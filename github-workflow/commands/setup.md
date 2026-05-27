@@ -1,5 +1,5 @@
 ---
-description: Interactive onboarding wizard for configuring the plugin
+description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "onboard", "initialize the workflow", "help me set up".'
 ---
 
 # Setup

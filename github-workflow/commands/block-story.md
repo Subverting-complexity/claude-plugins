@@ -1,5 +1,5 @@
 ---
-description: Mark the current story as blocked and record the reason
+description: 'Mark the current story as blocked. Trigger: "blocked", "I''m stuck", "can''t continue", "this is blocked by".'
 ---
 
 # Block Story

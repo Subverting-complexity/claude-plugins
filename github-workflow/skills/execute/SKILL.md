@@ -1,6 +1,13 @@
 ---
 description: 'End-to-end story execution: pick → plan → build → test → PR'
-when_to_use: "When the user says 'start the next story', 'work on story N', 'execute', or wants to run the full development workflow"
+when_to_use: >-
+  Trigger when the user wants development work done. Any of these:
+  "next story", "start the next story", "pick up a story", "what's next",
+  "work on story N", "do story N", "story #N", "#N", "do N", just a bare issue number,
+  "start working", "build the next feature", "execute", "run the workflow",
+  "fix bugs", "fix the next bug", "fix security issues" (use mode=bug),
+  "audit the codebase", "audit for security", "code audit", "run an audit" (use mode=audit).
+  Also trigger when the user pastes a GitHub issue URL or references an issue number.
 arguments:
   - name: story_number
     description: 'Optional issue number. If omitted, picks the next story from the backlog.'

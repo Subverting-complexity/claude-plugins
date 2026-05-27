@@ -1,5 +1,5 @@
 ---
-description: How to get started and what this plugin can do
+description: 'Orientation and help. Trigger: "how do I use this", "what can you do", "help", "get started", "guide me".'
 ---
 
 # Guide

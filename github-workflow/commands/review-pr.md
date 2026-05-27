@@ -1,5 +1,5 @@
 ---
-description: Review a pull request against its linked GitHub issue
+description: 'Review a PR against its linked issue. Trigger: "review PR N", "check the PR", "review this pull request", "look at PR N".'
 ---
 
 # Review PR

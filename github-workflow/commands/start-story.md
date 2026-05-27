@@ -1,5 +1,5 @@
 ---
-description: Assign the story, update the board, and create a working branch
+description: 'Assign a story, update the board, and create a branch. Trigger: "start story N", "begin working on N", "assign me story N".'
 ---
 
 # Start Story

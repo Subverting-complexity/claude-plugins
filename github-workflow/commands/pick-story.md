@@ -1,5 +1,5 @@
 ---
-description: Select the next unassigned story from the backlog
+description: 'Pick the next story from the backlog without starting it. Trigger: "what''s next", "pick a story", "show me the next story", "what should I work on".'
 ---
 
 # Pick Story
