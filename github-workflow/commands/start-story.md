@@ -1,0 +1,79 @@
+---
+description: Assign the story, update the board, and create a working branch
+---
+
+# Start Story
+
+Assign the story, update the board, and create a working branch.
+
+Requires: a story number (from `/github-workflow:pick-story` or provided directly).
+
+## Steps
+
+### 1. Read configuration
+
+Read `ClaudeProject.md` and extract:
+
+- `org`, `repo`, `default-branch` from Identity
+- Branch convention pattern
+- Project board settings (if configured)
+- Label map
+
+### 2. Assign the issue
+
+```
+gh issue edit {number} --repo {org}/{repo} --add-assignee @me
+```
+
+### 3. Update project board (if configured)
+
+Only if `ClaudeProject.md` has a Project Board section with field IDs.
+
+Set status to In Progress:
+
+```
+gh api graphql -f query='mutation {
+  updateProjectV2ItemFieldValue(input: {
+    projectId: "{project_node_id}"
+    itemId: "{item_id}"
+    fieldId: "{status_field_id}"
+    value: { singleSelectOptionId: "{in_progress_option_id}" }
+  }) { projectV2Item { id } }
+}'
+```
+
+Set start date to today:
+
+```
+gh api graphql -f query='mutation {
+  updateProjectV2ItemFieldValue(input: {
+    projectId: "{project_node_id}"
+    itemId: "{item_id}"
+    fieldId: "{start_date_field_id}"
+    value: { date: "{today}" }
+  }) { projectV2Item { id } }
+}'
+```
+
+If board operations fail, log a warning and continue. The board is optional.
+
+### 4. Validate the issue body
+
+Read the issue body. Check that it has at minimum:
+
+- **Context** — what the story is about and why
+- **Requirements** — acceptance criteria or expected behavior
+
+If the issue body is empty or has no actionable guidance, flag it.
+If linked docs or comments provide enough context, proceed anyway.
+If truly empty with no guidance anywhere, run `/github-workflow:block-story`.
+
+### 5. Create branch
+
+```
+git fetch origin {default-branch}
+git checkout -b {branch} origin/{default-branch}
+```
+
+Apply the branch convention from config. For example, if the convention
+is `feature/{number}/{short-desc}`, create `feature/42/add-user-auth`.

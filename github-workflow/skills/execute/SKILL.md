@@ -1,0 +1,187 @@
+---
+description: 'End-to-end story execution: pick → plan → build → test → PR'
+when_to_use: "When the user says 'start the next story', 'work on story N', 'execute', or wants to run the full development workflow"
+arguments:
+  - name: story_number
+    description: 'Optional issue number. If omitted, picks the next story from the backlog.'
+  - name: mode
+    description: 'Execution mode: story (default), bug (pick next bug/security issue), audit (codebase audit, no code changes)'
+---
+
+# Execute Story
+
+End-to-end story execution workflow. Picks a story from the backlog,
+plans the implementation, builds it, runs tests, and opens a PR.
+
+Read `ClaudeProject.md` for all project-specific settings before starting.
+Read `CLAUDE.md` for project rules and build principles.
+
+## Mode selection
+
+Default mode is `story`. Override with `$ARGUMENTS.mode`:
+
+- **story** — Pick and implement the next user story
+- **bug** — Pick and fix the next bug, security, or architecture issue
+- **audit** — Audit the codebase, create issues for findings, no code changes
+
+If mode is `audit`, skip to the Audit section at the bottom.
+
+---
+
+## Phase 1 — Pick
+
+If `$ARGUMENTS.story_number` is provided, use that issue directly.
+Otherwise, run the pick-story logic:
+
+1. Read `ClaudeProject.md` for org, repo, and label map.
+2. Check for milestones to detect backlog mode:
+   ```
+   gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | .[] | select(.open_issues > 0) | {title, due_on, open_issues}'
+   ```
+3. **Sprint mode** (milestones found): pick from the earliest milestone
+   with open issues, sorted by priority label then issue number.
+4. **Flat mode** (no milestones): pick from open unassigned issues with
+   the status-ready label, sorted by priority then issue number.
+5. **Bug mode**: filter to issues with bug/security/arch type labels.
+
+Read the full issue body. Check it has **Context** and **Requirements**.
+
+- If the issue has enough guidance (body, comments, linked docs): proceed.
+- If truly empty with no guidance anywhere: run `/github-workflow:block-story`
+  and pick the next one.
+
+## Phase 2 — Start
+
+1. Assign the issue:
+
+   ```
+   gh issue edit {number} --repo {org}/{repo} --add-assignee @me
+   ```
+
+2. Update project board to In Progress (if board configured in ClaudeProject.md):
+
+   ```
+   gh api graphql -f query='mutation {
+     updateProjectV2ItemFieldValue(input: {
+       projectId: "{project_node_id}"
+       itemId: "{item_id}"
+       fieldId: "{status_field_id}"
+       value: { singleSelectOptionId: "{in_progress_option_id}" }
+     }) { projectV2Item { id } }
+   }'
+   ```
+
+3. Set start date on board (if configured).
+
+4. Fetch and branch:
+   ```
+   git fetch origin {default-branch}
+   git checkout -b {branch} origin/{default-branch}
+   ```
+
+Board operations are best-effort. If they fail, log a warning and continue.
+
+## Phase 3 — Plan
+
+Use `/github-workflow:code-architect` to design the implementation:
+
+- Pass the issue requirements, relevant codebase context, and any
+  reference docs listed in ClaudeProject.md.
+- Consume the architecture plan output.
+- If the plan reveals unclear requirements or significant complexity,
+  run `/github-workflow:grill-me` to stress-test the plan before building.
+- Do not pause for confirmation. Consume the plan and proceed.
+
+## Phase 4 — Build
+
+Use `/github-workflow:structured-coding` to implement:
+
+- Pass the architecture plan from Phase 3 and the issue requirements.
+- Write code and tests together. Do not defer tests to a later phase.
+- Follow build principles from `CLAUDE.md`:
+  - One responsibility per file
+  - Domain must not import from infrastructure
+  - Every module unit-testable in isolation
+  - Search for existing utilities before creating new ones
+
+## Phase 5 — Verify
+
+Run the quality gate command from `ClaudeProject.md`:
+
+1. Execute the quality gate script/command.
+2. If it fails:
+   a. Read the error output carefully.
+   b. Fix the specific failing check.
+   c. Re-run the quality gate.
+   d. Repeat up to 3 times.
+3. If still failing after 3 attempts, investigate the root cause
+   more deeply before trying again.
+
+## Phase 6 — Commit
+
+1. Stage only relevant files. Never stage `.env`, credentials, or
+   generated files that should be gitignored.
+2. Write a clear commit message: what was built and why.
+3. The quality gate hook runs automatically on commit.
+4. If you need multiple logical commits, prefer atomic commits that
+   each leave the codebase in a working state.
+
+## Phase 7 — Finish
+
+1. Push the branch:
+
+   ```
+   git push -u origin HEAD
+   ```
+
+2. Create a real PR (not a draft):
+
+   ```
+   gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body "{body}"
+   ```
+
+   - Title under 70 chars
+   - Each linked issue on its own line: `Closes #42`
+   - Include a test plan section
+   - Summary of what was built and acceptance criteria addressed
+
+3. Add claude labels if configured in the label map.
+
+4. Update project board to In Review (if configured).
+
+5. Report: display the PR URL, linked issues, and labels applied.
+
+---
+
+## Audit mode
+
+When `$ARGUMENTS.mode` is `audit`:
+
+1. Read `ClaudeProject.md` for org, repo, and label map.
+2. Run `/github-workflow:code-review` on the codebase.
+3. For each finding, run `/github-workflow:report-issue` to create
+   a GitHub issue with the appropriate type and priority labels.
+4. Report a summary of all issues created.
+5. Do not make code changes. Do not create a branch or PR.
+
+---
+
+## Escape hatches
+
+**Blocked**: If any phase cannot proceed, run `/github-workflow:block-story`
+with details. Then pick the next story.
+
+**Bug found**: If you discover an unrelated bug during development,
+run `/github-workflow:report-issue`. Do not fix it inline unless it is
+trivial and within the same scope.
+
+**Dependency**: If this story depends on another unmerged story:
+
+1. Build the dependency on its own branch from the default branch.
+2. Branch the dependent story off the dependency branch.
+3. Set the dependent PR's base to the dependency branch.
+4. After merge, rebase onto the default branch and update the PR base.
+
+**Feature discovery**: If the story needs to be broken into sub-stories
+before implementation, use `/github-workflow:feature-discovery` to
+generate the backlog, then pick the first sub-story.

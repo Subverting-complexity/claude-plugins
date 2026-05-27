@@ -1,0 +1,8 @@
+{
+  "name": "github-workflow",
+  "version": "1.0.0",
+  "description": "End-to-end GitHub development workflow. Say 'start the next story' and the plugin handles picking, planning, building, testing, and opening a PR.",
+  "author": {
+    "name": "Subverting Complexity"
+  }
+}

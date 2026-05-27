@@ -1,0 +1,14 @@
+{
+  "name": "subverting-complexity",
+  "owner": {
+    "name": "Subverting Complexity"
+  },
+  "description": "Development workflow plugins by Subverting Complexity",
+  "plugins": [
+    {
+      "name": "github-workflow",
+      "source": "./github-workflow",
+      "description": "End-to-end GitHub development workflow"
+    }
+  ]
+}
