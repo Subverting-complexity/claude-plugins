@@ -55,6 +55,10 @@ development:
 ## Session Hygiene
 
 - Start a **new session** for each story.
+- Target **~100k tokens per session**. One story, one session. Commit
+  and push progress early so work survives session boundaries.
+- If a story is too large for one session, implement the most important
+  slice, open a PR for it, and create follow-up issues for the rest.
 - When compacting, preserve: modified files list, current test status,
   story number, branch name, and any blockers found.
 

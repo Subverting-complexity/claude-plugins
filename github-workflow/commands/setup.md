@@ -101,6 +101,9 @@ For anything not auto-detected, ask the user interactively:
   are configured separately in `review.config.md` during Step 7.)
 - **Quality gate command** — if not auto-detected
 - **Issue prefixes** — suggest `[STORY]`, `[BUG]`, `[ARCH]`, `[DEBT]`
+- **Stale timeout** — how long an assigned issue can go without a
+  branch or PR before `pick-story` reclaims it. Suggest `2h` as
+  default. Accepts values like `30m`, `1h`, `4h`.
 
 For each setting, show the detected or suggested default and let the
 user confirm or override. For labels, also list any existing labels

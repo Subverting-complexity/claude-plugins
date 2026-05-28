@@ -65,6 +65,9 @@ When given a specific issue number, run `/github-workflow:execute <number>`.
 ## Rules
 
 - One story per session. Start fresh for each story.
+- Target ~100k tokens per session. Commit and push progress early.
+  If the story is too large, implement the highest-priority slice,
+  open a PR, and create follow-up issues for the remainder.
 - Never skip tests. If a test framework isn't set up yet, note it in the PR.
 - If you discover a bug or architecture issue, run `/github-workflow:report-issue`.
   Do not fix unrelated problems inline.
