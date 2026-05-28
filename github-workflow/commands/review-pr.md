@@ -4,7 +4,10 @@ description: 'Review a PR against its linked issue. Trigger: "review PR N", "che
 
 # Review PR
 
-Review a pull request against its linked GitHub issue.
+Lightweight review of a pull request against its linked GitHub issue.
+This checks acceptance criteria and basic quality. For a deep structural
+review with fix application and state-label management, use
+`/github-workflow:code-review` instead.
 
 ## Steps
 
@@ -67,13 +70,8 @@ gh pr review {pr_number} --request-changes --body "{review_summary}"
 
 ### 6. Apply labels
 
-Add the claude-reviewed label from the label map:
-
-```
-gh pr edit {pr_number} --add-label "{claude_reviewed_label}"
-```
-
-If approved and a `claude-approved` label is configured:
+If approved and a `claude-approved` label is configured in the label
+map, apply it:
 
 ```
 gh pr edit {pr_number} --add-label "{claude_approved_label}"

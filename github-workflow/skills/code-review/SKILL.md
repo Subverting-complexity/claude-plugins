@@ -500,9 +500,11 @@ qualify for `Approved`.
 When issues remain that the reviewer could not auto-fix, the PR is
 left with the `changes-requested` label. To address that feedback:
 
-- A human or builder agent runs `/github-workflow:update-pr` to read
-  the review comment, fix each item in Issues Remaining, push changes,
-  and apply `needs-re-review`.
+- A human or **builder** agent runs `/github-workflow:update-pr` to
+  read the review comment, fix each item in Issues Remaining, push
+  changes, and apply `needs-re-review`. (The reviewer agent is
+  read-only and cannot run this command — it requires file editing
+  and git push access.)
 - The next code-review run will pick up PRs with `needs-re-review`
   (they are prioritised in Step 1) and perform a re-review.
 

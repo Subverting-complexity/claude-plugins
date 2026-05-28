@@ -53,8 +53,13 @@ Silently check for:
 >
 > **Review and audit:**
 >
-> - `/github-workflow:review-pr` → Review the current branch's PR.
-> - `/github-workflow:review-pr 15` → Review PR #15.
+> - `/github-workflow:code-review` → Deep review of the next open PR
+>   (finds it, claims it, reviews, fixes issues, posts comment, applies
+>   state labels).
+> - `/github-workflow:review-pr` → Quick review of a PR against its
+>   acceptance criteria.
+> - `/github-workflow:update-pr` → Address review feedback on a PR
+>   with changes requested, push fixes, flag for re-review.
 > - `/github-workflow:execute --mode audit` → Audit the codebase and
 >   create issues for anything found.
 >

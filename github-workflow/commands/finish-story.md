@@ -51,10 +51,11 @@ the Development sidebar.
 
 ### 4. Add labels to PR
 
-If claude labels are configured in the label map, apply them:
+If the `claude-authored` label is configured in the label map, apply it
+to mark this as a Claude-built PR:
 
 ```
-gh pr edit {pr_number} --add-label "{claude_reviewed_label}"
+gh pr edit {pr_number} --add-label "{claude_authored_label}"
 ```
 
 ### 5. Update project board (if configured)

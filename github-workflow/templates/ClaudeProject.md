@@ -65,16 +65,21 @@ Only include labels your project uses — remove unused rows.
 
 ### Claude
 
-| Purpose               | Label    |
-| --------------------- | -------- |
-| claude-reviewed       | `{name}` |
-| claude-approved       | `{name}` |
-| claude-needs-re-review | `{name}` |
-| claude-blocked        | `{name}` |
+Simple markers applied by workflow commands. These are **not** the
+review state labels — those are defined in `docs/review.config.md`
+and managed by the code-review skill.
+
+| Purpose          | Label    | Applied by       |
+| ---------------- | -------- | ---------------- |
+| claude-authored  | `{name}` | finish-story     |
+| claude-approved  | `{name}` | review-pr        |
+| claude-blocked   | `{name}` | block-story      |
 
 ### Custom (optional)
 
 Additional labels your project uses. Remove this section if not needed.
+The code-review skill also supports custom labels — those are defined
+in `docs/review.config.md`, not here.
 
 | Label    | When to apply |
 | -------- | ------------- |

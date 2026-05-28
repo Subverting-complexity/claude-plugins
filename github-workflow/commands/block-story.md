@@ -31,7 +31,9 @@ Blocked during automated execution. Details:
 
 ### 3. Add blocked label
 
-If a `status-blocked` or `claude-blocked` label is configured:
+Apply the `status-blocked` label if configured. If no `status-blocked`
+label exists, fall back to the `claude-blocked` label. Apply whichever
+is available — if both are configured, prefer `status-blocked`.
 
 ```
 gh issue edit {number} --repo {org}/{repo} --add-label "{blocked_label}"

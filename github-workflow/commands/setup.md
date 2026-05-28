@@ -78,14 +78,17 @@ For anything not auto-detected, ask the user interactively:
 - **Priority labels** — what label names for critical/high/medium/low
 - **Type labels** — what label names for story/bug/debt/arch
 - **Status labels** — what label names for ready/blocked
-- **Claude labels** — what label names for reviewed/approved/blocked/
-  needs-re-review (suggest `claude:reviewed`, `claude:approved`,
-  `claude:blocked`, `claude:needs-re-review`)
+- **Claude labels** — simple markers for Claude-authored PRs and
+  approvals. Suggest `claude:authored`, `claude:approved`,
+  `claude:blocked`. These are separate from the review state labels
+  set up in Step 6.
 - **Custom labels** — ask if the user has any additional labels they
-  want the workflow to apply or respect. For each custom label, ask
-  the name and when it should be applied. Examples: `high-priority`,
-  `frontend`, `backend`, `breaking-change`, `docs-needed`. Store
-  these in the Custom section of the label map.
+  want workflow commands to apply or respect. For each custom label,
+  ask the name and when it should be applied. Examples:
+  `breaking-change`, `docs-needed`, `frontend`, `backend`. Store
+  these in the Custom section of the label map in ClaudeProject.md.
+  (The code-review skill also supports its own custom labels — those
+  are configured separately in `review.config.md` during Step 6.)
 - **Quality gate command** — if not auto-detected
 - **Issue prefixes** — suggest `[STORY]`, `[BUG]`, `[ARCH]`, `[DEBT]`
 
@@ -126,7 +129,31 @@ template they should customise to match their project.
 Do not overwrite, reorder, or remove any existing CLAUDE.md content.
 The plugin's guidance is additive only.
 
-### 6. Verify and report
+### 6. Set up review configuration (optional)
+
+Ask the user if they plan to use the code-review skill for automated
+PR reviews. If yes:
+
+1. Check if `docs/review.config.md` already exists. If so, skip.
+2. If not, offer to generate it now by running the code-review skill's
+   **Config Generation** flow (defined in
+   `skills/code-review/SKILL.md`). This will:
+   - Ask for a label prefix (e.g., `claude`, `review`)
+   - Define review state labels (`{prefix}-reviewing`,
+     `{prefix}-approved`, `{prefix}-changes-requested`,
+     `{prefix}-needs-re-review`, etc.)
+   - Set up non-compliance gates, tech-stack rules, and test
+     expectations
+   - Create the labels on the GitHub repo
+   - Write `docs/review.config.md`
+3. If the user declines, note that the code-review skill will prompt
+   for this config on first run.
+
+Review state labels are separate from the Claude labels in
+ClaudeProject.md. The Claude labels are simple workflow markers; review
+state labels are a mutex managed by the code-review skill.
+
+### 7. Verify and report
 
 Confirm all required sections are present in `ClaudeProject.md`.
 Display a summary of what was configured:

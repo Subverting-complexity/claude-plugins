@@ -192,3 +192,7 @@ trivial and within the same scope.
 **Feature discovery**: If the story needs to be broken into sub-stories
 before implementation, use `/github-workflow:feature-discovery` to
 generate the backlog, then pick the first sub-story.
+
+**Review feedback**: After the PR is created, the code-review skill may
+flag issues. Run `/github-workflow:update-pr` to address the feedback,
+push fixes, and flag the PR for re-review.
