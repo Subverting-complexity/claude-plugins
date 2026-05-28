@@ -16,8 +16,19 @@ State labels are mutually exclusive — exactly one is applied per review.
 | `{PREFIX}-approved` | State | No remaining issues, ready for human merge |
 | `{PREFIX}-changes-requested` | State | Concrete problems remain that a human must address |
 | `{PREFIX}-needs-discussion` | State | Architectural or scope questions need human judgment |
+| `{PREFIX}-needs-re-review` | State | New commits pushed since last review — re-review required |
 | `{PREFIX}-review-failed` | State | Review could not be completed (checkout failed, PR too large) |
 | `{PREFIX}-fixes-applied` | Action | Claude pushed fix commits to the PR branch (sticky across runs) |
+
+## Custom Labels
+
+Additional labels applied to PRs based on project-specific criteria.
+These are applied alongside (not instead of) the state labels above.
+Remove this section if you don't use custom labels.
+
+| Label | When to apply |
+| ----- | ------------- |
+| `{LABEL}` | {CRITERIA} |
 
 ## Hard Non-Compliance Gates
 

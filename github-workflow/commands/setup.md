@@ -78,13 +78,20 @@ For anything not auto-detected, ask the user interactively:
 - **Priority labels** — what label names for critical/high/medium/low
 - **Type labels** — what label names for story/bug/debt/arch
 - **Status labels** — what label names for ready/blocked
-- **Claude labels** — what label names for reviewed/approved/blocked
-  (suggest `claude:reviewed`, `claude:approved`, `claude:blocked`)
+- **Claude labels** — what label names for reviewed/approved/blocked/
+  needs-re-review (suggest `claude:reviewed`, `claude:approved`,
+  `claude:blocked`, `claude:needs-re-review`)
+- **Custom labels** — ask if the user has any additional labels they
+  want the workflow to apply or respect. For each custom label, ask
+  the name and when it should be applied. Examples: `high-priority`,
+  `frontend`, `backend`, `breaking-change`, `docs-needed`. Store
+  these in the Custom section of the label map.
 - **Quality gate command** — if not auto-detected
 - **Issue prefixes** — suggest `[STORY]`, `[BUG]`, `[ARCH]`, `[DEBT]`
 
 For each setting, show the detected or suggested default and let the
-user confirm or override.
+user confirm or override. For labels, also list any existing labels
+found on the repo (`gh label list`) so the user can incorporate them.
 
 ### 4. Generate ClaudeProject.md
 
@@ -97,17 +104,27 @@ content without removing sections that are already there.
 
 ### 5. Generate or update CLAUDE.md
 
+The user's `CLAUDE.md` is their own file. The goal here is to add
+lightweight pointers to supplementary files, not to take over the file
+with plugin-specific rules.
+
 **If no `CLAUDE.md` exists**: use `templates/CLAUDE.md` as a starting
-point. Write it to the project root.
+point. Write it to the project root. Tell the user this is a starting
+template they should customise to match their project.
 
-**If `CLAUDE.md` exists**: check if it already references `ClaudeProject.md`.
-If not, add this line near the top:
+**If `CLAUDE.md` exists**: check if it already has a
+"Supplementary Files" section (or references `ClaudeProject.md`).
 
-```
-Read `ClaudeProject.md` for project-specific workflow settings.
-```
+- If neither exists, append the Supplementary Files section from the
+  template to the end of the existing file. This section is a table of
+  pointers to `ClaudeProject.md`, `docs/review.config.md`, and any
+  other reference docs the user mentioned during setup.
+- If a reference to `ClaudeProject.md` exists but there's no
+  Supplementary Files table, offer to upgrade it to the table format.
+- If the section already exists, leave it alone.
 
-Do not overwrite existing CLAUDE.md content.
+Do not overwrite, reorder, or remove any existing CLAUDE.md content.
+The plugin's guidance is additive only.
 
 ### 6. Verify and report
 

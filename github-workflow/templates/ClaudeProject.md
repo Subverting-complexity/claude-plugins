@@ -65,11 +65,20 @@ Only include labels your project uses — remove unused rows.
 
 ### Claude
 
-| Purpose         | Label    |
-| --------------- | -------- |
-| claude-reviewed | `{name}` |
-| claude-approved | `{name}` |
-| claude-blocked  | `{name}` |
+| Purpose               | Label    |
+| --------------------- | -------- |
+| claude-reviewed       | `{name}` |
+| claude-approved       | `{name}` |
+| claude-needs-re-review | `{name}` |
+| claude-blocked        | `{name}` |
+
+### Custom (optional)
+
+Additional labels your project uses. Remove this section if not needed.
+
+| Label    | When to apply |
+| -------- | ------------- |
+| `{name}` | {criteria}    |
 
 ## Story Template
 

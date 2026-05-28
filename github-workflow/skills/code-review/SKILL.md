@@ -94,7 +94,17 @@ questions by topic and use interactive selection where possible.
 
 **Labels:** Present a default label scheme (see the template in
 `references/review.config.template.md`) and ask if they want to customise
-the prefix or add/remove any.
+the prefix or add/remove any. Also list existing repo labels
+(`gh label list`) so the user can see what's already there.
+
+**Custom labels:** Ask if the user has additional labels they want the
+review process to apply or check. For each custom label, ask the name
+and the criteria for when it should be applied. Examples:
+- `breaking-change` — PR modifies a public API
+- `docs-needed` — PR adds a feature with no documentation update
+- `frontend` / `backend` — PR touches files in specific directories
+
+Store these in the Custom Labels section of the config.
 
 **Hard non-compliance gates:** Present sensible defaults (no linked issue,
 no tests on non-trivial code, secrets in code, scope creep). Ask if they
@@ -131,6 +141,7 @@ Use these default colours (adjustable by the user):
 - Reviewing: `#0E8A16` (green)
 - Approved: `#1D76DB` (blue)
 - Changes requested: `#E4E669` (yellow)
+- Needs re-review: `#FBCA04` (gold)
 - Needs discussion: `#D93F0B` (orange)
 - Review failed: `#B60205` (red)
 - Fixes applied: `#5319E7` (purple)
@@ -157,8 +168,8 @@ gh pr list --state open --repo <org>/<repo> --json number,title,labels,headRefNa
 
 Skip any PR that has:
 - The `reviewing` state label (another run is in progress).
-- The `approved` state label (already reviewed and approved, unless the
-  label is manually removed).
+- The `approved` state label **unless** it also has `needs-re-review`
+  (approved PRs that received new commits still need re-review).
 
 For each remaining PR, determine whether it needs review:
 
@@ -172,8 +183,12 @@ For each remaining PR, determine whether it needs review:
 4. If a comment exists, extract the `Reviewed at <SHA>` line. If that SHA
    differs from the current `headRefOid`, it needs review. Otherwise skip.
 
-If no PRs need review, report that and exit. If multiple PRs need review,
-pick the lowest-numbered one. Do not loop through multiple PRs.
+**Prioritisation:** PRs with the `needs-re-review` state label are
+reviewed first. Among those, pick the lowest-numbered one. If none have
+that label, pick the lowest-numbered PR that needs review.
+
+If no PRs need review, report that and exit. Do not loop through multiple
+PRs.
 
 ### Step 2 — Claim the PR
 
@@ -229,6 +244,63 @@ Run all of the following. If any command fails, treat as a review failure
   ```bash
   git diff <baseRef>...HEAD
   ```
+
+### Step 4b — Assess re-review significance (re-reviews only)
+
+This step applies only when reviewing a PR that was previously reviewed
+(a prior review comment with a footer exists). Skip this step for
+first-time reviews.
+
+Extract the SHA from the previous review footer. Compute the diff between
+that SHA and the current HEAD:
+
+```bash
+git diff <previous-review-SHA>..HEAD --stat
+git diff <previous-review-SHA>..HEAD
+```
+
+Classify the changes since the last review as **trivial** or
+**substantial**:
+
+**Trivial** — all of the following are true:
+- Only whitespace, formatting, or import-ordering changes
+- Comment or documentation text fixes (typos, wording)
+- Renaming that doesn't change behaviour (variable names, file renames
+  with no logic change)
+- Removing dead code that was flagged in the previous review
+
+**Substantial** — any of the following:
+- New or modified logic, control flow, or calculations
+- New files, new dependencies, or changed APIs
+- Test additions or changes to test assertions
+- Security-relevant changes (auth, input validation, data handling)
+- Anything that alters the observable behaviour of the code
+
+**If trivial and previous verdict was `approved`:**
+Skip the full re-review. Post an abbreviated comment:
+
+```
+## Re-review by Claude
+
+**Verdict: Approved**
+
+Changes since last review are trivial (formatting / typos / cleanup).
+Original approval stands.
+
+<footer from review.config.md>
+```
+
+Remove the `needs-re-review` label, ensure the `approved` label is
+present, and exit. Do not proceed to Step 5.
+
+**If trivial and previous verdict was `changes-requested`:**
+Proceed to Step 5 for a full re-review — the original issues may still
+be unresolved.
+
+**If substantial:**
+Proceed to Step 5 for a full re-review regardless of previous verdict.
+
+---
 
 ### Step 5 — Read the code in context
 
@@ -381,13 +453,17 @@ the updated SHA from Step 7 if fixes were pushed).
 ### Step 10 — Apply labels and exit
 
 1. Remove the `reviewing` state label.
-2. Remove all other state labels that don't match the new verdict (the
+2. Remove the `needs-re-review` state label (no-op if not present).
+3. Remove all other state labels that don't match the new verdict (the
    remove commands will no-op if the label isn't present).
-3. Apply exactly one state label matching the verdict.
-4. If fixes were pushed in Step 7, ensure the `fixes-applied` action label
+4. Apply exactly one state label matching the verdict.
+5. If fixes were pushed in Step 7, ensure the `fixes-applied` action label
    is present. Do not remove it if it was already there (it is sticky).
-5. Check out the original branch you were on before the review.
-6. Report `Reviewed PR #<number> — <verdict>` and exit.
+6. If `review.config.md` defines custom labels, evaluate each one's
+   "When to apply" criteria against the PR. Apply matching labels and
+   remove non-matching ones that were previously applied by a review.
+7. Check out the original branch you were on before the review.
+8. Report `Reviewed PR #<number> — <verdict>` and exit.
 
 Use the label names from `review.config.md` for all label operations.
 
@@ -404,6 +480,61 @@ review thoroughly):
 3. Post a comment explaining what failed, including the review footer so
    the failure is tied to a specific commit and future runs will retry.
 4. Exit immediately. Do not attempt to recover, retry, or continue.
+
+---
+
+## Addressing Review Feedback
+
+After a review concludes with a `Changes Requested` verdict, the PR
+needs updates before it can be re-reviewed. This can happen in two ways:
+
+### Automatic (during this review run)
+
+Step 7 already fixes objective issues and pushes them. If Step 7
+resolved **all** issues — meaning the Issues Remaining list is empty
+after fixes — re-evaluate the verdict before posting. The PR may now
+qualify for `Approved`.
+
+### Manual (separate invocation)
+
+When issues remain that the reviewer could not auto-fix, the PR is
+left with the `changes-requested` label. To address that feedback:
+
+- A human or builder agent runs `/github-workflow:update-pr` to read
+  the review comment, fix each item in Issues Remaining, push changes,
+  and apply `needs-re-review`.
+- The next code-review run will pick up PRs with `needs-re-review`
+  (they are prioritised in Step 1) and perform a re-review.
+
+### Change significance on update
+
+When changes are pushed to a reviewed PR (by `update-pr` or any other
+process), the pusher classifies the changes:
+
+**Trivial (no re-review needed):**
+- Whitespace, formatting, or import-order fixes
+- Typo corrections in comments or documentation
+- Removing dead code flagged in the review
+- Variable renames with no behaviour change
+
+Leave the existing state label in place.
+
+**Substantial (re-review required):**
+- New or modified logic, control flow, or calculations
+- New files, dependencies, or changed APIs
+- Test additions or modified assertions
+- Security-relevant changes
+- Anything that alters observable behaviour
+
+Remove the current state label and apply `needs-re-review`:
+
+```bash
+gh pr edit <number> --remove-label "<current-state-label>" --add-label "<needs-re-review-label>"
+```
+
+The code-review skill's Step 4b will then assess whether the re-review
+can be fast-tracked (trivial changes on an approved PR) or requires a
+full pass.
 
 ---
 
