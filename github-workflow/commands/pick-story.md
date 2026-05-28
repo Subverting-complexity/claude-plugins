@@ -66,7 +66,7 @@ gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 Add a comment explaining the reclamation:
 
 ```
-gh issue comment {number} --repo {org}/{repo} --body "Automatically unassigned — no branch or PR was created within the stale timeout. This issue is available for pickup again."
+gh issue comment {number} --repo {org}/{repo} --body "Automatically unassigned — no progress detected within the stale timeout ({stale_timeout}). This issue is available for pickup again."
 ```
 
 The reclaimed issue is now eligible for the normal pick logic below.

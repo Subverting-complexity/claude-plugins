@@ -102,8 +102,13 @@ Work through every item in **Issues remaining**, one at a time:
 
 ### 5. Run the quality gate
 
-Run the quality gate command from `ClaudeProject.md`. Fix any failures.
-Repeat up to 3 times if needed.
+Run the quality gate command from `ClaudeProject.md`:
+
+1. Execute the quality gate script/command.
+2. If it fails, read the error output, fix the issue, and re-run.
+3. Repeat up to 3 times. If still failing, warn the user but continue
+   to commit and push — the review feedback fixes are still valuable
+   even if the gate has a pre-existing issue.
 
 ### 6. Commit and push
 

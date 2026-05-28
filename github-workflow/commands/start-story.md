@@ -55,7 +55,9 @@ gh api graphql -f query='mutation {
 }'
 ```
 
-If board operations fail, log a warning and continue. The board is optional.
+Board operations are best-effort. If they fail, report the failure to
+the user (e.g., "Board update failed: {error}. Continuing without board
+update.") and proceed with the rest of the workflow.
 
 ### 4. Validate the issue body
 

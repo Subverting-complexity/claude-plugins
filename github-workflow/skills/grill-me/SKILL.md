@@ -57,9 +57,9 @@ Do not silently resolve. Always show the user what was found.
 
 Produce a markdown document at the end of the interview.
 
-**In Claude.ai (chat):** Output inline in the conversation.
-**In a VM or sandboxed environment (no persistent filesystem):** Output inline in the conversation.
-**In Claude Code or any agentic/codebase context with a real filesystem:** Write to `.decisions/<plan-name>-<YYYY-MM-DD>.md` relative to the current working directory and confirm the path.
+Write to `.decisions/<plan-name>-<YYYY-MM-DD>.md` relative to the current
+working directory. Create the `.decisions/` directory if it doesn't exist.
+Confirm the path to the user after writing.
 
 ---
 

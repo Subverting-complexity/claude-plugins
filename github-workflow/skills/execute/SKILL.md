@@ -122,7 +122,8 @@ Read the full issue body. Check it has **Context** and **Requirements**.
    git checkout -b {branch} origin/{default-branch}
    ```
 
-Board operations are best-effort. If they fail, log a warning and continue.
+Board operations are best-effort. If they fail, report the failure to
+the user (e.g., "Board update failed: {error}. Continuing.") and proceed.
 
 ## Phase 3 — Plan
 
