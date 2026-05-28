@@ -72,12 +72,17 @@ interview.
 
 ## Phase 2 -- Plan
 
-Use `/local-workflow:code-architect` to design the implementation:
+Use `/local-workflow:code-architect` to plan the implementation:
 
 - Pass the task requirements and relevant codebase context.
-- Consume the architecture plan output.
-- If the plan reveals unclear requirements or significant complexity,
-  use `/local-workflow:grill-me` to stress-test the plan before building.
+- Code-architect should scan the existing codebase and plan changes
+  based on the task description. Do not run an interactive design
+  interview or call grill-me.
+- Consume the architecture plan output and proceed to Build.
+- Do not pause for confirmation.
+- If requirements have gaps, make reasonable assumptions and note
+  them in the plan. Only stop if the task is so underspecified that
+  any implementation would be a guess.
 
 If the plan reveals the task exceeds one session's budget, tell the user
 and propose splitting it. Implement the highest-priority slice.

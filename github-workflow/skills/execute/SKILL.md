@@ -131,14 +131,18 @@ the user (e.g., "Board update failed: {error}. Continuing.") and proceed.
 
 ## Phase 3 — Plan
 
-Use `/github-workflow:code-architect` to design the implementation:
+Use `/github-workflow:code-architect` to plan the implementation:
 
 - Pass the issue requirements, relevant codebase context, and any
   reference docs listed in ClaudeProject.md.
-- Consume the architecture plan output.
-- If the plan reveals unclear requirements or significant complexity,
-  run `/github-workflow:grill-me` to stress-test the plan before building.
-- Do not pause for confirmation. Consume the plan and proceed.
+- Code-architect should scan the existing codebase and plan changes
+  based on the issue requirements. Do not run an interactive design
+  interview or call grill-me.
+- Consume the architecture plan output and proceed to Build.
+- Do not pause for confirmation.
+- If requirements have gaps, make reasonable assumptions and note
+  them in the plan. Only stop if the issue is so underspecified that
+  any implementation would be a guess.
 
 ## Phase 4 — Build
 
