@@ -34,10 +34,32 @@ Look for PRs with any of these state labels (in priority order):
 2. `needs-discussion` — questions were raised that may now be resolved
 3. `needs-re-review` — changes were pushed but review hasn't run yet
 
+**Skip** any PR that has:
+- The `reviewing` label (a review agent is currently working on it)
+- The `updating` label (another builder agent is already fixing it)
+
 If multiple PRs match, pick the one with the highest-priority state
 (changes-requested first), then lowest PR number.
 
 If no PRs need updating, report that and exit.
+
+### 2b. Claim the PR
+
+Multiple builder agents may be running concurrently. Apply the
+`updating` label to claim the PR before starting work:
+
+```
+gh pr edit {pr_number} --add-label "{updating_label}"
+```
+
+Wait 2 seconds, then re-read the PR labels:
+
+```
+gh pr view {pr_number} --repo {org}/{repo} --json labels
+```
+
+If `updating` is present, you own the claim — proceed. If it was
+removed or another agent's label appeared, exit without removing labels.
 
 ### 3. Check out the branch and read the review
 
@@ -95,8 +117,13 @@ git push
 
 ### 7. Assess change significance and update labels
 
-Classify the changes you just pushed (see the criteria in the execute
-skill's "Pushing changes to a reviewed PR" section):
+Remove the `updating` label (your claim is done):
+
+```
+gh pr edit {pr_number} --remove-label "{updating_label}"
+```
+
+Then classify the changes you pushed:
 
 **If substantial** (new logic, changed APIs, modified tests):
 
@@ -111,7 +138,13 @@ gh pr edit {pr_number} --remove-label "{current_state_label}" --add-label "{need
 Leave the current state label in place. The next code-review run will
 detect the SHA change and fast-track it.
 
-### 8. Report
+### 8. Error handling
+
+If anything goes wrong (checkout fails, quality gate can't pass, push
+fails), remove the `updating` label before exiting so another agent
+can pick up the PR.
+
+### 9. Report
 
 Display:
 

@@ -21,6 +21,7 @@ State labels are mutually exclusive — exactly one is applied per review.
 | `{PREFIX}-needs-discussion` | State | Architectural or scope questions need human judgment |
 | `{PREFIX}-needs-re-review` | State | New commits pushed since last review — re-review required |
 | `{PREFIX}-review-failed` | State | Review could not be completed (checkout failed, PR too large) |
+| `{PREFIX}-updating` | State | A builder agent is addressing review feedback — prevents concurrent updates |
 | `{PREFIX}-fixes-applied` | Action | Claude pushed fix commits to the PR branch (sticky across runs) |
 
 These labels are separate from the Claude labels in `ClaudeProject.md`.

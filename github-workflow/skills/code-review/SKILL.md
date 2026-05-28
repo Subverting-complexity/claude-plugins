@@ -139,6 +139,7 @@ gh label create "<label-name>" --description "<description>" --color "<hex>"
 
 Use these default colours (adjustable by the user):
 - Reviewing: `#0E8A16` (green)
+- Updating: `#0E8A16` (green)
 - Approved: `#1D76DB` (blue)
 - Changes requested: `#E4E669` (yellow)
 - Needs re-review: `#FBCA04` (gold)
@@ -167,7 +168,8 @@ gh pr list --state open --repo <org>/<repo> --json number,title,labels,headRefNa
 ```
 
 Skip any PR that has:
-- The `reviewing` state label (another run is in progress).
+- The `reviewing` state label (another review agent is in progress).
+- The `updating` state label (a builder agent is addressing feedback).
 - The `approved` state label **unless** it also has `needs-re-review`
   (approved PRs that received new commits still need re-review).
 
@@ -192,13 +194,28 @@ PRs.
 
 ### Step 2 — Claim the PR
 
-Apply the `reviewing` state label immediately:
+Multiple agents may be running code-review concurrently. The
+`reviewing` label acts as a distributed lock. Apply it, then verify
+you own the claim.
 
-```bash
-gh pr edit <number> --repo <org>/<repo> --add-label "<reviewing-label>"
-```
+1. Apply the `reviewing` state label:
 
-If this fails, exit immediately.
+   ```bash
+   gh pr edit <number> --repo <org>/<repo> --add-label "<reviewing-label>"
+   ```
+
+   If this fails, exit immediately.
+
+2. Wait 2 seconds, then re-read the PR labels to confirm:
+
+   ```bash
+   gh pr view <number> --repo <org>/<repo> --json labels
+   ```
+
+   If the `reviewing` label is present, you own the claim — proceed.
+   If another state label has appeared (e.g., another agent removed
+   `reviewing` and applied its own verdict in the meantime), another
+   agent won the race. Exit without removing any labels.
 
 ### Step 3 — Check out the PR branch
 
@@ -537,6 +554,43 @@ gh pr edit <number> --remove-label "<current-state-label>" --add-label "<needs-r
 The code-review skill's Step 4b will then assess whether the re-review
 can be fast-tracked (trivial changes on an approved PR) or requires a
 full pass.
+
+---
+
+## Label Reference for Agents
+
+Any agent encountering these labels on a PR should understand what they
+mean and what action (if any) to take. Labels use the prefix defined in
+`review.config.md`.
+
+### State labels (mutually exclusive — exactly one per PR)
+
+| Label | Meaning | Agent action |
+| ----- | ------- | ------------ |
+| `{PREFIX}-reviewing` | A review agent is actively reviewing this PR. | **Do not touch.** Wait for the review to complete. Do not start a review, update, or push to this PR. |
+| `{PREFIX}-updating` | A builder agent is addressing review feedback. | **Do not touch.** Wait for the update to complete. Do not start a review or competing update. |
+| `{PREFIX}-approved` | Review passed, no remaining issues. | Ready for human merge. No agent action needed unless new commits are pushed (see `needs-re-review`). |
+| `{PREFIX}-changes-requested` | Review found issues requiring human or builder action. | **Builder**: Run `/github-workflow:update-pr` to address the feedback. **Reviewer**: Skip, waiting on builder. |
+| `{PREFIX}-needs-re-review` | New commits pushed since last review. | **Reviewer**: Prioritise this PR for re-review. **Builder**: No action — wait for review. |
+| `{PREFIX}-needs-discussion` | Architectural or scope questions need human judgment. | **All agents**: Do not auto-fix. Flag to human. |
+| `{PREFIX}-review-failed` | Review could not complete (checkout failed, PR too large). | **Reviewer**: May retry on next run if root cause is resolved. **Builder**: Investigate the failure. |
+
+### Action labels (sticky, not mutually exclusive)
+
+| Label | Meaning | Agent action |
+| ----- | ------- | ------------ |
+| `{PREFIX}-fixes-applied` | Claude pushed fix commits to this PR branch. | Informational. Do not remove — it persists across review cycles. |
+
+### Concurrency rules
+
+- **Before reviewing**: Check for `reviewing` and `updating` labels.
+  If either is present, skip the PR entirely.
+- **Before updating**: Check for `reviewing` and `updating` labels.
+  If either is present, skip the PR entirely.
+- **Claiming**: Apply your claim label (`reviewing` or `updating`),
+  wait 2 seconds, re-read labels to confirm you still own the claim.
+- **On exit or error**: Always remove your claim label so other agents
+  can proceed.
 
 ---
 
