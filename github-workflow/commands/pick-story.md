@@ -96,6 +96,10 @@ List candidate issues in that milestone:
 gh issue list --repo {org}/{repo} --milestone "{sprint_title}" --state open --assignee "" --json number,title,labels --jq '.[] | {number, title, labels: [.labels[].name]}'
 ```
 
+Filter out issues with the `approved` label (e.g., `claude-approved`,
+`claude:approved`, or whatever is configured in the label map). These
+are waiting for human merge and must not be picked up.
+
 Sort candidates:
 
 1. By priority label (critical → high → medium → low, using label map)
@@ -111,6 +115,8 @@ List candidate issues:
 ```
 gh issue list --repo {org}/{repo} --state open --assignee "" --label "{status_ready_label}" --json number,title,labels --jq '.[] | {number, title, labels: [.labels[].name]}'
 ```
+
+Filter out issues with the `approved` label.
 
 Sort by priority label, then issue number.
 

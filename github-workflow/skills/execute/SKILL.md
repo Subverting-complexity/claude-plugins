@@ -86,6 +86,8 @@ Otherwise, run the pick-story logic (including stale task recovery):
 1. Read `ClaudeProject.md` for org, repo, label map, and stale-timeout.
 1b. Run stale task recovery — check for issues assigned to @me with no
     branch or PR past the stale-timeout. Auto-resolve each stale issue:
+    - **PR or issue has `approved` label**: skip entirely — waiting for
+      human merge, do not touch.
     - **Stale PR with review feedback** (`changes-requested` or
       `needs-discussion` label): check out the branch and run
       `/github-workflow:update-pr` to address it, then continue to

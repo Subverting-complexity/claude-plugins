@@ -37,6 +37,7 @@ Look for PRs with any of these state labels (in priority order):
 **Skip** any PR that has:
 - The `reviewing` label (a review agent is currently working on it)
 - The `updating` label (another builder agent is already fixing it)
+- The `approved` label (waiting for human merge, do not touch)
 
 If multiple PRs match, pick the one with the highest-priority state
 (changes-requested first), then lowest PR number.
