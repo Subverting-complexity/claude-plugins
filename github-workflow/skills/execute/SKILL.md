@@ -87,6 +87,10 @@ Otherwise, run the pick-story logic (including stale task recovery):
    the status-ready label, sorted by priority then issue number.
 5. **Bug mode**: filter to issues with bug/security/arch type labels.
 
+**Never ask the user which story to pick.** Always auto-select using
+priority labels then lowest issue number. If no candidates have
+priority labels, pick the lowest issue number.
+
 Read the full issue body. Check it has **Context** and **Requirements**.
 
 - If the issue has enough guidance (body, comments, linked docs): proceed.
@@ -141,6 +145,8 @@ Use `/github-workflow:code-architect` to design the implementation:
 Use `/github-workflow:structured-coding` to implement:
 
 - Pass the architecture plan from Phase 3 and the issue requirements.
+- Do not pause for user confirmation. The issue requirements and
+  architecture plan from Phase 3 serve as the approved specification.
 - Write code and tests together. Do not defer tests to a later phase.
 - Follow build principles from `CLAUDE.md`:
   - One responsibility per file

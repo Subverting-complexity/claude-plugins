@@ -87,6 +87,8 @@ and propose splitting it. Implement the highest-priority slice.
 Use `/local-workflow:structured-coding` to implement:
 
 - Pass the architecture plan from Phase 2 and the task requirements.
+- Do not pause for user confirmation. The task description and
+  architecture plan from Phase 2 serve as the approved specification.
 - Write code and tests together. Do not defer tests to a later phase.
 - Follow build principles from `CLAUDE.md` if it exists.
 
