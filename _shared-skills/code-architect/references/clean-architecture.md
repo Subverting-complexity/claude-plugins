@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 # Clean Architecture Reference
 Source: Clean Architecture by Robert C. Martin
 

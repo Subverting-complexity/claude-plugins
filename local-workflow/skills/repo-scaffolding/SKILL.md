@@ -12,7 +12,7 @@ Plan and decompose a new project into epics and user stories. Get to the core of
 
 Read each skill's SKILL.md when you reach the phase that needs it.
 
-- **code-architect** (`/github-workflow:code-architect`) — Architecture design and validation.
+- **code-architect** (`/local-workflow:code-architect`) — Architecture design and validation.
 
 ## Scope Detection
 

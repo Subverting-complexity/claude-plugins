@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 # Fundamentals of Software Architecture Reference
 Source: Fundamentals of Software Architecture by Mark Richards & Neal Ford
 
