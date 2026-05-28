@@ -195,6 +195,11 @@ that label, pick the lowest-numbered PR that needs review.
 If no PRs need review, report that and exit. Do not loop through multiple
 PRs.
 
+**Never ask the user which PR to review.** Always auto-select using the
+prioritisation rules above. If the user says "review PRs" or "review
+pull requests" (plural), that means "find the next one and review it",
+not "review all of them" or "let me choose".
+
 ### Step 2 — Claim the PR
 
 Multiple agents may be running code-review concurrently. The
