@@ -23,10 +23,14 @@ plans the implementation, builds it, runs tests, and opens a PR.
 
 **This workflow is fully autonomous.** Every phase flows into the next
 without pausing for user input. Do not ask the user to choose, confirm,
-or approve at any step. Do not call interactive skills (grill-me,
-feature-discovery). The only reason to stop is if the issue is so
-underspecified that any implementation would be a guess — in that case,
-block the story and pick the next one.
+or approve at any step. Do not call grill-me. The only reasons to stop
+are:
+
+- The issue is so underspecified that any implementation would be a
+  guess — block the story and pick the next one.
+- The story needs to be broken into sub-stories before implementation
+  can begin — run `/github-workflow:feature-discovery` to plan the
+  breakdown with the user, then pick the first sub-story.
 
 Read `ClaudeProject.md` for all project-specific settings before starting.
 Read `CLAUDE.md` for project rules and build principles.
@@ -255,11 +259,10 @@ trivial and within the same scope.
 3. Set the dependent PR's base to the dependency branch.
 4. After merge, rebase onto the default branch and update the PR base.
 
-**Story too broad**: If the story covers multiple distinct changes,
-implement the highest-priority slice. Create follow-up issues for the
-remaining slices using `/github-workflow:report-issue`. Do not call
-feature-discovery — it is an interactive skill not suited for
-autonomous execution.
+**Story too broad**: If the story covers multiple distinct changes and
+needs to be broken into sub-stories before implementation can begin,
+run `/github-workflow:feature-discovery` to plan the breakdown with the
+user, then pick the first sub-story.
 
 **Review feedback**: After the PR is created, the code-review skill may
 flag issues. Run `/github-workflow:update-pr` to address the feedback,
