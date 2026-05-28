@@ -96,6 +96,10 @@ List candidate issues in that milestone:
 gh issue list --repo {org}/{repo} --milestone "{sprint_title}" --state open --assignee "" --json number,title,labels --jq '.[] | {number, title, labels: [.labels[].name]}'
 ```
 
+Filter out issues with the `approved` label (e.g., `claude-approved`,
+`claude:approved`, or whatever is configured in the label map). These
+are waiting for human merge and must not be picked up.
+
 Sort candidates:
 
 1. By priority label (critical → high → medium → low, using label map)
@@ -112,11 +116,18 @@ List candidate issues:
 gh issue list --repo {org}/{repo} --state open --assignee "" --label "{status_ready_label}" --json number,title,labels --jq '.[] | {number, title, labels: [.labels[].name]}'
 ```
 
+Filter out issues with the `approved` label.
+
 Sort by priority label, then issue number.
 
 If no `status-ready` label is configured, list all open unassigned issues.
 
 ### 4. Select and display
+
+**Never ask the user which story to pick.** Always auto-select using
+the sort order above. If no candidates have priority labels, pick the
+lowest issue number. If the user says "pick a story" or "what's next",
+that means "give me the top one", not "show me a list to choose from".
 
 Pick the first candidate. Display:
 

@@ -37,9 +37,15 @@ Look for PRs with any of these state labels (in priority order):
 **Skip** any PR that has:
 - The `reviewing` label (a review agent is currently working on it)
 - The `updating` label (another builder agent is already fixing it)
+- The `approved` label (waiting for human merge, do not touch)
 
 If multiple PRs match, pick the one with the highest-priority state
 (changes-requested first), then lowest PR number.
+
+**Never ask the user which PR to update.** Always auto-select using the
+priority rules above. If the user says "update PRs" (plural), that means
+"find the next one and update it", not "update all of them" or "let me
+choose".
 
 If no PRs need updating, report that and exit.
 

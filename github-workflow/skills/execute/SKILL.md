@@ -21,6 +21,17 @@ arguments:
 End-to-end story execution workflow. Picks a story from the backlog,
 plans the implementation, builds it, runs tests, and opens a PR.
 
+**This workflow is fully autonomous.** Every phase flows into the next
+without pausing for user input. Do not ask the user to choose, confirm,
+or approve at any step. Do not call grill-me. The only reasons to stop
+are:
+
+- The issue is so underspecified that any implementation would be a
+  guess — block the story and pick the next one.
+- The story needs to be broken into sub-stories before implementation
+  can begin — run `/github-workflow:feature-discovery` to plan the
+  breakdown with the user, then pick the first sub-story.
+
 Read `ClaudeProject.md` for all project-specific settings before starting.
 Read `CLAUDE.md` for project rules and build principles.
 
@@ -74,9 +85,23 @@ Otherwise, run the pick-story logic (including stale task recovery):
 
 1. Read `ClaudeProject.md` for org, repo, label map, and stale-timeout.
 1b. Run stale task recovery — check for issues assigned to @me with no
-    branch or PR past the stale-timeout. Reclaim them if stale. If a
-    branch or PR exists, report it for continuation instead of picking
-    new work. (See pick-story for full logic.)
+    branch or PR past the stale-timeout. Auto-resolve each stale issue:
+    - **PR or issue has `approved` label**: skip entirely — waiting for
+      human merge, do not touch.
+    - **Stale PR with review feedback** (`changes-requested` or
+      `needs-discussion` label): check out the branch and run
+      `/github-workflow:update-pr` to address it, then continue to
+      Phase 7 (Finish).
+    - **Stale PR without review feedback**: check out the branch and
+      continue from wherever it left off (Phase 4 if code is
+      incomplete, Phase 5 if it looks done, Phase 7 if just needs
+      push/PR updates).
+    - **Stale branch with no PR**: check it out, assess the state, and
+      continue from the appropriate phase. If the branch has no
+      meaningful work, delete it and reclaim the issue.
+    - **No branch or PR**: reclaim the issue (unassign, comment) and
+      include it in the normal pick pool below.
+    - **Not stale yet**: skip — another session may be active.
 2. Check for milestones to detect backlog mode:
    ```
    gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | .[] | select(.open_issues > 0) | {title, due_on, open_issues}'
@@ -86,6 +111,10 @@ Otherwise, run the pick-story logic (including stale task recovery):
 4. **Flat mode** (no milestones): pick from open unassigned issues with
    the status-ready label, sorted by priority then issue number.
 5. **Bug mode**: filter to issues with bug/security/arch type labels.
+
+**Never ask the user which story to pick.** Always auto-select using
+priority labels then lowest issue number. If no candidates have
+priority labels, pick the lowest issue number.
 
 Read the full issue body. Check it has **Context** and **Requirements**.
 
@@ -127,20 +156,26 @@ the user (e.g., "Board update failed: {error}. Continuing.") and proceed.
 
 ## Phase 3 — Plan
 
-Use `/github-workflow:code-architect` to design the implementation:
+Use `/github-workflow:code-architect` to plan the implementation:
 
 - Pass the issue requirements, relevant codebase context, and any
   reference docs listed in ClaudeProject.md.
-- Consume the architecture plan output.
-- If the plan reveals unclear requirements or significant complexity,
-  run `/github-workflow:grill-me` to stress-test the plan before building.
-- Do not pause for confirmation. Consume the plan and proceed.
+- Code-architect should scan the existing codebase and plan changes
+  based on the issue requirements. Do not run an interactive design
+  interview or call grill-me.
+- Consume the architecture plan output and proceed to Build.
+- Do not pause for confirmation.
+- If requirements have gaps, make reasonable assumptions and note
+  them in the plan. Only stop if the issue is so underspecified that
+  any implementation would be a guess.
 
 ## Phase 4 — Build
 
 Use `/github-workflow:structured-coding` to implement:
 
 - Pass the architecture plan from Phase 3 and the issue requirements.
+- Do not pause for user confirmation. The issue requirements and
+  architecture plan from Phase 3 serve as the approved specification.
 - Write code and tests together. Do not defer tests to a later phase.
 - Follow build principles from `CLAUDE.md`:
   - One responsibility per file
@@ -226,9 +261,10 @@ trivial and within the same scope.
 3. Set the dependent PR's base to the dependency branch.
 4. After merge, rebase onto the default branch and update the PR base.
 
-**Feature discovery**: If the story needs to be broken into sub-stories
-before implementation, use `/github-workflow:feature-discovery` to
-generate the backlog, then pick the first sub-story.
+**Story too broad**: If the story covers multiple distinct changes and
+needs to be broken into sub-stories before implementation can begin,
+run `/github-workflow:feature-discovery` to plan the breakdown with the
+user, then pick the first sub-story.
 
 **Review feedback**: After the PR is created, the code-review skill may
 flag issues. Run `/github-workflow:update-pr` to address the feedback,

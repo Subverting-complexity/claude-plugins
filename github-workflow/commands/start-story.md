@@ -6,7 +6,9 @@ description: 'Assign a story, update the board, and create a branch. Trigger: "s
 
 Assign the story, update the board, and create a working branch.
 
-Requires: a story number (from `/github-workflow:pick-story` or provided directly).
+Requires: a story number. If no number is provided, run the
+`/github-workflow:pick-story` flow to auto-select the next story and
+use that number. Do not ask the user which story to start.
 
 ## Steps
 
