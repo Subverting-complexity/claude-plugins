@@ -144,12 +144,12 @@ Instead of hardcoding label names, the plugin maps **purposes** to
 your repository's actual labels via `ClaudeProject.md`:
 
 ```markdown
-| Purpose         | Label             |
-| --------------- | ----------------- |
-| priority-high   | `P1`              |
-| type-bug        | `bug`             |
-| status-ready    | `status:ready`    |
-| claude-reviewed | `claude:reviewed` |
+| Purpose          | Label              |
+| ---------------- | ------------------ |
+| priority-high    | `P1`               |
+| type-bug         | `bug`              |
+| status-ready     | `status:ready`     |
+| claude-authored  | `claude:authored`  |
 ```
 
 This lets the same plugin work across repos with different label schemes.

@@ -1,5 +1,5 @@
 ---
-description: 'Review a PR against its linked issue. Trigger: "review PR N", "check the PR", "review this pull request", "look at PR N".'
+description: 'Review a PR against its linked issue. Trigger: "review PR N", "check the PR", "review this pull request", "look at PR N", "check my PR", "is the PR ready", "validate the PR".'
 ---
 
 # Review PR
@@ -56,17 +56,17 @@ Optionally run `/github-workflow:code-review` for deeper analysis.
 
 ### 5. Submit review
 
-If all criteria are met:
+Post a review comment with the findings:
 
 ```
-gh pr review {pr_number} --approve --body "{review_summary}"
+gh pr comment {pr_number} --body "{review_summary}"
 ```
 
-If issues are found:
-
-```
-gh pr review {pr_number} --request-changes --body "{review_summary}"
-```
+The review summary should include:
+- Acceptance criteria checklist (each criterion as checked/unchecked)
+- Layer boundary assessment
+- Test coverage assessment
+- Verdict: Approved or Changes Requested with specific items
 
 ### 6. Apply labels
 
@@ -76,3 +76,6 @@ map, apply it:
 ```
 gh pr edit {pr_number} --add-label "{claude_approved_label}"
 ```
+
+If changes are requested, do not apply the approved label. The user
+or a builder agent should address the feedback and re-run the review.

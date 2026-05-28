@@ -1,5 +1,5 @@
 ---
-description: 'Mark the current story as blocked. Trigger: "blocked", "I''m stuck", "can''t continue", "this is blocked by".'
+description: 'Mark the current story as blocked. Trigger: "blocked", "I''m stuck", "can''t continue", "this is blocked by", "stuck on", "waiting for", "dependency issue", "can''t proceed".'
 ---
 
 # Block Story
@@ -29,7 +29,16 @@ Blocked during automated execution. Details:
 - Suggested resolution (if known)"
 ```
 
-### 3. Add blocked label
+### 3. Unassign the issue
+
+Remove the current assignee so the issue returns to the unassigned pool
+and can be picked up by another agent or re-picked later:
+
+```
+gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
+```
+
+### 4. Add blocked label
 
 Apply the `status-blocked` label if configured. If no `status-blocked`
 label exists, fall back to the `claude-blocked` label. Apply whichever
@@ -39,7 +48,7 @@ is available — if both are configured, prefer `status-blocked`.
 gh issue edit {number} --repo {org}/{repo} --add-label "{blocked_label}"
 ```
 
-### 4. Update project board (if configured)
+### 5. Update project board (if configured)
 
 Set status to On Hold:
 
@@ -54,7 +63,7 @@ gh api graphql -f query='mutation {
 }'
 ```
 
-### 5. Shelve work
+### 6. Shelve work
 
 If there are uncommitted changes:
 
@@ -68,7 +77,7 @@ Switch back to the default branch:
 git checkout {default-branch}
 ```
 
-### 6. Report
+### 7. Report
 
 Display what was blocked, why, and that the story has been shelved.
 Suggest running `/github-workflow:pick-story` to continue with the next story.

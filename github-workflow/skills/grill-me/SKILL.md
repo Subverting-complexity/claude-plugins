@@ -1,6 +1,6 @@
 ---
 name: grill-me
-description: "Interview the user relentlessly about a plan or design until reaching shared understanding, resolving every open question. Use this skill whenever the user wants to stress-test a plan, get grilled on their design, or says anything like \"grill me\", \"stress-test this\", \"challenge my thinking\", \"poke holes in this\", \"walk me through the decisions\", or \"interview me about this\". Also trigger when the user shares a plan, architecture, feature design, or technical approach and wants it interrogated rather than just reviewed. If a codebase is available, explore it instead of asking when the answer can be found there. NOT for code-specific feature planning or backlog work (use code-feature-discovery for that)."
+description: "Interview the user relentlessly about a plan or design until reaching shared understanding, resolving every open question. Use this skill whenever the user wants to stress-test a plan, get grilled on their design, or says anything like \"grill me\", \"stress-test this\", \"challenge my thinking\", \"poke holes in this\", \"walk me through the decisions\", or \"interview me about this\". Also trigger when the user shares a plan, architecture, feature design, or technical approach and wants it interrogated rather than just reviewed. If a codebase is available, explore it instead of asking when the answer can be found there. NOT for code-specific feature planning or backlog work (use feature-discovery for that)."
 ---
 
 # Grill Me
@@ -21,7 +21,7 @@ Relentlessly interview the user about their plan or design until every open ques
 
 ## Interview Discipline
 
-- **Batch related questions.** Group questions on the same topic into one turn. Use multiple `ask_user_input_v0` calls per turn when they cover related decisions. Don't artificially slow the interview by asking one thing at a time.
+- **Batch related questions.** Group questions on the same topic into one turn. Use multiple `interactive selection` calls per turn when they cover related decisions. Don't artificially slow the interview by asking one thing at a time.
 - **Lead with recommendations.** Don't just ask. Give your best answer, then ask if the user agrees or wants to change it.
 - **Use tappable options** when a question has a finite set of clear choices (see Tappable Options section). Fall back to plain text for open-ended or context-heavy questions.
 - **Explore before asking.** If a codebase is present, check it first. Show what you found, state the decision being recorded, and continue.
@@ -31,7 +31,7 @@ Relentlessly interview the user about their plan or design until every open ques
 
 ## Tappable Options (Interactive Elicitation)
 
-When `ask_user_input_v0` is available, use it for questions with a small set of distinct, reasonable answers. Your recommendation still leads the question in the conversational text before the options appear, and one of the options should reflect that recommendation.
+When `interactive selection` is available, use it for questions with a small set of distinct, reasonable answers. Your recommendation still leads the question in the conversational text before the options appear, and one of the options should reflect that recommendation.
 
 ### When NOT to use tappable options
 

@@ -5,6 +5,7 @@ when_to_use: >-
   "next story", "start the next story", "pick up a story", "what's next",
   "work on story N", "do story N", "story #N", "#N", "do N", just a bare issue number,
   "start working", "build the next feature", "execute", "run the workflow",
+  "implement", "develop", "build this", "implement story N", "develop N",
   "fix bugs", "fix the next bug", "fix security issues" (use mode=bug),
   "audit the codebase", "audit for security", "code audit", "run an audit" (use mode=audit).
   Also trigger when the user pastes a GitHub issue URL or references an issue number.
