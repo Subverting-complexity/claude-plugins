@@ -5,6 +5,7 @@ when_to_use: >-
   "next story", "start the next story", "pick up a story", "what's next",
   "work on story N", "do story N", "story #N", "#N", "do N", just a bare issue number,
   "start working", "build the next feature", "execute", "run the workflow",
+  "implement", "develop", "build this", "implement story N", "develop N",
   "fix bugs", "fix the next bug", "fix security issues" (use mode=bug),
   "audit the codebase", "audit for security", "code audit", "run an audit" (use mode=audit).
   Also trigger when the user pastes a GitHub issue URL or references an issue number.
@@ -23,6 +24,37 @@ plans the implementation, builds it, runs tests, and opens a PR.
 Read `ClaudeProject.md` for all project-specific settings before starting.
 Read `CLAUDE.md` for project rules and build principles.
 
+## Session budget
+
+Each agent session should stay under ~100k tokens. This means one story
+per session, scoped to what can be completed within that budget. The
+workflow is designed to produce a shippable artifact (branch + PR) every
+session, not to run indefinitely.
+
+**Practical guidelines:**
+
+- **Commit early and often.** Make atomic commits as you complete each
+  logical unit of work. If the session ends unexpectedly, committed work
+  on a pushed branch is recoverable; uncommitted work is lost.
+- **Push periodically.** After each major phase (plan complete, core
+  implementation done, tests passing), push the branch. This creates a
+  recovery point.
+- **Scope to one session.** If Phase 3 (Plan) reveals the story is too
+  large for a single session, split it: implement the highest-priority
+  slice, open a PR for that slice, and create follow-up issues for the
+  remainder using `/github-workflow:report-issue`.
+- **Wrap up, don't run out.** If you sense you are deep into a session
+  (many files read, many edits made, long planning phase), prioritise
+  getting to a committable state. A partial PR with clear "remaining
+  work" notes is better than an abandoned session with no artifact.
+- **One story, one session.** Do not pick a second story after finishing
+  the first. End the session so the next one starts with a fresh context.
+
+If the story is blocked or turns out to need more than one session's
+worth of work, commit what you have, push the branch, open a draft PR
+noting what's done and what remains, and exit. The next session can pick
+up from the branch.
+
 ## Mode selection
 
 Default mode is `story`. Override with `$ARGUMENTS.mode`:
@@ -38,9 +70,13 @@ If mode is `audit`, skip to the Audit section at the bottom.
 ## Phase 1 — Pick
 
 If `$ARGUMENTS.story_number` is provided, use that issue directly.
-Otherwise, run the pick-story logic:
+Otherwise, run the pick-story logic (including stale task recovery):
 
-1. Read `ClaudeProject.md` for org, repo, and label map.
+1. Read `ClaudeProject.md` for org, repo, label map, and stale-timeout.
+1b. Run stale task recovery — check for issues assigned to @me with no
+    branch or PR past the stale-timeout. Reclaim them if stale. If a
+    branch or PR exists, report it for continuation instead of picking
+    new work. (See pick-story for full logic.)
 2. Check for milestones to detect backlog mode:
    ```
    gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | .[] | select(.open_issues > 0) | {title, due_on, open_issues}'
@@ -86,7 +122,8 @@ Read the full issue body. Check it has **Context** and **Requirements**.
    git checkout -b {branch} origin/{default-branch}
    ```
 
-Board operations are best-effort. If they fail, log a warning and continue.
+Board operations are best-effort. If they fail, report the failure to
+the user (e.g., "Board update failed: {error}. Continuing.") and proceed.
 
 ## Phase 3 — Plan
 
@@ -192,3 +229,13 @@ trivial and within the same scope.
 **Feature discovery**: If the story needs to be broken into sub-stories
 before implementation, use `/github-workflow:feature-discovery` to
 generate the backlog, then pick the first sub-story.
+
+**Review feedback**: After the PR is created, the code-review skill may
+flag issues. Run `/github-workflow:update-pr` to address the feedback,
+push fixes, and flag the PR for re-review.
+
+**Story too large**: If the plan reveals the story exceeds one session's
+budget, implement the highest-priority slice, open a PR for that slice,
+and create follow-up issues for the remaining work using
+`/github-workflow:report-issue`. Do not attempt to complete everything
+in one session — a partial PR with clear notes is the expected outcome.

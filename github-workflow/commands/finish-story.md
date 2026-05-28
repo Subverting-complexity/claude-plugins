@@ -1,5 +1,5 @@
 ---
-description: 'Push the branch, create a PR, and update the board. Trigger: "finish", "done", "open a PR", "ship it", "create the PR".'
+description: 'Push the branch, create a PR, and update the board. Trigger: "finish", "done", "open a PR", "ship it", "create the PR", "submit", "wrap up", "push it", "send for review".'
 ---
 
 # Finish Story
@@ -18,13 +18,23 @@ Read `ClaudeProject.md` and extract:
 - Project board settings (if configured)
 - Label map (for claude labels)
 
-### 2. Push the branch
+### 2. Run the quality gate
+
+Run the quality gate command from `ClaudeProject.md` to verify the code
+is clean before pushing:
+
+1. Execute the quality gate script/command.
+2. If it fails, read the error output, fix the issue, and re-run.
+3. Repeat up to 3 times. If still failing, warn the user but continue
+   to push — they may want to open the PR for review anyway.
+
+### 3. Push the branch
 
 ```
 git push -u origin HEAD
 ```
 
-### 3. Create PR
+### 4. Create PR
 
 Build the PR body from the committed changes:
 
@@ -49,15 +59,16 @@ Closes #43
 Each `Closes #N` must be on its own line so GitHub links them in
 the Development sidebar.
 
-### 4. Add labels to PR
+### 5. Add labels to PR
 
-If claude labels are configured in the label map, apply them:
+If the `claude-authored` label is configured in the label map, apply it
+to mark this as a Claude-built PR:
 
 ```
-gh pr edit {pr_number} --add-label "{claude_reviewed_label}"
+gh pr edit {pr_number} --add-label "{claude_authored_label}"
 ```
 
-### 5. Update project board (if configured)
+### 6. Update project board (if configured)
 
 Set status to In Review:
 
@@ -72,9 +83,11 @@ gh api graphql -f query='mutation {
 }'
 ```
 
-If board operations fail, log a warning and continue.
+Board operations are best-effort. If they fail, report the failure to
+the user (e.g., "Board update failed: {error}. Continuing without board
+update.") and proceed with the rest of the workflow.
 
-### 6. Report
+### 7. Report
 
 Display:
 

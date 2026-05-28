@@ -27,7 +27,8 @@ claude --plugin-dir ./plugins/github-workflow
 | `/github-workflow:finish-story`         | Push, PR, board update                   |
 | `/github-workflow:block-story`          | Mark current story as blocked            |
 | `/github-workflow:report-issue`         | Create a bug/arch/debt issue             |
-| `/github-workflow:review-pr`            | Review a PR against its linked issue     |
+| `/github-workflow:review-pr`            | Quick review: PR vs acceptance criteria  |
+| `/github-workflow:update-pr`            | Address review feedback and re-flag PR   |
 | `/github-workflow:setup`                | Interactive project onboarding wizard    |
 | `/github-workflow:guide`                | How to get started / what can I do?      |
 
@@ -66,7 +67,8 @@ github-workflow/
 │   ├── finish-story.md        # Push, PR, set In Review
 │   ├── block-story.md         # Handle blockers
 │   ├── report-issue.md        # Create bug/arch/debt issues
-│   ├── review-pr.md           # Review PR against acceptance criteria
+│   ├── review-pr.md           # Quick review: PR vs acceptance criteria
+│   ├── update-pr.md           # Address review feedback on a PR
 │   ├── setup.md               # Interactive project onboarding
 │   └── guide.md               # How to get started / orientation
 ├── agents/
@@ -111,6 +113,11 @@ Optional sections: Project Board, Reference Docs.
 **`CLAUDE.md`** (required) — Project rules, build principles, and
 session hygiene.
 
+**`docs/review.config.md`** (optional) — Review label definitions,
+non-compliance gates, and tech-stack review rules. Required by the
+`code-review` skill. Generated automatically on first code-review run,
+or during setup.
+
 ## Backlog modes
 
 The plugin supports two backlog styles, auto-detected from milestones:
@@ -137,12 +144,12 @@ Instead of hardcoding label names, the plugin maps **purposes** to
 your repository's actual labels via `ClaudeProject.md`:
 
 ```markdown
-| Purpose         | Label             |
-| --------------- | ----------------- |
-| priority-high   | `P1`              |
-| type-bug        | `bug`             |
-| status-ready    | `status:ready`    |
-| claude-reviewed | `claude:reviewed` |
+| Purpose          | Label              |
+| ---------------- | ------------------ |
+| priority-high    | `P1`               |
+| type-bug         | `bug`              |
+| status-ready     | `status:ready`     |
+| claude-authored  | `claude:authored`  |
 ```
 
 This lets the same plugin work across repos with different label schemes.
@@ -200,4 +207,5 @@ Once installed, your scheduled task prompts become one-liners:
 | Work on next story | `Run /github-workflow:execute`               |
 | Fix bugs           | `Run /github-workflow:execute --mode bug`    |
 | Audit codebase     | `Run /github-workflow:execute --mode audit`  |
-| Review a PR        | `Run /github-workflow:review-pr {pr_number}` |
+| Review a PR        | `Run /github-workflow:code-review`           |
+| Fix review feedback| `Run /github-workflow:update-pr`             |

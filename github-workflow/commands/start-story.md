@@ -55,7 +55,9 @@ gh api graphql -f query='mutation {
 }'
 ```
 
-If board operations fail, log a warning and continue. The board is optional.
+Board operations are best-effort. If they fail, report the failure to
+the user (e.g., "Board update failed: {error}. Continuing without board
+update.") and proceed with the rest of the workflow.
 
 ### 4. Validate the issue body
 
@@ -72,8 +74,28 @@ If truly empty with no guidance anywhere, run `/github-workflow:block-story`.
 
 ```
 git fetch origin {default-branch}
-git checkout -b {branch} origin/{default-branch}
 ```
 
 Apply the branch convention from config. For example, if the convention
 is `feature/{number}/{short-desc}`, create `feature/42/add-user-auth`.
+
+Check if the branch already exists (from a previous blocked attempt or
+partial work):
+
+```
+git branch --list {branch}
+```
+
+If the branch exists locally, check it out and rebase onto the latest
+default branch:
+
+```
+git checkout {branch}
+git rebase origin/{default-branch}
+```
+
+If the branch does not exist, create it:
+
+```
+git checkout -b {branch} origin/{default-branch}
+```

@@ -1,7 +1,8 @@
 # Project Rules
 
-Read `ClaudeProject.md` for project-specific workflow settings
-(org, repo, labels, quality gate, branch convention, board).
+<!-- This file is yours — add whatever guidance you need for your project. -->
+<!-- The sections below are suggestions from the github-workflow plugin.   -->
+<!-- Edit, reorder, or remove anything that doesn't fit your workflow.     -->
 
 ## General Rules
 
@@ -10,8 +11,8 @@ third-party services, set up DNS, or perform manual infrastructure
 steps. Flag those as requiring human action.
 
 The **GitHub issue** is the source of truth for every story. Read the
-issue body first. Only consult reference docs (listed in ClaudeProject.md)
-for cross-cutting concerns not covered in the issue.
+issue body first. Only consult reference docs for cross-cutting
+concerns not covered in the issue.
 
 ## Autonomous Execution
 
@@ -54,5 +55,24 @@ development:
 ## Session Hygiene
 
 - Start a **new session** for each story.
+- Target **~100k tokens per session**. One story, one session. Commit
+  and push progress early so work survives session boundaries.
+- If a story is too large for one session, implement the most important
+  slice, open a PR for it, and create follow-up issues for the rest.
 - When compacting, preserve: modified files list, current test status,
   story number, branch name, and any blockers found.
+
+## Supplementary Files
+
+These files provide context for specific workflows. You don't need to
+read all of them every session — consult them when the topic is
+relevant to what you're working on.
+
+| File | When to consult |
+| ---- | --------------- |
+| `ClaudeProject.md` | Project identity, labels, quality gate, branch convention, board config. Read at the start of any workflow command. |
+| `docs/review.config.md` | Review label definitions, non-compliance gates, tech-stack review rules. Read when performing or preparing for code review. |
+
+Add your own reference docs to this table as needed — architecture
+decisions, coding standards, API specs, etc. — so future sessions
+know where to look.

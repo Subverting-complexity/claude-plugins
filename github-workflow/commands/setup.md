@@ -1,5 +1,5 @@
 ---
-description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "onboard", "initialize the workflow", "help me set up".'
+description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "onboard", "initialize the workflow", "help me set up", "setup", "init", "bootstrap", "configure the plugin", "first time setup".'
 ---
 
 # Setup
@@ -8,7 +8,17 @@ Interactive onboarding wizard for configuring the github-workflow plugin.
 
 ## Steps
 
-### 1. Check for existing configuration
+### 1. Verify prerequisites
+
+Before doing anything else, verify `gh` is authenticated:
+
+```
+gh auth status
+```
+
+If this fails, stop and tell the user to run `gh auth login` first.
+
+### 2. Check for existing configuration
 
 Look for these files at the project root:
 
@@ -22,7 +32,7 @@ rather than overwriting the file.
 **If `CLAUDE.md` exists**: do not overwrite. Check if it references
 `ClaudeProject.md`. If not, offer to add a reference line at the top.
 
-### 2. Auto-detect project settings
+### 3. Auto-detect project settings
 
 Run these detections and report what was found:
 
@@ -70,7 +80,7 @@ gh api repos/{org}/{repo}/milestones --state open --jq '.[] | {title, due_on, op
 
 If milestones with due dates exist, note that sprint mode is available.
 
-### 3. Ask for remaining settings
+### 4. Ask for remaining settings
 
 For anything not auto-detected, ask the user interactively:
 
@@ -78,15 +88,28 @@ For anything not auto-detected, ask the user interactively:
 - **Priority labels** — what label names for critical/high/medium/low
 - **Type labels** — what label names for story/bug/debt/arch
 - **Status labels** — what label names for ready/blocked
-- **Claude labels** — what label names for reviewed/approved/blocked
-  (suggest `claude:reviewed`, `claude:approved`, `claude:blocked`)
+- **Claude labels** — simple markers for Claude-authored PRs and
+  approvals. Suggest `claude:authored`, `claude:approved`,
+  `claude:blocked`. These are separate from the review state labels
+  set up in Step 7.
+- **Custom labels** — ask if the user has any additional labels they
+  want workflow commands to apply or respect. For each custom label,
+  ask the name and when it should be applied. Examples:
+  `breaking-change`, `docs-needed`, `frontend`, `backend`. Store
+  these in the Custom section of the label map in ClaudeProject.md.
+  (The code-review skill also supports its own custom labels — those
+  are configured separately in `review.config.md` during Step 7.)
 - **Quality gate command** — if not auto-detected
 - **Issue prefixes** — suggest `[STORY]`, `[BUG]`, `[ARCH]`, `[DEBT]`
+- **Stale timeout** — how long an assigned issue can go without a
+  branch or PR before `pick-story` reclaims it. Suggest `2h` as
+  default. Accepts values like `30m`, `1h`, `4h`.
 
 For each setting, show the detected or suggested default and let the
-user confirm or override.
+user confirm or override. For labels, also list any existing labels
+found on the repo (`gh label list`) so the user can incorporate them.
 
-### 4. Generate ClaudeProject.md
+### 5. Generate ClaudeProject.md
 
 Use the template from `templates/ClaudeProject.md`. Fill in all
 detected and user-provided values. Write to `ClaudeProject.md` at
@@ -95,21 +118,78 @@ the project root.
 If enhancing an existing file, merge new sections into the existing
 content without removing sections that are already there.
 
-### 5. Generate or update CLAUDE.md
+### 5b. Create labels on GitHub
+
+For every label configured in ClaudeProject.md (Priority, Type, Status,
+Claude, and Custom), check if it already exists on the repo. If not,
+create it:
+
+```
+gh label create "<label-name>" --description "<description>" --force
+```
+
+Use `gh label list --json name` to get existing labels first, then only
+create missing ones. The `--force` flag updates existing labels without
+error.
+
+Suggested colours (user can override):
+- Priority labels: critical `#B60205`, high `#D93F0B`, medium `#FBCA04`, low `#0E8A16`
+- Type labels: `#1D76DB` (blue)
+- Status labels: `#5319E7` (purple)
+- Claude labels: `#BFDADC` (light teal)
+
+This step is best-effort. If label creation fails (permissions, etc.),
+log a warning and continue.
+
+### 6. Generate or update CLAUDE.md
+
+The user's `CLAUDE.md` is their own file. The goal here is to add
+lightweight pointers to supplementary files, not to take over the file
+with plugin-specific rules.
 
 **If no `CLAUDE.md` exists**: use `templates/CLAUDE.md` as a starting
-point. Write it to the project root.
+point. Write it to the project root. Tell the user this is a starting
+template they should customise to match their project.
 
-**If `CLAUDE.md` exists**: check if it already references `ClaudeProject.md`.
-If not, add this line near the top:
+**If `CLAUDE.md` exists**: check if it already has a
+"Supplementary Files" section (or references `ClaudeProject.md`).
 
-```
-Read `ClaudeProject.md` for project-specific workflow settings.
-```
+- If neither exists, append the Supplementary Files section from the
+  template to the end of the existing file. This section is a table of
+  pointers to `ClaudeProject.md`, `docs/review.config.md`, and any
+  other reference docs the user mentioned during setup.
+- If a reference to `ClaudeProject.md` exists but there's no
+  Supplementary Files table, offer to upgrade it to the table format.
+- If the section already exists, leave it alone.
 
-Do not overwrite existing CLAUDE.md content.
+Do not overwrite, reorder, or remove any existing CLAUDE.md content.
+The plugin's guidance is additive only.
 
-### 6. Verify and report
+### 7. Set up review configuration (optional)
+
+Ask the user if they plan to use the code-review skill for automated
+PR reviews. If yes:
+
+1. Check if `docs/review.config.md` already exists. If so, skip.
+2. If not, offer to generate it now by running the code-review skill's
+   **Config Generation** flow (defined in
+   `skills/code-review/SKILL.md`). This will:
+   - Ask for a label prefix (e.g., `claude`, `review`)
+   - Define review state labels (`{prefix}-reviewing`,
+     `{prefix}-approved`, `{prefix}-changes-requested`,
+     `{prefix}-needs-re-review`, etc.)
+   - Set up non-compliance gates, tech-stack rules, and test
+     expectations
+   - Create the labels on the GitHub repo
+   - Write `docs/review.config.md`
+3. If the user declines, note that the code-review skill will prompt
+   for this config on first run.
+
+Review state labels are separate from the Claude labels in
+ClaudeProject.md. The Claude labels are simple workflow markers; review
+state labels are a mutex managed by the code-review skill.
+
+### 8. Verify and report
 
 Confirm all required sections are present in `ClaudeProject.md`.
 Display a summary of what was configured:

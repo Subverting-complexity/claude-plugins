@@ -53,7 +53,7 @@ Be relentless. The goal is shared understanding with every open question resolve
 ### Interview mechanics
 
 - **Lead with recommendations.** For every question, state what you'd recommend and why before asking. Don't just interrogate. Give your best answer, then ask if the user agrees or wants to change it. Tappable options should reflect your recommendation as the first choice.
-- **Batch related questions.** Group questions that belong to the same topic into a single turn. Use multiple `ask_user_input_v0` calls per turn when they cover related topics. Don't artificially slow the interview down.
+- **Batch related questions.** Group questions that belong to the same topic into a single turn. Use multiple `interactive selection` calls per turn when they cover related topics. Don't artificially slow the interview down.
 - **Push back on vague answers.** "It depends", "probably X", "we'll figure it out later" are not answers. Probe until concrete or explicitly deferred.
 - **Flag conflicts.** If a later answer contradicts an earlier one, surface it immediately. Don't silently accept the contradiction.
 - **Defer consciously.** If something genuinely can't be decided yet, note it as an open issue with a stated reason and move on. Never silently skip.
@@ -61,7 +61,7 @@ Be relentless. The goal is shared understanding with every open question resolve
 
 ### Tappable options
 
-Use `ask_user_input_v0` for any question with a bounded answer set: binary choices, picking from discovered patterns, confirming recommendations, scope in/out calls, phase-gate confirmations.
+Use `interactive selection` for any question with a bounded answer set: binary choices, picking from discovered patterns, confirming recommendations, scope in/out calls, phase-gate confirmations.
 
 - 2-4 options, short labels.
 - If you find yourself writing an "Other" option because the real answer probably isn't in the list, ask in plain text instead.
