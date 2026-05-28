@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 # Design Patterns Reference
 Source: Design Patterns: Elements of Reusable Object-Oriented Software (Gang of Four)
 

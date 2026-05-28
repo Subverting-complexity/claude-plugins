@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: repo-scaffolding
 description: "Scaffold a new project or repository from scratch: full discovery, architecture, and story decomposition into epics and user stories with acceptance criteria. Use when the user wants to plan a brand-new project, set up a new repo, scaffold a codebase, or design a system from the ground up. Trigger on: 'scaffold this', 'new project', 'set up a repo', 'plan a new app', 'build this from scratch', 'greenfield project', 'design a new system', 'start a new codebase', 'I want to build X', 'spin up a project for X'. Also trigger when the user describes a product idea or system concept and wants it broken down into buildable work. Do NOT use for adding features to an existing codebase (use feature-discovery instead). Do NOT use for building or implementing code (use execute instead)."
@@ -12,7 +11,7 @@ Plan and decompose a new project into epics and user stories. Get to the core of
 
 Read each skill's SKILL.md when you reach the phase that needs it.
 
-- **code-architect** (`/github-workflow:code-architect`) — Architecture design and validation.
+- **code-architect** (`/{{PLUGIN_NAME}}:code-architect`) — Architecture design and validation.
 
 ## Scope Detection
 

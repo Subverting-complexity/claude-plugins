@@ -9,6 +9,11 @@
       "name": "github-workflow",
       "source": "./github-workflow",
       "description": "End-to-end GitHub development workflow"
+    },
+    {
+      "name": "local-workflow",
+      "source": "./local-workflow",
+      "description": "Project-agnostic plugin for local development work"
     }
   ]
 }

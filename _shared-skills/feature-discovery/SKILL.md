@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: feature-discovery
 description: "Plan a single feature, enhancement, or change within an existing codebase by interviewing the user, exploring the code, and producing user stories with acceptance criteria. Use ANY time the user wants to scope a feature, break a change into stories, plan a piece of work, do discovery on a feature, or figure out what tasks are needed for a specific change. Trigger on: 'discover', 'plan this feature', 'scope this out', 'break this into stories', 'what stories do we need', 'what tasks does this need', 'plan this change', 'what needs to be built', 'figure out what we need', 'do discovery on this', 'I want to add X'. Also trigger when the user shares a requirement, ticket, or spec and wants it decomposed into actionable work items. Do NOT use for scaffolding a new project from scratch (use repo-scaffolding instead). Do NOT use for writing a single formatted user story from existing notes (use user-story instead). Do NOT use for building or implementing code (use execute instead)."
@@ -12,7 +11,7 @@ Plan and decompose a feature or change into user stories. Get to the core of the
 
 Read each skill's SKILL.md when you reach the phase that needs it.
 
-- **code-architect** (`/github-workflow:code-architect`) — Architecture design and validation.
+- **code-architect** (`/{{PLUGIN_NAME}}:code-architect`) — Architecture design and validation.
 
 ## Scope Detection
 
