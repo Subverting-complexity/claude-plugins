@@ -21,6 +21,13 @@ arguments:
 End-to-end story execution workflow. Picks a story from the backlog,
 plans the implementation, builds it, runs tests, and opens a PR.
 
+**This workflow is fully autonomous.** Every phase flows into the next
+without pausing for user input. Do not ask the user to choose, confirm,
+or approve at any step. Do not call interactive skills (grill-me,
+feature-discovery). The only reason to stop is if the issue is so
+underspecified that any implementation would be a guess — in that case,
+block the story and pick the next one.
+
 Read `ClaudeProject.md` for all project-specific settings before starting.
 Read `CLAUDE.md` for project rules and build principles.
 
@@ -74,9 +81,21 @@ Otherwise, run the pick-story logic (including stale task recovery):
 
 1. Read `ClaudeProject.md` for org, repo, label map, and stale-timeout.
 1b. Run stale task recovery — check for issues assigned to @me with no
-    branch or PR past the stale-timeout. Reclaim them if stale. If a
-    branch or PR exists, report it for continuation instead of picking
-    new work. (See pick-story for full logic.)
+    branch or PR past the stale-timeout. Auto-resolve each stale issue:
+    - **Stale PR with review feedback** (`changes-requested` or
+      `needs-discussion` label): check out the branch and run
+      `/github-workflow:update-pr` to address it, then continue to
+      Phase 7 (Finish).
+    - **Stale PR without review feedback**: check out the branch and
+      continue from wherever it left off (Phase 4 if code is
+      incomplete, Phase 5 if it looks done, Phase 7 if just needs
+      push/PR updates).
+    - **Stale branch with no PR**: check it out, assess the state, and
+      continue from the appropriate phase. If the branch has no
+      meaningful work, delete it and reclaim the issue.
+    - **No branch or PR**: reclaim the issue (unassign, comment) and
+      include it in the normal pick pool below.
+    - **Not stale yet**: skip — another session may be active.
 2. Check for milestones to detect backlog mode:
    ```
    gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | .[] | select(.open_issues > 0) | {title, due_on, open_issues}'
@@ -236,9 +255,11 @@ trivial and within the same scope.
 3. Set the dependent PR's base to the dependency branch.
 4. After merge, rebase onto the default branch and update the PR base.
 
-**Feature discovery**: If the story needs to be broken into sub-stories
-before implementation, use `/github-workflow:feature-discovery` to
-generate the backlog, then pick the first sub-story.
+**Story too broad**: If the story covers multiple distinct changes,
+implement the highest-priority slice. Create follow-up issues for the
+remaining slices using `/github-workflow:report-issue`. Do not call
+feature-discovery — it is an interactive skill not suited for
+autonomous execution.
 
 **Review feedback**: After the PR is created, the code-review skill may
 flag issues. Run `/github-workflow:update-pr` to address the feedback,
