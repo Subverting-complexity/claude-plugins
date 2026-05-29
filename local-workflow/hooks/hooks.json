@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "You just created a new file. If it contains logic (not config or docs), check whether a corresponding test file should be created alongside it."
+          }
+        ]
+      }
+    ]
+  }
+}

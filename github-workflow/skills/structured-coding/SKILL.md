@@ -21,6 +21,18 @@ allowed-tools:
 
 This skill defines how to approach coding tasks. The core philosophy: understand before you act, define before you build, and write code that belongs in its codebase.
 
+## Current session state (auto-loaded)
+
+**Branch:** !`git branch --show-current 2>/dev/null || echo "(not a git repo or detached HEAD)"`
+
+```!
+echo "--- Uncommitted changes ---"
+git diff --stat HEAD 2>/dev/null || echo "(no git repo)"
+echo ""
+echo "--- Recent commits on this branch ---"
+git log --oneline -5 2>/dev/null || echo "(no commits)"
+```
+
 ## The Approach
 
 Every coding task — no matter how small — follows this sequence:

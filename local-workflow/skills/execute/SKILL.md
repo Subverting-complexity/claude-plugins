@@ -28,7 +28,23 @@ arguments:
 End-to-end local task execution workflow. Takes a task description, plans the
 implementation, builds it, runs tests, and commits.
 
-Read `CLAUDE.md` for project rules and build principles if it exists.
+## Project context (auto-loaded)
+
+**Branch:** !`git branch --show-current 2>/dev/null || echo "(not a git repo or detached HEAD)"`
+
+```!
+if [ -f CLAUDE.md ]; then
+  echo "=== CLAUDE.md ==="
+  head -50 CLAUDE.md
+  lines=$(wc -l < CLAUDE.md)
+  if [ "$lines" -gt 50 ]; then
+    echo ""
+    echo "... ($lines total lines — read the full file for complete rules)"
+  fi
+else
+  echo "No CLAUDE.md found"
+fi
+```
 
 ## Session budget
 

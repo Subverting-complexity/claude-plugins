@@ -19,6 +19,19 @@ allowed-tools:
 
 Design, audit, and document codebases using principles from Clean Architecture, Design Patterns, and Fundamentals of Software Architecture.
 
+## Project structure (auto-loaded)
+
+```!
+echo "--- Key config files ---"
+find . -maxdepth 2 -type f \( -name "*.json" -o -name "*.yaml" -o -name "*.yml" -o -name "*.toml" -o -name "*.csproj" -o -name "*.sln" -o -name "*.mod" -o -name "Makefile" -o -name "Dockerfile" \) ! -path '*/node_modules/*' ! -path '*/.git/*' 2>/dev/null | head -20
+echo ""
+echo "--- Top-level directories ---"
+ls -d */ 2>/dev/null | head -20
+echo ""
+echo "--- Source structure (depth 2) ---"
+find . -maxdepth 2 -type d ! -path '*/node_modules/*' ! -path '*/.git/*' ! -path '*/.*' 2>/dev/null | sort | head -30
+```
+
 ## Core Workflows
 
 ### Workflow 1: Design New Codebase

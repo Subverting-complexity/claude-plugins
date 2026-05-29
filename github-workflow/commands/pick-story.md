@@ -7,11 +7,21 @@ description: 'Pick the next story from the backlog without starting it. Trigger:
 Select the next story from the backlog. Before looking for new work,
 check for stale in-progress stories that can be reclaimed.
 
+## Project configuration (auto-loaded)
+
+```!
+if [ -f ClaudeProject.md ]; then
+  cat ClaudeProject.md
+else
+  echo "ClaudeProject.md NOT FOUND — run /github-workflow:setup first."
+fi
+```
+
 ## Steps
 
 ### 1. Read configuration
 
-Read `ClaudeProject.md` and extract:
+Extract from the project configuration above:
 
 - `org` and `repo` from Identity
 - `default-branch` from Identity
@@ -25,29 +35,50 @@ Before picking new work, check for issues that were assigned but never
 completed — the previous session may have timed out, crashed, or lost
 context.
 
-List issues assigned to the current agent that are still open:
+**Batch query** — Fetch all assigned issues with their linked PRs in a
+single GraphQL call instead of N individual API requests:
 
 ```
-gh issue list --repo {org}/{repo} --state open --assignee @me --json number,title,labels,updatedAt
+gh api graphql -f query='
+query($owner: String!, $repo: String!, $assignee: String!) {
+  repository(owner: $owner, name: $repo) {
+    issues(states: OPEN, filterBy: {assignee: $assignee}, first: 20) {
+      nodes {
+        number
+        title
+        updatedAt
+        labels(first: 10) { nodes { name } }
+        timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], first: 10) {
+          nodes {
+            ... on CrossReferencedEvent {
+              source {
+                ... on PullRequest {
+                  number
+                  headRefName
+                  state
+                  labels(first: 10) { nodes { name } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}' -f owner="{org}" -f repo="{repo}" -f assignee="@me"
 ```
 
-For each assigned issue, check for existing work and determine
-staleness. "Meaningful work" means commits exist on a branch beyond
-the branch point from the default branch.
+This returns each assigned issue with its linked PRs (via cross-reference
+events), their branch names, and labels — all in one API call.
 
-1. **Check for a PR** linking this issue:
-   ```
-   gh pr list --repo {org}/{repo} --state open --json number,title,body,headRefName,labels --jq '.[] | select(.body | test("Closes #{number}|Fixes #{number}|Resolves #{number}"))'
-   ```
+For issues without a linked PR in the GraphQL response, check for a
+branch matching the branch convention:
+```
+git ls-remote --heads origin | grep -i "{number}"
+```
 
-2. **Check for a branch** matching the branch convention for this issue
-   number:
-   ```
-   git ls-remote --heads origin | grep -i "{number}"
-   ```
-
-3. **Check staleness** — compute how long ago the issue was last
-   updated. If the `updatedAt` timestamp is older than `stale-timeout`:
+Determine staleness from the `updatedAt` timestamp. If older than
+`stale-timeout`:
 
 **If PR or issue has the `approved` label:** Skip entirely — waiting
 for human merge, do not touch.

@@ -8,11 +8,29 @@ Push the branch, create a PR, and update the board.
 
 Requires: a story in progress with committed work on a feature branch.
 
+## Current state (auto-detected)
+
+**Branch:** !`git branch --show-current 2>/dev/null || echo "(unknown)"`
+
+**Recent commits:**
+```!
+git log --oneline -5 2>/dev/null || echo "(no commits)"
+```
+
+**Project configuration:**
+```!
+if [ -f ClaudeProject.md ]; then
+  cat ClaudeProject.md
+else
+  echo "ClaudeProject.md NOT FOUND"
+fi
+```
+
 ## Steps
 
 ### 1. Read configuration
 
-Read `ClaudeProject.md` and extract:
+Extract from the project configuration above:
 
 - `org`, `repo`, `default-branch` from Identity
 - Project board settings (if configured)
@@ -25,9 +43,11 @@ is clean before pushing:
 
 1. Execute the quality gate script/command.
 2. If it fails, read the error output, fix the issue, and re-run.
-3. Repeat up to 3 times (4 total runs maximum). If still failing,
-   continue to push — note the quality gate failure in the PR body
-   so reviewers are aware.
+3. Repeat up to 3 times (4 total runs maximum).
+4. If still failing after 4 runs, set a flag to create a **draft PR**
+   instead of a real PR. Include a "Quality Gate Failed" section in
+   the PR body with the last error output. Draft PRs cannot be
+   accidentally merged, giving reviewers a clear signal.
 
 ### 3. Push the branch
 
@@ -61,10 +81,26 @@ Build the PR body from the committed changes:
 - Note any technical decisions made
 - Add a test plan section
 
-Create a real PR (not a draft):
+Create the PR. If the quality gate failed (Step 2), create a draft:
 
 ```
+# Normal case — quality gate passed:
 gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body "{body}"
+
+# Quality gate failed — create draft instead:
+gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body "{body}" --draft
+```
+
+When creating a draft PR due to quality gate failure, prepend a section
+to the body:
+
+```
+> **⚠ Quality gate failed** — this PR was opened as a draft because
+> the quality gate did not pass after 4 attempts. See error details
+> below. Convert to ready-for-review after fixing.
+>
+> **Last error:**
+> {quality_gate_error_output}
 ```
 
 Each linked issue gets its own line in the PR body:

@@ -1,7 +1,7 @@
 {
   "name": "github-workflow",
   "displayName": "GitHub Workflow",
-  "version": "1.7.0",
+  "version": "1.9.0",
   "description": "Community plugin for GitHub-based development workflows. Say 'start the next story' and the plugin picks an issue from your backlog, plans the architecture, builds the implementation, runs tests, and opens a PR. Supports sprint-based and flat backlogs with configurable label mappings. Bundles 7 skills, 9 commands, and 3 agents with least-privilege tool access. Includes an interactive setup wizard that auto-detects your project configuration.",
   "author": {
     "name": "Subverting Complexity"
@@ -17,5 +17,31 @@
     "sprint",
     "story",
     "pr"
-  ]
+  ],
+  "hooks": "./hooks/hooks.json",
+  "userConfig": {
+    "github_org": {
+      "type": "string",
+      "title": "GitHub Organization/Owner",
+      "description": "The GitHub org or username that owns the repository (e.g., 'my-org' or 'my-username')",
+      "required": true
+    },
+    "default_branch": {
+      "type": "string",
+      "title": "Default Branch",
+      "description": "Main branch name",
+      "default": "main"
+    },
+    "quality_gate_command": {
+      "type": "string",
+      "title": "Quality Gate Command",
+      "description": "Command to run before PRs (e.g., 'npm test', 'make check', 'dotnet test')"
+    },
+    "branch_prefix": {
+      "type": "string",
+      "title": "Branch Prefix",
+      "description": "Prefix for feature branches (e.g., 'feat', 'feature', 'issue')",
+      "default": "feat"
+    }
+  }
 }
