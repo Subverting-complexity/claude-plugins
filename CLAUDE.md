@@ -2,21 +2,48 @@
 
 This repo contains multiple Claude Code plugins that share skills.
 
+## CRITICAL RULES
+
+1. **NEVER edit a synced skill copy directly.** If the file starts
+   with `<!-- SYNCED from _shared-skills/ -->`, it is generated.
+   Edit the canonical source in `_shared-skills/` instead. See the
+   shared skills list in `_shared-skills/MANIFEST.md`. Before editing
+   ANY skill file, check whether it exists in `_shared-skills/` — if
+   it does, that is the only file you may edit.
+
+2. **Always run `./sync-skills.ps1` after editing a shared skill.**
+   This deploys the change to all plugins. Commit the canonical file
+   AND the synced copies together in the same commit.
+
+3. **Always bump plugin versions before merging.** If you changed any
+   file in a plugin (directly or via sync), bump that plugin's version
+   in `{plugin}/.claude-plugin/plugin.json`:
+   - **Patch** (x.y.Z): bug fixes, typo corrections, minor wording
+   - **Minor** (x.Y.0): new skills, commands, behavioral changes
+   - **Major** (X.0.0): breaking changes, removed skills
+
 ## Shared Skills
 
-Skills in `_shared-skills/` are the canonical source. Plugin copies
-are generated — **never edit a plugin's copy of a shared skill
-directly**. If a file starts with
-`<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->`
-it is a synced copy.
+These skills exist in `_shared-skills/` and are deployed to multiple
+plugins. The full list is in `_shared-skills/MANIFEST.md`:
 
-### Editing shared skills
+- `code-architect`
+- `feature-discovery`
+- `grill-me`
+- `repo-scaffolding`
+- `structured-coding`
+- `_shared/` (banned-patterns)
+- `references/` (story-template)
+
+### How to edit
 
 1. Edit the file in `_shared-skills/{skill}/SKILL.md`
 2. Use `{{PLUGIN_NAME}}` for any plugin-specific references
    (e.g., `/{{PLUGIN_NAME}}:execute`)
 3. Run `./sync-skills.ps1` to deploy to all plugins
-4. Commit the canonical file AND the synced copies together
+4. Run `./sync-skills.ps1 -Verify` to confirm zero drift
+5. Commit canonical + synced copies together
+6. Bump affected plugin versions
 
 ### Checking for drift
 
@@ -25,24 +52,7 @@ it is a synced copy.
 ```
 
 Returns exit code 1 if any plugin copy has drifted from the canonical
-source. Use in CI to catch accidental direct edits.
-
-See `_shared-skills/MANIFEST.md` for the full list of shared skills
-and template variables.
-
-## Version Bumps
-
-When making changes to a plugin, bump its version in
-`{plugin}/.claude-plugin/plugin.json` before merging:
-
-- **Patch** (1.5.1): bug fixes, typo corrections, minor wording changes
-- **Minor** (1.6.0): new skills, new commands, behavioral changes,
-  new features
-- **Major** (2.0.0): breaking changes to skill interfaces, removed
-  skills, restructured commands
-
-The sync script checks for version bumps: if any synced file changed,
-it warns you to bump the affected plugin versions.
+source.
 
 ## Plugins
 
