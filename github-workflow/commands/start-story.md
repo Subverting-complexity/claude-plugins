@@ -21,10 +21,27 @@ Read `ClaudeProject.md` and extract:
 - Project board settings (if configured)
 - Label map
 
-### 2. Assign the issue
+### 2. Claim the issue
+
+Multiple agents may be running concurrently. Use assignment as a claim
+lock to prevent two agents from starting the same story:
 
 ```
 gh issue edit {number} --repo {org}/{repo} --add-assignee @me
+```
+
+Wait 2 seconds, then re-read the issue to verify your claim:
+
+```
+gh issue view {number} --repo {org}/{repo} --json assignees
+```
+
+If you are the only assignee, proceed. If another user or agent was
+assigned first (multiple assignees), remove yourself and exit — the
+other agent owns this story:
+
+```
+gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 ```
 
 ### 3. Update project board (if configured)
@@ -78,23 +95,43 @@ If truly empty with no guidance anywhere, run `/github-workflow:block-story`.
 git fetch origin {default-branch}
 ```
 
-Apply the branch convention from config. For example, if the convention
-is `feature/{number}/{short-desc}`, create `feature/42/add-user-auth`.
+Apply the branch convention from config. To generate `{short-desc}`
+from the issue title:
+
+1. Lowercase the title
+2. Replace spaces and special characters with hyphens
+3. Remove consecutive hyphens
+4. Truncate to 40 characters max
+5. Remove trailing hyphens
+
+Example: issue "Fix: User login broken!!!" with convention
+`feature/{number}/{short-desc}` → `feature/42/fix-user-login-broken`
 
 Check if the branch already exists (from a previous blocked attempt or
 partial work):
 
 ```
 git branch --list {branch}
+git ls-remote --heads origin {branch}
 ```
 
-If the branch exists locally, check it out and rebase onto the latest
-default branch:
+If the branch exists locally or remotely, check it out and rebase onto
+the latest default branch:
 
 ```
 git checkout {branch}
 git rebase origin/{default-branch}
 ```
+
+If rebase fails with conflicts, abort and recreate the branch:
+
+```
+git rebase --abort
+git checkout -b {branch}-retry origin/{default-branch}
+```
+
+Use the `-retry` branch and note in the PR that the original branch
+had conflicts.
 
 If the branch does not exist, create it:
 

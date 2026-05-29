@@ -112,9 +112,9 @@ Run the quality gate command from `ClaudeProject.md`:
 
 1. Execute the quality gate script/command.
 2. If it fails, read the error output, fix the issue, and re-run.
-3. Repeat up to 3 times. If still failing, warn the user but continue
-   to commit and push — the review feedback fixes are still valuable
-   even if the gate has a pre-existing issue.
+3. Repeat up to 3 times (4 total runs maximum). If still failing,
+   continue to commit and push — the review feedback fixes are still
+   valuable even if the gate has a pre-existing issue.
 
 ### 6. Commit and push
 
@@ -126,7 +126,42 @@ git commit -m "Address review feedback on PR #{pr_number}"
 git push
 ```
 
-### 7. Assess change significance and update labels
+### 7. Resolve merge conflicts
+
+After pushing, check if the PR has merge conflicts with the base
+branch:
+
+```
+gh pr view {pr_number} --repo {org}/{repo} --json mergeable,mergeStateStatus
+```
+
+If `mergeable` is `CONFLICTING`:
+
+1. Fetch the latest base branch and rebase onto it:
+   ```
+   git fetch origin {default-branch}
+   git rebase origin/{default-branch}
+   ```
+2. Resolve conflicts one commit at a time as the rebase progresses.
+   Read each conflicted file, understand both sides, and pick the
+   correct resolution. Then continue:
+   ```
+   git add <resolved-files>
+   git rebase --continue
+   ```
+3. After the rebase completes, run the quality gate once (retry once
+   if it fails, 2 total).
+4. Force-push the rebased branch:
+   ```
+   git push --force-with-lease
+   ```
+
+Conflict resolution counts as a change when classifying significance
+in the next step — complex conflicts (overlapping logic, altered
+control flow, modified signatures) make the overall change
+**substantial** regardless of how trivial the review fixes were.
+
+### 8. Assess change significance and update labels
 
 Remove the `updating` label (your claim is done):
 
@@ -134,7 +169,16 @@ Remove the `updating` label (your claim is done):
 gh pr edit {pr_number} --remove-label "{updating_label}"
 ```
 
-Then classify the changes you pushed:
+Then classify the changes you pushed and determine the label outcome:
+
+**If trivial AND all Issues Remaining were addressed:**
+
+All review feedback has been resolved with minor fixes. Remove the
+current state label and apply `approved` — no re-review needed:
+
+```
+gh pr edit {pr_number} --remove-label "{current_state_label}" --add-label "{approved_label}"
+```
 
 **If substantial** (new logic, changed APIs, modified tests):
 
@@ -144,18 +188,19 @@ Remove the current state label and apply `needs-re-review`:
 gh pr edit {pr_number} --remove-label "{current_state_label}" --add-label "{needs_re_review_label}"
 ```
 
-**If trivial** (only formatting, typos, dead code removal):
+**If trivial BUT some Issues Remaining were NOT addressed:**
 
-Leave the current state label in place. The next code-review run will
-detect the SHA change and fast-track it.
+Leave the current state label in place (`changes-requested` stays).
+The next code-review run will detect the SHA change and evaluate
+whether the unaddressed items are still relevant.
 
-### 8. Error handling
+### 9. Error handling
 
 If anything goes wrong (checkout fails, quality gate can't pass, push
 fails), remove the `updating` label before exiting so another agent
 can pick up the PR.
 
-### 9. Report
+### 10. Report
 
 Display:
 

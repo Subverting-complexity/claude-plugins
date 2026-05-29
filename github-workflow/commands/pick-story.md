@@ -31,11 +31,13 @@ List issues assigned to the current agent that are still open:
 gh issue list --repo {org}/{repo} --state open --assignee @me --json number,title,labels,updatedAt
 ```
 
-For each assigned issue, check whether meaningful progress was made:
+For each assigned issue, check for existing work and determine
+staleness. "Meaningful work" means commits exist on a branch beyond
+the branch point from the default branch.
 
 1. **Check for a PR** linking this issue:
    ```
-   gh pr list --repo {org}/{repo} --state open --json number,title,body,headRefName --jq '.[] | select(.body | test("Closes #{number}|Fixes #{number}|Resolves #{number}"))'
+   gh pr list --repo {org}/{repo} --state open --json number,title,body,headRefName,labels --jq '.[] | select(.body | test("Closes #{number}|Fixes #{number}|Resolves #{number}"))'
    ```
 
 2. **Check for a branch** matching the branch convention for this issue
@@ -47,14 +49,20 @@ For each assigned issue, check whether meaningful progress was made:
 3. **Check staleness** — compute how long ago the issue was last
    updated. If the `updatedAt` timestamp is older than `stale-timeout`:
 
-**If a PR exists:** The story has a PR but no session is working on it.
-Report it as available for continuation rather than picking a new story.
-Display the PR and suggest running `/github-workflow:update-pr` if it
-has review feedback, or resuming the branch if it's still in progress.
+**If PR or issue has the `approved` label:** Skip entirely — waiting
+for human merge, do not touch.
 
-**If a branch exists but no PR:** The previous session pushed code but
-didn't finish. Report this — the user or next session should check out
-the branch, verify the state, and either finish or block the story.
+**If a PR exists with review feedback** (`changes-requested` or
+`needs-discussion` label): Check out the branch and run
+`/github-workflow:update-pr` to address the feedback autonomously.
+
+**If a PR exists without review feedback:** Check out the branch and
+assess state. If code looks complete, push to finish (PR updates,
+labels). If incomplete, continue building from where it left off.
+
+**If a branch exists but no PR:** Check out the branch and assess. If
+it has meaningful commits, continue toward finishing. If it has no
+meaningful work, delete the branch and reclaim the issue.
 
 **If neither branch nor PR exists and the issue is stale:** The
 previous session claimed the issue but produced nothing. Reclaim it:
@@ -128,6 +136,10 @@ If no `status-ready` label is configured, list all open unassigned issues.
 the sort order above. If no candidates have priority labels, pick the
 lowest issue number. If the user says "pick a story" or "what's next",
 that means "give me the top one", not "show me a list to choose from".
+
+If no candidates remain after filtering, report "No stories available
+for pickup" and exit. Do not loop, retry, or ask the user to create
+stories.
 
 Pick the first candidate. Display:
 

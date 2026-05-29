@@ -56,9 +56,15 @@ and the review comment footer.
 1. `./docs/review.config.md`
 2. `./review.config.md`
 
-If neither exists, stop the review workflow and run the **Config Generation**
-flow (see below) to create one with the user. Do not proceed without a
-config.
+If neither exists and the session is interactive (user is present),
+run the **Config Generation** flow (see below) to create one.
+
+If the session is autonomous (called from `/github-workflow:execute`
+or a scheduled routine), skip the config generation — auto-detect
+sensible defaults from the repo's existing labels (`gh label list`)
+and proceed with a minimal review (no custom gates, no tech-stack
+rules, standard footer). Note in the review comment that no
+`review.config.md` was found and defaults were used.
 
 Read `review.config.md` fully before starting. Everything project-specific
 lives there. This workflow is generic.
@@ -319,8 +325,25 @@ Remove the `needs-re-review` label, ensure the `approved` label is
 present, and exit. Do not proceed to Step 5.
 
 **If trivial and previous verdict was `changes-requested`:**
-Proceed to Step 5 for a full re-review — the original issues may still
-be unresolved.
+Check whether the trivial changes address every item in the previous
+review's Issues Remaining list. If they do — all flagged issues are
+resolved by the diff — post an abbreviated approval:
+
+```
+## Re-review by Claude
+
+**Verdict: Approved**
+
+All previously flagged issues have been addressed with trivial fixes.
+
+<footer from review.config.md>
+```
+
+Remove the `needs-re-review` and `changes-requested` labels, apply
+`approved`, and exit. Do not proceed to Step 5.
+
+If the trivial changes do NOT address all Issues Remaining, proceed to
+Step 5 for a full re-review — the original issues are still unresolved.
 
 **If substantial:**
 Proceed to Step 5 for a full re-review regardless of previous verdict.
@@ -410,27 +433,43 @@ unrelated refactors, formatting changes, or comment edits.
 
 ### Step 7 — Fix issues
 
-If concrete problems are found (unrealistic test mocks, missing null
-checks, logic errors, missing test coverage, dead code, mismatched types),
-fix them directly on the PR branch. Commit each fix with a clear message.
-Push the fixes.
+Fix **all** concrete, objectively wrong problems directly on the PR branch.
+This includes both blocking issues and minor non-blocking observations:
 
-Do **not** fix stylistic preferences or make discretionary refactors. Only
-fix things that are objectively wrong or would block merge.
+- Unrealistic test mocks, missing null checks, logic errors
+- Missing test coverage, dead code, mismatched types
+- Missing trailing newlines, formatting inconsistencies
+- Null-forgiving operators, unnecessary casts
+- Utility method placement, misplaced code
+- Any other issue where the correct fix is obvious and unambiguous
 
-If an issue is architectural or requires a design decision, do not fix it.
-Flag it in the review comment as needing discussion.
+Commit each fix with a clear message. Push the fixes.
+
+Do **not** fix:
+- Stylistic preferences where multiple valid approaches exist
+- Architectural decisions that require human judgment
+- Issues where the "right fix" depends on product or design context
+
+Flag anything you cannot fix in the review comment as needing discussion.
 
 After pushing fixes, update the recorded commit SHA to the new `HEAD`.
 
 ### Step 8 — Determine the verdict
 
-- **Approved** — Zero hard non-compliance failures, zero remaining issues.
-  PR is fully ready to merge.
+Re-evaluate the PR state **after** Step 7 fixes. Issues that were
+auto-fixed do not count as remaining issues.
+
+- **Approved** — Zero hard non-compliance failures, zero remaining issues
+  after fixes. All problems were either absent or auto-fixed. PR is fully
+  ready to merge.
 - **Changes Requested** — Any hard non-compliance failure, or any remaining
-  problem that needs human action.
+  problem that could not be auto-fixed and needs human action.
 - **Needs Discussion** — No hard failures, but architectural questions or
   ambiguities need human judgment before merge.
+
+If every issue found in Step 6 was resolved in Step 7, the verdict is
+**Approved** — not "Changes Requested with observations". The fixes are
+already pushed; there is nothing left for the builder to do.
 
 ### Step 9 — Post the review
 
@@ -508,97 +547,10 @@ review thoroughly):
 
 ---
 
-## Addressing Review Feedback
+## Reference Material
 
-After a review concludes with a `Changes Requested` verdict, the PR
-needs updates before it can be re-reviewed. This can happen in two ways:
-
-### Automatic (during this review run)
-
-Step 7 already fixes objective issues and pushes them. If Step 7
-resolved **all** issues — meaning the Issues Remaining list is empty
-after fixes — re-evaluate the verdict before posting. The PR may now
-qualify for `Approved`.
-
-### Manual (separate invocation)
-
-When issues remain that the reviewer could not auto-fix, the PR is
-left with the `changes-requested` label. To address that feedback:
-
-- A human or **builder** agent runs `/github-workflow:update-pr` to
-  read the review comment, fix each item in Issues Remaining, push
-  changes, and apply `needs-re-review`. (The reviewer agent is
-  read-only and cannot run this command — it requires file editing
-  and git push access.)
-- The next code-review run will pick up PRs with `needs-re-review`
-  (they are prioritised in Step 1) and perform a re-review.
-
-### Change significance on update
-
-When changes are pushed to a reviewed PR (by `update-pr` or any other
-process), the pusher classifies the changes:
-
-**Trivial (no re-review needed):**
-- Whitespace, formatting, or import-order fixes
-- Typo corrections in comments or documentation
-- Removing dead code flagged in the review
-- Variable renames with no behaviour change
-
-Leave the existing state label in place.
-
-**Substantial (re-review required):**
-- New or modified logic, control flow, or calculations
-- New files, dependencies, or changed APIs
-- Test additions or modified assertions
-- Security-relevant changes
-- Anything that alters observable behaviour
-
-Remove the current state label and apply `needs-re-review`:
-
-```bash
-gh pr edit <number> --remove-label "<current-state-label>" --add-label "<needs-re-review-label>"
-```
-
-The code-review skill's Step 4b will then assess whether the re-review
-can be fast-tracked (trivial changes on an approved PR) or requires a
-full pass.
-
----
-
-## Label Reference for Agents
-
-Any agent encountering these labels on a PR should understand what they
-mean and what action (if any) to take. Labels use the prefix defined in
-`review.config.md`.
-
-### State labels (mutually exclusive — exactly one per PR)
-
-| Label | Meaning | Agent action |
-| ----- | ------- | ------------ |
-| `{PREFIX}-reviewing` | A review agent is actively reviewing this PR. | **Do not touch.** Wait for the review to complete. Do not start a review, update, or push to this PR. |
-| `{PREFIX}-updating` | A builder agent is addressing review feedback. | **Do not touch.** Wait for the update to complete. Do not start a review or competing update. |
-| `{PREFIX}-approved` | Review passed, no remaining issues. | Ready for human merge. No agent action needed unless new commits are pushed (see `needs-re-review`). |
-| `{PREFIX}-changes-requested` | Review found issues requiring human or builder action. | **Builder**: Run `/github-workflow:update-pr` to address the feedback. **Reviewer**: Skip, waiting on builder. |
-| `{PREFIX}-needs-re-review` | New commits pushed since last review. | **Reviewer**: Prioritise this PR for re-review. **Builder**: No action — wait for review. |
-| `{PREFIX}-needs-discussion` | Architectural or scope questions need human judgment. | **All agents**: Do not auto-fix. Flag to human. |
-| `{PREFIX}-review-failed` | Review could not complete (checkout failed, PR too large). | **Reviewer**: May retry on next run if root cause is resolved. **Builder**: Investigate the failure. |
-
-### Action labels (sticky, not mutually exclusive)
-
-| Label | Meaning | Agent action |
-| ----- | ------- | ------------ |
-| `{PREFIX}-fixes-applied` | Claude pushed fix commits to this PR branch. | Informational. Do not remove — it persists across review cycles. |
-
-### Concurrency rules
-
-- **Before reviewing**: Check for `reviewing` and `updating` labels.
-  If either is present, skip the PR entirely.
-- **Before updating**: Check for `reviewing` and `updating` labels.
-  If either is present, skip the PR entirely.
-- **Claiming**: Apply your claim label (`reviewing` or `updating`),
-  wait 2 seconds, re-read labels to confirm you still own the claim.
-- **On exit or error**: Always remove your claim label so other agents
-  can proceed.
+For label definitions, state transitions, concurrency rules, and
+feedback workflow details, see `references/review-workflow.md`.
 
 ---
 
@@ -607,5 +559,5 @@ mean and what action (if any) to take. Labels use the prefix defined in
 - Never use `gh pr review --approve`. Always use `gh pr comment`.
 - Do not merge or close any PR.
 - Do not make discretionary refactors or stylistic changes.
-- Only push fixes for objective problems that would block merge.
+- Push fixes for all concrete, objectively wrong problems (blocking and minor).
 - Review one PR per invocation, then exit.

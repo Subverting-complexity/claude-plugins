@@ -88,10 +88,10 @@ For anything not auto-detected, ask the user interactively:
 - **Priority labels** — what label names for critical/high/medium/low
 - **Type labels** — what label names for story/bug/debt/arch
 - **Status labels** — what label names for ready/blocked
-- **Claude labels** — simple markers for Claude-authored PRs and
-  approvals. Suggest `claude:authored`, `claude:approved`,
-  `claude:blocked`. These are separate from the review state labels
-  set up in Step 7.
+- **Claude labels** — simple workflow markers. Suggest
+  `claude:authored` and `claude:blocked`. These are separate from the
+  review state labels (including `{prefix}-approved`) set up in
+  Step 7.
 - **Custom labels** — ask if the user has any additional labels they
   want workflow commands to apply or respect. For each custom label,
   ask the name and when it should be applied. Examples:

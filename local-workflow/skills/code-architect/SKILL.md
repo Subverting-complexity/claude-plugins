@@ -23,7 +23,10 @@ Design, audit, and document codebases using principles from Clean Architecture, 
 ### Workflow 1: Design New Codebase
 When user asks to design, architect, or build a new system/codebase:
 
-1. **Establish shared understanding** - Call the `grill-me` skill to clarify:
+1. **Establish shared understanding** - Call the `grill-me` skill to clarify
+   (skip this step when called from an autonomous workflow like
+   `/local-workflow:execute` that explicitly says not to pause or call
+   grill-me):
    - What problem does this solve?
    - Who are the users/actors?
    - What are the core business rules?

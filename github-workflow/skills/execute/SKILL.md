@@ -9,6 +9,7 @@ when_to_use: >-
   "fix bugs", "fix the next bug", "fix security issues" (use mode=bug),
   "audit the codebase", "audit for security", "code audit", "run an audit" (use mode=audit).
   Also trigger when the user pastes a GitHub issue URL or references an issue number.
+argument-hint: '[issue#] [--mode bug|audit]'
 arguments:
   - name: story_number
     description: 'Optional issue number. If omitted, picks the next story from the backlog.'
@@ -33,6 +34,10 @@ are:
   breakdown with the user, then pick the first sub-story.
 
 Read `ClaudeProject.md` for all project-specific settings before starting.
+If `ClaudeProject.md` does not exist, stop and tell the user to run
+`/github-workflow:setup` first. Do not attempt to proceed without it —
+every subsequent step depends on the values defined there.
+
 Read `CLAUDE.md` for project rules and build principles.
 
 ## Session budget
@@ -60,6 +65,35 @@ session, not to run indefinitely.
   work" notes is better than an abandoned session with no artifact.
 - **One story, one session.** Do not pick a second story after finishing
   the first. End the session so the next one starts with a fresh context.
+
+**Session timeout awareness:**
+
+Record the start time at the beginning of execution (use `date +%s` or
+equivalent). Before starting each new phase, check elapsed time. If the
+session has been running for more than 45 minutes:
+
+1. Commit and push all current work immediately.
+2. If you have enough for a PR, open one (draft if incomplete).
+3. Create follow-up issues for any unfinished work.
+4. Exit cleanly — do not start a new phase that you may not finish.
+
+This prevents the harness from killing the session mid-work with nothing
+saved.
+
+## API rate limiting
+
+GitHub API has rate limits (5,000 requests/hour for authenticated
+users). Long autonomous sessions can accumulate many `gh` calls.
+
+- Before making a batch of API calls (e.g., listing issues, checking
+  milestones, updating board fields), check remaining quota:
+  ```
+  gh api rate_limit --jq '.rate.remaining'
+  ```
+- If remaining quota is below **100**, pause API-heavy operations.
+  Commit and push any current work, then exit with a message noting
+  the rate limit. The next session will continue from the pushed state.
+- Do not retry rate-limited requests in a loop — that makes it worse.
 
 If the story is blocked or turns out to need more than one session's
 worth of work, commit what you have, push the branch, open a draft PR
@@ -93,12 +127,15 @@ Otherwise, run the pick-story logic (including stale task recovery):
       `/github-workflow:update-pr` to address it, then continue to
       Phase 7 (Finish).
     - **Stale PR without review feedback**: check out the branch and
-      continue from wherever it left off (Phase 4 if code is
-      incomplete, Phase 5 if it looks done, Phase 7 if just needs
-      push/PR updates).
-    - **Stale branch with no PR**: check it out, assess the state, and
-      continue from the appropriate phase. If the branch has no
-      meaningful work, delete it and reclaim the issue.
+      determine the resume point by checking concrete state:
+      - Run the quality gate. If it passes → Phase 7 (Finish).
+      - If quality gate fails, check `git log --oneline` for commits
+        beyond the branch point. If commits exist → Phase 5 (Verify).
+      - If no commits beyond branch point → Phase 4 (Build).
+    - **Stale branch with no PR**: check it out and check for commits
+      beyond the branch point (`git log origin/{default-branch}..HEAD
+      --oneline`). If commits exist, continue from Phase 5 (Verify).
+      If no commits exist, delete the branch and reclaim the issue.
     - **No branch or PR**: reclaim the issue (unassign, comment) and
       include it in the normal pick pool below.
     - **Not stale yet**: skip — another session may be active.
@@ -163,7 +200,20 @@ Use `/github-workflow:code-architect` to plan the implementation:
 - Code-architect should scan the existing codebase and plan changes
   based on the issue requirements. Do not run an interactive design
   interview or call grill-me.
-- Consume the architecture plan output and proceed to Build.
+- Write the architecture plan to `.claude/plan.md` so it survives
+  context compaction. Include a checklist of files to create or modify,
+  each with a `[ ]` checkbox. Example:
+  ```
+  ## Files
+  - [ ] src/services/auth.ts — new auth service
+  - [ ] src/routes/login.ts — add login endpoint
+  - [ ] tests/auth.test.ts — auth service tests
+  ```
+- During Phase 4 (Build), mark each file `[x]` as you complete it.
+  If the session compacts mid-build, re-read `.claude/plan.md` to see
+  which files are done and which remain. Also check `git status` and
+  `git diff --name-only` to confirm what has actually been modified.
+- Consume the plan output and proceed to Build.
 - Do not pause for confirmation.
 - If requirements have gaps, make reasonable assumptions and note
   them in the plan. Only stop if the issue is so underspecified that
@@ -179,9 +229,10 @@ Use `/github-workflow:structured-coding` to implement:
 - Write code and tests together. Do not defer tests to a later phase.
 - Follow build principles from `CLAUDE.md`:
   - One responsibility per file
-  - Domain must not import from infrastructure
-  - Every module unit-testable in isolation
+  - Domain must not import from infrastructure. Strict layer boundaries.
+  - Every module unit-testable in isolation. Inject dependencies.
   - Search for existing utilities before creating new ones
+  - Write tests alongside the code, not after
 
 ## Phase 5 — Verify
 
@@ -192,9 +243,11 @@ Run the quality gate command from `ClaudeProject.md`:
    a. Read the error output carefully.
    b. Fix the specific failing check.
    c. Re-run the quality gate.
-   d. Repeat up to 3 times.
-3. If still failing after 3 attempts, investigate the root cause
-   more deeply before trying again.
+   d. Repeat up to 3 times (4 total runs maximum).
+3. If still failing after 4 total runs, commit what you have, open a
+   draft PR noting the quality gate failure, and exit. Do not
+   continue retrying — the issue likely requires changes outside the
+   story's scope.
 
 ## Phase 6 — Commit
 
@@ -237,15 +290,40 @@ Run the quality gate command from `ClaudeProject.md`:
 When `$ARGUMENTS.mode` is `audit`:
 
 1. Read `ClaudeProject.md` for org, repo, and label map.
-2. Run `/github-workflow:code-review` on the codebase.
+2. Audit the default branch — read the codebase structure, key files,
+   and patterns. Check for architecture violations, security issues,
+   test gaps, dead code, and tech debt. Use the evaluation criteria
+   from the code-review skill (non-compliance gates, correctness,
+   security, test coverage) but apply them to the codebase at large,
+   not to a specific PR diff.
 3. For each finding, run `/github-workflow:report-issue` to create
    a GitHub issue with the appropriate type and priority labels.
+   Cap at 10 issues per audit session to keep scope manageable.
 4. Report a summary of all issues created.
 5. Do not make code changes. Do not create a branch or PR.
 
 ---
 
 ## Escape hatches
+
+**Failure reporting**: If execution fails at any phase and cannot
+recover, leave a structured comment on the issue before exiting:
+
+```
+gh issue comment {number} --repo {org}/{repo} --body "## Autonomous execution failed
+
+**Phase:** {phase_name} (e.g., Build, Verify, Finish)
+**Error:** {one-line summary of what went wrong}
+**Branch:** {branch_name} (if created)
+**Commits pushed:** {yes/no}
+**What was completed:** {brief summary}
+**What remains:** {brief summary}
+
+_Automated by github-workflow execute_"
+```
+
+This ensures the next session (or human) can pick up exactly where
+this one failed without guessing what happened.
 
 **Blocked**: If any phase cannot proceed, run `/github-workflow:block-story`
 with details. Then pick the next story.

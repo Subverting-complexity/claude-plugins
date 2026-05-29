@@ -72,7 +72,6 @@ and managed by the code-review skill.
 | Purpose          | Label    | Applied by       |
 | ---------------- | -------- | ---------------- |
 | claude-authored  | `{name}` | finish-story     |
-| claude-approved  | `{name}` | review-pr        |
 | claude-blocked   | `{name}` | block-story      |
 
 ### Custom (optional)
