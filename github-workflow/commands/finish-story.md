@@ -34,7 +34,24 @@ is clean before pushing:
 git push -u origin HEAD
 ```
 
-### 4. Create PR
+### 4. Check for existing PR
+
+Before creating a new PR, check if one already exists for this branch
+(e.g., from a previous session that pushed but didn't finish cleanly):
+
+```
+gh pr list --repo {org}/{repo} --head {branch} --state open --json number,title
+```
+
+If a PR already exists, update it instead of creating a new one:
+
+```
+gh pr edit {pr_number} --body "{updated_body}"
+```
+
+Skip to Step 6 (labels). Only create a new PR if none exists.
+
+### 5. Create new PR
 
 Build the PR body from the committed changes:
 
@@ -59,7 +76,7 @@ Closes #43
 Each `Closes #N` must be on its own line so GitHub links them in
 the Development sidebar.
 
-### 5. Add labels to PR
+### 6. Add labels to PR
 
 If the `claude-authored` label is configured in the label map, apply it
 to mark this as a Claude-built PR:
@@ -68,7 +85,7 @@ to mark this as a Claude-built PR:
 gh pr edit {pr_number} --add-label "{claude_authored_label}"
 ```
 
-### 6. Update project board (if configured)
+### 7. Update project board (if configured)
 
 Set status to In Review:
 
@@ -87,7 +104,7 @@ Board operations are best-effort. If they fail, report the failure to
 the user (e.g., "Board update failed: {error}. Continuing without board
 update.") and proceed with the rest of the workflow.
 
-### 7. Report
+### 8. Report
 
 Display:
 

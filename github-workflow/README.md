@@ -73,6 +73,8 @@ github-workflow/
 │   ├── builder.md             # Full-access implementation agent
 │   ├── reviewer.md            # Read-only PR review agent
 │   └── doc-writer.md          # Docs-only documentation agent
+├── references/
+│   └── story-template.md      # Shared story issue template
 ├── templates/
 │   ├── ClaudeProject.md       # Template for project configuration
 │   └── CLAUDE.md              # Template for project rules
