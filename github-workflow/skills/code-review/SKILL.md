@@ -56,9 +56,15 @@ and the review comment footer.
 1. `./docs/review.config.md`
 2. `./review.config.md`
 
-If neither exists, stop the review workflow and run the **Config Generation**
-flow (see below) to create one with the user. Do not proceed without a
-config.
+If neither exists and the session is interactive (user is present),
+run the **Config Generation** flow (see below) to create one.
+
+If the session is autonomous (called from `/github-workflow:execute`
+or a scheduled routine), skip the config generation — auto-detect
+sensible defaults from the repo's existing labels (`gh label list`)
+and proceed with a minimal review (no custom gates, no tech-stack
+rules, standard footer). Note in the review comment that no
+`review.config.md` was found and defaults were used.
 
 Read `review.config.md` fully before starting. Everything project-specific
 lives there. This workflow is generic.

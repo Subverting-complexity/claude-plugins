@@ -25,8 +25,9 @@ is clean before pushing:
 
 1. Execute the quality gate script/command.
 2. If it fails, read the error output, fix the issue, and re-run.
-3. Repeat up to 3 times. If still failing, warn the user but continue
-   to push — they may want to open the PR for review anyway.
+3. Repeat up to 3 times (4 total runs maximum). If still failing,
+   continue to push — note the quality gate failure in the PR body
+   so reviewers are aware.
 
 ### 3. Push the branch
 

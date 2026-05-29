@@ -31,7 +31,9 @@ List issues assigned to the current agent that are still open:
 gh issue list --repo {org}/{repo} --state open --assignee @me --json number,title,labels,updatedAt
 ```
 
-For each assigned issue, check for existing work and staleness:
+For each assigned issue, check for existing work and determine
+staleness. "Meaningful work" means commits exist on a branch beyond
+the branch point from the default branch.
 
 1. **Check for a PR** linking this issue:
    ```
@@ -134,6 +136,10 @@ If no `status-ready` label is configured, list all open unassigned issues.
 the sort order above. If no candidates have priority labels, pick the
 lowest issue number. If the user says "pick a story" or "what's next",
 that means "give me the top one", not "show me a list to choose from".
+
+If no candidates remain after filtering, report "No stories available
+for pickup" and exit. Do not loop, retry, or ask the user to create
+stories.
 
 Pick the first candidate. Display:
 

@@ -34,6 +34,10 @@ are:
   breakdown with the user, then pick the first sub-story.
 
 Read `ClaudeProject.md` for all project-specific settings before starting.
+If `ClaudeProject.md` does not exist, stop and tell the user to run
+`/github-workflow:setup` first. Do not attempt to proceed without it —
+every subsequent step depends on the values defined there.
+
 Read `CLAUDE.md` for project rules and build principles.
 
 ## Session budget
@@ -94,12 +98,15 @@ Otherwise, run the pick-story logic (including stale task recovery):
       `/github-workflow:update-pr` to address it, then continue to
       Phase 7 (Finish).
     - **Stale PR without review feedback**: check out the branch and
-      continue from wherever it left off (Phase 4 if code is
-      incomplete, Phase 5 if it looks done, Phase 7 if just needs
-      push/PR updates).
-    - **Stale branch with no PR**: check it out, assess the state, and
-      continue from the appropriate phase. If the branch has no
-      meaningful work, delete it and reclaim the issue.
+      determine the resume point by checking concrete state:
+      - Run the quality gate. If it passes → Phase 7 (Finish).
+      - If quality gate fails, check `git log --oneline` for commits
+        beyond the branch point. If commits exist → Phase 5 (Verify).
+      - If no commits beyond branch point → Phase 4 (Build).
+    - **Stale branch with no PR**: check it out and check for commits
+      beyond the branch point (`git log origin/{default-branch}..HEAD
+      --oneline`). If commits exist, continue from Phase 5 (Verify).
+      If no commits exist, delete the branch and reclaim the issue.
     - **No branch or PR**: reclaim the issue (unassign, comment) and
       include it in the normal pick pool below.
     - **Not stale yet**: skip — another session may be active.
@@ -164,7 +171,10 @@ Use `/github-workflow:code-architect` to plan the implementation:
 - Code-architect should scan the existing codebase and plan changes
   based on the issue requirements. Do not run an interactive design
   interview or call grill-me.
-- Consume the architecture plan output and proceed to Build.
+- Write the architecture plan to `.claude/plan.md` so it survives
+  context compaction. If the session compacts mid-build, re-read this
+  file to recover the plan.
+- Consume the plan output and proceed to Build.
 - Do not pause for confirmation.
 - If requirements have gaps, make reasonable assumptions and note
   them in the plan. Only stop if the issue is so underspecified that
@@ -194,9 +204,11 @@ Run the quality gate command from `ClaudeProject.md`:
    a. Read the error output carefully.
    b. Fix the specific failing check.
    c. Re-run the quality gate.
-   d. Repeat up to 3 times.
-3. If still failing after 3 attempts, investigate the root cause
-   more deeply before trying again.
+   d. Repeat up to 3 times (4 total runs maximum).
+3. If still failing after 4 total runs, commit what you have, open a
+   draft PR noting the quality gate failure, and exit. Do not
+   continue retrying — the issue likely requires changes outside the
+   story's scope.
 
 ## Phase 6 — Commit
 
@@ -239,9 +251,15 @@ Run the quality gate command from `ClaudeProject.md`:
 When `$ARGUMENTS.mode` is `audit`:
 
 1. Read `ClaudeProject.md` for org, repo, and label map.
-2. Run `/github-workflow:code-review` on the codebase.
+2. Audit the default branch — read the codebase structure, key files,
+   and patterns. Check for architecture violations, security issues,
+   test gaps, dead code, and tech debt. Use the evaluation criteria
+   from the code-review skill (non-compliance gates, correctness,
+   security, test coverage) but apply them to the codebase at large,
+   not to a specific PR diff.
 3. For each finding, run `/github-workflow:report-issue` to create
    a GitHub issue with the appropriate type and priority labels.
+   Cap at 10 issues per audit session to keep scope manageable.
 4. Report a summary of all issues created.
 5. Do not make code changes. Do not create a branch or PR.
 
