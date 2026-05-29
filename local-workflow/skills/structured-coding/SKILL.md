@@ -74,7 +74,11 @@ Every task needs a clear definition of what "done" means. Before writing any cod
 
 This structure is **always** surfaced to the user — for every task, no matter how small. A one-line bug fix still gets an overview ("Fix the off-by-one error in pagination"), a technical section ("Change the offset calculation in `getPage()` from `page * size` to `(page - 1) * size`"), and acceptance criteria ("Page 1 returns the first N results, not the second N"). The depth scales with the task, but the structure is always there.
 
-Present this to the user and get confirmation before writing code. This is the checkpoint — if you and the user aren't aligned here, no amount of good code will matter.
+Present this to the user and get confirmation before writing code —
+unless you are executing inside an autonomous workflow (e.g.,
+`/local-workflow:execute`) that explicitly says not to pause. In
+that case, the issue requirements and architecture plan serve as the
+approved specification — proceed directly to Step 4.
 
 When the user's request is vague or ambiguous, ask clarifying questions to fill in the gaps in this structure before presenting it. Shape your questions around what's missing:
 

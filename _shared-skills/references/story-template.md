@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 # Story Template
 
 Each story is a single-session unit of work for an autonomous agent.

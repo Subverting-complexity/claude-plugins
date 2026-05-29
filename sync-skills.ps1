@@ -34,9 +34,11 @@ if ($Plugin) {
     $plugins = $allPlugins
 }
 
-$skillDirs = Get-ChildItem -Path $sharedDir -Directory | Where-Object { $_.Name -ne '_shared' }
+$skillDirs = Get-ChildItem -Path $sharedDir -Directory | Where-Object { $_.Name -ne '_shared' -and $_.Name -ne 'references' }
 $sharedSubDir = Join-Path $sharedDir '_shared'
 $hasShared = Test-Path $sharedSubDir
+$referencesDir = Join-Path $sharedDir 'references'
+$hasReferences = Test-Path $referencesDir
 
 $script:driftFound = $false
 $script:syncCount = 0
@@ -134,6 +136,12 @@ foreach ($pluginName in $plugins) {
         Write-Output "  [_shared]"
         Sync-Directory -SourceDir $sharedSubDir -DestDir $destSharedDir -PluginName $pluginName
     }
+
+    if ($hasReferences) {
+        $destReferencesDir = Join-Path (Join-Path $repoRoot $pluginName) 'references'
+        Write-Output "  [references]"
+        Sync-Directory -SourceDir $referencesDir -DestDir $destReferencesDir -PluginName $pluginName
+    }
 }
 
 Write-Output ""
@@ -147,4 +155,15 @@ if ($Verify) {
     }
 } else {
     Write-Output "Synced $($script:syncCount) file(s) across $($plugins.Count) plugin(s)."
+    if ($script:syncCount -gt 0) {
+        Write-Output ""
+        Write-Output "REMINDER: Bump plugin version(s) if these changes are user-facing."
+        foreach ($pluginName in $plugins) {
+            $pluginJsonPath = Join-Path (Join-Path (Join-Path $repoRoot $pluginName) '.claude-plugin') 'plugin.json'
+            if (Test-Path $pluginJsonPath) {
+                $pluginJson = Get-Content -Path $pluginJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                Write-Output "  $pluginName : current version $($pluginJson.version)"
+            }
+        }
+    }
 }

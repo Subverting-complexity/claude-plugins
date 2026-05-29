@@ -65,9 +65,9 @@ Be relentless. The goal is shared understanding with every open question resolve
 
 ### Interview mechanics
 
-- **Lead with recommendations.** For every question, state what you'd recommend and why before asking. Don't just interrogate. Give your best answer based on codebase research, then ask if the user agrees or wants to change it. Tappable options should reflect your recommendation as the first choice.
+- **Lead with recommendations.** For every question, state what you'd recommend and why before asking. Don't just interrogate. Give your best answer based on codebase research, then ask if the user agrees or wants to change it.
 - **Self-answer from the codebase.** Before asking anything, check if the codebase answers it. If it does, show what you found, state what you're recording, and move on. Only ask the user what the codebase can't tell you.
-- **Batch related questions.** Group questions that belong to the same topic into a single turn. Use multiple `interactive selection` calls per turn when they cover related topics. Don't artificially slow the interview down.
+- **Batch related questions.** Group questions that belong to the same topic into a single turn. Don't artificially slow the interview down.
 - **Push back on vague answers.** "It depends", "probably X", "we'll figure it out later" are not answers. Probe until concrete or explicitly deferred.
 - **Flag conflicts.** If a later answer contradicts an earlier one, surface it immediately. Don't silently accept the contradiction.
 - **Defer consciously.** If something genuinely can't be decided yet, note it as an open issue with a stated reason and move on. Never silently skip.
