@@ -28,13 +28,13 @@ for file in "${skill_files[@]}"; do
     if head -n5 "$file" | grep -q '^---$'; then
         has_frontmatter=true
 
-        # Extract frontmatter block
-        frontmatter=$(sed -n '/^---$/,/^---$/p' "$file" | head -50)
+        # Extract frontmatter block (avoid sed|head pipe to prevent SIGPIPE with pipefail)
+        frontmatter=$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$file")
 
         # Check required fields
         if echo "$frontmatter" | grep -qE '^name:'; then
             has_name=true
-            name_value=$(echo "$frontmatter" | grep -oP '^name:\s*\K.*' | tr -d '"' | xargs)
+            name_value=$(echo "$frontmatter" | grep -E '^name:' | sed 's/^name:[[:space:]]*//' | tr -d '"' | xargs)
         fi
         if echo "$frontmatter" | grep -qE '^description:'; then
             has_description=true
