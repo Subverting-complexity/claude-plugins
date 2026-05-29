@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Pre-commit hook: blocks commits that directly edit synced skill copies.
+# Install: cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+SYNC_MARKER='<!-- SYNCED from _shared-skills/'
+
+staged_files=$(git diff --cached --name-only --diff-filter=AM)
+
+violations=()
+for file in $staged_files; do
+    if [[ "$file" != _shared-skills/* ]] && [[ -f "$file" ]]; then
+        head -n1 "$file" 2>/dev/null | grep -qF "$SYNC_MARKER" && violations+=("$file")
+    fi
+done
+
+if [ ${#violations[@]} -gt 0 ]; then
+    echo "ERROR: The following staged files are synced copies."
+    echo "       Edit the canonical source in _shared-skills/ instead,"
+    echo "       then run ./sync-skills.ps1 (or ./sync-skills.sh)."
+    echo ""
+    for v in "${violations[@]}"; do
+        echo "  $v"
+    done
+    echo ""
+    echo "If you intentionally need to override, use --no-verify."
+    exit 1
+fi

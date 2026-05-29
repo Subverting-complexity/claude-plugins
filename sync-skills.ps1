@@ -42,15 +42,30 @@ $hasReferences = Test-Path $referencesDir
 
 $script:driftFound = $false
 $script:syncCount = 0
+$script:deleteCount = 0
+
+function Get-PluginVersion {
+    param([string]$PluginName)
+    $pluginJsonPath = Join-Path (Join-Path (Join-Path $repoRoot $PluginName) '.claude-plugin') 'plugin.json'
+    if (Test-Path $pluginJsonPath) {
+        $pluginJson = Get-Content -Path $pluginJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        return $pluginJson.version
+    }
+    return '0.0.0'
+}
 
 function Process-MdContent {
     param([string]$Content, [string]$PluginName)
     $result = $Content -replace '\{\{PLUGIN_NAME\}\}', $PluginName
+    $version = Get-PluginVersion -PluginName $PluginName
+    $result = $result -replace '\{\{PLUGIN_VERSION\}\}', $version
     if (-not $result.StartsWith($syncComment)) {
         $result = $syncComment + "`n" + $result
     }
     return $result
 }
+
+$script:expectedFiles = @{}
 
 function Sync-Directory {
     param([string]$SourceDir, [string]$DestDir, [string]$PluginName)
@@ -61,6 +76,8 @@ function Sync-Directory {
         $relativePath = $file.FullName.Substring($SourceDir.Length).TrimStart('\', '/')
         $destPath = Join-Path $DestDir $relativePath
         $destParent = Split-Path $destPath -Parent
+
+        $script:expectedFiles[$destPath] = $true
 
         if ($file.Extension -eq '.md') {
             $sourceContent = Get-Content -Path $file.FullName -Raw -Encoding UTF8
@@ -114,6 +131,38 @@ function Sync-Directory {
     }
 }
 
+function Remove-OrphanedFiles {
+    param([string]$DestDir, [string]$Label)
+
+    if (-not (Test-Path $DestDir)) { return }
+
+    $existingFiles = Get-ChildItem -Path $DestDir -Recurse -File
+    foreach ($file in $existingFiles) {
+        if (-not $script:expectedFiles.ContainsKey($file.FullName)) {
+            $relativePath = $file.FullName.Substring($DestDir.Length).TrimStart('\', '/')
+            if ($Verify) {
+                Write-Output "  ORPHAN: $relativePath (would be deleted)"
+                $script:driftFound = $true
+            } else {
+                Remove-Item -Path $file.FullName -Force
+                $script:deleteCount++
+                Write-Output "  Deleted orphan: $relativePath"
+            }
+        }
+    }
+
+    # Clean up empty directories left behind
+    if (-not $Verify) {
+        $dirs = Get-ChildItem -Path $DestDir -Recurse -Directory | Sort-Object { $_.FullName.Length } -Descending
+        foreach ($dir in $dirs) {
+            if ((Get-ChildItem -Path $dir.FullName -Force).Count -eq 0) {
+                Remove-Item -Path $dir.FullName -Force
+                Write-Output "  Removed empty dir: $($dir.Name)"
+            }
+        }
+    }
+}
+
 foreach ($pluginName in $plugins) {
     $pluginSkillsDir = Join-Path (Join-Path $repoRoot $pluginName) 'skills'
 
@@ -124,6 +173,8 @@ foreach ($pluginName in $plugins) {
 
     Write-Output ""
     Write-Output "=== $pluginName ==="
+
+    $script:expectedFiles = @{}
 
     foreach ($skillDir in $skillDirs) {
         $destSkillDir = Join-Path $pluginSkillsDir $skillDir.Name
@@ -142,6 +193,19 @@ foreach ($pluginName in $plugins) {
         Write-Output "  [references]"
         Sync-Directory -SourceDir $referencesDir -DestDir $destReferencesDir -PluginName $pluginName
     }
+
+    # Clean up orphaned files from removed shared skills
+    Write-Output "  [cleanup]"
+    foreach ($skillDir in $skillDirs) {
+        $destSkillDir = Join-Path $pluginSkillsDir $skillDir.Name
+        Remove-OrphanedFiles -DestDir $destSkillDir -Label $skillDir.Name
+    }
+    if ($hasShared) {
+        Remove-OrphanedFiles -DestDir (Join-Path $pluginSkillsDir '_shared') -Label '_shared'
+    }
+    if ($hasReferences) {
+        Remove-OrphanedFiles -DestDir (Join-Path (Join-Path $repoRoot $pluginName) 'references') -Label 'references'
+    }
 }
 
 Write-Output ""
@@ -154,8 +218,8 @@ if ($Verify) {
         exit 0
     }
 } else {
-    Write-Output "Synced $($script:syncCount) file(s) across $($plugins.Count) plugin(s)."
-    if ($script:syncCount -gt 0) {
+    Write-Output "Synced $($script:syncCount) file(s), deleted $($script:deleteCount) orphan(s) across $($plugins.Count) plugin(s)."
+    if ($script:syncCount -gt 0 -or $script:deleteCount -gt 0) {
         Write-Output ""
         Write-Output "REMINDER: Bump plugin version(s) if these changes are user-facing."
         foreach ($pluginName in $plugins) {

@@ -11,9 +11,10 @@ This repo contains multiple Claude Code plugins that share skills.
    ANY skill file, check whether it exists in `_shared-skills/` — if
    it does, that is the only file you may edit.
 
-2. **Always run `./sync-skills.ps1` after editing a shared skill.**
-   This deploys the change to all plugins. Commit the canonical file
-   AND the synced copies together in the same commit.
+2. **Always run `./sync-skills.ps1` (or `./sync-skills.sh`) after
+   editing a shared skill.** This deploys the change to all plugins.
+   Commit the canonical file AND the synced copies together in the
+   same commit.
 
 3. **Always bump plugin versions before merging.** If you changed any
    file in a plugin (directly or via sync), bump that plugin's version
@@ -38,9 +39,10 @@ plugins. The full list is in `_shared-skills/MANIFEST.md`:
 ### How to edit
 
 1. Edit the file in `_shared-skills/{skill}/SKILL.md`
-2. Use `{{PLUGIN_NAME}}` for any plugin-specific references
-   (e.g., `/{{PLUGIN_NAME}}:execute`)
-3. Run `./sync-skills.ps1` to deploy to all plugins
+2. Use `{{PLUGIN_NAME}}` for plugin-specific references
+   (e.g., `/{{PLUGIN_NAME}}:execute`) and `{{PLUGIN_VERSION}}`
+   for version references
+3. Run `./sync-skills.ps1` (or `./sync-skills.sh`) to deploy
 4. Run `./sync-skills.ps1 -Verify` to confirm zero drift
 5. Commit canonical + synced copies together
 6. Bump affected plugin versions
@@ -48,7 +50,8 @@ plugins. The full list is in `_shared-skills/MANIFEST.md`:
 ### Checking for drift
 
 ```powershell
-./sync-skills.ps1 -Verify
+./sync-skills.ps1 -Verify    # PowerShell
+./sync-skills.sh --verify     # Bash (macOS/Linux)
 ```
 
 Returns exit code 1 if any plugin copy has drifted from the canonical
@@ -60,3 +63,18 @@ source.
 |--------|-------------|
 | `github-workflow` | GitHub-based development workflows (stories, PRs, reviews) |
 | `local-workflow` | Project-agnostic local development (coding, architecture, discovery) |
+
+## Tooling
+
+| Tool | What it does |
+|------|-------------|
+| `sync-skills.ps1` / `sync-skills.sh` | Sync shared skills to plugins, clean up orphans |
+| `lint-skills.sh` | Validate skill frontmatter and detect unreplaced placeholders |
+| `hooks/pre-commit` | Git hook that blocks commits editing synced copies directly |
+| `.github/workflows/ci.yml` | CI: drift check, skill lint, plugin.json validation |
+
+### Installing the pre-commit hook
+
+```bash
+cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+```
