@@ -87,20 +87,23 @@ gh pr view {pr_number} --repo {org}/{repo} --json mergeable,mergeStateStatus
 
 If `mergeable` is `CONFLICTING`:
 
-1. Fetch and merge the base branch into the feature branch:
+1. Fetch the latest base branch and rebase onto it:
    ```
    git fetch origin {default-branch}
-   git merge origin/{default-branch}
+   git rebase origin/{default-branch}
    ```
-2. Resolve all conflicts. Read each conflicted file, understand both
-   sides, and pick the correct resolution.
-3. After resolving, run the quality gate again (1 run — if it fails,
-   fix and retry once more, 2 total).
-4. Commit the merge and push:
+2. Resolve conflicts one commit at a time as the rebase progresses.
+   Read each conflicted file, understand both sides, and pick the
+   correct resolution. Then continue:
    ```
    git add <resolved-files>
-   git commit -m "Merge {default-branch} and resolve conflicts"
-   git push
+   git rebase --continue
+   ```
+3. After the rebase completes, run the quality gate again (1 run —
+   if it fails, fix and retry once more, 2 total).
+4. Force-push the rebased branch:
+   ```
+   git push --force-with-lease
    ```
 
 **Classify the conflict resolution:**
@@ -110,7 +113,7 @@ If `mergeable` is `CONFLICTING`:
 - **Complex conflicts** (overlapping logic changes, altered control
   flow, modified function signatures, deleted code that the PR
   depended on): apply the `needs-re-review` label so the reviewer
-  evaluates the merged result:
+  evaluates the rebased result:
   ```
   gh pr edit {pr_number} --add-label "{needs_re_review_label}"
   ```

@@ -137,20 +137,23 @@ gh pr view {pr_number} --repo {org}/{repo} --json mergeable,mergeStateStatus
 
 If `mergeable` is `CONFLICTING`:
 
-1. Fetch and merge the base branch:
+1. Fetch the latest base branch and rebase onto it:
    ```
    git fetch origin {default-branch}
-   git merge origin/{default-branch}
+   git rebase origin/{default-branch}
    ```
-2. Resolve all conflicts. Read each conflicted file, understand both
-   sides, and pick the correct resolution.
-3. After resolving, run the quality gate once (retry once if it fails,
-   2 total).
-4. Commit the merge and push:
+2. Resolve conflicts one commit at a time as the rebase progresses.
+   Read each conflicted file, understand both sides, and pick the
+   correct resolution. Then continue:
    ```
    git add <resolved-files>
-   git commit -m "Merge {default-branch} and resolve conflicts"
-   git push
+   git rebase --continue
+   ```
+3. After the rebase completes, run the quality gate once (retry once
+   if it fails, 2 total).
+4. Force-push the rebased branch:
+   ```
+   git push --force-with-lease
    ```
 
 Conflict resolution counts as a change when classifying significance
