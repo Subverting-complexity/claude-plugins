@@ -27,6 +27,35 @@ jobs:
         shell: bash
         run: bash lint-skills.sh
 
+  version-bump-check:
+    name: Check plugin versions are bumped
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version bumps for changed plugins
+        shell: bash
+        run: |
+          status=0
+          base="${{ github.event.pull_request.base.sha }}"
+          for plugin in github-workflow local-workflow; do
+            changed=$(git diff --name-only "$base"...HEAD -- "$plugin/" | grep -v '.claude-plugin/plugin.json' | head -1)
+            if [ -n "$changed" ]; then
+              old_version=$(git show "$base:$plugin/.claude-plugin/plugin.json" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+              new_version=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" < "$plugin/.claude-plugin/plugin.json")
+              if [ "$old_version" = "$new_version" ]; then
+                echo "FAIL: $plugin/ has changes but version is still $old_version — bump it in plugin.json"
+                status=1
+              else
+                echo "OK: $plugin version bumped $old_version → $new_version"
+              fi
+            fi
+          done
+          exit $status
+
   validate-plugin-json:
     name: Validate plugin manifests
     runs-on: ubuntu-latest

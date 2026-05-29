@@ -9,18 +9,23 @@ Help the user understand the plugin and figure out where to start.
 Trigger: when the user asks "how do I use this", "how do I get started",
 "what can you do", "help", or similar orientation questions.
 
+## Project state (auto-detected)
+
+```!
+echo "--- Project files ---"
+[ -f ClaudeProject.md ] && echo "ClaudeProject.md: found" || echo "ClaudeProject.md: missing"
+[ -f CLAUDE.md ] && echo "CLAUDE.md: found" || echo "CLAUDE.md: missing"
+echo ""
+echo "--- Git remote ---"
+git remote -v 2>/dev/null | head -2 || echo "No git remote configured"
+echo ""
+echo "--- GitHub CLI ---"
+gh auth status 2>&1 | head -3
+```
+
 ## Steps
 
-### 1. Check project state
-
-Silently check for:
-
-- `ClaudeProject.md` at the project root
-- `CLAUDE.md` at the project root
-- Whether this is a git repo with a remote
-- Whether `gh` CLI is authenticated
-
-### 2. Respond based on state
+### 1. Respond based on detected state
 
 **No config files found:**
 

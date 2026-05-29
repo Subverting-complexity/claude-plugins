@@ -72,6 +72,24 @@ for file in "${skill_files[@]}"; do
         echo "WARN: $rel — missing 'description' in frontmatter"
     fi
 
+    # Validate depends-on references exist as skill directories in the same plugin
+    if [ "$has_frontmatter" = true ]; then
+        depends_on=$(echo "$frontmatter" | awk '/^depends-on:/{found=1; next} found && /^  - /{gsub(/^  - /,""); print} found && !/^  - /&&!/^$/{found=0}')
+        if [ -n "$depends_on" ]; then
+            plugin_dir=$(echo "$rel" | cut -d'/' -f1)
+            while IFS= read -r dep; do
+                dep=$(echo "$dep" | xargs)
+                [ -z "$dep" ] && continue
+                skill_path="$REPO_ROOT/$plugin_dir/skills/$dep/SKILL.md"
+                command_path="$REPO_ROOT/$plugin_dir/commands/$dep.md"
+                if [ ! -f "$skill_path" ] && [ ! -f "$command_path" ]; then
+                    echo "FAIL: $rel — depends-on '$dep' not found in $plugin_dir/skills/ or $plugin_dir/commands/"
+                    status=1
+                fi
+            done <<< "$depends_on"
+        fi
+    fi
+
     # Track trigger phrases for collision detection (from description field)
     if [ -n "$name_value" ]; then
         if [ -n "${trigger_map[$name_value]+x}" ]; then

@@ -7,11 +7,21 @@ description: 'Pick the next story from the backlog without starting it. Trigger:
 Select the next story from the backlog. Before looking for new work,
 check for stale in-progress stories that can be reclaimed.
 
+## Project configuration (auto-loaded)
+
+```!
+if [ -f ClaudeProject.md ]; then
+  cat ClaudeProject.md
+else
+  echo "ClaudeProject.md NOT FOUND — run /github-workflow:setup first."
+fi
+```
+
 ## Steps
 
 ### 1. Read configuration
 
-Read `ClaudeProject.md` and extract:
+Extract from the project configuration above:
 
 - `org` and `repo` from Identity
 - `default-branch` from Identity

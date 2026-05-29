@@ -7,11 +7,18 @@ edit plugin copies directly** — edit here, then run `sync-skills.ps1`.
 
 | Skill | Deployed to | Notes |
 |-------|-------------|-------|
+| `acceptance-criteria` | github-workflow, local-workflow | User-facing test criteria, grouped by change |
 | `code-architect` | github-workflow, local-workflow | Includes `references/` subdirectory with architecture book summaries |
+| `debugging` | github-workflow, local-workflow | Systematic reproduce → hypothesize → isolate → fix → verify cycle |
+| `doc-writer` | github-workflow, local-workflow | README, API docs, architecture guides, migration guides, changelogs |
 | `feature-discovery` | github-workflow, local-workflow | Uses `references/story-template.md` |
 | `grill-me` | github-workflow, local-workflow | `disable-model-invocation: true`, no filesystem output |
+| `pr-description` | github-workflow, local-workflow | Structured PR bodies from committed changes |
 | `repo-scaffolding` | github-workflow, local-workflow | Uses `references/story-template.md`, no spec docs |
+| `security-audit` | github-workflow, local-workflow | Dependency scanning, secrets detection, OWASP Top 10, input validation |
 | `structured-coding` | github-workflow, local-workflow | Autonomous workflow escape hatch |
+| `user-story` | github-workflow, local-workflow | Single user story from rough notes or requirements |
+| `verify-feature` | github-workflow, local-workflow | Pre-merge containment, completeness, and side-effect analysis |
 
 ## Shared resources
 

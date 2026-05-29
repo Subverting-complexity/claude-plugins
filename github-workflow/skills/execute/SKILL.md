@@ -1,4 +1,5 @@
 ---
+name: execute
 description: 'End-to-end story execution: pick → plan → build → test → PR'
 when_to_use: >-
   Trigger when the user wants development work done. Any of these:
@@ -37,8 +38,17 @@ are:
   can begin — run `/github-workflow:feature-discovery` to plan the
   breakdown with the user, then pick the first sub-story.
 
-Read `ClaudeProject.md` for all project-specific settings before starting.
-If `ClaudeProject.md` does not exist, stop and tell the user to run
+## Project configuration (auto-loaded)
+
+```!
+if [ -f ClaudeProject.md ]; then
+  cat ClaudeProject.md
+else
+  echo "ClaudeProject.md NOT FOUND"
+fi
+```
+
+If the above shows "NOT FOUND", stop and tell the user to run
 `/github-workflow:setup` first. Do not attempt to proceed without it —
 every subsequent step depends on the values defined there.
 
@@ -113,6 +123,35 @@ Default mode is `story`. Override with `$ARGUMENTS.mode`:
 - **audit** — Audit the codebase, create issues for findings, no code changes
 
 If mode is `audit`, skip to the Audit section at the bottom.
+
+---
+
+## Session state checkpoint
+
+Before each phase transition, write `.claude/execution-checkpoint.md`
+with the current state. This allows recovery if the session ends
+unexpectedly:
+
+```markdown
+# Execution Checkpoint
+- Story: #{number}
+- Phase: {current_phase} ({phase_name})
+- Branch: {branch_name}
+- Files modified: {list from git diff --name-only}
+- Tests passing: {yes/no/not yet run}
+- Last updated: {ISO 8601 timestamp}
+```
+
+At the start of execution, check for an existing checkpoint file. If
+one exists and matches an in-progress story:
+
+1. Read the checkpoint to determine where the previous session stopped.
+2. Verify the branch exists and check it out.
+3. Resume from the recorded phase rather than starting over.
+4. If the checkpoint is stale (older than `stale-timeout`), discard it
+   and start fresh.
+
+Delete the checkpoint file after Phase 7 completes successfully.
 
 ---
 
