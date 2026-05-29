@@ -650,5 +650,5 @@ mean and what action (if any) to take. Labels use the prefix defined in
 - Never use `gh pr review --approve`. Always use `gh pr comment`.
 - Do not merge or close any PR.
 - Do not make discretionary refactors or stylistic changes.
-- Only push fixes for objective problems that would block merge.
+- Push fixes for all concrete, objectively wrong problems (blocking and minor).
 - Review one PR per invocation, then exit.

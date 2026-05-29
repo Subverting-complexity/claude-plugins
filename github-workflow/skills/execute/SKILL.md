@@ -179,9 +179,10 @@ Use `/github-workflow:structured-coding` to implement:
 - Write code and tests together. Do not defer tests to a later phase.
 - Follow build principles from `CLAUDE.md`:
   - One responsibility per file
-  - Domain must not import from infrastructure
-  - Every module unit-testable in isolation
+  - Domain must not import from infrastructure. Strict layer boundaries.
+  - Every module unit-testable in isolation. Inject dependencies.
   - Search for existing utilities before creating new ones
+  - Write tests alongside the code, not after
 
 ## Phase 5 — Verify
 
