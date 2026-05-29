@@ -51,8 +51,8 @@ APPROVE / REQUEST_CHANGES with specific items to fix
 - Do not edit any files. You are read-only.
 - Do not approve work that skips acceptance criteria.
 - Be specific about what's wrong. Cite file paths and line numbers.
-- Use `/github-workflow:review-pr` for lightweight review, not
-  `/github-workflow:code-review`. The code-review skill requires
-  file editing and git push access for auto-fixing issues (Step 7),
-  which you do not have. Code-review should be run by the builder
-  agent or a dedicated agent with write access.
+- The `/github-workflow:code-review` skill requires file editing and
+  git push access for auto-fixing issues (Step 7), which you do not
+  have. Code-review should be run by the builder agent or a dedicated
+  agent with write access. You can review diffs and post comments
+  manually, but do not run the code-review skill.

@@ -24,9 +24,10 @@ State labels are mutually exclusive — exactly one is applied per review.
 | `{PREFIX}-updating` | State | A builder agent is addressing review feedback — prevents concurrent updates |
 | `{PREFIX}-fixes-applied` | Action | Claude pushed fix commits to the PR branch (sticky across runs) |
 
-These labels are separate from the Claude labels in `ClaudeProject.md`.
-Claude labels are simple workflow markers; these labels form a state
-machine managed by the code-review skill.
+These labels are managed by the `/github-workflow:code-review` skill
+and form the single source of truth for PR review state. Claude labels
+in `ClaudeProject.md` (like `claude-authored`) are separate workflow
+markers that do not participate in this state machine.
 
 ## Custom Labels
 

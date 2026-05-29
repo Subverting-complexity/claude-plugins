@@ -134,7 +134,16 @@ Remove the `updating` label (your claim is done):
 gh pr edit {pr_number} --remove-label "{updating_label}"
 ```
 
-Then classify the changes you pushed:
+Then classify the changes you pushed and determine the label outcome:
+
+**If trivial AND all Issues Remaining were addressed:**
+
+All review feedback has been resolved with minor fixes. Remove the
+current state label and apply `approved` — no re-review needed:
+
+```
+gh pr edit {pr_number} --remove-label "{current_state_label}" --add-label "{approved_label}"
+```
 
 **If substantial** (new logic, changed APIs, modified tests):
 
@@ -144,10 +153,11 @@ Remove the current state label and apply `needs-re-review`:
 gh pr edit {pr_number} --remove-label "{current_state_label}" --add-label "{needs_re_review_label}"
 ```
 
-**If trivial** (only formatting, typos, dead code removal):
+**If trivial BUT some Issues Remaining were NOT addressed:**
 
-Leave the current state label in place. The next code-review run will
-detect the SHA change and fast-track it.
+Leave the current state label in place (`changes-requested` stays).
+The next code-review run will detect the SHA change and evaluate
+whether the unaddressed items are still relevant.
 
 ### 8. Error handling
 

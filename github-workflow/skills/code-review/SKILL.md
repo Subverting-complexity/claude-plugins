@@ -319,8 +319,25 @@ Remove the `needs-re-review` label, ensure the `approved` label is
 present, and exit. Do not proceed to Step 5.
 
 **If trivial and previous verdict was `changes-requested`:**
-Proceed to Step 5 for a full re-review — the original issues may still
-be unresolved.
+Check whether the trivial changes address every item in the previous
+review's Issues Remaining list. If they do — all flagged issues are
+resolved by the diff — post an abbreviated approval:
+
+```
+## Re-review by Claude
+
+**Verdict: Approved**
+
+All previously flagged issues have been addressed with trivial fixes.
+
+<footer from review.config.md>
+```
+
+Remove the `needs-re-review` and `changes-requested` labels, apply
+`approved`, and exit. Do not proceed to Step 5.
+
+If the trivial changes do NOT address all Issues Remaining, proceed to
+Step 5 for a full re-review — the original issues are still unresolved.
 
 **If substantial:**
 Proceed to Step 5 for a full re-review regardless of previous verdict.
@@ -410,27 +427,43 @@ unrelated refactors, formatting changes, or comment edits.
 
 ### Step 7 — Fix issues
 
-If concrete problems are found (unrealistic test mocks, missing null
-checks, logic errors, missing test coverage, dead code, mismatched types),
-fix them directly on the PR branch. Commit each fix with a clear message.
-Push the fixes.
+Fix **all** concrete, objectively wrong problems directly on the PR branch.
+This includes both blocking issues and minor non-blocking observations:
 
-Do **not** fix stylistic preferences or make discretionary refactors. Only
-fix things that are objectively wrong or would block merge.
+- Unrealistic test mocks, missing null checks, logic errors
+- Missing test coverage, dead code, mismatched types
+- Missing trailing newlines, formatting inconsistencies
+- Null-forgiving operators, unnecessary casts
+- Utility method placement, misplaced code
+- Any other issue where the correct fix is obvious and unambiguous
 
-If an issue is architectural or requires a design decision, do not fix it.
-Flag it in the review comment as needing discussion.
+Commit each fix with a clear message. Push the fixes.
+
+Do **not** fix:
+- Stylistic preferences where multiple valid approaches exist
+- Architectural decisions that require human judgment
+- Issues where the "right fix" depends on product or design context
+
+Flag anything you cannot fix in the review comment as needing discussion.
 
 After pushing fixes, update the recorded commit SHA to the new `HEAD`.
 
 ### Step 8 — Determine the verdict
 
-- **Approved** — Zero hard non-compliance failures, zero remaining issues.
-  PR is fully ready to merge.
+Re-evaluate the PR state **after** Step 7 fixes. Issues that were
+auto-fixed do not count as remaining issues.
+
+- **Approved** — Zero hard non-compliance failures, zero remaining issues
+  after fixes. All problems were either absent or auto-fixed. PR is fully
+  ready to merge.
 - **Changes Requested** — Any hard non-compliance failure, or any remaining
-  problem that needs human action.
+  problem that could not be auto-fixed and needs human action.
 - **Needs Discussion** — No hard failures, but architectural questions or
   ambiguities need human judgment before merge.
+
+If every issue found in Step 6 was resolved in Step 7, the verdict is
+**Approved** — not "Changes Requested with observations". The fixes are
+already pushed; there is nothing left for the builder to do.
 
 ### Step 9 — Post the review
 
@@ -510,15 +543,14 @@ review thoroughly):
 
 ## Addressing Review Feedback
 
-After a review concludes with a `Changes Requested` verdict, the PR
-needs updates before it can be re-reviewed. This can happen in two ways:
-
 ### Automatic (during this review run)
 
-Step 7 already fixes objective issues and pushes them. If Step 7
-resolved **all** issues — meaning the Issues Remaining list is empty
-after fixes — re-evaluate the verdict before posting. The PR may now
-qualify for `Approved`.
+Step 7 fixes all objective issues and pushes them. Step 8 then
+re-evaluates the verdict **after** those fixes. If every issue was
+auto-fixed (Issues Remaining is empty), the verdict is **Approved** and
+the PR gets the `approved` label. The reviewer should fix aggressively —
+minor observations (missing trailing newline, utility placement, etc.)
+are cheap to fix and should not generate a "Changes Requested" round-trip.
 
 ### Manual (separate invocation)
 
@@ -527,26 +559,37 @@ left with the `changes-requested` label. To address that feedback:
 
 - A human or **builder** agent runs `/github-workflow:update-pr` to
   read the review comment, fix each item in Issues Remaining, push
-  changes, and apply `needs-re-review`. (The reviewer agent is
-  read-only and cannot run this command — it requires file editing
-  and git push access.)
+  changes, and update labels. (The reviewer agent is read-only and
+  cannot run this command — it requires file editing and git push
+  access.)
+- Alternatively, anyone (human or agent) can push commits to the PR
+  branch directly. The next code-review run will detect the SHA change
+  (Step 1) and re-review the PR automatically — no explicit
+  `/update-pr` invocation required.
 - The next code-review run will pick up PRs with `needs-re-review`
   (they are prioritised in Step 1) and perform a re-review.
 
 ### Change significance on update
 
-When changes are pushed to a reviewed PR (by `update-pr` or any other
-process), the pusher classifies the changes:
+When changes are pushed to a reviewed PR (by `update-pr`, ad-hoc push,
+or any other process), the change significance determines what happens
+next.
 
-**Trivial (no re-review needed):**
+**Trivial changes — auto-approve if all issues addressed:**
 - Whitespace, formatting, or import-order fixes
 - Typo corrections in comments or documentation
 - Removing dead code flagged in the review
 - Variable renames with no behaviour change
 
-Leave the existing state label in place.
+If the pusher is `update-pr` and all Issues Remaining were addressed:
+remove the current state label and apply `approved`. No re-review needed.
 
-**Substantial (re-review required):**
+If changes are trivial but pushed ad-hoc (no explicit update-pr run):
+leave the existing state label in place. The next code-review run will
+detect the SHA change, fast-track the re-review (Step 4b), and apply
+the appropriate verdict.
+
+**Substantial changes — re-review required:**
 - New or modified logic, control flow, or calculations
 - New files, dependencies, or changed APIs
 - Test additions or modified assertions

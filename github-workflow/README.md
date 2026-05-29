@@ -27,7 +27,6 @@ claude --plugin-dir ./plugins/github-workflow
 | `/github-workflow:finish-story`         | Push, PR, board update                   |
 | `/github-workflow:block-story`          | Mark current story as blocked            |
 | `/github-workflow:report-issue`         | Create a bug/arch/debt issue             |
-| `/github-workflow:review-pr`            | Quick review: PR vs acceptance criteria  |
 | `/github-workflow:update-pr`            | Address review feedback and re-flag PR   |
 | `/github-workflow:setup`                | Interactive project onboarding wizard    |
 | `/github-workflow:guide`                | How to get started / what can I do?      |
@@ -67,7 +66,6 @@ github-workflow/
 │   ├── finish-story.md        # Push, PR, set In Review
 │   ├── block-story.md         # Handle blockers
 │   ├── report-issue.md        # Create bug/arch/debt issues
-│   ├── review-pr.md           # Quick review: PR vs acceptance criteria
 │   ├── update-pr.md           # Address review feedback on a PR
 │   ├── setup.md               # Interactive project onboarding
 │   └── guide.md               # How to get started / orientation
