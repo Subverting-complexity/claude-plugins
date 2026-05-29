@@ -21,10 +21,27 @@ Read `ClaudeProject.md` and extract:
 - Project board settings (if configured)
 - Label map
 
-### 2. Assign the issue
+### 2. Claim the issue
+
+Multiple agents may be running concurrently. Use assignment as a claim
+lock to prevent two agents from starting the same story:
 
 ```
 gh issue edit {number} --repo {org}/{repo} --add-assignee @me
+```
+
+Wait 2 seconds, then re-read the issue to verify your claim:
+
+```
+gh issue view {number} --repo {org}/{repo} --json assignees
+```
+
+If you are the only assignee, proceed. If another user or agent was
+assigned first (multiple assignees), remove yourself and exit — the
+other agent owns this story:
+
+```
+gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 ```
 
 ### 3. Update project board (if configured)

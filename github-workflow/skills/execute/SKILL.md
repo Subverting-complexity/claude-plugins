@@ -66,6 +66,35 @@ session, not to run indefinitely.
 - **One story, one session.** Do not pick a second story after finishing
   the first. End the session so the next one starts with a fresh context.
 
+**Session timeout awareness:**
+
+Record the start time at the beginning of execution (use `date +%s` or
+equivalent). Before starting each new phase, check elapsed time. If the
+session has been running for more than 45 minutes:
+
+1. Commit and push all current work immediately.
+2. If you have enough for a PR, open one (draft if incomplete).
+3. Create follow-up issues for any unfinished work.
+4. Exit cleanly — do not start a new phase that you may not finish.
+
+This prevents the harness from killing the session mid-work with nothing
+saved.
+
+## API rate limiting
+
+GitHub API has rate limits (5,000 requests/hour for authenticated
+users). Long autonomous sessions can accumulate many `gh` calls.
+
+- Before making a batch of API calls (e.g., listing issues, checking
+  milestones, updating board fields), check remaining quota:
+  ```
+  gh api rate_limit --jq '.rate.remaining'
+  ```
+- If remaining quota is below **100**, pause API-heavy operations.
+  Commit and push any current work, then exit with a message noting
+  the rate limit. The next session will continue from the pushed state.
+- Do not retry rate-limited requests in a loop — that makes it worse.
+
 If the story is blocked or turns out to need more than one session's
 worth of work, commit what you have, push the branch, open a draft PR
 noting what's done and what remains, and exit. The next session can pick
@@ -172,8 +201,18 @@ Use `/github-workflow:code-architect` to plan the implementation:
   based on the issue requirements. Do not run an interactive design
   interview or call grill-me.
 - Write the architecture plan to `.claude/plan.md` so it survives
-  context compaction. If the session compacts mid-build, re-read this
-  file to recover the plan.
+  context compaction. Include a checklist of files to create or modify,
+  each with a `[ ]` checkbox. Example:
+  ```
+  ## Files
+  - [ ] src/services/auth.ts — new auth service
+  - [ ] src/routes/login.ts — add login endpoint
+  - [ ] tests/auth.test.ts — auth service tests
+  ```
+- During Phase 4 (Build), mark each file `[x]` as you complete it.
+  If the session compacts mid-build, re-read `.claude/plan.md` to see
+  which files are done and which remain. Also check `git status` and
+  `git diff --name-only` to confirm what has actually been modified.
 - Consume the plan output and proceed to Build.
 - Do not pause for confirmation.
 - If requirements have gaps, make reasonable assumptions and note
@@ -266,6 +305,25 @@ When `$ARGUMENTS.mode` is `audit`:
 ---
 
 ## Escape hatches
+
+**Failure reporting**: If execution fails at any phase and cannot
+recover, leave a structured comment on the issue before exiting:
+
+```
+gh issue comment {number} --repo {org}/{repo} --body "## Autonomous execution failed
+
+**Phase:** {phase_name} (e.g., Build, Verify, Finish)
+**Error:** {one-line summary of what went wrong}
+**Branch:** {branch_name} (if created)
+**Commits pushed:** {yes/no}
+**What was completed:** {brief summary}
+**What remains:** {brief summary}
+
+_Automated by github-workflow execute_"
+```
+
+This ensures the next session (or human) can pick up exactly where
+this one failed without guessing what happened.
 
 **Blocked**: If any phase cannot proceed, run `/github-workflow:block-story`
 with details. Then pick the next story.
