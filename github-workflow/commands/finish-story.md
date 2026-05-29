@@ -77,7 +77,45 @@ Closes #43
 Each `Closes #N` must be on its own line so GitHub links them in
 the Development sidebar.
 
-### 6. Add labels to PR
+### 6. Resolve merge conflicts
+
+Check if the PR has merge conflicts with the base branch:
+
+```
+gh pr view {pr_number} --repo {org}/{repo} --json mergeable,mergeStateStatus
+```
+
+If `mergeable` is `CONFLICTING`:
+
+1. Fetch and merge the base branch into the feature branch:
+   ```
+   git fetch origin {default-branch}
+   git merge origin/{default-branch}
+   ```
+2. Resolve all conflicts. Read each conflicted file, understand both
+   sides, and pick the correct resolution.
+3. After resolving, run the quality gate again (1 run — if it fails,
+   fix and retry once more, 2 total).
+4. Commit the merge and push:
+   ```
+   git add <resolved-files>
+   git commit -m "Merge {default-branch} and resolve conflicts"
+   git push
+   ```
+
+**Classify the conflict resolution:**
+
+- **Trivial conflicts** (import ordering, adjacent-line edits,
+  whitespace, auto-resolved renames): no re-review needed.
+- **Complex conflicts** (overlapping logic changes, altered control
+  flow, modified function signatures, deleted code that the PR
+  depended on): apply the `needs-re-review` label so the reviewer
+  evaluates the merged result:
+  ```
+  gh pr edit {pr_number} --add-label "{needs_re_review_label}"
+  ```
+
+### 7. Add labels to PR
 
 If the `claude-authored` label is configured in the label map, apply it
 to mark this as a Claude-built PR:
@@ -86,7 +124,7 @@ to mark this as a Claude-built PR:
 gh pr edit {pr_number} --add-label "{claude_authored_label}"
 ```
 
-### 7. Update project board (if configured)
+### 8. Update project board (if configured)
 
 Set status to In Review:
 
@@ -105,7 +143,7 @@ Board operations are best-effort. If they fail, report the failure to
 the user (e.g., "Board update failed: {error}. Continuing without board
 update.") and proceed with the rest of the workflow.
 
-### 8. Report
+### 9. Report
 
 Display:
 

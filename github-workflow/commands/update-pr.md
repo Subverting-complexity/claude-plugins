@@ -126,7 +126,39 @@ git commit -m "Address review feedback on PR #{pr_number}"
 git push
 ```
 
-### 7. Assess change significance and update labels
+### 7. Resolve merge conflicts
+
+After pushing, check if the PR has merge conflicts with the base
+branch:
+
+```
+gh pr view {pr_number} --repo {org}/{repo} --json mergeable,mergeStateStatus
+```
+
+If `mergeable` is `CONFLICTING`:
+
+1. Fetch and merge the base branch:
+   ```
+   git fetch origin {default-branch}
+   git merge origin/{default-branch}
+   ```
+2. Resolve all conflicts. Read each conflicted file, understand both
+   sides, and pick the correct resolution.
+3. After resolving, run the quality gate once (retry once if it fails,
+   2 total).
+4. Commit the merge and push:
+   ```
+   git add <resolved-files>
+   git commit -m "Merge {default-branch} and resolve conflicts"
+   git push
+   ```
+
+Conflict resolution counts as a change when classifying significance
+in the next step — complex conflicts (overlapping logic, altered
+control flow, modified signatures) make the overall change
+**substantial** regardless of how trivial the review fixes were.
+
+### 8. Assess change significance and update labels
 
 Remove the `updating` label (your claim is done):
 
@@ -159,13 +191,13 @@ Leave the current state label in place (`changes-requested` stays).
 The next code-review run will detect the SHA change and evaluate
 whether the unaddressed items are still relevant.
 
-### 8. Error handling
+### 9. Error handling
 
 If anything goes wrong (checkout fails, quality gate can't pass, push
 fails), remove the `updating` label before exiting so another agent
 can pick up the PR.
 
-### 9. Report
+### 10. Report
 
 Display:
 
