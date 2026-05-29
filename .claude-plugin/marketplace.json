@@ -4,6 +4,15 @@
     "name": "Subverting Complexity"
   },
   "description": "Development workflow plugins by Subverting Complexity",
+  "repository": "https://github.com/Subverting-complexity/claude-plugins",
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "automation",
+    "development",
+    "code-review",
+    "architecture"
+  ],
   "plugins": [
     {
       "name": "github-workflow",

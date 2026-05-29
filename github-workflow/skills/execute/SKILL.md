@@ -9,6 +9,10 @@ when_to_use: >-
   "fix bugs", "fix the next bug", "fix security issues" (use mode=bug),
   "audit the codebase", "audit for security", "code audit", "run an audit" (use mode=audit).
   Also trigger when the user pastes a GitHub issue URL or references an issue number.
+depends-on:
+  - code-architect
+  - structured-coding
+  - feature-discovery
 argument-hint: '[issue#] [--mode bug|audit]'
 arguments:
   - name: story_number

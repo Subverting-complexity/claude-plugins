@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  sync-check:
+    name: Verify shared skills are in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run sync verification
+        shell: bash
+        run: bash sync-skills.sh --verify
+
+  lint-skills:
+    name: Lint skill metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run skill linter
+        shell: bash
+        run: bash lint-skills.sh
+
+  validate-plugin-json:
+    name: Validate plugin manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required fields
+        shell: bash
+        run: |
+          status=0
+          for f in */\.claude-plugin/plugin.json; do
+            plugin_dir=$(dirname "$(dirname "$f")")
+            name=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" < "$f")
+            version=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" < "$f")
+            desc=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('description',''))" < "$f")
+
+            if [ -z "$name" ]; then
+              echo "FAIL: $f missing 'name'"
+              status=1
+            fi
+            if [ -z "$version" ]; then
+              echo "FAIL: $f missing 'version'"
+              status=1
+            fi
+            if ! echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "FAIL: $f version '$version' is not valid semver"
+              status=1
+            fi
+            if [ -z "$desc" ]; then
+              echo "FAIL: $f missing 'description'"
+              status=1
+            fi
+            echo "OK: $plugin_dir ($name@$version)"
+          done
+          exit $status

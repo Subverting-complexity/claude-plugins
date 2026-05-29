@@ -27,6 +27,7 @@ The sync script replaces these placeholders with plugin-specific values:
 | Variable | Replacement |
 |----------|-------------|
 | `{{PLUGIN_NAME}}` | Plugin directory name (e.g., `github-workflow`, `local-workflow`) |
+| `{{PLUGIN_VERSION}}` | Plugin version from `plugin.json` (e.g., `1.7.0`) |
 
 ## Sync commands
 

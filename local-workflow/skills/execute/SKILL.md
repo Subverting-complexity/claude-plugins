@@ -14,6 +14,10 @@ when_to_use: >-
   without building them (use feature-discovery or grill-me instead). Do NOT
   use for verifying a completed feature before merge (use verify-feature
   instead).
+depends-on:
+  - code-architect
+  - structured-coding
+  - grill-me
 arguments:
   - name: mode
     description: 'Execution mode: build (default), audit (codebase audit, no code changes)'
