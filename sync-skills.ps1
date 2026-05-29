@@ -59,6 +59,7 @@ function Process-MdContent {
     $result = $Content -replace '\{\{PLUGIN_NAME\}\}', $PluginName
     $version = Get-PluginVersion -PluginName $PluginName
     $result = $result -replace '\{\{PLUGIN_VERSION\}\}', $version
+    $result = $result -replace "`r`n", "`n"
     if (-not $result.StartsWith($syncComment)) {
         $result = $syncComment + "`n" + $result
     }
@@ -85,7 +86,7 @@ function Sync-Directory {
 
             if ($Verify) {
                 if (Test-Path $destPath) {
-                    $existingContent = Get-Content -Path $destPath -Raw -Encoding UTF8
+                    $existingContent = (Get-Content -Path $destPath -Raw -Encoding UTF8) -replace "`r`n", "`n"
                     if ($existingContent.Trim() -ne $processedContent.Trim()) {
                         Write-Output "  DRIFT: $relativePath"
                         $script:driftFound = $true
