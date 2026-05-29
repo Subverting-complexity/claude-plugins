@@ -48,9 +48,12 @@ Present a brief summary of what you found:
 - Related existing stories or tasks
 - Potential integration points and constraints
 
-Then state the scope tier and which interview sections you plan to cover. First decision point:
+Then state the scope tier and which interview sections you plan to
+cover. Use `AskUserQuestion` to confirm:
 
-> `Agree with scope` · `This is bigger than that` · `This is smaller`
+- "Agree with scope (Recommended)" — proceed with the detected tier
+- "This is bigger than that" — bump up a tier
+- "This is smaller" — bump down a tier
 
 ---
 
@@ -70,13 +73,19 @@ Be relentless. The goal is shared understanding with every open question resolve
 - **Defer consciously.** If something genuinely can't be decided yet, note it as an open issue with a stated reason and move on. Never silently skip.
 - **Track context.** Maintain a running internal record of resolved questions and deferrals as you go. This ensures nothing falls through the cracks during decomposition.
 
-### Tappable options
+### Using AskUserQuestion
 
-Use `interactive selection` for any question with a bounded answer set: binary choices, picking from discovered patterns, confirming recommendations, scope in/out calls, phase-gate confirmations.
+Use the `AskUserQuestion` tool for any question with a bounded answer
+set: binary choices, picking from discovered patterns, confirming
+recommendations, scope in/out decisions, phase-gate confirmations.
 
-- 2-4 options, short labels.
-- If you find yourself writing an "Other" option because the real answer probably isn't in the list, ask in plain text instead.
-- If the user types instead of tapping, that's their answer.
+- 2-4 options per question, short labels.
+- Your recommended answer should be the first option with
+  "(Recommended)" appended to the label.
+- Batch up to 4 related questions in a single `AskUserQuestion` call.
+- The user can always select "Other" to type a custom answer. If you
+  find yourself wanting to add an "Other" option manually, just ask
+  in plain text instead.
 
 ### Interview sections
 
@@ -124,10 +133,10 @@ Use `interactive selection` for any question with a bounded answer set: binary c
 
 ### Interview completion
 
-When all relevant sections are covered:
-> "I think we've covered everything needed to break this down."
->
-> `Show me the breakdown` · `I have more to add`
+When all relevant sections are covered, use `AskUserQuestion`:
+
+- "Show me the breakdown (Recommended)"
+- "I have more to add"
 
 ---
 
@@ -182,7 +191,11 @@ Present the plan before finalising:
 3. Coverage check against interview findings
 4. Open issues or deferred items
 
-> `Approve` · `I have changes` · `Redo a section`
+Use `AskUserQuestion`:
+
+- "Approve (Recommended)"
+- "I have changes"
+- "Redo a section"
 
 Iterate until confirmed.
 
