@@ -1,15 +1,3 @@
 {
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "If you just ran 'git commit' and the quality gate is configured in ClaudeProject.md but you haven't run it yet in this session, remind yourself to run it before pushing."
-          }
-        ]
-      }
-    ]
-  }
+  "hooks": {}
 }
