@@ -92,15 +92,20 @@ For anything not auto-detected, ask the user interactively:
   regardless of type; `--mode feature` picks feature stories only;
   `--mode maintenance` picks from bug/security/debt/arch issues.
   All five types should be configured for full mode support.
-- **Status labels** — what label names for ready/blocked/needs-refinement.
-  The `needs-refinement` label marks stories that were created with
-  minimal spec during feature decomposition and need a refinement
-  session (feature-discovery or grill-me) before they can be picked
-  up. Suggest `needs-refinement` with colour `#D4C5F9` (purple).
+- **Status labels** — what label names for ready/needs-refinement.
+  The `status-ready` label is the positive signal that a story is
+  eligible for pickup (no unresolved dependencies). Stories without
+  this label are not picked. Suggest `status:ready` with colour
+  `#0E8A16` (green). The `needs-refinement` label marks stories that
+  were created with minimal spec during feature decomposition and need
+  a refinement session (feature-discovery or grill-me) before they can
+  be picked up. Suggest `needs-refinement` with colour `#D4C5F9`
+  (purple). No "blocked" label is needed — dependencies are tracked
+  in the issue body and the absence of `status-ready` keeps the story
+  out of the pick pool.
 - **Claude labels** — simple workflow markers. Suggest
-  `claude:authored` and `claude:blocked`. These are separate from the
-  review state labels (including `{prefix}-approved`) set up in
-  Step 7.
+  `claude:authored`. These are separate from the review state labels
+  (including `{prefix}-approved`) set up in Step 7.
 - **Agent gating** — ask "Require human approval before Claude
   picks up stories?" If yes, set `agent-gating` to `enabled` in
   ClaudeProject.md and ask for the approval label name (suggest

@@ -259,7 +259,9 @@ issues. If they accept:
    - Stories with no unresolved dependencies (DAG roots) →
      `status-ready` label.
    - Stories whose dependencies are not yet closed →
-     `status-blocked` label.
+     do NOT apply `status-ready`. The `## Dependencies` section in the
+     body is sufficient to communicate the dependency — no blocked
+     label is needed.
    - Deferred stories (see "Deferred speccing") →
      `needs-refinement` label.
 4. After creation, verify each issue body contains the correct

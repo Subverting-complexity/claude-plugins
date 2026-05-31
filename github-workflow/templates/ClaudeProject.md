@@ -62,7 +62,6 @@ Only include labels your project uses — remove unused rows.
 | Purpose            | Label    |
 | ------------------ | -------- |
 | status-ready       | `{name}` |
-| status-blocked     | `{name}` |
 | needs-refinement   | `{name}` |
 
 ### Claude
@@ -74,7 +73,6 @@ and managed by the code-review skill.
 | Purpose          | Label    | Applied by       |
 | ---------------- | -------- | ---------------- |
 | claude-authored  | `{name}` | finish-story     |
-| claude-blocked   | `{name}` | block-story      |
 | claude-ready     | `{name}` | human triage     |
 
 The `claude-ready` label is used only when Agent Gating is enabled

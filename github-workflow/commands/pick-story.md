@@ -132,22 +132,18 @@ The reclaimed issue is now eligible for the normal pick logic below.
 **If the issue is not stale yet:** Skip it — another session may still
 be actively working on it.
 
-### 1c. Auto-unblock resolved dependencies
+### 1c. Auto-ready resolved dependencies
 
-Before picking new work, check issues with the `status-blocked` or
-`claude-blocked` label that are assigned to `@me`. For each one,
-read the issue body and look for dependency markers (see Step 3c).
-If all referenced issues are now closed, the blocker is resolved:
+Before picking new work, check issues assigned to `@me` that do NOT
+have the `status-ready` label. For each one, read the issue body and
+look for dependency markers (see Step 3c). If all referenced issues
+are now closed, the dependencies are resolved:
 
-1. Remove the blocked label:
-   ```
-   gh issue edit {number} --repo {org}/{repo} --remove-label "{blocked_label}"
-   ```
-2. Re-apply the `status-ready` label (if configured):
+1. Apply the `status-ready` label:
    ```
    gh issue edit {number} --repo {org}/{repo} --add-label "{status_ready_label}"
    ```
-3. Add a comment:
+2. Add a comment:
    ```
    gh issue comment {number} --repo {org}/{repo} --body "Dependencies resolved — all blocking issues are now closed. Returning to the ready pool."
    ```
@@ -181,8 +177,6 @@ gh issue list --repo {org}/{repo} --milestone "{sprint_title}" --state open --as
 
 Filter out issues that have **any** of these labels:
 - The `approved` label — waiting for human merge.
-- The `status-blocked` label — blocked on another issue.
-- The `claude-blocked` label — blocked during execution.
 
 **Agent gating:** If `agent-gating` is `enabled`, also filter out
 issues that do **not** have the `claude-ready` label. Only
@@ -204,8 +198,7 @@ List candidate issues:
 gh issue list --repo {org}/{repo} --state open --assignee "" --label "{status_ready_label}" --json number,title,labels,body --jq '.[] | {number, title, labels: [.labels[].name], body}'
 ```
 
-Filter out issues with the `approved`, `status-blocked`, or
-`claude-blocked` label.
+Filter out issues with the `approved` label.
 
 **Agent gating:** If `agent-gating` is `enabled`, also filter out
 issues that do **not** have the `claude-ready` label.

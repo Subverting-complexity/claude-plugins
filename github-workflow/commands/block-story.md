@@ -54,16 +54,12 @@ issue cannot re-enter the pick pool while blocked:
 gh issue edit {number} --repo {org}/{repo} --remove-label "{status_ready_label}"
 ```
 
-Then apply the `status-blocked` label if configured. If no
-`status-blocked` label exists, fall back to the `claude-blocked`
-label. Apply whichever is available — if both are configured, prefer
-`status-blocked`.
+Do NOT apply a "blocked" label. The dependency information lives in
+the issue body (`## Dependencies` section) and in the comment from
+Step 2. The absence of `status-ready` is sufficient to keep the issue
+out of the pick pool.
 
-```
-gh issue edit {number} --repo {org}/{repo} --add-label "{blocked_label}"
-```
-
-Both commands are best-effort — the remove will no-op if the label
+This command is best-effort — the remove will no-op if the label
 is not present.
 
 ### 5. Update project board (if configured)
