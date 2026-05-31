@@ -42,7 +42,7 @@ jobs:
           status=0
           base="${{ github.event.pull_request.base.sha }}"
           for plugin in github-workflow local-workflow; do
-            changed=$(git diff --name-only "$base"...HEAD -- "$plugin/" | grep -v '.claude-plugin/plugin.json' | head -1)
+            changed=$(git diff --name-only "$base"...HEAD -- "$plugin/" | grep -v '.claude-plugin/plugin.json' | head -1 || true)
             if [ -n "$changed" ]; then
               old_version=$(git show "$base:$plugin/.claude-plugin/plugin.json" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
               new_version=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" < "$plugin/.claude-plugin/plugin.json")
