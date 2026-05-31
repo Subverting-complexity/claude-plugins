@@ -42,9 +42,9 @@ When a story depends on another unmerged story:
 3. Set the dependent PR's base to the dependency branch.
 4. After merge, rebase onto the default branch and update the PR base.
 
-## Bug and Issue Workflow
+## Bug, Security, and Maintenance Workflow
 
-When a bug, architecture violation, or tech debt is found during
+When a bug, security issue, architecture violation, or tech debt is found during
 development:
 
 - **Trivial and same scope**: Fix in the current PR.

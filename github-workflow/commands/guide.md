@@ -51,10 +51,13 @@ gh auth status 2>&1 | head -3
 >
 > **Daily workflow:**
 >
-> - "Start the next story" → I'll pick one from your backlog, plan it,
->   build it, test it, and open a PR. All hands-free.
+> - "Start the next story" → I'll pick the highest priority issue from
+>   your backlog, plan it, build it, test it, and open a PR. Hands-free.
 > - `/github-workflow:execute 42` → Work on a specific issue.
-> - `/github-workflow:execute --mode bug` → Pick and fix the next bug.
+> - `/github-workflow:execute --mode feature` → Pick only feature stories.
+> - `/github-workflow:execute --mode maintenance` → Pick and fix the
+>   next bug, security issue, architecture problem, or tech debt item.
+>   (Shorthand: `--mode bug` also works.)
 >
 > **Review and audit:**
 >
@@ -68,7 +71,8 @@ gh auth status 2>&1 | head -3
 >
 > **Issue management:**
 >
-> - `/github-workflow:report-issue` → File a bug, arch, or debt issue.
+> - `/github-workflow:report-issue` → File a bug, security, arch, or
+>   debt issue.
 > - `/github-workflow:block-story` → Mark the current story as blocked.
 >
 > **Individual steps** (the execute skill runs these automatically, but

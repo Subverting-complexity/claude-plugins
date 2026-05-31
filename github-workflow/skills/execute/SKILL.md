@@ -7,19 +7,20 @@ when_to_use: >-
   "work on story N", "do story N", "story #N", "#N", "do N", just a bare issue number,
   "start working", "build the next feature", "execute", "run the workflow",
   "implement", "develop", "build this", "implement story N", "develop N",
-  "fix bugs", "fix the next bug", "fix security issues" (use mode=bug),
-  "audit the codebase", "audit for security", "code audit", "run an audit" (use mode=audit).
+  "new feature", "start a feature" (use mode=feature),
+  "fix bugs", "fix the next bug", "fix security issues", "tech debt", "maintenance" (use mode=maintenance),
+  "audit the codebase", "audit for security", "security audit", "code audit", "run an audit" (use mode=audit).
   Also trigger when the user pastes a GitHub issue URL or references an issue number.
 depends-on:
   - code-architect
   - structured-coding
   - feature-discovery
-argument-hint: '[issue#] [--mode bug|audit]'
+argument-hint: '[issue#] [--mode feature|maintenance|audit]'
 arguments:
   - name: story_number
     description: 'Optional issue number. If omitted, picks the next story from the backlog.'
   - name: mode
-    description: 'Execution mode: story (default), bug (pick next bug/security issue), audit (codebase audit, no code changes)'
+    description: 'Execution mode: story (default — picks highest priority issue regardless of type), feature (feature stories only), maintenance (bug/security/architecture/debt; "bug" is accepted as alias), audit (codebase audit, no code changes)'
 ---
 
 # Execute Story
@@ -127,9 +128,12 @@ up from the branch.
 
 Default mode is `story`. Override with `$ARGUMENTS.mode`:
 
-- **story** — Pick and implement the next user story
-- **bug** — Pick and fix the next bug, security, or architecture issue
+- **story** — Pick and implement the next highest-priority issue regardless of type
+- **feature** — Pick only feature stories (type-story label)
+- **maintenance** — Pick and fix the next bug, security, architecture, or tech debt issue (alias: bug)
 - **audit** — Audit the codebase, create issues for findings, no code changes
+
+If mode is "bug", treat it as "maintenance" (backward compatibility).
 
 If mode is `audit`, skip to the Audit section at the bottom.
 
@@ -238,7 +242,9 @@ Otherwise, run the pick-story logic (including stale task recovery):
    with open issues, sorted by priority label then issue number.
 4. **Flat mode** (no milestones): pick from open unassigned issues with
    the status-ready label, sorted by priority then issue number.
-5. **Bug mode**: filter to issues with bug/security/arch type labels.
+5. **Maintenance mode**: filter to issues with maintenance type labels (type-bug, type-security, type-arch, type-debt from the label map).
+6. **Feature mode**: filter to issues with the type-story label only.
+7. **Story mode (default)**: no type filter — pick the highest priority issue regardless of type label. This is the most common mode.
 
 **Filtering (all modes):** Before selecting a candidate, apply these
 filters to the candidate list:
