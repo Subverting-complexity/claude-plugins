@@ -59,10 +59,11 @@ Only include labels your project uses — remove unused rows.
 
 ### Status
 
-| Purpose        | Label    |
-| -------------- | -------- |
-| status-ready   | `{name}` |
-| status-blocked | `{name}` |
+| Purpose            | Label    |
+| ------------------ | -------- |
+| status-ready       | `{name}` |
+| status-blocked     | `{name}` |
+| needs-refinement   | `{name}` |
 
 ### Claude
 
@@ -101,6 +102,21 @@ When `enabled`, the agent only picks up issues that carry the
 this label during triage to approve the story for autonomous
 execution. When `disabled` (default), any eligible unassigned issue
 can be picked — no extra label is required.
+
+## Refinement
+
+| Setting          | Value               |
+| ---------------- | ------------------- |
+| refinement-skill | `feature-discovery` |
+
+When a `needs-refinement` story is next in the pick queue, the execute
+skill surfaces it to the user and offers to start a refinement session
+using the skill configured here.
+
+- `feature-discovery` (default) — code-aware: explores the codebase,
+  interviews the user, and updates the story with full spec and AC.
+- `grill-me` — lightweight Q&A interrogation without codebase
+  exploration, for stories where requirements just need sharpening.
 
 ## Session Budget
 

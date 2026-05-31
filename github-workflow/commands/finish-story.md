@@ -159,6 +159,27 @@ Closes #43
 Each `Closes #N` must be on its own line so GitHub links them in
 the Development sidebar.
 
+### 5b. Validate PR body
+
+After creating or updating the PR, immediately read it back and
+verify the body was written correctly:
+
+```
+gh pr view {pr_number} --repo {org}/{repo} --json body --jq '.body'
+```
+
+If the body is empty, only whitespace, or consists of just `@` (a
+known Windows/PowerShell shell-escaping issue):
+
+1. Write the intended body to a temporary file.
+2. Update the PR using `--body-file`:
+   ```
+   gh pr edit {pr_number} --repo {org}/{repo} --body-file {tempfile}
+   ```
+3. Delete the temporary file.
+4. Re-read the PR to confirm the fix.
+5. If still corrupted after retry, warn the user.
+
 ### 6. Resolve merge conflicts
 
 Check if the PR has merge conflicts with the base branch:

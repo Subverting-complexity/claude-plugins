@@ -168,17 +168,55 @@ Use the story template from `references/story-template.md`.
 
 ### Story sizing
 
-- One session of work max. If bigger, split it.
+- One session of work max (~100k tokens). If bigger, split it.
 - One concern per story (one module, one screen, one API surface).
 - Technical Notes over 10 lines means the story is too big.
+- More than 5 files to create/modify means the story is too big.
+- More than 3 modules touched means the story is too big.
 - Dependencies must be explicit and acyclic.
+- Assign a size estimate to each story: `small` (< 50k tokens),
+  `medium` (50–100k), `large` (needs splitting). Include this in the
+  story's Overview section as `**Size estimate:** {size}`.
+- When a story is flagged as too large, automatically split it and
+  explain the split to the user before proceeding.
+
+### Deferred speccing (large features)
+
+When a large-scope feature produces more than 4 stories:
+
+1. **Fully spec** the first 2–3 stories in the dependency chain (the
+   fundamentals that later stories depend on).
+2. **Defer speccing** for stories deeper in the dependency chain.
+   Create them with minimal spec: title, one-line Overview, dependency
+   markers, and a note: "This story needs refinement after its
+   dependencies are complete."
+3. Apply the `needs-refinement` label (from the project's label map)
+   to deferred stories. This excludes them from the execute pick pool
+   until their dependencies are resolved and a refinement session has
+   been run.
+4. The user can later refine deferred stories by running the
+   configured refinement skill (feature-discovery in continuous mode
+   or grill-me, per the `refinement-skill` setting in
+   ClaudeProject.md).
+
+### Dependency chain enforcement
+
+Every story must declare its dependencies explicitly using the format:
+`Depends on #{number}` (or `Blocked by #{number}`, `After #{number}`).
+
+After decomposition:
+
+1. Build a text-based dependency graph showing the ordering.
+2. Validate the graph is a DAG — no cycles allowed. If a cycle is
+   detected, surface it to the user and resolve before proceeding.
+3. Include the dependency graph in the Phase 5 review output.
 
 ### Cross-referencing
 
 After decomposition, verify:
 - Every interview question is covered by at least one story
 - No gaps in the user journey
-- Dependencies are acyclic
+- Dependencies are acyclic (validated by the DAG check above)
 - No overlap with existing stories
 - Story ordering respects dependency chain
 
@@ -204,7 +242,30 @@ Iterate until confirmed.
 
 ## Output
 
-The final deliverable is stories (optionally grouped into epics) with acceptance criteria and dependency ordering. The user can then create issues, board items, or tickets in their project management tool of choice.
+The final deliverable is stories (optionally grouped into epics) with
+acceptance criteria and dependency ordering.
+
+### Creating issues on GitHub
+
+When the user approves the plan, offer to create the stories as GitHub
+issues. If they accept:
+
+1. Create issues in **dependency order** — dependencies first so that
+   later stories can reference them by issue number.
+2. Include a `## Dependencies` section in each issue body listing
+   upstream dependencies by issue number (e.g., `Depends on #42`).
+3. Apply labels based on dependency state:
+   - Stories with no unresolved dependencies (DAG roots) →
+     `status-ready` label.
+   - Stories whose dependencies are not yet closed →
+     `status-blocked` label.
+   - Deferred stories (see "Deferred speccing") →
+     `needs-refinement` label.
+4. After creation, verify each issue body contains the correct
+   dependency references. Use the post-creation validation pattern
+   (see report-issue) to catch body corruption.
+5. Present a summary: issue numbers, titles, labels, and the
+   dependency graph with issue numbers filled in.
 
 ---
 
