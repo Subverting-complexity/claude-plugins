@@ -92,7 +92,11 @@ For anything not auto-detected, ask the user interactively:
   regardless of type; `--mode feature` picks feature stories only;
   `--mode maintenance` picks from bug/security/debt/arch issues.
   All five types should be configured for full mode support.
-- **Status labels** — what label names for ready/blocked
+- **Status labels** — what label names for ready/blocked/needs-refinement.
+  The `needs-refinement` label marks stories that were created with
+  minimal spec during feature decomposition and need a refinement
+  session (feature-discovery or grill-me) before they can be picked
+  up. Suggest `needs-refinement` with colour `#D4C5F9` (purple).
 - **Claude labels** — simple workflow markers. Suggest
   `claude:authored` and `claude:blocked`. These are separate from the
   review state labels (including `{prefix}-approved`) set up in
@@ -115,6 +119,10 @@ For anything not auto-detected, ask the user interactively:
 - **Stale timeout** — how long an assigned issue can go without a
   branch or PR before `pick-story` reclaims it. Suggest `2h` as
   default. Accepts values like `30m`, `1h`, `4h`.
+- **Refinement skill** — which skill to use when a `needs-refinement`
+  story is next in the queue. Options: `feature-discovery` (default,
+  code-aware) or `grill-me` (lightweight Q&A). Store as
+  `refinement-skill` in ClaudeProject.md.
 
 For each setting, show the detected or suggested default and let the
 user confirm or override. For labels, also list any existing labels
@@ -146,7 +154,7 @@ error.
 Suggested colours (user can override):
 - Priority labels: critical `#B60205`, high `#D93F0B`, medium `#FBCA04`, low `#0E8A16`
 - Type labels: story `#1D76DB` (blue), bug `#D93F0B` (red-orange), security `#B60205` (red), debt `#FBCA04` (yellow), arch `#0E8A16` (green)
-- Status labels: `#5319E7` (purple)
+- Status labels: `#5319E7` (purple), needs-refinement `#D4C5F9` (light purple)
 - Claude labels: `#BFDADC` (light teal)
 
 This step is best-effort. If label creation fails (permissions, etc.),

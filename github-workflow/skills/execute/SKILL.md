@@ -227,13 +227,22 @@ Otherwise, run the pick-story logic (including stale task recovery):
       include it in the normal pick pool below.
     - **Not stale yet**: skip — another session may be active.
 1c. Auto-unblock resolved dependencies — check issues with the
-    `status-blocked` or `claude-blocked` label assigned to `@me`.
-    For each, parse the issue body for dependency markers (`Depends
-    on #N`, `Blocked by #N`, `After #N`, `Requires #N`) and check
-    the `## Dependencies` section. If all referenced issues are now
-    `CLOSED`, remove the blocked label, re-apply `status-ready`, and
-    comment that dependencies are resolved. The unblocked issue
-    re-enters the pick pool below. Best-effort — skip on API errors.
+    `status-blocked`, `claude-blocked`, or `needs-refinement` label
+    assigned to `@me`. For each, parse the issue body for dependency
+    markers (`Depends on #N`, `Blocked by #N`, `After #N`, `Requires
+    #N`) and check the `## Dependencies` section. If all referenced
+    issues are now `CLOSED`:
+    - **Issues with `status-blocked` or `claude-blocked`**: remove the
+      blocked label, re-apply `status-ready`, and comment that
+      dependencies are resolved. The unblocked issue re-enters the
+      pick pool below.
+    - **Issues with `needs-refinement`**: do NOT auto-promote to
+      `status-ready`. Leave the `needs-refinement` label in place.
+      Comment that dependencies are resolved and the story is ready
+      for a refinement session. The story will be surfaced to the user
+      when it reaches the top of the pick queue (see Phase 1 pick
+      logic above).
+    Best-effort — skip on API errors.
 2. Check for milestones to detect backlog mode:
    ```
    gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | .[] | select(.open_issues > 0) | {title, due_on, open_issues}'
@@ -249,8 +258,9 @@ Otherwise, run the pick-story logic (including stale task recovery):
 **Filtering (all modes):** Before selecting a candidate, apply these
 filters to the candidate list:
 
-- **Blocked:** Exclude issues with the `status-blocked` or
-  `claude-blocked` label.
+- **Blocked:** Exclude issues with the `status-blocked`,
+  `claude-blocked`, or `needs-refinement` label (all looked up from
+  the label map in ClaudeProject.md).
 - **Agent gating:** If `agent-gating` is `enabled` in
   ClaudeProject.md, exclude issues that do **not** have the
   `claude-ready` label. Only human-approved stories are eligible.
@@ -268,6 +278,17 @@ priority labels, pick the lowest issue number.
 
 Read the full issue body. Check it has **Context** and **Requirements**.
 
+- If the issue has the `needs-refinement` label (from the label map):
+  surface it to the user. Tell them: "The next priority story
+  (#{number}: {title}) needs refinement before it can be implemented.
+  Would you like to refine it now?" Use `AskUserQuestion` with options:
+  - "Refine now (Recommended)" — run the refinement skill configured
+    in `refinement-skill` from ClaudeProject.md (default:
+    `feature-discovery` in continuous mode; alternative: `grill-me`).
+    After refinement completes, remove the `needs-refinement` label,
+    apply `status-ready`, and continue with Phase 2.
+  - "Skip and pick next" — leave the label, pick the next eligible
+    story instead.
 - If the issue has enough guidance (body, comments, linked docs): proceed.
 - If truly empty with no guidance anywhere: run `/github-workflow:block-story`
   and pick the next one.
@@ -389,6 +410,23 @@ Run the quality gate command from `ClaudeProject.md`:
    - Each linked issue on its own line: `Closes #42`
    - Include a test plan section
    - Summary of what was built and acceptance criteria addressed
+
+2b. Validate the PR body was written correctly:
+
+   ```
+   gh pr view {pr_number} --repo {org}/{repo} --json body --jq '.body'
+   ```
+
+   If the body is empty, only whitespace, or consists of just `@`
+   (a known Windows/PowerShell shell-escaping issue), write the body
+   to a temporary file and retry with `--body-file`:
+
+   ```
+   gh pr edit {pr_number} --repo {org}/{repo} --body-file {tempfile}
+   ```
+
+   Clean up the temp file after. Re-validate. If still corrupted,
+   warn the user.
 
 3. Add claude labels if configured in the label map.
 

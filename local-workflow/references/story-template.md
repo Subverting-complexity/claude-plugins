@@ -7,6 +7,7 @@ Use the 12-section issue template, omitting sections that don't apply:
 ```markdown
 ## Overview
 What this story delivers and why. 2-4 sentences.
+**Size estimate:** small | medium | large
 
 ## User Role
 Which user type(s) this story serves.

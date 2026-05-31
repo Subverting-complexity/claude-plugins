@@ -127,7 +127,29 @@ Include in the body:
 - Suggested fix (if known)
 - Whether it blocks the current story
 
-### 6. Report
+### 6. Validate issue body
+
+After creating the issue, immediately read it back and verify the body
+was written correctly:
+
+```
+gh issue view {number} --repo {org}/{repo} --json body --jq '.body'
+```
+
+If the body is empty, only whitespace, or consists of just `@` (a
+known Windows/PowerShell shell-escaping issue):
+
+1. Write the intended body to a temporary file.
+2. Update the issue using `--body-file`:
+   ```
+   gh issue edit {number} --repo {org}/{repo} --body-file {tempfile}
+   ```
+3. Delete the temporary file.
+4. Re-read the issue to confirm the fix.
+5. If still corrupted after retry, warn the user that the issue body
+   may need manual editing.
+
+### 7. Report
 
 Display the created issue number and URL, and whether it blocks
 the current story or is deferred.
