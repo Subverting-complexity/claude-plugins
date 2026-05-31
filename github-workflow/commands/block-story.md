@@ -45,26 +45,25 @@ and can be picked up by another agent or re-picked later:
 gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 ```
 
-### 4. Update labels
+### 4. Remove from ready state
 
-Remove the `status-ready` label (if configured and present) so the
-issue cannot re-enter the pick pool while blocked:
+Remove the issue from the ready state so it cannot re-enter the pick
+pool while blocked. What to do depends on `ready-gate`:
 
-```
-gh issue edit {number} --repo {org}/{repo} --remove-label "{status_ready_label}"
-```
+- **`label` or `both`**: remove the `status-ready` label:
+  ```
+  gh issue edit {number} --repo {org}/{repo} --remove-label "{status_ready_label}"
+  ```
+- **`board-column` or `both`**: move the issue back to "Backlog" (or
+  "On Hold" if configured) on the project board.
 
-Then apply the `status-blocked` label if configured. If no
-`status-blocked` label exists, fall back to the `claude-blocked`
-label. Apply whichever is available — if both are configured, prefer
-`status-blocked`.
+Do NOT apply a "blocked" label. The dependency information lives in
+the issue body (`## Dependencies` section) and in the comment from
+Step 2. The absence of ready state is sufficient to keep the issue
+out of the pick pool.
 
-```
-gh issue edit {number} --repo {org}/{repo} --add-label "{blocked_label}"
-```
-
-Both commands are best-effort — the remove will no-op if the label
-is not present.
+These commands are best-effort — the label remove will no-op if the
+label is not present.
 
 ### 5. Update project board (if configured)
 

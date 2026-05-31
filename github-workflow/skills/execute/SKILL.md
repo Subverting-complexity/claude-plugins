@@ -226,15 +226,13 @@ Otherwise, run the pick-story logic (including stale task recovery):
     - **No branch or PR**: reclaim the issue (unassign, comment) and
       include it in the normal pick pool below.
     - **Not stale yet**: skip — another session may be active.
-1c. Auto-unblock resolved dependencies — check issues with the
-    `status-blocked`, `claude-blocked`, or `needs-refinement` label
-    assigned to `@me`. For each, parse the issue body for dependency
-    markers (`Depends on #N`, `Blocked by #N`, `After #N`, `Requires
-    #N`) and check the `## Dependencies` section. If all referenced
-    issues are now `CLOSED`:
-    - **Issues with `status-blocked` or `claude-blocked`**: remove the
-      blocked label, re-apply `status-ready`, and comment that
-      dependencies are resolved. The unblocked issue re-enters the
+1c. Auto-ready resolved dependencies — check issues assigned to
+    `@me` that do NOT have the `status-ready` label. For each, parse
+    the issue body for dependency markers (`Depends on #N`, `Blocked
+    by #N`, `After #N`, `Requires #N`) and check the `## Dependencies`
+    section. If all referenced issues are now `CLOSED`:
+    - **Issues without `needs-refinement`**: apply `status-ready` and
+      comment that dependencies are resolved. The issue re-enters the
       pick pool below.
     - **Issues with `needs-refinement`**: do NOT auto-promote to
       `status-ready`. Leave the `needs-refinement` label in place.
@@ -249,8 +247,9 @@ Otherwise, run the pick-story logic (including stale task recovery):
    ```
 3. **Sprint mode** (milestones found): pick from the earliest milestone
    with open issues, sorted by priority label then issue number.
-4. **Flat mode** (no milestones): pick from open unassigned issues with
-   the status-ready label, sorted by priority then issue number.
+4. **Flat mode** (no milestones): pick from open unassigned issues in
+   the ready state (per `ready-gate`: label, board column, or both),
+   sorted by priority then issue number.
 5. **Maintenance mode**: filter to issues with maintenance type labels (type-bug, type-security, type-arch, type-debt from the label map).
 6. **Feature mode**: filter to issues with the type-story label only.
 7. **Story mode (default)**: no type filter — pick the highest priority issue regardless of type label. This is the most common mode.
@@ -258,9 +257,8 @@ Otherwise, run the pick-story logic (including stale task recovery):
 **Filtering (all modes):** Before selecting a candidate, apply these
 filters to the candidate list:
 
-- **Blocked:** Exclude issues with the `status-blocked`,
-  `claude-blocked`, or `needs-refinement` label (all looked up from
-  the label map in ClaudeProject.md).
+- **Blocked:** Exclude issues with the `needs-refinement` label
+  (looked up from the label map in ClaudeProject.md).
 - **Agent gating:** If `agent-gating` is `enabled` in
   ClaudeProject.md, exclude issues that do **not** have the
   `claude-ready` label. Only human-approved stories are eligible.
