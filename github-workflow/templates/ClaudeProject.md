@@ -73,6 +73,11 @@ and managed by the code-review skill.
 | ---------------- | -------- | ---------------- |
 | claude-authored  | `{name}` | finish-story     |
 | claude-blocked   | `{name}` | block-story      |
+| claude-ready     | `{name}` | human triage     |
+
+The `claude-ready` label is used only when Agent Gating is enabled
+(see below). A human applies it during triage to approve a story for
+autonomous agent pickup.
 
 ### Custom (optional)
 
@@ -83,6 +88,18 @@ in `docs/review.config.md`, not here.
 | Label    | When to apply |
 | -------- | ------------- |
 | `{name}` | {criteria}    |
+
+## Agent Gating
+
+| Setting       | Value      |
+| ------------- | ---------- |
+| agent-gating  | `disabled` |
+
+When `enabled`, the agent only picks up issues that carry the
+`claude-ready` label (see Claude labels above). A human must apply
+this label during triage to approve the story for autonomous
+execution. When `disabled` (default), any eligible unassigned issue
+can be picked — no extra label is required.
 
 ## Session Budget
 

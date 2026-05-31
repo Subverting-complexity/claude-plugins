@@ -92,6 +92,12 @@ For anything not auto-detected, ask the user interactively:
   `claude:authored` and `claude:blocked`. These are separate from the
   review state labels (including `{prefix}-approved`) set up in
   Step 7.
+- **Agent gating** — ask "Require human approval before Claude
+  picks up stories?" If yes, set `agent-gating` to `enabled` in
+  ClaudeProject.md and ask for the approval label name (suggest
+  `claude:ready`). Store as `claude-ready` in the Claude label map.
+  If no, set `agent-gating` to `disabled` — the `claude-ready` row
+  can be removed from the label map.
 - **Custom labels** — ask if the user has any additional labels they
   want workflow commands to apply or respect. For each custom label,
   ask the name and when it should be applied. Examples:

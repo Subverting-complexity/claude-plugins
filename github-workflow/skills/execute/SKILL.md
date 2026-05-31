@@ -199,7 +199,8 @@ pick. Delete the checkpoint file after Phase 7 completes successfully.
 If `$ARGUMENTS.story_number` is provided, use that issue directly.
 Otherwise, run the pick-story logic (including stale task recovery):
 
-1. Read `ClaudeProject.md` for org, repo, label map, and stale-timeout.
+1. Read `ClaudeProject.md` for org, repo, label map, stale-timeout,
+   `agent-gating` mode, and the `claude-ready` label name.
 1b. Run stale task recovery — check for issues assigned to @me with no
     branch or PR past the stale-timeout. Auto-resolve each stale issue:
     - **PR or issue has `approved` label**: skip entirely — waiting for
@@ -221,6 +222,14 @@ Otherwise, run the pick-story logic (including stale task recovery):
     - **No branch or PR**: reclaim the issue (unassign, comment) and
       include it in the normal pick pool below.
     - **Not stale yet**: skip — another session may be active.
+1c. Auto-unblock resolved dependencies — check issues with the
+    `status-blocked` or `claude-blocked` label assigned to `@me`.
+    For each, parse the issue body for dependency markers (`Depends
+    on #N`, `Blocked by #N`, `After #N`, `Requires #N`) and check
+    the `## Dependencies` section. If all referenced issues are now
+    `CLOSED`, remove the blocked label, re-apply `status-ready`, and
+    comment that dependencies are resolved. The unblocked issue
+    re-enters the pick pool below. Best-effort — skip on API errors.
 2. Check for milestones to detect backlog mode:
    ```
    gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | .[] | select(.open_issues > 0) | {title, due_on, open_issues}'
@@ -230,6 +239,22 @@ Otherwise, run the pick-story logic (including stale task recovery):
 4. **Flat mode** (no milestones): pick from open unassigned issues with
    the status-ready label, sorted by priority then issue number.
 5. **Bug mode**: filter to issues with bug/security/arch type labels.
+
+**Filtering (all modes):** Before selecting a candidate, apply these
+filters to the candidate list:
+
+- **Blocked:** Exclude issues with the `status-blocked` or
+  `claude-blocked` label.
+- **Agent gating:** If `agent-gating` is `enabled` in
+  ClaudeProject.md, exclude issues that do **not** have the
+  `claude-ready` label. Only human-approved stories are eligible.
+- **Dependencies:** For each of the top 10 candidates, parse the
+  issue body for dependency markers (`Depends on #N`, `Blocked by
+  #N`, `After #N`, `Requires #N`) and `## Dependencies` section
+  references. For each referenced `#N`, check `gh issue view {N}
+  --repo {org}/{repo} --json state --jq '.state'`. Skip the
+  candidate if any dependency is still `OPEN`. Check at most 5
+  dependency references per candidate.
 
 **Never ask the user which story to pick.** Always auto-select using
 priority labels then lowest issue number. If no candidates have
@@ -453,12 +478,17 @@ with details. Then pick the next story.
 run `/github-workflow:report-issue`. Do not fix it inline unless it is
 trivial and within the same scope.
 
-**Dependency**: If this story depends on another unmerged story:
+**Dependency**: If this story depends on another unmerged story
+(discovered during planning, not caught by the Phase 1 filter):
 
 1. Build the dependency on its own branch from the default branch.
 2. Branch the dependent story off the dependency branch.
 3. Set the dependent PR's base to the dependency branch.
 4. After merge, rebase onto the default branch and update the PR base.
+
+If the dependency is not yet started, block this story instead
+(`/github-workflow:block-story`) and pick the dependency — or the
+next available story — instead.
 
 **Story too broad**: If the story covers multiple distinct changes and
 needs to be broken into sub-stories before implementation can begin,
