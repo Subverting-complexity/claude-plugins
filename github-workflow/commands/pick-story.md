@@ -33,7 +33,9 @@ Extract from the project configuration above:
 - `org` and `repo` from Identity
 - `default-branch` from Identity
 - `branch-convention` from Branch Convention
-- Label map (priority labels, status labels, type labels)
+- Label map (priority labels, status labels, type labels, claude labels)
+- `agent-gating` from Agent Gating (`enabled` or `disabled`, default: `disabled`)
+- `claude-ready` label name from the Claude label map (only needed when gating is enabled)
 - `stale-timeout` from Session Budget (default: 2 hours if not set)
 
 ### 1b. Reclaim stale in-progress stories
@@ -120,6 +122,31 @@ The reclaimed issue is now eligible for the normal pick logic below.
 **If the issue is not stale yet:** Skip it — another session may still
 be actively working on it.
 
+### 1c. Auto-unblock resolved dependencies
+
+Before picking new work, check issues with the `status-blocked` or
+`claude-blocked` label that are assigned to `@me`. For each one,
+read the issue body and look for dependency markers (see Step 3c).
+If all referenced issues are now closed, the blocker is resolved:
+
+1. Remove the blocked label:
+   ```
+   gh issue edit {number} --repo {org}/{repo} --remove-label "{blocked_label}"
+   ```
+2. Re-apply the `status-ready` label (if configured):
+   ```
+   gh issue edit {number} --repo {org}/{repo} --add-label "{status_ready_label}"
+   ```
+3. Add a comment:
+   ```
+   gh issue comment {number} --repo {org}/{repo} --body "Dependencies resolved — all blocking issues are now closed. Returning to the ready pool."
+   ```
+
+The unblocked issue is now eligible for normal picking below.
+
+This step is best-effort. If the dependency check fails (API error,
+unparseable body), skip the issue and continue.
+
 ### 2. Detect backlog mode
 
 Check for milestones with open issues:
@@ -139,12 +166,17 @@ This is the current sprint — no hardcoded sprint order needed.
 List candidate issues in that milestone:
 
 ```
-gh issue list --repo {org}/{repo} --milestone "{sprint_title}" --state open --assignee "" --json number,title,labels --jq '.[] | {number, title, labels: [.labels[].name]}'
+gh issue list --repo {org}/{repo} --milestone "{sprint_title}" --state open --assignee "" --json number,title,labels,body --jq '.[] | {number, title, labels: [.labels[].name], body}'
 ```
 
-Filter out issues with the `approved` label (e.g., `claude-approved`,
-`claude:approved`, or whatever is configured in the label map). These
-are waiting for human merge and must not be picked up.
+Filter out issues that have **any** of these labels:
+- The `approved` label — waiting for human merge.
+- The `status-blocked` label — blocked on another issue.
+- The `claude-blocked` label — blocked during execution.
+
+**Agent gating:** If `agent-gating` is `enabled`, also filter out
+issues that do **not** have the `claude-ready` label. Only
+human-approved stories are eligible.
 
 Sort candidates:
 
@@ -159,14 +191,46 @@ issues that have it. If none do, fall back to all unassigned issues.
 List candidate issues:
 
 ```
-gh issue list --repo {org}/{repo} --state open --assignee "" --label "{status_ready_label}" --json number,title,labels --jq '.[] | {number, title, labels: [.labels[].name]}'
+gh issue list --repo {org}/{repo} --state open --assignee "" --label "{status_ready_label}" --json number,title,labels,body --jq '.[] | {number, title, labels: [.labels[].name], body}'
 ```
 
-Filter out issues with the `approved` label.
+Filter out issues with the `approved`, `status-blocked`, or
+`claude-blocked` label.
+
+**Agent gating:** If `agent-gating` is `enabled`, also filter out
+issues that do **not** have the `claude-ready` label.
 
 Sort by priority label, then issue number.
 
 If no `status-ready` label is configured, list all open unassigned issues.
+
+### 3c. Filter out issues with unresolved dependencies
+
+Before selecting a candidate, check the top 10 candidates for
+dependency markers. Scan each issue's body for lines matching any of
+these patterns (case-insensitive):
+
+- `Depends on #N`
+- `Blocked by #N`
+- `After #N`
+- `Requires #N`
+
+Also check the `## Dependencies` section if present — look for
+`#N` references to other issues in that section.
+
+For each referenced issue number, check its state:
+
+```
+gh issue view {dep_number} --repo {org}/{repo} --json state --jq '.state'
+```
+
+If **any** referenced issue is still `OPEN`, skip the candidate —
+it has unresolved dependencies. Move to the next candidate in
+priority order.
+
+To limit API calls, check at most 10 candidates and at most 5
+dependency references per candidate. If a candidate has more than 5
+dependencies, treat it as blocked (likely a meta-issue).
 
 ### 4. Select and display
 

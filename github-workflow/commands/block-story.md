@@ -45,15 +45,26 @@ and can be picked up by another agent or re-picked later:
 gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 ```
 
-### 4. Add blocked label
+### 4. Update labels
 
-Apply the `status-blocked` label if configured. If no `status-blocked`
-label exists, fall back to the `claude-blocked` label. Apply whichever
-is available — if both are configured, prefer `status-blocked`.
+Remove the `status-ready` label (if configured and present) so the
+issue cannot re-enter the pick pool while blocked:
+
+```
+gh issue edit {number} --repo {org}/{repo} --remove-label "{status_ready_label}"
+```
+
+Then apply the `status-blocked` label if configured. If no
+`status-blocked` label exists, fall back to the `claude-blocked`
+label. Apply whichever is available — if both are configured, prefer
+`status-blocked`.
 
 ```
 gh issue edit {number} --repo {org}/{repo} --add-label "{blocked_label}"
 ```
+
+Both commands are best-effort — the remove will no-op if the label
+is not present.
 
 ### 5. Update project board (if configured)
 

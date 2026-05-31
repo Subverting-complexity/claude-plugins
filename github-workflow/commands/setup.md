@@ -92,6 +92,12 @@ For anything not auto-detected, ask the user interactively:
   `claude:authored` and `claude:blocked`. These are separate from the
   review state labels (including `{prefix}-approved`) set up in
   Step 7.
+- **Agent gating** — ask "Require human approval before Claude
+  picks up stories?" If yes, set `agent-gating` to `enabled` in
+  ClaudeProject.md and ask for the approval label name (suggest
+  `claude:ready`). Store as `claude-ready` in the Claude label map.
+  If no, set `agent-gating` to `disabled` — the `claude-ready` row
+  can be removed from the label map.
 - **Custom labels** — ask if the user has any additional labels they
   want workflow commands to apply or respect. For each custom label,
   ask the name and when it should be applied. Examples:
@@ -140,6 +146,30 @@ Suggested colours (user can override):
 
 This step is best-effort. If label creation fails (permissions, etc.),
 log a warning and continue.
+
+### 5c. Ignore plugin scratch files
+
+The execute skill writes session-local scratch files under `.claude/`
+that must never be committed: `.claude/execution-checkpoint.md` (resume
+state) and `.claude/plan.md` (the per-story architecture plan). If they
+land in a commit, a stale checkpoint can follow the branch around and
+trigger a bad resume in a later session.
+
+Ensure the project's `.gitignore` excludes them:
+
+- If no `.gitignore` exists, create one with these entries.
+- If one exists, check whether it already covers `.claude/`. If not,
+  append the two lines below. Do not remove or reorder existing entries.
+
+```
+# github-workflow plugin scratch files
+.claude/execution-checkpoint.md
+.claude/plan.md
+```
+
+If the project already ignores `.claude/` wholesale, leave it alone.
+This step is best-effort — if `.gitignore` cannot be written, log a
+warning and continue.
 
 ### 6. Generate or update CLAUDE.md
 
