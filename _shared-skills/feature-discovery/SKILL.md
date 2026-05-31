@@ -254,13 +254,14 @@ issues. If they accept:
    later stories can reference them by issue number.
 2. Include a `## Dependencies` section in each issue body listing
    upstream dependencies by issue number (e.g., `Depends on #42`).
-3. Apply labels based on dependency state:
-   - Stories with no unresolved dependencies (DAG roots) →
-     `status-ready` label.
+3. Apply ready state based on dependency state:
+   - Stories with no unresolved dependencies (DAG roots) → mark as
+     ready per the project's `ready-gate` setting: apply the
+     `status-ready` label and/or move to the "Ready" board column.
    - Stories whose dependencies are not yet closed →
-     do NOT apply `status-ready`. The `## Dependencies` section in the
-     body is sufficient to communicate the dependency — no blocked
-     label is needed.
+     do NOT mark as ready. The `## Dependencies` section in the body
+     is sufficient to communicate the dependency — no blocked label
+     is needed.
    - Deferred stories (see "Deferred speccing") →
      `needs-refinement` label.
 4. After creation, verify each issue body contains the correct

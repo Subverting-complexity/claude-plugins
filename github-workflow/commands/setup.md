@@ -92,17 +92,27 @@ For anything not auto-detected, ask the user interactively:
   regardless of type; `--mode feature` picks feature stories only;
   `--mode maintenance` picks from bug/security/debt/arch issues.
   All five types should be configured for full mode support.
+- **Ready gate** — ask "How do you signal that a story is ready for
+  pickup?" Options:
+  - `label` (default) — a `status-ready` label on the issue.
+  - `board-column` — a "Ready" column on the project board.
+  - `both` — requires the label AND the board column.
+  Store the choice as `ready-gate` in ClaudeProject.md. If
+  `board-column` or `both` is chosen, a project board must be
+  configured and must have a "Ready" status option.
 - **Status labels** — what label names for ready/needs-refinement.
-  The `status-ready` label is the positive signal that a story is
-  eligible for pickup (no unresolved dependencies). Stories without
-  this label are not picked. Suggest `status:ready` with colour
-  `#0E8A16` (green). The `needs-refinement` label marks stories that
-  were created with minimal spec during feature decomposition and need
-  a refinement session (feature-discovery or grill-me) before they can
-  be picked up. Suggest `needs-refinement` with colour `#D4C5F9`
-  (purple). No "blocked" label is needed — dependencies are tracked
-  in the issue body and the absence of `status-ready` keeps the story
-  out of the pick pool.
+  If `ready-gate` is `label` or `both`, ask for the `status-ready`
+  label name. This is the positive signal that a story is eligible
+  for pickup (no unresolved dependencies). Suggest `status:ready` with
+  colour `#0E8A16` (green). If `ready-gate` is `board-column`, this
+  label is optional — skip unless the user wants both signals. The
+  `needs-refinement` label marks stories that were created with
+  minimal spec during feature decomposition and need a refinement
+  session (feature-discovery or grill-me) before they can be picked
+  up. Suggest `needs-refinement` with colour `#D4C5F9` (purple). No
+  "blocked" label is needed — dependencies are tracked in the issue
+  body and the absence of ready state keeps the story out of the pick
+  pool.
 - **Claude labels** — simple workflow markers. Suggest
   `claude:authored`. These are separate from the review state labels
   (including `{prefix}-approved`) set up in Step 7.

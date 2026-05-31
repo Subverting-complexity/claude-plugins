@@ -247,8 +247,9 @@ Otherwise, run the pick-story logic (including stale task recovery):
    ```
 3. **Sprint mode** (milestones found): pick from the earliest milestone
    with open issues, sorted by priority label then issue number.
-4. **Flat mode** (no milestones): pick from open unassigned issues with
-   the status-ready label, sorted by priority then issue number.
+4. **Flat mode** (no milestones): pick from open unassigned issues in
+   the ready state (per `ready-gate`: label, board column, or both),
+   sorted by priority then issue number.
 5. **Maintenance mode**: filter to issues with maintenance type labels (type-bug, type-security, type-arch, type-debt from the label map).
 6. **Feature mode**: filter to issues with the type-story label only.
 7. **Story mode (default)**: no type filter — pick the highest priority issue regardless of type label. This is the most common mode.

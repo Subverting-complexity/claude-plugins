@@ -89,6 +89,22 @@ in `docs/review.config.md`, not here.
 | -------- | ------------- |
 | `{name}` | {criteria}    |
 
+## Ready Gate
+
+| Setting    | Value   |
+| ---------- | ------- |
+| ready-gate | `label` |
+
+How stories signal they are eligible for pickup:
+
+- `label` (default) — the `status-ready` label in the label map.
+- `board-column` — the "Ready" column on the project board.
+- `both` — story must have the label AND be in the board column.
+
+When using `board-column` or `both`, a project board must be
+configured (see Project Board section below) and must have a "Ready"
+status option.
+
 ## Agent Gating
 
 | Setting       | Value      |
@@ -164,6 +180,7 @@ Remove this entire section if you don't use a GitHub project board.
 | Status      | Option ID |
 | ----------- | --------- |
 | Backlog     | `{id}`    |
+| Ready       | `{id}`    |
 | In Progress | `{id}`    |
 | In Review   | `{id}`    |
 | Done        | `{id}`    |

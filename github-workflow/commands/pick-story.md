@@ -47,6 +47,8 @@ Extract from the project configuration above:
 - `agent-gating` from Agent Gating (`enabled` or `disabled`, default: `disabled`)
 - `claude-ready` label name from the Claude label map (only needed when gating is enabled)
 - `stale-timeout` from Session Budget (default: 2 hours if not set)
+- `ready-gate` from Ready Gate (`label`, `board-column`, or `both`; default: `label`)
+- Project board settings (if `ready-gate` is `board-column` or `both`)
 
 ### 1b. Reclaim stale in-progress stories
 
@@ -134,19 +136,37 @@ be actively working on it.
 
 ### 1c. Auto-ready resolved dependencies
 
-Before picking new work, check issues assigned to `@me` that do NOT
-have the `status-ready` label. For each one, read the issue body and
-look for dependency markers (see Step 3c). If all referenced issues
-are now closed, the dependencies are resolved:
+Before picking new work, check issues assigned to `@me` that are not
+in the ready state. How to detect "not ready" depends on `ready-gate`:
 
-1. Apply the `status-ready` label:
-   ```
-   gh issue edit {number} --repo {org}/{repo} --add-label "{status_ready_label}"
-   ```
-2. Add a comment:
-   ```
-   gh issue comment {number} --repo {org}/{repo} --body "Dependencies resolved — all blocking issues are now closed. Returning to the ready pool."
-   ```
+- **`label`**: issues without the `status-ready` label.
+- **`board-column`**: issues not in the "Ready" board column.
+- **`both`**: issues missing EITHER the label OR the board column.
+
+For each non-ready issue, read the issue body and look for dependency
+markers (see Step 3c). If all referenced issues are now closed, the
+dependencies are resolved — mark the issue as ready:
+
+- **`label` or `both`**: apply the `status-ready` label:
+  ```
+  gh issue edit {number} --repo {org}/{repo} --add-label "{status_ready_label}"
+  ```
+- **`board-column` or `both`**: move the issue to the "Ready" column
+  on the project board (using the `ready-option-id` from board config):
+  ```
+  gh api graphql -f query='mutation {
+    updateProjectV2ItemFieldValue(input: {
+      projectId: "{project_node_id}"
+      itemId: "{item_id}"
+      fieldId: "{status_field_id}"
+      value: { singleSelectOptionId: "{ready_option_id}" }
+    }) { projectV2Item { id } }
+  }'
+  ```
+- Add a comment:
+  ```
+  gh issue comment {number} --repo {org}/{repo} --body "Dependencies resolved — all blocking issues are now closed. Returning to the ready pool."
+  ```
 
 The unblocked issue is now eligible for normal picking below.
 
@@ -187,16 +207,26 @@ Sort candidates:
 1. By priority label (critical → high → medium → low, using label map)
 2. By issue number ascending
 
-If a `status-ready` label is configured in the label map, prefer
-issues that have it. If none do, fall back to all unassigned issues.
+Apply the ready-gate filter to prefer ready issues (see below).
 
 ### 3b. Flat backlog mode
 
-List candidate issues:
+List candidate issues. How to find ready candidates depends on
+`ready-gate`:
 
-```
-gh issue list --repo {org}/{repo} --state open --assignee "" --label "{status_ready_label}" --json number,title,labels,body --jq '.[] | {number, title, labels: [.labels[].name], body}'
-```
+- **`label`**: filter by `status-ready` label:
+  ```
+  gh issue list --repo {org}/{repo} --state open --assignee "" --label "{status_ready_label}" --json number,title,labels,body --jq '.[] | {number, title, labels: [.labels[].name], body}'
+  ```
+- **`board-column`**: query the project board for issues in the
+  "Ready" column:
+  ```
+  gh api graphql -f query='query { node(id: "{project_node_id}") { ... on ProjectV2 { items(first: 100) { nodes { fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } content { ... on Issue { number title labels(first:10) { nodes { name } } body state assignees(first:1) { nodes { login } } } } } } } } }'
+  ```
+  Filter to items where Status is "Ready", state is OPEN, and
+  assignees is empty.
+- **`both`**: use the label query, then confirm each candidate is also
+  in the "Ready" board column. Drop candidates not in both.
 
 Filter out issues with the `approved` label.
 
@@ -205,7 +235,8 @@ issues that do **not** have the `claude-ready` label.
 
 Sort by priority label, then issue number.
 
-If no `status-ready` label is configured, list all open unassigned issues.
+If no ready gate is configured (no `status-ready` label and no board),
+list all open unassigned issues.
 
 ### 3b-1. Apply mode filter
 
