@@ -151,16 +151,46 @@ unexpectedly:
 - Last updated: {ISO 8601 timestamp}
 ```
 
-At the start of execution, check for an existing checkpoint file. If
-one exists and matches an in-progress story:
+At the start of execution, check for an existing checkpoint file. A
+checkpoint is only trustworthy if it still describes live, claimable
+work — a stale or orphaned checkpoint must never trigger a resume.
+Before acting on one, run **all** of these validation gates and discard
+the checkpoint (delete the file and start fresh) if **any** fails:
+
+1. **Freshness** — If the `Last updated` timestamp is older than
+   `stale-timeout`, the checkpoint is stale. Discard it.
+2. **Issue still open** — Read the recorded story:
+   ```
+   gh issue view {number} --repo {org}/{repo} --json state,assignees,closedByPullRequestsReferences
+   ```
+   If the issue is `CLOSED` (already merged or otherwise resolved), the
+   checkpoint is orphaned. Discard it.
+3. **Still ours** — If the issue is open but **not** assigned to `@me`
+   (another agent reclaimed it, or a human reassigned it), do not steal
+   it back. Discard the checkpoint.
+4. **Branch still exists** — Confirm the recorded branch is present
+   locally or on the remote:
+   ```
+   git rev-parse --verify {branch_name} 2>/dev/null \
+     || git ls-remote --exit-code --heads origin {branch_name}
+   ```
+   If the branch is gone, the work cannot be resumed. Discard the
+   checkpoint.
+
+If **every** gate passes, the checkpoint describes resumable work:
 
 1. Read the checkpoint to determine where the previous session stopped.
-2. Verify the branch exists and check it out.
-3. Resume from the recorded phase rather than starting over.
-4. If the checkpoint is stale (older than `stale-timeout`), discard it
-   and start fresh.
+2. Check out the recorded branch.
+3. Reconcile against reality before trusting the recorded phase — run
+   `git status` and `git diff --name-only`, and re-read `.claude/plan.md`
+   to confirm which files are actually done. Resume from the recorded
+   phase only if the on-disk state is consistent with it; otherwise fall
+   back to the earliest phase the concrete state supports (the same
+   resume-point logic used for stale PRs in Phase 1).
 
-Delete the checkpoint file after Phase 7 completes successfully.
+When discarding a checkpoint, delete both `.claude/execution-checkpoint.md`
+and any orphaned `.claude/plan.md`, then proceed with a normal Phase 1
+pick. Delete the checkpoint file after Phase 7 completes successfully.
 
 ---
 

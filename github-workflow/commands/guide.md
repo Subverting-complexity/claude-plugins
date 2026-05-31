@@ -87,7 +87,7 @@ Flag the specific issue and explain how to fix it:
 - No git repo → suggest `git init` and adding a remote
 - gh not authenticated → suggest `gh auth login`
 
-### 3. Offer next step
+### 2. Offer next step
 
 Always end with a concrete suggestion based on the state detected.
 Don't just list options — recommend the one most likely to be useful

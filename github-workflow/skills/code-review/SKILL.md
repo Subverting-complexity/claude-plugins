@@ -363,26 +363,72 @@ changed? Are unrelated code paths in the same files untouched and correct?
 Is every changed line necessary for the PR's stated purpose? Flag
 unrelated refactors, formatting changes, or comment edits.
 
-### Step 7 — Fix issues
+### Step 7 — Fix issues (critical-first, budget-aware)
 
-Fix **all** concrete, objectively wrong problems directly on the PR branch.
-This includes both blocking issues and minor non-blocking observations:
+Fix concrete, objectively wrong problems directly on the PR branch. Work
+in priority order so that if the session runs out of budget, the most
+important fixes have already landed.
 
-- Unrealistic test mocks, missing null checks, logic errors
-- Missing test coverage, dead code, mismatched types
-- Missing trailing newlines, formatting inconsistencies
-- Null-forgiving operators, unnecessary casts
-- Utility method placement, misplaced code
-- Any other issue where the correct fix is obvious and unambiguous
+#### 7a — Triage findings into tiers
 
-Commit each fix with a clear message. Push the fixes.
+Sort every finding from Step 6 into two tiers:
+
+- **Critical** — must be fixed before the PR is mergeable:
+  - Hard non-compliance gate failures
+  - Security problems (injection, missing input validation, secrets in
+    logs)
+  - Logic and correctness errors, missing null checks, broken or
+    incorrect tests
+  - Missing test coverage on non-trivial new code paths
+  - Regressions to existing callers or consumers
+- **Trivial** — correct to fix, but non-blocking:
+  - Missing trailing newlines, formatting inconsistencies
+  - Dead code removal, utility method placement, misplaced code
+  - Null-forgiving operators, unnecessary casts
+  - Comment or naming cleanups where the fix is obvious
+
+#### 7b — Fix the critical tier
+
+Fix every critical finding. Commit each fix (or a small logical group)
+with a clear message. These are non-negotiable — do not skip them for
+budget reasons. If a critical issue genuinely cannot be auto-fixed
+(needs human or design judgment), leave it for the verdict in Step 8
+rather than guessing.
+
+#### 7c — Assess remaining budget
+
+Before starting the trivial tier, check whether there is room to
+continue. Treat the budget as spent if **any** of these is true:
+
+- The session has been running a long time or context is approaching its
+  limit.
+- Many files have already been read and edited this session.
+
+If the budget is spent, **skip to Step 7e** and record the unfixed
+trivial findings so Step 9 can list them under "Issues remaining" as
+non-blocking cleanups for a follow-up.
+
+#### 7d — Fix the trivial tier
+
+If budget remains, fix the trivial findings too. Commit them.
+
+#### 7e — Push
+
+Push all fixes:
+
+```bash
+git push
+```
 
 Do **not** fix:
 - Stylistic preferences where multiple valid approaches exist
 - Architectural decisions that require human judgment
 - Issues where the "right fix" depends on product or design context
 
-Flag anything you cannot fix in the review comment as needing discussion.
+Flag anything you cannot fix — and any trivial items deferred for budget
+in Step 7c — in the review comment. Deferred trivial items are
+non-blocking and do not by themselves force a "Changes Requested"
+verdict.
 
 After pushing fixes, update the recorded commit SHA to the new `HEAD`.
 
@@ -391,17 +437,20 @@ After pushing fixes, update the recorded commit SHA to the new `HEAD`.
 Re-evaluate the PR state **after** Step 7 fixes. Issues that were
 auto-fixed do not count as remaining issues.
 
-- **Approved** — Zero hard non-compliance failures, zero remaining issues
-  after fixes. All problems were either absent or auto-fixed. PR is fully
+- **Approved** — Zero hard non-compliance failures and zero remaining
+  *critical* issues. All critical problems were either absent or
+  auto-fixed. Trivial cleanups that were deferred for budget (Step 7c)
+  do **not** block approval — list them as non-blocking notes. PR is
   ready to merge.
 - **Changes Requested** — Any hard non-compliance failure, or any remaining
-  problem that could not be auto-fixed and needs human action.
+  *critical* problem that could not be auto-fixed and needs human action.
 - **Needs Discussion** — No hard failures, but architectural questions or
   ambiguities need human judgment before merge.
 
-If every issue found in Step 6 was resolved in Step 7, the verdict is
-**Approved** — not "Changes Requested with observations". The fixes are
-already pushed; there is nothing left for the builder to do.
+If every critical issue found in Step 6 was resolved in Step 7, the
+verdict is **Approved** — not "Changes Requested with observations" —
+even if some trivial cleanups were deferred for budget. The fixes are
+already pushed; nothing blocking is left for the builder to do.
 
 ### Step 9 — Post the review
 

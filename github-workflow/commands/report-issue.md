@@ -31,11 +31,32 @@ Determine the type:
 - **Architecture** — Layer violation, coupling, design problem
 - **Tech Debt** — Working but needs improvement
 
-### 3. Assess severity
+### 3. Assess severity and select labels
+
+First decide what happens to the issue:
 
 - **Blocks current story** → Create and fix first on its own branch
 - **Same scope and trivial** → Fix inline in current PR
 - **Everything else** → Create issue for later
+
+Then map the severity to a **priority label** from the label map in
+`ClaudeProject.md`:
+
+- **Critical** — security hole, data loss, or a crash on a core path →
+  `priority-critical` label
+- **High** — broken feature, blocks other work, or a clear regression →
+  `priority-high` label
+- **Medium** — incorrect behaviour with a workaround, or notable debt →
+  `priority-medium` label
+- **Low** — cosmetic, minor cleanup, or nice-to-have → `priority-low`
+  label
+
+Also select the **type label** (`type-bug`, `type-arch`, or `type-debt`)
+from the label map based on the classification in Step 2.
+
+Build the label list from whichever of these the project actually
+defines in its label map. Skip any purpose that has no label configured
+— never pass a placeholder or an empty label name to `gh`.
 
 ### 4. Detect current milestone
 
@@ -46,14 +67,28 @@ in the right sprint:
 gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | .[] | select(.open_issues > 0) | .title' | head -1
 ```
 
+If this returns nothing (flat backlog mode, or no open milestones), the
+issue is created without a milestone — do **not** pass an empty
+`--milestone` flag, as `gh` rejects it.
+
 ### 5. Create the issue
 
+Assemble the label list from the type and priority labels selected in
+Step 3, comma-separated, omitting any that are not configured.
+
 ```
+# Sprint mode (a current milestone was found):
 gh issue create --repo {org}/{repo} \
   --title "{prefix} {title}" \
   --body "{description}" \
   --label "{type_label},{priority_label}" \
   --milestone "{current_milestone}"
+
+# Flat mode (no milestone) — omit the --milestone flag entirely:
+gh issue create --repo {org}/{repo} \
+  --title "{prefix} {title}" \
+  --body "{description}" \
+  --label "{type_label},{priority_label}"
 ```
 
 Where `{prefix}` is `[BUG]`, `[ARCH]`, or `[DEBT]` from the Issue Prefixes

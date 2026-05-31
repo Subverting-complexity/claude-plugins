@@ -141,6 +141,30 @@ Suggested colours (user can override):
 This step is best-effort. If label creation fails (permissions, etc.),
 log a warning and continue.
 
+### 5c. Ignore plugin scratch files
+
+The execute skill writes session-local scratch files under `.claude/`
+that must never be committed: `.claude/execution-checkpoint.md` (resume
+state) and `.claude/plan.md` (the per-story architecture plan). If they
+land in a commit, a stale checkpoint can follow the branch around and
+trigger a bad resume in a later session.
+
+Ensure the project's `.gitignore` excludes them:
+
+- If no `.gitignore` exists, create one with these entries.
+- If one exists, check whether it already covers `.claude/`. If not,
+  append the two lines below. Do not remove or reorder existing entries.
+
+```
+# github-workflow plugin scratch files
+.claude/execution-checkpoint.md
+.claude/plan.md
+```
+
+If the project already ignores `.claude/` wholesale, leave it alone.
+This step is best-effort — if `.gitignore` cannot be written, log a
+warning and continue.
+
 ### 6. Generate or update CLAUDE.md
 
 The user's `CLAUDE.md` is their own file. The goal here is to add
