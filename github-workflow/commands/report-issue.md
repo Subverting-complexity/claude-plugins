@@ -1,5 +1,5 @@
 ---
-description: 'Create a bug, architecture, or tech debt issue. Trigger: "report a bug", "log an issue", "found a bug", "report tech debt", "create an issue", "file a bug", "something''s broken", "found a problem", "raise an issue".'
+description: 'Create a bug, security, architecture, or tech debt issue. Trigger: "report a bug", "log an issue", "found a bug", "report tech debt", "create an issue", "file a bug", "something''s broken", "found a problem", "raise an issue", "security issue", "vulnerability".'
 ---
 
 # Report Issue
@@ -28,6 +28,7 @@ Read `ClaudeProject.md` and extract:
 Determine the type:
 
 - **Bug** — Something is broken or behaves incorrectly
+- **Security** — Vulnerability, insecure pattern, or missing protection
 - **Architecture** — Layer violation, coupling, design problem
 - **Tech Debt** — Working but needs improvement
 
@@ -51,7 +52,7 @@ Then map the severity to a **priority label** from the label map in
 - **Low** — cosmetic, minor cleanup, or nice-to-have → `priority-low`
   label
 
-Also select the **type label** (`type-bug`, `type-arch`, or `type-debt`)
+Also select the **type label** (`type-bug`, `type-security`, `type-arch`, or `type-debt`)
 from the label map based on the classification in Step 2.
 
 Build the label list from whichever of these the project actually
@@ -70,6 +71,30 @@ gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | .[] | select(.open
 If this returns nothing (flat backlog mode, or no open milestones), the
 issue is created without a milestone — do **not** pass an empty
 `--milestone` flag, as `gh` rejects it.
+
+### 4b. Validate and create labels
+
+Before creating the issue, ensure all selected labels exist on the
+repository. Fetch the current label list:
+
+```
+gh label list --repo {org}/{repo} --json name --jq '.[].name'
+```
+
+For each label in the assembled list (type label, priority label),
+check if it appears in the output. If a label is missing, create it:
+
+```
+gh label create "{label_name}" --repo {org}/{repo} --description "{description}" --force
+```
+
+Use these colours (matching the setup wizard defaults):
+- Priority: critical `#B60205`, high `#D93F0B`, medium `#FBCA04`, low `#0E8A16`
+- Type: story `#1D76DB`, bug `#D93F0B`, security `#B60205`, debt `#FBCA04`, arch `#0E8A16`
+
+This step is best-effort. If label creation fails (permissions, etc.),
+log a warning and proceed — `gh issue create` will still apply labels
+that already exist.
 
 ### 5. Create the issue
 
@@ -91,7 +116,7 @@ gh issue create --repo {org}/{repo} \
   --label "{type_label},{priority_label}"
 ```
 
-Where `{prefix}` is `[BUG]`, `[ARCH]`, or `[DEBT]` from the Issue Prefixes
+Where `{prefix}` is `[BUG]`, `[SECURITY]`, `[ARCH]`, or `[DEBT]` from the Issue Prefixes
 table in `ClaudeProject.md`.
 
 Include in the body:

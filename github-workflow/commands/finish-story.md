@@ -79,6 +79,45 @@ gh pr edit {pr_number} --body "{updated_body}"
 
 Skip to Step 6 (labels). Only create a new PR if none exists.
 
+### 4b. Ensure issue linkage
+
+Every PR must link to a GitHub issue for traceability. Before creating
+a new PR, determine whether the current work has an associated issue:
+
+1. Check session context for a story number from `/github-workflow:execute`
+   or `/github-workflow:start-story`.
+2. If no story number is known, check the branch name for an issue
+   number (e.g., `feature/42/description` → issue #42). Verify it
+   exists:
+   ```
+   gh issue view {number} --repo {org}/{repo} --json state --jq '.state'
+   ```
+3. If no issue is found from context or branch name, create one now.
+   Use the commit history and diff to build a proper issue body:
+
+   - **Title**: derive from the branch name or first commit message.
+     Apply the appropriate issue prefix (`[STORY]`, `[BUG]`,
+     `[SECURITY]`, `[ARCH]`, or `[DEBT]`) from ClaudeProject.md.
+   - **Body**: include Context (what was built and why), Requirements
+     (what the changes accomplish), and Notes (any caveats).
+   - **Labels**: apply the appropriate type and priority labels. Run
+     label validation (check existence, create if missing) before
+     applying:
+     ```
+     gh label list --repo {org}/{repo} --json name --jq '.[].name'
+     gh label create "{label}" --repo {org}/{repo} --description "{desc}" --force
+     ```
+   - **Milestone**: if in sprint mode, attach to the current milestone.
+
+   ```
+   gh issue create --repo {org}/{repo} --title "{title}" --body "{body}" --label "{labels}"
+   ```
+
+   Record the new issue number for use in Step 5.
+
+The issue number (from context, branch, or newly created) is used in
+Step 5 to add `Closes #N` to the PR body.
+
 ### 5. Create new PR
 
 Build the PR body from the committed changes:

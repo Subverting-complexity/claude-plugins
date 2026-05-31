@@ -1,11 +1,21 @@
 ---
-description: 'Pick the next story from the backlog without starting it. Trigger: "what''s next", "pick a story", "show me the next story", "what should I work on", "next issue", "show backlog", "what''s in the queue", "grab a story".'
+description: 'Pick the next story from the backlog without starting it. Supports mode filtering: default picks highest priority regardless of type, --mode feature for features only, --mode maintenance for bugs/security/arch/debt. Trigger: "what''s next", "pick a story", "show me the next story", "what should I work on", "next issue", "show backlog", "what''s in the queue", "grab a story", "next bug", "next maintenance item", "next feature".'
 ---
 
 # Pick Story
 
 Select the next story from the backlog. Before looking for new work,
 check for stale in-progress stories that can be reclaimed.
+
+## Mode
+
+This command accepts an optional mode argument:
+
+- **story** (default) — Pick the highest priority issue regardless of type
+- **feature** — Pick only feature stories (type-story label)
+- **maintenance** — Pick the next bug, security, architecture, or tech debt issue (alias: bug)
+
+If mode is "bug", treat it as "maintenance".
 
 ## Preflight
 
@@ -203,6 +213,21 @@ issues that do **not** have the `claude-ready` label.
 Sort by priority label, then issue number.
 
 If no `status-ready` label is configured, list all open unassigned issues.
+
+### 3b-1. Apply mode filter
+
+After assembling the candidate list (from either sprint or flat mode),
+apply type-based filtering based on mode:
+
+- **Story mode** (default): no type filter. Pick the highest priority
+  issue regardless of its type label. This is the most common mode.
+- **Feature mode**: keep only issues with the type-story label (from
+  the label map). If no type-story issues exist, report "No feature
+  stories available" and exit.
+- **Maintenance mode**: keep only issues with type-bug, type-security,
+  type-arch, or type-debt labels (from the label map).
+
+The filtered list then proceeds to Step 3c (dependency checking).
 
 ### 3c. Filter out issues with unresolved dependencies
 

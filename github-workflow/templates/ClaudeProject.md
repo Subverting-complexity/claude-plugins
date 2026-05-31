@@ -49,12 +49,13 @@ Only include labels your project uses — remove unused rows.
 
 ### Type
 
-| Purpose    | Label    |
-| ---------- | -------- |
-| type-story | `{name}` |
-| type-bug   | `{name}` |
-| type-debt  | `{name}` |
-| type-arch  | `{name}` |
+| Purpose       | Label    |
+| ------------- | -------- |
+| type-story    | `{name}` |
+| type-bug      | `{name}` |
+| type-security | `{name}` |
+| type-debt     | `{name}` |
+| type-arch     | `{name}` |
 
 ### Status
 
@@ -124,12 +125,13 @@ Issues should include these sections at minimum:
 
 ## Issue Prefixes
 
-| Type         | Prefix    |
-| ------------ | --------- |
-| Story        | `[STORY]` |
-| Bug          | `[BUG]`   |
-| Architecture | `[ARCH]`  |
-| Tech Debt    | `[DEBT]`  |
+| Type         | Prefix       |
+| ------------ | ------------ |
+| Story        | `[STORY]`    |
+| Bug          | `[BUG]`      |
+| Security     | `[SECURITY]` |
+| Architecture | `[ARCH]`     |
+| Tech Debt    | `[DEBT]`     |
 
 ## Project Board (optional)
 

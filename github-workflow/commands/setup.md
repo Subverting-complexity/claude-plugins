@@ -86,7 +86,12 @@ For anything not auto-detected, ask the user interactively:
 
 - **Branch convention** — suggest `feature/{number}/{short-desc}` as default
 - **Priority labels** — what label names for critical/high/medium/low
-- **Type labels** — what label names for story/bug/debt/arch
+- **Type labels** — what label names for story/bug/security/debt/arch.
+  Explain that type labels control mode filtering:
+  `/github-workflow:execute` (default) picks the highest priority issue
+  regardless of type; `--mode feature` picks feature stories only;
+  `--mode maintenance` picks from bug/security/debt/arch issues.
+  All five types should be configured for full mode support.
 - **Status labels** — what label names for ready/blocked
 - **Claude labels** — simple workflow markers. Suggest
   `claude:authored` and `claude:blocked`. These are separate from the
@@ -106,7 +111,7 @@ For anything not auto-detected, ask the user interactively:
   (The code-review skill also supports its own custom labels — those
   are configured separately in `review.config.md` during Step 7.)
 - **Quality gate command** — if not auto-detected
-- **Issue prefixes** — suggest `[STORY]`, `[BUG]`, `[ARCH]`, `[DEBT]`
+- **Issue prefixes** — suggest `[STORY]`, `[BUG]`, `[SECURITY]`, `[ARCH]`, `[DEBT]`
 - **Stale timeout** — how long an assigned issue can go without a
   branch or PR before `pick-story` reclaims it. Suggest `2h` as
   default. Accepts values like `30m`, `1h`, `4h`.
@@ -140,7 +145,7 @@ error.
 
 Suggested colours (user can override):
 - Priority labels: critical `#B60205`, high `#D93F0B`, medium `#FBCA04`, low `#0E8A16`
-- Type labels: `#1D76DB` (blue)
+- Type labels: story `#1D76DB` (blue), bug `#D93F0B` (red-orange), security `#B60205` (red), debt `#FBCA04` (yellow), arch `#0E8A16` (green)
 - Status labels: `#5319E7` (purple)
 - Claude labels: `#BFDADC` (light teal)
 
