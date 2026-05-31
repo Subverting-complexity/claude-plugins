@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Grill Me
 
-Relentlessly interview the user about their plan or design until every open question is resolved. For each question, provide your recommended answer before the user responds.
+Relentlessly interview the user about their plan or design until every open question is resolved. For each question, provide your recommended answer before the user responds, worded in clear, complete sentences rather than terse shorthand.
 
 ## How It Works
 
@@ -45,6 +45,48 @@ Relentlessly interview the user about their plan or design until every open ques
   surface it immediately.
 - **Defer consciously.** If something genuinely can't be decided yet,
   mark it as an open issue and move on.
+
+## Wording and Clarity
+
+Recommendations and explanations must be easy to read on first pass.
+Favour clarity over density:
+
+- **Write in complete sentences.** Avoid telegraphic fragments like
+  "Expiry: 7 days, configurable". Write "Invites expire after 7 days
+  by default. This is configurable through an `InviteExpiry` setting."
+- **One idea per sentence.** Break dense compound statements apart
+  rather than stacking clauses with parentheses and slashes.
+- **Format identifiers as code.** Put state names, settings, methods,
+  and endpoints in backticks (`Pending`, `InviteExpiry`, `POST`).
+- **Give each point room to breathe.** Use a bullet per point with a
+  blank line between them, and a short bold label where it helps.
+- **Define, don't abbreviate.** Spell out shorthand and jargon. Say
+  what a term means rather than assuming the reader fills the gap.
+- **Always include the why.** State the recommendation, then a short
+  plain-language rationale for it.
+
+### Example
+
+Terse and hard to parse:
+
+> Expiry: 7 days, configurable (InviteExpiry setting). On expiry,
+> Pending → Expired. GET landing is idempotent + re-openable while
+> Pending (SafeLinks-safe); accept is single-success.
+
+Clear and easy to read:
+
+> - **Expiry:** Invites expire after 7 days by default. This is
+>   configurable through an `InviteExpiry` setting. When an invite
+>   expires, its status changes from `Pending` to `Expired`.
+>
+> - **Landing page:** The `GET` landing page is idempotent and
+>   re-openable while the invite is still `Pending`. This makes it
+>   safe for tools such as SafeLinks to open the link without
+>   consuming the invite.
+>
+> - **Acceptance:** Accepting the invite is single-use. The first
+>   valid `POST` changes it from `Pending` to `Accepted`. Any later
+>   `POST` shows an "already accepted" message.
 
 ## Codebase Exploration
 
