@@ -10,6 +10,13 @@ Requires: a story number. If no number is provided, run the
 `/github-workflow:pick-story` flow to auto-select the next story and
 use that number. Do not ask the user which story to start.
 
+## Preflight
+
+Before doing anything else, invoke `/github-workflow:preflight` to
+verify project configuration. If it finds issues and the user chooses
+"Configure now", wait for setup to complete, then ask the user to
+re-run this command. Otherwise, proceed.
+
 ## Steps
 
 ### 1. Read configuration

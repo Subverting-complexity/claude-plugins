@@ -7,6 +7,13 @@ description: 'Address review feedback on a PR. Trigger: "update the PR", "fix th
 Address review feedback on a pull request that has changes requested,
 push fixes, and flag it for re-review.
 
+## Preflight
+
+Before doing anything else, invoke `/github-workflow:preflight` to
+verify project configuration. If it finds issues and the user chooses
+"Configure now", wait for setup to complete, then ask the user to
+re-run this command. Otherwise, proceed.
+
 ## Steps
 
 ### 1. Read configuration

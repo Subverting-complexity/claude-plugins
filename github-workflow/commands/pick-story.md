@@ -7,6 +7,13 @@ description: 'Pick the next story from the backlog without starting it. Trigger:
 Select the next story from the backlog. Before looking for new work,
 check for stale in-progress stories that can be reclaimed.
 
+## Preflight
+
+Before doing anything else, invoke `/github-workflow:preflight` to
+verify project configuration. If it finds issues and the user chooses
+"Configure now", wait for setup to complete, then ask the user to
+re-run this command. Otherwise, proceed.
+
 ## Project configuration (auto-loaded)
 
 ```!
