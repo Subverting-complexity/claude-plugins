@@ -38,6 +38,14 @@ are:
   can begin — run `/github-workflow:feature-discovery` to plan the
   breakdown with the user, then pick the first sub-story.
 
+## Preflight
+
+Before doing anything else, invoke `/github-workflow:preflight` to
+verify project configuration. If it finds issues and the user chooses
+"Configure now", wait for setup to complete, then ask the user to
+re-run this command (the configuration loaded below will be stale).
+If the user chooses "Continue anyway" or "Don't remind me", proceed.
+
 ## Project configuration (auto-loaded)
 
 ```!
@@ -48,9 +56,10 @@ else
 fi
 ```
 
-If the above shows "NOT FOUND", stop and tell the user to run
-`/github-workflow:setup` first. Do not attempt to proceed without it —
-every subsequent step depends on the values defined there.
+If the above shows "NOT FOUND" and preflight did not already handle
+this, stop and tell the user to run `/github-workflow:setup` first.
+Do not attempt to proceed without it — every subsequent step depends
+on the values defined there.
 
 Read `CLAUDE.md` for project rules and build principles.
 

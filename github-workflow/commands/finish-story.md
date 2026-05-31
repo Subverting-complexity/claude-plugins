@@ -8,6 +8,13 @@ Push the branch, create a PR, and update the board.
 
 Requires: a story in progress with committed work on a feature branch.
 
+## Preflight
+
+Before doing anything else, invoke `/github-workflow:preflight` to
+verify project configuration. If it finds issues and the user chooses
+"Configure now", wait for setup to complete, then ask the user to
+re-run this command. Otherwise, proceed.
+
 ## Current state (auto-detected)
 
 **Branch:** !`git branch --show-current 2>/dev/null || echo "(unknown)"`

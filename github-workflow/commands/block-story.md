@@ -8,6 +8,13 @@ Mark the current story as blocked and record the reason.
 
 Requires: a story in progress with a known blocker.
 
+## Preflight
+
+Before doing anything else, invoke `/github-workflow:preflight` to
+verify project configuration. If it finds issues and the user chooses
+"Configure now", wait for setup to complete, then ask the user to
+re-run this command. Otherwise, proceed.
+
 ## Steps
 
 ### 1. Read configuration

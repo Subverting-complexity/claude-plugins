@@ -6,6 +6,13 @@ description: 'Create a bug, architecture, or tech debt issue. Trigger: "report a
 
 Create a bug, architecture, or tech debt issue discovered during development.
 
+## Preflight
+
+Before doing anything else, invoke `/github-workflow:preflight` to
+verify project configuration. If it finds issues and the user chooses
+"Configure now", wait for setup to complete, then ask the user to
+re-run this command. Otherwise, proceed.
+
 ## Steps
 
 ### 1. Read configuration
