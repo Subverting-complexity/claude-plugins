@@ -78,3 +78,17 @@ source.
 ```bash
 cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 ```
+
+## Updating installed plugins
+
+After merging changes to main, the local Claude Code marketplace cache
+is stale. You must refresh it before updating:
+
+```powershell
+claude plugins marketplace update subverting-complexity
+claude plugins update github-workflow@subverting-complexity
+claude plugins update local-workflow@subverting-complexity
+```
+
+Without the marketplace refresh, `plugins update` reports "already at
+latest" against the cached version — not the actual latest on main.
