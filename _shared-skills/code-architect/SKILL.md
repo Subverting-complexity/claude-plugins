@@ -1,7 +1,7 @@
 ---
 name: code-architect
 description: >-
-  Design, audit, and document codebases using Clean Architecture, Design Patterns (GoF), and Fundamentals of Software Architecture. Three workflows. (1) Design new systems with architecture style selection, SOLID, testability, boundaries. Auto-triggers grill-me for requirements. (2) Audit existing code for SOLID violations, dependency direction, testability, with file-level findings and refactoring plans. (3) Produce architecture documentation - ADRs, compliance guardrails, coding standards, boundary maps, and agent-followable strategy docs. Trigger on design/architect/structure a codebase, review/audit architecture, SOLID violations, dependency inversion, improve testability, refactor for extensibility, document the architecture, write coding standards, generate compliance rules, ADR, guardrails, architecture strategy. Also trigger when the user types "/code-a" as a slash command shortcut. Uses document-reader for book lookups.
+  Design, audit, and document codebases using Clean Architecture, Design Patterns (GoF), and Fundamentals of Software Architecture. Three workflows. (1) Design new systems with architecture style selection, SOLID, testability, boundaries. Auto-triggers grill-me for requirements. (2) Audit existing code for SOLID violations, dependency direction, testability, with file-level findings and refactoring plans. (3) Produce architecture documentation - compliance guardrails, coding standards, boundary maps, and agent-followable strategy docs. Trigger on design/architect/structure a codebase, review/audit architecture, SOLID violations, dependency inversion, improve testability, refactor for extensibility, document the architecture, write coding standards, generate compliance rules, guardrails, architecture strategy. Also trigger when the user types "/code-a" as a slash command shortcut. Uses document-reader for book lookups.
 depends-on:
   - grill-me
 allowed-tools:
@@ -96,42 +96,7 @@ This workflow produces structured, enforceable documents. The key distinction: t
 
 #### Document Types
 
-**1. Architecture Decision Records (ADRs)**
-When to produce: After any significant design decision.
-Save to: `.claude/decisions/` or `docs/architecture/decisions/`
-
-Template:
-```
-# ADR-NNN: [Decision Title]
-
-## Status
-[Proposed | Accepted | Deprecated | Superseded by ADR-NNN]
-
-## Context
-What forces are at play? What problem are we solving?
-Include relevant architecture characteristics and trade-offs.
-
-## Decision
-What is the change we are making?
-Reference specific principles: [SRP | OCP | LSP | ISP | DIP | CCP | SDP | etc.]
-
-## Consequences
-### Positive
-- What improves?
-- What becomes possible?
-
-### Negative
-- What trade-offs are we accepting?
-- What becomes harder?
-
-### Compliance Rules
-Concrete, checkable rules that follow from this decision:
-- MUST: [things that must be true]
-- MUST NOT: [things that must not happen]
-- SHOULD: [preferred but not enforced]
-```
-
-**2. Architecture Compliance Document**
+**1. Architecture Compliance Document**
 When to produce: When establishing or updating codebase guardrails.
 Save to: `.claude/architecture.md` or `docs/architecture/compliance.md`
 
@@ -276,14 +241,12 @@ A subagent or reviewer should check:
 □ Interfaces defined for any new external service
 □ Unit tests cover business logic without infrastructure
 □ No circular dependencies introduced
-□ ADR written for any new architectural decision
 ```
 
 #### Documentation Workflow Steps
 
 1. **Determine document type** based on request:
    - "Document the architecture" or "write architecture docs" → Full compliance document + boundary map
-   - "Write an ADR for [decision]" → Single ADR
    - "Create coding standards" or "guardrails" → Coding standards document
    - "Strategy for [codebase]" → Compliance document tailored to specific codebase
 

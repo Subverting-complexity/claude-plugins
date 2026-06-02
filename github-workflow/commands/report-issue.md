@@ -23,6 +23,12 @@ Read `ClaudeProject.md` and extract:
 - Label map (for type and priority labels)
 - Issue prefixes
 
+If `ClaudeProject.md` is missing or has no label map, use the default
+label names from `templates/default-labels.md`. When using defaults in
+an interactive session, warn the user: "Label map not configured —
+using default labels. Run `/github-workflow:setup` to configure labels
+for this project."
+
 ### 2. Classify the issue
 
 Determine the type:
@@ -101,20 +107,25 @@ that already exist.
 Assemble the label list from the type and priority labels selected in
 Step 3, comma-separated, omitting any that are not configured.
 
+Write the issue body to a temporary file first, then create using
+`--body-file` to avoid Windows/PowerShell shell-escaping issues:
+
 ```
 # Sprint mode (a current milestone was found):
 gh issue create --repo {org}/{repo} \
   --title "{prefix} {title}" \
-  --body "{description}" \
+  --body-file {tempfile} \
   --label "{type_label},{priority_label}" \
   --milestone "{current_milestone}"
 
 # Flat mode (no milestone) — omit the --milestone flag entirely:
 gh issue create --repo {org}/{repo} \
   --title "{prefix} {title}" \
-  --body "{description}" \
+  --body-file {tempfile} \
   --label "{type_label},{priority_label}"
 ```
+
+Delete the temp file after creation.
 
 Where `{prefix}` is `[BUG]`, `[SECURITY]`, `[ARCH]`, or `[DEBT]` from the Issue Prefixes
 table in `ClaudeProject.md`.
@@ -126,6 +137,26 @@ Include in the body:
 - Impact assessment
 - Suggested fix (if known)
 - Whether it blocks the current story
+
+### 5b. Verify labels were applied
+
+After creating the issue, verify the labels were actually applied:
+
+```
+gh issue view {number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'
+```
+
+For each expected label (type and priority), if missing, create it and
+reapply:
+
+```
+gh label create "{label}" --repo {org}/{repo} --description "{desc}" --color "{color}" --force
+gh issue edit {number} --repo {org}/{repo} --add-label "{label}"
+```
+
+Use label colors from `templates/default-labels.md`. If the label map
+in `ClaudeProject.md` is missing or incomplete, use the default names
+from `templates/default-labels.md`.
 
 ### 6. Validate issue body
 

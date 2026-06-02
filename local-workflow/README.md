@@ -82,7 +82,7 @@ local-workflow/
 
 | Skill                | What it does                                       |
 | -------------------- | -------------------------------------------------- |
-| `code-architect`     | Design new codebases, audit existing, document ADRs |
+| `code-architect`     | Design new codebases, audit existing, document architecture |
 | `feature-discovery`  | Explore and decompose features into user stories   |
 | `grill-me`           | Relentless stress-testing of plans and assumptions |
 | `repo-scaffolding`   | Scaffold a new repository from requirements        |

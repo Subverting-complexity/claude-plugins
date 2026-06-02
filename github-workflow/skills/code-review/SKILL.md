@@ -63,11 +63,19 @@ If neither exists and the session is interactive (user is present),
 run the **Config Generation** flow (see below) to create one.
 
 If the session is autonomous (called from `/github-workflow:execute`
-or a scheduled routine), skip the config generation — auto-detect
-sensible defaults from the repo's existing labels (`gh label list`)
-and proceed with a minimal review (no custom gates, no tech-stack
-rules, standard footer). Note in the review comment that no
-`review.config.md` was found and defaults were used.
+or a scheduled routine), skip the config generation — use the default
+review state labels from `templates/default-labels.md` (prefix
+`review`: `review-reviewing`, `review-approved`,
+`review-changes-requested`, `review-needs-discussion`,
+`review-needs-re-review`, `review-review-failed`, `review-updating`,
+`review-fixes-applied`). Proceed with a minimal review (no custom
+gates, no tech-stack rules, standard footer). Before starting, ensure
+all default labels exist on the repo — create any missing ones using
+`gh label create` with the colors from `templates/default-labels.md`.
+Note in the review comment that no `review.config.md` was found and
+defaults were used. In interactive sessions, also warn the user:
+"No `review.config.md` found — using default labels. Run
+`/github-workflow:setup` to configure review labels for this project."
 
 Read `review.config.md` fully before starting. Everything project-specific
 lives there. This workflow is generic.
@@ -511,6 +519,26 @@ the updated SHA from Step 7 if fixes were pushed).
 8. Report `Reviewed PR #<number> — <verdict>` and exit.
 
 Use the label names from `review.config.md` for all label operations.
+If no `review.config.md` exists, use the defaults from
+`templates/default-labels.md`.
+
+### Step 10b — Verify labels were applied
+
+After applying labels in Step 10, immediately read back the PR labels:
+
+```bash
+gh pr view <number> --repo <org>/<repo> --json labels --jq '[.labels[].name]'
+```
+
+Confirm the expected state label is present. If missing, the label
+likely doesn't exist on the repo. Create it and retry:
+
+```bash
+gh label create "<label>" --repo <org>/<repo> --description "<desc>" --color "<color>" --force
+gh pr edit <number> --repo <org>/<repo> --add-label "<label>"
+```
+
+If still missing after retry, report the failure but do not block.
 
 ---
 

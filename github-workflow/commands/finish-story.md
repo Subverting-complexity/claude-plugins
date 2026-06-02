@@ -43,6 +43,12 @@ Extract from the project configuration above:
 - Project board settings (if configured)
 - Label map (for claude labels)
 
+If `ClaudeProject.md` is missing or has no label map, use the default
+label names from `templates/default-labels.md`. When using defaults in
+an interactive session, warn the user: "Label map not configured —
+using default labels. Run `/github-workflow:setup` to configure labels
+for this project."
+
 ### 2. Run the quality gate
 
 Run the quality gate command from `ClaudeProject.md` to verify the code
@@ -74,8 +80,13 @@ gh pr list --repo {org}/{repo} --head {branch} --state open --json number,title
 If a PR already exists, update it instead of creating a new one:
 
 ```
-gh pr edit {pr_number} --body "{updated_body}"
+gh pr edit {pr_number} --body-file {tempfile}
 ```
+
+Write the updated body to a temporary file first, then use
+`--body-file` to avoid Windows/PowerShell shell-escaping issues.
+Delete the temp file after. Then validate the body was applied
+(same as Step 5b).
 
 Skip to Step 6 (labels). Only create a new PR if none exists.
 
@@ -109,9 +120,16 @@ a new PR, determine whether the current work has an associated issue:
      ```
    - **Milestone**: if in sprint mode, attach to the current milestone.
 
+   Write the issue body to a temporary file, then create using
+   `--body-file` to avoid Windows/PowerShell shell-escaping issues:
+
    ```
-   gh issue create --repo {org}/{repo} --title "{title}" --body "{body}" --label "{labels}"
+   gh issue create --repo {org}/{repo} --title "{title}" --body-file {tempfile} --label "{labels}"
    ```
+
+   Delete the temp file after. Then validate the issue body and
+   labels were applied correctly — read back and verify, same as
+   the validation in `/github-workflow:report-issue` Steps 5b and 6.
 
    Record the new issue number for use in Step 5.
 
@@ -127,15 +145,19 @@ Build the PR body from the committed changes:
 - Note any technical decisions made
 - Add a test plan section
 
-Create the PR. If the quality gate failed (Step 2), create a draft:
+Write the PR body to a temporary file first, then create the PR
+using `--body-file` to avoid Windows/PowerShell shell-escaping issues.
+If the quality gate failed (Step 2), create a draft:
 
 ```
 # Normal case — quality gate passed:
-gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body "{body}"
+gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}
 
 # Quality gate failed — create draft instead:
-gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body "{body}" --draft
+gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile} --draft
 ```
+
+Delete the temp file after creation.
 
 When creating a draft PR due to quality gate failure, prepend a section
 to the body:
@@ -221,12 +243,29 @@ If `mergeable` is `CONFLICTING`:
   gh pr edit {pr_number} --add-label "{needs_re_review_label}"
   ```
 
+  After applying, verify the label is present (same as Step 7 below).
+  If missing, create it and retry.
+
 ### 7. Add labels to PR
 
 If the `claude-authored` label is configured in the label map, apply it
-to mark this as a Claude-built PR:
+to mark this as a Claude-built PR. If no label map exists, use the
+default name `claude-authored` from `templates/default-labels.md`:
 
 ```
+gh pr edit {pr_number} --add-label "{claude_authored_label}"
+```
+
+After applying, verify the label was applied:
+
+```
+gh pr view {pr_number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'
+```
+
+If missing, create the label and retry:
+
+```
+gh label create "{claude_authored_label}" --repo {org}/{repo} --description "Built by Claude" --color "5319E7" --force
 gh pr edit {pr_number} --add-label "{claude_authored_label}"
 ```
 
