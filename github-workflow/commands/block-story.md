@@ -23,18 +23,26 @@ Read `ClaudeProject.md` and extract:
 
 - `org`, `repo` from Identity
 - Project board settings (if configured)
-- Label map (for blocked labels)
+- Label map (for status labels)
+
+If `ClaudeProject.md` is missing or has no label map, use the default
+label names from `templates/default-labels.md`. When using defaults in
+an interactive session, warn the user: "Label map not configured —
+using default labels. Run `/github-workflow:setup` to configure labels
+for this project."
 
 ### 2. Comment the blocker
 
-```
-gh issue comment {number} --repo {org}/{repo} --body "**Blocked**: {reason}
+Write the comment body to a temporary file and post using `--body-file`
+(avoids Windows shell-escaping issues with multi-line content):
 
-Blocked during automated execution. Details:
-- What was attempted
-- What failed or is missing
-- Suggested resolution (if known)"
 ```
+gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
+```
+
+The comment should include: the blocker reason, what was attempted,
+what failed or is missing, and a suggested resolution if known.
+Delete the temp file after.
 
 ### 3. Unassign the issue
 

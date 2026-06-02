@@ -50,6 +50,13 @@ Extract from the project configuration above:
 - `ready-gate` from Ready Gate (`label`, `board-column`, or `both`; default: `label`)
 - Project board settings (if `ready-gate` is `board-column` or `both`)
 
+If the label map is missing or incomplete, use the default label names
+from `templates/default-labels.md` (e.g., `status-ready`,
+`priority-critical`, `type-story`, etc.). When using defaults in an
+interactive session, warn the user: "Label map not configured — using
+default labels. Run `/github-workflow:setup` to configure labels for
+this project."
+
 ### 1b. Reclaim stale in-progress stories
 
 Before picking new work, check for issues that were assigned but never
@@ -151,6 +158,9 @@ dependencies are resolved — mark the issue as ready:
   ```
   gh issue edit {number} --repo {org}/{repo} --add-label "{status_ready_label}"
   ```
+  After applying, verify the label is present. If missing, create it
+  with `gh label create --force` using the color from
+  `templates/default-labels.md` and retry once.
 - **`board-column` or `both`**: move the issue to the "Ready" column
   on the project board (using the `ready-option-id` from board config):
   ```
@@ -280,6 +290,29 @@ priority order.
 To limit API calls, check at most 10 candidates and at most 5
 dependency references per candidate. If a candidate has more than 5
 dependencies, treat it as blocked (likely a meta-issue).
+
+### 3d. Close already-completed issues
+
+Before selecting a candidate, check the top candidates for issues that
+have already been resolved. For each candidate, check if a merged PR
+references it:
+
+```
+gh pr list --repo {org}/{repo} --search "closes #{number} OR fixes #{number}" --state merged --json number,title --jq '.[0]'
+```
+
+If a merged PR exists that closes or fixes this issue, the issue should
+already be closed but GitHub may not have auto-linked it. Close the
+issue:
+
+```
+gh issue close {number} --repo {org}/{repo} --comment "Closing — this issue was already resolved by #{pr_number}."
+```
+
+Skip the closed issue and move to the next candidate.
+
+To limit API calls, check at most 5 candidates this way. If more need
+checking, let them be caught on subsequent pick runs.
 
 ### 4. Select and display
 

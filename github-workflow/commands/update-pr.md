@@ -24,7 +24,15 @@ Read `ClaudeProject.md` and extract:
 - Label map (for claude and review state labels)
 
 If `docs/review.config.md` or `review.config.md` exists, read the
-state label definitions from there.
+state label definitions from there. If neither exists, use the default
+review state labels from `templates/default-labels.md` (prefix
+`review`: `review-reviewing`, `review-approved`,
+`review-changes-requested`, `review-needs-discussion`,
+`review-needs-re-review`, `review-review-failed`, `review-updating`,
+`review-fixes-applied`). When using defaults in an interactive
+session, warn the user: "No `review.config.md` found — using default
+labels. Run `/github-workflow:setup` to configure review labels for
+this project."
 
 ### 2. Find the PR to update
 
@@ -200,6 +208,24 @@ gh pr edit {pr_number} --remove-label "{current_state_label}" --add-label "{need
 Leave the current state label in place (`changes-requested` stays).
 The next code-review run will detect the SHA change and evaluate
 whether the unaddressed items are still relevant.
+
+### 8b. Verify labels were applied
+
+After updating labels in Step 8, read back the PR labels:
+
+```
+gh pr view {pr_number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'
+```
+
+Confirm the expected state label is present and the `updating` label
+was removed. If the state label is missing, create it and retry:
+
+```
+gh label create "{label}" --repo {org}/{repo} --description "{desc}" --color "{color}" --force
+gh pr edit {pr_number} --add-label "{label}"
+```
+
+Use label colors from `templates/default-labels.md`.
 
 ### 9. Error handling
 

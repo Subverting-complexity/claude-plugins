@@ -73,7 +73,7 @@ For each endpoint or public function:
 1. System overview (one paragraph + diagram description)
 2. Component map (what each major module/service does)
 3. Data flow (how requests/data move through the system)
-4. Key decisions (reference ADRs if they exist)
+4. Key decisions
 5. Boundaries (what talks to what, what's off-limits)
 
 ### Migration guide
