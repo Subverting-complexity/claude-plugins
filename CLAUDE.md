@@ -72,6 +72,14 @@ source.
 | `github-workflow` | GitHub-based development workflows (stories, PRs, reviews) |
 | `local-workflow` | Project-agnostic local development (coding, architecture, discovery) |
 
+## Running parallel agents
+
+These workflows spawn parallel/background agents, each of which the harness
+places in its own git worktree. When running agents in parallel — especially
+on Windows, where per-worktree `node_modules` duplication causes file-lock
+cleanup failures — follow the recommended harness configuration and manual
+reap routine in [`docs/worktree-config.md`](docs/worktree-config.md).
+
 ## Tooling
 
 | Tool | What it does |
