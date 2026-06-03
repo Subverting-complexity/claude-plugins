@@ -38,9 +38,11 @@ claiming, confirm the story is not already in flight:
 
 ```
 gh issue view {number} --repo {org}/{repo} --json state,labels,assignees
-gh pr list --repo {org}/{repo} --state open --json number,title,headRefName,body \
-  --jq '[.[] | select(.body | test("(?i)\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) +#{number}\\b"))]'
 ```
+
+Then find any open PR that already closes this issue by running the
+authoritative lookup in `templates/sibling-pr-lookup.md` with this
+`{number}`.
 
 - If the issue is **closed**, report it and stop.
 - If an **open PR already closes this issue**, do not start fresh. Report

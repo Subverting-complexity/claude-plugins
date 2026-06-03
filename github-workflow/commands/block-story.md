@@ -76,12 +76,9 @@ If the blocker is another issue, also record it in the issue body under a
 **First, the open-PR guard.** Blocking returns the issue to the
 unassigned pool. If the story **already has an open PR**, that would let
 another agent pick it up and open a *second* PR for the same work. A story
-with a live PR is not "blocked from starting" — it is in review. Check:
-
-```
-gh pr list --repo {org}/{repo} --state open --json number,title,headRefName,body \
-  --jq '[.[] | select(.body | test("(?i)\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) +#{number}\\b"))]'
-```
+with a live PR is not "blocked from starting" — it is in review. Check for
+an open PR that closes this issue by running the authoritative lookup in
+`templates/sibling-pr-lookup.md` with this `{number}`.
 
 If an open PR closes this issue, **do not unassign and do not return the
 issue to the pool**. Tell the user the story has an open PR (#N) and that

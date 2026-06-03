@@ -224,9 +224,11 @@ a fresh claim would otherwise succeed and duplicate the work).
 
 ```
 gh issue view {number} --repo {org}/{repo} --json state,labels,assignees
-gh pr list --repo {org}/{repo} --state open --json number,title,headRefName,body \
-  --jq '[.[] | select(.body | test("(?i)\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) +#{number}\\b"))]'
 ```
+
+Then find any open PR that already closes this issue by running the
+authoritative lookup in `templates/sibling-pr-lookup.md` with this
+`{number}`.
 
 - If the issue is **closed**, report it and stop.
 - If an **open PR already closes this issue**, do not start fresh work.
@@ -443,14 +445,13 @@ Run the quality gate command from `ClaudeProject.md`:
    ```
 
 1b. **Duplicate-PR detection.** Before creating, check whether another
-   open PR already closes this issue on a different branch (the Phase 1
-   guard catches the common case, but a true create-time race can slip a
-   second PR through here):
-
-   ```
-   gh pr list --repo {org}/{repo} --state open --json number,title,headRefName,body \
-     --jq '[.[] | select(.headRefName != "{branch}") | select(.body | test("(?i)\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) +#{number}\\b"))]'
-   ```
+   open PR already closes this issue on a different branch. Holding the
+   issue claim through PR creation (it is released only in step 5, below)
+   already serializes builders, so this should never fire — it is the
+   backstop for a sub-second create-time race. Run the authoritative
+   lookup in `templates/sibling-pr-lookup.md` with this `{number}` and
+   ignore any result whose `headRefName` equals `{branch}` (that is your
+   own about-to-be-pushed PR).
 
    If a sibling PR exists, still create your PR (so both are real and
    comparable) but prepend a flag line to the body so code review

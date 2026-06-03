@@ -186,19 +186,15 @@ hand-reaped claim ref, or a genuine create-time race where two sessions
 each opened a PR on a different branch. When two open PRs close one issue,
 exactly one must survive.
 
-1. Parse the claimed PR's body for its linked issue(s) — `Closes #N` /
-   `Fixes #N` / `Resolves #N` (the same parse Step 4 uses). Call that set
-   `{issues}`. If the PR closes no issue, skip this step.
-2. For each `#N` in `{issues}`, find every **other** open PR that also
-   closes it. List open PRs and parse their bodies — GitHub search
-   indexing lags, so do not rely on `--search`:
-   ```bash
-   gh pr list --repo <org>/<repo> --state open \
-     --json number,title,headRefName,labels,body,additions,deletions,mergeable \
-     --jq '[.[] | select(.body | test("(?i)\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) +#N\\b"))]'
-   ```
-   Let `S` be the duplicate set: the claimed PR plus every other open PR
-   that closes the same `#N`.
+1. Determine the claimed PR's linked issue(s). Use GitHub's own closing
+   parse, not the PR body: the claimed PR's `closingIssuesReferences`
+   (returned by the lookup in `templates/sibling-pr-lookup.md`) is the
+   authoritative set `{issues}`. If the PR closes no issue, skip this step.
+2. For each `#N` in `{issues}`, find every open PR that will close it by
+   running the lookup in `templates/sibling-pr-lookup.md` with that `N`.
+   That returns the **duplicate set** `S` (oldest-first), each node already
+   carrying `number`, `title`, `headRefName`, `isDraft`, and `labels` — the
+   claimed PR will be in it.
 3. If `S` contains only the claimed PR, there are no duplicates — skip the
    rest of this step and continue to Step 3.
 

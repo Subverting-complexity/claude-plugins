@@ -164,12 +164,9 @@ Step 5 to add `Closes #N` to the PR body.
 Step 4 already ruled out an existing PR on **this** branch. Now check for
 a sibling open PR that closes the **same issue** on a **different** branch
 (a second session may have built the same story — see the duplicate
-vectors in `skills/code-review/references/review-workflow.md`):
-
-```
-gh pr list --repo {org}/{repo} --state open --json number,title,headRefName,body \
-  --jq '[.[] | select(.headRefName != "{branch}") | select(.body | test("(?i)\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) +#{number}\\b"))]'
-```
+vectors in `skills/code-review/references/review-workflow.md`). Run the
+authoritative lookup in `templates/sibling-pr-lookup.md` with this
+`{number}` and ignore any result whose `headRefName` equals `{branch}`.
 
 If a sibling PR exists, still create your PR in Step 5 (so both are real
 and comparable) but prepend this flag line to the body so code review
