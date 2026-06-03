@@ -129,9 +129,12 @@ it has meaningful commits, continue toward finishing. If it has no
 meaningful work, delete the branch and reclaim the issue.
 
 **If neither branch nor PR exists and the issue is stale:** The
-previous session claimed the issue but produced nothing. Reclaim it:
+previous session claimed the issue but produced nothing. Reclaim it.
+First release the stale claim ref so the issue can be claimed again,
+following `templates/claim-procedure.md` (**Release**), then unassign:
 
 ```
+git push origin :refs/claims/issue-{number}
 gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 ```
 
@@ -334,7 +337,15 @@ If no candidates remain after filtering, report "No stories available
 for pickup" and exit. Do not loop, retry, or ask the user to create
 stories.
 
-Pick the first candidate. Display:
+**Claim at pick time.** Take the first candidate and immediately acquire
+it with the atomic claim procedure in `templates/claim-procedure.md`
+(**Acquire**) — this closes the window between selecting a story and
+owning it. If Acquire wins, this is your story. If Acquire reports the
+claim is lost, another agent took it first: drop this candidate and try
+the next one in sort order, repeating until one is claimed or the list is
+exhausted. Acquiring also applies the `--add-assignee @me` display marker.
+
+Once a candidate is claimed, display:
 
 - Issue number, title, and URL
 - Sprint/milestone (if applicable)

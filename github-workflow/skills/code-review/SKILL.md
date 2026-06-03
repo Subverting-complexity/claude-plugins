@@ -153,28 +153,19 @@ not "review all of them" or "let me choose".
 
 ### Step 2 — Claim the PR
 
-Multiple agents may be running code-review concurrently. The
-`reviewing` label acts as a distributed lock. Apply it, then verify
-you own the claim.
+Multiple agents may be running code-review concurrently — possibly under
+the same GitHub identity, where a shared `reviewing` label cannot exclude
+a rival (it reads present for both). Acquire the PR with the atomic claim
+procedure in `templates/claim-procedure.md` (**Acquire**), using the
+target `pr-<number>`. It pushes a unique object to `refs/claims/pr-<number>`
+— a genuine server-side compare-and-swap — and applies the `reviewing`
+state label as the human-visible marker on success.
 
-1. Apply the `reviewing` state label:
-
-   ```bash
-   gh pr edit <number> --repo <org>/<repo> --add-label "<reviewing-label>"
-   ```
-
-   If this fails, exit immediately.
-
-2. Wait 2 seconds, then re-read the PR labels to confirm:
-
-   ```bash
-   gh pr view <number> --repo <org>/<repo> --json labels
-   ```
-
-   If the `reviewing` label is present, you own the claim — proceed.
-   If another state label has appeared (e.g., another agent removed
-   `reviewing` and applied its own verdict in the meantime), another
-   agent won the race. Exit without removing any labels.
+If Acquire reports the claim is lost, another agent owns this PR: exit
+without removing any labels and without making changes. The `reviewing`
+label remains a display signal that other skills filter on; the
+`refs/claims/pr-<number>` ref is the actual lock. No label read-back is
+needed — the atomic push already proved exclusivity.
 
 ### Step 3 — Check out the PR branch
 
@@ -182,8 +173,10 @@ you own the claim.
 gh pr checkout <number>
 ```
 
-If checkout fails: remove the `reviewing` label, apply the `review-failed`
-label, post a brief failure comment with the footer, and exit.
+If checkout fails: release the claim (`templates/claim-procedure.md`
+**Release** for target `pr-<number>`: `git push origin :refs/claims/pr-<number>`),
+remove the `reviewing` label, apply the `review-failed` label, post a
+brief failure comment with the footer, and exit.
 
 Record the current commit SHA:
 
@@ -510,7 +503,11 @@ the updated SHA from Step 7 if fixes were pushed).
 
 ### Step 10 — Apply labels and exit
 
-1. Remove the `reviewing` state label.
+1. Remove the `reviewing` state label, then release the atomic claim now
+   that the verdict is being recorded (`templates/claim-procedure.md`
+   **Release** for target `pr-<number>`): `git push origin :refs/claims/pr-<number>`
+   and `rm -f .claude/claim-pr-<number>.sha`. Best-effort — ignore an
+   error if the ref is already gone.
 2. Remove the `needs-re-review` state label (no-op if not present).
 3. Remove all other state labels that don't match the new verdict (the
    remove commands will no-op if the label isn't present).
@@ -557,11 +554,14 @@ If anything goes wrong (gh commands fail, branch checkout fails, a changed
 file cannot be read, the PR has no diff, or the codebase is too large to
 review thoroughly):
 
-1. Remove the `reviewing` state label.
-2. Apply the `review-failed` state label.
-3. Post a comment explaining what failed, including the review footer so
+1. Release the atomic claim (`templates/claim-procedure.md` **Release**
+   for target `pr-<number>`): `git push origin :refs/claims/pr-<number>`
+   and `rm -f .claude/claim-pr-<number>.sha`. Best-effort.
+2. Remove the `reviewing` state label.
+3. Apply the `review-failed` state label.
+4. Post a comment explaining what failed, including the review footer so
    the failure is tied to a specific commit and future runs will retry.
-4. Exit immediately. Do not attempt to recover, retry, or continue.
+5. Exit immediately. Do not attempt to recover, retry, or continue.
 
 ---
 

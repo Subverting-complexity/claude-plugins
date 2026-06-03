@@ -102,11 +102,21 @@ or filtering. Never apply a bare name literally.
 
 ### Concurrency rules
 
-- **Before reviewing**: Check for `reviewing` and `updating` labels.
-  If either is present, skip the PR entirely.
-- **Before updating**: Check for `reviewing` and `updating` labels.
-  If either is present, skip the PR entirely.
-- **Claiming**: Apply your claim label (`reviewing` or `updating`),
-  wait 2 seconds, re-read labels to confirm you still own the claim.
-- **On exit or error**: Always remove your claim label so other agents
-  can proceed.
+The real lock is an atomic claim ref, **not** a label. Both reviewing and
+updating a PR claim the same `refs/claims/pr-<number>` ref via
+`templates/claim-procedure.md`, so a reviewer and an updater are mutually
+exclusive on a PR even under a shared GitHub identity (a shared label
+cannot guarantee this — it reads present for every agent). The `reviewing`
+/ `updating` labels remain **human-visible display markers** that the
+skip checks below still read.
+
+- **Before reviewing**: Check for `reviewing` and `updating` labels as a
+  cheap first filter — if either is present, skip the PR entirely. The
+  atomic claim is the authoritative gate if the labels race.
+- **Before updating**: Same label pre-check, then claim atomically.
+- **Claiming**: Run `templates/claim-procedure.md` **Acquire** for target
+  `pr-<number>`. On success it applies your display label (`reviewing` or
+  `updating`). If the claim is lost, exit without changes — do not fall
+  back to a label-only claim.
+- **On exit or error**: Run **Release** for `pr-<number>` (delete the
+  ref), then remove your display label so other agents can proceed.

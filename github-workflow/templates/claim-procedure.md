@@ -1,0 +1,145 @@
+# Atomic claim procedure
+
+Single, canonical way to claim a work item for exclusive work and to
+release it again. The item is usually an **issue** (story work) but the
+same procedure claims a **pull request** for review. Referenced by every
+command that takes or relinquishes ownership: `pick-story`,
+`start-story`, `block-story`, `finish-story`, the `execute` skill's
+Phase 1 / Phase 2 / stale recovery, and the `code-review` skill's PR
+claim. **Do not inline a different claim mechanism anywhere** — call this
+procedure so all call sites behave identically.
+
+## Target and ref name
+
+`{target}` is `issue-{number}` when claiming an issue, or `pr-{number}`
+when claiming a pull request for review. The claim ref is always
+`refs/claims/{target}`. Everything below is identical for both; only the
+**human-visible marker** in Acquire step 4 differs (assignment for
+issues, the `reviewing` state label for PRs).
+
+## Why assignment is not a lock
+
+The old lock used idempotent set-insertion (`gh issue edit --add-assignee
+@me`, optionally a `reviewing` label) plus a short wait and a read-back of
+"am I the only assignee?". This **cannot** exclude two agents that share
+one GitHub identity — the normal case when one developer runs several
+agents at once. `@me` resolves to the same login for both, so "only
+assignee" is true for both, and a shared boolean label reads present for
+both. GitHub offers no atomic compare-and-swap on assignees or labels, so
+the pattern is unfixable as designed.
+
+Git refs **do** offer a server-side compare-and-swap. Creating a ref that
+does not yet exist is atomic: the first push wins, a second push of a
+*different* object to the now-existing ref is rejected as a
+non-fast-forward. We use a per-issue ref under `refs/claims/` as the lock.
+
+Inputs:
+
+- `{number}` — the issue or PR being claimed or released.
+- `{target}` — `issue-{number}` or `pr-{number}` (see above).
+- `{org}` / `{repo}` from `ClaudeProject.md` `## Identity` (only needed
+  for the human-visible marker in Acquire step 4).
+
+---
+
+## Acquire
+
+Run this the moment a work item is selected, **before** assigning it,
+branching, applying any state label, or touching the board. Acquiring is
+the gate: if you do not win the claim, you perform **no** side effects.
+
+### Step 1 — Re-entry check (already ours?)
+
+If a previous step in this same flow already won the claim, it recorded
+the winning object in `.claude/claim-{target}.sha`. Re-acquiring must be
+a no-op, not a self-collision.
+
+```
+test -f .claude/claim-{target}.sha \
+  && [ "$(cat .claude/claim-{target}.sha)" = "$(git ls-remote origin refs/claims/{target} | awk '{print $1}')" ] \
+  && echo HELD
+```
+
+If this prints `HELD`, you already own the claim — skip to step 4 (the
+marker is idempotent) and proceed. Otherwise continue to step 2.
+
+### Step 2 — Atomic acquire
+
+Build a **unique** claim object and push it to the claim ref. Uniqueness
+is mandatory: pushing an object identical to one already on the ref is a
+silent no-op success, which would let a loser believe it won. The tree
+content is irrelevant — only the commit's uniqueness matters — so reuse
+`HEAD^{tree}` and make the message unique:
+
+```
+CLAIM_SHA=$(git commit-tree HEAD^{tree} \
+  -m "claim {target} $(date -u +%Y-%m-%dT%H:%M:%SZ) pid$$-$RANDOM")
+git push origin "$CLAIM_SHA":refs/claims/{target}
+echo "claim-exit=$?"
+```
+
+(`git commit-tree` needs a configured git identity — the same one commits
+already require.)
+
+### Step 3 — Interpret the result
+
+- **`claim-exit=0`** → **you won the claim.** Record it so re-entry is
+  idempotent, then continue to step 4:
+  ```
+  mkdir -p .claude
+  echo "$CLAIM_SHA" > .claude/claim-{target}.sha
+  ```
+- **non-zero** → **another agent holds the claim.** Exit cleanly with
+  **no side effects**: do not assign, do not apply a state label, do not
+  create a branch, do not update the board, do not comment. In a pick or
+  review loop, move on to the next candidate. Standalone, report
+  "#{number} is already claimed by another agent — skipping." and stop.
+
+### Step 4 — Human-visible marker
+
+Now that the claim is yours, mark it where humans can see it. The marker
+is target-specific:
+
+- **Issue:** assign it.
+  ```
+  gh issue edit {number} --repo {org}/{repo} --add-assignee @me
+  ```
+- **PR:** apply the `reviewing` state label (resolved by purpose key).
+  ```
+  gh pr edit {number} --repo {org}/{repo} --add-label "{reviewing_label}"
+  ```
+
+The marker is now a **display signal**, not the lock. The `refs/claims/`
+ref is the lock. No read-back of the marker is required — the atomic push
+already proved exclusivity.
+
+---
+
+## Release
+
+Run this when you relinquish the item: the PR is open (`finish-story`),
+the story is blocked back to the backlog (`block-story`), a stale session
+is being reclaimed (`pick-story` / `execute` stale recovery), or a PR
+review has reached its verdict or failed (`code-review`). Releasing frees
+the ref so the item can be claimed again and keeps `refs/claims/` bounded
+to in-flight work.
+
+```
+git push origin :refs/claims/{target}
+rm -f .claude/claim-{target}.sha
+```
+
+Best-effort: deleting a ref that is already gone fails harmlessly —
+ignore the error. Releasing does **not** clear the human-visible marker;
+callers that also want to return the item to the pool do their own
+`--remove-assignee` / state-label removal as before.
+
+---
+
+## Lost-claim path
+
+Whenever Acquire reports a non-zero exit (claim lost), the only correct
+action is to stop touching the item. You have made no changes, so there
+is nothing to undo. Never fall back to `--add-assignee` or the
+`reviewing` label as a "soft" claim — that reintroduces the race this
+procedure exists to remove.

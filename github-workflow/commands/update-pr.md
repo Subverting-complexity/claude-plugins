@@ -67,21 +67,19 @@ If no PRs need updating, report that and exit.
 
 ### 2b. Claim the PR
 
-Multiple builder agents may be running concurrently. Apply the
-`updating` label to claim the PR before starting work:
+Multiple agents may be running concurrently — possibly under the same
+GitHub identity, where a shared `updating` label cannot exclude a rival
+(and a reviewer holding `reviewing` must be excluded too). Acquire the PR
+with the atomic claim procedure in `templates/claim-procedure.md`
+(**Acquire**) using the target `pr-{pr_number}`. It pushes a unique object
+to `refs/claims/pr-{pr_number}` — the same ref the code-review skill
+claims, so a reviewer and an updater are mutually exclusive — and applies
+the `updating` state label as the human-visible marker on success.
 
-```
-gh pr edit {pr_number} --add-label "{updating_label}"
-```
-
-Wait 2 seconds, then re-read the PR labels:
-
-```
-gh pr view {pr_number} --repo {org}/{repo} --json labels
-```
-
-If `updating` is present, you own the claim — proceed. If it was
-removed or another agent's label appeared, exit without removing labels.
+If Acquire reports the claim is lost, another agent (reviewer or updater)
+owns this PR: exit without removing any labels and without making changes.
+The `refs/claims/pr-{pr_number}` ref is the lock; the `updating` label is
+a display signal other skills filter on. No label read-back is needed.
 
 ### 3. Check out the branch and read the review
 
@@ -179,11 +177,18 @@ control flow, modified signatures) make the overall change
 
 ### 8. Assess change significance and update labels
 
-Remove the `updating` label (your claim is done):
+Release the atomic claim (your work is done) and remove the `updating`
+label (`templates/claim-procedure.md` **Release** for target
+`pr-{pr_number}`):
 
 ```
+git push origin :refs/claims/pr-{pr_number}
+rm -f .claude/claim-pr-{pr_number}.sha
 gh pr edit {pr_number} --remove-label "{updating_label}"
 ```
+
+The claim-ref delete is best-effort — ignore an error if it is already
+gone.
 
 Then classify the changes you pushed and determine the label outcome:
 
@@ -234,8 +239,15 @@ Use label colors from `templates/default-labels.md`.
 ### 9. Error handling
 
 If anything goes wrong (checkout fails, quality gate can't pass, push
-fails), remove the `updating` label before exiting so another agent
-can pick up the PR.
+fails), release the atomic claim and remove the `updating` label before
+exiting so another agent can pick up the PR
+(`templates/claim-procedure.md` **Release** for target `pr-{pr_number}`):
+
+```
+git push origin :refs/claims/pr-{pr_number}
+rm -f .claude/claim-pr-{pr_number}.sha
+gh pr edit {pr_number} --remove-label "{updating_label}"
+```
 
 ### 10. Report
 

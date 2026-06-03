@@ -51,7 +51,8 @@ what every other skill filters on.
 
 Run `/github-workflow:code-review` to review the next PR. The skill
 orchestrates the full flow: find the next PR needing review, claim it
-with the `reviewing` label, check out its branch, read the changed code
+atomically with a `refs/claims/pr-<number>` ref (marked by the
+`reviewing` label), check out its branch, read the changed code
 in full codebase context, fix concrete issues, push the fixes, post a
 structured review comment, and apply the correct state label.
 
@@ -82,18 +83,19 @@ open PR.
 - Never use `gh pr review --approve`. Post the verdict with
   `gh pr comment` as the skill specifies.
 - Do not merge or close any PR.
-- Always remove your `reviewing` claim label on exit or error so other
-  agents can proceed.
+- Always release your `refs/claims/pr-<number>` claim ref and remove the
+  `reviewing` label on exit or error so other agents can proceed (the
+  skill does this in Step 10 and its error handler).
 
 ## Error recovery
 
 - If checkout fails, a changed file cannot be read, or the PR has no
-  diff, the skill removes the `reviewing` label, applies `review-failed`,
-  posts a failure comment with the footer, and exits. Do not retry in a
-  loop.
+  diff, the skill releases the claim ref, removes the `reviewing` label,
+  applies `review-failed`, posts a failure comment with the footer, and
+  exits. Do not retry in a loop.
 - If a `gh` CLI call fails (auth, network, rate limit), retry once after
-  10 seconds. If it fails again, remove your claim label and exit with
-  the error noted in a comment.
+  10 seconds. If it fails again, release your claim ref, remove the
+  `reviewing` label, and exit with the error noted in a comment.
 - If the quality gate fails after fixing review issues, push the fixes
   anyway (they are still valuable) and note the gate failure in the
   review comment.
