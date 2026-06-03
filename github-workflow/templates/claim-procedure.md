@@ -128,7 +128,7 @@ git push origin :refs/claims/{target}
 rm -f .claude/claim-{target}.sha
 ```
 
-Best-effort: deleting a ref that is already gone fails harmlessly —
+Idempotent: deleting a ref that is already gone fails harmlessly —
 ignore the error. Releasing does **not** clear the human-visible marker;
 callers that also want to return the item to the pool do their own
 `--remove-assignee` / state-label removal as before.

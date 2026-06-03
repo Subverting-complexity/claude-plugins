@@ -422,7 +422,7 @@ Run the quality gate command from `ClaudeProject.md`:
    git push origin :refs/claims/issue-{number}
    rm -f .claude/claim-issue-{number}.sha .claude/plan.md
    ```
-   The claim-ref delete is best-effort — ignore an error if it is already
+   The claim-ref delete is idempotent — ignore an error if it is already
    gone. The issue stays assigned to @me through review.
 
 6. Report: display the PR URL, linked issues, and labels applied.
