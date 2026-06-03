@@ -460,6 +460,15 @@ already pushed; nothing blocking is left for the builder to do.
 
 ### Step 9 — Post the review
 
+Write the comment in plain English, following `_shared/wording-standard.md`.
+The author reading this review may not have the context you built up, so
+each finding should state **the problem and the suggested fix** in
+complete sentences a reader can follow without the diff in front of them.
+Avoid telegraphic fragments and stacked clauses; define or avoid jargon;
+keep `file:line` references and identifiers precise in backticks. The
+section headings below give structure — the text under them is prose, not
+a stripped list of identifiers.
+
 Post a single comment using `gh pr comment <number> --repo <org>/<repo>`:
 
 ```

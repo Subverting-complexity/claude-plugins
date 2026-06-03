@@ -49,9 +49,14 @@ Relentlessly interview the user about their plan or design until every open ques
 
 ## Wording and Clarity
 
-Recommendations and explanations must be easy to read on first pass.
-Favour clarity over density:
+Follow the shared `_shared/wording-standard.md` for every question,
+recommendation, and `AskUserQuestion` option. The person answering often
+has **no prior context** — they may be driving an agent that is running
+autonomously and have not seen the reasoning behind the question. Write
+so they can understand and answer on first pass. The essentials:
 
+- **State both the problem and the proposed solution.** Say what is being
+  decided and what you recommend doing about it, not just "which option?".
 - **Write in complete sentences.** Avoid telegraphic fragments like
   "Expiry: 7 days, configurable". Write "Invites expire after 7 days
   by default. This is configurable through an `InviteExpiry` setting."

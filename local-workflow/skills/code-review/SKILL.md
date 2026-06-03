@@ -171,6 +171,12 @@ the findings rather than fixing it.
 
 ## Step 5 — Report Findings
 
+Write findings in plain English, following `_shared/wording-standard.md`.
+State **the problem and the suggested fix** in complete sentences that a
+reader without the full context can follow. Avoid telegraphic fragments
+and stacked clauses, define or avoid jargon, and keep `file:line`
+references and identifiers precise in backticks.
+
 Present findings organized by severity:
 
 ### Critical
