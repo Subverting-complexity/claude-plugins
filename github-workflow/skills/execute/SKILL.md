@@ -99,7 +99,9 @@ session has been running for more than 45 minutes:
 1. Commit and push all current work immediately.
 2. If you have enough for a PR, open one (draft if incomplete).
 3. Create follow-up issues for any unfinished work.
-4. Exit cleanly — do not start a new phase that you may not finish.
+4. Delete the scratch files (see **Scratch file cleanup**):
+   `rm -f .claude/plan.md .claude/execution-checkpoint.md`.
+5. Exit cleanly — do not start a new phase that you may not finish.
 
 This prevents the harness from killing the session mid-work with nothing
 saved.
@@ -115,14 +117,16 @@ users). Long autonomous sessions can accumulate many `gh` calls.
   gh api rate_limit --jq '.rate.remaining'
   ```
 - If remaining quota is below **100**, pause API-heavy operations.
-  Commit and push any current work, then exit with a message noting
-  the rate limit. The next session will continue from the pushed state.
+  Commit and push any current work, delete the scratch files (see
+  **Scratch file cleanup**), then exit with a message noting the rate
+  limit. The next session will continue from the pushed state.
 - Do not retry rate-limited requests in a loop — that makes it worse.
 
 If the story is blocked or turns out to need more than one session's
 worth of work, commit what you have, push the branch, open a draft PR
-noting what's done and what remains, and exit. The next session can pick
-up from the branch.
+noting what's done and what remains, delete the scratch files (see
+**Scratch file cleanup**), and exit. The next session can pick up from
+the branch.
 
 ## Mode selection
 
@@ -194,7 +198,37 @@ If **every** gate passes, the checkpoint describes resumable work:
 
 When discarding a checkpoint, delete both `.claude/execution-checkpoint.md`
 and any orphaned `.claude/plan.md`, then proceed with a normal Phase 1
-pick. Delete the checkpoint file after Phase 7 completes successfully.
+pick.
+
+### Scratch file cleanup
+
+This skill writes two per-session scratch files: `.claude/plan.md`
+(Phase 3) and `.claude/execution-checkpoint.md` (rewritten before every
+phase transition). Both are gitignored, but they must still be removed
+on **every** exit path so no stale scratch lingers in the worktree — a
+leftover scratch file is what originally blocked harness worktree
+auto-cleanup. As the **final** step before the session ends, and always
+**after** any commit/push (so the pushed branch — not scratch — is the
+source of truth), delete both files:
+
+```
+rm -f .claude/plan.md .claude/execution-checkpoint.md
+```
+
+This applies to **all** exits without exception:
+
+- Phase 7 completes successfully.
+- Blocked via `/github-workflow:block-story`.
+- Unrecoverable error (after leaving the failure comment).
+- Session-budget or 45-minute timeout exit.
+- API rate-limit pause.
+- One-session overflow (partial slice shipped, follow-ups filed).
+
+Cross-session resume does **not** depend on leftover scratch: a later
+session recovers the work from the pushed branch through Phase 1
+stale-task recovery, not from these files. (Within-session context
+compaction is unaffected — no exit occurs, so the files remain on disk
+for the duration of the run.)
 
 ---
 
@@ -439,7 +473,11 @@ Run the quality gate command from `ClaudeProject.md`:
 
 4. Update project board to In Review (if configured).
 
-5. Report: display the PR URL, linked issues, and labels applied.
+5. Delete both scratch files now that the work is shipped (see
+   **Scratch file cleanup**):
+   `rm -f .claude/plan.md .claude/execution-checkpoint.md`.
+
+6. Report: display the PR URL, linked issues, and labels applied.
 
 ## Phase 8 — Self-Review
 
@@ -514,10 +552,13 @@ whether commits were pushed, what was completed, and what remains.
 Delete the temp file after.
 
 This ensures the next session (or human) can pick up exactly where
-this one failed without guessing what happened.
+this one failed without guessing what happened. After the comment is
+posted, delete the scratch files (see **Scratch file cleanup**) before
+exiting.
 
 **Blocked**: If any phase cannot proceed, run `/github-workflow:block-story`
-with details. Then pick the next story.
+with details, then delete the scratch files (see **Scratch file
+cleanup**). Then pick the next story.
 
 **Bug found**: If you discover an unrelated bug during development,
 run `/github-workflow:report-issue`. Do not fix it inline unless it is
@@ -549,3 +590,4 @@ budget, implement the highest-priority slice, open a PR for that slice,
 and create follow-up issues for the remaining work using
 `/github-workflow:report-issue`. Do not attempt to complete everything
 in one session — a partial PR with clear notes is the expected outcome.
+Delete the scratch files (see **Scratch file cleanup**) before exiting.
