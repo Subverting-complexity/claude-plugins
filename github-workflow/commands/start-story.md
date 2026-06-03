@@ -48,13 +48,16 @@ separately; just verify the read-back per `templates/default-labels.md`.
 
 ### 3. Update project board (if configured)
 
-First resolve the board and the issue's `{item_id}` following
-`templates/board-resolution.md`. That step decides whether a board is
-configured at all, verifies the stored `project-node-id` still resolves
-to a board whose title matches `project-title` (aborting loudly on a
-mismatch), and adds the issue to the board if it is not there yet. Only
-proceed with the mutations below once it has handed back a verified
-`{item_id}`.
+First resolve the board, the issue's `{item_id}`, and the target column's
+`{column_option_id}` following `templates/board-resolution.md`. That step
+decides whether a board is configured at all, verifies the stored
+`project-node-id` still resolves to a board whose title matches
+`project-title` (aborting loudly on a mismatch), adds the issue to the
+board if it is not there yet, and resolves the target column by purpose
+key. The target column for `status-in-progress` is **In Progress**
+(`col-in-progress`) per the label ⇄ column pairing in
+`templates/default-labels.md`. Only proceed with the mutations below once
+it has handed back a verified `{item_id}` and `{column_option_id}`.
 
 Set status to In Progress:
 
@@ -64,7 +67,7 @@ gh api graphql -f query='mutation {
     projectId: "{project_node_id}"
     itemId: "{item_id}"
     fieldId: "{status_field_id}"
-    value: { singleSelectOptionId: "{in_progress_option_id}" }
+    value: { singleSelectOptionId: "{column_option_id}" }
   }) { projectV2Item { id } }
 }'
 ```

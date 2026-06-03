@@ -177,7 +177,31 @@ When configured, the setup wizard auto-fetches:
 
 - Project number and node ID
 - Field IDs for Status, Start Date, End Date
-- Option IDs for each status value (Backlog, In Progress, In Review, Done, On Hold)
+- Option IDs for each status column (see the canonical set below)
+
+### Board columns mirror the lifecycle
+
+The board is the **board-side mirror** of the issue lifecycle labels.
+Every command that moves an issue to a new lifecycle *label* also moves
+its board item to the paired *column*, so the board never drifts from the
+labels. The canonical six-column set — the three **active workflow
+columns** (In Progress, In Review, Blocked) plus Backlog, Ready, and Done
+— and the full label ⇄ column pairing live in one place,
+`templates/default-labels.md` → Board Columns. Columns resolve by purpose
+key (`col-in-progress`, `col-in-review`, `col-blocked`, …) exactly like
+labels, so "apply == filter" holds for the board too.
+
+| Lifecycle label | Board column |
+| --------------- | ------------ |
+| `status-in-progress` (and `status-needs-attention`) | In Progress |
+| `status-in-review` | In Review |
+| `status-blocked` (and `status-parked`) | Blocked |
+| `status-ready` | Ready |
+
+When a board is configured, the three active columns must exist: the
+setup wizard creates any that are missing (via `updateProjectV2Field`),
+and preflight raises a `board-columns-incomplete` error if one is absent.
+A project with no board configured skips all of this silently.
 
 ## Agents
 

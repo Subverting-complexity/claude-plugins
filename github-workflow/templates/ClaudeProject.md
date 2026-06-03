@@ -191,14 +191,22 @@ instead of silently mutating the wrong board.
 
 ### Status Options
 
-| Status      | Option ID |
-| ----------- | --------- |
-| Backlog     | `{id}`    |
-| Ready       | `{id}`    |
-| In Progress | `{id}`    |
-| In Review   | `{id}`    |
-| Done        | `{id}`    |
-| On Hold     | `{id}`    |
+The canonical six-column set. Each column mirrors one or more issue
+lifecycle states (see `templates/default-labels.md` → Board Columns for
+the full label ⇄ column pairing). Every command that sets a lifecycle
+label also moves the board item to the paired column, so the board never
+drifts from the labels. The three **active workflow columns** — In
+Progress, In Review, Blocked — must exist when a board is configured;
+setup creates them and preflight flags any that are missing.
+
+| Status      | Purpose key       | Option ID |
+| ----------- | ----------------- | --------- |
+| Backlog     | `col-backlog`     | `{id}`    |
+| Ready       | `col-ready`       | `{id}`    |
+| In Progress | `col-in-progress` | `{id}`    |
+| In Review   | `col-in-review`   | `{id}`    |
+| Blocked     | `col-blocked`     | `{id}`    |
+| Done        | `col-done`        | `{id}`    |
 
 ## Reference Docs (optional)
 

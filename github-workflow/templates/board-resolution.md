@@ -95,14 +95,38 @@ gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){
 
 You now have a verified `{item_id}` on the confirmed board.
 
-## Step 4 — Use it, and fail loud on errors
+## Step 4 — Resolve the target column's option id
 
-Pass the resolved `{item_id}` (and `{project_node_id}`) into the board
-mutation the calling command runs. Because a board is configured, a
-failure of the identity check (Step 2), the item_id resolution (Step 3),
-or the mutation itself is **reported loudly** to the user — never
-swallowed. The workflow still continues past the board step; only the
-board write is skipped.
+The calling command names the destination by **column purpose key**
+(`col-in-progress`, `col-in-review`, `col-blocked`, `col-ready`,
+`col-backlog`, `col-done`) — never by a hardcoded column name. Resolve it
+to a Status option id through the single path in
+`templates/default-labels.md` → Board Columns:
+
+1. Look up the purpose key's row in `ClaudeProject.md` → `## Project
+   Board` → `### Status Options` and read its **Option ID**.
+2. If that id is present and real (not `n/a`, not a `{placeholder}`), use
+   it as `{column_option_id}`.
+3. If the id is `n/a`/absent, the column does not exist on the board.
+   This is the `board-columns-incomplete` condition preflight flags — do
+   **not** invent an id. Skip the board move and report it loudly (a
+   configured board is missing a required column; run
+   `/github-workflow:setup` to create it). The rest of the workflow
+   continues.
+
+The label ⇄ column pairing (which purpose key a given lifecycle label
+moves to) is defined once in `templates/default-labels.md` — callers cite
+the pairing rather than re-deriving it.
+
+## Step 5 — Use it, and fail loud on errors
+
+Pass the resolved `{item_id}`, `{project_node_id}`, and
+`{column_option_id}` into the board mutation the calling command runs.
+Because a board is configured, a failure of the identity check (Step 2),
+the item_id resolution (Step 3), the column resolution (Step 4), or the
+mutation itself is **reported loudly** to the user — never swallowed. The
+workflow still continues past the board step; only the board write is
+skipped.
 
 > Caveat (Windows / auto-run blocks): these queries contain code fences
 > and must be run by hand, not inside a `!`-prefixed auto-run block — an

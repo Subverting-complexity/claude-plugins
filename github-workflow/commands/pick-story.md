@@ -99,19 +99,21 @@ dependencies are resolved — mark the issue as ready:
   `templates/default-labels.md` (no `--force`) and retry once. This is the
   automatic unblock path for `status-blocked` issues: when every
   `Blocked by #N` is closed, the issue returns to `status-ready`.
-- **`board-column` or `both`**: move the issue to the "Ready" column
-  on the project board (using the `ready-option-id` from board config).
-  First resolve the board and the issue's `{item_id}` following
-  `templates/board-resolution.md` (identity verification by title,
-  add-to-board-if-missing); only mutate once it returns a verified
-  `{item_id}`:
+- **`board-column` or `both`**: move the issue to the **Ready** column
+  (`col-ready`) on the project board — the column paired with
+  `status-ready` in `templates/default-labels.md`. First resolve the
+  board, the issue's `{item_id}`, and the target column's
+  `{column_option_id}` following `templates/board-resolution.md` (identity
+  verification by title, add-to-board-if-missing, column-option-id
+  resolution); only mutate once it returns a verified `{item_id}` and
+  `{column_option_id}`:
   ```
   gh api graphql -f query='mutation {
     updateProjectV2ItemFieldValue(input: {
       projectId: "{project_node_id}"
       itemId: "{item_id}"
       fieldId: "{status_field_id}"
-      value: { singleSelectOptionId: "{ready_option_id}" }
+      value: { singleSelectOptionId: "{column_option_id}" }
     }) { projectV2Item { id } }
   }'
   ```

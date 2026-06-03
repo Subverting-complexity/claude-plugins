@@ -108,20 +108,25 @@ list. The blocker detail lives in the issue body (`## Dependencies`) and
 the Step 2 comment.
 
 If `ready-gate` is `board-column` or `both`, also move the issue out of
-the "Ready" board column (to "On Hold" if configured, else "Backlog") so
-the board agrees with the label.
+the "Ready" board column — to the **Blocked** column (`col-blocked`), the
+column paired with `status-blocked` in `templates/default-labels.md` — so
+the board agrees with the label. (This is the same move as Step 5; under a
+board ready-gate it is required rather than best-effort.)
 
 These commands are idempotent — a label remove no-ops if the label is
 not present.
 
 ### 5. Update project board (if configured)
 
-First resolve the board and the issue's `{item_id}` following
-`templates/board-resolution.md` (board-configured check, identity
-verification by title, add-to-board-if-missing). Only run the mutation
-below once it returns a verified `{item_id}`.
+First resolve the board, the issue's `{item_id}`, and the target column's
+`{column_option_id}` following `templates/board-resolution.md`
+(board-configured check, identity verification by title,
+add-to-board-if-missing, and column-option-id resolution). The target
+column for `status-blocked` is **Blocked** (`col-blocked`) per the label ⇄
+column pairing in `templates/default-labels.md`. Only run the mutation
+below once it returns a verified `{item_id}` and `{column_option_id}`.
 
-Set status to On Hold:
+Set status to Blocked:
 
 ```
 gh api graphql -f query='mutation {
@@ -129,7 +134,7 @@ gh api graphql -f query='mutation {
     projectId: "{project_node_id}"
     itemId: "{item_id}"
     fieldId: "{status_field_id}"
-    value: { singleSelectOptionId: "{on_hold_option_id}" }
+    value: { singleSelectOptionId: "{column_option_id}" }
   }) { projectV2Item { id } }
 }'
 ```

@@ -144,6 +144,62 @@ Claude-created issues.
 |-------------|-------------|-------|-------------|
 | `claude-authored` | `claude-authored` | `5319E7` | Built or created by Claude (issues and PRs) |
 
+## Board Columns
+
+The **board-side mirror** of the issue lifecycle. When a project board is
+configured, every command that moves an issue to a new lifecycle *label*
+also moves its board item to the paired *column* — so the board never
+drifts from the labels. Board moves are best-effort: with no board
+configured they no-op silently; with a board configured a failure is
+reported loudly (see `templates/board-resolution.md`). The labels remain
+the authoritative state; the board mirrors them.
+
+Columns are resolved by **purpose key** through the exact same path as
+labels: read the concrete column name / option ID from
+`ClaudeProject.md` → `## Project Board` → `### Status Options`; fall back
+to the default name below. This extends the **apply == filter** invariant
+to the board — every producer and consumer resolves a column through one
+path, so the column a command moves to is the same column the picker reads.
+
+The canonical set is six columns; the three **active workflow columns**
+(In Progress, In Review, Blocked) are the ones commands move *between*.
+
+| Purpose key      | Default Name  | Option color | Mirrors lifecycle label(s) |
+|------------------|---------------|--------------|----------------------------|
+| `col-backlog`    | `Backlog`     | GRAY         | `needs-refinement`, new issues |
+| `col-ready`      | `Ready`       | GREEN        | `status-ready` |
+| `col-in-progress`| `In Progress` | BLUE         | `status-in-progress`, `status-needs-attention` |
+| `col-in-review`  | `In Review`   | YELLOW       | `status-in-review` |
+| `col-blocked`    | `Blocked`     | RED          | `status-blocked`, `status-parked` |
+| `col-done`       | `Done`        | GRAY         | (issue closed) |
+
+> Option `color` values come from the GitHub enum
+> `ProjectV2SingleSelectFieldOptionColor`:
+> `GRAY`, `BLUE`, `GREEN`, `YELLOW`, `ORANGE`, `RED`, `PINK`, `PURPLE`.
+> These name the *board* option color and are distinct from the hex label
+> colors above.
+
+**Label ⇄ column pairing (the single mapping every command follows):**
+
+| Lifecycle transition (label set)         | Board column moved to        | Command(s) |
+|------------------------------------------|------------------------------|------------|
+| `status-in-progress`                     | In Progress (`col-in-progress`) | start-story, execute Phase 2 |
+| `status-in-review`                       | In Review (`col-in-review`)  | finish-story, execute Phase 6 |
+| `status-blocked`                         | Blocked (`col-blocked`)      | block-story |
+| `status-ready` (unblock)                 | Ready (`col-ready`)          | pick-story |
+| `needs-refinement` / `status-ready` (new issue) | Backlog / Ready             | report-issue (best-effort placement) |
+
+`status-needs-attention` stays in **In Progress** (the work is still
+in-flight; the label flags it for a human). `status-parked` shares the
+**Blocked** column with `status-blocked` (both mean "set aside, out of the
+pick pool"); the distinct label preserves the reason.
+
+**Required columns.** When a board is configured, the three active
+columns — In Progress, In Review, Blocked — must exist (preflight emits
+`CRITICAL board-columns-incomplete` if any is missing; setup creates
+them). The Ready column is additionally required only under a
+`board-column`/`both` ready-gate.
+
 ## Review State Labels
 
 These control the PR review workflow. Resolved via the Labels table in
