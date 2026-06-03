@@ -79,8 +79,83 @@ it (see `templates/board-resolution.md`). When a board is selected,
 auto-fetch its field IDs and status option IDs:
 
 ```
-gh api graphql -f query='query { node(id: "{project_id}") { ... on ProjectV2 { fields(first: 20) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } ... on ProjectV2Field { id name } } } } } }'
+gh api graphql -f query='query { node(id: "{project_id}") { ... on ProjectV2 { fields(first: 20) { nodes { ... on ProjectV2SingleSelectField { id name options { id name color description } } ... on ProjectV2Field { id name } } } } } }'
 ```
+
+Record the Status single-select field's `id` as `status-field-id`, and
+keep the full list of its existing `options` (each with `id`, `name`,
+`color`, `description`) — you need them verbatim for the column-creation
+step below.
+
+**Ensure the board's lifecycle columns exist:**
+
+The board must mirror the issue lifecycle (see
+`templates/default-labels.md` → Board Columns). Compare the Status
+field's existing option names against the canonical set and decide what
+is missing:
+
+- **Required when a board is selected:** In Progress (`col-in-progress`),
+  In Review (`col-in-review`), Blocked (`col-blocked`) — the three active
+  workflow columns.
+- **Also required only under a `board-column`/`both` ready-gate:** Ready
+  (`col-ready`).
+- Backlog (`col-backlog`) and Done (`col-done`) usually already exist as
+  the board's default Todo/Done options — map those purpose keys onto
+  whatever the board already calls them; do not create duplicates.
+
+Match case-insensitively and allow for the board's own naming (e.g. a
+default "Todo" satisfies `col-backlog`). For each **missing** column, ask
+the user what to name it, suggesting the default (`In Progress`,
+`In Review`, `Blocked`, `Ready`). If every required column already
+exists, skip creation.
+
+Then create the missing columns in **one** mutation.
+
+> **Critical:** `updateProjectV2Field`'s `singleSelectOptions` is a
+> **full replace**, not additive — whatever list you pass becomes the
+> complete option set. You **must** pass back every existing option with
+> its `id` (preserving it) plus each new option **without** an `id`. Omit
+> an existing option and it is **deleted** (along with any items in that
+> column). Each option needs `name`, `color`
+> (`GRAY`/`BLUE`/`GREEN`/`YELLOW`/`ORANGE`/`RED`/`PINK`/`PURPLE`), and a
+> `description` (all required).
+
+Build the `singleSelectOptions` list as: the existing options (each
+`{id, name, color, description}` exactly as fetched) followed by the new
+ones (no `id`). Suggested colors for new columns: Ready `GREEN`,
+In Progress `BLUE`, In Review `YELLOW`, Blocked `RED`.
+
+`gh api graphql` only binds **scalar** variables (`-f`/`-F`), so the
+option-list input cannot be passed as a variable — **inline the full
+`singleSelectOptions` array directly into the query text**. The `color`
+values are enum literals (unquoted); `name`/`description` are quoted
+strings. Existing options keep their `id`; new ones omit it:
+
+```
+gh api graphql -f query='mutation {
+  updateProjectV2Field(input: {
+    fieldId: "{status_field_id}"
+    singleSelectOptions: [
+      { id: "<existing-id-1>", name: "Todo",        color: GRAY,   description: "" },
+      { id: "<existing-id-2>", name: "In Progress", color: BLUE,   description: "" },
+      { id: "<existing-id-3>", name: "Done",        color: GRAY,   description: "" },
+      { name: "In Review", color: YELLOW, description: "PR open, awaiting review" },
+      { name: "Blocked",   color: RED,    description: "Blocked or parked — out of the pick pool" }
+    ]
+  }) {
+    projectV2Field { ... on ProjectV2SingleSelectField { options { id name } } }
+  }
+}'
+```
+
+(The example adds In Review and Blocked to a default Todo/In Progress/Done
+board; pass back **all** pre-existing options or they are deleted.) The
+mutation returns the full option list (existing + new) with their ids. Read the returned `options` to capture the option id for every
+canonical column — these become the Status Options values written to
+`ClaudeProject.md` in Step 5. This step is best-effort: if the mutation
+fails (permissions, etc.), warn the user that the columns must be created
+manually in the board UI, record the option ids that do exist, and
+continue.
 
 **Milestones:**
 

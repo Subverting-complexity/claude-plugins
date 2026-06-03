@@ -68,8 +68,8 @@ Every issue always carries exactly one of these lifecycle labels — the
 issue-side mirror of the PR review-state machine (see
 `github-workflow/templates/default-labels.md` → Issue Lifecycle State
 Labels). They make each issue's current state visible in the issues list
-without depending on the project board (whose lifecycle columns are not
-yet configured here).
+without depending on the project board — and the board now mirrors them
+(its active lifecycle columns are configured; see Project Board below).
 
 | Purpose                | Label                    |
 | ---------------------- | ------------------------ |
@@ -108,9 +108,9 @@ How stories signal they are eligible for pickup:
 - `board-column` — the "Ready" column on the project board.
 - `both` — story must have the label AND be in the board column.
 
-Using `label` because the project board's Status field currently has
-only the default options (Todo / In Progress / Done) — there is no
-"Ready" column. Add a "Ready" option to the board and switch this to
+Using `label` because the board has the active workflow columns (In
+Progress / In Review / Blocked) but no "Ready" column — pickup is
+label-driven here. Add a "Ready" option to the board and switch this to
 `board-column` or `both` if you prefer board-driven pickup.
 
 ## Agent Gating
@@ -175,25 +175,27 @@ issue #27). Always confirm the live board's title matches
 
 ### Status Options
 
-The board uses GitHub's **default** Status options. "Ready" and
-"In Review" columns do not exist yet — add them in the board UI to get
-full status tracking, then fill in their option IDs below.
+The board now carries all three active workflow columns. Each column
+mirrors one or more issue lifecycle states — see
+`github-workflow/templates/default-labels.md` → Board Columns for the full
+label ⇄ column pairing. (`col-backlog` maps onto the board's default
+"Todo" option; `col-done` onto "Done".)
 
-| Status      | Option ID            |
-| ----------- | -------------------- |
-| Backlog     | `f75ad846` (Todo)    |
-| Ready       | `n/a` (add column)   |
-| In Progress | `47fc9ee4`           |
-| In Review   | `n/a` (add column)   |
-| Done        | `98236657`           |
-| On Hold     | `n/a` (add column)   |
+| Status      | Purpose key       | Option ID            |
+| ----------- | ----------------- | -------------------- |
+| Backlog     | `col-backlog`     | `f75ad846` (Todo)    |
+| Ready       | `col-ready`       | `n/a` (optional — label ready-gate) |
+| In Progress | `col-in-progress` | `47fc9ee4`           |
+| In Review   | `col-in-review`   | `9b47c867`           |
+| Blocked     | `col-blocked`     | `28e51b4e`           |
+| Done        | `col-done`        | `98236657`           |
 
-Board updates are best-effort: `start-story` → In Progress works today;
-`finish-story` → In Review and `block-story` → On Hold will no-op until
-those columns are added. This no-op is now harmless for state visibility:
-the **issue lifecycle labels** (Status section above) always carry the
-authoritative state, so an issue in review or blocked is visible by label
-even while the board lacks those columns.
+All board moves now resolve to a real column: `start-story` → In Progress,
+`finish-story` → In Review, `block-story` → Blocked, and `report-issue`
+places new issues in Todo/Backlog. The **issue lifecycle labels** (Status
+section above) remain the authoritative state; the board mirrors them.
+"Ready" stays optional because this repo's ready-gate is `label`, not
+`board-column`.
 
 ## Reference Docs
 

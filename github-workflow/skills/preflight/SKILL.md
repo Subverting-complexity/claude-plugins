@@ -143,6 +143,19 @@ Classify:
 - **Ready column missing** — `ready-gate` is `board-column` or `both`
   and the "Ready" Status option id is `n/a` or absent:
   emit `CRITICAL board-ready-option: ready-gate '{gate}' needs a "Ready" board column, but no Ready Status option id is configured`.
+- **Active lifecycle columns missing** — a board **is** configured
+  (`project-node-id` is real) but one or more of the three active
+  workflow columns is absent. This is a **local table read, no network
+  call** — check the `### Status Options` rows for `col-in-progress`,
+  `col-in-review`, and `col-blocked`; any whose Option ID is `n/a`,
+  absent, or still a `{placeholder}` is missing. If any are missing:
+  emit `CRITICAL board-columns-incomplete: board is configured but missing lifecycle column(s) {names}` —
+  the board cannot mirror the issue lifecycle until those columns exist.
+  Run this **whenever a board is configured**, independent of ready-gate;
+  setup creates these columns and records their option ids. A project with
+  **no** board configured produces no finding here (the board is
+  optional). The label ⇄ column pairing is in
+  `templates/default-labels.md` → Board Columns.
 - **Board identity (required boards only)** — run this network check
   **only when the board is required** (ready-gate `board-column`/`both`).
   Resolve `project-node-id` and compare its title to `project-title`:
@@ -211,8 +224,13 @@ Read all output from the checks above. Categorize:
 - **CRITICAL** — the workflow **cannot proceed and has no usable
   default**: gh not authenticated, ClaudeProject.md missing, a required
   section absent, a **required** board (ready-gate `board-column`/`both`)
-  unconfigured or its stored identity mismatched. Only these trigger the
-  wizard.
+  unconfigured or its stored identity mismatched, or a **configured board
+  missing its active lifecycle columns** (`board-columns-incomplete`).
+  Only these trigger the wizard. The board-columns case is the one board
+  gap that escalates even though board *moves* are best-effort: a board
+  that exists but cannot mirror the lifecycle is a real misconfiguration
+  the user must resolve (setup creates the columns), not a default-covered
+  gap.
 - **WARNING** — something is missing **but a default covers it**, so the
   workflow proceeds: an unmapped label purpose (resolves to its default
   name via `templates/default-labels.md`), unreplaced placeholders,

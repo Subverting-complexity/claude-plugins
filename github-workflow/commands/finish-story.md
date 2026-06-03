@@ -336,11 +336,14 @@ create-if-missing without `--force` if absent, then retry once). This
 label — not the board — is the authoritative "in review" signal, so it
 works even when no board is configured.
 
-**Project board (best-effort, if configured).** First resolve the board
-and the issue's `{item_id}` following `templates/board-resolution.md`
-(board-configured check, identity verification by title,
-add-to-board-if-missing). Only run the mutation below once it returns a
-verified `{item_id}`.
+**Project board (best-effort, if configured).** First resolve the board,
+the issue's `{item_id}`, and the target column's `{column_option_id}`
+following `templates/board-resolution.md` (board-configured check,
+identity verification by title, add-to-board-if-missing, column-option-id
+resolution). The target column for `status-in-review` is **In Review**
+(`col-in-review`) per the label ⇄ column pairing in
+`templates/default-labels.md`. Only run the mutation below once it returns
+a verified `{item_id}` and `{column_option_id}`.
 
 Set status to In Review:
 
@@ -350,7 +353,7 @@ gh api graphql -f query='mutation {
     projectId: "{project_node_id}"
     itemId: "{item_id}"
     fieldId: "{status_field_id}"
-    value: { singleSelectOptionId: "{in_review_option_id}" }
+    value: { singleSelectOptionId: "{column_option_id}" }
   }) { projectV2Item { id } }
 }'
 ```

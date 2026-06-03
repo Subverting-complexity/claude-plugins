@@ -307,12 +307,16 @@ claim for you.
    `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
 
 2. Update project board to In Progress (if board configured in ClaudeProject.md).
-   First resolve the board and the issue's `{item_id}` following
-   `templates/board-resolution.md` — it decides whether a board is
-   configured, verifies the stored `project-node-id` resolves to a board
-   whose title matches `project-title` (aborting loudly on a mismatch),
-   and adds the issue to the board if missing. Only run the mutation once
-   it returns a verified `{item_id}`:
+   First resolve the board, the issue's `{item_id}`, and the target
+   column's `{column_option_id}` following `templates/board-resolution.md`
+   — it decides whether a board is configured, verifies the stored
+   `project-node-id` resolves to a board whose title matches
+   `project-title` (aborting loudly on a mismatch), adds the issue to the
+   board if missing, and resolves the target column by purpose key. The
+   target column for `status-in-progress` is **In Progress**
+   (`col-in-progress`) per the label ⇄ column pairing in
+   `templates/default-labels.md`. Only run the mutation once it returns a
+   verified `{item_id}` and `{column_option_id}`:
 
    ```
    gh api graphql -f query='mutation {
@@ -320,7 +324,7 @@ claim for you.
        projectId: "{project_node_id}"
        itemId: "{item_id}"
        fieldId: "{status_field_id}"
-       value: { singleSelectOptionId: "{in_progress_option_id}" }
+       value: { singleSelectOptionId: "{column_option_id}" }
      }) { projectV2Item { id } }
    }'
    ```
@@ -473,7 +477,10 @@ Run the quality gate command from `ClaudeProject.md`:
      --remove-label "{status_in_progress_label}" --add-label "{status_in_review_label}"
    ```
    Verify per `templates/default-labels.md`. Then update the project
-   board to In Review (best-effort, if configured).
+   board to the **In Review** column (`col-in-review`) — best-effort, if
+   configured — following `templates/board-resolution.md` (which resolves
+   the column option id by purpose key); the label ⇄ column pairing lives
+   in `templates/default-labels.md`.
 
 5. Release the atomic claim now that the PR exists — the open PR plus the
    assignment are the ownership markers, so the claim ref is no longer

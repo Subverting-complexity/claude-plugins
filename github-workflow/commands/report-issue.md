@@ -205,8 +205,40 @@ known Windows/PowerShell shell-escaping issue):
 5. If still corrupted after retry, warn the user that the issue body
    may need manual editing.
 
+### 6b. Place the issue on the board (best-effort, if configured)
+
+So the new issue mirrors its lifecycle label on the board from the moment
+it is created, place it in the column paired with the lifecycle state
+chosen in Step 3 (see `templates/default-labels.md` → Board Columns):
+
+- `status-ready` → **Ready** (`col-ready`)
+- `needs-refinement` → **Backlog** (`col-backlog`)
+
+First resolve the board, the new issue's `{item_id}`, and the target
+column's `{column_option_id}` following `templates/board-resolution.md`
+(board-configured check, identity verification by title, **add the issue
+to the board** — a new issue is never on it yet — and column-option-id
+resolution). Only run the mutation once it returns a verified `{item_id}`
+and `{column_option_id}`:
+
+```
+gh api graphql -f query='mutation {
+  updateProjectV2ItemFieldValue(input: {
+    projectId: "{project_node_id}"
+    itemId: "{item_id}"
+    fieldId: "{status_field_id}"
+    value: { singleSelectOptionId: "{column_option_id}" }
+  }) { projectV2Item { id } }
+}'
+```
+
+When **no** board is configured, skip this step silently. When a board
+**is** configured, board failures are loud: report the failure (e.g.
+"Board placement failed: {error}. Continuing.") and proceed.
+
 ### 7. Report
 
 Display the created issue by number **and** title together (e.g.
-`#42 Fix login crash`, never the number alone) plus its URL, and whether
-it blocks the current story or is deferred.
+`#42 Fix login crash`, never the number alone) plus its URL, whether
+it blocks the current story or is deferred, and its board column (if
+placed).
