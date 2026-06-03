@@ -41,7 +41,11 @@ correct answer and push them yourself.
 Read `ClaudeProject.md` for project-specific settings before starting.
 If `docs/review.config.md` (or `review.config.md`) exists, the
 code-review skill reads it for label definitions and non-compliance
-gates.
+gates. The label names referenced below (`reviewing`,
+`changes-requested`, `needs-discussion`) are **purpose keys** — the
+code-review skill resolves them to concrete names through the single
+path in `templates/default-labels.md`, so its claim/verdict labels match
+what every other skill filters on.
 
 ## Your workflow
 

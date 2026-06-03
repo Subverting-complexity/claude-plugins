@@ -1,70 +1,108 @@
-# Default Labels
+# Label Resolver & Default Inventory
 
-All skills that apply labels use these defaults. Project configuration
-overrides them — `ClaudeProject.md` for workflow labels,
-`review.config.md` for review state labels. When no override is
-configured, use the names and colors below.
+This file is the **single source of truth** for how every skill and
+command resolves a label name, and the default inventory created at
+setup. All producers (skills that *apply* a label) and all consumers
+(skills that *filter or skip* on a label) resolve through the one path
+below, so the string that is applied always equals the string that is
+filtered — by construction.
 
-## Label Resolution
+## Purpose keys
 
-When a skill needs a label name:
+A label is identified by its **purpose key**, never by a hardcoded
+concrete name. Purpose keys are stable; concrete names are
+project-configurable. The bare names that appear in workflow prose
+(`reviewing`, `updating`, `approved`, `changes-requested`,
+`needs-discussion`, `claude-authored`, `status-ready`, …) **are purpose
+keys** — they are resolved to a concrete name through this file, and are
+never applied literally.
 
-1. Check the project config (ClaudeProject.md label map or
-   review.config.md) for the label purpose.
-2. If configured, use that name.
-3. If not configured, use the default name from this file.
+## The single resolution path
 
-Before applying any label, ensure it exists on the repo. If missing,
-create it:
+When any skill needs the concrete name for a purpose key:
+
+1. **Workflow purposes** (typing, priority, status, claude markers) —
+   look up the purpose in the `ClaudeProject.md` label map.
+   **Review-state purposes** (the PR review mutex) — look up the purpose
+   in `review.config.md`'s Labels table, matched **by purpose** (the
+   Purpose column), not by guessing a prefix.
+2. If the project config defines a name for that purpose, use it.
+3. If not configured, use the default name from the inventory below.
+
+**Invariant — apply == filter.** Because producers and consumers both
+start from the same purpose key and run the same three steps, a claim
+label written by one skill is the identical string another skill filters
+on. Do not re-derive names independently, do not hardcode a concrete
+name in prose or a filter, and do not assume a prefix — always resolve
+the purpose key through this path.
+
+## Pre-creation contract
+
+The complete inventory below (workflow **and** review-state labels) is
+created once at setup (`/github-workflow:setup`, step 5b). Skills at
+runtime must **not** `--force`-overwrite labels — that causes
+colour/description churn when two skills disagree on metadata. A skill
+may only **create a missing label as a guarded fallback**: check whether
+it exists, create it without `--force` if absent, warn that setup should
+have created it, then proceed.
+
+Guarded create-if-missing pattern:
 
 ```
-gh label create "{name}" --repo {org}/{repo} --description "{description}" --color "{color}" --force
+# resolve <name> from the purpose key via the path above, then:
+existing=$(gh label list --repo {org}/{repo} --json name --jq '.[].name')
+case "$existing" in
+  *"<name>"*) : ;;  # already present — leave its metadata untouched
+  *) gh label create "<name>" --repo {org}/{repo} \
+       --description "<description>" --color "<color>" || true ;;
+esac
 ```
 
-After applying labels, verify they were applied by reading back:
+After applying any label, verify it took effect by reading back:
 
 ```
 gh issue view {number} --json labels --jq '[.labels[].name]'
 gh pr view {number} --json labels --jq '[.labels[].name]'
 ```
 
-If a label is missing after apply, the label likely didn't exist and
-`gh` silently skipped it. Create it and retry once.
+If a label is missing after apply, it did not exist and `gh` silently
+skipped it. Create it with the guarded pattern above and retry once.
 
 ## Workflow Labels
 
 These control issue management — typing, prioritization, and status.
-Overridden by the label map in `ClaudeProject.md`.
+Resolved via the label map in `ClaudeProject.md`; defaults below.
 
-| Purpose | Default Name | Color | Description |
-|---------|-------------|-------|-------------|
-| Story type | `type-story` | `1D76DB` | Feature story |
-| Bug type | `type-bug` | `D93F0B` | Bug fix |
-| Security type | `type-security` | `B60205` | Security issue |
-| Debt type | `type-debt` | `FBCA04` | Technical debt |
-| Arch type | `type-arch` | `0E8A16` | Architecture issue |
-| Critical priority | `priority-critical` | `B60205` | Critical priority |
-| High priority | `priority-high` | `D93F0B` | High priority |
-| Medium priority | `priority-medium` | `FBCA04` | Medium priority |
-| Low priority | `priority-low` | `0E8A16` | Low priority |
-| Ready status | `status-ready` | `0E8A16` | Ready for pickup |
-| Claude-authored | `claude-authored` | `5319E7` | Built by Claude |
-| Claude-ready | `claude-ready` | `1D76DB` | Approved for agent work |
+| Purpose key | Default Name | Color | Description |
+|-------------|-------------|-------|-------------|
+| `type-story` | `type-story` | `1D76DB` | Feature story |
+| `type-bug` | `type-bug` | `D93F0B` | Bug fix |
+| `type-security` | `type-security` | `B60205` | Security issue |
+| `type-debt` | `type-debt` | `FBCA04` | Technical debt |
+| `type-arch` | `type-arch` | `0E8A16` | Architecture issue |
+| `priority-critical` | `priority-critical` | `B60205` | Critical priority |
+| `priority-high` | `priority-high` | `D93F0B` | High priority |
+| `priority-medium` | `priority-medium` | `FBCA04` | Medium priority |
+| `priority-low` | `priority-low` | `0E8A16` | Low priority |
+| `status-ready` | `status-ready` | `0E8A16` | Ready for pickup |
+| `claude-authored` | `claude-authored` | `5319E7` | Built by Claude |
+| `claude-ready` | `claude-ready` | `1D76DB` | Approved for agent work |
 
 ## Review State Labels
 
-These control the PR review workflow. Overridden by label definitions
-in `review.config.md`. Default prefix: `review`.
+These control the PR review workflow. Resolved via the Labels table in
+`review.config.md` (matched by purpose key); defaults below use the
+prefix `review`.
 
 State labels are mutually exclusive — exactly one per PR.
 
-| Purpose | Default Name | Color | Description |
-|---------|-------------|-------|-------------|
-| Reviewing | `review-reviewing` | `0E8A16` | Review in progress |
-| Approved | `review-approved` | `1D76DB` | Ready for human merge |
-| Changes requested | `review-changes-requested` | `E4E669` | Issues need human action |
-| Needs discussion | `review-needs-discussion` | `D93F0B` | Architectural questions |
-| Needs re-review | `review-needs-re-review` | `FBCA04` | New commits since last review |
-| Review failed | `review-review-failed` | `B60205` | Review could not complete |
-| Updating | `review-updating` | `0E8A16` | Builder addressing feedback |
-| Fixes applied | `review-fixes-applied` | `5319E7` | Claude pushed fix commits (sticky) |
+| Purpose key | Default Name | Color | Description |
+|-------------|-------------|-------|-------------|
+| `reviewing` | `review-reviewing` | `0E8A16` | Review in progress |
+| `approved` | `review-approved` | `1D76DB` | Ready for human merge |
+| `changes-requested` | `review-changes-requested` | `E4E669` | Issues need human action |
+| `needs-discussion` | `review-needs-discussion` | `D93F0B` | Architectural questions |
+| `needs-re-review` | `review-needs-re-review` | `FBCA04` | New commits since last review |
+| `review-failed` | `review-review-failed` | `B60205` | Review could not complete |
+| `updating` | `review-updating` | `0E8A16` | Builder addressing feedback |
+| `fixes-applied` | `review-fixes-applied` | `5319E7` | Claude pushed fix commits (sticky) |

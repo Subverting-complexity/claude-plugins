@@ -248,9 +248,10 @@ If `mergeable` is `CONFLICTING`:
 
 ### 7. Add labels to PR
 
-If the `claude-authored` label is configured in the label map, apply it
-to mark this as a Claude-built PR. If no label map exists, use the
-default name `claude-authored` from `templates/default-labels.md`:
+Resolve the `claude-authored` purpose key to its concrete name through
+the single path in `templates/default-labels.md` (the `ClaudeProject.md`
+label map, default `claude-authored`), then apply it to mark this as a
+Claude-built PR:
 
 ```
 gh pr edit {pr_number} --add-label "{claude_authored_label}"
@@ -262,10 +263,13 @@ After applying, verify the label was applied:
 gh pr view {pr_number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'
 ```
 
-If missing, create the label and retry:
+If missing, the label was not created at setup. Create it with the
+guarded create-if-missing pattern from `templates/default-labels.md` —
+**without `--force`** so existing metadata is never overwritten — then
+retry:
 
 ```
-gh label create "{claude_authored_label}" --repo {org}/{repo} --description "Built by Claude" --color "5319E7" --force
+gh label create "{claude_authored_label}" --repo {org}/{repo} --description "Built by Claude" --color "5319E7"
 gh pr edit {pr_number} --add-label "{claude_authored_label}"
 ```
 

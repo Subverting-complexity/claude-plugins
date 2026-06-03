@@ -11,18 +11,24 @@
 Replace `{PREFIX}` with your label prefix (e.g., `claude`, `review`,
 `cr`). All state labels use this prefix so they're easy to filter.
 
+The **Purpose** column is the stable identity skills resolve against —
+it never changes even when you pick a custom prefix. Producers and
+consumers look a label up by purpose (see the resolution path in
+`templates/default-labels.md`), so the name you set here is what every
+skill applies and filters on.
+
 State labels are mutually exclusive — exactly one is applied per review.
 
-| Label | Type | Meaning |
-| ----- | ---- | ------- |
-| `{PREFIX}-reviewing` | State | Review in progress — prevents concurrent reviews |
-| `{PREFIX}-approved` | State | No remaining issues, ready for human merge |
-| `{PREFIX}-changes-requested` | State | Concrete problems remain that a human must address |
-| `{PREFIX}-needs-discussion` | State | Architectural or scope questions need human judgment |
-| `{PREFIX}-needs-re-review` | State | New commits pushed since last review — re-review required |
-| `{PREFIX}-review-failed` | State | Review could not be completed (checkout failed, PR too large) |
-| `{PREFIX}-updating` | State | A builder agent is addressing review feedback — prevents concurrent updates |
-| `{PREFIX}-fixes-applied` | Action | Claude pushed fix commits to the PR branch (sticky across runs) |
+| Purpose | Label | Type | Meaning |
+| ------- | ----- | ---- | ------- |
+| `reviewing` | `{PREFIX}-reviewing` | State | Review in progress — prevents concurrent reviews |
+| `approved` | `{PREFIX}-approved` | State | No remaining issues, ready for human merge |
+| `changes-requested` | `{PREFIX}-changes-requested` | State | Concrete problems remain that a human must address |
+| `needs-discussion` | `{PREFIX}-needs-discussion` | State | Architectural or scope questions need human judgment |
+| `needs-re-review` | `{PREFIX}-needs-re-review` | State | New commits pushed since last review — re-review required |
+| `review-failed` | `{PREFIX}-review-failed` | State | Review could not be completed (checkout failed, PR too large) |
+| `updating` | `{PREFIX}-updating` | State | A builder agent is addressing review feedback — prevents concurrent updates |
+| `fixes-applied` | `{PREFIX}-fixes-applied` | Action | Claude pushed fix commits to the PR branch (sticky across runs) |
 
 These labels are managed by the `/github-workflow:code-review` skill
 and form the single source of truth for PR review state. Claude labels
