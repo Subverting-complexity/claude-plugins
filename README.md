@@ -102,6 +102,14 @@ Each plugin also has its own README:
 [`github-workflow/README.md`](github-workflow/README.md) ·
 [`local-workflow/README.md`](local-workflow/README.md).
 
+### Running parallel agents
+
+Many of these workflows spawn parallel or background agents, and the Claude
+Code harness gives each its own git worktree. If you run agents in parallel —
+especially on Windows — read
+[`docs/worktree-config.md`](docs/worktree-config.md) for the recommended
+harness worktree configuration and a manual cleanup routine.
+
 ---
 
 ## Contributing
