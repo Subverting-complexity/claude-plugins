@@ -276,6 +276,11 @@ gh pr edit {pr_number} --add-label "{claude_authored_label}"
 
 ### 8. Update project board (if configured)
 
+First resolve the board and the issue's `{item_id}` following
+`templates/board-resolution.md` (board-configured check, identity
+verification by title, add-to-board-if-missing). Only run the mutation
+below once it returns a verified `{item_id}`.
+
 Set status to In Review:
 
 ```
@@ -289,8 +294,9 @@ gh api graphql -f query='mutation {
 }'
 ```
 
-Board operations are best-effort. If they fail, report the failure to
-the user (e.g., "Board update failed: {error}. Continuing without board
+When **no** board is configured, skip this step silently. When a board
+**is** configured, board failures are loud: report the failure to the
+user (e.g., "Board update failed: {error}. Continuing without board
 update.") and proceed with the rest of the workflow.
 
 ### 9. Report

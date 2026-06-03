@@ -333,7 +333,13 @@ Read the full issue body. Check it has **Context** and **Requirements**.
    gh issue edit {number} --repo {org}/{repo} --add-assignee @me
    ```
 
-2. Update project board to In Progress (if board configured in ClaudeProject.md):
+2. Update project board to In Progress (if board configured in ClaudeProject.md).
+   First resolve the board and the issue's `{item_id}` following
+   `templates/board-resolution.md` — it decides whether a board is
+   configured, verifies the stored `project-node-id` resolves to a board
+   whose title matches `project-title` (aborting loudly on a mismatch),
+   and adds the issue to the board if missing. Only run the mutation once
+   it returns a verified `{item_id}`:
 
    ```
    gh api graphql -f query='mutation {
@@ -354,7 +360,8 @@ Read the full issue body. Check it has **Context** and **Requirements**.
    git checkout -b {branch} origin/{default-branch}
    ```
 
-Board operations are best-effort. If they fail, report the failure to
+When **no** board is configured, skip the board update silently. When a
+board **is** configured, board failures are loud: report the failure to
 the user (e.g., "Board update failed: {error}. Continuing.") and proceed.
 
 ## Phase 3 — Plan

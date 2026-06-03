@@ -167,13 +167,19 @@ Issues should include these sections at minimum:
 
 Remove this entire section if you don't use a GitHub project board.
 
-| Setting             | Value  |
-| ------------------- | ------ |
-| project-number      | `{n}`  |
-| project-node-id     | `{id}` |
-| status-field-id     | `{id}` |
-| start-date-field-id | `{id}` |
-| end-date-field-id   | `{id}` |
+| Setting             | Value     |
+| ------------------- | --------- |
+| project-number      | `{n}`     |
+| project-title       | `{title}` |
+| project-node-id     | `{id}`    |
+| status-field-id     | `{id}`    |
+| start-date-field-id | `{id}`    |
+| end-date-field-id   | `{id}`    |
+
+`project-title` is the human-readable board name. Workflow commands
+re-check that `project-node-id` still resolves to a board with this
+title before writing to the board, so a stale or wrong id fails loudly
+instead of silently mutating the wrong board.
 
 ### Status Options
 

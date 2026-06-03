@@ -61,12 +61,22 @@ gh repo view --json owner,name,defaultBranchRef --jq '{org: .owner.login, repo: 
 
 **Project board:**
 
+A project board can be owned by an **organization** or by a **user**.
+Query both so user-owned boards are not missed (the org query errors or
+returns empty when `{org}` is a personal account):
+
 ```
-gh api graphql -f query='query { organization(login: "{org}") { projectsV2(first: 10) { nodes { id number title } } } }'
+gh api graphql -f query='query { organization(login: "{org}") { projectsV2(first: 20) { nodes { id number title } } } }'
+gh api graphql -f query='query { user(login: "{org}") { projectsV2(first: 20) { nodes { id number title } } } }'
 ```
 
-If boards are found, list them and ask which to use (or none).
-When a board is selected, auto-fetch its field IDs and status option IDs:
+Merge the results. If boards are found, list them by **title** (and
+number) and ask which to use (or none). Record the chosen board's
+`number` as `project-number`, its `id` as `project-node-id`, and its
+`title` as `project-title` — `project-title` lets later commands confirm
+the stored node id still points at the intended board before they mutate
+it (see `templates/board-resolution.md`). When a board is selected,
+auto-fetch its field IDs and status option IDs:
 
 ```
 gh api graphql -f query='query { node(id: "{project_id}") { ... on ProjectV2 { fields(first: 20) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } ... on ProjectV2Field { id name } } } } } }'
