@@ -49,8 +49,12 @@ fi
 if [ -f ClaudeProject.md ]; then
   echo "OK file-ClaudeProject"
 
-  # Unreplaced template placeholders
-  placeholders=$(grep -cE '\{(org|repo|name|id|package_manager|quality_gate_command|branch_pattern|default_branch|n|criteria|path/to/doc)\}' ClaudeProject.md 2>/dev/null || echo "0")
+  # Unreplaced template placeholders.
+  # grep -c already prints "0" (and exits 1) when there are no matches,
+  # so swallow the exit code with `|| true` rather than `|| echo "0"`
+  # (which would append a second "0" and break the -gt test below).
+  placeholders=$(grep -cE '\{(org|repo|name|id|package_manager|quality_gate_command|branch_pattern|default_branch|n|criteria|path/to/doc)\}' ClaudeProject.md 2>/dev/null || true)
+  placeholders=${placeholders:-0}
   if [ "$placeholders" -gt 0 ]; then
     echo "WARNING placeholders: $placeholders unreplaced template placeholder(s)"
     grep -nE '\{(org|repo|name|id|package_manager|quality_gate_command|branch_pattern|default_branch|n|criteria|path/to/doc)\}' ClaudeProject.md 2>/dev/null | head -5
@@ -87,18 +91,19 @@ fi
 
 ### Quality gate command
 
-```!
-if [ -f ClaudeProject.md ]; then
-  qg=$(awk '/^## Quality Gate$/,/^## [A-Z]/' ClaudeProject.md \
-       | sed -n '/^```$/,/^```$/{ /^```$/d; p; }' \
-       | head -1 | xargs 2>/dev/null)
-  if [ -z "$qg" ] || [ "$qg" = "{quality_gate_command}" ]; then
-    echo "WARNING quality-gate: not configured or has template placeholder"
-  else
-    echo "OK quality-gate: $qg"
-  fi
-fi
-```
+Read this one by hand — do **not** use an auto-run (`!`-prefixed) block.
+The quality-gate command lives inside a fenced code block in
+`ClaudeProject.md`, and an auto-run block cannot contain a code-fence
+delimiter without truncating itself mid-command (this previously emitted
+a bash "unexpected EOF" error on every preflight run — issue #33).
+
+Open `ClaudeProject.md`, find the `## Quality Gate` section, and read the
+command inside its fenced code block. Then classify:
+
+- Section missing, command empty, or still the literal
+  `{quality_gate_command}` placeholder → emit
+  `WARNING quality-gate: not configured or has template placeholder`.
+- Otherwise → emit `OK quality-gate: {command}`.
 
 ## 3. Evaluate results
 
