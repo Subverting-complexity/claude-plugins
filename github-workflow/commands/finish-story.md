@@ -132,6 +132,12 @@ a new PR, determine whether the current work has an associated issue:
    labels were applied correctly — read back and verify, same as
    the validation in `/github-workflow:report-issue` Steps 5b and 6.
 
+   **Leave the assignee blank.** Do not pass `--assignee`/`--add-assignee`
+   on this `gh issue create`, and do not edit the new issue to assign it.
+   A follow-up issue must enter the unassigned pool so it is eligible for
+   normal pickup; assignment happens only at claim time, never at
+   creation.
+
    Record the new issue number for use in Step 5.
 
 The issue number (from context, branch, or newly created) is used in

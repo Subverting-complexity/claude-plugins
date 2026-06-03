@@ -311,6 +311,12 @@ issues. If they accept:
 5. Present a summary: issue numbers, titles, labels, and the
    dependency graph with issue numbers filled in.
 
+**Leave the assignee blank.** Do not assign created stories to anyone —
+not the creator, not an agent. Pass no `--assignee`/`--add-assignee` on
+creation and do not edit issues to assign them afterward. Backlog
+stories must enter the unassigned pool so `pick-story` / `execute` can
+select them; assignment happens only at claim time, never at creation.
+
 ---
 
 ## Continuous Mode
