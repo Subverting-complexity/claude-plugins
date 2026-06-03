@@ -382,7 +382,8 @@ Run the quality gate command from `ClaudeProject.md`:
    Delete the temp file after creation.
 
    - Title under 70 chars
-   - Each linked issue on its own line: `Closes #42`
+   - **Always** close the associated issue: each linked issue on its own
+     line as `Closes #42`. A story PR must never omit this.
    - Include a test plan section
    - Summary of what was built and acceptance criteria addressed
 
@@ -401,7 +402,8 @@ Run the quality gate command from `ClaudeProject.md`:
    ```
 
    Clean up the temp file after. Re-validate. If still corrupted,
-   warn the user.
+   warn the user. Also confirm the body contains a `Closes #N` line for
+   every linked issue; if any is missing, add it before proceeding.
 
 3. Add claude labels. Resolve the `claude-authored` purpose key to its
    concrete name through the single path in `templates/default-labels.md`
@@ -425,7 +427,9 @@ Run the quality gate command from `ClaudeProject.md`:
    The claim-ref delete is idempotent — ignore an error if it is already
    gone. The issue stays assigned to @me through review.
 
-6. Report: display the PR URL, linked issues, and labels applied.
+6. Report: display the PR by number **and** title together (e.g.
+   `#123 Add login button`, never the number alone) plus its URL, the
+   linked issues (each by number **and** title), and labels applied.
 
 ## Phase 8 — Self-Review
 

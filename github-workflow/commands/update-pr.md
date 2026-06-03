@@ -136,7 +136,7 @@ Stage and commit the fixes with a clear message referencing the review:
 
 ```
 git add <changed-files>
-git commit -m "Address review feedback on PR #{pr_number}"
+git commit -m "Address review feedback on PR #{pr_number} {pr_title}"
 git push
 ```
 

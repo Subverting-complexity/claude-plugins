@@ -194,5 +194,6 @@ known Windows/PowerShell shell-escaping issue):
 
 ### 7. Report
 
-Display the created issue number and URL, and whether it blocks
-the current story or is deferred.
+Display the created issue by number **and** title together (e.g.
+`#42 Fix login crash`, never the number alone) plus its URL, and whether
+it blocks the current story or is deferred.
