@@ -279,3 +279,25 @@ Display a summary of what was configured:
 - Labels configured
 
 Suggest running `/github-workflow:execute` to start the first story.
+
+## Troubleshooting
+
+### A story or PR is stuck and no agent will pick it
+
+Exclusive ownership is enforced by atomic refs under `refs/claims/`
+(see `templates/claim-procedure.md`), not by labels or assignment. These
+refs are released automatically on every normal exit, but an ungraceful
+exit — a hard-killed session, a crash, or a machine reboot — can leave an
+orphaned ref with no live owner. Every future attempt to claim that item
+then fails and it silently drops out of the pool.
+
+To recover, list the active claims and free the abandoned one **after**
+confirming no live session holds it:
+
+```
+git ls-remote origin 'refs/claims/*'
+git push origin :refs/claims/issue-{number}   # or :refs/claims/pr-{number}
+```
+
+Full procedure and safety checks: **Reaping orphaned claims** in
+`templates/claim-procedure.md`.

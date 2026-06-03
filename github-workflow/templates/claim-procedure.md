@@ -142,3 +142,39 @@ action is to stop touching the item. You have made no changes, so there
 is nothing to undo. Never fall back to `--add-assignee` or the
 `reviewing` label as a "soft" claim — that reintroduces the race this
 procedure exists to remove.
+
+---
+
+## Reaping orphaned claims
+
+A claim ref is normally released the instant a session no longer needs it
+(PR opened, story blocked, review verdict recorded, or any **Exit
+cleanup**). But a ref is server-side state with no owner-side timeout:
+unlike the old assignment lock, it does **not** self-heal. If a session
+is hard-killed, the machine reboots, or the process dies before its
+release runs, the ref survives with no live owner. Every future Acquire
+for that target then returns non-zero and the item silently drops out of
+the pool — un-pickable (issues) or un-reviewable (PRs) until a human
+frees it. This is the deliberate trade for atomicity: there is no
+background reaper, so removing an orphan is a manual, intentional act.
+
+This is rare (only an ungraceful exit causes it) but has no automatic
+remedy, so the recovery is by hand. List in-flight claims and confirm one
+is truly orphaned — its issue has no open session and no open PR, or its
+PR review is plainly abandoned — before freeing it:
+
+```
+# List every active claim ref and the object each points at.
+git ls-remote origin 'refs/claims/*'
+
+# Cross-check: is the issue still being worked, or the PR still in review?
+gh issue view {number} --repo {org}/{repo} --json assignees,state
+gh pr list --repo {org}/{repo} --state open
+
+# Once certain no live session holds it, delete the orphaned ref.
+git push origin :refs/claims/issue-{number}   # or :refs/claims/pr-{number}
+```
+
+Deleting a ref that a live agent still holds would let a second agent
+claim the same item — so only reap a ref you have confirmed is abandoned.
+A freed item returns to the pool and the next Acquire wins it normally.
