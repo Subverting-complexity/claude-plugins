@@ -138,16 +138,15 @@ metadata.
 
 ## Reaping stale claim refs
 
-The github-workflow plugin locks each in-flight issue/PR with a short-lived
-ref under `refs/claims/` (see
-`github-workflow/templates/claim-procedure.md`). The lock is only a
-race-protector for the brief select-to-claim window; **durable ownership is
-the assignment + the issue's lifecycle label**, not the ref. A crashed or
-killed session can leave a claim ref behind, but it cannot permanently lock
-an item out: `pick-story` / `execute` sweep refs older than the **6-hour
-TTL** automatically before selecting.
-
-To reap them by hand (e.g. you want an item pickable again immediately):
+The github-workflow plugin locks each in-flight issue/PR with a ref under
+`refs/claims/` (see `github-workflow/templates/claim-procedure.md` →
+"Reaping orphaned claims"). The lock is only a race-protector for the brief
+select-to-claim window; **durable ownership is the assignment + the issue's
+lifecycle label**, not the ref. There is deliberately **no automatic
+reaper** — auto-deleting a ref by age could yank the claim of a session
+that is still legitimately running and let a second agent grab the same
+item. So a ref left behind by a crashed or killed session is freed **by
+hand**, after confirming no live session holds it:
 
 ```bash
 # List all claim refs on the remote.

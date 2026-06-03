@@ -219,11 +219,6 @@ Otherwise, run the pick-story logic:
 
 1. Read `ClaudeProject.md` for org, repo, label map, `agent-gating`
    mode, and the `claude-ready` label name.
-1a. Sweep stale claim refs — before selecting, release any orphaned
-    `refs/claims/*` older than the 6-hour TTL, following **Sweeping stale
-    claims** in `templates/claim-procedure.md`. This frees issues locked
-    by crashed sessions without touching their assignment or labels.
-    Best-effort: skip on error.
 1b. Auto-ready resolved dependencies — scan two groups (regardless of
     assignee): issues carrying the `status-blocked` label (found by
     label — `block-story` unassigns them) and issues assigned to `@me`

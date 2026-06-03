@@ -48,17 +48,19 @@ markers**:
 
 Because `pick-story` / `execute` only ever select *unassigned* issues, an
 assigned + labelled issue stays out of the pick pool **indefinitely** —
-for days if a human parks it — even after its claim ref has been swept as
-stale. This is the intended way to pause work and resume later without a
-second agent producing a duplicate branch or PR. Never treat the claim
-ref as the thing that prevents duplicate pickup; the assignment + label
-do that. The ref only stops the simultaneous-select race.
+for days if a human parks it. This is the intended way to pause work and
+resume later without a second agent producing a duplicate branch or PR:
+the assignment + lifecycle label, not the claim ref, are what keep it
+yours. Never treat the claim ref as the thing that prevents duplicate
+pickup; the assignment + label do that. The ref only stops the
+simultaneous-select race.
 
-A consequence: claim refs are safe to expire. A ref older than the
-**staleness TTL of 6 hours** cannot still be guarding a live
-select-to-claim race (that window is seconds), so it is an orphan left by
-a crashed or killed session and may be released. See **Sweeping stale
-claims** below.
+This is also why there is **no automatic expiry or background reaper**: a
+session that legitimately runs for hours still holds a live claim, and
+auto-deleting a ref by age could let a second agent claim an item that is
+still being worked. An orphan left by a crashed or killed session is freed
+**by hand**, deliberately, after confirming no live session holds it — see
+**Reaping orphaned claims** below.
 
 Inputs:
 
@@ -173,38 +175,10 @@ callers that also want to return the item to the pool do their own
 
 **Always release on every exit.** A command that wins a claim must release
 it on *all* exit paths — success, block, error, timeout, or budget/rate
-abort — not just the happy path. An exit that skips Release leaks the ref;
-the sweep below is the backstop, not an excuse to skip Release.
-
----
-
-## Sweeping stale claims
-
-Because the lock is ephemeral (see above), any claim ref older than the
-**6-hour TTL** is an orphan from a crashed or killed session and is safe
-to delete. `pick-story` (and `execute` Phase 1) run this sweep **before**
-selecting a candidate, so a crashed agent never permanently locks an item
-out of the pool. The sweep deletes only the *ref* — it never touches the
-issue's assignment or labels, which remain the durable ownership record.
-
-```
-# List claim refs with the timestamp embedded in each claim commit message.
-git ls-remote origin 'refs/claims/*' | awk '{print $2}' | while read ref; do
-  sha=$(git ls-remote origin "$ref" | awk '{print $1}')
-  # Fetch just this object and read its commit message timestamp.
-  ts=$(git fetch origin "$ref" >/dev/null 2>&1; \
-       git log -1 --format=%s FETCH_HEAD 2>/dev/null \
-         | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z')
-  # If ts is older than 6 hours, release the orphaned ref:
-  #   git push origin :"$ref"
-done
-```
-
-This is best-effort: if the sweep cannot run (API error, shallow clone),
-skip it and continue — the assignment + lifecycle label still prevent
-duplicate pickup; only the ref-reuse cleanup is deferred. A human can run
-the **manual reap** any time (see `docs/worktree-config.md` →
-"Reaping stale claim refs").
+abort — not just the happy path. There is no automatic reaper, so a skipped
+Release leaks the ref until a human reaps it by hand (**Reaping orphaned
+claims** below). Releasing on every exit is what keeps that manual recovery
+rare.
 
 ---
 

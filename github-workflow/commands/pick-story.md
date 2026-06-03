@@ -68,15 +68,6 @@ Issues in any other lifecycle state — `status-in-progress`,
 excluded; do **not** add a separate filter for the PR-only `approved`
 label (issues never carry it).
 
-### 1a. Sweep stale claim refs
-
-Before selecting, release any orphaned claim refs left by crashed or
-killed sessions, following **Sweeping stale claims** in
-`templates/claim-procedure.md` (delete `refs/claims/*` whose embedded
-timestamp is older than the 6-hour TTL). This deletes only the ref — it
-never touches an issue's assignment or labels, which remain the durable
-ownership record. Best-effort: skip on any error and continue.
-
 ### 1b. Auto-ready resolved dependencies
 
 Before picking new work, scan for issues whose dependencies may now be
