@@ -64,6 +64,42 @@ cover. Use `AskUserQuestion` to confirm:
 
 Be relentless. The goal is shared understanding with every open question resolved. Don't accept hand-waving. If the user gives a surface-level answer, dig deeper. If they say "probably" or "it depends", that's your cue to probe until the answer is concrete or the user explicitly defers (with a reason). Every resolved question informs the stories. Every deferred question becomes a noted open issue.
 
+### Wording and Clarity
+
+Follow the shared `_shared/wording-standard.md` for every question,
+recommendation, and `AskUserQuestion` option you write. The person
+answering often has **no prior context** — the agent may be running
+autonomously, so they have not seen the reasoning that led to the
+question. The essentials:
+
+- **State both the problem and the proposed solution.** Explain what is
+  being decided and what you recommend doing about it, not just "which
+  option?".
+- **Write in complete sentences** and avoid telegraphic fragments.
+- **Always include the why** in plain language.
+- **Avoid or define jargon**, but keep precision — identifiers stay in
+  backticks.
+- This applies to `AskUserQuestion` option **labels and descriptions**,
+  which are often all an autonomous reader sees.
+
+Terse and hard to parse without context:
+
+> Cache layer? Redis vs in-mem LRU, TTL 5m, invalidate on write.
+
+Clear and easy to read:
+
+> - **The problem:** Product lookups hit the database on every request,
+>   and the catalogue page issues dozens of them per load.
+> - **Recommendation:** Add a read-through cache in front of the
+>   `ProductRepository`. I'd use the existing Redis instance rather than
+>   an in-memory `LRU` cache, so the cache is shared across all server
+>   instances. Entries would expire after 5 minutes by default, and we'd
+>   clear an entry when its product is updated. Do you agree, or would
+>   you prefer a different store or expiry?
+
+See `_shared/wording-standard.md` for the full standard and a second
+example.
+
 ### Interview mechanics
 
 - **Lead with recommendations.** For every question, state what you'd recommend and why before asking. Don't just interrogate. Give your best answer based on codebase research, then ask if the user agrees or wants to change it.
@@ -87,6 +123,10 @@ recommendations, scope in/out decisions, phase-gate confirmations.
 - The user can always select "Other" to type a custom answer. If you
   find yourself wanting to add an "Other" option manually, just ask
   in plain text instead.
+- Word the question and every option per the Wording and Clarity rules
+  above (`_shared/wording-standard.md`): each option label and
+  description should convey the problem and the proposed solution to a
+  reader with no prior context.
 
 ### Interview sections
 
