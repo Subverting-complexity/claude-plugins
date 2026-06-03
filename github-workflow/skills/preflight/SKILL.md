@@ -33,6 +33,20 @@ or running `/github-workflow:setup`.
 
 Run every check below and collect the output.
 
+**Reuse, don't re-read.** Several calling commands (`pick-story`,
+`execute`, `finish-story`) auto-load the full `ClaudeProject.md` into
+context before invoking preflight. When that copy is already present,
+evaluate the by-hand checks (quality gate, ready-gate/board) against it —
+do **not** open `ClaudeProject.md` again. Only read the file if it is not
+already in context.
+
+**Run expensive checks only when needed.** The single network call here
+(the board-identity `gh api` query) runs **only when a board is
+required** (ready-gate `board-column`/`both`). For the common `label`
+ready-gate, skip it entirely — board writes are best-effort and
+`templates/board-resolution.md` re-verifies identity at write time, so a
+preflight network round-trip every command is wasted tokens and latency.
+
 ### GitHub CLI
 
 ```!
@@ -129,9 +143,9 @@ Classify:
 - **Ready column missing** — `ready-gate` is `board-column` or `both`
   and the "Ready" Status option id is `n/a` or absent:
   emit `CRITICAL board-ready-option: ready-gate '{gate}' needs a "Ready" board column, but no Ready Status option id is configured`.
-- **Board identity** — `project-node-id` is present (whether the board
-  is required or just best-effort). Resolve it and compare its title to
-  the configured `project-title`:
+- **Board identity (required boards only)** — run this network check
+  **only when the board is required** (ready-gate `board-column`/`both`).
+  Resolve `project-node-id` and compare its title to `project-title`:
 
   ```
   gh api graphql -f query='query($id:ID!){ node(id:$id){ ... on ProjectV2 { title } } }' -F id='<project-node-id>' --jq '.data.node.title'
@@ -140,11 +154,13 @@ Classify:
   - Resolves and the title **matches** `project-title` →
     emit `OK board-identity: '{project-title}'`.
   - Does not resolve, or the resolved title **differs** from
-    `project-title` → emit a mismatch finding. Severity is **CRITICAL**
-    when the board is required, **WARNING** when it is best-effort
-    (label gate):
-    `{CRITICAL|WARNING} board-identity: stored project-node-id resolves to '<resolved>' but project-title is '<configured>'`
+    `project-title` → emit
+    `CRITICAL board-identity: stored project-node-id resolves to '<resolved>' but project-title is '<configured>'`
     (or `... does not resolve to a ProjectV2`).
+- **Best-effort board (label ready-gate)** — do **not** make the network
+  call. Board writes are best-effort and `templates/board-resolution.md`
+  verifies identity at write time, so a stale id there fails loudly then,
+  not on every preflight. No finding here.
 - **Board not required and not configured** — no finding. A `label`
   ready-gate with no board section is valid.
 
@@ -200,11 +216,12 @@ Read all output from the checks above. Categorize:
 - **WARNING** — something is missing **but a default covers it**, so the
   workflow proceeds: an unmapped label purpose (resolves to its default
   name via `templates/default-labels.md`), unreplaced placeholders,
-  CLAUDE.md missing, quality gate not set, a best-effort board's identity
-  stale, or a referenced `review.config.md` missing. **Defaults are not
+  CLAUDE.md missing, quality gate not set, or a referenced
+  `review.config.md` missing. **Defaults are not
   a failure** — every label, the issue lifecycle states, and the
   review-state labels all have defaults, so a missing mapping is never
-  critical on its own.
+  critical on its own. (Best-effort board identity is **not** checked
+  here — it is verified at write time by `templates/board-resolution.md`.)
 - **OK** — check passed.
 
 **Defaults-first principle.** Everything that *can* default *does* default
