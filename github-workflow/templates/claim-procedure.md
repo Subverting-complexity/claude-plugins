@@ -33,6 +33,35 @@ does not yet exist is atomic: the first push wins, a second push of a
 *different* object to the now-existing ref is rejected as a
 non-fast-forward. We use a per-issue ref under `refs/claims/` as the lock.
 
+## The lock is ephemeral; ownership is durable
+
+The claim ref protects **only the brief window between selecting a work
+item and recording ownership** — the instant where two agents could both
+think an unassigned issue is theirs. It is **not** the long-term record of
+who owns the work. Durable ownership lives in the **human-visible
+markers**:
+
+- **Issue:** the assignment (`@me`) **plus** the `status-in-progress` /
+  `status-parked` lifecycle label.
+- **PR:** the open PR itself **plus** its review-state label
+  (`reviewing` / `updating` / …).
+
+Because `pick-story` / `execute` only ever select *unassigned* issues, an
+assigned + labelled issue stays out of the pick pool **indefinitely** —
+for days if a human parks it. This is the intended way to pause work and
+resume later without a second agent producing a duplicate branch or PR:
+the assignment + lifecycle label, not the claim ref, are what keep it
+yours. Never treat the claim ref as the thing that prevents duplicate
+pickup; the assignment + label do that. The ref only stops the
+simultaneous-select race.
+
+This is also why there is **no automatic expiry or background reaper**: a
+session that legitimately runs for hours still holds a live claim, and
+auto-deleting a ref by age could let a second agent claim an item that is
+still being worked. An orphan left by a crashed or killed session is freed
+**by hand**, deliberately, after confirming no live session holds it — see
+**Reaping orphaned claims** below.
+
 Inputs:
 
 - `{number}` — the issue or PR being claimed or released.
@@ -100,18 +129,29 @@ already require.)
 Now that the claim is yours, mark it where humans can see it. The marker
 is target-specific:
 
-- **Issue:** assign it.
+- **Issue:** assign it **and** move it to the `status-in-progress`
+  lifecycle label (resolved by purpose key via `default-labels.md`),
+  removing whatever lifecycle label it had (`status-ready`,
+  `status-parked`, `status-blocked`, …) so exactly one state is present.
+  The assignment + this label are the **durable ownership record** that
+  keeps the issue out of the pick pool even after the claim ref expires.
   ```
-  gh issue edit {number} --repo {org}/{repo} --add-assignee @me
+  gh issue edit {number} --repo {org}/{repo} --add-assignee @me \
+    --remove-label "{previous_lifecycle_label}" --add-label "{status_in_progress_label}"
   ```
-- **PR:** apply the `reviewing` state label (resolved by purpose key).
+- **PR:** apply the `reviewing` state label (resolved by purpose key),
+  removing the prior review-state label (e.g. `needs-review`) so exactly
+  one state is present.
   ```
-  gh pr edit {number} --repo {org}/{repo} --add-label "{reviewing_label}"
+  gh pr edit {number} --repo {org}/{repo} \
+    --remove-label "{needs_review_label}" --add-label "{reviewing_label}"
   ```
 
-The marker is now a **display signal**, not the lock. The `refs/claims/`
-ref is the lock. No read-back of the marker is required — the atomic push
-already proved exclusivity.
+The claim ref is the **lock**; the assignment/label is the **durable
+display + ownership signal** other skills filter on. No read-back of the
+marker is required for exclusivity — the atomic push already proved that.
+Verify the label took effect per `default-labels.md` (read-back, guarded
+create-if-missing) so the issue is never left without a state label.
 
 ---
 
@@ -132,6 +172,13 @@ Idempotent: deleting a ref that is already gone fails harmlessly —
 ignore the error. Releasing does **not** clear the human-visible marker;
 callers that also want to return the item to the pool do their own
 `--remove-assignee` / state-label removal as before.
+
+**Always release on every exit.** A command that wins a claim must release
+it on *all* exit paths — success, block, error, timeout, or budget/rate
+abort — not just the happy path. There is no automatic reaper, so a skipped
+Release leaks the ref until a human reaps it by hand (**Reaping orphaned
+claims** below). Releasing on every exit is what keeps that manual recovery
+rare.
 
 ---
 

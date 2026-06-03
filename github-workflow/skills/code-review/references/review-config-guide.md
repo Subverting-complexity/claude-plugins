@@ -74,13 +74,14 @@ gh label create "<label-name>" --description "<description>" --color "<hex>"
 ```
 
 Use these default colours (adjustable by the user):
+- Needs review (entry state): `#C2E0C6` (pale green)
 - Reviewing: `#0E8A16` (green)
 - Updating: `#0E8A16` (green)
 - Approved: `#1D76DB` (blue)
 - Changes requested: `#E4E669` (yellow)
 - Needs re-review: `#FBCA04` (gold)
 - Needs discussion: `#D93F0B` (orange)
-- Review failed: `#B60205` (red)
+- Failed (`{prefix}-failed`): `#B60205` (red)
 - Fixes applied: `#5319E7` (purple)
 
 ## Step 4 — Write the config

@@ -135,13 +135,16 @@ For each remaining PR, determine whether it needs review:
    ```
 2. Filter comments for the review footer marker (defined in
    `review.config.md`).
-3. If no such comment exists, it needs review.
+3. If no such comment exists, it needs review. A PR carrying the
+   `needs-review` entry-state label (applied at PR creation) is the
+   normal first-review case.
 4. If a comment exists, extract the `Reviewed at <SHA>` line. If that SHA
    differs from the current `headRefOid`, it needs review. Otherwise skip.
 
 **Prioritisation:** PRs with the `needs-re-review` state label are
 reviewed first. Among those, pick the lowest-numbered one. If none have
-that label, pick the lowest-numbered PR that needs review.
+that label, pick the lowest-numbered PR that needs review (a
+`needs-review` PR or one whose SHA changed).
 
 If no PRs need review, report that and exit. Do not loop through multiple
 PRs.
@@ -175,8 +178,9 @@ gh pr checkout <number>
 
 If checkout fails: release the claim (`templates/claim-procedure.md`
 **Release** for target `pr-<number>`: `git push origin :refs/claims/pr-<number>`),
-remove the `reviewing` label, apply the `review-failed` label, post a
-brief failure comment with the footer, and exit.
+remove the `reviewing` label, apply the `failed` review-state label
+(purpose key `failed`, default name `review-failed`), post a brief
+failure comment with the footer, and exit.
 
 Record the current commit SHA:
 
@@ -568,7 +572,8 @@ review thoroughly):
    for target `pr-<number>`): `git push origin :refs/claims/pr-<number>`
    and `rm -f .claude/claim-pr-<number>.sha`. Idempotent.
 2. Remove the `reviewing` state label.
-3. Apply the `review-failed` state label.
+3. Apply the `failed` review-state label (purpose key `failed`, default
+   name `review-failed`).
 4. Post a comment explaining what failed, including the review footer so
    the failure is tied to a specific commit and future runs will retry.
 5. Exit immediately. Do not attempt to recover, retry, or continue.

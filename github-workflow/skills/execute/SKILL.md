@@ -97,7 +97,11 @@ equivalent). Before starting each new phase, check elapsed time. If the
 session has been running for more than 45 minutes:
 
 1. Commit and push all current work immediately.
-2. If you have enough for a PR, open one (draft if incomplete).
+2. If the work has reached a shippable state, run Phase 7 to open a
+   **real** PR (never a draft). If it has not, leave the branch pushed
+   and move the issue to the `status-needs-attention` lifecycle label
+   (removing `status-in-progress`) with a comment listing what remains —
+   do **not** open a PR for incomplete work.
 3. Create follow-up issues for any unfinished work.
 4. Run **Exit cleanup** — release the claim ref and delete the scratch
    file.
@@ -117,16 +121,20 @@ users). Long autonomous sessions can accumulate many `gh` calls.
   gh api rate_limit --jq '.rate.remaining'
   ```
 - If remaining quota is below **100**, pause API-heavy operations.
-  Commit and push any current work, run **Exit cleanup** (release the
-  claim ref and delete the scratch file), then exit with a message noting
-  the rate limit. The next session will continue from the pushed state.
+  Commit and push any current work, move the issue to
+  `status-needs-attention` (removing `status-in-progress`) with a comment
+  noting the rate-limit pause, run **Exit cleanup** (release the claim ref
+  and delete the scratch file), then exit. The next session will continue
+  from the pushed state.
 - Do not retry rate-limited requests in a loop — that makes it worse.
 
-If the story is blocked or turns out to need more than one session's
-worth of work, commit what you have, push the branch, open a draft PR
-noting what's done and what remains, run **Exit cleanup** (release the
-claim ref and delete the scratch file), and exit. The next session can
-pick up from the branch.
+If the story turns out to need more than one session's worth of work,
+ship the shippable slice as a **real** PR via Phase 7 and file follow-up
+issues for the remainder (see **Story too large** below). Never open a
+draft. If no slice is shippable, leave the branch pushed, move the issue
+to `status-needs-attention` with a comment on what remains, run **Exit
+cleanup** (release the claim ref and delete the scratch file), and exit.
+The next session can pick up from the branch.
 
 ## Mode selection
 
@@ -211,14 +219,17 @@ Otherwise, run the pick-story logic:
 
 1. Read `ClaudeProject.md` for org, repo, label map, `agent-gating`
    mode, and the `claude-ready` label name.
-1b. Auto-ready resolved dependencies — check issues assigned to
-    `@me` that do NOT have the `status-ready` label. For each, parse
-    the issue body for dependency markers (`Depends on #N`, `Blocked
-    by #N`, `After #N`, `Requires #N`) and check the `## Dependencies`
-    section. If all referenced issues are now `CLOSED`:
-    - **Issues without `needs-refinement`**: apply `status-ready` and
-      comment that dependencies are resolved. The issue re-enters the
-      pick pool below.
+1b. Auto-ready resolved dependencies — scan two groups (regardless of
+    assignee): issues carrying the `status-blocked` label (found by
+    label — `block-story` unassigns them) and issues assigned to `@me`
+    that do NOT have the `status-ready` label. For each, parse the issue
+    body for dependency markers (`Depends on #N`, `Blocked by #N`,
+    `After #N`, `Requires #N`) and check the `## Dependencies` section.
+    If all referenced issues are now `CLOSED`:
+    - **Issues without `needs-refinement`**: move the issue to
+      `status-ready` (removing its current lifecycle label, e.g.
+      `status-blocked`) and comment that dependencies are resolved. The
+      issue re-enters the pick pool below.
     - **Issues with `needs-refinement`**: do NOT auto-promote to
       `status-ready`. Leave the `needs-refinement` label in place.
       Comment that dependencies are resolved and the story is ready
@@ -379,10 +390,13 @@ Run the quality gate command from `ClaudeProject.md`:
    b. Fix the specific failing check.
    c. Re-run the quality gate.
    d. Repeat up to 3 times (4 total runs maximum).
-3. If still failing after 4 total runs, commit what you have, open a
-   draft PR noting the quality gate failure, and exit. Do not
-   continue retrying — the issue likely requires changes outside the
-   story's scope.
+3. If still failing after 4 total runs, the code is complete but the gate
+   is red. Commit what you have and proceed to Phase 7, but set the
+   **gate-failed flag**: Phase 7 will open a **real** PR (never a draft)
+   carrying the `changes-requested` review-state label and a "Quality
+   Gate Failed" section in the body, so a human sees it and the blocking
+   label prevents merge until the gate is green. Do not continue
+   retrying — the issue likely requires changes outside the story's scope.
 
 ## Phase 6 — Commit
 
@@ -401,9 +415,9 @@ Run the quality gate command from `ClaudeProject.md`:
    git push -u origin HEAD
    ```
 
-2. Create a real PR (not a draft). Write the body to a temporary
-   file first, then use `--body-file` to avoid Windows/PowerShell
-   shell-escaping issues:
+2. Create a real PR (never a draft — this workflow does not open drafts).
+   Write the body to a temporary file first, then use `--body-file` to
+   avoid Windows/PowerShell shell-escaping issues:
 
    ```
    gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}
@@ -416,6 +430,8 @@ Run the quality gate command from `ClaudeProject.md`:
      line as `Closes #42`. A story PR must never omit this.
    - Include a test plan section
    - Summary of what was built and acceptance criteria addressed
+   - If the **gate-failed flag** is set (Phase 5), prepend a "Quality
+     Gate Failed" section with the last error output.
 
 2b. Validate the PR body was written correctly:
 
@@ -435,15 +451,29 @@ Run the quality gate command from `ClaudeProject.md`:
    warn the user. Also confirm the body contains a `Closes #N` line for
    every linked issue; if any is missing, add it before proceeding.
 
-3. Add claude labels. Resolve the `claude-authored` purpose key to its
-   concrete name through the single path in `templates/default-labels.md`
-   (the `ClaudeProject.md` label map, default `claude-authored`). After
-   applying, verify the label was applied by reading back the PR
-   labels. If missing, create the label with the guarded
-   create-if-missing pattern from `templates/default-labels.md` (no
-   `--force`) and retry once.
+3. Add PR labels — both resolved by purpose key through
+   `templates/default-labels.md`:
+   - `claude-authored` (provenance, default `claude-authored`).
+   - The review-state **entry label**: `needs-review` (default
+     `review-needs-review`) when the gate passed, or `changes-requested`
+     (default `review-changes-requested`) when the gate-failed flag is
+     set. Exactly one review-state label. This ensures the PR is never
+     unlabelled and the reviewer can find it.
 
-4. Update project board to In Review (if configured).
+   After applying, verify by reading back the PR labels. If a label is
+   missing, create it with the guarded create-if-missing pattern from
+   `templates/default-labels.md` (no `--force`) and retry once.
+
+4. Move the linked issue to the `status-in-review` lifecycle label,
+   removing `status-in-progress` so exactly one state is present (resolve
+   both by purpose key). This — not the board — is the authoritative
+   "in review" signal:
+   ```
+   gh issue edit {number} --repo {org}/{repo} \
+     --remove-label "{status_in_progress_label}" --add-label "{status_in_review_label}"
+   ```
+   Verify per `templates/default-labels.md`. Then update the project
+   board to In Review (best-effort, if configured).
 
 5. Release the atomic claim now that the PR exists — the open PR plus the
    assignment are the ownership markers, so the claim ref is no longer
@@ -534,6 +564,11 @@ The comment should include: phase name, error summary, branch name,
 whether commits were pushed, what was completed, and what remains.
 Delete the temp file after.
 
+Then move the issue to the `status-needs-attention` lifecycle label
+(removing `status-in-progress` so exactly one state is present, resolved
+by purpose key) so the failure is visible in the issues list. Do **not**
+open a PR for failed/incomplete work.
+
 This ensures the next session (or human) can pick up exactly where
 this one failed without guessing what happened. After the comment is
 posted, run **Exit cleanup** (release the claim ref so the issue can be
@@ -549,16 +584,26 @@ run `/github-workflow:report-issue`. Do not fix it inline unless it is
 trivial and within the same scope.
 
 **Dependency**: If this story depends on another unmerged story
-(discovered during planning, not caught by the Phase 1 filter):
+(discovered during planning, not caught by the Phase 1 filter), there is
+**one** rule — chaining is only allowed when the dependency's branch is
+already published; otherwise block:
 
-1. Build the dependency on its own branch from the default branch.
-2. Branch the dependent story off the dependency branch.
-3. Set the dependent PR's base to the dependency branch.
-4. After merge, rebase onto the default branch and update the PR base.
+- **Dependency branch exists on the remote** (the other story is in
+  review or in progress and has pushed): you can chain off it.
+  1. Branch the dependent story off the dependency branch.
+  2. Set the dependent PR's base to the dependency branch.
+  3. After the dependency merges, rebase onto the default branch and
+     update the PR base.
+- **Dependency branch does not exist on the remote** (not started, or
+  started but unpushed — you cannot build on what you cannot fetch):
+  do **not** fork a parallel copy. Block this story
+  (`/github-workflow:block-story`, recording `Blocked by #N`) and pick
+  the dependency — or the next available story — instead.
 
-If the dependency is not yet started, block this story instead
-(`/github-workflow:block-story`) and pick the dependency — or the
-next available story — instead.
+This is the same policy the Phase 1 dependency filter enforces (skip a
+dependent story while its dependency issue is open): chaining is the
+narrow exception for a dependency that is already pushed, not a parallel
+route around an unfinished one.
 
 **Story too broad**: If the story covers multiple distinct changes and
 needs to be broken into sub-stories before implementation can begin,

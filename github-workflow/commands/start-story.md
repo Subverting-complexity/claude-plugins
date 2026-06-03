@@ -40,8 +40,11 @@ proceeds; a losing agent exits cleanly having made no changes.
 If Acquire reports the claim is lost, stop — another agent owns this
 story. Do not assign, branch, or touch the board. If `pick-story` already
 claimed this issue in the same flow, Acquire's re-entry check treats it as
-a no-op and proceeds. Acquire performs the `--add-assignee @me` display
-marker for you; do not assign separately.
+a no-op and proceeds. Acquire performs the durable ownership markers for
+you — it assigns `@me` **and** moves the issue to the `status-in-progress`
+lifecycle label (removing `status-ready` or any prior lifecycle label, so
+exactly one state is present). Do not assign or set a status label
+separately; just verify the read-back per `templates/default-labels.md`.
 
 ### 3. Update project board (if configured)
 

@@ -57,12 +57,23 @@ Only include labels your project uses — remove unused rows.
 | type-debt     | `{name}` |
 | type-arch     | `{name}` |
 
-### Status
+### Status (issue lifecycle)
 
-| Purpose            | Label    |
-| ------------------ | -------- |
-| status-ready       | `{name}` |
-| needs-refinement   | `{name}` |
+Every issue always carries exactly one of these lifecycle labels — the
+issue-side mirror of the PR review-state machine. They make the current
+state of every issue visible in the issues list without depending on a
+project board. See `templates/default-labels.md` → Issue Lifecycle State
+Labels for the state machine and transitions.
+
+| Purpose                | Label    |
+| ---------------------- | -------- |
+| status-ready           | `{name}` |
+| needs-refinement       | `{name}` |
+| status-in-progress     | `{name}` |
+| status-parked          | `{name}` |
+| status-blocked         | `{name}` |
+| status-in-review       | `{name}` |
+| status-needs-attention | `{name}` |
 
 ### Claude
 
@@ -70,10 +81,14 @@ Simple markers applied by workflow commands. These are **not** the
 review state labels — those are defined in `docs/review.config.md`
 and managed by the code-review skill.
 
-| Purpose          | Label    | Applied by       |
-| ---------------- | -------- | ---------------- |
-| claude-authored  | `{name}` | finish-story     |
-| claude-ready     | `{name}` | human triage     |
+| Purpose          | Label    | Applied by                     |
+| ---------------- | -------- | ------------------------------ |
+| claude-authored  | `{name}` | finish-story (PRs), report-issue / finish-story (issues) |
+| claude-ready     | `{name}` | human triage                   |
+
+`claude-authored` is a provenance marker, not a lifecycle state — it
+coexists with any status label and is applied to both Claude-authored
+PRs and Claude-created issues.
 
 The `claude-ready` label is used only when Agent Gating is enabled
 (see below). A human applies it during triage to approve a story for

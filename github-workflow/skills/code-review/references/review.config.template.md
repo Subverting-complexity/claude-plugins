@@ -21,12 +21,13 @@ State labels are mutually exclusive — exactly one is applied per review.
 
 | Purpose | Label | Type | Meaning |
 | ------- | ----- | ---- | ------- |
+| `needs-review` | `{PREFIX}-needs-review` | State | Open PR awaiting its first review (entry state, applied at creation) |
 | `reviewing` | `{PREFIX}-reviewing` | State | Review in progress — prevents concurrent reviews |
 | `approved` | `{PREFIX}-approved` | State | No remaining issues, ready for human merge |
 | `changes-requested` | `{PREFIX}-changes-requested` | State | Concrete problems remain that a human must address |
 | `needs-discussion` | `{PREFIX}-needs-discussion` | State | Architectural or scope questions need human judgment |
 | `needs-re-review` | `{PREFIX}-needs-re-review` | State | New commits pushed since last review — re-review required |
-| `review-failed` | `{PREFIX}-review-failed` | State | Review could not be completed (checkout failed, PR too large) |
+| `failed` | `{PREFIX}-failed` | State | Review could not be completed (checkout failed, PR too large) |
 | `updating` | `{PREFIX}-updating` | State | A builder agent is addressing review feedback — prevents concurrent updates |
 | `fixes-applied` | `{PREFIX}-fixes-applied` | Action | Claude pushed fix commits to the PR branch (sticky across runs) |
 

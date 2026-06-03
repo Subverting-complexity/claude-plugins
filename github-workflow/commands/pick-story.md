@@ -50,36 +50,55 @@ Extract from the project configuration above:
 
 Resolve every label name by **purpose key** through the single path in
 `templates/default-labels.md` — the label map for workflow purposes
-(`status-ready`, `priority-*`, `type-*`, claude markers) and
-`review.config.md` for the `approved` review-state purpose used to skip
-issues awaiting human merge. The bare names in the steps below are
-purpose keys: resolve them, never filter on a bare name literally, so the
-strings this command skips on match the strings the review skills apply.
-When falling back to defaults in an interactive
-session, warn the user: "Label map not configured — using default
-labels. Run `/github-workflow:setup` to configure labels for this
+(`status-ready`, the issue lifecycle states `status-in-progress` /
+`status-parked` / `status-blocked` / `status-in-review` /
+`status-needs-attention`, `priority-*`, `type-*`, claude markers). The
+bare names in the steps below are purpose keys: resolve them, never filter
+on a bare name literally, so the strings this command skips on match the
+strings other commands apply. When falling back to defaults in an
+interactive session, warn the user: "Label map not configured — using
+default labels. Run `/github-workflow:setup` to configure labels for this
 project."
+
+Issues are selected only from the `--assignee ""` (unassigned) pool, and
+only candidates carrying `status-ready` (per `ready-gate`) are eligible.
+Issues in any other lifecycle state — `status-in-progress`,
+`status-parked`, `status-blocked`, `status-in-review`,
+`status-needs-attention`, `needs-refinement` — are therefore already
+excluded; do **not** add a separate filter for the PR-only `approved`
+label (issues never carry it).
 
 ### 1b. Auto-ready resolved dependencies
 
-Before picking new work, check issues assigned to `@me` that are not
-in the ready state. How to detect "not ready" depends on `ready-gate`:
+Before picking new work, scan for issues whose dependencies may now be
+resolved. Two groups, regardless of assignee:
 
-- **`label`**: issues without the `status-ready` label.
-- **`board-column`**: issues not in the "Ready" board column.
-- **`both`**: issues missing EITHER the label OR the board column.
+- **Blocked issues** — any issue carrying the `status-blocked` label.
+  `block-story` unassigns these, so they must be found **by label, not by
+  assignee**:
+  ```
+  gh issue list --repo {org}/{repo} --state open --label "{status_blocked_label}" --json number,body
+  ```
+- **Your non-ready issues** — issues assigned to `@me` that are not in
+  the ready state (detected per `ready-gate`: missing the `status-ready`
+  label, not in the "Ready" board column, or either, respectively).
 
-For each non-ready issue, read the issue body and look for dependency
+For each such issue, read the issue body and look for dependency
 markers (see Step 3c). If all referenced issues are now closed, the
 dependencies are resolved — mark the issue as ready:
 
-- **`label` or `both`**: apply the `status-ready` label:
+- **`label` or `both`**: move the issue to `status-ready`, removing its
+  current lifecycle label (e.g. `status-blocked`) so exactly one state is
+  present:
   ```
-  gh issue edit {number} --repo {org}/{repo} --add-label "{status_ready_label}"
+  gh issue edit {number} --repo {org}/{repo} \
+    --remove-label "{current_lifecycle_label}" --add-label "{status_ready_label}"
   ```
   After applying, verify the label is present. If missing, create it
   with the guarded create-if-missing pattern from
-  `templates/default-labels.md` (no `--force`) and retry once.
+  `templates/default-labels.md` (no `--force`) and retry once. This is the
+  automatic unblock path for `status-blocked` issues: when every
+  `Blocked by #N` is closed, the issue returns to `status-ready`.
 - **`board-column` or `both`**: move the issue to the "Ready" column
   on the project board (using the `ready-option-id` from board config).
   First resolve the board and the issue's `{item_id}` following
@@ -128,8 +147,9 @@ List candidate issues in that milestone:
 gh issue list --repo {org}/{repo} --milestone "{sprint_title}" --state open --assignee "" --json number,title,labels,body --jq '.[] | {number, title, labels: [.labels[].name], body}'
 ```
 
-Filter out issues that have **any** of these labels:
-- The `approved` label — waiting for human merge.
+Candidates come from the unassigned `status-ready` pool, so issues in any
+other lifecycle state are already excluded (see Step 1). Do not filter on
+the PR-only `approved` label.
 
 **Agent gating:** If `agent-gating` is `enabled`, also filter out
 issues that do **not** have the `claude-ready` label. Only
@@ -160,8 +180,6 @@ List candidate issues. How to find ready candidates depends on
   assignees is empty.
 - **`both`**: use the label query, then confirm each candidate is also
   in the "Ready" board column. Drop candidates not in both.
-
-Filter out issues with the `approved` label.
 
 **Agent gating:** If `agent-gating` is `enabled`, also filter out
 issues that do **not** have the `claude-ready` label.

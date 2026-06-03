@@ -7,8 +7,7 @@ This repo contains multiple Claude Code plugins that share skills.
 > gate, board) live in [`ClaudeProject.md`](ClaudeProject.md); workflow
 > commands (`/github-workflow:pick-story`, `:execute`, `:code-review`,
 > etc.) read it. The open backlog of plugin-hardening work is tracked on
-> the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8)
-> and described in [`docs/github-workflow-audit.md`](docs/github-workflow-audit.md).
+> the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8).
 
 ## CRITICAL RULES
 

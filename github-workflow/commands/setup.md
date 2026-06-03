@@ -110,19 +110,26 @@ For anything not auto-detected, ask the user interactively:
   Store the choice as `ready-gate` in ClaudeProject.md. If
   `board-column` or `both` is chosen, a project board must be
   configured and must have a "Ready" status option.
-- **Status labels** — what label names for ready/needs-refinement.
-  If `ready-gate` is `label` or `both`, ask for the `status-ready`
-  label name. This is the positive signal that a story is eligible
-  for pickup (no unresolved dependencies). Suggest `status:ready` with
-  colour `#0E8A16` (green). If `ready-gate` is `board-column`, this
-  label is optional — skip unless the user wants both signals. The
-  `needs-refinement` label marks stories that were created with
-  minimal spec during feature decomposition and need a refinement
-  session (feature-discovery or grill-me) before they can be picked
-  up. Suggest `needs-refinement` with colour `#D4C5F9` (purple). No
-  "blocked" label is needed — dependencies are tracked in the issue
-  body and the absence of ready state keeps the story out of the pick
-  pool.
+- **Issue lifecycle (status) labels** — the issue-side mirror of the PR
+  review-state machine: every issue always carries exactly one. Confirm
+  names for the full set (suggest the defaults from
+  `templates/default-labels.md` → Issue Lifecycle State Labels):
+  - `status-ready` — eligible for pickup, no unresolved dependencies
+    (`#0E8A16` green). If `ready-gate` is `label` or `both` this is the
+    pickup signal; under `board-column` it is optional.
+  - `needs-refinement` — created with minimal spec, needs a refinement
+    session (feature-discovery or grill-me) before pickup (`#D4C5F9`
+    purple).
+  - `status-in-progress` — an agent is actively working it (`#1D76DB`).
+  - `status-parked` — a human deliberately set it aside and will resume;
+    keeps it out of the pick pool without losing ownership (`#C5DEF5`).
+  - `status-blocked` — cannot proceed (external/dependency blocker);
+    auto-cleared when its `Blocked by #N` issues close (`#B60205`).
+  - `status-in-review` — a PR is open, awaiting review/merge (`#FBCA04`).
+  - `status-needs-attention` — a run failed/errored; needs human
+    intervention (`#D93F0B`).
+  These replace any need for an ad-hoc "blocked" marker — `status-blocked`
+  is now a first-class state.
 - **Claude labels** — simple workflow markers. Suggest
   `claude:authored`. These are separate from the review state labels
   (including `{prefix}-approved`) set up in Step 7.
@@ -169,14 +176,18 @@ both the workflow labels and the review-state mutex labels — so no skill
 has to lazily create labels mid-workflow.
 
 1. **Workflow labels** — every label configured in ClaudeProject.md
-   (Priority, Type, Status, Claude, and Custom). Resolve each name
+   (Priority, Type, Status, Claude, and Custom). "Status" now covers the
+   full issue lifecycle set (`status-ready`, `needs-refinement`,
+   `status-in-progress`, `status-parked`, `status-blocked`,
+   `status-in-review`, `status-needs-attention`). Resolve each name
    through the label map per `templates/default-labels.md`.
-2. **Review-state labels** — the eight review-state labels. If the user
-   set up `docs/review.config.md` (step 7) or chose a label prefix,
-   resolve each name from its Purpose row there; otherwise use the
-   `review-` defaults from `templates/default-labels.md`. Create these
-   even if the user defers full review-config setup, so the code-review
-   skill never has to create them at runtime.
+2. **Review-state labels** — the nine review-state labels (including the
+   `needs-review` entry state and `failed`). If the user set up
+   `docs/review.config.md` (step 7) or chose a label prefix, resolve each
+   name from its Purpose row there; otherwise use the `review-` defaults
+   from `templates/default-labels.md`. Create these even if the user
+   defers full review-config setup, so the code-review skill never has to
+   create them at runtime.
 
 First fetch existing labels, then create only the missing ones —
 **without `--force`**, so existing labels keep their colour and
@@ -252,9 +263,10 @@ PR reviews. If yes:
    **Config Generation** flow (defined in
    `skills/code-review/SKILL.md`). This will:
    - Ask for a label prefix (e.g., `claude`, `review`)
-   - Define review state labels (`{prefix}-reviewing`,
-     `{prefix}-approved`, `{prefix}-changes-requested`,
-     `{prefix}-needs-re-review`, etc.)
+   - Define review state labels (`{prefix}-needs-review`,
+     `{prefix}-reviewing`, `{prefix}-approved`,
+     `{prefix}-changes-requested`, `{prefix}-needs-re-review`,
+     `{prefix}-failed`, etc.)
    - Set up non-compliance gates, tech-stack rules, and test
      expectations
    - Create the labels on the GitHub repo

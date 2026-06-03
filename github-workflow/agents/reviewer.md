@@ -90,7 +90,7 @@ open PR.
 
 - If checkout fails, a changed file cannot be read, or the PR has no
   diff, the skill releases the claim ref, removes the `reviewing` label,
-  applies `review-failed`, posts a failure comment with the footer, and
+  applies the `failed` review-state label (default `review-failed`), posts a failure comment with the footer, and
   exits. Do not retry in a loop.
 - If a `gh` CLI call fails (auth, network, rate limit), retry once after
   10 seconds. If it fails again, release your claim ref, remove the

@@ -86,13 +86,14 @@ or filtering. Never apply a bare name literally.
 
 | Label | Meaning | Agent action |
 | ----- | ------- | ------------ |
+| `{PREFIX}-needs-review` | Open PR awaiting its first review (entry state set at creation). | **Reviewer**: Pick it up for review (after `needs-re-review` PRs). **Builder**: No action — wait for review. |
 | `{PREFIX}-reviewing` | A review agent is actively reviewing this PR. | **Do not touch.** Wait for the review to complete. Do not start a review, update, or push to this PR. |
 | `{PREFIX}-updating` | A builder agent is addressing review feedback. | **Do not touch.** Wait for the update to complete. Do not start a review or competing update. |
 | `{PREFIX}-approved` | Review passed, no remaining issues. | Ready for human merge. No agent action needed unless new commits are pushed (see `needs-re-review`). |
 | `{PREFIX}-changes-requested` | Review found issues requiring human or builder action. | **Builder**: Run `/github-workflow:update-pr` to address the feedback. **Reviewer**: Skip, waiting on builder. |
 | `{PREFIX}-needs-re-review` | New commits pushed since last review. | **Reviewer**: Prioritise this PR for re-review. **Builder**: No action — wait for review. |
 | `{PREFIX}-needs-discussion` | Architectural or scope questions need human judgment. | **All agents**: Do not auto-fix. Flag to human. |
-| `{PREFIX}-review-failed` | Review could not complete (checkout failed, PR too large). | **Reviewer**: May retry on next run if root cause is resolved. **Builder**: Investigate the failure. |
+| `{PREFIX}-failed` | Review could not complete (checkout failed, PR too large). | **Reviewer**: May retry on next run if root cause is resolved. **Builder**: Investigate the failure. |
 
 ### Action labels (sticky, not mutually exclusive)
 
@@ -120,3 +121,10 @@ skip checks below still read.
   back to a label-only claim.
 - **On exit or error**: Run **Release** for `pr-<number>` (delete the
   ref), then remove your display label so other agents can proceed.
+
+**Push-race safety.** A reviewer records HEAD at checkout, may push fixes,
+and footers `Reviewed at <SHA>`. A concurrent builder push between checkout
+and the reviewer's push would make that push a non-fast-forward reject —
+but the shared `refs/claims/pr-<number>` mutex means a reviewer and an
+updater can never hold the PR at the same time, so this race cannot occur.
+The claim ref, not the labels, is what guarantees it.
