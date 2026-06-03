@@ -30,6 +30,17 @@ This repo contains multiple Claude Code plugins that share skills.
    - **Minor** (x.Y.0): new skills, commands, behavioral changes
    - **Major** (X.0.0): breaking changes, removed skills
 
+4. **Always commit and open a PR when work is complete.** This is the
+   default and it **overrides** the generic "only commit/push when asked"
+   caution — finishing a unit of work here *means* committing it on a
+   feature branch and opening a pull request against `main`, without
+   waiting to be told. Only skip this if the user explicitly says not to
+   (e.g. "don't commit", "just show me the diff"). Never leave completed
+   changes uncommitted in the working tree. Before committing: branch off
+   `main` if on it, run the quality gate, sync shared skills (rule 2), and
+   bump versions (rule 3). End commit messages and PR bodies with the
+   standard co-author / generation trailers.
+
 ## Shared Skills
 
 These skills exist in `_shared-skills/` and are deployed to multiple
