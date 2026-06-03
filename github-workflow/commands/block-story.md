@@ -56,7 +56,7 @@ git push origin :refs/claims/issue-{number}
 gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 ```
 
-The claim-ref delete is best-effort — ignore an error if the ref is
+The claim-ref delete is idempotent — ignore an error if the ref is
 already gone.
 
 ### 4. Remove from ready state
@@ -76,7 +76,7 @@ the issue body (`## Dependencies` section) and in the comment from
 Step 2. The absence of ready state is sufficient to keep the issue
 out of the pick pool.
 
-These commands are best-effort — the label remove will no-op if the
+These commands are idempotent — the label remove will no-op if the
 label is not present.
 
 ### 5. Update project board (if configured)

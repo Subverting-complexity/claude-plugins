@@ -156,9 +156,22 @@ This lets the same plugin work across repos with different label schemes.
 
 ## Project board
 
-Board updates (status transitions, date stamps) are wrapped in
-best-effort guards. A project without a board works fine — the
-plugin skips those steps silently.
+A project without a board works fine — when no board is configured, the
+plugin skips board updates (status transitions, date stamps) silently.
+
+This is the rule everywhere in the plugin: **"best-effort" never means
+"skip a configured feature."** It applies only to two cases:
+
+1. **Feature not configured** — e.g. no board in `ClaudeProject.md`. The
+   step is skipped silently.
+2. **Inherently idempotent cleanup** — e.g. deleting a claim ref that may
+   already be gone, or removing a label that may not be present. The
+   "failure" is a no-op, not a swallowed error.
+
+When a feature **is** configured, its steps fail loudly: a board, label,
+or milestone operation that errors is reported to the user, never
+swallowed. The workflow continues past the failed step, but the failure
+is surfaced.
 
 When configured, the setup wizard auto-fetches:
 

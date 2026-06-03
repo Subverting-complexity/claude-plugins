@@ -312,7 +312,7 @@ git push origin :refs/claims/issue-{number}
 rm -f .claude/claim-issue-{number}.sha
 ```
 
-Best-effort — ignore an error if the ref is already gone. This does
+Idempotent — ignore an error if the ref is already gone. This does
 **not** unassign the issue; it stays assigned to @me through review.
 
 ### 10. Report

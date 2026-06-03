@@ -515,7 +515,7 @@ the updated SHA from Step 7 if fixes were pushed).
 1. Remove the `reviewing` state label, then release the atomic claim now
    that the verdict is being recorded (`templates/claim-procedure.md`
    **Release** for target `pr-<number>`): `git push origin :refs/claims/pr-<number>`
-   and `rm -f .claude/claim-pr-<number>.sha`. Best-effort — ignore an
+   and `rm -f .claude/claim-pr-<number>.sha`. Idempotent — ignore an
    error if the ref is already gone.
 2. Remove the `needs-re-review` state label (no-op if not present).
 3. Remove all other state labels that don't match the new verdict (the
@@ -565,7 +565,7 @@ review thoroughly):
 
 1. Release the atomic claim (`templates/claim-procedure.md` **Release**
    for target `pr-<number>`): `git push origin :refs/claims/pr-<number>`
-   and `rm -f .claude/claim-pr-<number>.sha`. Best-effort.
+   and `rm -f .claude/claim-pr-<number>.sha`. Idempotent.
 2. Remove the `reviewing` state label.
 3. Apply the `review-failed` state label.
 4. Post a comment explaining what failed, including the review footer so

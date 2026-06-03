@@ -187,7 +187,7 @@ rm -f .claude/claim-pr-{pr_number}.sha
 gh pr edit {pr_number} --remove-label "{updating_label}"
 ```
 
-The claim-ref delete is best-effort — ignore an error if it is already
+The claim-ref delete is idempotent — ignore an error if it is already
 gone.
 
 Then classify the changes you pushed and determine the label outcome:
