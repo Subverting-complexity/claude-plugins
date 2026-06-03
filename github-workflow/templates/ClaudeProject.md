@@ -134,16 +134,9 @@ using the skill configured here.
 
 ## Session Budget
 
-| Setting       | Value    |
-| ------------- | -------- |
-| stale-timeout | `2h`     |
-
-The `stale-timeout` controls how long an assigned issue can go without
-a branch or PR before `pick-story` reclaims it. Accepts values like
-`1h`, `2h`, `30m`. Default is `2h` if not set.
-
-Agent sessions should target ~100k tokens. One story per session.
-Commit and push early so progress survives session boundaries.
+Agent sessions should target ~100k tokens. One story per session, run
+start-to-finish. Commit and push early so committed work survives a
+session that ends unexpectedly.
 
 ## Story Template
 

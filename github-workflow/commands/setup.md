@@ -141,9 +141,6 @@ For anything not auto-detected, ask the user interactively:
   are configured separately in `review.config.md` during Step 7.)
 - **Quality gate command** — if not auto-detected
 - **Issue prefixes** — suggest `[STORY]`, `[BUG]`, `[SECURITY]`, `[ARCH]`, `[DEBT]`
-- **Stale timeout** — how long an assigned issue can go without a
-  branch or PR before `pick-story` reclaims it. Suggest `2h` as
-  default. Accepts values like `30m`, `1h`, `4h`.
 - **Refinement skill** — which skill to use when a `needs-refinement`
   story is next in the queue. Options: `feature-discovery` (default,
   code-aware) or `grill-me` (lightweight Q&A). Store as
@@ -201,21 +198,19 @@ log a warning and continue.
 
 ### 5c. Ignore plugin scratch files
 
-The execute skill writes session-local scratch files under `.claude/`
-that must never be committed: `.claude/execution-checkpoint.md` (resume
-state) and `.claude/plan.md` (the per-story architecture plan). If they
-land in a commit, a stale checkpoint can follow the branch around and
-trigger a bad resume in a later session.
+The execute skill writes a session-local scratch file under `.claude/`
+that must never be committed: `.claude/plan.md` (the per-story
+architecture plan). If it lands in a commit, a stale plan can follow the
+branch around and confuse a later session.
 
-Ensure the project's `.gitignore` excludes them:
+Ensure the project's `.gitignore` excludes it:
 
-- If no `.gitignore` exists, create one with these entries.
+- If no `.gitignore` exists, create one with this entry.
 - If one exists, check whether it already covers `.claude/`. If not,
-  append the two lines below. Do not remove or reorder existing entries.
+  append the line below. Do not remove or reorder existing entries.
 
 ```
 # github-workflow plugin scratch files
-.claude/execution-checkpoint.md
 .claude/plan.md
 ```
 
