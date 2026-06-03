@@ -167,7 +167,11 @@ dependencies are resolved — mark the issue as ready:
   with the guarded create-if-missing pattern from
   `templates/default-labels.md` (no `--force`) and retry once.
 - **`board-column` or `both`**: move the issue to the "Ready" column
-  on the project board (using the `ready-option-id` from board config):
+  on the project board (using the `ready-option-id` from board config).
+  First resolve the board and the issue's `{item_id}` following
+  `templates/board-resolution.md` (identity verification by title,
+  add-to-board-if-missing); only mutate once it returns a verified
+  `{item_id}`:
   ```
   gh api graphql -f query='mutation {
     updateProjectV2ItemFieldValue(input: {

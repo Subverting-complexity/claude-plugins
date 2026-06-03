@@ -53,7 +53,13 @@ gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 
 ### 3. Update project board (if configured)
 
-Only if `ClaudeProject.md` has a Project Board section with field IDs.
+First resolve the board and the issue's `{item_id}` following
+`templates/board-resolution.md`. That step decides whether a board is
+configured at all, verifies the stored `project-node-id` still resolves
+to a board whose title matches `project-title` (aborting loudly on a
+mismatch), and adds the issue to the board if it is not there yet. Only
+proceed with the mutations below once it has handed back a verified
+`{item_id}`.
 
 Set status to In Progress:
 
@@ -81,8 +87,9 @@ gh api graphql -f query='mutation {
 }'
 ```
 
-Board operations are best-effort. If they fail, report the failure to
-the user (e.g., "Board update failed: {error}. Continuing without board
+When **no** board is configured, skip this step silently. When a board
+**is** configured, board failures are loud: report the failure to the
+user (e.g., "Board update failed: {error}. Continuing without board
 update.") and proceed with the rest of the workflow.
 
 ### 4. Validate the issue body
