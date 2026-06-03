@@ -5,8 +5,8 @@ release it again. The item is usually an **issue** (story work) but the
 same procedure claims a **pull request** for review. Referenced by every
 command that takes or relinquishes ownership: `pick-story`,
 `start-story`, `block-story`, `finish-story`, the `execute` skill's
-Phase 1 / Phase 2 / stale recovery, and the `code-review` skill's PR
-claim. **Do not inline a different claim mechanism anywhere** — call this
+Phase 1 / Phase 2, and the `code-review` skill's PR claim. **Do not
+inline a different claim mechanism anywhere** — call this
 procedure so all call sites behave identically.
 
 ## Target and ref name
@@ -118,8 +118,7 @@ already proved exclusivity.
 ## Release
 
 Run this when you relinquish the item: the PR is open (`finish-story`),
-the story is blocked back to the backlog (`block-story`), a stale session
-is being reclaimed (`pick-story` / `execute` stale recovery), or a PR
+the story is blocked back to the backlog (`block-story`), or a PR
 review has reached its verdict or failed (`code-review`). Releasing frees
 the ref so the item can be claimed again and keeps `refs/claims/` bounded
 to in-flight work.
