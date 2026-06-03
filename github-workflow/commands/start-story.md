@@ -30,26 +30,18 @@ Read `ClaudeProject.md` and extract:
 
 ### 2. Claim the issue
 
-Multiple agents may be running concurrently. Use assignment as a claim
-lock to prevent two agents from starting the same story:
+Multiple agents may be running concurrently — possibly under the same
+GitHub identity, where assignment cannot exclude a rival. Acquire the
+issue with the atomic claim procedure in `templates/claim-procedure.md`
+(**Acquire**). It pushes a unique object to `refs/claims/issue-{number}`,
+which is a genuine server-side compare-and-swap: the first agent wins and
+proceeds; a losing agent exits cleanly having made no changes.
 
-```
-gh issue edit {number} --repo {org}/{repo} --add-assignee @me
-```
-
-Wait 2 seconds, then re-read the issue to verify your claim:
-
-```
-gh issue view {number} --repo {org}/{repo} --json assignees
-```
-
-If you are the only assignee, proceed. If another user or agent was
-assigned first (multiple assignees), remove yourself and exit — the
-other agent owns this story:
-
-```
-gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
-```
+If Acquire reports the claim is lost, stop — another agent owns this
+story. Do not assign, branch, or touch the board. If `pick-story` already
+claimed this issue in the same flow, Acquire's re-entry check treats it as
+a no-op and proceeds. Acquire performs the `--add-assignee @me` display
+marker for you; do not assign separately.
 
 ### 3. Update project board (if configured)
 

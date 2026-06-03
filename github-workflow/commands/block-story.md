@@ -44,14 +44,20 @@ The comment should include: the blocker reason, what was attempted,
 what failed or is missing, and a suggested resolution if known.
 Delete the temp file after.
 
-### 3. Unassign the issue
+### 3. Release the claim and unassign
 
-Remove the current assignee so the issue returns to the unassigned pool
-and can be picked up by another agent or re-picked later:
+Release the atomic claim ref so the issue can be claimed again, following
+`templates/claim-procedure.md` (**Release**), then remove the assignee so
+the issue returns to the unassigned pool and can be picked up by another
+agent or re-picked later:
 
 ```
+git push origin :refs/claims/issue-{number}
 gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 ```
+
+The claim-ref delete is best-effort — ignore an error if the ref is
+already gone.
 
 ### 4. Remove from ready state
 

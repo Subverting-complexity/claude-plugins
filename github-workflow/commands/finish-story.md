@@ -299,7 +299,23 @@ When **no** board is configured, skip this step silently. When a board
 user (e.g., "Board update failed: {error}. Continuing without board
 update.") and proceed with the rest of the workflow.
 
-### 9. Report
+### 9. Release the claim
+
+The PR now exists, so the issue's assignment and the open PR are the
+ownership markers — the select-to-start race window is closed and the
+atomic claim ref is no longer needed. Release it (following
+`templates/claim-procedure.md` **Release**) so `refs/claims/` stays
+bounded to in-flight work:
+
+```
+git push origin :refs/claims/issue-{number}
+rm -f .claude/claim-issue-{number}.sha
+```
+
+Best-effort — ignore an error if the ref is already gone. This does
+**not** unassign the issue; it stays assigned to @me through review.
+
+### 10. Report
 
 Display:
 

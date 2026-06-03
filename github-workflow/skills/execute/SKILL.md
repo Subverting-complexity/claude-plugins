@@ -257,8 +257,10 @@ Otherwise, run the pick-story logic (including stale task recovery):
       beyond the branch point (`git log origin/{default-branch}..HEAD
       --oneline`). If commits exist, continue from Phase 5 (Verify).
       If no commits exist, delete the branch and reclaim the issue.
-    - **No branch or PR**: reclaim the issue (unassign, comment) and
-      include it in the normal pick pool below.
+    - **No branch or PR**: reclaim the issue — release the stale claim
+      ref (`templates/claim-procedure.md` **Release**:
+      `git push origin :refs/claims/issue-{number}`), then unassign and
+      comment. Include it in the normal pick pool below.
     - **Not stale yet**: skip — another session may be active.
 1c. Auto-ready resolved dependencies — check issues assigned to
     `@me` that do NOT have the `status-ready` label. For each, parse
@@ -325,13 +327,24 @@ Read the full issue body. Check it has **Context** and **Requirements**.
 - If truly empty with no guidance anywhere: run `/github-workflow:block-story`
   and pick the next one.
 
+**Claim at pick time.** Once you have selected a usable story, acquire it
+atomically with `templates/claim-procedure.md` (**Acquire**) before doing
+anything else — this closes the window between selecting and owning the
+issue under a shared GitHub identity. The procedure pushes a unique object
+to `refs/claims/issue-{number}` (a real server-side compare-and-swap) and
+applies the `--add-assignee @me` display marker on success. If Acquire
+reports the claim is lost, another agent took it: make no changes and
+return to candidate selection for the next story. If the issue turns out
+to be empty and you route it to `block-story`, that command releases the
+claim for you.
+
 ## Phase 2 — Start
 
-1. Assign the issue:
-
-   ```
-   gh issue edit {number} --repo {org}/{repo} --add-assignee @me
-   ```
+1. Confirm the claim. The story was already claimed (and assigned) at the
+   end of Phase 1 via `templates/claim-procedure.md` (**Acquire**). Re-run
+   Acquire here only if Phase 1's claim state was lost to compaction — its
+   re-entry check makes a still-held claim a no-op. Do **not** issue a bare
+   `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
 
 2. Update project board to In Progress (if board configured in ClaudeProject.md).
    First resolve the board and the issue's `{item_id}` following
@@ -481,9 +494,17 @@ Run the quality gate command from `ClaudeProject.md`:
 
 4. Update project board to In Review (if configured).
 
-5. Delete both scratch files now that the work is shipped (see
-   **Scratch file cleanup**):
-   `rm -f .claude/plan.md .claude/execution-checkpoint.md`.
+5. Release the atomic claim now that the PR exists — the open PR plus the
+   assignment are the ownership markers, so the claim ref is no longer
+   needed (`templates/claim-procedure.md` **Release**). Then delete both
+   scratch files now that the work is shipped (see **Scratch file
+   cleanup**):
+   ```
+   git push origin :refs/claims/issue-{number}
+   rm -f .claude/claim-issue-{number}.sha .claude/plan.md .claude/execution-checkpoint.md
+   ```
+   The claim-ref delete is best-effort — ignore an error if it is already
+   gone. The issue stays assigned to @me through review.
 
 6. Report: display the PR URL, linked issues, and labels applied.
 
