@@ -33,6 +33,33 @@ does not yet exist is atomic: the first push wins, a second push of a
 *different* object to the now-existing ref is rejected as a
 non-fast-forward. We use a per-issue ref under `refs/claims/` as the lock.
 
+## The lock is ephemeral; ownership is durable
+
+The claim ref protects **only the brief window between selecting a work
+item and recording ownership** — the instant where two agents could both
+think an unassigned issue is theirs. It is **not** the long-term record of
+who owns the work. Durable ownership lives in the **human-visible
+markers**:
+
+- **Issue:** the assignment (`@me`) **plus** the `status-in-progress` /
+  `status-parked` lifecycle label.
+- **PR:** the open PR itself **plus** its review-state label
+  (`reviewing` / `updating` / …).
+
+Because `pick-story` / `execute` only ever select *unassigned* issues, an
+assigned + labelled issue stays out of the pick pool **indefinitely** —
+for days if a human parks it — even after its claim ref has been swept as
+stale. This is the intended way to pause work and resume later without a
+second agent producing a duplicate branch or PR. Never treat the claim
+ref as the thing that prevents duplicate pickup; the assignment + label
+do that. The ref only stops the simultaneous-select race.
+
+A consequence: claim refs are safe to expire. A ref older than the
+**staleness TTL of 6 hours** cannot still be guarding a live
+select-to-claim race (that window is seconds), so it is an orphan left by
+a crashed or killed session and may be released. See **Sweeping stale
+claims** below.
+
 Inputs:
 
 - `{number}` — the issue or PR being claimed or released.
@@ -100,18 +127,29 @@ already require.)
 Now that the claim is yours, mark it where humans can see it. The marker
 is target-specific:
 
-- **Issue:** assign it.
+- **Issue:** assign it **and** move it to the `status-in-progress`
+  lifecycle label (resolved by purpose key via `default-labels.md`),
+  removing whatever lifecycle label it had (`status-ready`,
+  `status-parked`, `status-blocked`, …) so exactly one state is present.
+  The assignment + this label are the **durable ownership record** that
+  keeps the issue out of the pick pool even after the claim ref expires.
   ```
-  gh issue edit {number} --repo {org}/{repo} --add-assignee @me
+  gh issue edit {number} --repo {org}/{repo} --add-assignee @me \
+    --remove-label "{previous_lifecycle_label}" --add-label "{status_in_progress_label}"
   ```
-- **PR:** apply the `reviewing` state label (resolved by purpose key).
+- **PR:** apply the `reviewing` state label (resolved by purpose key),
+  removing the prior review-state label (e.g. `needs-review`) so exactly
+  one state is present.
   ```
-  gh pr edit {number} --repo {org}/{repo} --add-label "{reviewing_label}"
+  gh pr edit {number} --repo {org}/{repo} \
+    --remove-label "{needs_review_label}" --add-label "{reviewing_label}"
   ```
 
-The marker is now a **display signal**, not the lock. The `refs/claims/`
-ref is the lock. No read-back of the marker is required — the atomic push
-already proved exclusivity.
+The claim ref is the **lock**; the assignment/label is the **durable
+display + ownership signal** other skills filter on. No read-back of the
+marker is required for exclusivity — the atomic push already proved that.
+Verify the label took effect per `default-labels.md` (read-back, guarded
+create-if-missing) so the issue is never left without a state label.
 
 ---
 
@@ -132,6 +170,41 @@ Idempotent: deleting a ref that is already gone fails harmlessly —
 ignore the error. Releasing does **not** clear the human-visible marker;
 callers that also want to return the item to the pool do their own
 `--remove-assignee` / state-label removal as before.
+
+**Always release on every exit.** A command that wins a claim must release
+it on *all* exit paths — success, block, error, timeout, or budget/rate
+abort — not just the happy path. An exit that skips Release leaks the ref;
+the sweep below is the backstop, not an excuse to skip Release.
+
+---
+
+## Sweeping stale claims
+
+Because the lock is ephemeral (see above), any claim ref older than the
+**6-hour TTL** is an orphan from a crashed or killed session and is safe
+to delete. `pick-story` (and `execute` Phase 1) run this sweep **before**
+selecting a candidate, so a crashed agent never permanently locks an item
+out of the pool. The sweep deletes only the *ref* — it never touches the
+issue's assignment or labels, which remain the durable ownership record.
+
+```
+# List claim refs with the timestamp embedded in each claim commit message.
+git ls-remote origin 'refs/claims/*' | awk '{print $2}' | while read ref; do
+  sha=$(git ls-remote origin "$ref" | awk '{print $1}')
+  # Fetch just this object and read its commit message timestamp.
+  ts=$(git fetch origin "$ref" >/dev/null 2>&1; \
+       git log -1 --format=%s FETCH_HEAD 2>/dev/null \
+         | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z')
+  # If ts is older than 6 hours, release the orphaned ref:
+  #   git push origin :"$ref"
+done
+```
+
+This is best-effort: if the sweep cannot run (API error, shallow clone),
+skip it and continue — the assignment + lifecycle label still prevent
+duplicate pickup; only the ref-reuse cleanup is deferred. A human can run
+the **manual reap** any time (see `docs/worktree-config.md` →
+"Reaping stale claim refs").
 
 ---
 

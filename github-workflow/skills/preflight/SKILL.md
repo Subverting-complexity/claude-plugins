@@ -158,7 +158,9 @@ if [ -f ClaudeProject.md ]; then
   missing=0
   for purpose in priority-critical priority-high priority-medium priority-low \
                  type-story type-bug type-security type-arch type-debt \
-                 status-ready needs-refinement claude-authored; do
+                 status-ready needs-refinement status-in-progress status-parked \
+                 status-blocked status-in-review status-needs-attention \
+                 claude-authored; do
     if printf '%s\n' "$labelmap" | grep -q "$purpose"; then
       :
     else
@@ -190,27 +192,48 @@ fi
 
 Read all output from the checks above. Categorize:
 
-- **CRITICAL** — the workflow will fail (gh not authenticated,
-  ClaudeProject.md missing, required sections absent, a required board
-  is unconfigured, or the stored board identity does not match).
-- **WARNING** — the workflow may misbehave (placeholders, CLAUDE.md
-  missing, quality gate not set, a label purpose has no mapped label,
-  a best-effort board's identity is stale, or a referenced
-  `review.config.md` is missing).
+- **CRITICAL** — the workflow **cannot proceed and has no usable
+  default**: gh not authenticated, ClaudeProject.md missing, a required
+  section absent, a **required** board (ready-gate `board-column`/`both`)
+  unconfigured or its stored identity mismatched. Only these trigger the
+  wizard.
+- **WARNING** — something is missing **but a default covers it**, so the
+  workflow proceeds: an unmapped label purpose (resolves to its default
+  name via `templates/default-labels.md`), unreplaced placeholders,
+  CLAUDE.md missing, quality gate not set, a best-effort board's identity
+  stale, or a referenced `review.config.md` missing. **Defaults are not
+  a failure** — every label, the issue lifecycle states, and the
+  review-state labels all have defaults, so a missing mapping is never
+  critical on its own.
 - **OK** — check passed.
+
+**Defaults-first principle.** Everything that *can* default *does* default
+at runtime. The wizard exists only for the few things that genuinely have
+no default (identity, auth, required board). Never escalate a
+default-covered gap to the wizard.
 
 **If every check is OK**: proceed silently. Do not mention preflight
 to the user. Return control to the calling command.
 
-**If any CRITICAL or WARNING**: continue to step 4.
+**If there are WARNINGs but NO CRITICAL items**: do **not** prompt or run
+the wizard. Print one concise line noting what is using defaults — e.g.
+"Using default labels for {purposes}; run `/github-workflow:setup` to
+customise" — then return control to the calling command and let it
+proceed. The command resolves the missing names through
+`templates/default-labels.md` (and creates any missing GitHub labels with
+the guarded create-if-missing pattern) on its own.
 
-## 4. Present findings and ask
+**If any CRITICAL item is present**: continue to step 4 (the wizard).
 
-Show a brief summary using these markers:
+## 4. Present findings and ask (CRITICAL only)
+
+Reached only when at least one CRITICAL item exists. Show a brief summary
+using these markers:
 
 - `[pass]` for OK items — list these first, briefly
 - `[action needed]` for CRITICAL items
-- `[recommended]` for WARNING items
+- `[recommended]` for WARNING items — list them as informational
+  (they are proceeding on defaults), not as reasons to configure
 
 Then use `AskUserQuestion` with these options:
 

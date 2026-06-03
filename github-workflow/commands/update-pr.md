@@ -25,10 +25,10 @@ Read `ClaudeProject.md` and extract:
 
 Resolve every review-state and claude label by **purpose key** through
 the single path in `templates/default-labels.md`: review-state purposes
-(`updating`, `approved`, `changes-requested`, `needs-discussion`,
-`needs-re-review`, …) via `review.config.md` when present, defaults
-(`review-` prefix) otherwise; claude purposes via the `ClaudeProject.md`
-label map. The bare names used throughout these steps are purpose keys —
+(`needs-review`, `updating`, `approved`, `changes-requested`,
+`needs-discussion`, `needs-re-review`, `failed`, …) via `review.config.md`
+when present, defaults (`review-` prefix) otherwise; claude purposes via
+the `ClaudeProject.md` label map. The bare names used throughout these steps are purpose keys —
 resolve them, never apply them literally — so the `updating` claim this
 command writes is the identical string the code-review skill filters on.
 When falling back to defaults in an interactive session, warn the user:
@@ -54,6 +54,10 @@ Look for PRs with any of these state labels (in priority order):
 - The `reviewing` label (a review agent is currently working on it)
 - The `updating` label (another builder agent is already fixing it)
 - The `approved` label (waiting for human merge, do not touch)
+- The `needs-review` label (awaiting its first review — no feedback to
+  address yet)
+- The `failed` label (review could not complete — investigate the
+  failure, but there is no review feedback to apply here)
 
 If multiple PRs match, pick the one with the highest-priority state
 (changes-requested first), then lowest PR number.

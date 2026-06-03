@@ -41,11 +41,22 @@ Extract from the project configuration above:
 
 - `org`, `repo`, `default-branch` from Identity
 - Project board settings (if configured)
-- Label map (for claude labels)
+- Label map (for claude labels and the issue lifecycle states)
 
-If `ClaudeProject.md` is missing or has no label map, use the default
-label names from `templates/default-labels.md`. When using defaults in
-an interactive session, warn the user: "Label map not configured —
+Resolve every label by **purpose key** through the single path in
+`templates/default-labels.md`:
+
+- **Issue lifecycle** purposes (`status-in-review`) and **claude**
+  purposes (`claude-authored`) — via the `ClaudeProject.md` label map.
+- **Review-state** purposes this command applies to the PR
+  (`needs-review`, `needs-re-review`) — via `review.config.md` when
+  present, defaults (`review-` prefix) otherwise.
+
+Resolve them, never apply a bare name literally, so the labels this
+command writes are the identical strings the code-review and update-pr
+skills filter on. If `ClaudeProject.md` is missing or has no label map,
+use the defaults from `templates/default-labels.md`. When using defaults
+in an interactive session, warn the user: "Label map not configured —
 using default labels. Run `/github-workflow:setup` to configure labels
 for this project."
 
@@ -57,10 +68,13 @@ is clean before pushing:
 1. Execute the quality gate script/command.
 2. If it fails, read the error output, fix the issue, and re-run.
 3. Repeat up to 3 times (4 total runs maximum).
-4. If still failing after 4 runs, set a flag to create a **draft PR**
-   instead of a real PR. Include a "Quality Gate Failed" section in
-   the PR body with the last error output. Draft PRs cannot be
-   accidentally merged, giving reviewers a clear signal.
+4. If still failing after 4 runs, **do not create a draft PR** (this
+   workflow never opens drafts). The work is complete but the gate is
+   red, so a human still needs to see it: set a flag to open a **real
+   PR** and mark it blocked-for-merge via labels in Step 7 — apply the
+   `changes-requested` review-state label and add a "Quality Gate Failed"
+   section to the PR body with the last error output. The blocking label
+   (not draft status) is what signals "do not merge yet."
 
 ### 3. Push the branch
 
@@ -111,10 +125,12 @@ a new PR, determine whether the current work has an associated issue:
      `[SECURITY]`, `[ARCH]`, or `[DEBT]`) from ClaudeProject.md.
    - **Body**: include Context (what was built and why), Requirements
      (what the changes accomplish), and Notes (any caveats).
-   - **Labels**: resolve the appropriate type and priority labels by
-     purpose key via `templates/default-labels.md`, then run label
-     validation (check existence, create-if-missing without `--force`)
-     before applying:
+   - **Labels**: resolve the appropriate type and priority labels, the
+     `claude-authored` provenance marker (this issue is Claude-created),
+     and the `status-in-review` lifecycle label (a PR is being opened for
+     it now) — all by purpose key via `templates/default-labels.md`. Then
+     run label validation (check existence, create-if-missing without
+     `--force`) before applying:
      ```
      gh label list --repo {org}/{repo} --json name --jq '.[].name'
      gh label create "{label}" --repo {org}/{repo} --description "{desc}" --color "{color}"
@@ -158,25 +174,24 @@ Build the PR body from the committed changes:
 
 Write the PR body to a temporary file first, then create the PR
 using `--body-file` to avoid Windows/PowerShell shell-escaping issues.
-If the quality gate failed (Step 2), create a draft:
+**Always create a real PR — never a draft.** The same command is used
+whether or not the quality gate passed; a failed gate is signalled by a
+blocking label in Step 7, not by draft status:
 
 ```
-# Normal case — quality gate passed:
 gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}
-
-# Quality gate failed — create draft instead:
-gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile} --draft
 ```
 
 Delete the temp file after creation.
 
-When creating a draft PR due to quality gate failure, prepend a section
-to the body:
+When the quality gate failed (Step 2), prepend this section to the body
+so the failure is visible (the `changes-requested` label applied in
+Step 7 is what actually blocks merge):
 
 ```
-> **⚠ Quality gate failed** — this PR was opened as a draft because
-> the quality gate did not pass after 4 attempts. See error details
-> below. Convert to ready-for-review after fixing.
+> **⚠ Quality gate failed** — the quality gate did not pass after 4
+> attempts. This PR carries the `changes-requested` label and must not
+> be merged until the gate is green. See error details below.
 >
 > **Last error:**
 > {quality_gate_error_output}
@@ -255,48 +270,77 @@ If `mergeable` is `CONFLICTING`:
   whitespace, auto-resolved renames): no re-review needed.
 - **Complex conflicts** (overlapping logic changes, altered control
   flow, modified function signatures, deleted code that the PR
-  depended on): apply the `needs-re-review` label so the reviewer
-  evaluates the rebased result:
-  ```
-  gh pr edit {pr_number} --add-label "{needs_re_review_label}"
-  ```
+  depended on): the rebased result needs a reviewer's eyes.
+  - **New PR** (this `finish-story` just created it, no prior review):
+    the `needs-review` entry label set in Step 7 already routes it to a
+    reviewer — no extra label needed here.
+  - **Existing PR** (Step 4 path — it was opened in a prior session and
+    may already have been reviewed): move it to `needs-re-review`,
+    removing any current review-state label so exactly one is present:
+    ```
+    gh pr edit {pr_number} --remove-label "{current_state_label}" --add-label "{needs_re_review_label}"
+    ```
 
   After applying, verify the label is present (same as Step 7 below).
   If missing, create it and retry.
 
 ### 7. Add labels to PR
 
-Resolve the `claude-authored` purpose key to its concrete name through
-the single path in `templates/default-labels.md` (the `ClaudeProject.md`
-label map, default `claude-authored`), then apply it to mark this as a
-Claude-built PR:
+Apply two labels, both resolved by purpose key through the single path in
+`templates/default-labels.md`:
+
+1. **Provenance** — `claude-authored` (default `claude-authored`), to
+   mark this as a Claude-built PR.
+2. **Review-state entry label** — so the PR is never unlabelled and the
+   reviewer can find it:
+   - Quality gate passed → `needs-review` (default `review-needs-review`).
+   - Quality gate failed (Step 2 flag) → `changes-requested` (default
+     `review-changes-requested`), which blocks merge until the gate is
+     green. Do **not** also apply `needs-review` — exactly one
+     review-state label.
+
+Skip this entirely if Step 4 found an existing PR that already carries a
+review-state label (e.g. `approved`, `needs-re-review`) — do not reset a
+reviewed PR back to `needs-review`; leave its existing state (Step 6 may
+have moved it to `needs-re-review`).
 
 ```
-gh pr edit {pr_number} --add-label "{claude_authored_label}"
+gh pr edit {pr_number} --add-label "{claude_authored_label}" --add-label "{needs_review_label}"
 ```
 
-After applying, verify the label was applied:
+After applying, verify the labels were applied:
 
 ```
 gh pr view {pr_number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'
 ```
 
-If missing, the label was not created at setup. Create it with the
+If a label is missing, it was not created at setup. Create it with the
 guarded create-if-missing pattern from `templates/default-labels.md` —
 **without `--force`** so existing metadata is never overwritten — then
-retry:
+retry. Use the colours from `templates/default-labels.md`.
+
+### 8. Move the issue to In Review
+
+**Issue lifecycle label (authoritative).** Move the linked issue to the
+`status-in-review` lifecycle label, removing its current lifecycle label
+(`status-in-progress`) so exactly one state is present. Resolve both
+names by purpose key through `templates/default-labels.md`:
 
 ```
-gh label create "{claude_authored_label}" --repo {org}/{repo} --description "Built by Claude" --color "5319E7"
-gh pr edit {pr_number} --add-label "{claude_authored_label}"
+gh issue edit {number} --repo {org}/{repo} \
+  --remove-label "{status_in_progress_label}" --add-label "{status_in_review_label}"
 ```
 
-### 8. Update project board (if configured)
+Verify per `templates/default-labels.md` (read back; guarded
+create-if-missing without `--force` if absent, then retry once). This
+label — not the board — is the authoritative "in review" signal, so it
+works even when no board is configured.
 
-First resolve the board and the issue's `{item_id}` following
-`templates/board-resolution.md` (board-configured check, identity
-verification by title, add-to-board-if-missing). Only run the mutation
-below once it returns a verified `{item_id}`.
+**Project board (best-effort, if configured).** First resolve the board
+and the issue's `{item_id}` following `templates/board-resolution.md`
+(board-configured check, identity verification by title,
+add-to-board-if-missing). Only run the mutation below once it returns a
+verified `{item_id}`.
 
 Set status to In Review:
 

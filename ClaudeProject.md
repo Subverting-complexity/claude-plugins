@@ -62,22 +62,37 @@ Map workflow purposes to this repository's actual label names.
 | type-debt     | `type-debt`     |
 | type-arch     | `type-arch`     |
 
-### Status
+### Status (issue lifecycle)
 
-| Purpose            | Label              |
-| ------------------ | ------------------ |
-| status-ready       | `status-ready`     |
-| needs-refinement   | `needs-refinement` |
+Every issue always carries exactly one of these lifecycle labels — the
+issue-side mirror of the PR review-state machine (see
+`github-workflow/templates/default-labels.md` → Issue Lifecycle State
+Labels). They make each issue's current state visible in the issues list
+without depending on the project board (whose lifecycle columns are not
+yet configured here).
+
+| Purpose                | Label                    |
+| ---------------------- | ------------------------ |
+| status-ready           | `status-ready`           |
+| needs-refinement       | `needs-refinement`       |
+| status-in-progress     | `status-in-progress`     |
+| status-parked          | `status-parked`          |
+| status-blocked         | `status-blocked`         |
+| status-in-review       | `status-in-review`       |
+| status-needs-attention | `status-needs-attention` |
 
 ### Claude
 
-Simple markers applied by workflow commands. These are **not** the
-review state labels — those are defined in `docs/review.config.md`
-and managed by the code-review skill.
+`claude-authored` is a provenance marker (not a lifecycle state) applied
+by workflow commands to Claude-authored PRs and Claude-created issues. It
+is **not** part of the PR review-state machine. This repo has no
+`docs/review.config.md`, so the code-review skill resolves review-state
+labels from their defaults (the `review-` prefix) in
+`github-workflow/templates/default-labels.md`.
 
-| Purpose          | Label             | Applied by   |
-| ---------------- | ----------------- | ------------ |
-| claude-authored  | `claude-authored` | finish-story |
+| Purpose          | Label             | Applied by                    |
+| ---------------- | ----------------- | ----------------------------- |
+| claude-authored  | `claude-authored` | finish-story, report-issue    |
 
 Agent gating is disabled, so no `claude-ready` label is configured.
 
@@ -175,12 +190,16 @@ full status tracking, then fill in their option IDs below.
 
 Board updates are best-effort: `start-story` → In Progress works today;
 `finish-story` → In Review and `block-story` → On Hold will no-op until
-those columns are added.
+those columns are added. This no-op is now harmless for state visibility:
+the **issue lifecycle labels** (Status section above) always carry the
+authoritative state, so an issue in review or blocked is visible by label
+even while the board lacks those columns.
 
 ## Reference Docs
 
-- `docs/github-workflow-audit.md` — robustness audit of this plugin and
-  the source of issues #24–#31.
+- `docs/worktree-config.md` — recommended harness configuration for
+  parallel/background agents, and the manual reap routine for stale
+  worktrees and claim refs.
 
 ## Bundled Skills
 

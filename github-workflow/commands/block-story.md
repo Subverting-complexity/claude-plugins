@@ -8,6 +8,28 @@ Mark the current story as blocked and record the reason.
 
 Requires: a story in progress with a known blocker.
 
+## What "blocked" means
+
+An issue is **blocked** when it cannot make progress because of something
+outside its own control: another unfinished issue, an external decision,
+missing access or credentials, or an upstream fix. Blocked is **not**
+"I gave up" and **not** "this needs more spec" — that second case is
+`needs-refinement`, a different state.
+
+A blocked issue carries the `status-blocked` lifecycle label (so it is
+visibly blocked in the issues list, not silently indistinguishable from
+the backlog) and is kept out of the pick pool by the absence of
+`status-ready`.
+
+**How it becomes unblocked:**
+
+- **Automatically** — when the blocker is another issue recorded as
+  `Blocked by #N`, `pick-story`'s dependency-resolution step detects that
+  all `#N` are closed, removes `status-blocked`, restores `status-ready`,
+  and comments. The issue re-enters the pick pool.
+- **Manually** — for non-issue blockers (a decision, access granted), a
+  human removes `status-blocked` and applies `status-ready`.
+
 ## Preflight
 
 Before doing anything else, invoke `/github-workflow:preflight` to
@@ -44,6 +66,11 @@ The comment should include: the blocker reason, what was attempted,
 what failed or is missing, and a suggested resolution if known.
 Delete the temp file after.
 
+If the blocker is another issue, also record it in the issue body under a
+`## Dependencies` section as `Blocked by #N` (edit the body via
+`--body-file`). This is what lets `pick-story` auto-unblock the issue when
+`#N` closes. If the `## Dependencies` section already lists it, skip.
+
 ### 3. Release the claim and unassign
 
 Release the atomic claim ref so the issue can be claimed again, following
@@ -59,25 +86,33 @@ gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 The claim-ref delete is idempotent — ignore an error if the ref is
 already gone.
 
-### 4. Remove from ready state
+### 4. Move the issue to the blocked state
 
-Remove the issue from the ready state so it cannot re-enter the pick
-pool while blocked. What to do depends on `ready-gate`:
+Move the issue to the `status-blocked` lifecycle label, removing whatever
+lifecycle label it currently has (`status-in-progress`, `status-ready`,
+etc.) so exactly one state is present. Resolve both names by purpose key
+through `templates/default-labels.md`:
 
-- **`label` or `both`**: remove the `status-ready` label:
-  ```
-  gh issue edit {number} --repo {org}/{repo} --remove-label "{status_ready_label}"
-  ```
-- **`board-column` or `both`**: move the issue back to "Backlog" (or
-  "On Hold" if configured) on the project board.
+```
+gh issue edit {number} --repo {org}/{repo} \
+  --remove-label "{current_lifecycle_label}" --add-label "{status_blocked_label}"
+```
 
-Do NOT apply a "blocked" label. The dependency information lives in
-the issue body (`## Dependencies` section) and in the comment from
-Step 2. The absence of ready state is sufficient to keep the issue
-out of the pick pool.
+After applying, verify per `templates/default-labels.md` (read back the
+labels; guarded create-if-missing without `--force` if the label is
+absent, then retry once).
 
-These commands are idempotent — the label remove will no-op if the
-label is not present.
+`status-blocked` keeps the issue out of the pick pool (it lacks
+`status-ready`) **and** makes the blocked state visible in the issues
+list. The blocker detail lives in the issue body (`## Dependencies`) and
+the Step 2 comment.
+
+If `ready-gate` is `board-column` or `both`, also move the issue out of
+the "Ready" board column (to "On Hold" if configured, else "Backlog") so
+the board agrees with the label.
+
+These commands are idempotent — a label remove no-ops if the label is
+not present.
 
 ### 5. Update project board (if configured)
 

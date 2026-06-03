@@ -136,6 +136,38 @@ metadata.
 
 ---
 
+## Reaping stale claim refs
+
+The github-workflow plugin locks each in-flight issue/PR with a short-lived
+ref under `refs/claims/` (see
+`github-workflow/templates/claim-procedure.md`). The lock is only a
+race-protector for the brief select-to-claim window; **durable ownership is
+the assignment + the issue's lifecycle label**, not the ref. A crashed or
+killed session can leave a claim ref behind, but it cannot permanently lock
+an item out: `pick-story` / `execute` sweep refs older than the **6-hour
+TTL** automatically before selecting.
+
+To reap them by hand (e.g. you want an item pickable again immediately):
+
+```bash
+# List all claim refs on the remote.
+git ls-remote origin 'refs/claims/*'
+
+# Inspect one to see when and by which session it was created.
+git fetch origin refs/claims/issue-42 && git log -1 FETCH_HEAD
+
+# Delete a specific orphaned claim ref.
+git push origin :refs/claims/issue-42
+```
+
+Deleting a claim ref never touches the issue's assignment or labels — those
+remain the source of truth for who owns the work. If you also want to hand
+the item back to the pool, clear the human-visible markers too: remove the
+assignee and move the lifecycle label back to `status-ready` (or
+`status-blocked` if it is genuinely blocked).
+
+---
+
 ## Quick reference
 
 | Setting | Recommended value | Why |

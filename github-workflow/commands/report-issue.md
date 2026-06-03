@@ -61,9 +61,19 @@ Then map the severity to a **priority label** from the label map in
 Also select the **type label** (`type-bug`, `type-security`, `type-arch`, or `type-debt`)
 from the label map based on the classification in Step 2.
 
+Also include:
+
+- **Lifecycle state** — exactly one, so the new issue is never
+  unlabelled: `status-ready` when the report is actionable as written
+  (it includes where and a suggested fix — the usual case), or
+  `needs-refinement` when the report is too vague to implement without a
+  refinement session.
+- **Provenance** — `claude-authored`, since this issue is Claude-created.
+
 Build the label list from whichever of these the project actually
 defines in its label map. Skip any purpose that has no label configured
-— never pass a placeholder or an empty label name to `gh`.
+— never pass a placeholder or an empty label name to `gh`. Resolve every
+name by purpose key through `templates/default-labels.md`.
 
 ### 4. Detect current milestone
 
@@ -87,9 +97,10 @@ repository. Fetch the current label list:
 gh label list --repo {org}/{repo} --json name --jq '.[].name'
 ```
 
-For each label in the assembled list (type label, priority label),
-resolve its name by purpose key via `templates/default-labels.md` and
-check if it appears in the output. If a label is missing (setup should
+For each label in the assembled list (type, priority, lifecycle state,
+and `claude-authored`), resolve its name by purpose key via
+`templates/default-labels.md` and check if it appears in the output. If a
+label is missing (setup should
 have created it), create it with the guarded create-if-missing pattern
 from `templates/default-labels.md` — **without `--force`** so existing
 label metadata is never overwritten:
@@ -108,8 +119,9 @@ that already exist.
 
 ### 5. Create the issue
 
-Assemble the label list from the type and priority labels selected in
-Step 3, comma-separated, omitting any that are not configured.
+Assemble the label list from the type, priority, lifecycle-state, and
+`claude-authored` labels selected in Step 3, comma-separated, omitting
+any that are not configured.
 
 Write the issue body to a temporary file first, then create using
 `--body-file` to avoid Windows/PowerShell shell-escaping issues:
@@ -157,8 +169,9 @@ After creating the issue, verify the labels were actually applied:
 gh issue view {number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'
 ```
 
-For each expected label (type and priority), if missing, create it with
-the guarded create-if-missing pattern from `templates/default-labels.md`
+For each expected label (type, priority, lifecycle state, and
+`claude-authored`), if missing, create it with the guarded
+create-if-missing pattern from `templates/default-labels.md`
 — **without `--force`** — and reapply:
 
 ```
