@@ -73,6 +73,42 @@ full pass.
 
 ---
 
+## Duplicate PRs for one issue
+
+The atomic issue claim (`refs/claims/issue-N`) prevents two agents from
+selecting the same story concurrently, so duplicate PRs should be rare.
+They can still appear at the edges the claim ref does not cover:
+
+- A story started by **explicit number** (`/execute 42`, `/start-story 42`)
+  after a PR already exists — the claim ref was released when the first PR
+  opened, so a fresh claim succeeds. The pre-start guards in `execute`
+  Phase 1 and `start-story` stop most of these before any work happens.
+- `block-story` run on an issue that **already has an open PR** — without
+  the guard in its release step, it would unassign the issue and return it
+  to the pool, inviting a second PR.
+- A hand-reaped claim ref (manual orphan recovery) deleted while a PR was
+  still live.
+- A true create-time race: two sessions that each passed every earlier
+  gate and opened a PR on a different branch.
+
+When two open PRs close the same issue, **code-review Step 2b** reconciles
+them: it picks the winner — mergeable/gate-green over broken, then
+acceptance-criteria coverage, then test coverage, then **lowest PR number**
+as a deterministic tie-break — and closes the loser(s) with a comment
+linking the survivor. The deterministic tie-break matters: two reviewers
+evaluating the same set independently must agree on the winner, so neither
+closes the other's keeper. A loser is closed by whichever agent can claim
+its `refs/claims/pr-N` ref (its own holder, or the winner's reviewer if it
+is free); a PR being actively reviewed or updated is left for the next
+round. Closing a duplicate is the **only** time the review flow closes a
+PR. The losing branch is never deleted, so its work can be salvaged into
+the survivor.
+
+`execute` Phase 7 and `finish-story` add a lighter, detection-only guard
+at PR-creation time: if a sibling open PR already closes the issue, the
+new PR is flagged as a possible duplicate so this reconciliation reliably
+fires on the next review.
+
 ## Label Reference for Agents
 
 Any agent encountering these labels on a PR should understand what they

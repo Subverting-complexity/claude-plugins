@@ -73,10 +73,28 @@ If the blocker is another issue, also record it in the issue body under a
 
 ### 3. Release the claim and unassign
 
-Release the atomic claim ref so the issue can be claimed again, following
-`templates/claim-procedure.md` (**Release**), then remove the assignee so
-the issue returns to the unassigned pool and can be picked up by another
-agent or re-picked later:
+**First, the open-PR guard.** Blocking returns the issue to the
+unassigned pool. If the story **already has an open PR**, that would let
+another agent pick it up and open a *second* PR for the same work. A story
+with a live PR is not "blocked from starting" — it is in review. Check:
+
+```
+gh pr list --repo {org}/{repo} --state open --json number,title,headRefName,body \
+  --jq '[.[] | select(.body | test("(?i)\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) +#{number}\\b"))]'
+```
+
+If an open PR closes this issue, **do not unassign and do not return the
+issue to the pool**. Tell the user the story has an open PR (#N) and that
+the blocker should be handled on the PR (push a fix, request changes via
+review, or close the PR) rather than by blocking the issue. Record the
+blocker comment (Step 2) if useful, then stop without unassigning. The
+assignment keeps the issue out of the pick pool so no duplicate PR is
+created.
+
+Otherwise (no open PR), release the atomic claim ref so the issue can be
+claimed again, following `templates/claim-procedure.md` (**Release**),
+then remove the assignee so the issue returns to the unassigned pool and
+can be picked up by another agent or re-picked later:
 
 ```
 git push origin :refs/claims/issue-{number}

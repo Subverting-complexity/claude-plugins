@@ -159,6 +159,29 @@ a new PR, determine whether the current work has an associated issue:
 The issue number (from context, branch, or newly created) is used in
 Step 5 to add `Closes #N` to the PR body.
 
+### 4c. Duplicate-PR detection
+
+Step 4 already ruled out an existing PR on **this** branch. Now check for
+a sibling open PR that closes the **same issue** on a **different** branch
+(a second session may have built the same story — see the duplicate
+vectors in `skills/code-review/references/review-workflow.md`):
+
+```
+gh pr list --repo {org}/{repo} --state open --json number,title,headRefName,body \
+  --jq '[.[] | select(.headRefName != "{branch}") | select(.body | test("(?i)\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) +#{number}\\b"))]'
+```
+
+If a sibling PR exists, still create your PR in Step 5 (so both are real
+and comparable) but prepend this flag line to the body so code review
+reconciles them:
+
+```
+> ⚠ Possible duplicate of #{sibling_number} — both close #{number}. Pending reconciliation by code review, which keeps the better-implemented PR and closes the other.
+```
+
+Report the duplicate to the user. Do not pick the winner or close the
+other PR here — code review's Step 2b does that with full context.
+
 ### 5. Create new PR
 
 Build the PR body from the committed changes:

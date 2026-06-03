@@ -81,7 +81,12 @@ open PR.
   `changes-requested` or `needs-discussion` verdict — do not guess.
 - Never use `gh pr review --approve`. Post the verdict with
   `gh pr comment` as the skill specifies.
-- Do not merge or close any PR.
+- Do not merge any PR.
+- Do not close a PR except to reconcile duplicates: when the skill's
+  Step 2b finds two or more open PRs closing the same issue, it keeps the
+  best-implemented one and closes the rest (tie-break: lowest PR number).
+  That is the only sanctioned close — never close a PR for any other
+  reason.
 - Always release your `refs/claims/pr-<number>` claim ref and remove the
   `reviewing` label on exit or error so other agents can proceed (the
   skill does this in Step 10 and its error handler).
