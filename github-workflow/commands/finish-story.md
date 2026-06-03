@@ -151,6 +151,10 @@ Build the PR body from the committed changes:
 - List acceptance criteria addressed
 - Note any technical decisions made
 - Add a test plan section
+- **Always** close the associated issue: include a `Closes #N` line for
+  every issue this PR resolves (see the linked-issue format below). A PR
+  for a story must never omit this — if no issue is linked, that is a
+  workflow error to resolve before opening the PR.
 
 Write the PR body to a temporary file first, then create the PR
 using `--body-file` to avoid Windows/PowerShell shell-escaping issues.
@@ -178,7 +182,8 @@ to the body:
 > {quality_gate_error_output}
 ```
 
-Each linked issue gets its own line in the PR body:
+Every PR **must** close its associated issue(s). Each linked issue gets
+its own `Closes #N` line in the PR body:
 
 ```
 Closes #42
@@ -186,7 +191,9 @@ Closes #43
 ```
 
 Each `Closes #N` must be on its own line so GitHub links them in
-the Development sidebar.
+the Development sidebar and auto-closes the issue on merge. The Step 5b
+validation must confirm a `Closes #N` line is present for every linked
+issue before the PR is considered done.
 
 ### 5b. Validate PR body
 
@@ -208,6 +215,10 @@ known Windows/PowerShell shell-escaping issue):
 3. Delete the temporary file.
 4. Re-read the PR to confirm the fix.
 5. If still corrupted after retry, warn the user.
+
+Also confirm the body contains a `Closes #N` line for every linked
+issue. If any is missing, add it (via `gh pr edit --body-file`) before
+proceeding — a PR must always close its associated issue.
 
 ### 6. Resolve merge conflicts
 
@@ -325,7 +336,8 @@ Idempotent — ignore an error if the ref is already gone. This does
 
 Display:
 
-- PR URL
-- Linked issue(s)
+- PR number, title, and URL — always name the PR by number **and**
+  title together (e.g. `#123 Add login button`), never the number alone
+- Linked issue(s), each by number **and** title
 - Labels applied
 - Board status (if updated)

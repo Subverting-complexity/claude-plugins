@@ -527,7 +527,8 @@ the updated SHA from Step 7 if fixes were pushed).
    "When to apply" criteria against the PR. Apply matching labels and
    remove non-matching ones that were previously applied by a review.
 7. Check out the original branch you were on before the review.
-8. Report `Reviewed PR #<number> — <verdict>` and exit.
+8. Report `Reviewed PR #<number> <title> — <verdict>` (always name the
+   PR by number **and** title together, never the number alone) and exit.
 
 Resolve every label name by purpose key through the single path in
 `templates/default-labels.md` (review-state purposes via

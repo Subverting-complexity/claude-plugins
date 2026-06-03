@@ -258,7 +258,8 @@ exhausted. Acquiring also applies the `--add-assignee @me` display marker.
 
 Once a candidate is claimed, display:
 
-- Issue number, title, and URL
+- Issue number and title together (e.g. `#42 Add login button`, never
+  the number alone), and URL
 - Sprint/milestone (if applicable)
 - Priority and type labels
 - Brief summary of the issue body

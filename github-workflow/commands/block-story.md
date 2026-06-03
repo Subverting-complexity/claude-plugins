@@ -115,6 +115,7 @@ backlog without disturbing the working tree.
 
 ### 7. Report
 
-Display what was blocked, why, and that the story has been blocked and
-returned to the backlog.
+Display what was blocked — naming the story by number **and** title
+together (e.g. `#42 Add login button`, never the number alone) — why,
+and that the story has been blocked and returned to the backlog.
 Suggest running `/github-workflow:pick-story` to continue with the next story.
