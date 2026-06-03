@@ -88,10 +88,14 @@ gh label list --repo {org}/{repo} --json name --jq '.[].name'
 ```
 
 For each label in the assembled list (type label, priority label),
-check if it appears in the output. If a label is missing, create it:
+resolve its name by purpose key via `templates/default-labels.md` and
+check if it appears in the output. If a label is missing (setup should
+have created it), create it with the guarded create-if-missing pattern
+from `templates/default-labels.md` — **without `--force`** so existing
+label metadata is never overwritten:
 
 ```
-gh label create "{label_name}" --repo {org}/{repo} --description "{description}" --force
+gh label create "{label_name}" --repo {org}/{repo} --description "{description}" --color "{color}"
 ```
 
 Use these colours (matching the setup wizard defaults):
@@ -146,11 +150,12 @@ After creating the issue, verify the labels were actually applied:
 gh issue view {number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'
 ```
 
-For each expected label (type and priority), if missing, create it and
-reapply:
+For each expected label (type and priority), if missing, create it with
+the guarded create-if-missing pattern from `templates/default-labels.md`
+— **without `--force`** — and reapply:
 
 ```
-gh label create "{label}" --repo {org}/{repo} --description "{desc}" --color "{color}" --force
+gh label create "{label}" --repo {org}/{repo} --description "{desc}" --color "{color}"
 gh issue edit {number} --repo {org}/{repo} --add-label "{label}"
 ```
 

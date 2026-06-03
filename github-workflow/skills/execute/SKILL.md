@@ -464,12 +464,13 @@ Run the quality gate command from `ClaudeProject.md`:
    Clean up the temp file after. Re-validate. If still corrupted,
    warn the user.
 
-3. Add claude labels. Use the label name from the label map in
-   `ClaudeProject.md`. If no label map exists, use the default
-   `claude-authored` from `templates/default-labels.md`. After
+3. Add claude labels. Resolve the `claude-authored` purpose key to its
+   concrete name through the single path in `templates/default-labels.md`
+   (the `ClaudeProject.md` label map, default `claude-authored`). After
    applying, verify the label was applied by reading back the PR
-   labels. If missing, create the label with `gh label create --force`
-   and retry once.
+   labels. If missing, create the label with the guarded
+   create-if-missing pattern from `templates/default-labels.md` (no
+   `--force`) and retry once.
 
 4. Update project board to In Review (if configured).
 

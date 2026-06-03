@@ -111,12 +111,13 @@ a new PR, determine whether the current work has an associated issue:
      `[SECURITY]`, `[ARCH]`, or `[DEBT]`) from ClaudeProject.md.
    - **Body**: include Context (what was built and why), Requirements
      (what the changes accomplish), and Notes (any caveats).
-   - **Labels**: apply the appropriate type and priority labels. Run
-     label validation (check existence, create if missing) before
-     applying:
+   - **Labels**: resolve the appropriate type and priority labels by
+     purpose key via `templates/default-labels.md`, then run label
+     validation (check existence, create-if-missing without `--force`)
+     before applying:
      ```
      gh label list --repo {org}/{repo} --json name --jq '.[].name'
-     gh label create "{label}" --repo {org}/{repo} --description "{desc}" --force
+     gh label create "{label}" --repo {org}/{repo} --description "{desc}" --color "{color}"
      ```
    - **Milestone**: if in sprint mode, attach to the current milestone.
 

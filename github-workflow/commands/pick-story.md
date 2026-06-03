@@ -164,8 +164,8 @@ dependencies are resolved — mark the issue as ready:
   gh issue edit {number} --repo {org}/{repo} --add-label "{status_ready_label}"
   ```
   After applying, verify the label is present. If missing, create it
-  with `gh label create --force` using the color from
-  `templates/default-labels.md` and retry once.
+  with the guarded create-if-missing pattern from
+  `templates/default-labels.md` (no `--force`) and retry once.
 - **`board-column` or `both`**: move the issue to the "Ready" column
   on the project board (using the `ready-option-id` from board config):
   ```
