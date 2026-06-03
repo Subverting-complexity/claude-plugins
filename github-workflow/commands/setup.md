@@ -152,25 +152,39 @@ the project root.
 If enhancing an existing file, merge new sections into the existing
 content without removing sections that are already there.
 
-### 5b. Create labels on GitHub
+### 5b. Create the complete label inventory on GitHub
 
-For every label configured in ClaudeProject.md (Priority, Type, Status,
-Claude, and Custom), check if it already exists on the repo. If not,
-create it:
+Setup is the **only** place the full label inventory is created. Skills
+at runtime rely on these already existing and only create-if-missing as
+a guarded fallback (see the pre-creation contract in
+`templates/default-labels.md`). Create the **complete** inventory now —
+both the workflow labels and the review-state mutex labels — so no skill
+has to lazily create labels mid-workflow.
+
+1. **Workflow labels** — every label configured in ClaudeProject.md
+   (Priority, Type, Status, Claude, and Custom). Resolve each name
+   through the label map per `templates/default-labels.md`.
+2. **Review-state labels** — the eight review-state labels. If the user
+   set up `docs/review.config.md` (step 7) or chose a label prefix,
+   resolve each name from its Purpose row there; otherwise use the
+   `review-` defaults from `templates/default-labels.md`. Create these
+   even if the user defers full review-config setup, so the code-review
+   skill never has to create them at runtime.
+
+First fetch existing labels, then create only the missing ones —
+**without `--force`**, so existing labels keep their colour and
+description (no churn):
 
 ```
-gh label create "<label-name>" --description "<description>" --force
+existing=$(gh label list --repo {org}/{repo} --json name --jq '.[].name')
+# for each resolved <name> not in $existing:
+gh label create "<name>" --repo {org}/{repo} --description "<description>" --color "<color>"
 ```
 
-Use `gh label list --json name` to get existing labels first, then only
-create missing ones. The `--force` flag updates existing labels without
-error.
-
-Suggested colours (user can override):
-- Priority labels: critical `#B60205`, high `#D93F0B`, medium `#FBCA04`, low `#0E8A16`
-- Type labels: story `#1D76DB` (blue), bug `#D93F0B` (red-orange), security `#B60205` (red), debt `#FBCA04` (yellow), arch `#0E8A16` (green)
-- Status labels: `#5319E7` (purple), needs-refinement `#D4C5F9` (light purple)
-- Claude labels: `#BFDADC` (light teal)
+Use the colours from the inventory tables in
+`templates/default-labels.md` (review-state labels there;
+needs-refinement `#D4C5F9` light purple). The user may override any
+colour during setup.
 
 This step is best-effort. If label creation fails (permissions, etc.),
 log a warning and continue.

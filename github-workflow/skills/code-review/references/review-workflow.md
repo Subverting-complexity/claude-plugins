@@ -77,7 +77,10 @@ full pass.
 
 Any agent encountering these labels on a PR should understand what they
 mean and what action (if any) to take. Labels use the prefix defined in
-`review.config.md`.
+`review.config.md`. The bare names below (`reviewing`, `updating`,
+`approved`, …) are **purpose keys** — resolve each to its concrete name
+through the single path in `templates/default-labels.md` before applying
+or filtering. Never apply a bare name literally.
 
 ### State labels (mutually exclusive — exactly one per PR)
 

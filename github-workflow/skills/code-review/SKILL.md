@@ -63,19 +63,24 @@ If neither exists and the session is interactive (user is present),
 run the **Config Generation** flow (see below) to create one.
 
 If the session is autonomous (called from `/github-workflow:execute`
-or a scheduled routine), skip the config generation — use the default
-review state labels from `templates/default-labels.md` (prefix
-`review`: `review-reviewing`, `review-approved`,
-`review-changes-requested`, `review-needs-discussion`,
-`review-needs-re-review`, `review-review-failed`, `review-updating`,
-`review-fixes-applied`). Proceed with a minimal review (no custom
-gates, no tech-stack rules, standard footer). Before starting, ensure
-all default labels exist on the repo — create any missing ones using
-`gh label create` with the colors from `templates/default-labels.md`.
-Note in the review comment that no `review.config.md` was found and
-defaults were used. In interactive sessions, also warn the user:
-"No `review.config.md` found — using default labels. Run
+or a scheduled routine), skip the config generation — resolve the
+review-state labels through the single path in
+`templates/default-labels.md` (review-state purposes default to the
+`review-` prefix). Proceed with a minimal review (no custom gates, no
+tech-stack rules, standard footer). The label inventory should already
+exist (created at setup); if a label is missing, create it with the
+guarded create-if-missing pattern from `templates/default-labels.md`
+(no `--force`). Note in the review comment that no `review.config.md`
+was found and defaults were used. In interactive sessions, also warn
+the user: "No `review.config.md` found — using default labels. Run
 `/github-workflow:setup` to configure review labels for this project."
+
+**Resolving label names.** Every label this skill applies or filters on
+(`reviewing`, `approved`, `changes-requested`, …) is a **purpose key**.
+Resolve each to its concrete name through `templates/default-labels.md`
+before use — never apply a bare name literally and never assume a
+prefix. This guarantees the claim label this skill writes is the
+identical string other skills filter on.
 
 Read `review.config.md` fully before starting. Everything project-specific
 lives there. This workflow is generic.
@@ -518,9 +523,10 @@ the updated SHA from Step 7 if fixes were pushed).
 7. Check out the original branch you were on before the review.
 8. Report `Reviewed PR #<number> — <verdict>` and exit.
 
-Use the label names from `review.config.md` for all label operations.
-If no `review.config.md` exists, use the defaults from
-`templates/default-labels.md`.
+Resolve every label name by purpose key through the single path in
+`templates/default-labels.md` (review-state purposes via
+`review.config.md` when present, defaults otherwise). Do not hardcode a
+concrete name.
 
 ### Step 10b — Verify labels were applied
 
@@ -531,10 +537,13 @@ gh pr view <number> --repo <org>/<repo> --json labels --jq '[.labels[].name]'
 ```
 
 Confirm the expected state label is present. If missing, the label
-likely doesn't exist on the repo. Create it and retry:
+likely doesn't exist on the repo (setup should have created it). Create
+it with the guarded create-if-missing pattern from
+`templates/default-labels.md` — **without `--force`** so existing label
+metadata is never overwritten — then retry:
 
 ```bash
-gh label create "<label>" --repo <org>/<repo> --description "<desc>" --color "<color>" --force
+gh label create "<label>" --repo <org>/<repo> --description "<desc>" --color "<color>"
 gh pr edit <number> --repo <org>/<repo> --add-label "<label>"
 ```
 

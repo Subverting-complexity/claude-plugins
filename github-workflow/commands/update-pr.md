@@ -23,16 +23,17 @@ Read `ClaudeProject.md` and extract:
 - `org`, `repo`, `default-branch` from Identity
 - Label map (for claude and review state labels)
 
-If `docs/review.config.md` or `review.config.md` exists, read the
-state label definitions from there. If neither exists, use the default
-review state labels from `templates/default-labels.md` (prefix
-`review`: `review-reviewing`, `review-approved`,
-`review-changes-requested`, `review-needs-discussion`,
-`review-needs-re-review`, `review-review-failed`, `review-updating`,
-`review-fixes-applied`). When using defaults in an interactive
-session, warn the user: "No `review.config.md` found — using default
-labels. Run `/github-workflow:setup` to configure review labels for
-this project."
+Resolve every review-state and claude label by **purpose key** through
+the single path in `templates/default-labels.md`: review-state purposes
+(`updating`, `approved`, `changes-requested`, `needs-discussion`,
+`needs-re-review`, …) via `review.config.md` when present, defaults
+(`review-` prefix) otherwise; claude purposes via the `ClaudeProject.md`
+label map. The bare names used throughout these steps are purpose keys —
+resolve them, never apply them literally — so the `updating` claim this
+command writes is the identical string the code-review skill filters on.
+When falling back to defaults in an interactive session, warn the user:
+"No `review.config.md` found — using default labels. Run
+`/github-workflow:setup` to configure review labels for this project."
 
 ### 2. Find the PR to update
 
@@ -218,10 +219,13 @@ gh pr view {pr_number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'
 ```
 
 Confirm the expected state label is present and the `updating` label
-was removed. If the state label is missing, create it and retry:
+was removed. If the state label is missing, create it with the guarded
+create-if-missing pattern from `templates/default-labels.md` —
+**without `--force`** so existing label metadata is never overwritten —
+then retry:
 
 ```
-gh label create "{label}" --repo {org}/{repo} --description "{desc}" --color "{color}" --force
+gh label create "{label}" --repo {org}/{repo} --description "{desc}" --color "{color}"
 gh pr edit {pr_number} --add-label "{label}"
 ```
 

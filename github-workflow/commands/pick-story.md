@@ -50,12 +50,17 @@ Extract from the project configuration above:
 - `ready-gate` from Ready Gate (`label`, `board-column`, or `both`; default: `label`)
 - Project board settings (if `ready-gate` is `board-column` or `both`)
 
-If the label map is missing or incomplete, use the default label names
-from `templates/default-labels.md` (e.g., `status-ready`,
-`priority-critical`, `type-story`, etc.). When using defaults in an
-interactive session, warn the user: "Label map not configured — using
-default labels. Run `/github-workflow:setup` to configure labels for
-this project."
+Resolve every label name by **purpose key** through the single path in
+`templates/default-labels.md` — the label map for workflow purposes
+(`status-ready`, `priority-*`, `type-*`, claude markers) and
+`review.config.md` for the review-state purposes used in stale recovery
+(`approved`, `changes-requested`, `needs-discussion`). The bare names in
+the steps below are purpose keys: resolve them, never filter on a bare
+name literally, so the strings this command skips on match the strings
+the review skills apply. When falling back to defaults in an interactive
+session, warn the user: "Label map not configured — using default
+labels. Run `/github-workflow:setup` to configure labels for this
+project."
 
 ### 1b. Reclaim stale in-progress stories
 
@@ -159,8 +164,8 @@ dependencies are resolved — mark the issue as ready:
   gh issue edit {number} --repo {org}/{repo} --add-label "{status_ready_label}"
   ```
   After applying, verify the label is present. If missing, create it
-  with `gh label create --force` using the color from
-  `templates/default-labels.md` and retry once.
+  with the guarded create-if-missing pattern from
+  `templates/default-labels.md` (no `--force`) and retry once.
 - **`board-column` or `both`**: move the issue to the "Ready" column
   on the project board (using the `ready-option-id` from board config):
   ```
