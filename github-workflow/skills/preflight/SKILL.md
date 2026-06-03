@@ -105,14 +105,98 @@ command inside its fenced code block. Then classify:
   `WARNING quality-gate: not configured or has template placeholder`.
 - Otherwise → emit `OK quality-gate: {command}`.
 
+### Ready-gate and project board
+
+Read this by hand — board identity needs a `gh` API call plus value
+extraction from `ClaudeProject.md` tables, which an auto-run (`!`) block
+cannot do reliably (and the `gh` query below contains a code fence,
+which would truncate an auto-run block — see issue #33).
+
+1. Open `ClaudeProject.md`. In `## Ready Gate`, read the `ready-gate`
+   value (`label`, `board-column`, or `both`).
+2. A board is **required** when `ready-gate` is `board-column` or
+   `both`. It is **optional** (best-effort board updates only) when
+   `ready-gate` is `label`.
+3. In `## Project Board`, read `project-node-id`, `project-title`, and
+   the Status option ids.
+
+Classify:
+
+- **Board required but not configured** — a board is required and the
+  `## Project Board` section is missing, or `project-node-id` is absent,
+  `n/a`, or still a `{placeholder}`:
+  emit `CRITICAL board-config: ready-gate '{gate}' requires a project board, but none is configured`.
+- **Ready column missing** — `ready-gate` is `board-column` or `both`
+  and the "Ready" Status option id is `n/a` or absent:
+  emit `CRITICAL board-ready-option: ready-gate '{gate}' needs a "Ready" board column, but no Ready Status option id is configured`.
+- **Board identity** — `project-node-id` is present (whether the board
+  is required or just best-effort). Resolve it and compare its title to
+  the configured `project-title`:
+
+  ```
+  gh api graphql -f query='query($id:ID!){ node(id:$id){ ... on ProjectV2 { title } } }' -F id='<project-node-id>' --jq '.data.node.title'
+  ```
+
+  - Resolves and the title **matches** `project-title` →
+    emit `OK board-identity: '{project-title}'`.
+  - Does not resolve, or the resolved title **differs** from
+    `project-title` → emit a mismatch finding. Severity is **CRITICAL**
+    when the board is required, **WARNING** when it is best-effort
+    (label gate):
+    `{CRITICAL|WARNING} board-identity: stored project-node-id resolves to '<resolved>' but project-title is '<configured>'`
+    (or `... does not resolve to a ProjectV2`).
+- **Board not required and not configured** — no finding. A `label`
+  ready-gate with no board section is valid.
+
+### Label-map completeness
+
+```!
+if [ -f ClaudeProject.md ]; then
+  # Extract the ## Label Map section body (subsections use ###, which
+  # does not match the ^## top-level header that ends the range).
+  labelmap=$(awk '/^## Label Map$/{f=1; next} f && /^## /{exit} f' ClaudeProject.md)
+  missing=0
+  for purpose in priority-critical priority-high priority-medium priority-low \
+                 type-story type-bug type-security type-arch type-debt \
+                 status-ready needs-refinement claude-authored; do
+    if printf '%s\n' "$labelmap" | grep -q "$purpose"; then
+      :
+    else
+      echo "WARNING label-map: no label mapped for purpose '$purpose'"
+      missing=1
+    fi
+  done
+  [ "$missing" -eq 0 ] && echo "OK label-map: all expected purposes mapped"
+fi
+```
+
+### Review configuration
+
+```!
+# Review is "in play" when ClaudeProject.md references a review state-label
+# file. If so, that file must exist or review-state labelling silently breaks.
+if [ -f ClaudeProject.md ] && grep -q 'review\.config\.md' ClaudeProject.md 2>/dev/null; then
+  path=$(grep -oE '[A-Za-z0-9._/-]*review\.config\.md' ClaudeProject.md | head -1)
+  path=${path:-docs/review.config.md}
+  if [ -f "$path" ]; then
+    echo "OK review-config: $path present"
+  else
+    echo "WARNING review-config: $path referenced by ClaudeProject.md but not found"
+  fi
+fi
+```
+
 ## 3. Evaluate results
 
 Read all output from the checks above. Categorize:
 
 - **CRITICAL** — the workflow will fail (gh not authenticated,
-  ClaudeProject.md missing, required sections absent).
+  ClaudeProject.md missing, required sections absent, a required board
+  is unconfigured, or the stored board identity does not match).
 - **WARNING** — the workflow may misbehave (placeholders, CLAUDE.md
-  missing, quality gate not set).
+  missing, quality gate not set, a label purpose has no mapped label,
+  a best-effort board's identity is stale, or a referenced
+  `review.config.md` is missing).
 - **OK** — check passed.
 
 **If every check is OK**: proceed silently. Do not mention preflight
