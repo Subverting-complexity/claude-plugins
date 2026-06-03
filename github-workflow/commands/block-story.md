@@ -104,21 +104,17 @@ When **no** board is configured, skip this step silently. When a board
 user (e.g., "Board update failed: {error}. Continuing without board
 update.") and proceed with the rest of the workflow.
 
-### 6. Shelve work
+### 6. Leave the work in place
 
-If there are uncommitted changes:
-
-```
-git stash push -m "blocked-{number}: {short_reason}"
-```
-
-Switch back to the default branch:
-
-```
-git checkout {default-branch}
-```
+Do **not** `git stash` — the stash is shared across every worktree on
+this clone, so shelving here can collide with another agent's work.
+Committed work stays on the story branch (preserved under the claim);
+uncommitted scratch work stays in this worktree, left as-is for a later
+session to inspect. Releasing the claim (above) returns the story to the
+backlog without disturbing the working tree.
 
 ### 7. Report
 
-Display what was blocked, why, and that the story has been shelved.
+Display what was blocked, why, and that the story has been blocked and
+returned to the backlog.
 Suggest running `/github-workflow:pick-story` to continue with the next story.

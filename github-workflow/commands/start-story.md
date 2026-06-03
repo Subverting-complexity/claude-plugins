@@ -129,15 +129,24 @@ git checkout {branch}
 git rebase origin/{default-branch}
 ```
 
-If rebase fails with conflicts, abort and recreate the branch:
+If `git checkout {branch}` fails because the branch is **already checked
+out in another worktree**, that is a lost claim — another agent on this
+machine owns the work. Stop and exit cleanly per the claim-procedure
+**Lost-claim path**: change nothing, fork nothing. (With the atomic claim
+in step 2 this is rare, but a lingering worktree can still hold the
+branch.)
+
+If the rebase fails with conflicts, do **not** fork a parallel branch.
+Abort and block the story so the divergence can be resolved deliberately:
 
 ```
 git rebase --abort
-git checkout -b {branch}-retry origin/{default-branch}
 ```
 
-Use the `-retry` branch and note in the PR that the original branch
-had conflicts.
+Then run `/github-workflow:block-story` with the conflict details. The
+atomic claim in step 2 guarantees no rival agent shares this branch, so a
+conflict is a genuine divergence to resolve — never a collision to route
+around with a `-retry` fork.
 
 If the branch does not exist, create it:
 

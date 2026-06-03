@@ -30,7 +30,6 @@ tools:
   - Bash(git push *)
   - Bash(git rebase *)
   - Bash(git show *)
-  - Bash(git stash *)
   - Bash(git status *)
   - Bash(git switch *)
   - Bash(gh *)
@@ -80,8 +79,12 @@ When given a specific issue number, run `/github-workflow:execute <number>`.
   check, and re-run the quality gate before attempting to commit again.
 - If a test fails, fix the test or the code (not both simultaneously).
   Run only the failing test until it passes, then run the full suite.
-- If git operations fail (merge conflict, detached HEAD), stash work,
-  re-fetch, and rebase cleanly. Do not force-push.
+- If a git operation fails (rebase conflict, detached HEAD), do **not**
+  `git stash` — the stash is shared across every worktree on this clone,
+  so it is unsafe when agents run in parallel. Your committed work is the
+  durable state: run `git rebase --abort` (or `git checkout {branch}` to
+  leave a detached HEAD) to return to a clean state, then run
+  `/github-workflow:block-story` with the details. Do not force-push.
 - If a `gh` CLI call fails (auth, network, rate limit), retry once
   after 10 seconds. If it fails again, run `/github-workflow:block-story`
   with the error details.

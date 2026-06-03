@@ -17,7 +17,6 @@ tools:
   - Bash(git checkout *)
   - Bash(git fetch *)
   - Bash(git rebase *)
-  - Bash(git stash *)
   - Bash(git push *)
   - Bash(git branch *)
   - Bash(gh *)
