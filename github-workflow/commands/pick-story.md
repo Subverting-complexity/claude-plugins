@@ -4,8 +4,7 @@ description: 'Pick the next story from the backlog without starting it. Supports
 
 # Pick Story
 
-Select the next story from the backlog. Before looking for new work,
-check for stale in-progress stories that can be reclaimed.
+Select the next story from the backlog.
 
 ## Mode
 
@@ -46,110 +45,22 @@ Extract from the project configuration above:
 - Label map (priority labels, status labels, type labels, claude labels)
 - `agent-gating` from Agent Gating (`enabled` or `disabled`, default: `disabled`)
 - `claude-ready` label name from the Claude label map (only needed when gating is enabled)
-- `stale-timeout` from Session Budget (default: 2 hours if not set)
 - `ready-gate` from Ready Gate (`label`, `board-column`, or `both`; default: `label`)
 - Project board settings (if `ready-gate` is `board-column` or `both`)
 
 Resolve every label name by **purpose key** through the single path in
 `templates/default-labels.md` — the label map for workflow purposes
 (`status-ready`, `priority-*`, `type-*`, claude markers) and
-`review.config.md` for the review-state purposes used in stale recovery
-(`approved`, `changes-requested`, `needs-discussion`). The bare names in
-the steps below are purpose keys: resolve them, never filter on a bare
-name literally, so the strings this command skips on match the strings
-the review skills apply. When falling back to defaults in an interactive
+`review.config.md` for the `approved` review-state purpose used to skip
+issues awaiting human merge. The bare names in the steps below are
+purpose keys: resolve them, never filter on a bare name literally, so the
+strings this command skips on match the strings the review skills apply.
+When falling back to defaults in an interactive
 session, warn the user: "Label map not configured — using default
 labels. Run `/github-workflow:setup` to configure labels for this
 project."
 
-### 1b. Reclaim stale in-progress stories
-
-Before picking new work, check for issues that were assigned but never
-completed — the previous session may have timed out, crashed, or lost
-context.
-
-**Batch query** — Fetch all assigned issues with their linked PRs in a
-single GraphQL call instead of N individual API requests:
-
-```
-gh api graphql -f query='
-query($owner: String!, $repo: String!, $assignee: String!) {
-  repository(owner: $owner, name: $repo) {
-    issues(states: OPEN, filterBy: {assignee: $assignee}, first: 20) {
-      nodes {
-        number
-        title
-        updatedAt
-        labels(first: 10) { nodes { name } }
-        timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], first: 10) {
-          nodes {
-            ... on CrossReferencedEvent {
-              source {
-                ... on PullRequest {
-                  number
-                  headRefName
-                  state
-                  labels(first: 10) { nodes { name } }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}' -f owner="{org}" -f repo="{repo}" -f assignee="@me"
-```
-
-This returns each assigned issue with its linked PRs (via cross-reference
-events), their branch names, and labels — all in one API call.
-
-For issues without a linked PR in the GraphQL response, check for a
-branch matching the branch convention:
-```
-git ls-remote --heads origin | grep -i "{number}"
-```
-
-Determine staleness from the `updatedAt` timestamp. If older than
-`stale-timeout`:
-
-**If PR or issue has the `approved` label:** Skip entirely — waiting
-for human merge, do not touch.
-
-**If a PR exists with review feedback** (`changes-requested` or
-`needs-discussion` label): Check out the branch and run
-`/github-workflow:update-pr` to address the feedback autonomously.
-
-**If a PR exists without review feedback:** Check out the branch and
-assess state. If code looks complete, push to finish (PR updates,
-labels). If incomplete, continue building from where it left off.
-
-**If a branch exists but no PR:** Check out the branch and assess. If
-it has meaningful commits, continue toward finishing. If it has no
-meaningful work, delete the branch and reclaim the issue.
-
-**If neither branch nor PR exists and the issue is stale:** The
-previous session claimed the issue but produced nothing. Reclaim it.
-First release the stale claim ref so the issue can be claimed again,
-following `templates/claim-procedure.md` (**Release**), then unassign:
-
-```
-git push origin :refs/claims/issue-{number}
-gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
-```
-
-Add a comment explaining the reclamation:
-
-```
-gh issue comment {number} --repo {org}/{repo} --body "Automatically unassigned — no progress detected within the stale timeout ({stale_timeout}). This issue is available for pickup again."
-```
-
-The reclaimed issue is now eligible for the normal pick logic below.
-
-**If the issue is not stale yet:** Skip it — another session may still
-be actively working on it.
-
-### 1c. Auto-ready resolved dependencies
+### 1b. Auto-ready resolved dependencies
 
 Before picking new work, check issues assigned to `@me` that are not
 in the ready state. How to detect "not ready" depends on `ready-gate`:

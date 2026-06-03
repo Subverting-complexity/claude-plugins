@@ -99,8 +99,8 @@ session has been running for more than 45 minutes:
 1. Commit and push all current work immediately.
 2. If you have enough for a PR, open one (draft if incomplete).
 3. Create follow-up issues for any unfinished work.
-4. Delete the scratch files (see **Scratch file cleanup**):
-   `rm -f .claude/plan.md .claude/execution-checkpoint.md`.
+4. Delete the scratch file (see **Scratch file cleanup**):
+   `rm -f .claude/plan.md`.
 5. Exit cleanly — do not start a new phase that you may not finish.
 
 This prevents the harness from killing the session mid-work with nothing
@@ -143,76 +143,18 @@ If mode is `audit`, skip to the Audit section at the bottom.
 
 ---
 
-## Session state checkpoint
+## Scratch file cleanup
 
-Before each phase transition, write `.claude/execution-checkpoint.md`
-with the current state. This allows recovery if the session ends
-unexpectedly:
-
-```markdown
-# Execution Checkpoint
-- Story: #{number}
-- Phase: {current_phase} ({phase_name})
-- Branch: {branch_name}
-- Files modified: {list from git diff --name-only}
-- Tests passing: {yes/no/not yet run}
-- Last updated: {ISO 8601 timestamp}
-```
-
-At the start of execution, check for an existing checkpoint file. A
-checkpoint is only trustworthy if it still describes live, claimable
-work — a stale or orphaned checkpoint must never trigger a resume.
-Before acting on one, run **all** of these validation gates and discard
-the checkpoint (delete the file and start fresh) if **any** fails:
-
-1. **Freshness** — If the `Last updated` timestamp is older than
-   `stale-timeout`, the checkpoint is stale. Discard it.
-2. **Issue still open** — Read the recorded story:
-   ```
-   gh issue view {number} --repo {org}/{repo} --json state,assignees,closedByPullRequestsReferences
-   ```
-   If the issue is `CLOSED` (already merged or otherwise resolved), the
-   checkpoint is orphaned. Discard it.
-3. **Still ours** — If the issue is open but **not** assigned to `@me`
-   (another agent reclaimed it, or a human reassigned it), do not steal
-   it back. Discard the checkpoint.
-4. **Branch still exists** — Confirm the recorded branch is present
-   locally or on the remote:
-   ```
-   git rev-parse --verify {branch_name} 2>/dev/null \
-     || git ls-remote --exit-code --heads origin {branch_name}
-   ```
-   If the branch is gone, the work cannot be resumed. Discard the
-   checkpoint.
-
-If **every** gate passes, the checkpoint describes resumable work:
-
-1. Read the checkpoint to determine where the previous session stopped.
-2. Check out the recorded branch.
-3. Reconcile against reality before trusting the recorded phase — run
-   `git status` and `git diff --name-only`, and re-read `.claude/plan.md`
-   to confirm which files are actually done. Resume from the recorded
-   phase only if the on-disk state is consistent with it; otherwise fall
-   back to the earliest phase the concrete state supports (the same
-   resume-point logic used for stale PRs in Phase 1).
-
-When discarding a checkpoint, delete both `.claude/execution-checkpoint.md`
-and any orphaned `.claude/plan.md`, then proceed with a normal Phase 1
-pick.
-
-### Scratch file cleanup
-
-This skill writes two per-session scratch files: `.claude/plan.md`
-(Phase 3) and `.claude/execution-checkpoint.md` (rewritten before every
-phase transition). Both are gitignored, but they must still be removed
-on **every** exit path so no stale scratch lingers in the worktree — a
-leftover scratch file is what originally blocked harness worktree
-auto-cleanup. As the **final** step before the session ends, and always
-**after** any commit/push (so the pushed branch — not scratch — is the
-source of truth), delete both files:
+This skill writes one per-session scratch file: `.claude/plan.md`
+(Phase 3). It is gitignored, but it must still be removed on **every**
+exit path so no stale scratch lingers in the worktree — a leftover
+scratch file is what originally blocked harness worktree auto-cleanup.
+As the **final** step before the session ends, and always **after** any
+commit/push (so the pushed branch — not scratch — is the source of
+truth), delete it:
 
 ```
-rm -f .claude/plan.md .claude/execution-checkpoint.md
+rm -f .claude/plan.md
 ```
 
 This applies to **all** exits without exception:
@@ -224,10 +166,10 @@ This applies to **all** exits without exception:
 - API rate-limit pause.
 - One-session overflow (partial slice shipped, follow-ups filed).
 
-Cross-session resume does **not** depend on leftover scratch: a later
-session recovers the work from the pushed branch through Phase 1
-stale-task recovery, not from these files. (Within-session context
-compaction is unaffected — no exit occurs, so the files remain on disk
+Each session is self-contained: it runs one story start-to-finish or
+exits cleanly. There is no cross-session resume — a session never picks
+up work a previous session left behind. (Within-session context
+compaction is unaffected — no exit occurs, so the file remains on disk
 for the duration of the run.)
 
 ---
@@ -235,34 +177,11 @@ for the duration of the run.)
 ## Phase 1 — Pick
 
 If `$ARGUMENTS.story_number` is provided, use that issue directly.
-Otherwise, run the pick-story logic (including stale task recovery):
+Otherwise, run the pick-story logic:
 
-1. Read `ClaudeProject.md` for org, repo, label map, stale-timeout,
-   `agent-gating` mode, and the `claude-ready` label name.
-1b. Run stale task recovery — check for issues assigned to @me with no
-    branch or PR past the stale-timeout. Auto-resolve each stale issue:
-    - **PR or issue has `approved` label**: skip entirely — waiting for
-      human merge, do not touch.
-    - **Stale PR with review feedback** (`changes-requested` or
-      `needs-discussion` label): check out the branch and run
-      `/github-workflow:update-pr` to address it, then continue to
-      Phase 7 (Finish).
-    - **Stale PR without review feedback**: check out the branch and
-      determine the resume point by checking concrete state:
-      - Run the quality gate. If it passes → Phase 7 (Finish).
-      - If quality gate fails, check `git log --oneline` for commits
-        beyond the branch point. If commits exist → Phase 5 (Verify).
-      - If no commits beyond branch point → Phase 4 (Build).
-    - **Stale branch with no PR**: check it out and check for commits
-      beyond the branch point (`git log origin/{default-branch}..HEAD
-      --oneline`). If commits exist, continue from Phase 5 (Verify).
-      If no commits exist, delete the branch and reclaim the issue.
-    - **No branch or PR**: reclaim the issue — release the stale claim
-      ref (`templates/claim-procedure.md` **Release**:
-      `git push origin :refs/claims/issue-{number}`), then unassign and
-      comment. Include it in the normal pick pool below.
-    - **Not stale yet**: skip — another session may be active.
-1c. Auto-ready resolved dependencies — check issues assigned to
+1. Read `ClaudeProject.md` for org, repo, label map, `agent-gating`
+   mode, and the `claude-ready` label name.
+1b. Auto-ready resolved dependencies — check issues assigned to
     `@me` that do NOT have the `status-ready` label. For each, parse
     the issue body for dependency markers (`Depends on #N`, `Blocked
     by #N`, `After #N`, `Requires #N`) and check the `## Dependencies`
@@ -501,7 +420,7 @@ Run the quality gate command from `ClaudeProject.md`:
    cleanup**):
    ```
    git push origin :refs/claims/issue-{number}
-   rm -f .claude/claim-issue-{number}.sha .claude/plan.md .claude/execution-checkpoint.md
+   rm -f .claude/claim-issue-{number}.sha .claude/plan.md
    ```
    The claim-ref delete is best-effort — ignore an error if it is already
    gone. The issue stays assigned to @me through review.
