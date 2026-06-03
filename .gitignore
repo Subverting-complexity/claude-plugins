@@ -1,2 +1,6 @@
 # Claude Code worktree directories
 **/.claude/worktrees/
+
+# github-workflow plugin scratch files (per-session, never commit)
+**/.claude/plan.md
+**/.claude/execution-checkpoint.md

@@ -2,6 +2,14 @@
 
 This repo contains multiple Claude Code plugins that share skills.
 
+> **Dogfooding note:** This repo is itself configured as a
+> `github-workflow` target. Project settings (org/repo, labels, quality
+> gate, board) live in [`ClaudeProject.md`](ClaudeProject.md); workflow
+> commands (`/github-workflow:pick-story`, `:execute`, `:code-review`,
+> etc.) read it. The open backlog of plugin-hardening work is tracked on
+> the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8)
+> and described in [`docs/github-workflow-audit.md`](docs/github-workflow-audit.md).
+
 ## CRITICAL RULES
 
 1. **NEVER edit a synced skill copy directly.** If the file starts
