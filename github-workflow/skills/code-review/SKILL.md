@@ -672,7 +672,11 @@ an explicit `enabled` setting. The review comment from Step 9 must
 already be posted before you merge — never merge before the verdict is
 on the PR.
 
-When all conditions hold, merge deterministically:
+When all conditions hold, drive the PR to a merged state. Conflicts and
+red CI are **blockers to clear, not reasons to give up** — fix them on the
+branch (the same auto-fix discipline as Step 7: fix concrete, objectively
+correct problems; never guess at changes that need product or design
+judgment), then merge. You are already on the PR branch from Step 3.
 
 1. **Confirm the PR is still what you reviewed.** Re-read its state:
    ```bash
@@ -681,47 +685,94 @@ When all conditions hold, merge deterministically:
    - `state` not `OPEN` (already merged or closed) → nothing to do;
      report and exit.
    - `headRefOid` differs from the SHA you reviewed (recorded in Step 3,
-     or the updated SHA from Step 7, and written to the footer) → new
-     commits landed mid-review. Do **not** merge: ensure `needs-re-review`
-     is applied and exit so the next run re-reviews the new head.
-   - `mergeable` is `CONFLICTING` → the branch has conflicts. Do **not**
-     force it. Post a one-line follow-up comment that auto-merge was
-     skipped pending a rebase, and exit. The `approved` verdict stands; a
-     human resolves the conflict.
+     or the updated SHA from Step 7, and written to the footer) → commits
+     you did not review landed mid-run. Do **not** merge: ensure
+     `needs-re-review` is applied and exit so the next run re-reviews the
+     new head. (Commits **you** push in steps 2–3 below are excluded —
+     update your recorded SHA as you push them.)
 
-2. **Do not merge over red CI.** Read the required-check rollup:
+2. **Resolve merge conflicts if there are any.** When `mergeable` is
+   `CONFLICTING`, bring the base branch in and resolve, rather than
+   bailing:
+   ```bash
+   git fetch origin <baseRef>
+   git merge origin/<baseRef>
+   ```
+   For each conflicted file, read **both** sides in full context (not just
+   the hunk) and resolve so the PR's intent **and** the incoming base
+   change are both preserved. Then re-run the project quality gate locally
+   to prove the resolution compiles and the tests pass. Commit the
+   resolution and push:
+   ```bash
+   git add -A && git commit -m "Resolve merge conflicts with <baseRef>"
+   git push
+   ```
+   Update your recorded SHA to the new `HEAD` and append a line to the
+   review comment noting the conflict resolution.
+
+   **Fallback — only when the resolution genuinely needs human judgment**
+   (the two sides made incompatible product/design decisions and no
+   objectively correct merge exists): `git merge --abort`, post a one-line
+   comment that auto-merge is paused pending a human rebase, leave the
+   `approved` verdict, and exit. Do not guess.
+
+3. **Fix a failing pipeline if there is one.** Read the required-check
+   rollup:
    ```bash
    gh pr checks <number> --repo <org>/<repo> --required
    ```
-   - Any **required** check **failing** → skip the merge. Post a one-line
-     follow-up comment that auto-merge was skipped because required
-     checks are red, and exit. Approval stands; the failing check, not
-     the review, is the blocker.
-   - Required checks **pending** → enqueue native auto-merge so the PR
-     lands the moment they pass: go to step 4 (`--auto`).
-   - Required checks **passing**, or none required → merge now (step 3).
+   - Any **required** check **failing** → fetch the failure detail and fix
+     the cause on the branch:
+     ```bash
+     gh run view <run-id> --repo <org>/<repo> --log-failed
+     ```
+     Diagnose the actual failure — a compile/type error, a lint
+     violation, a test the change broke, a stale snapshot/lockfile — and
+     fix it the same way Step 7 fixes findings. Reproduce the failing
+     check locally (run that test/lint/build) to confirm it now passes,
+     then commit and push:
+     ```bash
+     git add -A && git commit -m "Fix <check> failure"
+     git push
+     ```
+     Update your recorded SHA and note the fix in the review comment.
+     Pushing re-triggers the pipeline, so the checks will be **pending**
+     again — proceed to step 4 and enqueue `--auto` so the PR merges the
+     moment the now-fixed pipeline is green.
 
-3. **Merge now (checks green).** Squash-merge and delete the branch:
-   ```bash
-   gh pr merge <number> --repo <org>/<repo> --squash --delete-branch
-   ```
-   If this fails because branch protection requires an approving review,
-   retry once as an admin merge — this skill records its approval as a
-   comment and the `approved` label, **not** as a GitHub review (see
-   Rules), so the required-review rule must be satisfied administratively:
-   ```bash
-   gh pr merge <number> --repo <org>/<repo> --squash --delete-branch --admin
-   ```
-   If the admin retry also fails (the actor lacks admin rights), fall back
-   to enqueuing native auto-merge (step 4) and report that the merge is
-   queued pending repo-side requirements.
+     **Fallback — only when the failure is not yours to fix** (flaky or
+     infrastructure failures outside the diff, or a fix that needs design
+     judgment): post a one-line comment naming the check and that
+     auto-merge is paused pending a fix, leave `approved`, and exit. Never
+     force a merge over a genuinely red required check.
+   - Required checks **pending** (including right after you pushed a fix)
+     → enqueue auto-merge: step 4 (`--auto`).
+   - Required checks **passing**, or none required, and you pushed nothing
+     in steps 2–3 → merge now (step 4, immediate path).
 
-4. **Enqueue (checks pending, or admin unavailable).**
-   ```bash
-   gh pr merge <number> --repo <org>/<repo> --squash --delete-branch --auto
-   ```
-   GitHub merges automatically once its branch-protection requirements
-   are met.
+4. **Merge.** Squash-merge and delete the branch.
+   - **Immediate** (nothing pushed in steps 2–3, required checks already
+     green or none):
+     ```bash
+     gh pr merge <number> --repo <org>/<repo> --squash --delete-branch
+     ```
+     If this fails because branch protection requires an approving review,
+     retry once as an admin merge — this skill records its approval as a
+     comment and the `approved` label, **not** as a GitHub review (see
+     Rules), so the required-review rule must be satisfied
+     administratively:
+     ```bash
+     gh pr merge <number> --repo <org>/<repo> --squash --delete-branch --admin
+     ```
+     If the admin retry also fails (the actor lacks admin rights), fall
+     back to the enqueue path below.
+   - **Enqueue** (checks pending — including after a fix push — or admin
+     unavailable):
+     ```bash
+     gh pr merge <number> --repo <org>/<repo> --squash --delete-branch --auto
+     ```
+     GitHub merges automatically once its branch-protection requirements
+     (the now-fixed checks, any required review) are met.
 
 5. **Verify the outcome — never assume.** Re-read the state:
    ```bash
@@ -771,8 +822,11 @@ feedback workflow details, see `references/review-workflow.md`.
 - Never use `gh pr review --approve`. Always use `gh pr comment`.
 - Do not merge a PR **except** the one sanctioned auto-merge in Step 11 —
   only when the verdict is Approved, `review.config.md` sets Auto-Merge on
-  Approval to `enabled` (off by default), required checks are green, and
-  the review comment is already posted. Never merge in read-only mode.
+  Approval to `enabled` (off by default), and the review comment is already
+  posted. Step 11 first resolves any merge conflicts and fixes any failing
+  required check on the branch, then merges (or enqueues `--auto`); it
+  never force-merges over a genuinely red required check. Never merge in
+  read-only mode.
 - Do not close a PR **except** to reconcile duplicates in Step 2b — when
   two or more open PRs close the same issue, close the losers and keep the
   winner. That is the one sanctioned close; never close a PR for any other

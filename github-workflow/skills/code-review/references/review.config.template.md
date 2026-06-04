@@ -58,16 +58,26 @@ comment has been posted. When `disabled` (the default), an approved PR is
 left for a human to merge.
 
 This is **off by default** — turn it on only for repos where you trust an
-approved Claude review to land unattended. When on, the merge is
-deterministic, with these guardrails (enforced in Step 11 of the
-code-review skill):
+approved Claude review to land unattended. When on, the skill drives the
+PR all the way to merged. Conflicts and red CI are blockers it clears, not
+reasons it gives up (enforced in Step 11 of the code-review skill):
 
-- The PR must still be open and unchanged since the review (a new commit
-  since the reviewed SHA forces a re-review instead of a merge).
-- Merge conflicts skip the merge — a human rebases first.
-- A **failing required status check** skips the merge — red CI blocks it,
-  by design. Pending required checks enqueue GitHub-native auto-merge so
-  the PR lands the moment they pass.
+- The PR must still be open and unchanged by **others** since the review
+  (a commit the skill did not review forces a re-review instead of a
+  merge; fixes the skill pushes itself in the steps below do not).
+- **Merge conflicts are resolved automatically** — the skill merges the
+  base branch into the PR branch, resolves the conflicts (preserving both
+  the PR's intent and the incoming base change), re-runs the quality gate,
+  and pushes. It only pauses for a human when the two sides made
+  incompatible product/design decisions with no objectively correct merge.
+- **A failing required check is fixed, then merged** — the skill reads the
+  failing run's logs, fixes the cause on the branch (compile/type/lint
+  errors, tests the change broke, stale snapshots/lockfiles), reproduces
+  the check locally to confirm it passes, and pushes. Because the push
+  re-runs the pipeline, it enqueues GitHub-native auto-merge so the PR
+  lands the moment the fixed pipeline is green. It only pauses for a human
+  when the failure is flaky/infrastructure or needs design judgment — it
+  never force-merges over a genuinely red check.
 - Claude records its approval as a review comment and the `approved`
   label, not as a GitHub *review*. So if the branch requires an approving
   review, the merge needs admin rights to satisfy that rule

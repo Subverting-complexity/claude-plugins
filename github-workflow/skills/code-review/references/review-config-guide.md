@@ -66,11 +66,13 @@ logs).
 Claude approves it and posts the review comment?" **Default to no** —
 record `auto-merge-on-approval: disabled` unless the user explicitly opts
 in. If they say yes, set it to `enabled` and warn them what it implies:
-the PR is merged unattended on an approved review, red required checks
-still block it, and (because Claude approves via a comment, not a GitHub
-review) a branch that requires an approving review needs the merging
-actor to have admin rights. See the Auto-Merge on Approval section in
-`references/review.config.template.md` for the exact guardrails.
+the PR is merged unattended on an approved review; merge conflicts are
+resolved automatically and a failing pipeline is fixed on the branch and
+then merged (the skill only pauses for a human on judgment-call conflicts
+or flaky/infra failures); and (because Claude approves via a comment, not
+a GitHub review) a branch that requires an approving review needs the
+merging actor to have admin rights. See the Auto-Merge on Approval section
+in `references/review.config.template.md` for the exact guardrails.
 
 **Review comment footer:** Offer a default and let them customise.
 
