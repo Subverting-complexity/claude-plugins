@@ -1,10 +1,67 @@
 #!/usr/bin/env bash
-# Pre-commit hook: blocks commits that directly edit synced skill copies.
-# Install: cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+# Pre-commit hook:
+#   1. blocks commits that directly edit synced skill copies, and
+#   2. blocks CRLF line endings from being committed (keeps the repo LF-only,
+#      matching .gitattributes; stops the Windows CRLF churn documented in
+#      docs/worktree-config.md).
+# Install via ./bootstrap.sh (or ./bootstrap.ps1), or by hand:
+#   cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 
 SYNC_MARKER='<!-- SYNCED from _shared-skills/'
 
 staged_files=$(git diff --cached --name-only --diff-filter=AM)
+
+# --- CRLF guard ---------------------------------------------------------
+# Reject (or auto-normalize) any staged text blob containing CRLF.
+#
+# Detection reads the raw staged blob with `git cat-file` (never `git show`,
+# which can apply the eol smudge filter) and byte-matches with PCRE under
+# `LC_ALL=C`. Notes on the pitfalls this avoids:
+#   - `grep -I` classifies a CR-bearing stream as "binary" in a C locale and
+#     then suppresses the match, so the guard silently passed. Don't use it.
+#   - bash cannot hold a NUL in a variable ($'\x00' becomes ""), so the
+#     binary skip must express the byte as a PCRE escape ('\x00'), not a
+#     literal. grep -P matches the byte without a literal NUL/CR in argv.
+has_byte() { git cat-file blob ":$1" 2>/dev/null | LC_ALL=C grep -qUP "$2"; }
+
+crlf_fixed=()
+crlf_blocked=()
+for file in $staged_files; do
+    [ -f "$file" ] || continue
+    has_byte "$file" '\x00' && continue           # skip binary blobs
+    if has_byte "$file" '\r'; then
+        # Auto-fix only when there are no unstaged changes to clobber.
+        if git diff --quiet -- "$file"; then
+            git add --renormalize -- "$file"
+            if has_byte "$file" '\r'; then
+                crlf_blocked+=("$file")
+            else
+                crlf_fixed+=("$file")
+            fi
+        else
+            crlf_blocked+=("$file")
+        fi
+    fi
+done
+
+if [ ${#crlf_fixed[@]} -gt 0 ]; then
+    echo "NOTE: normalized CRLF -> LF and re-staged:"
+    for f in "${crlf_fixed[@]}"; do echo "  $f"; done
+    echo ""
+fi
+
+if [ ${#crlf_blocked[@]} -gt 0 ]; then
+    echo "ERROR: staged files contain CRLF line endings and were not"
+    echo "       auto-normalized (they have unstaged changes, or are pinned"
+    echo "       to CRLF). Run ./bootstrap.sh (or 'git add --renormalize .'),"
+    echo "       then re-stage these files:"
+    echo ""
+    for f in "${crlf_blocked[@]}"; do echo "  $f"; done
+    echo ""
+    echo "If you intentionally need to override, use --no-verify."
+    exit 1
+fi
+# ------------------------------------------------------------------------
 
 violations=()
 for file in $staged_files; do

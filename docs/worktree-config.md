@@ -110,8 +110,17 @@ even though no content changed. Confirm with:
 git ls-files --eol CLAUDE.md
 ```
 
-**Fix it once per clone** (this writes to the shared `.git/config`, so it
-covers the main checkout and every worktree on the machine):
+**Fix it once per clone** by running the bootstrap script — it sets the
+config, renormalizes, and installs the pre-commit hook (which also blocks
+CRLF from being committed in future):
+
+```bash
+./bootstrap.sh      # macOS / Linux / Git Bash
+./bootstrap.ps1     # Windows PowerShell
+```
+
+Or do it by hand (writes to the shared `.git/config`, so it covers the
+main checkout and every worktree on the machine):
 
 ```bash
 git config --local core.autocrlf false   # stop Git injecting CRLF
