@@ -304,6 +304,36 @@ If the project already ignores `.claude/` wholesale, leave it alone.
 This step is best-effort — if `.gitignore` cannot be written, log a
 warning and continue.
 
+### 5d. Normalize line endings
+
+Workflows spawn parallel agents in separate git worktrees, and a worktree
+is only auto-reaped when it is clean. On Windows the usual reason one stays
+"dirty" (blocking cleanup and leaving its branch checked out) is a
+**line-ending mismatch**, not a real edit: Git for Windows defaults to
+`core.autocrlf=true`, so files get CRLF on disk while the repo stores LF,
+and they then read as perpetually modified. Pin the project to LF so this
+never happens.
+
+1. **`.gitattributes`** — if the repo has none, create it with:
+   ```
+   * text=auto eol=lf
+   ```
+   If one exists but has no `eol`/line-ending rule, offer to append that
+   line. Never overwrite or reorder existing rules.
+2. **Git config (this clone)** — set the working tree to honor it:
+   ```
+   git config core.autocrlf false
+   git config core.eol lf
+   ```
+3. **Renormalize** any files already stored with CRLF (no-op if clean):
+   ```
+   git add --renormalize .
+   ```
+   If this stages changes, tell the user to commit them once.
+
+This step is best-effort — if any command fails (permissions, no git),
+log a warning and continue.
+
 ### 6. Generate or update CLAUDE.md
 
 The user's `CLAUDE.md` is their own file. The goal here is to add
@@ -344,6 +374,14 @@ PR reviews. If yes:
      `{prefix}-failed`, etc.)
    - Set up non-compliance gates, tech-stack rules, and test
      expectations
+   - Ask whether to **auto-merge approved PRs** (squash-merge once Claude
+     approves and posts its comment). This defaults to **off**; enable it
+     only for repos that should merge approved reviews unattended. Stored
+     as `auto-merge-on-approval` in `docs/review.config.md`. If the user
+     enables it, also turn on GitHub's repo-level auto-merge so queued
+     merges can fire (`gh api -X PATCH repos/{org}/{repo} -F
+     allow_auto_merge=true`) — best-effort; warn if it fails on
+     permissions.
    - Create the labels on the GitHub repo
    - Write `docs/review.config.md`
 3. If the user declines, note that the code-review skill will prompt

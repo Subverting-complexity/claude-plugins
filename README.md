@@ -92,9 +92,10 @@ source rather than duplicating them:
 ├── github-workflow/      # the GitHub-integrated plugin
 ├── local-workflow/       # the project-agnostic plugin
 ├── _shared-skills/       # canonical source for skills used by both plugins
+├── bootstrap.sh /.ps1    # one-time per-clone setup (LF line endings + hook)
 ├── sync-skills.sh /.ps1  # deploy shared skills into each plugin
 ├── lint-skills.sh        # validate skill frontmatter / placeholders
-├── hooks/pre-commit      # blocks direct edits to synced skill copies
+├── hooks/pre-commit      # blocks synced-copy edits and CRLF line endings
 └── CLAUDE.md             # contributor guide (read this before editing)
 ```
 
@@ -126,7 +127,16 @@ shared skills consistent. In short:
    `{plugin}/.claude-plugin/plugin.json` before merging (patch / minor / major
    per the guidance in `CLAUDE.md`).
 
-Install the pre-commit hook to enforce rule 1 locally:
+Bootstrap your clone once (idempotent) — this pins line endings to LF
+(so files don't churn to CRLF on Windows and leave worktrees stuck
+"dirty") and installs the pre-commit hook that enforces rule 1:
+
+```bash
+./bootstrap.sh      # macOS / Linux / Git Bash
+./bootstrap.ps1     # Windows PowerShell
+```
+
+To install only the hook by hand:
 
 ```bash
 cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit

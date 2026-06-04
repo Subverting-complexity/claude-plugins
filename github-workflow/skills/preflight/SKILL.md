@@ -40,12 +40,15 @@ evaluate the by-hand checks (quality gate, ready-gate/board) against it —
 do **not** open `ClaudeProject.md` again. Only read the file if it is not
 already in context.
 
-**Run expensive checks only when needed.** The single network call here
-(the board-identity `gh api` query) runs **only when a board is
-required** (ready-gate `board-column`/`both`). For the common `label`
-ready-gate, skip it entirely — board writes are best-effort and
+**Run expensive checks only when needed.** Network calls here are
+conditional and rare. The board-identity `gh api` query runs **only when a
+board is required** (ready-gate `board-column`/`both`); for the common
+`label` ready-gate, skip it entirely — board writes are best-effort and
 `templates/board-resolution.md` re-verifies identity at write time, so a
 preflight network round-trip every command is wasted tokens and latency.
+The auto-merge repo-setting check runs **only when
+`auto-merge-on-approval` is `enabled`** in `review.config.md` (an opt-in,
+off-by-default feature). Neither call runs in the default configuration.
 
 ### GitHub CLI
 
@@ -211,6 +214,28 @@ if [ -f ClaudeProject.md ] && grep -q 'review\.config\.md' ClaudeProject.md 2>/d
   path=${path:-docs/review.config.md}
   if [ -f "$path" ]; then
     echo "OK review-config: $path present"
+    # Surface the auto-merge-on-approval setting so an enabled (and
+    # therefore PR-mutating) config is never a silent surprise. Absent =
+    # disabled, which is the safe default and needs no finding.
+    automerge=$(grep -E 'auto-merge-on-approval' "$path" 2>/dev/null | grep -oiE 'enabled|disabled' | head -1)
+    if [ "$automerge" = "enabled" ]; then
+      echo "OK review-auto-merge: enabled — approved PRs are squash-merged automatically"
+      # Only when enabled: confirm the repo allows native auto-merge, or
+      # `gh pr merge --auto` (used after a conflict/CI fix) errors and a
+      # queued merge never fires. This is the one conditional network call
+      # here — it runs only for the opt-in enabled case, never otherwise.
+      slug=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)
+      if [ -n "$slug" ]; then
+        allowed=$(gh api "repos/$slug" --jq '.allow_auto_merge' 2>/dev/null)
+        if [ "$allowed" = "true" ]; then
+          echo "OK review-auto-merge-repo: repo allows auto-merge"
+        else
+          echo "WARNING review-auto-merge-repo: auto-merge-on-approval is enabled but the repo's 'Allow auto-merge' setting is off — queued merges will not fire. Enable it with 'gh api -X PATCH repos/$slug -F allow_auto_merge=true' or re-run /github-workflow:setup"
+        fi
+      fi
+    elif [ -n "$automerge" ]; then
+      echo "OK review-auto-merge: disabled"
+    fi
   else
     echo "WARNING review-config: $path referenced by ClaudeProject.md but not found"
   fi
@@ -234,8 +259,10 @@ Read all output from the checks above. Categorize:
 - **WARNING** — something is missing **but a default covers it**, so the
   workflow proceeds: an unmapped label purpose (resolves to its default
   name via `templates/default-labels.md`), unreplaced placeholders,
-  CLAUDE.md missing, quality gate not set, or a referenced
-  `review.config.md` missing. **Defaults are not
+  CLAUDE.md missing, quality gate not set, a referenced
+  `review.config.md` missing, or `auto-merge-on-approval` enabled while the
+  repo's "Allow auto-merge" setting is off (reviews still run; only the
+  queued-merge step is affected). **Defaults are not
   a failure** — every label, the issue lifecycle states, and the
   review-state labels all have defaults, so a missing mapping is never
   critical on its own. (Best-effort board identity is **not** checked

@@ -91,6 +91,50 @@ Treat this as a best-effort safety net, not a substitute for
 
 ---
 
+## Line endings: stop phantom CLAUDE.md diffs from blocking cleanup
+
+A worktree is only auto-removed when it is **clean**. On Windows the most
+common reason a worktree stays "dirty" — and so never gets reaped, leaving
+its branch checked out — is a **line-ending mismatch**, not a real edit.
+
+The repo's `.gitattributes` pins every text file to LF (`* text=auto
+eol=lf`), because the `sync-skills` scripts write LF-only. But Git for
+Windows installs with `core.autocrlf=true` at the **system** level, which
+fights that attribute: a file can end up with CRLF in the working tree
+while the committed blob is LF. `CLAUDE.md` is the usual victim (it is
+loaded and rewritten often), and it then shows as perpetually "modified"
+even though no content changed. Confirm with:
+
+```bash
+# A healthy text file reads "w/lf"; a churned one reads "w/crlf".
+git ls-files --eol CLAUDE.md
+```
+
+**Fix it once per clone** by running the bootstrap script — it sets the
+config, renormalizes, and installs the pre-commit hook (which also blocks
+CRLF from being committed in future):
+
+```bash
+./bootstrap.sh      # macOS / Linux / Git Bash
+./bootstrap.ps1     # Windows PowerShell
+```
+
+Or do it by hand (writes to the shared `.git/config`, so it covers the
+main checkout and every worktree on the machine):
+
+```bash
+git config --local core.autocrlf false   # stop Git injecting CRLF
+git config --local core.eol lf            # honor the .gitattributes intent
+git add --renormalize .                   # normalize any stale CRLF blobs
+# Rewrite a working copy that is still CRLF on disk:
+rm CLAUDE.md && git checkout -- CLAUDE.md
+git ls-files --eol CLAUDE.md              # verify it now reads "w/lf"
+```
+
+Do this in a fresh clone before running parallel agents. Without it, the
+harness keeps reporting cleanup failures for worktrees that look modified
+but only differ by line endings.
+
 ## Windows limitations to be aware of
 
 - **File-lock cleanup failures.** Windows does not allow deleting files that
@@ -176,3 +220,4 @@ assignee and move the lifecycle label back to `status-ready` (or
 | `.worktreeinclude` | list `.env` / secrets | Make untracked config available |
 | `cleanupPeriodDays` | `1` (lower) | Reap stale worktrees sooner |
 | `WorktreeRemove` hook | optional (Windows) | Clear locks / `index.lock` / rebases |
+| `core.autocrlf` / `core.eol` | `false` / `lf` (repo-local) | Stop CRLF churn that leaves worktrees "dirty" |

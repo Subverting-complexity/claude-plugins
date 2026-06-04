@@ -94,16 +94,27 @@ reap routine in [`docs/worktree-config.md`](docs/worktree-config.md).
 
 | Tool | What it does |
 |------|-------------|
+| `bootstrap.ps1` / `bootstrap.sh` | One-time per-clone setup: pin LF line endings, renormalize, install the pre-commit hook |
 | `sync-skills.ps1` / `sync-skills.sh` | Sync shared skills to plugins, clean up orphans |
 | `lint-skills.sh` | Validate skill frontmatter and detect unreplaced placeholders |
-| `hooks/pre-commit` | Git hook that blocks commits editing synced copies directly |
+| `hooks/pre-commit` | Git hook that blocks commits editing synced copies directly and blocks CRLF line endings |
 | `.github/workflows/ci.yml` | CI: drift check, skill lint, plugin.json validation |
 
-### Installing the pre-commit hook
+### Bootstrapping your clone
+
+Run this once after cloning (idempotent). It pins line endings to LF —
+matching `.gitattributes`, so files like `CLAUDE.md` don't churn to CRLF
+on Windows and leave worktrees stuck "dirty" — and installs the
+pre-commit hook:
 
 ```bash
-cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+./bootstrap.sh      # macOS / Linux / Git Bash
+./bootstrap.ps1     # Windows PowerShell
 ```
+
+This replaces the manual hook install (`cp hooks/pre-commit
+.git/hooks/pre-commit && chmod +x .git/hooks/pre-commit`), which still
+works if you only want the hook.
 
 ## Updating installed plugins
 

@@ -62,6 +62,30 @@ logs).
 
 **Test expectations:** Present defaults and ask if they want to adjust.
 
+**Auto-merge on approval:** Ask "Automatically squash-merge a PR once
+Claude approves it and posts the review comment?" **Default to no** —
+record `auto-merge-on-approval: disabled` unless the user explicitly opts
+in. If they say yes, set it to `enabled` and warn them what it implies:
+the PR is merged unattended on an approved review; merge conflicts are
+resolved automatically and a failing pipeline is fixed on the branch and
+then merged (the skill only pauses for a human on judgment-call conflicts
+or flaky/infra failures); and (because Claude approves via a comment, not
+a GitHub review) a branch that requires an approving review needs the
+merging actor to have admin rights. See the Auto-Merge on Approval section
+in `references/review.config.template.md` for the exact guardrails.
+
+If they enable it, also turn on GitHub's repo-level auto-merge setting so
+the skill's `gh pr merge --auto` (used after a conflict/CI fix) can queue
+the merge — otherwise that call errors and a queued merge never fires:
+
+```bash
+gh api -X PATCH repos/{ORG}/{REPO} -F allow_auto_merge=true
+```
+
+Best-effort: if it fails (permissions), tell the user an admin must turn
+on "Allow auto-merge" in the repo's Settings → Pull Requests, or queued
+merges will not complete.
+
 **Review comment footer:** Offer a default and let them customise.
 
 ## Step 3 — Create the labels

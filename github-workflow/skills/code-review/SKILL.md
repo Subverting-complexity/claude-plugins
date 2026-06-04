@@ -85,6 +85,12 @@ identical string other skills filter on.
 Read `review.config.md` fully before starting. Everything project-specific
 lives there. This workflow is generic.
 
+**Auto-merge.** `review.config.md` may define an **Auto-Merge on Approval**
+setting (purpose: squash-merge a PR once the review verdict is Approved).
+It is **opt-in and defaults to `disabled`** — treat it as disabled whenever
+the section, or the whole file, is absent (including the autonomous minimal
+review). Step 11 reads this setting and is the only place this skill merges.
+
 ---
 
 ## Config Generation
@@ -108,6 +114,8 @@ When `$ARGUMENTS.mode` is `read-only`:
 - In Step 8, determine the verdict based on raw findings (nothing was auto-fixed).
 - In Step 9, post the review comment with "Fixes applied: None (read-only mode)."
 - In Step 10, apply labels normally.
+- **Skip Step 11** (auto-merge) entirely — read-only mode never merges,
+  closes, or pushes, regardless of the Auto-Merge on Approval setting.
 
 Read-only mode is intended for the Reviewer agent, which has no write
 access. It produces the same structured evaluation without modifying
@@ -345,7 +353,8 @@ Original approval stands.
 ```
 
 Remove the `needs-re-review` label, ensure the `approved` label is
-present, and exit. Do not proceed to Step 5.
+present, then run **Step 11** (auto-merge on approval, if enabled) and
+exit. Do not proceed to Step 5.
 
 **If trivial and previous verdict was `changes-requested`:**
 Check whether the trivial changes address every item in the previous
@@ -363,7 +372,8 @@ All previously flagged issues have been addressed with trivial fixes.
 ```
 
 Remove the `needs-re-review` and `changes-requested` labels, apply
-`approved`, and exit. Do not proceed to Step 5.
+`approved`, then run **Step 11** (auto-merge on approval, if enabled) and
+exit. Do not proceed to Step 5.
 
 If the trivial changes do NOT address all Issues Remaining, proceed to
 Step 5 for a full re-review — the original issues are still unresolved.
@@ -641,6 +651,145 @@ gh pr edit <number> --repo <org>/<repo> --add-label "<label>"
 
 If still missing after retry, report the failure but do not block.
 
+If the verdict is **Approved**, proceed to Step 11 before exiting.
+Otherwise the review is complete — exit here.
+
+### Step 11 — Auto-merge on approval (if enabled)
+
+Run this step **only** when all of the following hold. If any is false,
+skip it and exit normally:
+
+- The verdict is **Approved** — including the abbreviated re-review
+  approvals in Step 4b, which route here before exiting.
+- `review.config.md`'s **Auto-Merge on Approval** setting is `enabled`.
+  If there is no `review.config.md`, or the section is absent, the
+  setting is `disabled` — **never merge**.
+- The session is **not** in read-only mode.
+
+This is opt-in and **off by default**. Merging a PR is otherwise
+forbidden (see Rules); this is the one sanctioned merge, and only under
+an explicit `enabled` setting. The review comment from Step 9 must
+already be posted before you merge — never merge before the verdict is
+on the PR.
+
+When all conditions hold, drive the PR to a merged state. Conflicts and
+red CI are **blockers to clear, not reasons to give up** — fix them on the
+branch (the same auto-fix discipline as Step 7: fix concrete, objectively
+correct problems; never guess at changes that need product or design
+judgment), then merge. You are already on the PR branch from Step 3.
+
+1. **Confirm the PR is still what you reviewed.** Re-read its state:
+   ```bash
+   gh pr view <number> --repo <org>/<repo> --json state,mergeable,headRefOid
+   ```
+   - `state` not `OPEN` (already merged or closed) → nothing to do;
+     report and exit.
+   - `headRefOid` differs from the SHA you reviewed (recorded in Step 3,
+     or the updated SHA from Step 7, and written to the footer) → commits
+     you did not review landed mid-run. Do **not** merge: ensure
+     `needs-re-review` is applied and exit so the next run re-reviews the
+     new head. (Commits **you** push in steps 2–3 below are excluded —
+     update your recorded SHA as you push them.)
+
+2. **Resolve merge conflicts if there are any.** When `mergeable` is
+   `CONFLICTING`, bring the base branch in and resolve, rather than
+   bailing:
+   ```bash
+   git fetch origin <baseRef>
+   git merge origin/<baseRef>
+   ```
+   For each conflicted file, read **both** sides in full context (not just
+   the hunk) and resolve so the PR's intent **and** the incoming base
+   change are both preserved. Then re-run the project quality gate locally
+   to prove the resolution compiles and the tests pass. Commit the
+   resolution and push:
+   ```bash
+   git add -A && git commit -m "Resolve merge conflicts with <baseRef>"
+   git push
+   ```
+   Update your recorded SHA to the new `HEAD` and append a line to the
+   review comment noting the conflict resolution.
+
+   **Fallback — only when the resolution genuinely needs human judgment**
+   (the two sides made incompatible product/design decisions and no
+   objectively correct merge exists): `git merge --abort`, post a one-line
+   comment that auto-merge is paused pending a human rebase, leave the
+   `approved` verdict, and exit. Do not guess.
+
+3. **Fix a failing pipeline if there is one.** Read the required-check
+   rollup:
+   ```bash
+   gh pr checks <number> --repo <org>/<repo> --required
+   ```
+   - Any **required** check **failing** → fetch the failure detail and fix
+     the cause on the branch:
+     ```bash
+     gh run view <run-id> --repo <org>/<repo> --log-failed
+     ```
+     Diagnose the actual failure — a compile/type error, a lint
+     violation, a test the change broke, a stale snapshot/lockfile — and
+     fix it the same way Step 7 fixes findings. Reproduce the failing
+     check locally (run that test/lint/build) to confirm it now passes,
+     then commit and push:
+     ```bash
+     git add -A && git commit -m "Fix <check> failure"
+     git push
+     ```
+     Update your recorded SHA and note the fix in the review comment.
+     Pushing re-triggers the pipeline, so the checks will be **pending**
+     again — proceed to step 4 and enqueue `--auto` so the PR merges the
+     moment the now-fixed pipeline is green.
+
+     **Fallback — only when the failure is not yours to fix** (flaky or
+     infrastructure failures outside the diff, or a fix that needs design
+     judgment): post a one-line comment naming the check and that
+     auto-merge is paused pending a fix, leave `approved`, and exit. Never
+     force a merge over a genuinely red required check.
+   - Required checks **pending** (including right after you pushed a fix)
+     → enqueue auto-merge: step 4 (`--auto`).
+   - Required checks **passing**, or none required, and you pushed nothing
+     in steps 2–3 → merge now (step 4, immediate path).
+
+4. **Merge.** Squash-merge and delete the branch.
+   - **Immediate** (nothing pushed in steps 2–3, required checks already
+     green or none):
+     ```bash
+     gh pr merge <number> --repo <org>/<repo> --squash --delete-branch
+     ```
+     If this fails because branch protection requires an approving review,
+     retry once as an admin merge — this skill records its approval as a
+     comment and the `approved` label, **not** as a GitHub review (see
+     Rules), so the required-review rule must be satisfied
+     administratively:
+     ```bash
+     gh pr merge <number> --repo <org>/<repo> --squash --delete-branch --admin
+     ```
+     If the admin retry also fails (the actor lacks admin rights), fall
+     back to the enqueue path below.
+   - **Enqueue** (checks pending — including after a fix push — or admin
+     unavailable):
+     ```bash
+     gh pr merge <number> --repo <org>/<repo> --squash --delete-branch --auto
+     ```
+     GitHub merges automatically once its branch-protection requirements
+     (the now-fixed checks, any required review) are met.
+
+5. **Verify the outcome — never assume.** Re-read the state:
+   ```bash
+   gh pr view <number> --repo <org>/<repo> --json state,mergedAt
+   ```
+   - `state` `MERGED` → report `Merged PR #<number> <title> (squash)`.
+   - Auto-merge enqueued → report `Auto-merge queued for PR #<number>
+     <title> — will land when checks / branch protection clear`.
+   - Neither → report exactly why the merge did not complete. Do not
+     claim success.
+
+6. **The linked issue closes itself.** The PR's `closingIssuesReferences`
+   close the issue on merge — do not close it by hand. The branch was
+   deleted by the merge; there is nothing else to clean up.
+
+Report the merge outcome alongside the Step 10 review line, then exit.
+
 ---
 
 ## Error Handling
@@ -671,7 +820,13 @@ feedback workflow details, see `references/review-workflow.md`.
 ## Rules
 
 - Never use `gh pr review --approve`. Always use `gh pr comment`.
-- Do not merge any PR.
+- Do not merge a PR **except** the one sanctioned auto-merge in Step 11 —
+  only when the verdict is Approved, `review.config.md` sets Auto-Merge on
+  Approval to `enabled` (off by default), and the review comment is already
+  posted. Step 11 first resolves any merge conflicts and fixes any failing
+  required check on the branch, then merges (or enqueues `--auto`); it
+  never force-merges over a genuinely red required check. Never merge in
+  read-only mode.
 - Do not close a PR **except** to reconcile duplicates in Step 2b — when
   two or more open PRs close the same issue, close the losers and keep the
   winner. That is the one sanctioned close; never close a PR for any other
