@@ -74,6 +74,18 @@ a GitHub review) a branch that requires an approving review needs the
 merging actor to have admin rights. See the Auto-Merge on Approval section
 in `references/review.config.template.md` for the exact guardrails.
 
+If they enable it, also turn on GitHub's repo-level auto-merge setting so
+the skill's `gh pr merge --auto` (used after a conflict/CI fix) can queue
+the merge — otherwise that call errors and a queued merge never fires:
+
+```bash
+gh api -X PATCH repos/{ORG}/{REPO} -F allow_auto_merge=true
+```
+
+Best-effort: if it fails (permissions), tell the user an admin must turn
+on "Allow auto-merge" in the repo's Settings → Pull Requests, or queued
+merges will not complete.
+
 **Review comment footer:** Offer a default and let them customise.
 
 ## Step 3 — Create the labels

@@ -347,7 +347,11 @@ PR reviews. If yes:
    - Ask whether to **auto-merge approved PRs** (squash-merge once Claude
      approves and posts its comment). This defaults to **off**; enable it
      only for repos that should merge approved reviews unattended. Stored
-     as `auto-merge-on-approval` in `docs/review.config.md`.
+     as `auto-merge-on-approval` in `docs/review.config.md`. If the user
+     enables it, also turn on GitHub's repo-level auto-merge so queued
+     merges can fire (`gh api -X PATCH repos/{org}/{repo} -F
+     allow_auto_merge=true`) — best-effort; warn if it fails on
+     permissions.
    - Create the labels on the GitHub repo
    - Write `docs/review.config.md`
 3. If the user declines, note that the code-review skill will prompt
