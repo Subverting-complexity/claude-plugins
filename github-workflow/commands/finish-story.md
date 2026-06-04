@@ -232,6 +232,12 @@ issue before the PR is considered done.
 
 ### 5b. Validate PR body
 
+**Always pass the body with `--body-file {tempfile}`. Never pass it
+inline** with `--body "..."` or, worse, `--body -` — inline bodies hit
+Windows/PowerShell shell-escaping bugs, and `--body -` does **not** read
+stdin (it sets the body to the literal string `-`). Both produce the
+corrupt one-character bodies this step exists to catch.
+
 After creating or updating the PR, immediately read it back and
 verify the body was written correctly:
 
@@ -239,8 +245,17 @@ verify the body was written correctly:
 gh pr view {pr_number} --repo {org}/{repo} --json body --jq '.body'
 ```
 
-If the body is empty, only whitespace, or consists of just `@` (a
-known Windows/PowerShell shell-escaping issue):
+Treat the body as **corrupt** if any of these is true (not just the
+single `@` case — the same escaping/stdin bugs also leave `-`, `.`, `#`,
+or other lone punctuation):
+
+- It is empty or only whitespace.
+- After trimming whitespace it is shorter than ~10 characters.
+- After trimming it consists only of punctuation/symbols (e.g. `-`, `@`,
+  `.`, `#`) with no words — a stray shell artifact, not a description.
+- It is missing a required `Closes #N` line (see below).
+
+When the body is corrupt:
 
 1. Write the intended body to a temporary file.
 2. Update the PR using `--body-file`:
@@ -248,8 +263,9 @@ known Windows/PowerShell shell-escaping issue):
    gh pr edit {pr_number} --repo {org}/{repo} --body-file {tempfile}
    ```
 3. Delete the temporary file.
-4. Re-read the PR to confirm the fix.
-5. If still corrupted after retry, warn the user.
+4. Re-read the PR to confirm the fix — apply the same corruption test
+   again, not just "non-empty".
+5. If still corrupt after retry, warn the user.
 
 Also confirm the body contains a `Closes #N` line for every linked
 issue. If any is missing, add it (via `gh pr edit --body-file`) before
