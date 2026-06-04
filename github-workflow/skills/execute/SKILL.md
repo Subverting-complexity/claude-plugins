@@ -214,8 +214,33 @@ occurs, so the files remain on disk for the duration of the run.)
 
 ## Phase 1 — Pick
 
-If `$ARGUMENTS.story_number` is provided, use that issue directly.
-Otherwise, run the pick-story logic:
+If `$ARGUMENTS.story_number` is provided, use that issue directly — but
+first run the **already-in-flight guard**. The auto-pick pool below
+already excludes issues that are assigned or in any non-ready lifecycle
+state, so this guard only matters for an explicit number: it stops a
+second PR being built for a story that is already in review or already has
+an open PR (the claim ref was released the moment that first PR opened, so
+a fresh claim would otherwise succeed and duplicate the work).
+
+```
+gh issue view {number} --repo {org}/{repo} --json state,labels,assignees
+```
+
+Then find any open PR that already closes this issue by running the
+authoritative lookup in `templates/sibling-pr-lookup.md` with this
+`{number}`.
+
+- If the issue is **closed**, report it and stop.
+- If an **open PR already closes this issue**, do not start fresh work.
+  Report the existing PR by number and title and tell the user to use
+  `/github-workflow:update-pr` (to address feedback) or let code review
+  reconcile it — then stop. Do not claim, branch, or build.
+- If the issue carries `status-in-review` but no open PR is found, the PR
+  may have been closed without the label being reset — surface this to the
+  user and stop rather than guessing.
+- Otherwise proceed to claim and build as normal.
+
+If no number is provided, run the pick-story logic:
 
 1. Read `ClaudeProject.md` for org, repo, label map, `agent-gating`
    mode, and the `claude-ready` label name.
@@ -418,6 +443,27 @@ Run the quality gate command from `ClaudeProject.md`:
    ```
    git push -u origin HEAD
    ```
+
+1b. **Duplicate-PR detection.** Before creating, check whether another
+   open PR already closes this issue on a different branch. Holding the
+   issue claim through PR creation (it is released only in step 5, below)
+   already serializes builders, so this should never fire — it is the
+   backstop for a sub-second create-time race. Run the authoritative
+   lookup in `templates/sibling-pr-lookup.md` with this `{number}` and
+   ignore any result whose `headRefName` equals `{branch}` (that is your
+   own about-to-be-pushed PR).
+
+   If a sibling PR exists, still create your PR (so both are real and
+   comparable) but prepend a flag line to the body so code review
+   reconciles them and keeps the better one:
+
+   ```
+   > ⚠ Possible duplicate of #{sibling_number} — both close #{number}. Pending reconciliation by code review, which keeps the better-implemented PR and closes the other.
+   ```
+
+   Report the duplicate to the user. Do not attempt to pick the winner or
+   close the other PR here — that is code review's job (Step 2b of the
+   code-review skill), where both PRs have full context.
 
 2. Create a real PR (never a draft — this workflow does not open drafts).
    Write the body to a temporary file first, then use `--body-file` to

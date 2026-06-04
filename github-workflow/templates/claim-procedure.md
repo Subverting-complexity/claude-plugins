@@ -55,6 +55,28 @@ yours. Never treat the claim ref as the thing that prevents duplicate
 pickup; the assignment + label do that. The ref only stops the
 simultaneous-select race.
 
+## Load-bearing invariant: hold the issue claim across PR creation
+
+For an **issue** claim there is one ordering rule the whole
+duplicate-prevention design rests on: **the claim must stay held until
+*after* the PR is created, and be released only once the PR exists.** This
+is what closes the create-time race. While session A holds
+`refs/claims/issue-N`, session B cannot acquire it; B can only proceed once
+A releases — and A releases only after its PR is live, at which point B's
+pre-start guard (`templates/sibling-pr-lookup.md`) sees that PR and stops.
+Reorder this — release before `gh pr create` — and two sessions could both
+create a PR for the same issue. So `execute` Phase 7 and `finish-story`
+create the PR first and release the claim afterward, never the reverse.
+
+GitHub offers no atomic "create a PR only if none already closes this
+issue" operation (a compare-and-swap cannot span issue state *and* PR
+existence), so this invariant plus the pre-start guard make duplicates
+practically impossible but not provably so. A sub-second
+replication-lag window at the release/create boundary remains
+theoretically open; the `code-review` skill's duplicate reconciliation
+(Step 2b) is the convergence backstop that makes the system *self-healing*
+rather than merely *unlikely* to duplicate.
+
 This is also why there is **no automatic expiry or background reaper**: a
 session that legitimately runs for hours still holds a live claim, and
 auto-deleting a ref by age could let a second agent claim an item that is

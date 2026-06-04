@@ -28,6 +28,31 @@ Read `ClaudeProject.md` and extract:
 - Project board settings (if configured)
 - Label map
 
+### 1b. Already-in-flight guard
+
+`pick-story` only ever hands back unassigned, ready issues, but this
+command can also be given an explicit number — and the issue claim ref is
+released the moment a story's first PR opens, so a fresh claim on an
+already-PR'd story would otherwise succeed and build a duplicate. Before
+claiming, confirm the story is not already in flight:
+
+```
+gh issue view {number} --repo {org}/{repo} --json state,labels,assignees
+```
+
+Then find any open PR that already closes this issue by running the
+authoritative lookup in `templates/sibling-pr-lookup.md` with this
+`{number}`.
+
+- If the issue is **closed**, report it and stop.
+- If an **open PR already closes this issue**, do not start fresh. Report
+  the existing PR (number and title) and point the user at
+  `/github-workflow:update-pr`, then stop — do not claim, branch, or
+  build.
+- If it carries `status-in-review` with no open PR found, surface the
+  inconsistency and stop rather than guessing.
+- Otherwise proceed to claim.
+
 ### 2. Claim the issue
 
 Multiple agents may be running concurrently — possibly under the same
