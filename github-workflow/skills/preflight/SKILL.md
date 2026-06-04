@@ -211,6 +211,15 @@ if [ -f ClaudeProject.md ] && grep -q 'review\.config\.md' ClaudeProject.md 2>/d
   path=${path:-docs/review.config.md}
   if [ -f "$path" ]; then
     echo "OK review-config: $path present"
+    # Surface the auto-merge-on-approval setting so an enabled (and
+    # therefore PR-mutating) config is never a silent surprise. Absent =
+    # disabled, which is the safe default and needs no finding.
+    automerge=$(grep -E 'auto-merge-on-approval' "$path" 2>/dev/null | grep -oiE 'enabled|disabled' | head -1)
+    if [ "$automerge" = "enabled" ]; then
+      echo "OK review-auto-merge: enabled — approved PRs are squash-merged automatically"
+    elif [ -n "$automerge" ]; then
+      echo "OK review-auto-merge: disabled"
+    fi
   else
     echo "WARNING review-config: $path referenced by ClaudeProject.md but not found"
   fi

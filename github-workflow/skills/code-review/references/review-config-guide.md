@@ -62,6 +62,16 @@ logs).
 
 **Test expectations:** Present defaults and ask if they want to adjust.
 
+**Auto-merge on approval:** Ask "Automatically squash-merge a PR once
+Claude approves it and posts the review comment?" **Default to no** —
+record `auto-merge-on-approval: disabled` unless the user explicitly opts
+in. If they say yes, set it to `enabled` and warn them what it implies:
+the PR is merged unattended on an approved review, red required checks
+still block it, and (because Claude approves via a comment, not a GitHub
+review) a branch that requires an approving review needs the merging
+actor to have admin rights. See the Auto-Merge on Approval section in
+`references/review.config.template.md` for the exact guardrails.
+
 **Review comment footer:** Offer a default and let them customise.
 
 ## Step 3 — Create the labels

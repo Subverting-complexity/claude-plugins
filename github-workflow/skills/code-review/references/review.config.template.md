@@ -46,6 +46,34 @@ Remove this section if you don't use custom labels.
 | ----- | ------------- |
 | `{LABEL}` | {CRITERIA} |
 
+## Auto-Merge on Approval
+
+| Setting                 | Value      |
+| ----------------------- | ---------- |
+| auto-merge-on-approval  | `disabled` |
+
+When `enabled`, the code-review skill squash-merges a PR (deleting its
+branch) as soon as the review verdict is **Approved** and the review
+comment has been posted. When `disabled` (the default), an approved PR is
+left for a human to merge.
+
+This is **off by default** — turn it on only for repos where you trust an
+approved Claude review to land unattended. When on, the merge is
+deterministic, with these guardrails (enforced in Step 11 of the
+code-review skill):
+
+- The PR must still be open and unchanged since the review (a new commit
+  since the reviewed SHA forces a re-review instead of a merge).
+- Merge conflicts skip the merge — a human rebases first.
+- A **failing required status check** skips the merge — red CI blocks it,
+  by design. Pending required checks enqueue GitHub-native auto-merge so
+  the PR lands the moment they pass.
+- Claude records its approval as a review comment and the `approved`
+  label, not as a GitHub *review*. So if the branch requires an approving
+  review, the merge needs admin rights to satisfy that rule
+  administratively. Grant the merging actor merge (admin, if reviews are
+  required) permissions, or the merge stays queued.
+
 ## Hard Non-Compliance Gates
 
 Any of these force a `Changes Requested` verdict regardless of all other

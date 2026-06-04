@@ -344,6 +344,10 @@ PR reviews. If yes:
      `{prefix}-failed`, etc.)
    - Set up non-compliance gates, tech-stack rules, and test
      expectations
+   - Ask whether to **auto-merge approved PRs** (squash-merge once Claude
+     approves and posts its comment). This defaults to **off**; enable it
+     only for repos that should merge approved reviews unattended. Stored
+     as `auto-merge-on-approval` in `docs/review.config.md`.
    - Create the labels on the GitHub repo
    - Write `docs/review.config.md`
 3. If the user declines, note that the code-review skill will prompt
