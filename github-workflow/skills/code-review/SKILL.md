@@ -89,7 +89,10 @@ lives there. This workflow is generic.
 setting (purpose: squash-merge a PR once the review verdict is Approved).
 It is **opt-in and defaults to `disabled`** — treat it as disabled whenever
 the section, or the whole file, is absent (including the autonomous minimal
-review). Step 11 reads this setting and is the only place this skill merges.
+review). The same section may set **`require-ci-before-merge`** (default
+`false`); when `true`, Step 11 refuses to merge a PR that has no green CI
+gate (no checks at all, or a red check) instead of landing it. Step 11
+reads both settings and is the only place this skill merges.
 
 ---
 
@@ -666,6 +669,12 @@ skip it and exit normally:
   setting is `disabled` — **never merge**.
 - The session is **not** in read-only mode.
 
+Also read **`require-ci-before-merge`** from the same Auto-Merge on
+Approval section. Absent ⇒ `false`. When `true`, the skill must see a
+**green CI gate** before it merges: a PR with no checks at all, or with a
+failing check it cannot fix, is **paused**, not merged (the exact branches
+are in step 3 below). When `false`, behaviour is unchanged.
+
 This is opt-in and **off by default**. Merging a PR is otherwise
 forbidden (see Rules); this is the one sanctioned merge, and only under
 an explicit `enabled` setting. The review comment from Step 9 must
@@ -747,8 +756,35 @@ judgment), then merge. You are already on the PR branch from Step 3.
      force a merge over a genuinely red required check.
    - Required checks **pending** (including right after you pushed a fix)
      → enqueue auto-merge: step 4 (`--auto`).
-   - Required checks **passing**, or none required, and you pushed nothing
-     in steps 2–3 → merge now (step 4, immediate path).
+   - Required checks **passing** → merge now (step 4, immediate path),
+     provided you pushed nothing in steps 2–3 (a push leaves checks
+     pending → enqueue `--auto` instead).
+   - **No required checks reported** → the branch is unprotected. What to
+     do depends on `require-ci-before-merge`:
+     - **`false` (default)** → preserve today's behaviour: if you pushed
+       nothing in steps 2–3, merge now (step 4, immediate path).
+     - **`true`** → require a green CI gate before merging. Read the
+       full check rollup (not just required ones):
+       ```bash
+       gh pr checks <number> --repo <org>/<repo>
+       ```
+       - **No checks at all** on the head SHA → **pause**: post a
+         one-line comment "auto-merge paused: require-ci-before-merge is
+         set but no CI checks are configured", leave `approved`, and
+         exit. Never merge.
+       - Some checks **failing** → fix-or-pause exactly as for a failing
+         required check above (read the run logs, fix the cause on the
+         branch and push — which makes the checks pending, then enqueue
+         `--auto`; or, when the failure is not yours to fix, pause with a
+         one-line comment and leave `approved`).
+       - All checks **passing** and you pushed nothing in steps 2–3 →
+         merge now (step 4, immediate path).
+       - Any check **pending** (none required, so `--auto` would *not*
+         wait for them) → poll to completion before deciding:
+         ```bash
+         gh pr checks <number> --repo <org>/<repo> --watch
+         ```
+         then re-evaluate against the passing/failing branches above.
 
 4. **Merge.** Squash-merge and delete the branch.
    - **Immediate** (nothing pushed in steps 2–3, required checks already
@@ -774,15 +810,28 @@ judgment), then merge. You are already on the PR branch from Step 3.
      GitHub merges automatically once its branch-protection requirements
      (the now-fixed checks, any required review) are met.
 
+     `--auto` requires the repo's "Allow auto-merge" setting to be on. If
+     this call **fails** because auto-merge is disabled on the repo, do
+     **not** fall back to an unguarded immediate merge — that would defeat
+     the gate you just enqueued behind. Instead **pause**: post a one-line
+     comment ("auto-merge paused: repo-level auto-merge is disabled —
+     enable it with `/github-workflow:setup harden`"), leave `approved`,
+     and exit. Confirm the enqueue actually took in step 5 below.
+
 5. **Verify the outcome — never assume.** Re-read the state:
    ```bash
-   gh pr view <number> --repo <org>/<repo> --json state,mergedAt
+   gh pr view <number> --repo <org>/<repo> --json state,mergedAt,autoMergeRequest
    ```
    - `state` `MERGED` → report `Merged PR #<number> <title> (squash)`.
-   - Auto-merge enqueued → report `Auto-merge queued for PR #<number>
-     <title> — will land when checks / branch protection clear`.
-   - Neither → report exactly why the merge did not complete. Do not
-     claim success.
+   - `autoMergeRequest` is non-null (auto-merge enqueued) → report
+     `Auto-merge queued for PR #<number> <title> — will land when checks
+     / branch protection clear`.
+   - You took the **Enqueue** path but `autoMergeRequest` is null and
+     `state` is still `OPEN` → the `--auto` call did not take (repo
+     auto-merge disabled). Pause per step 4: post the one-line comment,
+     leave `approved`, and exit. Do not claim success.
+   - Neither merged nor queued → report exactly why the merge did not
+     complete. Do not claim success.
 
 6. **The linked issue closes itself.** The PR's `closingIssuesReferences`
    close the issue on merge — do not close it by hand. The branch was
@@ -825,8 +874,10 @@ feedback workflow details, see `references/review-workflow.md`.
   Approval to `enabled` (off by default), and the review comment is already
   posted. Step 11 first resolves any merge conflicts and fixes any failing
   required check on the branch, then merges (or enqueues `--auto`); it
-  never force-merges over a genuinely red required check. Never merge in
-  read-only mode.
+  never force-merges over a genuinely red required check. When
+  `require-ci-before-merge` is set, it also never merges a PR that has no
+  CI gate at all (no checks, or a red check it cannot fix) — it pauses and
+  leaves `approved`. Never merge in read-only mode.
 - Do not close a PR **except** to reconcile duplicates in Step 2b — when
   two or more open PRs close the same issue, close the losers and keep the
   winner. That is the one sanctioned close; never close a PR for any other

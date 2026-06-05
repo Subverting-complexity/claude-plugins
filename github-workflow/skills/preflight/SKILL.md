@@ -46,9 +46,10 @@ board is required** (ready-gate `board-column`/`both`); for the common
 `label` ready-gate, skip it entirely — board writes are best-effort and
 `templates/board-resolution.md` re-verifies identity at write time, so a
 preflight network round-trip every command is wasted tokens and latency.
-The auto-merge repo-setting check runs **only when
+The auto-merge repo-setting and CI-gate checks run **only when
 `auto-merge-on-approval` is `enabled`** in `review.config.md` (an opt-in,
-off-by-default feature). Neither call runs in the default configuration.
+off-by-default feature). None of these calls run in the default
+configuration.
 
 ### GitHub CLI
 
@@ -230,7 +231,24 @@ if [ -f ClaudeProject.md ] && grep -q 'review\.config\.md' ClaudeProject.md 2>/d
         if [ "$allowed" = "true" ]; then
           echo "OK review-auto-merge-repo: repo allows auto-merge"
         else
-          echo "WARNING review-auto-merge-repo: auto-merge-on-approval is enabled but the repo's 'Allow auto-merge' setting is off — queued merges will not fire. Enable it with 'gh api -X PATCH repos/$slug -F allow_auto_merge=true' or re-run /github-workflow:setup"
+          echo "WARNING review-auto-merge-repo: auto-merge-on-approval is enabled but the repo's 'Allow auto-merge' setting is off — queued merges will not fire. Enable it with 'gh api -X PATCH repos/$slug -F allow_auto_merge=true' or re-run /github-workflow:setup harden"
+        fi
+        # The CI gate: auto-merge is only safe if SOMETHING enforces "CI
+        # green before merge" — either GitHub's required status checks, or
+        # the plugin-side require-ci-before-merge flag. Flag off AND no
+        # required checks on the default branch = approved PRs can land
+        # with no CI guarantee. One extra call, enabled case only.
+        requireci=$(grep -E 'require-ci-before-merge' "$path" 2>/dev/null | grep -oiE 'true|false|enabled|disabled' | head -1)
+        if [ "$requireci" = "true" ] || [ "$requireci" = "enabled" ]; then
+          echo "OK review-auto-merge-ci: require-ci-before-merge is set — the skill enforces a green CI gate"
+        else
+          branch=$(gh repo view "$slug" --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)
+          reqchecks=$(gh api "repos/$slug/branches/$branch/protection/required_status_checks/contexts" --jq 'length' 2>/dev/null)
+          if [ -n "$reqchecks" ] && [ "$reqchecks" -gt 0 ] 2>/dev/null; then
+            echo "OK review-auto-merge-ci: $reqchecks required status check(s) gate '$branch' — GitHub enforces CI before merge"
+          else
+            echo "WARNING review-auto-merge-ci: auto-merge-on-approval is enabled but NEITHER GitHub required status checks NOR require-ci-before-merge is configured — an approved PR can merge with no CI guarantee. Run /github-workflow:setup harden to wire up the gate."
+          fi
         fi
       fi
     elif [ -n "$automerge" ]; then
@@ -260,9 +278,13 @@ Read all output from the checks above. Categorize:
   workflow proceeds: an unmapped label purpose (resolves to its default
   name via `templates/default-labels.md`), unreplaced placeholders,
   CLAUDE.md missing, quality gate not set, a referenced
-  `review.config.md` missing, or `auto-merge-on-approval` enabled while the
+  `review.config.md` missing, `auto-merge-on-approval` enabled while the
   repo's "Allow auto-merge" setting is off (reviews still run; only the
-  queued-merge step is affected). **Defaults are not
+  queued-merge step is affected), or `auto-merge-on-approval` enabled with
+  **no CI gate** — neither GitHub required status checks nor
+  `require-ci-before-merge` (an approved PR could merge with no CI
+  guarantee; `/github-workflow:setup harden` wires up the gate).
+  **Defaults are not
   a failure** — every label, the issue lifecycle states, and the
   review-state labels all have defaults, so a missing mapping is never
   critical on its own. (Best-effort board identity is **not** checked

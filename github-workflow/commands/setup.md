@@ -1,10 +1,20 @@
 ---
-description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "onboard", "initialize the workflow", "help me set up", "setup", "init", "bootstrap", "configure the plugin", "first time setup".'
+description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "onboard", "initialize the workflow", "help me set up", "setup", "init", "bootstrap", "configure the plugin", "first time setup", "harden auto-merge", "enforce CI before merge", "require CI".'
 ---
 
 # Setup
 
 Interactive onboarding wizard for configuring the github-workflow plugin.
+
+## Focused mode
+
+If `$ARGUMENTS` is `harden` (or `auto-merge`), **skip the full
+onboarding** and run **only Step 7b — Harden auto-merge enforcement**
+against the already-configured project. This is the easy re-entry point
+for wiring up (or repairing) the CI/merge gate after the repo already
+has a `ClaudeProject.md`/`review.config.md`. Verify prerequisites
+(Step 1) and locate `docs/review.config.md`, then jump straight to
+Step 7b. Otherwise run all steps in order.
 
 ## Steps
 
@@ -377,11 +387,11 @@ PR reviews. If yes:
    - Ask whether to **auto-merge approved PRs** (squash-merge once Claude
      approves and posts its comment). This defaults to **off**; enable it
      only for repos that should merge approved reviews unattended. Stored
-     as `auto-merge-on-approval` in `docs/review.config.md`. If the user
-     enables it, also turn on GitHub's repo-level auto-merge so queued
-     merges can fire (`gh api -X PATCH repos/{org}/{repo} -F
-     allow_auto_merge=true`) — best-effort; warn if it fails on
-     permissions.
+     as `auto-merge-on-approval` in `docs/review.config.md`. **If the user
+     enables it, run Step 7b** (Harden auto-merge enforcement) before
+     finishing — that step turns on repo-level auto-merge, attempts
+     branch protection with required checks, and sets the
+     `require-ci-before-merge` fallback when GitHub can't enforce them.
    - Create the labels on the GitHub repo
    - Write `docs/review.config.md`
 3. If the user declines, note that the code-review skill will prompt
@@ -390,6 +400,75 @@ PR reviews. If yes:
 Review state labels are separate from the Claude labels in
 ClaudeProject.md. The Claude labels are simple workflow markers; review
 state labels are a mutex managed by the code-review skill.
+
+### 7b. Harden auto-merge enforcement
+
+Run this when the user **enables `auto-merge-on-approval`** (from Step 7),
+or standalone via `/github-workflow:setup harden`. It makes "merge only
+after CI passes" actually enforceable. Without it, an approved PR on a
+branch with no **required** checks merges immediately — no CI guarantee.
+
+The goal is **one** of two safe configurations:
+
+- **(a) GitHub enforces it** — branch protection with required status
+  checks. Preferred, but needs a public repo or GitHub Pro/Team on a
+  private one.
+- **(b) The plugin enforces it** — `require-ci-before-merge: true` in
+  `docs/review.config.md` + a real PR pipeline. The fallback when (a)
+  isn't available.
+
+Resolve `{org}`, `{repo}`, `{branch}` from `ClaudeProject.md`. Each
+sub-step is **best-effort** and degrades to a warning.
+
+1. **Enable repo-level auto-merge** (needed by `gh pr merge --auto`):
+   ```bash
+   gh api -X PATCH repos/{org}/{repo} -F allow_auto_merge=true
+   allowed=$(gh api repos/{org}/{repo} --jq '.allow_auto_merge')
+   ```
+   **Read it back** — some orgs accept the PATCH (200) but silently keep
+   it `false` via policy. If `allowed` is not `true`, warn: repo-level
+   auto-merge is blocked by org/repo policy; an admin must enable "Allow
+   auto-merge" in Settings → Pull Requests, or queued merges never fire.
+
+2. **Branch protection + required checks.** Find candidate check
+   contexts — the job names in `.github/workflows/*.yml`, or the check
+   names on a recent PR (`gh pr checks <recent-pr> --repo {org}/{repo}`).
+   Ask the user which contexts must pass before merge. Apply protection
+   with **strict** mode (require branches up to date):
+   ```bash
+   gh api -X PUT repos/{org}/{repo}/branches/{branch}/protection \
+     --input - <<'JSON'
+   {
+     "required_status_checks": { "strict": true, "contexts": ["<ctx>", "..."] },
+     "enforce_admins": false,
+     "required_pull_request_reviews": null,
+     "restrictions": null
+   }
+   JSON
+   ```
+   If this returns **403** ("Upgrade to GitHub Pro or make this
+   repository public"), GitHub cannot enforce required checks on this
+   repo — note it and proceed to step 3. If there are no CI workflows at
+   all, say so: there is nothing to require yet (merge the pipeline
+   first), and step 3 is the only available guard.
+
+3. **Plugin-side fallback.** If step 1 or 2 could **not** be fully
+   enforced (repo auto-merge stuck off, branch protection unavailable, or
+   no required checks now exist), set in `docs/review.config.md`'s
+   Auto-Merge on Approval section:
+   ```
+   | require-ci-before-merge | `true` |
+   ```
+   Tell the user why: GitHub isn't enforcing the gate, so the code-review
+   skill will — it waits for a green CI run and **pauses** an approved PR
+   that has no checks or a red check, instead of merging it. (If
+   server-side enforcement via step 2 fully succeeded, leaving this
+   `false` is fine; configuration (a) already covers it.)
+
+4. **Report** what landed: repo auto-merge on/off, branch protection
+   applied or blocked, and which enforcement configuration ((a), (b), or
+   "neither — auto-merge is unguarded; merge a CI pipeline first") is now
+   in effect.
 
 ### 8. Verify and report
 

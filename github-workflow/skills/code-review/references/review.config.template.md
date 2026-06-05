@@ -51,11 +51,24 @@ Remove this section if you don't use custom labels.
 | Setting                 | Value      |
 | ----------------------- | ---------- |
 | auto-merge-on-approval  | `disabled` |
+| require-ci-before-merge | `false`    |
 
 When `enabled`, the code-review skill squash-merges a PR (deleting its
 branch) as soon as the review verdict is **Approved** and the review
 comment has been posted. When `disabled` (the default), an approved PR is
 left for a human to merge.
+
+`require-ci-before-merge` (default `false`) hardens the merge gate for
+repos that intend to gate on CI but cannot mark checks **required** (e.g.
+a private repo on a free plan, where branch protection is unavailable).
+When `true`, the skill refuses to merge a PR that has **no green CI
+gate** — if the head SHA has no checks at all, or a check it cannot fix
+is red, it pauses and leaves the `approved` verdict instead of landing
+the PR. With it `false`, an approved PR on a branch with no *required*
+checks merges immediately (the default, backward-compatible behaviour).
+Set it `true` whenever auto-merge is enabled but GitHub itself is not
+enforcing required status checks — `/github-workflow:setup harden` sets
+it for you when it cannot wire up server-side enforcement.
 
 This is **off by default** — turn it on only for repos where you trust an
 approved Claude review to land unattended. When on, the skill drives the
