@@ -90,6 +90,27 @@ only safe with **one** of these two configurations:
   and pauses if there are no checks or a red check. Use this when (a)
   isn't available.
 
+> **Plan limitation — when (a) is simply not available.** GitHub gates
+> required status checks behind a paid plan for private repos. Verified
+> against GitHub docs (June 2026): branch protection covers *"public and
+> private repositories with GitHub Pro, GitHub Team, GitHub Enterprise"*
+> — **private + Free is excluded** — and the newer **rulesets** path is
+> *"GitHub Team and GitHub Enterprise"* only. So on a **private repo on
+> the Free plan, configuration (a) cannot be turned on at all** (you'll
+> get `403 "Upgrade to GitHub Pro or make this repository public"`). The
+> three real choices, in order of enforcement strength:
+>
+> 1. **Make the repo public** — free, gives real server-side enforcement.
+> 2. **Pay** — GitHub **Pro** (personal) or **Team** (org-owned, the
+>    realistic option for an organization's private repo) unlocks (a).
+> 3. **Stay private + Free** — configuration (a) is impossible, so **(b)
+>    is your only gate.** This is not a stopgap for these repos; it is the
+>    enforcement mechanism. `/github-workflow:setup harden` detects the
+>    `403` and sets `require-ci-before-merge: true` automatically.
+>
+> Sources: [About protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches),
+> [About rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets).
+
 So after enabling auto-merge, also ask: **"Should an approved PR refuse
 to merge unless CI is green?"** If yes (or if branch protection can't be
 configured), record `require-ci-before-merge: true`. Default `false`

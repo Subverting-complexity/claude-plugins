@@ -448,9 +448,14 @@ sub-step is **best-effort** and degrades to a warning.
    ```
    If this returns **403** ("Upgrade to GitHub Pro or make this
    repository public"), GitHub cannot enforce required checks on this
-   repo — note it and proceed to step 3. If there are no CI workflows at
-   all, say so: there is nothing to require yet (merge the pipeline
-   first), and step 3 is the only available guard.
+   repo — required status checks are paid-plan-only for private repos, so
+   a private repo on the Free plan can never use configuration (a). Note
+   it and proceed to step 3 (the plugin-side fallback is the only gate
+   available); to get server-side enforcement instead, the repo must go
+   public or move to GitHub Pro/Team. See the "Plan limitation" note in
+   `skills/code-review/references/review-config-guide.md`. If there are no
+   CI workflows at all, say so: there is nothing to require yet (merge the
+   pipeline first), and step 3 is the only available guard.
 
 3. **Plugin-side fallback.** If step 1 or 2 could **not** be fully
    enforced (repo auto-merge stuck off, branch protection unavailable, or
