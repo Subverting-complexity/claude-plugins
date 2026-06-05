@@ -780,11 +780,25 @@ judgment), then merge. You are already on the PR branch from Step 3.
        - All checks **passing** and you pushed nothing in steps 2–3 →
          merge now (step 4, immediate path).
        - Any check **pending** (none required, so `--auto` would *not*
-         wait for them) → poll to completion before deciding:
+         wait for them) → **watch for a short, bounded window** to catch a
+         fast pipeline in this run, then hand off if it is still running.
+         Do **not** block indefinitely — this skill reviews one PR per
+         invocation and exits. Watch for ~3 minutes (or any bounded poll —
+         the point is a short wait, not an open-ended block):
          ```bash
-         gh pr checks <number> --repo <org>/<repo> --watch
+         timeout 180 gh pr checks <number> --repo <org>/<repo> --watch
          ```
-         then re-evaluate against the passing/failing branches above.
+         - Settles **green** within the window → merge now (step 4,
+           immediate path).
+         - Settles **red** within the window → fix-or-pause exactly as for
+           a failing check above.
+         - **Still pending** when the window elapses → stop watching and
+           hand off. Leave the `approved` verdict, post a one-line comment
+           ("auto-merge deferred: CI still running — PR stays approved and
+           will merge once green via a re-run or a human"), and exit. The
+           PR is safe — it is never merged without a green gate. It
+           completes when a human merges it, or when a later review pass
+           re-selects it (after new commits land).
 
 4. **Merge.** Squash-merge and delete the branch.
    - **Immediate** (nothing pushed in steps 2–3, required checks already
