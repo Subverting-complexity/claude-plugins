@@ -74,17 +74,60 @@ a GitHub review) a branch that requires an approving review needs the
 merging actor to have admin rights. See the Auto-Merge on Approval section
 in `references/review.config.template.md` for the exact guardrails.
 
-If they enable it, also turn on GitHub's repo-level auto-merge setting so
-the skill's `gh pr merge --auto` (used after a conflict/CI fix) can queue
-the merge — otherwise that call errors and a queued merge never fires:
+If they enable it, **run the wizard's hardening step**
+(`/github-workflow:setup harden`, Step 7b of the setup command) rather
+than wiring the repo up by hand. It enables repo-level auto-merge,
+attempts branch protection with required status checks, and — when GitHub
+can't enforce those — sets the plugin-side fallback below. Auto-merge is
+only safe with **one** of these two configurations:
+
+- **(a) GitHub enforces it** — required status checks via branch
+  protection on the default branch. GitHub itself blocks the merge until
+  the checks pass. Requires branch protection (a public repo, or GitHub
+  Pro/Team on a private one).
+- **(b) The plugin enforces it** — `require-ci-before-merge: true` **plus
+  a real pipeline** that runs on PRs. The skill waits for a green CI gate
+  and pauses if there are no checks or a red check. Use this when (a)
+  isn't available.
+
+> **Plan limitation — when (a) is simply not available.** GitHub gates
+> required status checks behind a paid plan for private repos. Verified
+> against GitHub docs (June 2026): branch protection covers *"public and
+> private repositories with GitHub Pro, GitHub Team, GitHub Enterprise"*
+> — **private + Free is excluded** — and the newer **rulesets** path is
+> *"GitHub Team and GitHub Enterprise"* only. So on a **private repo on
+> the Free plan, configuration (a) cannot be turned on at all** (you'll
+> get `403 "Upgrade to GitHub Pro or make this repository public"`). The
+> three real choices, in order of enforcement strength:
+>
+> 1. **Make the repo public** — free, gives real server-side enforcement.
+> 2. **Pay** — GitHub **Pro** (personal) or **Team** (org-owned, the
+>    realistic option for an organization's private repo) unlocks (a).
+> 3. **Stay private + Free** — configuration (a) is impossible, so **(b)
+>    is your only gate.** This is not a stopgap for these repos; it is the
+>    enforcement mechanism. `/github-workflow:setup harden` detects the
+>    `403` and sets `require-ci-before-merge: true` automatically.
+>
+> Sources: [About protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches),
+> [About rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets).
+
+So after enabling auto-merge, also ask: **"Should an approved PR refuse
+to merge unless CI is green?"** If yes (or if branch protection can't be
+configured), record `require-ci-before-merge: true`. Default `false`
+keeps today's behaviour — an approved PR with no *required* checks merges
+immediately, which is only safe under configuration (a). Without either
+(a) or (b), an approved PR can land with no CI guarantee at all.
+
+The repo-level auto-merge toggle the skill's `gh pr merge --auto` needs
+is handled by the same hardening step:
 
 ```bash
 gh api -X PATCH repos/{ORG}/{REPO} -F allow_auto_merge=true
 ```
 
-Best-effort: if it fails (permissions), tell the user an admin must turn
-on "Allow auto-merge" in the repo's Settings → Pull Requests, or queued
-merges will not complete.
+Best-effort: if it fails (permissions/org policy), tell the user an admin
+must turn on "Allow auto-merge" in the repo's Settings → Pull Requests,
+or queued merges will not complete.
 
 **Review comment footer:** Offer a default and let them customise.
 
