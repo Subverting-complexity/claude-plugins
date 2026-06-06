@@ -109,6 +109,14 @@ and propose splitting it. Implement the highest-priority slice.
 
 ## Phase 3 -- Build
 
+**Start clean.** Before making any edits, run the **Start clean** check in
+`templates/worktree-hygiene.md`: `git status --porcelain`. If the tree is
+already dirty, record the baseline and tell the user — a local session may
+run in their own checkout, so pre-existing changes may be *their* work.
+Leave those untouched and treat only the files you change from here on as
+yours. This baseline is what lets the Exit cleanup tell your work apart
+from what was already there.
+
 Use `/local-workflow:structured-coding` to implement:
 
 - Pass the architecture plan from Phase 2 and the task requirements.
@@ -144,6 +152,8 @@ project supports (e.g. `npm test`, `pytest`, `dotnet test`, `cargo test`).
 Do not push or create PRs. This is a local workflow. The user decides
 what happens next.
 
+After committing, run the **Exit cleanup** below so the tree ends clean.
+
 ## Phase 6 -- Report
 
 Summarize what was done:
@@ -151,6 +161,33 @@ Summarize what was done:
 - Which files were changed
 - What tests were added or modified
 - Any remaining work or known limitations
+
+## Exit cleanup -- reconcile the working tree to clean
+
+Run this as the **final** step on **every** exit path — success, blocked,
+task-too-large, audit, or error — and always **after** any commit. It is
+idempotent; run it without reasoning about which earlier phase may have
+left the tree dirty.
+
+A worktree is auto-removed by the harness **only when it is clean**
+(`docs/worktree-config.md`). A leftover uncommitted change — even a stray
+formatter reflow — pins the worktree open forever and strands the work
+(there is no cross-session resume). Run the **End clean** procedure in
+`templates/worktree-hygiene.md`: `git status --porcelain` must end empty
+(or show only the pre-existing baseline you recorded at Start clean, which
+is the user's and must be left untouched).
+
+Because Start clean recorded what was already dirty, anything dirty here
+that is **not** in that baseline was produced by this session — so:
+
+- **Commit** a forgotten task file into the work.
+- **Commit incidental formatting** on files outside the task as a
+  **separate `chore:` commit** — do not fold it into the task's diff.
+- **Discard** disposable generated noise (`git restore` / `git clean -fd`).
+
+**Never `git stash`** — the stash is shared across every worktree on the
+clone, and stashing would also bury the user's pre-existing changes.
+Leaving the tree dirty (beyond the recorded baseline) is never an option.
 
 ---
 
@@ -163,6 +200,10 @@ When `$ARGUMENTS.mode` is `audit`:
    architecture problems, code quality concerns.
 3. Report findings organized by severity (critical, warning, suggestion).
 4. Do not make code changes. Do not create branches or commits.
+5. Run the **Exit cleanup** so the tree ends clean. Audit makes no code
+   changes, so the tree should already be clean — but the quality gate or
+   a tool may have left incidental churn; reconcile it (or confirm
+   `git status --porcelain` is empty) before ending.
 
 ---
 
@@ -170,7 +211,11 @@ When `$ARGUMENTS.mode` is `audit`:
 
 **Blocked**: If any phase cannot proceed (missing dependency, unclear
 requirement, broken environment), tell the user what's blocking you and
-what information you need to continue.
+what information you need to continue. Then run the **Exit cleanup**:
+commit any real partial work worth keeping (do **not** `git stash` it —
+the stash is shared across worktrees, and there is no cross-session resume
+to pick it back up) or discard disposable noise, so the tree ends clean
+and the worktree can be reaped.
 
 **Bug found**: If you discover an unrelated bug during development, note
 it in the final report. Do not fix it inline unless it is trivial and
@@ -178,4 +223,6 @@ within the same scope.
 
 **Task too large**: If the plan reveals the task exceeds one session's
 budget, implement the highest-priority slice, commit it, and report
-what remains. Do not attempt to complete everything in one session.
+what remains. Do not attempt to complete everything in one session. Run
+the **Exit cleanup** after committing the slice so the tree ends clean —
+uncommitted remainder left in the worktree is stranded, not resumed.
