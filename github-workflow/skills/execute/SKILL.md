@@ -153,12 +153,15 @@ If mode is `audit`, skip to the Audit section at the bottom.
 
 ## Exit cleanup
 
-Every exit path must leave two things clean: the **atomic claim ref** and
-the **per-session scratch file**. Both cleanups are idempotent, so run
-them on *every* exit without reasoning about which earlier step may
-already have handled them. Do this as the **final** step before the
-session ends, and always **after** any commit/push (so the pushed branch
-— not local state — is the source of truth).
+Every exit path must leave three things clean: the **atomic claim ref**,
+the **per-session scratch file**, and the **working tree itself**. All
+three cleanups are idempotent, so run them on *every* exit without
+reasoning about which earlier step may already have handled them. Do this
+as the **final** step before the session ends, and always **after** any
+commit/push (so the pushed branch — not local state — is the source of
+truth). Run them in order: release the claim, delete the scratch file,
+then reconcile the tree (so the scratch file is gone before the tree
+check runs).
 
 ### 1. Release the claim ref
 
@@ -191,6 +194,19 @@ originally blocked harness worktree auto-cleanup:
 ```
 rm -f .claude/plan.md
 ```
+
+### 3. Reconcile the working tree to clean
+
+A worktree is auto-removed by the harness **only when it is clean**
+(`docs/worktree-config.md`). A leftover uncommitted change — even a stray
+formatter reflow — pins the worktree open forever. Run the **End clean**
+procedure in `templates/worktree-hygiene.md`: `git status --porcelain`
+must end empty. Because Phase 2 started from a clean tree, anything still
+dirty here was produced by this session — commit a forgotten story file,
+commit incidental formatting on unrelated files as a **separate `chore:`
+commit** (do not fold it into the feature diff), or discard disposable
+generated noise. **Never `git stash`** — the stash is shared across every
+worktree on the clone. Leaving the tree dirty is never an option.
 
 ### Applies to all exits without exception
 
@@ -356,7 +372,14 @@ claim for you.
 
 3. Set start date on board (if configured).
 
-4. Fetch and branch:
+4. **Start clean.** Before branching, run the **Start clean** check in
+   `templates/worktree-hygiene.md`. If the worktree was provisioned dirty
+   (a reused or leaked worktree, or a checkout-time formatter), that is
+   inherited junk — reset it to a pristine baseline and report it, so it
+   is never mistaken for this session's work or left to block worktree
+   cleanup. The session must begin from a clean tree.
+
+5. Fetch and branch:
    ```
    git fetch origin {default-branch}
    git checkout -b {branch} origin/{default-branch}

@@ -159,14 +159,25 @@ When **no** board is configured, skip this step silently. When a board
 user (e.g., "Board update failed: {error}. Continuing without board
 update.") and proceed with the rest of the workflow.
 
-### 6. Leave the work in place
+### 6. Reconcile the working tree to clean
 
-Do **not** `git stash` — the stash is shared across every worktree on
-this clone, so shelving here can collide with another agent's work.
-Committed work stays on the story branch (preserved under the claim);
-uncommitted scratch work stays in this worktree, left as-is for a later
-session to inspect. Releasing the claim (above) returns the story to the
-backlog without disturbing the working tree.
+Do **not** leave uncommitted work sitting in the worktree. There is no
+cross-session resume, so a worktree left dirty "for a later session to
+inspect" is never inspected — the work is stranded **and** the dirty tree
+blocks the harness from ever reaping the worktree (`docs/worktree-config.md`).
+
+Run the **End clean** procedure in `templates/worktree-hygiene.md`:
+
+- **Real partial work** worth keeping — commit it to the story branch and
+  **push** it (`git push -u origin HEAD`) so it survives the worktree
+  being reaped. The pushed branch, not local state, is what a future
+  session can build on.
+- **Disposable scratch / generated noise** — discard it.
+
+Do **not** `git stash` — the stash is shared across every worktree on this
+clone, so shelving here can collide with another agent's work. End with
+`git status --porcelain` empty. Releasing the claim (above) returns the
+story to the backlog; reconciling the tree lets the worktree be reaped.
 
 ### 7. Report
 
