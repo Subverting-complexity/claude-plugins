@@ -1,21 +1,41 @@
 <!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 # Plain-English Wording Standard
 
-This is the shared standard for how workflow skills should word the
-things a person reads: interview questions, `AskUserQuestion` options,
-pull request descriptions, and code review comments.
+This is the shared standard for **every piece of text a person reads**,
+in any skill or command in this plugin. That includes the plan you print
+before building, progress notes while you work, the final summary,
+interview questions, `AskUserQuestion` options, pull request
+descriptions, code review comments, and the explanation in any chat
+reply. If a human will read it, this standard applies.
 
-The reader often has **no prior context**. The agent may be running
-autonomously (for example through `execute` or a scheduled routine), so
-the person answering a question or reading a PR has not seen the
-reasoning that led up to it. Write for that reader: someone smart who
-does not have the diff, the codebase, or the conversation in front of
-them.
-
-Every writing skill that asks questions or produces written output for a
-human references this file.
+The reader often has **no prior context on this codebase**. Assume a
+technically capable reader who is **not involved in this particular
+project** — they follow conceptual and architectural points fine, but
+they do not know this codebase's specific names, files, components, or
+conventions. The agent may be running autonomously (for example through
+`execute` or a scheduled routine), so the person reading has not seen the
+diff, the codebase, or the conversation. Write so they can follow the
+change without already knowing its internals.
 
 ## The standard
+
+- **Explain at a high level first.** Lead with what the change does and
+  why it matters, in plain words. Concepts and architecture are fair game
+  — the reader can follow those. What they cannot follow is unexplained
+  project-specific detail, so the technical specifics support the
+  explanation rather than replace it.
+
+- **Explain what project-specific things are.** When you name a
+  component, pattern, file, setting, or identifier from this codebase,
+  say what it is and what role it plays before relying on it. The reader
+  knows software in general but does not know that `InviteService` is the
+  thing that sends invites or that this project uses a particular
+  pattern. A symbol on its own carries no meaning to them.
+
+- **Never let identifiers stand in for an explanation.** A line like
+  `Pending → Expired on expiry; GET idempotent` names mechanics without
+  explaining them. Say what happens and why in plain words, then name the
+  identifier. The reader cannot infer the concept from the symbol.
 
 - **State both the problem and the proposed solution.** Every question
   and every recommendation should say what is being decided and what you
@@ -23,12 +43,17 @@ human references this file.
   that invites currently never expire, why that is a problem, and what
   you recommend instead.
 
-- **Write in complete sentences.** Avoid telegraphic fragments like
-  "Expiry: 7 days, configurable". Write "Invites expire after 7 days by
-  default. This is configurable through an `InviteExpiry` setting."
+- **Be concise. Plain does not mean long.** Say the thing in as few
+  words as carry the meaning, then stop. Do not pad with restatement or
+  background the reader did not ask for. Bullets are good. One clear
+  concept per sentence is good. The goal is easy to understand, not
+  wordy.
 
-- **One idea per sentence.** Break dense compound statements apart
-  rather than stacking clauses with parentheses and slashes.
+- **Write statements a reader can follow, not fragments.** Avoid
+  telegraphic shorthand like "Expiry: 7 days, configurable". Write
+  "Invites expire after 7 days by default, and that period is
+  configurable." Each sentence should be a complete, understandable
+  statement on its own.
 
 - **Always include the why.** State the recommendation, then a short
   plain-language reason for it. A reader without context cannot judge a
@@ -39,10 +64,11 @@ human references this file.
   English does not mean vague — it means a non-expert in this particular
   change can still follow it.
 
-- **Keep precision.** Format identifiers as code: state names, settings,
-  methods, endpoints, and file paths in backticks (`Pending`,
-  `InviteExpiry`, `POST`, `src/auth/login.ts`). Being readable does not
-  mean dropping the specifics.
+- **Keep precision, in service of the explanation.** Format identifiers
+  as code so they stay exact: state names, settings, methods, endpoints,
+  and file paths in backticks (`Pending`, `InviteExpiry`, `POST`,
+  `src/auth/login.ts`). Use them to anchor the plain-English point, not
+  in place of it.
 
 - **Give each point room to breathe.** Use a bullet per point with a
   blank line between them, and a short bold label where it helps.
@@ -51,6 +77,16 @@ This applies to `AskUserQuestion` option **labels and descriptions** as
 much as to free-text prose. The option text is often all an autonomous
 reader sees, so it must carry the problem and the proposed solution on
 its own.
+
+## Before you send anything
+
+Reread your output once with the reader in mind. Remove the patterns in
+`_shared/banned-patterns.md`. Check that a technically capable person who
+is not involved in this codebase could read it and understand what
+changed and why. If a line names a project-specific component or
+identifier without saying what it is, explain it. If a line is just a
+string of identifiers or a clipped fragment, rewrite it as a plain
+statement.
 
 ## Example
 
@@ -77,4 +113,5 @@ Clear and easy to read:
 
 See also `_shared/banned-patterns.md` for words, phrases, and structural
 habits that must never appear in output. This standard is about being
-clear and complete; banned-patterns is about what to avoid. Both apply.
+clear, high-level, and complete; banned-patterns is about what to avoid.
+Both apply to all output.

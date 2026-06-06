@@ -6,6 +6,8 @@ description: 'Set up or configure a project for this plugin. Trigger: "set up my
 
 Interactive onboarding wizard for configuring the github-workflow plugin.
 
+**Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
+
 ## Focused mode
 
 If `$ARGUMENTS` is `harden` (or `auto-merge`), **skip the full

@@ -7,7 +7,7 @@ description: Write user-facing acceptance criteria for testing a PR or feature b
 
 Produces short, user-facing acceptance criteria for testing a feature or PR. The audience is testers and stakeholders who interact with the product through the UI, not developers reading code.
 
-Read `_shared/banned-patterns.md` before writing. All banned patterns apply to acceptance criteria.
+Read `_shared/wording-standard.md` and `_shared/banned-patterns.md` before writing. Both apply to acceptance criteria. Write each step in plain language a tester who is not involved in this codebase can follow, and explain what a feature does rather than naming internal identifiers.
 
 ---
 

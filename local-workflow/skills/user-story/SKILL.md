@@ -6,7 +6,7 @@ description: Write, format, or structure a single user story for a development w
 
 # User Story Documentation
 
-Read `_shared/banned-patterns.md` before writing. All banned patterns apply to user stories.
+Read `_shared/wording-standard.md` and `_shared/banned-patterns.md` before writing. Both apply to user stories. Assume a technically capable reader who is not involved in this codebase: explain what a component or pattern is before relying on its name, and never let a string of identifiers replace a plain explanation.
 
 Write user stories that give developers a clear picture of what to build and why. Every story follows the same structure so readers know exactly where to look: a business-facing Overview and an implementation-focused Technical section.
 

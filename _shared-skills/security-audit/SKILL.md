@@ -27,6 +27,10 @@ Deep security-focused review of the codebase. This is not a general
 code review — it specifically targets security vulnerabilities, leaked
 secrets, and attack surface.
 
+## Plain-English output
+
+Everything you write for a person to read (each finding, its risk, and the summary) follows `_shared/wording-standard.md` and avoids `_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component, vulnerability class, or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
+
 ## Phase 1 — Scope
 
 Determine what to audit.

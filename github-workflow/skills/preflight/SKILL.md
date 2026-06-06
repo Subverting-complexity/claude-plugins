@@ -14,6 +14,12 @@ description: >-
 Verify project configuration is complete and consistent before running
 workflow commands.
 
+When you report results to the user, follow
+`skills/_shared/wording-standard.md` and avoid
+`skills/_shared/banned-patterns.md`: say what is wrong and what to do
+about it in plain language a reader who is not involved in this codebase
+can act on.
+
 ## 1. Check suppression
 
 ```!

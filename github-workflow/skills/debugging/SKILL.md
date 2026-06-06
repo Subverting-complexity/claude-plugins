@@ -9,6 +9,10 @@ description: "Systematic debugging methodology: reproduce, hypothesize, isolate,
 Systematic approach to finding and fixing bugs. Every step builds on the
 previous one — do not skip ahead to a fix without isolating the cause.
 
+## Plain-English output
+
+Everything you write for a person to read (your findings, the diagnosis, and the summary of the fix) follows `_shared/wording-standard.md` and avoids `_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
+
 ## Phase 1 — Reproduce
 
 Confirm the failure before investigating.

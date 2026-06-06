@@ -39,6 +39,10 @@ issue found.
 
 Read `CLAUDE.md` for project rules and coding standards if it exists.
 
+## Plain-English output
+
+Everything you write for a person to read (the report, each issue, and the fix plan) follows `_shared/wording-standard.md` and avoids `_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
+
 ---
 
 ## Step 1 — Establish Feature Scope

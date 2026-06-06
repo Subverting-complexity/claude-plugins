@@ -9,6 +9,10 @@ depends-on:
 
 Plan and decompose a new project into epics and user stories. Get to the core of the design as fast as possible. The interview should be relentless: probe every vague answer, challenge weak reasoning, surface conflicts between answers, and don't move on until each question has a concrete answer or a conscious deferral with a stated reason.
 
+## Plain-English output
+
+Everything you write for a person to read (interview questions, `AskUserQuestion` options, epics, and stories) follows `_shared/wording-standard.md` and avoids `_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
+
 ## Skills Used
 
 Read each skill's SKILL.md when you reach the phase that needs it.

@@ -8,6 +8,8 @@ Push the branch, create a PR, and update the board.
 
 Requires: a story in progress with committed work on a feature branch.
 
+**Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
+
 ## Preflight
 
 Before doing anything else, invoke `/github-workflow:preflight` to

@@ -6,6 +6,8 @@ description: 'Orientation and help. Trigger: "how do I use this", "what can you 
 
 Help the user understand the plugin and figure out where to start.
 
+**Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
+
 Trigger: when the user asks "how do I use this", "how do I get started",
 "what can you do", "help", or similar orientation questions.
 

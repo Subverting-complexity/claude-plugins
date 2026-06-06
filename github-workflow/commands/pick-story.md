@@ -6,6 +6,8 @@ description: 'Pick the next story from the backlog without starting it. Supports
 
 Select the next story from the backlog.
 
+**Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
+
 ## Mode
 
 This command accepts an optional mode argument:
