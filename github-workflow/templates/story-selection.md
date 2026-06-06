@@ -59,12 +59,21 @@ How "ready" is determined depends on `ready-gate`:
   Keep items where Status is "Ready", state is OPEN, assignees is empty.
 - **`both`** — the `label` query, then drop any candidate not also in the
   "Ready" board column.
-- **`none`** — no readiness gate at all. List every open unassigned issue;
-  any of them is eligible. Use this for fully autonomous pickup where no
-  human readiness signal (label or column) is required:
+- **`none`** — no readiness gate at all. Any open unassigned issue is
+  eligible. Use this for fully autonomous pickup where no human readiness
+  signal (label or column) is required:
   ```
   gh issue list --repo {org}/{repo} --state open --assignee "" --json number,title,labels,body --jq '.[] | {number, title, labels: [.labels[].name], body}'
   ```
+  Then **drop any candidate carrying `status-blocked`**: those are
+  unassigned (so the `--assignee ""` filter does not catch them) but have
+  an unresolved blocker — including them just claims, re-checks, and
+  re-blocks them, wasting calls. Other non-pickable states need no special
+  handling here: `status-parked` / `status-in-progress` / `status-in-review`
+  stay **assigned**, so the unassigned filter already excludes them, and
+  `needs-refinement` is dropped by the refinement filter below. A
+  `status-blocked` issue whose dependencies have actually closed is restored
+  to `status-ready` by Step 4 and becomes eligible on the next pass.
 
 Then narrow the list with **local** filters (no API calls):
 
