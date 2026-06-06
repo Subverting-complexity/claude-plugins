@@ -9,19 +9,12 @@ reconciles duplicate PRs: `pick-story`/`execute` Phase 1 and `start-story`
 different lookup anywhere** — call this procedure so every site identifies
 the same set.
 
-## Why not regex the PR body
-
-The obvious approach — listing open PRs and grepping each body for
-`Closes #N` — is fragile. It misses closing keywords it didn't enumerate,
-cross-repo references (`owner/repo#N`), issues linked through the GitHub UI
-rather than the body, and bodies mangled by the known Windows/PowerShell
-`@`-escaping corruption. Worse, two call sites with slightly different
-regexes would disagree about what counts as a duplicate.
-
-GitHub already parses closing references itself — it is exactly the parse
-that auto-closes an issue when the PR merges — and exposes the result as
-`closingIssuesReferences` on the PR. Ask GitHub; do not re-implement its
-parser.
+Use GitHub's own parse of closing references
+(`closingIssuesReferences`) — the exact parse that auto-closes an issue on
+merge. Do **not** regex PR bodies: that misses closing keywords,
+cross-repo refs, UI-linked issues, and `@`-escaping-mangled bodies, and two
+call sites with different regexes would disagree on what counts as a
+duplicate.
 
 ## Primary lookup (authoritative)
 

@@ -222,7 +222,7 @@ worktree on the clone. Leaving the tree dirty is never an option.
 A crash, hard kill, or machine reboot can still skip this cleanup
 entirely and orphan a claim ref. That residue cannot be prevented from
 inside a session — see **Reaping orphaned claims** in
-`templates/claim-procedure.md` for the manual one-liner that frees a
+`templates/claim-procedure-rationale.md` for the manual one-liner that frees a
 stuck ref. (Within-session context compaction is unaffected — no exit
 occurs, so the files remain on disk for the duration of the run.)
 

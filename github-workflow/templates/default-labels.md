@@ -151,28 +151,12 @@ see dual-tracking note above):
 | `priority-medium`      | Medium                  |
 | `priority-low`         | Low                     |
 
-### Effort field option map
+### Effort & Origin field option maps
 
-The story size estimate (from the story template) → `Effort` field option:
-
-| Size estimate | `Effort` field option |
-|---------------|-----------------------|
-| large         | High                  |
-| medium        | Medium                |
-| small         | Low                   |
-
-### Origin field option map
-
-The creating command/session → `Origin` field option:
-
-| Creating command / session                       | `Origin` option     |
-|--------------------------------------------------|---------------------|
-| `feature-discovery`                              | Feature Discovery   |
-| `grill-me` refinement session                    | Grill-Me Session    |
-| `security-audit` / `execute` audit (security)    | Security Audit      |
-| `code-review`                                    | Code Review         |
-| `report-issue` (found during dev), `finish-story`| Development         |
-| human / stakeholder request                      | Stakeholder Request |
+The `Effort` (size estimate) and `Origin` (creating command/session) field
+option maps live in `templates/label-reference.md` — they are used only on
+the **issue-creation** path (`report-issue`, `finish-story`,
+`feature-discovery`), not the claim/selection path. Resolve them there.
 
 ## Issue Lifecycle State Labels
 
@@ -290,22 +274,11 @@ them). The Ready column is additionally required only under a
 
 ## Review State Labels
 
-These control the PR review workflow. Resolved via the Labels table in
-`review.config.md` (matched by purpose key); defaults below use the
-prefix `review`.
-
-State labels are mutually exclusive — exactly one per PR. A PR enters
-the machine at `needs-review` the moment it is opened (so a new PR is
-never unlabelled), and the reviewer moves it from there.
-
-| Purpose key | Default Name | Color | Description |
-|-------------|-------------|-------|-------------|
-| `needs-review` | `review-needs-review` | `C2E0C6` | Open PR awaiting its first review |
-| `reviewing` | `review-reviewing` | `0E8A16` | Review in progress |
-| `approved` | `review-approved` | `1D76DB` | Ready for human merge |
-| `changes-requested` | `review-changes-requested` | `E4E669` | Issues need human action |
-| `needs-discussion` | `review-needs-discussion` | `D93F0B` | Architectural questions |
-| `needs-re-review` | `review-needs-re-review` | `FBCA04` | New commits since last review |
-| `failed` | `review-failed` | `B60205` | Review could not complete |
-| `updating` | `review-updating` | `0E8A16` | Builder addressing feedback |
-| `fixes-applied` | `review-fixes-applied` | `5319E7` | Claude pushed fix commits (sticky) |
+The PR review-state label table (the review mutex: `needs-review`,
+`reviewing`, `approved`, `changes-requested`, `needs-discussion`,
+`needs-re-review`, `failed`, `updating`, `fixes-applied`) lives in
+`templates/label-reference.md`. It is used only on the **review** path
+(`code-review`, `update-pr`, `finish-story` PR labelling), not the
+claim/selection path. Resolve review-state purposes via the Labels table in
+`review.config.md` (matched by purpose key), falling back to the defaults
+in `label-reference.md`.

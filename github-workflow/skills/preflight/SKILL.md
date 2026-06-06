@@ -31,6 +31,18 @@ or running `/github-workflow:setup`.
 
 ## 2. Run diagnostics
 
+**Fast path (the common, healthy case).** Only **CRITICAL** items can
+block a command (gh auth, `ClaudeProject.md` + its required sections, a
+*required* board, `board-columns-incomplete`). Everything else is a
+WARNING that proceeds on a default. So: run the cheap CRITICAL checks
+below (GitHub CLI, ClaudeProject.md sections, and — only if a board is
+required or configured — the board checks). If none are CRITICAL,
+**return silently and let the command proceed** — do not compose a
+findings report. The WARNING-level checks (placeholders, label-map
+completeness, CLAUDE.md, quality gate, review config) only ever print one
+informational line and never block; run them, but never let them stall the
+calling command.
+
 Run every check below and collect the output.
 
 **Reuse, don't re-read.** Several calling commands (`pick-story`,
@@ -216,52 +228,20 @@ if [ -f ClaudeProject.md ] && grep -q 'review\.config\.md' ClaudeProject.md 2>/d
   path=${path:-docs/review.config.md}
   if [ -f "$path" ]; then
     echo "OK review-config: $path present"
-    # Surface the auto-merge-on-approval setting so an enabled (and
-    # therefore PR-mutating) config is never a silent surprise. Absent =
-    # disabled, which is the safe default and needs no finding.
-    automerge=$(grep -E 'auto-merge-on-approval' "$path" 2>/dev/null | grep -oiE 'enabled|disabled' | head -1)
-    if [ "$automerge" = "enabled" ]; then
-      echo "OK review-auto-merge: enabled — approved PRs are squash-merged automatically"
-      # Only when enabled: confirm the repo allows native auto-merge, or
-      # `gh pr merge --auto` (used after a conflict/CI fix) errors and a
-      # queued merge never fires. This is the one conditional network call
-      # here — it runs only for the opt-in enabled case, never otherwise.
-      slug=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)
-      if [ -n "$slug" ]; then
-        allowed=$(gh api "repos/$slug" --jq '.allow_auto_merge' 2>/dev/null)
-        if [ "$allowed" = "true" ]; then
-          echo "OK review-auto-merge-repo: repo allows auto-merge"
-        else
-          echo "WARNING review-auto-merge-repo: auto-merge-on-approval is enabled but the repo's 'Allow auto-merge' setting is off — queued merges will not fire. Enable it with 'gh api -X PATCH repos/$slug -F allow_auto_merge=true' or re-run /github-workflow:setup harden"
-        fi
-        # The CI gate: auto-merge is only safe if SOMETHING enforces "CI
-        # green before merge" — either GitHub's required status checks, or
-        # the plugin-side require-ci-before-merge flag. Flag off AND no
-        # required checks on the default branch = approved PRs can land
-        # with no CI guarantee. One extra call, enabled case only.
-        requireci=$(grep -E 'require-ci-before-merge' "$path" 2>/dev/null | grep -oiE 'if-present|true|false|enabled|disabled' | head -1)
-        if [ "$requireci" = "true" ] || [ "$requireci" = "enabled" ]; then
-          echo "OK review-auto-merge-ci: require-ci-before-merge=true — the skill enforces a green CI gate (pauses an approved PR that has no checks)"
-        elif [ "$requireci" = "if-present" ]; then
-          echo "OK review-auto-merge-ci: require-ci-before-merge=if-present — the skill gates on CI when checks exist (a PR with no checks merges; not an absolute gate)"
-        else
-          branch=$(gh repo view "$slug" --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)
-          reqchecks=$(gh api "repos/$slug/branches/$branch/protection/required_status_checks/contexts" --jq 'length' 2>/dev/null)
-          if [ -n "$reqchecks" ] && [ "$reqchecks" -gt 0 ] 2>/dev/null; then
-            echo "OK review-auto-merge-ci: $reqchecks required status check(s) gate '$branch' — GitHub enforces CI before merge"
-          else
-            echo "WARNING review-auto-merge-ci: auto-merge-on-approval is enabled but NEITHER GitHub required status checks NOR require-ci-before-merge is configured — an approved PR can merge with no CI guarantee. Run /github-workflow:setup harden to wire up the gate."
-          fi
-        fi
-      fi
-    elif [ -n "$automerge" ]; then
-      echo "OK review-auto-merge: disabled"
+    if grep -qE 'auto-merge-on-approval' "$path" 2>/dev/null && grep -E 'auto-merge-on-approval' "$path" | grep -qiE 'enabled'; then
+      echo "AUTO_MERGE_ENABLED — run references/review-auto-merge-checks.md"
     fi
   else
     echo "WARNING review-config: $path referenced by ClaudeProject.md but not found"
   fi
 fi
 ```
+
+If the block above printed `AUTO_MERGE_ENABLED`, the opt-in auto-merge
+feature is on — read `references/review-auto-merge-checks.md` and run its
+safety checks (repo `Allow auto-merge` setting + CI gate). Otherwise skip
+it entirely; in the default configuration (no `review.config.md`, or
+auto-merge disabled) those checks never run.
 
 ## 3. Evaluate results
 
