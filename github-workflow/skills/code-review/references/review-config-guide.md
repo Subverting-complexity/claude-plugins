@@ -88,7 +88,10 @@ only safe with **one** of these two configurations:
 - **(b) The plugin enforces it** — `require-ci-before-merge: true` **plus
   a real pipeline** that runs on PRs. The skill waits for a green CI gate
   and pauses if there are no checks or a red check. Use this when (a)
-  isn't available.
+  isn't available. (A lighter variant, **`if-present`**, gates the same way
+  *when checks exist* but merges a PR that has none — convenient for a mix
+  of repos where some have CI and some don't, at the cost of not being an
+  absolute gate. Prefer `true` when you want the guarantee.)
 
 > **Plan limitation — when (a) is simply not available.** GitHub gates
 > required status checks behind a paid plan for private repos. Verified
@@ -113,8 +116,11 @@ only safe with **one** of these two configurations:
 
 So after enabling auto-merge, also ask: **"Should an approved PR refuse
 to merge unless CI is green?"** If yes (or if branch protection can't be
-configured), record `require-ci-before-merge: true`. Default `false`
-keeps today's behaviour — an approved PR with no *required* checks merges
+configured), record `require-ci-before-merge: true`. If the answer is
+"only when the PR actually runs CI — otherwise just merge," record
+`require-ci-before-merge: if-present` instead (it gates when checks exist
+and merges when none do; not an absolute gate). Default `false` keeps
+today's behaviour — an approved PR with no *required* checks merges
 immediately, which is only safe under configuration (a). Without either
 (a) or (b), an approved PR can land with no CI guarantee at all.
 

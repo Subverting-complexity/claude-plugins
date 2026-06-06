@@ -239,9 +239,11 @@ if [ -f ClaudeProject.md ] && grep -q 'review\.config\.md' ClaudeProject.md 2>/d
         # the plugin-side require-ci-before-merge flag. Flag off AND no
         # required checks on the default branch = approved PRs can land
         # with no CI guarantee. One extra call, enabled case only.
-        requireci=$(grep -E 'require-ci-before-merge' "$path" 2>/dev/null | grep -oiE 'true|false|enabled|disabled' | head -1)
+        requireci=$(grep -E 'require-ci-before-merge' "$path" 2>/dev/null | grep -oiE 'if-present|true|false|enabled|disabled' | head -1)
         if [ "$requireci" = "true" ] || [ "$requireci" = "enabled" ]; then
-          echo "OK review-auto-merge-ci: require-ci-before-merge is set — the skill enforces a green CI gate"
+          echo "OK review-auto-merge-ci: require-ci-before-merge=true — the skill enforces a green CI gate (pauses an approved PR that has no checks)"
+        elif [ "$requireci" = "if-present" ]; then
+          echo "OK review-auto-merge-ci: require-ci-before-merge=if-present — the skill gates on CI when checks exist (a PR with no checks merges; not an absolute gate)"
         else
           branch=$(gh repo view "$slug" --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)
           reqchecks=$(gh api "repos/$slug/branches/$branch/protection/required_status_checks/contexts" --jq 'length' 2>/dev/null)
