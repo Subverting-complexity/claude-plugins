@@ -96,6 +96,35 @@ labels from their defaults (the `review-` prefix) in
 
 Agent gating is disabled, so no `claude-ready` label is configured.
 
+## Issue Types & Fields
+
+This org (`Subverting-complexity`) **is** type-capable: it has native
+GitHub issue types — **Bug**, **Feature**, **User Story**, **Epic** — and
+org issue fields. The workflow uses them as the first-class classification
+and metadata, not just labels; on a type-capable org the native type
+replaces the `type-*` label (priority stays dual-tracked with its label).
+Resolution and mutations follow `github-workflow/templates/issue-fields-resolution.md`;
+the purpose→value maps (the "by nature" type mapping, priority/effort/origin
+maps) live in `github-workflow/templates/default-labels.md` → *Issue Types
+& Field Values*.
+
+Field names match the defaults:
+
+| Purpose key          | Field name      |
+| -------------------- | --------------- |
+| field-priority       | `Priority`      |
+| field-effort         | `Effort`        |
+| field-type           | `Type of issue` |
+| field-origin         | `Origin`        |
+| field-start          | `Start date`    |
+| field-target         | `Target date`   |
+| field-parent         | `Parent`        |
+| field-status-reason  | `Status reason` |
+
+> The `Origin` field must exist in the org for it to be populated (single
+> select: Grill-Me Session, Security Audit, Feature Discovery, Code Review,
+> Development, Stakeholder Request). All other fields above already exist.
+
 ## Ready Gate
 
 | Setting    | Value   |

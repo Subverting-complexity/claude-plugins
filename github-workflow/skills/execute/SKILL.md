@@ -326,7 +326,10 @@ agents never validate or build the same issue.
    }'
    ```
 
-3. Set start date on board (if configured).
+3. Set start date on board (if configured). Also set the org-level
+   **`Start date`** issue field to today (best-effort, capability-gated)
+   per `templates/issue-fields-resolution.md` — independent of the board,
+   skipped silently if the org does not define the field.
 
 4. **Start clean.** Before branching, run the **Start clean** check in
    `templates/worktree-hygiene.md`. If the worktree was provisioned dirty

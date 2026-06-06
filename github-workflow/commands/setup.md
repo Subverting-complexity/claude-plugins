@@ -348,6 +348,41 @@ never happens.
 This step is best-effort — if any command fails (permissions, no git),
 log a warning and continue.
 
+### 5e. Detect native issue types & fields (best-effort)
+
+The workflow prefers the org's **native GitHub issue types** (Bug, Feature,
+User Story, Epic) and **org issue fields** over `type-*` labels when they
+exist (see `templates/issue-fields-resolution.md`). Detect capability and
+record it so the generated `ClaudeProject.md` reflects reality.
+
+1. **Issue types** — list the owner's enabled types:
+   ```
+   gh api graphql -f query='query($login:String!){ organization(login:$login){ issueTypes(first:20){ nodes { name isEnabled } } } }' -F login='{org}' --jq '[.data.organization.issueTypes.nodes[] | select(.isEnabled) | .name]'
+   ```
+   If this errors or the owner is a user account (issue types are
+   org-only), the project is **not** type-capable — leave the
+   `## Issue Types & Fields` section out (the Label Map's `type-*` labels
+   remain the classification) and skip step 2.
+2. **Issue fields** — list configured fields:
+   ```
+   gh api "orgs/{org}/issue-fields" --jq '[.[] | .name]'
+   ```
+3. **Write the section** — if the org is type-capable, fill in the
+   `## Issue Types & Fields` section of `ClaudeProject.md` from the
+   template, mapping each `field-*` purpose to the **actual** field name
+   detected in step 2 (override the default only where the org's name
+   differs). Note which expected fields are **missing** so the user can
+   create them — the workflow simply skips a missing field at runtime.
+4. **Origin field** — if `Origin` is absent, point the user at
+   `/github-workflow:setup`'s field guidance or the GitHub *Issue fields*
+   settings UI to add it (single-select: Grill-Me Session, Security Audit,
+   Feature Discovery, Code Review, Development, Stakeholder Request). It is
+   the one field the workflow populates that GitHub does not create by
+   default.
+
+This step is best-effort and **non-blocking**: a project with no native
+types/fields is fully supported on the label-only path.
+
 ### 6. Generate or update CLAUDE.md
 
 The user's `CLAUDE.md` is their own file. The goal here is to add

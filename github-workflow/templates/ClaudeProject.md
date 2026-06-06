@@ -104,6 +104,34 @@ in `docs/review.config.md`, not here.
 | -------- | ------------- |
 | `{name}` | {criteria}    |
 
+## Issue Types & Fields
+
+When this org has **native GitHub issue types** (Bug, Feature, User Story,
+Epic) and **org issue fields** configured, the workflow uses them as the
+first-class classification and metadata — not just labels. Capability is
+auto-detected at runtime, per dimension (see
+`templates/issue-fields-resolution.md`); an org without them keeps the
+label-only behaviour from the Label Map above, so this whole section is
+optional.
+
+The purpose→value mappings — which kind maps to which native type, which
+priority maps to which `Priority` option, the size→`Effort` and
+session→`Origin` maps — live in `templates/default-labels.md` → *Issue
+Types & Field Values* and follow the "by nature" default. Override a
+**field name** below only if your org named a field differently from the
+default.
+
+| Purpose key          | Field name      |
+| -------------------- | --------------- |
+| field-priority       | `Priority`      |
+| field-effort         | `Effort`        |
+| field-type           | `Type of issue` |
+| field-origin         | `Origin`        |
+| field-start          | `Start date`    |
+| field-target         | `Target date`   |
+| field-parent         | `Parent`        |
+| field-status-reason  | `Status reason` |
+
 ## Ready Gate
 
 | Setting    | Value   |

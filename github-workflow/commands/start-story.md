@@ -115,6 +115,14 @@ When **no** board is configured, skip this step silently. When a board
 user (e.g., "Board update failed: {error}. Continuing without board
 update.") and proceed with the rest of the workflow.
 
+**Org `Start date` field (best-effort, capability-gated).** Independently
+of the board, set the org-level **`Start date`** issue field to today via
+`templates/issue-fields-resolution.md` (Step 2 to confirm the field
+exists, Step 3 for the issue node id, Step 5 with `dateValue: "{today}"`).
+This runs whether or not a board is configured — the board start-date
+above is a *board* field; this is the issue field. Skip silently if the
+org does not define `Start date`.
+
 ### 4. Validate the issue body
 
 Read the issue body. Check that it has at minimum:

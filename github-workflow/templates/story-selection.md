@@ -83,12 +83,33 @@ Then narrow the list with **local** filters (no API calls):
 - **Agent gating:** if `agent-gating` is `enabled`, exclude issues that do
   **not** carry the `claude-ready` label — only human-approved stories are
   eligible. If `disabled` (default), this filter is **ignored entirely**.
-- **Mode:** `feature` → keep only `type-story`; `maintenance` → keep only
-  `type-bug` / `type-security` / `type-arch` / `type-debt`; `story`
-  (default) → no type filter.
+- **Mode:** filter by issue kind. `story` (default) → no type filter.
+  `feature` → keep only **story**-kind issues; `maintenance` → keep only
+  **bug / security / tech-debt / architecture** kinds. Resolve "kind"
+  through `templates/issue-fields-resolution.md` Step 6:
+  - **Type-capable org** → kind is the issue's **native issue type**. `gh`
+    cannot project it (`--json issueType` is unsupported), so fetch it via
+    GraphQL once and build a `number → type` map, then filter using the
+    *Native issue type map* in `templates/default-labels.md` (feature keeps
+    `User Story`; maintenance keeps `Bug` + any `Feature` whose
+    `Type of issue` is Tech Debt/Architecture/Security):
+    ```
+    gh api graphql -f query='query($owner:String!,$repo:String!){
+      repository(owner:$owner,name:$repo){
+        issues(first:100, states:OPEN){ nodes { number issueType { name } } }
+      }
+    }' -F owner='{org}' -F repo='{repo}' \
+      --jq '[.data.repository.issues.nodes[] | {number, type: .issueType.name}]'
+    ```
+    (Paginate if the open backlog exceeds 100.)
+  - **Not type-capable** → kind is the `type-*` label, exactly as before:
+    `feature` keeps `type-story`; `maintenance` keeps `type-bug` /
+    `type-security` / `type-arch` / `type-debt`.
 
 **Sort** the survivors by priority label (critical → high → medium → low,
-per the label map) then ascending issue number.
+per the label map) then ascending issue number. Priority is dual-tracked
+(label + `Priority` field), so the sort stays a cheap label read — no
+per-issue field fetch.
 
 If the list is empty, skip to **Step 4** (lazy auto-ready).
 

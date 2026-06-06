@@ -148,6 +148,15 @@ a new PR, determine whether the current work has an associated issue:
    labels were applied correctly — read back and verify, same as
    the validation in `/github-workflow:report-issue` Steps 5b and 6.
 
+   - **Native type + fields**: then upgrade the issue exactly as
+     `/github-workflow:report-issue` **Step 5c**
+     (`templates/issue-fields-resolution.md`, capability-gated,
+     best-effort): set the native issue type per the *Native issue type
+     map* in `templates/default-labels.md`, populate `Type of issue` /
+     `Priority` (dual-tracked with the label), and remove the redundant
+     `type-*` label on a type-capable org. `Origin` here is **Development**
+     (the issue is being filed as the work is wrapped up).
+
    **Leave the assignee blank.** Do not pass `--assignee`/`--add-assignee`
    on this `gh issue create`, and do not edit the new issue to assign it.
    A follow-up issue must enter the unassigned pool so it is eligible for

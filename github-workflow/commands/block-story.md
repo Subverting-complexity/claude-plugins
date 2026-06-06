@@ -71,6 +71,20 @@ If the blocker is another issue, also record it in the issue body under a
 `--body-file`). This is what lets `pick-story` auto-unblock the issue when
 `#N` closes. If the `## Dependencies` section already lists it, skip.
 
+**Structured blocker metadata (best-effort, capability-gated).** Following
+`templates/issue-fields-resolution.md`, also:
+
+- Populate the **`Status reason`** field (Step 5) with a one-line summary
+  of the blocker — the same reason from the comment, condensed — so the
+  blocked state carries a machine-readable "why" alongside the label.
+- When the blocker is another issue, add a native **`addBlockedBy`**
+  relationship (Step 7) in addition to the `## Dependencies` marker (the
+  marker stays the source of truth for auto-unblock; the relationship adds
+  GitHub-UI visibility).
+
+Skip silently on an org that does not define these — the comment and the
+body marker remain the authoritative record.
+
 ### 3. Release the claim and unassign
 
 **First, the open-PR guard.** Blocking returns the issue to the
