@@ -90,9 +90,11 @@ setting (purpose: squash-merge a PR once the review verdict is Approved).
 It is **opt-in and defaults to `disabled`** — treat it as disabled whenever
 the section, or the whole file, is absent (including the autonomous minimal
 review). The same section may set **`require-ci-before-merge`** (default
-`false`); when `true`, Step 11 refuses to merge a PR that has no green CI
-gate (no checks at all, or a red check) instead of landing it. Step 11
-reads both settings and is the only place this skill merges.
+`false`; also `true` or `if-present`); when set, Step 11 gates the merge on
+CI — `true` refuses to merge a PR with no green CI gate (no checks at all,
+or a red check), while `if-present` gates only when checks exist and merges
+a PR that has no checks. Step 11 reads both settings and is the only place
+this skill merges.
 
 ---
 
@@ -677,10 +679,21 @@ skip it and exit normally:
 - The session is **not** in read-only mode.
 
 Also read **`require-ci-before-merge`** from the same Auto-Merge on
-Approval section. Absent ⇒ `false`. When `true`, the skill must see a
-**green CI gate** before it merges: a PR with no checks at all, or with a
-failing check it cannot fix, is **paused**, not merged (the exact branches
-are in step 3 below). When `false`, behaviour is unchanged.
+Approval section. Absent ⇒ `false`. It takes three values:
+
+- **`false`** (default) — behaviour is unchanged; an unprotected branch
+  merges immediately whether or not checks exist.
+- **`true`** — the skill must see a **green CI gate** before it merges: a
+  PR with no checks at all, or with a failing check it cannot fix, is
+  **paused**, not merged. An absolute gate, even on a repo with no
+  pipeline.
+- **`if-present`** — gate on CI **only when CI exists**: a PR whose head
+  SHA has checks must see them green (a red check it cannot fix pauses),
+  but a PR with **no checks at all merges** (there is no gate to wait
+  for). Use this for "require CI to pass *if there is CI*, otherwise
+  merge."
+
+The exact branches are in step 3 below.
 
 This is opt-in and **off by default**. Merging a PR is otherwise
 forbidden (see Rules); this is the one sanctioned merge, and only under
@@ -770,15 +783,19 @@ judgment), then merge. You are already on the PR branch from Step 3.
      do depends on `require-ci-before-merge`:
      - **`false` (default)** → preserve today's behaviour: if you pushed
        nothing in steps 2–3, merge now (step 4, immediate path).
-     - **`true`** → require a green CI gate before merging. Read the
+     - **`true` or `if-present`** → gate on CI when checks exist. Read the
        full check rollup (not just required ones):
        ```bash
        gh pr checks <number> --repo <org>/<repo>
        ```
-       - **No checks at all** on the head SHA → **pause**: post a
-         one-line comment "auto-merge paused: require-ci-before-merge is
-         set but no CI checks are configured", leave `approved`, and
-         exit. Never merge.
+       - **No checks at all** on the head SHA → the two values diverge
+         here:
+         - **`true`** → **pause**: post a one-line comment "auto-merge
+           paused: require-ci-before-merge is set but no CI checks are
+           configured", leave `approved`, and exit. Never merge.
+         - **`if-present`** → **merge now** (step 4, immediate path),
+           provided you pushed nothing in steps 2–3. There is no CI to
+           wait for, so `if-present` does not block an unchecked branch.
        - Some checks **failing** → fix-or-pause exactly as for a failing
          required check above (read the run logs, fix the cause on the
          branch and push — which makes the checks pending, then enqueue

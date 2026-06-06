@@ -509,6 +509,15 @@ sub-step is **best-effort** and degrades to a warning.
    server-side enforcement via step 2 fully succeeded, leaving this
    `false` is fine; configuration (a) already covers it.)
 
+   Harden sets `true` because that is the strict guarantee — it pauses
+   even when a repo runs no pipeline. If the user instead wants "gate when
+   the PR runs CI, otherwise just merge," offer **`if-present`**: it
+   behaves identically to `true` on a repo that has a pipeline, and merges
+   an unchecked PR rather than pausing it. Note the trade-off — `if-present`
+   is **not** an absolute gate, so a repo with no pipeline merges
+   unguarded. When no pipeline exists at all, say so plainly: neither
+   value gates anything until a PR pipeline is running.
+
 4. **Report** what landed: repo auto-merge on/off, branch protection
    applied or blocked, and which enforcement configuration ((a), (b), or
    "neither — auto-merge is unguarded; merge a CI pipeline first") is now
