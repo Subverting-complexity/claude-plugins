@@ -415,6 +415,23 @@ rm -f .claude/claim-issue-{number}.sha
 Idempotent — ignore an error if the ref is already gone. This does
 **not** unassign the issue; it stays assigned to @me through review.
 
+### 9b. Reconcile the working tree to clean
+
+The PR is pushed, so local state is no longer the source of truth. Leave
+the worktree clean so the harness can reap it (`docs/worktree-config.md` —
+a dirty tree is never auto-removed). Delete the per-session scratch file
+and run the **End clean** procedure in `templates/worktree-hygiene.md`:
+
+```
+rm -f .claude/plan.md
+git status --porcelain    # reconcile until empty
+```
+
+Commit any incidental formatting on unrelated files as a **separate
+`chore:` commit** and push it (it rides the PR branch); discard disposable
+generated noise. **Never `git stash`** — the stash is shared across every
+worktree on the clone. End with `git status --porcelain` empty.
+
 ### 10. Report
 
 Display:

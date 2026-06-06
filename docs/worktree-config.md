@@ -135,6 +135,40 @@ Do this in a fresh clone before running parallel agents. Without it, the
 harness keeps reporting cleanup failures for worktrees that look modified
 but only differ by line endings.
 
+## Keeping worktrees clean (the session's responsibility)
+
+Line-ending churn is the *phantom* reason a worktree stays dirty; the more
+common *real* reason is simply that a session left uncommitted changes
+behind. **A worktree is only auto-removed when it is clean** — so any
+loose change pins it open: it is never reaped, its branch stays checked
+out, and stale worktrees accumulate until cleanup fails on locks and long
+paths. There is no cross-session resume, so leaving work "for a later
+session" strands it rather than preserving it.
+
+The github-workflow plugin enforces a two-ended discipline, defined once in
+[`github-workflow/templates/worktree-hygiene.md`](../github-workflow/templates/worktree-hygiene.md)
+and referenced from every entry/exit path (`execute` Phases 2 and Exit
+cleanup, `finish-story`, `update-pr`, `block-story`):
+
+- **Start clean.** Before branching, assert `git status --porcelain` is
+  empty. If a worktree was provisioned dirty (reused/leaked, or a
+  checkout-time formatter), that inherited junk is recorded, discarded to
+  a pristine baseline, and reported — so it is never blamed on the new
+  session or left to block cleanup.
+- **End clean.** On every exit, after committing and pushing the real
+  work, reconcile the tree to empty: commit a forgotten file, commit
+  incidental formatting on unrelated files as a **separate `chore:`
+  commit** (kept out of the feature diff), or discard disposable generated
+  noise. **Never `git stash`** — the stash is shared across every worktree
+  on the clone, so it leaks between agents.
+
+The model is: *start clean → everything dirty at the end is therefore this
+session's → commit it or discard it → end clean → the harness reaps the
+worktree.* The biggest upstream cause of unexpected dirt is a quality gate
+that runs a **whole-repo formatter** (`prettier --write .`); scope it to
+staged/changed files or make it check-only so it never silently rewrites
+unrelated files.
+
 ## Windows limitations to be aware of
 
 - **File-lock cleanup failures.** Windows does not allow deleting files that

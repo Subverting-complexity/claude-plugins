@@ -253,6 +253,24 @@ rm -f .claude/claim-pr-{pr_number}.sha
 gh pr edit {pr_number} --remove-label "{updating_label}"
 ```
 
+### 9b. Reconcile the working tree to clean
+
+The fixes are pushed, so leave the worktree clean for the harness to reap
+(`docs/worktree-config.md` — a dirty tree is never auto-removed). Delete
+the per-session scratch file and run the **End clean** procedure in
+`templates/worktree-hygiene.md`:
+
+```
+rm -f .claude/plan.md
+git status --porcelain    # reconcile until empty
+```
+
+Commit incidental formatting on unrelated files as a **separate `chore:`
+commit** and push it (it rides the PR branch); discard disposable
+generated noise. **Never `git stash`** — the stash is shared across every
+worktree on the clone. This applies on the error-handling exit (Step 9)
+too: end with `git status --porcelain` empty.
+
 ### 10. Report
 
 Display:
