@@ -185,6 +185,13 @@ label remains a display signal that other skills filter on; the
 `refs/claims/pr-<number>` ref is the actual lock. No label read-back is
 needed — the atomic push already proved exclusivity.
 
+**The `reviewing` label is the first mutating action of any review — it
+must be applied (via this Acquire) before checkout, gathering context,
+reading, or evaluating.** Never read or fix a PR first and label it later:
+that leaves a window where a second agent starts the same review. The only
+thing that precedes it is winning the atomic claim, which is what makes the
+label safe to apply under a shared identity.
+
 ### Step 2b — Reconcile duplicate PRs for the same issue
 
 Before spending a full review on the claimed PR, check whether **another

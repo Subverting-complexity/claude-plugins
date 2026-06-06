@@ -115,10 +115,15 @@ How stories signal they are eligible for pickup:
 - `label` (default) — the `status-ready` label in the label map.
 - `board-column` — the "Ready" column on the project board.
 - `both` — story must have the label AND be in the board column.
+- `none` — no readiness gate at all. Any open, unassigned issue is
+  eligible for autonomous pickup, refined or not. Use this when no human
+  readiness signal is required and you want the agent to work the whole
+  open backlog. (Agent Gating below is independent — set it to `disabled`
+  too for fully unattended pickup.)
 
 When using `board-column` or `both`, a project board must be
 configured (see Project Board section below) and must have a "Ready"
-status option.
+status option. `label` and `none` need no board.
 
 ## Agent Gating
 
