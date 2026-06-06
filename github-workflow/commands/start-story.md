@@ -1,92 +1,74 @@
 ---
-description: 'Assign a story, update the board, and create a branch. Trigger: "start story N", "begin working on N", "assign me story N".'
+description: 'Assign a story, update the board, and create a working branch. Trigger: "start story N", "begin working on N", "assign me story N".'
 ---
 
 # Start Story
 
-Assign the story, update the board, and create a working branch.
+Assign the story, update the board, and create a working branch. This is
+the manual single-step equivalent of `execute` Phase 1–2; it shares the
+same procedures, so behaviour is identical.
 
 **Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
 
-Requires: a story number. If no number is provided, run the
-`/github-workflow:pick-story` flow to auto-select the next story and
-use that number. Do not ask the user which story to start.
+Requires a story number. If none is given, run the
+`/github-workflow:pick-story` flow to auto-select the next story and use
+that number. Do not ask the user which story to start.
 
 ## Preflight
 
-Before doing anything else, invoke `/github-workflow:preflight` to
-verify project configuration. If it finds issues and the user chooses
-"Configure now", wait for setup to complete, then ask the user to
-re-run this command. Otherwise, proceed.
+Invoke `/github-workflow:preflight` first. If it finds issues and the user
+chooses "Configure now", wait for setup, then ask the user to re-run this
+command. Otherwise proceed.
 
-## Steps
+## 1. Read configuration
 
-### 1. Read configuration
+Read `ClaudeProject.md` and extract: `org`, `repo`, `default-branch`, the
+branch convention, the label map, and project-board settings. Resolve
+every label by **purpose key** via `templates/default-labels.md` — never a
+bare literal.
 
-Read `ClaudeProject.md` and extract:
+## 2. Already-in-flight guard (explicit number only)
 
-- `org`, `repo`, `default-branch` from Identity
-- Branch convention pattern
-- Project board settings (if configured)
-- Label map
-
-### 1b. Already-in-flight guard
-
-`pick-story` only ever hands back unassigned, ready issues, but this
-command can also be given an explicit number — and the issue claim ref is
-released the moment a story's first PR opens, so a fresh claim on an
-already-PR'd story would otherwise succeed and build a duplicate. Before
-claiming, confirm the story is not already in flight:
+`pick-story` only hands back unassigned, ready issues, but an explicit
+number can name a story that already has a PR — and the claim ref is
+released the moment that PR opens, so a fresh claim would otherwise
+duplicate it. Before claiming:
 
 ```
 gh issue view {number} --repo {org}/{repo} --json state,labels,assignees
 ```
 
-Then find any open PR that already closes this issue by running the
-authoritative lookup in `templates/sibling-pr-lookup.md` with this
-`{number}`.
+Then find any open PR that already closes this issue via the authoritative
+lookup in `templates/sibling-pr-lookup.md` with this `{number}`.
 
-- If the issue is **closed**, report it and stop.
-- If an **open PR already closes this issue**, do not start fresh. Report
-  the existing PR (number and title) and point the user at
-  `/github-workflow:update-pr`, then stop — do not claim, branch, or
-  build.
-- If it carries `status-in-review` with no open PR found, surface the
+- Issue **closed** → report and stop.
+- **Open PR already closes it** → do not start fresh; report the PR
+  (number + title), point the user at `/github-workflow:update-pr`, stop.
+- Carries `status-in-review` with no open PR found → surface the
   inconsistency and stop rather than guessing.
-- Otherwise proceed to claim.
+- Otherwise → proceed to claim.
 
-### 2. Claim the issue
+## 3. Claim the issue
 
-Multiple agents may be running concurrently — possibly under the same
-GitHub identity, where assignment cannot exclude a rival. Acquire the
-issue with the atomic claim procedure in `templates/claim-procedure.md`
-(**Acquire**). It pushes a unique object to `refs/claims/issue-{number}`,
-which is a genuine server-side compare-and-swap: the first agent wins and
-proceeds; a losing agent exits cleanly having made no changes.
+Acquire it with `templates/claim-procedure.md` (**Acquire**, target
+`issue-{number}`). The atomic ref is a genuine compare-and-swap; the first
+agent wins, a loser exits cleanly having made no changes. Acquire also
+applies the durable markers — it assigns `@me` **and** moves the issue to
+`status-in-progress` (removing any prior lifecycle label). Do not assign or
+set a status label separately; just verify the read-back per
+`templates/default-labels.md`.
 
-If Acquire reports the claim is lost, stop — another agent owns this
-story. Do not assign, branch, or touch the board. If `pick-story` already
-claimed this issue in the same flow, Acquire's re-entry check treats it as
-a no-op and proceeds. Acquire performs the durable ownership markers for
-you — it assigns `@me` **and** moves the issue to the `status-in-progress`
-lifecycle label (removing `status-ready` or any prior lifecycle label, so
-exactly one state is present). Do not assign or set a status label
-separately; just verify the read-back per `templates/default-labels.md`.
+If Acquire reports the claim is lost, stop — another agent owns this story.
+If `pick-story` already claimed it in this same flow, Acquire's re-entry
+check treats it as a no-op and proceeds.
 
-### 3. Update project board (if configured)
+## 4. Update project board (if configured)
 
-First resolve the board, the issue's `{item_id}`, and the target column's
-`{column_option_id}` following `templates/board-resolution.md`. That step
-decides whether a board is configured at all, verifies the stored
-`project-node-id` still resolves to a board whose title matches
-`project-title` (aborting loudly on a mismatch), adds the issue to the
-board if it is not there yet, and resolves the target column by purpose
-key. The target column for `status-in-progress` is **In Progress**
-(`col-in-progress`) per the label ⇄ column pairing in
-`templates/default-labels.md`. Only proceed with the mutations below once
-it has handed back a verified `{item_id}` and `{column_option_id}`.
-
-Set status to In Progress:
+Resolve the board, the issue's `{item_id}`, and the target column's
+`{column_option_id}` via `templates/board-resolution.md`. The target column
+for `status-in-progress` is **In Progress** (`col-in-progress`) per the
+label ⇄ column pairing in `templates/default-labels.md`. Only run the
+mutation once it returns a verified `{item_id}` and `{column_option_id}`:
 
 ```
 gh api graphql -f query='mutation {
@@ -99,98 +81,57 @@ gh api graphql -f query='mutation {
 }'
 ```
 
-Set start date to today:
-
-```
-gh api graphql -f query='mutation {
-  updateProjectV2ItemFieldValue(input: {
-    projectId: "{project_node_id}"
-    itemId: "{item_id}"
-    fieldId: "{start_date_field_id}"
-    value: { date: "{today}" }
-  }) { projectV2Item { id } }
-}'
-```
+Set the board start date too if a `start-date-field-id` is configured (same
+mutation shape, `value: { date: "{today}" }`). Independently of the board,
+set the org-level **`Start date`** issue field to today (best-effort,
+capability-gated) per `templates/issue-fields-resolution.md` (Steps 2, 3,
+5) — skip silently if the org does not define it.
 
 When **no** board is configured, skip this step silently. When a board
-**is** configured, board failures are loud: report the failure to the
-user (e.g., "Board update failed: {error}. Continuing without board
-update.") and proceed with the rest of the workflow.
+**is** configured, board failures are loud: report and continue.
 
-**Org `Start date` field (best-effort, capability-gated).** Independently
-of the board, set the org-level **`Start date`** issue field to today via
-`templates/issue-fields-resolution.md` (Step 2 to confirm the field
-exists, Step 3 for the issue node id, Step 5 with `dateValue: "{today}"`).
-This runs whether or not a board is configured — the board start-date
-above is a *board* field; this is the issue field. Skip silently if the
-org does not define `Start date`.
+## 5. Validate the issue body
 
-### 4. Validate the issue body
+Read the issue body. It needs at minimum **Context** (what and why) and
+**Requirements** (acceptance criteria / expected behavior). If linked docs
+or comments supply enough context, proceed. If truly empty with no guidance
+anywhere, run `/github-workflow:block-story`.
 
-Read the issue body. Check that it has at minimum:
-
-- **Context** — what the story is about and why
-- **Requirements** — acceptance criteria or expected behavior
-
-If the issue body is empty or has no actionable guidance, flag it.
-If linked docs or comments provide enough context, proceed anyway.
-If truly empty with no guidance anywhere, run `/github-workflow:block-story`.
-
-### 5. Create branch
+## 6. Create branch
 
 ```
 git fetch origin {default-branch}
 ```
 
-Apply the branch convention from config. To generate `{short-desc}`
-from the issue title:
+Apply the branch convention from config. Generate `{short-desc}` from the
+issue title: lowercase; replace spaces/special chars with hyphens; collapse
+consecutive hyphens; truncate to 40 chars; strip trailing hyphens. (Issue
+"Fix: User login broken!!!" with `feature/{number}/{short-desc}` →
+`feature/42/fix-user-login-broken`.)
 
-1. Lowercase the title
-2. Replace spaces and special characters with hyphens
-3. Remove consecutive hyphens
-4. Truncate to 40 characters max
-5. Remove trailing hyphens
-
-Example: issue "Fix: User login broken!!!" with convention
-`feature/{number}/{short-desc}` → `feature/42/fix-user-login-broken`
-
-Check if the branch already exists (from a previous blocked attempt or
-partial work):
+Check whether the branch already exists (from a prior blocked or partial
+attempt):
 
 ```
 git branch --list {branch}
 git ls-remote --heads origin {branch}
 ```
 
-If the branch exists locally or remotely, check it out and rebase onto
-the latest default branch:
-
-```
-git checkout {branch}
-git rebase origin/{default-branch}
-```
-
-If `git checkout {branch}` fails because the branch is **already checked
-out in another worktree**, that is a lost claim — another agent on this
-machine owns the work. Stop and exit cleanly per the claim-procedure
-**Lost-claim path**: change nothing, fork nothing. (With the atomic claim
-in step 2 this is rare, but a lingering worktree can still hold the
-branch.)
-
-If the rebase fails with conflicts, do **not** fork a parallel branch.
-Abort and block the story so the divergence can be resolved deliberately:
-
-```
-git rebase --abort
-```
-
-Then run `/github-workflow:block-story` with the conflict details. The
-atomic claim in step 2 guarantees no rival agent shares this branch, so a
-conflict is a genuine divergence to resolve — never a collision to route
-around with a `-retry` fork.
-
-If the branch does not exist, create it:
-
-```
-git checkout -b {branch} origin/{default-branch}
-```
+- **Exists locally or remotely** → check it out and rebase onto the latest
+  default branch:
+  ```
+  git checkout {branch}
+  git rebase origin/{default-branch}
+  ```
+  - If `git checkout` fails because the branch is **already checked out in
+    another worktree**, that is a lost claim — another agent on this machine
+    owns the work. Stop and exit cleanly per the claim-procedure
+    **Lost-claim path**: change nothing.
+  - If the rebase **conflicts**, do not fork a parallel branch — the atomic
+    claim guarantees no rival shares this branch, so a conflict is a genuine
+    divergence. `git rebase --abort`, then run `/github-workflow:block-story`
+    with the conflict details.
+- **Does not exist** → create it:
+  ```
+  git checkout -b {branch} origin/{default-branch}
+  ```

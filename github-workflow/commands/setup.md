@@ -559,4 +559,4 @@ git push origin :refs/claims/issue-{number}   # or :refs/claims/pr-{number}
 ```
 
 Full procedure and safety checks: **Reaping orphaned claims** in
-`templates/claim-procedure.md`.
+`templates/claim-procedure-rationale.md`.
