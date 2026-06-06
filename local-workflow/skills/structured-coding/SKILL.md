@@ -21,6 +21,10 @@ allowed-tools:
 
 This skill defines how to approach coding tasks. The core philosophy: understand before you act, define before you build, and write code that belongs in its codebase.
 
+## Plain-English output
+
+Everything you write for a person to read (your plan, progress notes, and the summary of what you changed) follows `_shared/wording-standard.md` and avoids `_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
+
 ## Current session state (auto-loaded)
 
 **Branch:** !`git branch --show-current 2>/dev/null || echo "(not a git repo or detached HEAD)"`

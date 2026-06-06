@@ -6,6 +6,8 @@ description: 'Assign a story, update the board, and create a branch. Trigger: "s
 
 Assign the story, update the board, and create a working branch.
 
+**Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
+
 Requires: a story number. If no number is provided, run the
 `/github-workflow:pick-story` flow to auto-select the next story and
 use that number. Do not ask the user which story to start.

@@ -38,6 +38,10 @@ production-readiness. Scoped to React Native with Expo.
 
 Read `CLAUDE.md` for project rules if it exists.
 
+## Plain-English output
+
+Everything you write for a person to read (each finding, its impact, and the summary) follows `_shared/wording-standard.md` and avoids `_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
+
 ---
 
 ## Step 1 — Establish Feature Scope

@@ -1,7 +1,7 @@
 <!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 # Banned Output Patterns
 
-These patterns must never appear in output. Every writing skill in this plugin references this file.
+These patterns must never appear in output. Every skill and command that produces text a person reads references this file, alongside `_shared/wording-standard.md`.
 
 ## Punctuation
 

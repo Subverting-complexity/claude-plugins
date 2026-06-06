@@ -28,6 +28,10 @@ arguments:
 End-to-end story execution workflow. Picks a story from the backlog,
 plans the implementation, builds it, runs tests, and opens a PR.
 
+## Plain-English output
+
+Everything you write for a person to read (the plan, progress notes, the PR description, and the final summary) follows `skills/_shared/wording-standard.md` and avoids `skills/_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
+
 **This workflow is fully autonomous.** Every phase flows into the next
 without pausing for user input. Do not ask the user to choose, confirm,
 or approve at any step. Do not call grill-me. The only reasons to stop

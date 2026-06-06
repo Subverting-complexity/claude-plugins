@@ -21,8 +21,12 @@ Write or update project documentation based on the actual codebase.
 Documentation describes what exists — do not document aspirational
 features or planned changes.
 
-Read `skills/_shared/banned-patterns.md` before writing. All
-documentation must follow those voice and tone rules.
+Read `skills/_shared/wording-standard.md` and
+`skills/_shared/banned-patterns.md` before writing. All documentation
+must follow both. Assume a technically capable reader who is not involved
+in this codebase: explain what a component or pattern is before relying
+on its name, stay high-level and concise, and never let a string of
+identifiers replace a plain explanation.
 
 ## Inputs
 

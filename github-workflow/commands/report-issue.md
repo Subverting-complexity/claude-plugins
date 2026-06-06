@@ -6,6 +6,8 @@ description: 'Create a bug, security, architecture, or tech debt issue. Trigger:
 
 Create a bug, architecture, or tech debt issue discovered during development.
 
+**Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
+
 ## Preflight
 
 Before doing anything else, invoke `/github-workflow:preflight` to
