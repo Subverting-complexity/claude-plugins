@@ -256,88 +256,44 @@ authoritative lookup in `templates/sibling-pr-lookup.md` with this
   user and stop rather than guessing.
 - Otherwise proceed to claim and build as normal.
 
-If no number is provided, run the pick-story logic:
+If no number is provided, **select a story** with the canonical procedure
+in `templates/story-selection.md`, passing `$ARGUMENTS.mode` (default
+`story`). That procedure:
 
-1. Read `ClaudeProject.md` for org, repo, label map, `agent-gating`
-   mode, and the `claude-ready` label name.
-1b. Auto-ready resolved dependencies — scan two groups (regardless of
-    assignee): issues carrying the `status-blocked` label (found by
-    label — `block-story` unassigns them) and issues assigned to `@me`
-    that do NOT have the `status-ready` label. For each, parse the issue
-    body for dependency markers (`Depends on #N`, `Blocked by #N`,
-    `After #N`, `Requires #N`) and check the `## Dependencies` section.
-    If all referenced issues are now `CLOSED`:
-    - **Issues without `needs-refinement`**: move the issue to
-      `status-ready` (removing its current lifecycle label, e.g.
-      `status-blocked`) and comment that dependencies are resolved. The
-      issue re-enters the pick pool below.
-    - **Issues with `needs-refinement`**: do NOT auto-promote to
-      `status-ready`. Leave the `needs-refinement` label in place.
-      Comment that dependencies are resolved and the story is ready
-      for a refinement session. The story will be surfaced to the user
-      when it reaches the top of the pick queue (see Phase 1 pick
-      logic above).
-    Best-effort — skip on API errors.
-2. Check for milestones to detect backlog mode:
-   ```
-   gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | .[] | select(.open_issues > 0) | {title, due_on, open_issues}'
-   ```
-3. **Sprint mode** (milestones found): pick from the earliest milestone
-   with open issues, sorted by priority label then issue number.
-4. **Flat mode** (no milestones): pick from open unassigned issues in
-   the ready state (per `ready-gate`: label, board column, or both),
-   sorted by priority then issue number.
-5. **Maintenance mode**: filter to issues with maintenance type labels (type-bug, type-security, type-arch, type-debt from the label map).
-6. **Feature mode**: filter to issues with the type-story label only.
-7. **Story mode (default)**: no type filter — pick the highest priority issue regardless of type label. This is the most common mode.
+1. detects backlog mode (sprint vs flat),
+2. assembles the unassigned candidate list per `ready-gate`
+   (`label` / `board-column` / `both` / `none`), applies the agent-gating
+   and mode filters, and sorts by priority then issue number,
+3. **claims the top candidate first, then validates only that one**
+   (dependencies + already-merged) — releasing and trying the next only on
+   failure, marking a genuinely-blocked issue `status-blocked` or closing
+   an already-resolved one, and
+4. runs the dependency auto-ready scan **only if the pool comes up empty**.
 
-**Filtering (all modes):** Before selecting a candidate, apply these
-filters to the candidate list:
+It returns either a single **claimed** story (the atomic claim is held and
+`status-in-progress` + `@me` are applied) or "No stories available" — in
+which case stop. `agent-gating: disabled` (the default) means the
+`claude-ready` human-approval label is **ignored entirely**; no extra label
+is required. The atomic claim is acquired *before* any side effect, so two
+agents never validate or build the same issue.
 
-- **Blocked:** Exclude issues with the `needs-refinement` label
-  (looked up from the label map in ClaudeProject.md).
-- **Agent gating:** If `agent-gating` is `enabled` in
-  ClaudeProject.md, exclude issues that do **not** have the
-  `claude-ready` label. Only human-approved stories are eligible.
-- **Dependencies:** For each of the top 10 candidates, parse the
-  issue body for dependency markers (`Depends on #N`, `Blocked by
-  #N`, `After #N`, `Requires #N`) and `## Dependencies` section
-  references. For each referenced `#N`, check `gh issue view {N}
-  --repo {org}/{repo} --json state --jq '.state'`. Skip the
-  candidate if any dependency is still `OPEN`. Check at most 5
-  dependency references per candidate.
+**Then, on the claimed story**, read the full issue body and confirm it has
+**Context** and **Requirements**:
 
-**Never ask the user which story to pick.** Always auto-select using
-priority labels then lowest issue number. If no candidates have
-priority labels, pick the lowest issue number.
-
-Read the full issue body. Check it has **Context** and **Requirements**.
-
-- If the issue has the `needs-refinement` label (from the label map):
-  surface it to the user. Tell them: "The next priority story
-  (#{number}: {title}) needs refinement before it can be implemented.
-  Would you like to refine it now?" Use `AskUserQuestion` with options:
-  - "Refine now (Recommended)" — run the refinement skill configured
-    in `refinement-skill` from ClaudeProject.md (default:
-    `feature-discovery` in continuous mode; alternative: `grill-me`).
-    After refinement completes, remove the `needs-refinement` label,
-    apply `status-ready`, and continue with Phase 2.
-  - "Skip and pick next" — leave the label, pick the next eligible
-    story instead.
-- If the issue has enough guidance (body, comments, linked docs): proceed.
-- If truly empty with no guidance anywhere: run `/github-workflow:block-story`
-  and pick the next one.
-
-**Claim at pick time.** Once you have selected a usable story, acquire it
-atomically with `templates/claim-procedure.md` (**Acquire**) before doing
-anything else — this closes the window between selecting and owning the
-issue under a shared GitHub identity. The procedure pushes a unique object
-to `refs/claims/issue-{number}` (a real server-side compare-and-swap) and
-applies the `--add-assignee @me` display marker on success. If Acquire
-reports the claim is lost, another agent took it: make no changes and
-return to candidate selection for the next story. If the issue turns out
-to be empty and you route it to `block-story`, that command releases the
-claim for you.
+- Enough guidance (body, comments, linked docs) → proceed to Phase 2.
+- Carries `needs-refinement` (a configuration may surface such an issue) →
+  offer refinement: "The next priority story (#{number}: {title}) needs
+  refinement before it can be implemented. Would you like to refine it
+  now?" Use `AskUserQuestion`:
+  - "Refine now (Recommended)" — run the refinement skill from
+    `refinement-skill` (default `feature-discovery`; alternative
+    `grill-me`). After refinement, remove `needs-refinement`, apply
+    `status-ready`, and continue with Phase 2.
+  - "Skip and pick next" — release the claim
+    (`templates/claim-procedure.md` **Release**) and re-run the selection.
+- Truly empty with no guidance anywhere → run
+  `/github-workflow:block-story` (which releases the claim) and re-run the
+  selection for the next story.
 
 ## Phase 2 — Start
 

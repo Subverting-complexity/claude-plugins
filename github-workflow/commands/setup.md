@@ -192,9 +192,13 @@ For anything not auto-detected, ask the user interactively:
   - `label` (default) — a `status-ready` label on the issue.
   - `board-column` — a "Ready" column on the project board.
   - `both` — requires the label AND the board column.
+  - `none` — no readiness gate; any open unassigned issue is eligible
+    for autonomous pickup. (Pair with `agent-gating: disabled` for fully
+    unattended pickup of the whole open backlog.)
   Store the choice as `ready-gate` in ClaudeProject.md. If
   `board-column` or `both` is chosen, a project board must be
-  configured and must have a "Ready" status option.
+  configured and must have a "Ready" status option; `label` and `none`
+  need no board.
 - **Issue lifecycle (status) labels** — the issue-side mirror of the PR
   review-state machine: every issue always carries exactly one. Confirm
   names for the full set (suggest the defaults from

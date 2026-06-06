@@ -131,10 +131,11 @@ cannot do reliably (and the `gh` query below contains a code fence,
 which would truncate an auto-run block — see issue #33).
 
 1. Open `ClaudeProject.md`. In `## Ready Gate`, read the `ready-gate`
-   value (`label`, `board-column`, or `both`).
+   value (`label`, `board-column`, `both`, or `none`).
 2. A board is **required** when `ready-gate` is `board-column` or
    `both`. It is **optional** (best-effort board updates only) when
-   `ready-gate` is `label`.
+   `ready-gate` is `label` or `none` — neither needs a board, since
+   neither uses a "Ready" column to gate pickup.
 3. In `## Project Board`, read `project-node-id`, `project-title`, and
    the Status option ids.
 
@@ -174,12 +175,12 @@ Classify:
     `project-title` → emit
     `CRITICAL board-identity: stored project-node-id resolves to '<resolved>' but project-title is '<configured>'`
     (or `... does not resolve to a ProjectV2`).
-- **Best-effort board (label ready-gate)** — do **not** make the network
-  call. Board writes are best-effort and `templates/board-resolution.md`
-  verifies identity at write time, so a stale id there fails loudly then,
-  not on every preflight. No finding here.
-- **Board not required and not configured** — no finding. A `label`
-  ready-gate with no board section is valid.
+- **Best-effort board (`label`/`none` ready-gate)** — do **not** make the
+  network call. Board writes are best-effort and
+  `templates/board-resolution.md` verifies identity at write time, so a
+  stale id there fails loudly then, not on every preflight. No finding here.
+- **Board not required and not configured** — no finding. A `label` or
+  `none` ready-gate with no board section is valid.
 
 ### Label-map completeness
 

@@ -43,238 +43,44 @@ Extract from the project configuration above:
 - `default-branch` from Identity
 - `branch-convention` from Branch Convention
 - Label map (priority labels, status labels, type labels, claude labels)
-- `agent-gating` from Agent Gating (`enabled` or `disabled`, default: `disabled`)
-- `claude-ready` label name from the Claude label map (only needed when gating is enabled)
-- `ready-gate` from Ready Gate (`label`, `board-column`, or `both`; default: `label`)
-- Project board settings (if `ready-gate` is `board-column` or `both`)
+- `agent-gating` from Agent Gating (`enabled` or `disabled`, default:
+  `disabled`). When `disabled`, the `claude-ready` human-approval label is
+  **ignored entirely** — no extra label is required to pick an issue.
+- `claude-ready` label name from the Claude label map (only needed when
+  gating is enabled)
+- `ready-gate` from Ready Gate (`label`, `board-column`, `both`, or
+  `none`; default: `label`)
+- Project board settings (only needed when `ready-gate` is `board-column`
+  or `both`)
 
 Resolve every label name by **purpose key** through the single path in
-`templates/default-labels.md` — the label map for workflow purposes
-(`status-ready`, the issue lifecycle states `status-in-progress` /
-`status-parked` / `status-blocked` / `status-in-review` /
-`status-needs-attention`, `priority-*`, `type-*`, claude markers). The
-bare names in the steps below are purpose keys: resolve them, never filter
-on a bare name literally, so the strings this command skips on match the
-strings other commands apply. When falling back to defaults in an
-interactive session, warn the user: "Label map not configured — using
-default labels. Run `/github-workflow:setup` to configure labels for this
-project."
+`templates/default-labels.md` — never filter on a bare name literally, so
+the strings this command skips on match the strings other commands apply.
+When falling back to defaults in an interactive session, warn the user:
+"Label map not configured — using default labels. Run
+`/github-workflow:setup` to configure labels for this project."
 
-Issues are selected only from the `--assignee ""` (unassigned) pool, and
-only candidates carrying `status-ready` (per `ready-gate`) are eligible.
-Issues in any other lifecycle state — `status-in-progress`,
-`status-parked`, `status-blocked`, `status-in-review`,
-`status-needs-attention`, `needs-refinement` — are therefore already
-excluded; do **not** add a separate filter for the PR-only `approved`
-label (issues never carry it).
+### 2. Select a story
 
-### 1b. Auto-ready resolved dependencies
+Run the canonical selection procedure in `templates/story-selection.md`
+with the configuration above and this command's `mode`. It:
 
-Before picking new work, scan for issues whose dependencies may now be
-resolved. Two groups, regardless of assignee:
+1. detects backlog mode (sprint vs flat),
+2. assembles the unassigned candidate list per `ready-gate`
+   (`label` / `board-column` / `both` / `none`), applies the agent-gating
+   and mode filters, and sorts by priority then issue number,
+3. **claims the top candidate first, then validates only that one**
+   (dependencies + already-merged) — releasing and trying the next only if
+   it fails, marking a genuinely-blocked issue `status-blocked` or closing
+   an already-resolved one, and
+4. runs the dependency auto-ready scan **only if the pool comes up empty**.
 
-- **Blocked issues** — any issue carrying the `status-blocked` label.
-  `block-story` unassigns these, so they must be found **by label, not by
-  assignee**:
-  ```
-  gh issue list --repo {org}/{repo} --state open --label "{status_blocked_label}" --json number,body
-  ```
-- **Your non-ready issues** — issues assigned to `@me` that are not in
-  the ready state (detected per `ready-gate`: missing the `status-ready`
-  label, not in the "Ready" board column, or either, respectively).
+The procedure returns either a single **claimed** issue (the atomic claim
+is held and the `status-in-progress` + `@me` markers are applied) or "No
+stories available for pickup". **Never ask the user which story to pick** —
+selection is fully automatic by the sort order above.
 
-For each such issue, read the issue body and look for dependency
-markers (see Step 3c). If all referenced issues are now closed, the
-dependencies are resolved — mark the issue as ready:
-
-- **`label` or `both`**: move the issue to `status-ready`, removing its
-  current lifecycle label (e.g. `status-blocked`) so exactly one state is
-  present:
-  ```
-  gh issue edit {number} --repo {org}/{repo} \
-    --remove-label "{current_lifecycle_label}" --add-label "{status_ready_label}"
-  ```
-  After applying, verify the label is present. If missing, create it
-  with the guarded create-if-missing pattern from
-  `templates/default-labels.md` (no `--force`) and retry once. This is the
-  automatic unblock path for `status-blocked` issues: when every
-  `Blocked by #N` is closed, the issue returns to `status-ready`.
-- **`board-column` or `both`**: move the issue to the **Ready** column
-  (`col-ready`) on the project board — the column paired with
-  `status-ready` in `templates/default-labels.md`. First resolve the
-  board, the issue's `{item_id}`, and the target column's
-  `{column_option_id}` following `templates/board-resolution.md` (identity
-  verification by title, add-to-board-if-missing, column-option-id
-  resolution); only mutate once it returns a verified `{item_id}` and
-  `{column_option_id}`:
-  ```
-  gh api graphql -f query='mutation {
-    updateProjectV2ItemFieldValue(input: {
-      projectId: "{project_node_id}"
-      itemId: "{item_id}"
-      fieldId: "{status_field_id}"
-      value: { singleSelectOptionId: "{column_option_id}" }
-    }) { projectV2Item { id } }
-  }'
-  ```
-- Add a comment:
-  ```
-  gh issue comment {number} --repo {org}/{repo} --body "Dependencies resolved — all blocking issues are now closed. Returning to the ready pool."
-  ```
-
-The unblocked issue is now eligible for normal picking below.
-
-This step is best-effort. If the dependency check fails (API error,
-unparseable body), skip the issue and continue.
-
-### 2. Detect backlog mode
-
-Check for milestones with open issues:
-
-```
-gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | .[] | select(.open_issues > 0) | {title, due_on, open_issues}'
-```
-
-- **Milestones with due dates and open issues exist** → Sprint mode
-- **Otherwise** → Flat backlog mode
-
-### 3a. Sprint mode — find current sprint
-
-Pick the earliest milestone (by due date) that has open issues.
-This is the current sprint — no hardcoded sprint order needed.
-
-List candidate issues in that milestone:
-
-```
-gh issue list --repo {org}/{repo} --milestone "{sprint_title}" --state open --assignee "" --json number,title,labels,body --jq '.[] | {number, title, labels: [.labels[].name], body}'
-```
-
-Candidates come from the unassigned `status-ready` pool, so issues in any
-other lifecycle state are already excluded (see Step 1). Do not filter on
-the PR-only `approved` label.
-
-**Agent gating:** If `agent-gating` is `enabled`, also filter out
-issues that do **not** have the `claude-ready` label. Only
-human-approved stories are eligible.
-
-Sort candidates:
-
-1. By priority label (critical → high → medium → low, using label map)
-2. By issue number ascending
-
-Apply the ready-gate filter to prefer ready issues (see below).
-
-### 3b. Flat backlog mode
-
-List candidate issues. How to find ready candidates depends on
-`ready-gate`:
-
-- **`label`**: filter by `status-ready` label:
-  ```
-  gh issue list --repo {org}/{repo} --state open --assignee "" --label "{status_ready_label}" --json number,title,labels,body --jq '.[] | {number, title, labels: [.labels[].name], body}'
-  ```
-- **`board-column`**: query the project board for issues in the
-  "Ready" column:
-  ```
-  gh api graphql -f query='query { node(id: "{project_node_id}") { ... on ProjectV2 { items(first: 100) { nodes { fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } content { ... on Issue { number title labels(first:10) { nodes { name } } body state assignees(first:1) { nodes { login } } } } } } } } }'
-  ```
-  Filter to items where Status is "Ready", state is OPEN, and
-  assignees is empty.
-- **`both`**: use the label query, then confirm each candidate is also
-  in the "Ready" board column. Drop candidates not in both.
-
-**Agent gating:** If `agent-gating` is `enabled`, also filter out
-issues that do **not** have the `claude-ready` label.
-
-Sort by priority label, then issue number.
-
-If no ready gate is configured (no `status-ready` label and no board),
-list all open unassigned issues.
-
-### 3b-1. Apply mode filter
-
-After assembling the candidate list (from either sprint or flat mode),
-apply type-based filtering based on mode:
-
-- **Story mode** (default): no type filter. Pick the highest priority
-  issue regardless of its type label. This is the most common mode.
-- **Feature mode**: keep only issues with the type-story label (from
-  the label map). If no type-story issues exist, report "No feature
-  stories available" and exit.
-- **Maintenance mode**: keep only issues with type-bug, type-security,
-  type-arch, or type-debt labels (from the label map).
-
-The filtered list then proceeds to Step 3c (dependency checking).
-
-### 3c. Filter out issues with unresolved dependencies
-
-Before selecting a candidate, check the top 10 candidates for
-dependency markers. Scan each issue's body for lines matching any of
-these patterns (case-insensitive):
-
-- `Depends on #N`
-- `Blocked by #N`
-- `After #N`
-- `Requires #N`
-
-Also check the `## Dependencies` section if present — look for
-`#N` references to other issues in that section.
-
-For each referenced issue number, check its state:
-
-```
-gh issue view {dep_number} --repo {org}/{repo} --json state --jq '.state'
-```
-
-If **any** referenced issue is still `OPEN`, skip the candidate —
-it has unresolved dependencies. Move to the next candidate in
-priority order.
-
-To limit API calls, check at most 10 candidates and at most 5
-dependency references per candidate. If a candidate has more than 5
-dependencies, treat it as blocked (likely a meta-issue).
-
-### 3d. Close already-completed issues
-
-Before selecting a candidate, check the top candidates for issues that
-have already been resolved. For each candidate, check if a merged PR
-references it:
-
-```
-gh pr list --repo {org}/{repo} --search "closes #{number} OR fixes #{number}" --state merged --json number,title --jq '.[0]'
-```
-
-If a merged PR exists that closes or fixes this issue, the issue should
-already be closed but GitHub may not have auto-linked it. Close the
-issue:
-
-```
-gh issue close {number} --repo {org}/{repo} --comment "Closing — this issue was already resolved by #{pr_number}."
-```
-
-Skip the closed issue and move to the next candidate.
-
-To limit API calls, check at most 5 candidates this way. If more need
-checking, let them be caught on subsequent pick runs.
-
-### 4. Select and display
-
-**Never ask the user which story to pick.** Always auto-select using
-the sort order above. If no candidates have priority labels, pick the
-lowest issue number. If the user says "pick a story" or "what's next",
-that means "give me the top one", not "show me a list to choose from".
-
-If no candidates remain after filtering, report "No stories available
-for pickup" and exit. Do not loop, retry, or ask the user to create
-stories.
-
-**Claim at pick time.** Take the first candidate and immediately acquire
-it with the atomic claim procedure in `templates/claim-procedure.md`
-(**Acquire**) — this closes the window between selecting a story and
-owning it. If Acquire wins, this is your story. If Acquire reports the
-claim is lost, another agent took it first: drop this candidate and try
-the next one in sort order, repeating until one is claimed or the list is
-exhausted. Acquiring also applies the `--add-assignee @me` display marker.
+### 3. Display
 
 Once a candidate is claimed, display:
 
