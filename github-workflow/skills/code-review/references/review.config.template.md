@@ -60,15 +60,32 @@ left for a human to merge.
 
 `require-ci-before-merge` (default `false`) hardens the merge gate for
 repos that intend to gate on CI but cannot mark checks **required** (e.g.
-a private repo on a free plan, where branch protection is unavailable).
-When `true`, the skill refuses to merge a PR that has **no green CI
-gate** — if the head SHA has no checks at all, or a check it cannot fix
-is red, it pauses and leaves the `approved` verdict instead of landing
-the PR. With it `false`, an approved PR on a branch with no *required*
-checks merges immediately (the default, backward-compatible behaviour).
-Set it `true` whenever auto-merge is enabled but GitHub itself is not
-enforcing required status checks — `/github-workflow:setup harden` sets
-it for you when it cannot wire up server-side enforcement.
+a private repo on a free plan, where branch protection is unavailable). It
+takes three values:
+
+- **`false`** (default, backward-compatible) — an approved PR on a branch
+  with no *required* checks merges immediately, whether or not other
+  checks exist.
+- **`true`** — the skill refuses to merge a PR that has **no green CI
+  gate**: if the head SHA has no checks at all, or a check it cannot fix
+  is red, it pauses and leaves the `approved` verdict. An absolute gate —
+  it pauses even on a repo that runs no pipeline.
+- **`if-present`** — gate on CI **only when CI exists**: if the head SHA
+  has checks they must be green (a red check it cannot fix pauses), but a
+  PR with **no checks at all merges**. Use this for "require CI to pass if
+  there is CI, otherwise merge."
+
+Set it `true` (or `if-present`) whenever auto-merge is enabled but GitHub
+itself is not enforcing required status checks — `/github-workflow:setup
+harden` sets `true` for you when it cannot wire up server-side
+enforcement.
+
+> **Only `true` and configuration (a) are absolute gates.** Because
+> `if-present` merges when a head SHA has no checks, it guarantees "CI
+> green before merge" only on a repo that **actually runs a PR pipeline**.
+> For a hard guarantee that an approved PR can *never* merge without green
+> CI — including before any check has reported — use GitHub-enforced
+> required status checks (configuration (a) in the setup guide) or `true`.
 
 This is **off by default** — turn it on only for repos where you trust an
 approved Claude review to land unattended. When on, the skill drives the
