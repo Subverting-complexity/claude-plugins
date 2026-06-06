@@ -183,6 +183,40 @@ Use label colors from `templates/default-labels.md`. If the label map
 in `ClaudeProject.md` is missing or incomplete, use the default names
 from `templates/default-labels.md`.
 
+### 5c. Native issue type + field values (best-effort)
+
+Upgrade the freshly-created issue from label-only classification to the
+org's **native issue type** and **issue fields**, following
+`templates/issue-fields-resolution.md`. This is capability-gated and
+entirely best-effort: an org without native types or fields keeps the
+label-only result from the steps above with no error.
+
+1. Run **Step 1** (discover native issue types) and **Step 2** (discover
+   issue fields) of `issue-fields-resolution.md`.
+2. Resolve this issue's node id (**Step 3**).
+3. **Native type (Step 4)** — if the org is type-capable, map the Step 2
+   classification to a native type via the *Native issue type map* in
+   `templates/default-labels.md`:
+   - Bug → **Bug**, Security → **Bug**, Architecture → **Feature**,
+     Tech Debt → **Feature**.
+   - Set it with `updateIssueIssueType`, then **remove the now-redundant
+     `type-*` label** you applied in Step 5 (`gh issue edit {number}
+     --remove-label "{type_label}"`) — native type is not dual-tracked.
+     On a non-type-capable org, skip this and leave the `type-*` label as
+     the classification.
+4. **Field values (Step 5)** — populate, for whichever fields the org
+   defines, in one `setIssueFieldValue` call:
+   - `Type of issue` ← Security / Architecture / Tech Debt per the map
+     (leave unset for a plain Bug).
+   - `Priority` ← the option mapped from the priority you chose in Step 3
+     (Critical→Urgent, High→High, Medium→Medium, Low→Low). **Keep** the
+     `priority-*` label too — priority is dual-tracked.
+   - `Origin` ← **Development** (report-issue files issues found during
+     development; if the report came from a security audit session, use
+     **Security Audit** instead).
+5. Report any failure loudly but continue — the issue already exists and
+   carries its labels.
+
 ### 6. Validate issue body
 
 After creating the issue, immediately read it back and verify the body

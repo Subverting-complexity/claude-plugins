@@ -86,6 +86,94 @@ map in `ClaudeProject.md`; defaults below.
 | `priority-low` | `priority-low` | `0E8A16` | Low priority |
 | `claude-ready` | `claude-ready` | `1D76DB` | Approved for agent work |
 
+## Issue Types & Field Values
+
+When the target org has **native GitHub issue types** and **org issue
+fields** configured, the workflow uses them as the first-class
+classification and metadata — see `templates/issue-fields-resolution.md`
+for the runtime resolution + mutation procedure. This section is the
+**single source of truth** for the purpose→value mappings those steps
+follow; a project may override any of it in `ClaudeProject.md` →
+`## Issue Types & Fields`.
+
+Capability is detected at runtime, per dimension: an org with **no** native
+types, or missing a given field, transparently keeps the label-only
+behaviour above for that dimension. Native types are **not** dual-tracked —
+on a type-capable org the native type replaces the `type-*` label.
+**Priority is** dual-tracked (the field *and* the `priority-*` label) so the
+selector's priority sort stays a cheap label read.
+
+### Native issue type map ("by nature")
+
+The workflow's kind → native issue type, the finer `Type of issue` field
+option, and the `type-*` label used as the fallback on a non-type-capable
+org:
+
+| Workflow kind | Native issue type | `Type of issue` option | `type-*` fallback label |
+|---------------|-------------------|------------------------|-------------------------|
+| story         | User Story        | New Feature            | `type-story` |
+| bug           | Bug               | _(unset)_              | `type-bug` |
+| security      | Bug               | Security               | `type-security` |
+| tech debt     | Feature           | Tech Debt              | `type-debt` |
+| architecture  | Feature           | Architecture           | `type-arch` |
+| feature       | Feature           | New Feature            | `type-story` |
+| epic          | Epic              | _(unset)_              | `type-story` |
+| spike         | User Story        | Spike                  | `type-story` |
+| chore         | User Story        | Chore                  | `type-bug` |
+
+A `Type of issue` option of _(unset)_ means the native type already says
+it (a `Bug` needs no sub-category); leave the field empty.
+
+### Field-name inventory
+
+Resolved via `ClaudeProject.md` → `## Issue Types & Fields`; defaults here.
+
+| Purpose key            | Default field name | Data type     |
+|------------------------|--------------------|---------------|
+| `field-priority`       | `Priority`         | single-select |
+| `field-effort`         | `Effort`           | single-select |
+| `field-type`           | `Type of issue`    | single-select |
+| `field-origin`         | `Origin`           | single-select |
+| `field-start`          | `Start date`       | date          |
+| `field-target`         | `Target date`      | date          |
+| `field-parent`         | `Parent`           | text          |
+| `field-status-reason`  | `Status reason`    | text          |
+
+### Priority field option map
+
+The `priority-*` label purpose → `Priority` field option (both are set;
+see dual-tracking note above):
+
+| Priority label purpose | `Priority` field option |
+|------------------------|-------------------------|
+| `priority-critical`    | Urgent                  |
+| `priority-high`        | High                    |
+| `priority-medium`      | Medium                  |
+| `priority-low`         | Low                     |
+
+### Effort field option map
+
+The story size estimate (from the story template) → `Effort` field option:
+
+| Size estimate | `Effort` field option |
+|---------------|-----------------------|
+| large         | High                  |
+| medium        | Medium                |
+| small         | Low                   |
+
+### Origin field option map
+
+The creating command/session → `Origin` field option:
+
+| Creating command / session                       | `Origin` option     |
+|--------------------------------------------------|---------------------|
+| `feature-discovery`                              | Feature Discovery   |
+| `grill-me` refinement session                    | Grill-Me Session    |
+| `security-audit` / `execute` audit (security)    | Security Audit      |
+| `code-review`                                    | Code Review         |
+| `report-issue` (found during dev), `finish-story`| Development         |
+| human / stakeholder request                      | Stakeholder Request |
+
 ## Issue Lifecycle State Labels
 
 These are the **issue-side mirror** of the PR review-state machine: every

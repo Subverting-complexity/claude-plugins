@@ -305,10 +305,31 @@ issues. If they accept:
      is needed.
    - Deferred stories (see "Deferred speccing") →
      `needs-refinement` label.
-4. After creation, verify each issue body contains the correct
+4. **Native type + fields** (best-effort, capability-gated) — for each
+   created issue, upgrade it from labels to the org's native issue type
+   and fields per `templates/issue-fields-resolution.md`, using the
+   *Native issue type map* and field maps in `templates/default-labels.md`:
+   - **Native type**: a story → **User Story**; an epic → **Epic**. Set it
+     with `updateIssueIssueType` and drop the redundant `type-*` label on a
+     type-capable org.
+   - **`Type of issue`** ← New Feature (default for planned story work; use
+     Enhancement when the story improves something that already exists,
+     Spike for a research story).
+   - **`Effort`** ← from the story's size estimate (large→High,
+     medium→Medium, small→Low).
+   - **`Priority`** ← if the plan assigned one (dual-tracked with the
+     `priority-*` label).
+   - **`Parent`** ← when the story belongs to an epic, the epic's `#N`.
+   - **`Origin`** ← **Feature Discovery** for every issue created here.
+   - **Dependencies**: in addition to the body `## Dependencies` markers,
+     optionally record each known upstream as a native `addBlockedBy`
+     relationship (Step 7 of the resolution template).
+   On a non-type-capable org or for any undefined field, skip silently —
+   the label-based result stands.
+5. After creation, verify each issue body contains the correct
    dependency references. Use the post-creation validation pattern
    (see report-issue) to catch body corruption.
-5. Present a summary: issue numbers, titles, labels, and the
+6. Present a summary: issue numbers, titles, native type/labels, and the
    dependency graph with issue numbers filled in.
 
 **Leave the assignee blank.** Do not assign created stories to anyone —
