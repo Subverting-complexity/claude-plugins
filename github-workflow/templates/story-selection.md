@@ -5,22 +5,16 @@ a usable story." Referenced by `pick-story` and the `execute` skill's
 Phase 1 — **do not restate this loop inline anywhere**; call this procedure
 so both behave identically.
 
-## Why claim-first
+## Claim-first, validate-lazily
 
-The atomic claim (`templates/claim-procedure.md`) is the **cheapest**
-operation in the whole flow — two git pushes. Dependency checks and
-already-merged checks are the **expensive** ones (one `gh` call per
-dependency, per candidate). The old design validated up to ten candidates
-*before* claiming one — dozens of API calls to pick a single story.
-
-Invert it: **claim the top candidate first, then validate only that one.**
-In the common case (the top candidate is fine) this is ~3 calls instead of
-~60. It stays race-safe because the atomic ref is still acquired before any
-side effect — validation happens *after* you provably own the item, so no
-two agents ever validate or mutate the same issue. The only cost is a
-little label/assignee churn on the rare candidate that fails validation,
-and that churn does useful work (it marks a genuinely-blocked issue
-`status-blocked` or closes an already-resolved one).
+**Claim the top candidate first, then validate only that one** — never the
+whole list. The atomic claim is two cheap git pushes; dependency and
+already-merged checks are the expensive per-candidate `gh` calls. Claiming
+first makes the common case ~3 calls instead of ~60, and stays race-safe
+because the ref is acquired before any side effect (validation runs only
+after you provably own the item). The rare failed candidate costs a little
+label/assignee churn — which does useful work (marks it `status-blocked` or
+closes it). Full rationale: `templates/story-selection-rationale.md`.
 
 ## Inputs
 
@@ -83,10 +77,12 @@ Then narrow the list with **local** filters (no API calls):
 - **Agent gating:** if `agent-gating` is `enabled`, exclude issues that do
   **not** carry the `claude-ready` label — only human-approved stories are
   eligible. If `disabled` (default), this filter is **ignored entirely**.
-- **Mode:** filter by issue kind. `story` (default) → no type filter.
-  `feature` → keep only **story**-kind issues; `maintenance` → keep only
-  **bug / security / tech-debt / architecture** kinds. Resolve "kind"
-  through `templates/issue-fields-resolution.md` Step 6:
+- **Mode:** filter by issue kind. **`story` (default) → no type filter at
+  all: do not read `templates/issue-fields-resolution.md`, and do not run
+  the native-type fetch below.** Only `feature` and `maintenance` filter by
+  kind — `feature` keeps **story**-kind issues; `maintenance` keeps **bug /
+  security / tech-debt / architecture** kinds. For those two modes only,
+  resolve "kind" through `templates/issue-fields-resolution.md` Step 6:
   - **Type-capable org** → kind is the issue's **native issue type**. `gh`
     cannot project it (`--json issueType` is unsupported), so fetch it via
     GraphQL once and build a `number → type` map, then filter using the
