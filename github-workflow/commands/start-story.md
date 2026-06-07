@@ -1,5 +1,6 @@
 ---
 description: 'Assign a story, update the board, and create a working branch. Trigger: "start story N", "begin working on N", "assign me story N".'
+argument-hint: '[issue#]'
 ---
 
 # Start Story
@@ -25,7 +26,9 @@ runs straight after `/github-workflow:pick-story` in the same session,
 preflight has already run green and nothing has changed — do **not** invoke
 it again. Only run it on a fresh, standalone start.
 
-## 1. Read configuration
+## Steps
+
+### 1. Read configuration
 
 Extract `org`, `repo`, `default-branch`, the branch convention, the label
 map, and project-board settings from `ClaudeProject.md`. **If `pick-story`
@@ -35,7 +38,7 @@ every label by **purpose key** from that label map — never a bare literal,
 and only fall back to `templates/default-labels.md` for a purpose key the
 map omits.
 
-## 2. Already-in-flight guard (explicit number only)
+### 2. Already-in-flight guard (explicit number only)
 
 `pick-story` only hands back unassigned, ready issues, but an explicit
 number can name a story that already has a PR — and the claim ref is
@@ -56,7 +59,7 @@ lookup in `templates/sibling-pr-lookup.md` with this `{number}`.
   inconsistency and stop rather than guessing.
 - Otherwise → proceed to claim.
 
-## 3. Claim the issue
+### 3. Claim the issue
 
 Acquire it with `templates/claim-procedure.md` (**Acquire**, target
 `issue-{number}`). The atomic ref is a genuine compare-and-swap; the first
@@ -70,7 +73,7 @@ If Acquire reports the claim is lost, stop — another agent owns this story.
 If `pick-story` already claimed it in this same flow, Acquire's re-entry
 check treats it as a no-op and proceeds.
 
-## 4. Update project board (if configured)
+### 4. Update project board (if configured)
 
 Resolve the board, the issue's `{item_id}`, and the target column's
 `{column_option_id}` via `templates/board-resolution.md`, then run its
@@ -88,14 +91,14 @@ capability-gated) per `templates/issue-fields-resolution.md` (Steps 2, 3,
 When **no** board is configured, skip this step silently. When a board
 **is** configured, board failures are loud: report and continue.
 
-## 5. Validate the issue body
+### 5. Validate the issue body
 
 Read the issue body. It needs at minimum **Context** (what and why) and
 **Requirements** (acceptance criteria / expected behavior). If linked docs
 or comments supply enough context, proceed. If truly empty with no guidance
 anywhere, run `/github-workflow:block-story`.
 
-## 6. Create branch
+### 6. Create branch
 
 ```
 git fetch origin {default-branch}

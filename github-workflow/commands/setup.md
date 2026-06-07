@@ -1,5 +1,6 @@
 ---
 description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "onboard", "initialize the workflow", "help me set up", "setup", "init", "bootstrap", "configure the plugin", "first time setup", "harden auto-merge", "enforce CI before merge", "require CI".'
+argument-hint: '[harden]'
 ---
 
 # Setup
