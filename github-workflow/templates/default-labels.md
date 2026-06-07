@@ -19,6 +19,15 @@ never applied literally.
 
 ## The single resolution path
 
+> **You usually do not need to open this file.** Every workflow command
+> auto-loads the full `ClaudeProject.md` (label map included) into context
+> before it runs. When that map is already in context — the normal case —
+> resolve purpose keys directly from it and do **not** read this file. Open
+> it only as a fallback: a purpose key is missing from the project map, or
+> you need the default inventory / colours / native-type and board-column
+> tables below. Reading all ~280 lines just to map a name you already have
+> in context is wasted tokens and a wasted round-trip.
+
 When any skill needs the concrete name for a purpose key:
 
 1. **Workflow purposes** (typing, priority, status, claude markers) —

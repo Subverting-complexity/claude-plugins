@@ -21,34 +21,27 @@ closes it). Full rationale: `templates/story-selection-rationale.md`.
 From `ClaudeProject.md` (already in context — do not re-read it): `org`,
 `repo`, the label map, `agent-gating`, `ready-gate`, and project-board
 settings. Plus the caller's `mode` (`story` / `feature` / `maintenance`)
-and any explicit issue number. Resolve every label by **purpose key**
-through `templates/default-labels.md` — never filter on a bare literal.
+and any explicit issue number. Resolve every label by **purpose key** from
+the in-context `ClaudeProject.md` label map — never filter on a bare
+literal, and do not open `templates/default-labels.md` unless a purpose key
+is missing from that map.
 
 ---
 
-## 1. Detect backlog mode
-
-```
-gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | .[] | select(.open_issues > 0) | {title, due_on, open_issues}'
-```
-
-- Milestones with open issues exist → **Sprint mode**: candidates come
-  from the earliest milestone (by due date) with open issues.
-- Otherwise → **Flat mode**: candidates come from the whole open backlog.
-
-## 2. Assemble the candidate list
+## 1. Assemble the candidate list
 
 Candidates are always drawn from the **unassigned** pool (`--assignee ""`).
-How "ready" is determined depends on `ready-gate`:
+Request the `milestone` field in the **same** fetch so backlog mode (Step 2)
+is decided from this result without a separate API call. How "ready" is
+determined depends on `ready-gate`:
 
 - **`label`** (default) — issues carrying `status-ready`:
   ```
-  gh issue list --repo {org}/{repo} --state open --assignee "" --label "{status_ready_label}" --json number,title,labels,body --jq '.[] | {number, title, labels: [.labels[].name], body}'
+  gh issue list --repo {org}/{repo} --state open --assignee "" --label "{status_ready_label}" --json number,title,labels,body,milestone --jq '.[] | {number, title, labels: [.labels[].name], body, milestone: .milestone.title}'
   ```
-  (Sprint mode: add `--milestone "{sprint_title}"`.)
 - **`board-column`** — issues in the "Ready" column of the project board:
   ```
-  gh api graphql -f query='query { node(id: "{project_node_id}") { ... on ProjectV2 { items(first: 100) { nodes { fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } content { ... on Issue { number title labels(first:10) { nodes { name } } body state assignees(first:1) { nodes { login } } } } } } } } }'
+  gh api graphql -f query='query { node(id: "{project_node_id}") { ... on ProjectV2 { items(first: 100) { nodes { fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } content { ... on Issue { number title labels(first:10) { nodes { name } } body state milestone { title } assignees(first:1) { nodes { login } } } } } } } } }'
   ```
   Keep items where Status is "Ready", state is OPEN, assignees is empty.
 - **`both`** — the `label` query, then drop any candidate not also in the
@@ -57,7 +50,7 @@ How "ready" is determined depends on `ready-gate`:
   eligible. Use this for fully autonomous pickup where no human readiness
   signal (label or column) is required:
   ```
-  gh issue list --repo {org}/{repo} --state open --assignee "" --json number,title,labels,body --jq '.[] | {number, title, labels: [.labels[].name], body}'
+  gh issue list --repo {org}/{repo} --state open --assignee "" --json number,title,labels,body,milestone --jq '.[] | {number, title, labels: [.labels[].name], body, milestone: .milestone.title}'
   ```
   Then **drop any candidate carrying `status-blocked`**: those are
   unassigned (so the `--assignee ""` filter does not catch them) but have
@@ -68,6 +61,21 @@ How "ready" is determined depends on `ready-gate`:
   `needs-refinement` is dropped by the refinement filter below. A
   `status-blocked` issue whose dependencies have actually closed is restored
   to `status-ready` by Step 4 and becomes eligible on the next pass.
+
+## 2. Detect backlog mode (from the candidates just fetched)
+
+Decide sprint vs flat from the `milestone` already on each candidate — no
+extra API call in the common case:
+
+- **No candidate carries a milestone** → **Flat mode**: the whole fetched
+  list is the pool. This is the common case and costs **zero** extra calls.
+- **Some candidates carry a milestone** → **Sprint mode**: narrow to the
+  active sprint. *Only now* spend one call to order milestones by due date
+  and take the earliest open one as `{sprint_title}`:
+  ```
+  gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | map(select(.open_issues > 0)) | .[0].title'
+  ```
+  Then **locally** drop any candidate whose `milestone` ≠ `{sprint_title}`.
 
 Then narrow the list with **local** filters (no API calls):
 
@@ -160,8 +168,8 @@ If the walk exhausts every candidate without a valid claim, go to Step 4.
 
 ## 4. Lazy auto-ready (only when the pool is empty)
 
-Reached only when Step 2 produced no candidates, or Step 3 exhausted them
-all. *Now* — and only now — is it worth spending API calls to see whether
+Reached only when Steps 1–2 produced no candidates, or Step 3 exhausted
+them all. *Now* — and only now — is it worth spending API calls to see whether
 anything can be unblocked, because there is nothing else to pick. (This is
 deliberately **off** the hot path: in the common case a story is claimed in
 Step 3 and these calls never run.)
@@ -192,7 +200,7 @@ For each, parse the body for the same dependency markers (Step 3). If
 Comment that dependencies are resolved. Best-effort — skip an issue on any
 API/parse error.
 
-**If this restored at least one issue**, return to **Step 2** once and run
+**If this restored at least one issue**, return to **Step 1** once and run
 the selection again (the newly-ready work is now eligible). **If it
 restored nothing**, report "No stories available for pickup" and stop — do
 not loop, retry, or ask the user to create stories.

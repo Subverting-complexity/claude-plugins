@@ -20,12 +20,20 @@ Invoke `/github-workflow:preflight` first. If it finds issues and the user
 chooses "Configure now", wait for setup, then ask the user to re-run this
 command. Otherwise proceed.
 
+**Skip preflight if it already passed this session.** When this command
+runs straight after `/github-workflow:pick-story` in the same session,
+preflight has already run green and nothing has changed — do **not** invoke
+it again. Only run it on a fresh, standalone start.
+
 ## 1. Read configuration
 
-Read `ClaudeProject.md` and extract: `org`, `repo`, `default-branch`, the
-branch convention, the label map, and project-board settings. Resolve
-every label by **purpose key** via `templates/default-labels.md` — never a
-bare literal.
+Extract `org`, `repo`, `default-branch`, the branch convention, the label
+map, and project-board settings from `ClaudeProject.md`. **If `pick-story`
+already loaded it into context this session, reuse that copy — do not read
+the file again.** Read it only if it is not already in context. Resolve
+every label by **purpose key** from that label map — never a bare literal,
+and only fall back to `templates/default-labels.md` for a purpose key the
+map omits.
 
 ## 2. Already-in-flight guard (explicit number only)
 
@@ -55,8 +63,8 @@ Acquire it with `templates/claim-procedure.md` (**Acquire**, target
 agent wins, a loser exits cleanly having made no changes. Acquire also
 applies the durable markers — it assigns `@me` **and** moves the issue to
 `status-in-progress` (removing any prior lifecycle label). Do not assign or
-set a status label separately; just verify the read-back per
-`templates/default-labels.md`.
+set a status label separately; just verify the read-back (guarded
+create-if-missing pattern in `templates/default-labels.md`).
 
 If Acquire reports the claim is lost, stop — another agent owns this story.
 If `pick-story` already claimed it in this same flow, Acquire's re-entry
