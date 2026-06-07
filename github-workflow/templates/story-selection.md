@@ -14,7 +14,7 @@ first makes the common case ~3 calls instead of ~60, and stays race-safe
 because the ref is acquired before any side effect (validation runs only
 after you provably own the item). The rare failed candidate costs a little
 label/assignee churn — which does useful work (marks it `status-blocked` or
-closes it). Full rationale: `templates/story-selection-rationale.md`.
+closes it).
 
 ## Inputs
 
