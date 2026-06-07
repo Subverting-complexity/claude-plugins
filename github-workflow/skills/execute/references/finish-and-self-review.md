@@ -35,14 +35,12 @@ here are only needed once you are ready to open the PR.
    code-review skill), where both PRs have full context.
 
 2. Create a real PR (never a draft — this workflow does not open drafts).
-   Write the body to a temporary file first, then use `--body-file` to
-   avoid Windows/PowerShell shell-escaping issues:
+   Write the body following `templates/body-file-write.md` (temp file +
+   `--body-file`):
 
    ```
    gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}
    ```
-
-   Delete the temp file after creation.
 
    - Title under 70 chars
    - **Always** close the associated issue: each linked issue on its own
@@ -52,23 +50,11 @@ here are only needed once you are ready to open the PR.
    - If the **gate-failed flag** is set (Phase 5), prepend a "Quality
      Gate Failed" section with the last error output.
 
-2b. Validate the PR body was written correctly:
-
-   ```
-   gh pr view {pr_number} --repo {org}/{repo} --json body --jq '.body'
-   ```
-
-   If the body is empty, only whitespace, or consists of just `@`
-   (a known Windows/PowerShell shell-escaping issue), write the body
-   to a temporary file and retry with `--body-file`:
-
-   ```
-   gh pr edit {pr_number} --repo {org}/{repo} --body-file {tempfile}
-   ```
-
-   Clean up the temp file after. Re-validate. If still corrupted,
-   warn the user. Also confirm the body contains a `Closes #N` line for
-   every linked issue; if any is missing, add it before proceeding.
+2b. Validate the PR body — read it back and apply the corruption test and
+   retry in `templates/body-file-write.md` (**Validate** + **Retry**). For
+   a PR body the test also requires a `Closes #N` line for every linked
+   issue; if any is missing, add it via `gh pr edit --body-file` before
+   proceeding.
 
 3. Add PR labels — both resolved by purpose key through
    `templates/default-labels.md`:
@@ -136,13 +122,12 @@ gaps before a human reviewer sees the PR.
    - Hardcoded values that should be configurable
    - Missing error handling on new external calls
 
-5. If any gaps are found, write the comment body to a temporary file
-   and post using `--body-file` (avoids Windows shell-escaping issues
-   with multi-line content):
+5. If any gaps are found, post a comment — write it following
+   `templates/body-file-write.md` (temp file + `--body-file`):
    ```
    gh pr comment {pr_number} --repo {org}/{repo} --body-file {tempfile}
    ```
-   Delete the temp file after. Then, for each **material** gap that you
+   Then, for each **material** gap that you
    are not fixing before exiting (a missing acceptance criterion, an
    untested public function, missing error handling), file it to the
    board with `/github-workflow:report-issue` (autonomous, `status-ready`,

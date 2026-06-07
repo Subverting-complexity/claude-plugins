@@ -125,8 +125,8 @@ Assemble the label list from the type, priority, lifecycle-state, and
 `claude-authored` labels selected in Step 3, comma-separated, omitting
 any that are not configured.
 
-Write the issue body to a temporary file first, then create using
-`--body-file` to avoid Windows/PowerShell shell-escaping issues:
+Write the issue body following `templates/body-file-write.md` (temp file +
+`--body-file`):
 
 ```
 # Sprint mode (a current milestone was found):
@@ -142,8 +142,6 @@ gh issue create --repo {org}/{repo} \
   --body-file {tempfile} \
   --label "{type_label},{priority_label}"
 ```
-
-Delete the temp file after creation.
 
 **Leave the assignee blank.** Do not pass `--assignee`/`--add-assignee`
 here, and do not follow up with a `gh issue edit --add-assignee`.
@@ -221,25 +219,10 @@ label-only result from the steps above with no error.
 
 ### 6. Validate issue body
 
-After creating the issue, immediately read it back and verify the body
-was written correctly:
-
-```
-gh issue view {number} --repo {org}/{repo} --json body --jq '.body'
-```
-
-If the body is empty, only whitespace, or consists of just `@` (a
-known Windows/PowerShell shell-escaping issue):
-
-1. Write the intended body to a temporary file.
-2. Update the issue using `--body-file`:
-   ```
-   gh issue edit {number} --repo {org}/{repo} --body-file {tempfile}
-   ```
-3. Delete the temporary file.
-4. Re-read the issue to confirm the fix.
-5. If still corrupted after retry, warn the user that the issue body
-   may need manual editing.
+After creating the issue, validate the body by reading it back and
+applying the corruption test and retry in `templates/body-file-write.md`
+(**Validate** + **Retry**). The `Closes #N` clause is PR-only and does not
+apply to an issue body.
 
 ### 6b. Place the issue on the board (best-effort, if configured)
 
@@ -250,27 +233,12 @@ chosen in Step 3 (see `templates/default-labels.md` → Board Columns):
 - `status-ready` → **Ready** (`col-ready`)
 - `needs-refinement` → **Backlog** (`col-backlog`)
 
-First resolve the board, the new issue's `{item_id}`, and the target
-column's `{column_option_id}` following `templates/board-resolution.md`
-(board-configured check, identity verification by title, **add the issue
-to the board** — a new issue is never on it yet — and column-option-id
-resolution). Only run the mutation once it returns a verified `{item_id}`
-and `{column_option_id}`:
-
-```
-gh api graphql -f query='mutation {
-  updateProjectV2ItemFieldValue(input: {
-    projectId: "{project_node_id}"
-    itemId: "{item_id}"
-    fieldId: "{status_field_id}"
-    value: { singleSelectOptionId: "{column_option_id}" }
-  }) { projectV2Item { id } }
-}'
-```
-
-When **no** board is configured, skip this step silently. When a board
-**is** configured, board failures are loud: report the failure (e.g.
-"Board placement failed: {error}. Continuing.") and proceed.
+Resolve the board, the new issue's `{item_id}`, and the target column's
+`{column_option_id}` following `templates/board-resolution.md`, then run
+its **Step 5** mutation to set Status. The template's Step 3 **adds the
+issue to the board** (a new issue is never on it yet); the
+board-configured check (skip silently when unconfigured), the identity
+verification, and the loud-on-failure contract all live there too.
 
 ### 7. Report
 

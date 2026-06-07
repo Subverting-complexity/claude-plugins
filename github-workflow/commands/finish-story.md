@@ -203,17 +203,14 @@ Build the PR body from the committed changes:
   for a story must never omit this — if no issue is linked, that is a
   workflow error to resolve before opening the PR.
 
-Write the PR body to a temporary file first, then create the PR
-using `--body-file` to avoid Windows/PowerShell shell-escaping issues.
-**Always create a real PR — never a draft.** The same command is used
-whether or not the quality gate passed; a failed gate is signalled by a
-blocking label in Step 7, not by draft status:
+Write the PR body following `templates/body-file-write.md` (temp file +
+`--body-file`). **Always create a real PR — never a draft.** The same
+command is used whether or not the quality gate passed; a failed gate is
+signalled by a blocking label in Step 7, not by draft status:
 
 ```
 gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}
 ```
-
-Delete the temp file after creation.
 
 When the quality gate failed (Step 2), prepend this section to the body
 so the failure is visible (the `changes-requested` label applied in
@@ -243,44 +240,13 @@ issue before the PR is considered done.
 
 ### 5b. Validate PR body
 
-**Always pass the body with `--body-file {tempfile}`. Never pass it
-inline** with `--body "..."` or, worse, `--body -` — inline bodies hit
-Windows/PowerShell shell-escaping bugs, and `--body -` does **not** read
-stdin (it sets the body to the literal string `-`). Both produce the
-corrupt one-character bodies this step exists to catch.
+After creating or updating the PR, validate the body by reading it back
+and applying the corruption test and retry in
+`templates/body-file-write.md` (**Validate** + **Retry**).
 
-After creating or updating the PR, immediately read it back and
-verify the body was written correctly:
-
-```
-gh pr view {pr_number} --repo {org}/{repo} --json body --jq '.body'
-```
-
-Treat the body as **corrupt** if any of these is true (not just the
-single `@` case — the same escaping/stdin bugs also leave `-`, `.`, `#`,
-or other lone punctuation):
-
-- It is empty or only whitespace.
-- After trimming whitespace it is shorter than ~10 characters.
-- After trimming it consists only of punctuation/symbols (e.g. `-`, `@`,
-  `.`, `#`) with no words — a stray shell artifact, not a description.
-- It is missing a required `Closes #N` line (see below).
-
-When the body is corrupt:
-
-1. Write the intended body to a temporary file.
-2. Update the PR using `--body-file`:
-   ```
-   gh pr edit {pr_number} --repo {org}/{repo} --body-file {tempfile}
-   ```
-3. Delete the temporary file.
-4. Re-read the PR to confirm the fix — apply the same corruption test
-   again, not just "non-empty".
-5. If still corrupt after retry, warn the user.
-
-Also confirm the body contains a `Closes #N` line for every linked
-issue. If any is missing, add it (via `gh pr edit --body-file`) before
-proceeding — a PR must always close its associated issue.
+For a PR body the test additionally requires a `Closes #N` line for every
+linked issue — a PR must always close its associated issue. If any is
+missing, add it (via `gh pr edit --body-file`) before proceeding.
 
 ### 6. Resolve merge conflicts
 
@@ -383,32 +349,14 @@ create-if-missing without `--force` if absent, then retry once). This
 label — not the board — is the authoritative "in review" signal, so it
 works even when no board is configured.
 
-**Project board (best-effort, if configured).** First resolve the board,
-the issue's `{item_id}`, and the target column's `{column_option_id}`
-following `templates/board-resolution.md` (board-configured check,
-identity verification by title, add-to-board-if-missing, column-option-id
-resolution). The target column for `status-in-review` is **In Review**
-(`col-in-review`) per the label ⇄ column pairing in
-`templates/default-labels.md`. Only run the mutation below once it returns
-a verified `{item_id}` and `{column_option_id}`.
-
-Set status to In Review:
-
-```
-gh api graphql -f query='mutation {
-  updateProjectV2ItemFieldValue(input: {
-    projectId: "{project_node_id}"
-    itemId: "{item_id}"
-    fieldId: "{status_field_id}"
-    value: { singleSelectOptionId: "{column_option_id}" }
-  }) { projectV2Item { id } }
-}'
-```
-
-When **no** board is configured, skip this step silently. When a board
-**is** configured, board failures are loud: report the failure to the
-user (e.g., "Board update failed: {error}. Continuing without board
-update.") and proceed with the rest of the workflow.
+**Project board (best-effort, if configured).** Resolve the board, the
+issue's `{item_id}`, and the target column's `{column_option_id}`
+following `templates/board-resolution.md`, then run its **Step 5**
+mutation to set Status. The target column for `status-in-review` is **In
+Review** (`col-in-review`) per the label ⇄ column pairing in
+`templates/default-labels.md`. The board-configured check (skip silently
+when unconfigured), the identity verification, and the loud-on-failure
+contract all live in that template.
 
 ### 9. Release the claim
 

@@ -308,29 +308,18 @@ agents never validate or build the same issue.
    `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
 
 2. Update project board to In Progress (if board configured in ClaudeProject.md).
-   First resolve the board, the issue's `{item_id}`, and the target
-   column's `{column_option_id}` following `templates/board-resolution.md`
-   — it decides whether a board is configured, verifies the stored
-   `project-node-id` resolves to a board whose title matches
-   `project-title` (aborting loudly on a mismatch), adds the issue to the
-   board if missing, and resolves the target column by purpose key. The
-   target column for `status-in-progress` is **In Progress**
-   (`col-in-progress`) per the label ⇄ column pairing in
-   `templates/default-labels.md`. Only run the mutation once it returns a
-   verified `{item_id}` and `{column_option_id}`:
+   Resolve the board, the issue's `{item_id}`, and the target column's
+   `{column_option_id}` following `templates/board-resolution.md`, then run
+   its **Step 5** mutation to set Status — it decides whether a board is
+   configured (skipping silently when not), verifies the stored
+   `project-node-id` resolves to a board whose title matches `project-title`
+   (aborting loudly on a mismatch), adds the issue to the board if missing,
+   and resolves the target column by purpose key. The target column for
+   `status-in-progress` is **In Progress** (`col-in-progress`) per the label
+   ⇄ column pairing in `templates/default-labels.md`.
 
-   ```
-   gh api graphql -f query='mutation {
-     updateProjectV2ItemFieldValue(input: {
-       projectId: "{project_node_id}"
-       itemId: "{item_id}"
-       fieldId: "{status_field_id}"
-       value: { singleSelectOptionId: "{column_option_id}" }
-     }) { projectV2Item { id } }
-   }'
-   ```
-
-3. Set start date on board (if configured). Also set the org-level
+3. Set start date on board (if configured) — the Step 5 date-field form in
+   `templates/board-resolution.md`. Also set the org-level
    **`Start date`** issue field to today (best-effort, capability-gated)
    per `templates/issue-fields-resolution.md` — independent of the board,
    skipped silently if the org does not define the field.
