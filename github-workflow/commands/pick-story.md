@@ -55,9 +55,12 @@ Extract from the project configuration above:
 - Project board settings (only needed when `ready-gate` is `board-column`
   or `both`)
 
-Resolve every label name by **purpose key** through the single path in
-`templates/default-labels.md` — never filter on a bare name literally, so
-the strings this command skips on match the strings other commands apply.
+Resolve every label name by **purpose key** from the label map in the
+project configuration above (already in context) — never filter on a bare
+name literally, so the strings this command skips on match the strings
+other commands apply. Only open `templates/default-labels.md` as a fallback
+if a purpose key is missing from the project map; do not read it just to map
+a name the configuration already provides.
 When falling back to defaults in an interactive session, warn the user:
 "Label map not configured — using default labels. Run
 `/github-workflow:setup` to configure labels for this project."

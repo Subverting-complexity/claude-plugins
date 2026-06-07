@@ -17,23 +17,20 @@ PRs). `{org}`/`{repo}` come from `ClaudeProject.md` `## Identity`.
 
 ## Invariants (the four rules this design rests on)
 
-1. **The claim ref is the lock.** A push that *creates* the ref is an
-   atomic server-side compare-and-swap: first push wins, a later push of a
-   *different* object is rejected. It is the only thing that excludes two
-   agents sharing one GitHub identity — assignment and labels cannot (both
-   resolve to the same login and read present for both).
-2. **The lock is ephemeral; ownership is durable.** What keeps work out of
-   the pick pool is the **human-visible marker** (issue: `@me` +
+1. **The claim ref is the lock.** Creating the ref is an atomic
+   compare-and-swap (first push wins, a different later object is rejected);
+   it is the only thing that excludes two agents sharing one GitHub identity
+   — assignment and labels cannot.
+2. **The lock is ephemeral; ownership is durable.** Work stays out of the
+   pick pool via the **human-visible marker** (issue: `@me` +
    `status-in-progress`/`status-parked`; PR: the open PR + its review-state
-   label), *not* the ref. The picker only selects *unassigned* issues, so
-   the marker holds work for days even after the ref is gone.
+   label), not the ref — the picker only selects *unassigned* issues.
 3. **Hold an issue claim across PR creation.** Release only *after*
-   `gh pr create` succeeds, never before — this closes the create-time
-   duplicate race (`execute` Phase 7, `finish-story`). The pre-start guard
-   (`templates/sibling-pr-lookup.md`) then sees the live PR and stops a
-   second session.
-4. **No auto-expiry, no reaper — always Release on every exit.** A skipped
-   Release leaks the ref until a human reaps it by hand.
+   `gh pr create` succeeds (closes the create-time duplicate race in
+   `execute` Phase 7 / `finish-story`; the `sibling-pr-lookup.md` guard then
+   sees the live PR).
+4. **No auto-expiry — always Release on every exit.** A skipped Release
+   leaks the ref until a human reaps it.
 
 Full reasoning and the manual orphan-reap one-liner live in
 `templates/claim-procedure-rationale.md` (not read at runtime).
@@ -86,7 +83,8 @@ echo "claim-exit=$?"
   already claimed by another agent — skipping." and stop.
 
 **Step 4 — Human-visible marker** (durable ownership; resolve label names
-by purpose key via `templates/default-labels.md`):
+by purpose key from the in-context `ClaudeProject.md` label map — fall back
+to `templates/default-labels.md` only for a purpose key the map omits):
 
 - **Issue** — assign **and** move to `status-in-progress`, removing
   whatever lifecycle label it had so exactly one state is present:
@@ -101,9 +99,9 @@ by purpose key via `templates/default-labels.md`):
   ```
 
 No read-back is needed for *exclusivity* (the atomic push already proved
-it), but verify the **label** took effect per `default-labels.md`
-(read-back, guarded create-if-missing) so the item is never left without a
-state label.
+it), but verify the **label** took effect (read-back, guarded
+create-if-missing — pattern in `default-labels.md`) so the item is never
+left without a state label.
 
 ---
 

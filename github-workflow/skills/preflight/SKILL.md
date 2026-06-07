@@ -20,36 +20,84 @@ When you report results to the user, follow
 about it in plain language a reader who is not involved in this codebase
 can act on.
 
-## 1. Check suppression
+## 1. Startup checks (one shell round-trip)
+
+Run suppression, GitHub-CLI auth, `ClaudeProject.md`, and `CLAUDE.md` in a
+**single** block so the common path costs one round-trip instead of four —
+and so a suppressed project pays for none of the auth/grep work. (None of
+these checks contain a code-fence delimiter, so they are safe in an
+auto-run block — see issue #33.)
 
 ```!
 if [ -f .claude/preflight-dismiss.md ]; then
   echo "PREFLIGHT_SUPPRESSED"
 else
   echo "PREFLIGHT_ACTIVE"
+
+  # GitHub CLI auth (CRITICAL)
+  if gh auth status >/dev/null 2>&1; then
+    echo "OK gh-auth"
+  else
+    echo "CRITICAL gh-auth: not authenticated — run 'gh auth login'"
+  fi
+
+  # ClaudeProject.md: existence (CRITICAL), placeholders (WARNING), sections (CRITICAL)
+  if [ -f ClaudeProject.md ]; then
+    echo "OK file-ClaudeProject"
+    # grep -c prints "0" (and exits 1) when there are no matches, so swallow
+    # the exit code with `|| true` rather than `|| echo "0"`.
+    placeholders=$(grep -cE '\{(org|repo|name|id|package_manager|quality_gate_command|branch_pattern|default_branch|n|criteria|path/to/doc)\}' ClaudeProject.md 2>/dev/null || true)
+    placeholders=${placeholders:-0}
+    if [ "$placeholders" -gt 0 ]; then
+      echo "WARNING placeholders: $placeholders unreplaced template placeholder(s)"
+      grep -nE '\{(org|repo|name|id|package_manager|quality_gate_command|branch_pattern|default_branch|n|criteria|path/to/doc)\}' ClaudeProject.md 2>/dev/null | head -5
+    fi
+    for section in "## Identity" "## Package Manager" "## Quality Gate" "## Branch Convention" "## Label Map"; do
+      slug=$(echo "$section" | sed 's/## //; s/ /-/g' | tr '[:upper:]' '[:lower:]')
+      if grep -q "$section" ClaudeProject.md 2>/dev/null; then
+        echo "OK section-$slug"
+      else
+        echo "CRITICAL section-$slug: $section section missing"
+      fi
+    done
+  else
+    echo "CRITICAL file-ClaudeProject: ClaudeProject.md not found"
+  fi
+
+  # CLAUDE.md (WARNING-level)
+  if [ -f CLAUDE.md ]; then
+    echo "OK file-CLAUDE"
+    if grep -q "ClaudeProject.md" CLAUDE.md 2>/dev/null; then
+      echo "OK claude-ref"
+    else
+      echo "WARNING claude-ref: CLAUDE.md does not reference ClaudeProject.md"
+    fi
+  else
+    echo "WARNING file-CLAUDE: CLAUDE.md not found"
+  fi
 fi
 ```
 
-If `PREFLIGHT_SUPPRESSED`, skip all remaining checks. Return silently
-and let the calling command proceed. The user has dismissed preflight
-reminders. They can re-enable by deleting `.claude/preflight-dismiss.md`
-or running `/github-workflow:setup`.
+If the block printed `PREFLIGHT_SUPPRESSED`, skip all remaining checks.
+Return silently and let the calling command proceed. The user has dismissed
+preflight reminders. They can re-enable by deleting
+`.claude/preflight-dismiss.md` or running `/github-workflow:setup`.
 
 ## 2. Run diagnostics
 
 **Fast path (the common, healthy case).** Only **CRITICAL** items can
 block a command (gh auth, `ClaudeProject.md` + its required sections, a
 *required* board, `board-columns-incomplete`). Everything else is a
-WARNING that proceeds on a default. So: run the cheap CRITICAL checks
-below (GitHub CLI, ClaudeProject.md sections, and — only if a board is
-required or configured — the board checks). If none are CRITICAL,
-**return silently and let the command proceed** — do not compose a
-findings report. The WARNING-level checks (placeholders, label-map
-completeness, CLAUDE.md, quality gate, review config) only ever print one
-informational line and never block; run them, but never let them stall the
-calling command.
+WARNING that proceeds on a default. The one-shot block above already ran
+the cheap CRITICAL file/auth/section checks; the only checks left are the
+**by-hand** ones below (quality gate, ready-gate/board), and the board
+network check runs **only if a board is required or configured**. If
+nothing is CRITICAL, **return silently and let the command proceed** — do
+not compose a findings report. The WARNING-level results (placeholders,
+label-map completeness, CLAUDE.md, quality gate, review config) only ever
+print one informational line and never block.
 
-Run every check below and collect the output.
+Collect the output from the block above and the by-hand checks below.
 
 **Reuse, don't re-read.** Several calling commands (`pick-story`,
 `execute`, `finish-story`) auto-load the full `ClaudeProject.md` into
@@ -69,61 +117,11 @@ The auto-merge repo-setting and CI-gate checks run **only when
 off-by-default feature). None of these calls run in the default
 configuration.
 
-### GitHub CLI
-
-```!
-if gh auth status >/dev/null 2>&1; then
-  echo "OK gh-auth"
-else
-  echo "CRITICAL gh-auth: not authenticated — run 'gh auth login'"
-fi
-```
-
-### ClaudeProject.md
-
-```!
-if [ -f ClaudeProject.md ]; then
-  echo "OK file-ClaudeProject"
-
-  # Unreplaced template placeholders.
-  # grep -c already prints "0" (and exits 1) when there are no matches,
-  # so swallow the exit code with `|| true` rather than `|| echo "0"`
-  # (which would append a second "0" and break the -gt test below).
-  placeholders=$(grep -cE '\{(org|repo|name|id|package_manager|quality_gate_command|branch_pattern|default_branch|n|criteria|path/to/doc)\}' ClaudeProject.md 2>/dev/null || true)
-  placeholders=${placeholders:-0}
-  if [ "$placeholders" -gt 0 ]; then
-    echo "WARNING placeholders: $placeholders unreplaced template placeholder(s)"
-    grep -nE '\{(org|repo|name|id|package_manager|quality_gate_command|branch_pattern|default_branch|n|criteria|path/to/doc)\}' ClaudeProject.md 2>/dev/null | head -5
-  fi
-
-  # Required sections
-  for section in "## Identity" "## Package Manager" "## Quality Gate" "## Branch Convention" "## Label Map"; do
-    slug=$(echo "$section" | sed 's/## //; s/ /-/g' | tr '[:upper:]' '[:lower:]')
-    if grep -q "$section" ClaudeProject.md 2>/dev/null; then
-      echo "OK section-$slug"
-    else
-      echo "CRITICAL section-$slug: $section section missing"
-    fi
-  done
-else
-  echo "CRITICAL file-ClaudeProject: ClaudeProject.md not found"
-fi
-```
-
-### CLAUDE.md
-
-```!
-if [ -f CLAUDE.md ]; then
-  echo "OK file-CLAUDE"
-  if grep -q "ClaudeProject.md" CLAUDE.md 2>/dev/null; then
-    echo "OK claude-ref"
-  else
-    echo "WARNING claude-ref: CLAUDE.md does not reference ClaudeProject.md"
-  fi
-else
-  echo "WARNING file-CLAUDE: CLAUDE.md not found"
-fi
-```
+> The GitHub-CLI, `ClaudeProject.md` (existence, placeholders, required
+> sections), and `CLAUDE.md` checks all run in the one-shot block in
+> Section 1 above. The remaining checks below are read by hand because
+> they need value extraction or a `gh` API call that an auto-run block
+> cannot do reliably (issue #33).
 
 ### Quality gate command
 
