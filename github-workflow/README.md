@@ -20,7 +20,7 @@ claude --plugin-dir ./plugins/github-workflow
 | --------------------------------------- | ---------------------------------------- |
 | `/github-workflow:execute`              | Pick next story, execute end-to-end      |
 | `/github-workflow:execute 47`           | Execute story #47 directly               |
-| `/github-workflow:execute --mode bug`   | Pick and fix the next bug/security issue |
+| `/github-workflow:execute --mode maintenance` | Pick and fix the next bug/security/debt issue |
 | `/github-workflow:execute --mode audit` | Audit codebase, create issues (no code)  |
 | `/github-workflow:pick-story`           | Select the next story from the backlog   |
 | `/github-workflow:start-story`          | Assign, branch, board update             |
@@ -41,43 +41,29 @@ agents.
 github-workflow/
 ├── .claude-plugin/
 │   └── plugin.json            # Plugin manifest
-├── skills/
-│   ├── execute/
-│   │   └── SKILL.md           # Orchestrator: full pick-to-PR workflow
-│   ├── code-architect/
-│   │   ├── SKILL.md           # Architecture planning (SOLID + Clean)
-│   │   ├── references/        # Book summaries and patterns
-│   │   ├── README.md
-│   │   └── test-cases.md
-│   ├── structured-coding/
-│   │   └── SKILL.md           # 5-step coding methodology
-│   ├── code-review/
-│   │   ├── SKILL.md           # Deep code review and analysis
-│   │   └── references/
-│   ├── grill-me/
-│   │   └── SKILL.md           # Stress-test plans with tough questions
-│   ├── feature-discovery/
-│   │   └── SKILL.md           # Break features into stories
-│   └── repo-scaffolding/
-│       └── SKILL.md           # Repository structure and setup
-├── commands/
-│   ├── pick-story.md          # Select next issue from backlog
-│   ├── start-story.md         # Assign, set In Progress, branch
-│   ├── finish-story.md        # Push, PR, set In Review
-│   ├── block-story.md         # Handle blockers
-│   ├── report-issue.md        # Create bug/arch/debt issues
-│   ├── update-pr.md           # Address review feedback on a PR
-│   ├── setup.md               # Interactive project onboarding
-│   └── guide.md               # How to get started / orientation
-├── agents/
-│   ├── builder.md             # Full-access implementation agent
-│   ├── reviewer.md            # Read-only PR review agent
-│   └── doc-writer.md          # Docs-only documentation agent
+├── skills/                    # Skills catalogue — see "Skills" below
+│   ├── execute/               # Orchestrator: full pick-to-PR workflow
+│   ├── code-architect/        # Architecture design and audit (SOLID + Clean)
+│   ├── structured-coding/     # Structured coding methodology
+│   ├── code-review/           # Deep PR review, labels, optional auto-merge
+│   ├── preflight/             # Project-config health check
+│   ├── feature-discovery/     # Break features into stories
+│   ├── grill-me/              # Stress-test plans with tough questions
+│   ├── verify-feature/        # Verify a change against its story
+│   ├── security-audit/        # Security-focused codebase audit
+│   ├── debugging/             # Systematic root-cause debugging
+│   ├── repo-scaffolding/      # Repository structure and setup
+│   ├── user-story/            # Author user stories
+│   ├── acceptance-criteria/   # Author acceptance criteria
+│   ├── pr-description/        # Author PR descriptions
+│   ├── doc-writer/            # Write and update documentation
+│   └── _shared/               # Wording + banned-patterns standards
+├── commands/                  # 8 slash commands — see "Usage" above
+├── agents/                    # builder, reviewer, doc-writer
 ├── references/
 │   └── story-template.md      # Shared story issue template
-├── templates/
-│   ├── ClaudeProject.md       # Template for project configuration
-│   └── CLAUDE.md              # Template for project rules
+├── templates/                 # Canonical procedures + project-config templates
+├── hooks/                     # Quality-gate commit hook
 ├── settings.json              # Default agent = builder
 └── README.md                  # This file
 ```
@@ -214,18 +200,29 @@ A project with no board configured skips all of this silently.
 Each agent follows least privilege — only the tools it needs.
 The builder is the default agent when the plugin is active.
 
-## Bundled skills
+## Skills
 
-These skills are bundled with the plugin and used during execution:
+The plugin bundles the following skills. The orchestrators (`execute`,
+`code-review`) drive the workflow; the rest are invoked by them or
+directly.
 
-| Skill                                | Phase            | What it does                               |
-| ------------------------------------ | ---------------- | ------------------------------------------ |
-| `/github-workflow:code-architect`    | Planning         | Architecture design using SOLID + Clean    |
-| `/github-workflow:structured-coding` | Implementation   | Structured coding methodology              |
-| `/github-workflow:code-review`       | Review / Audit   | Deep code review and analysis              |
-| `/github-workflow:grill-me`          | Plan validation  | Stress-tests plans with tough questions    |
-| `/github-workflow:feature-discovery` | Backlog creation | Breaks features into implementable stories |
-| `/github-workflow:repo-scaffolding`  | Project setup    | Repository structure and scaffolding       |
+| Skill                 | What it does                                       |
+| --------------------- | ------------------------------------------------- |
+| `execute`             | Orchestrator: pick → plan → build → test → PR     |
+| `code-architect`      | Architecture design and audit (SOLID + Clean)     |
+| `structured-coding`   | Structured coding methodology                     |
+| `code-review`         | Deep PR review, labels, optional auto-merge       |
+| `preflight`           | Checks project-config health before a run         |
+| `feature-discovery`   | Breaks features into implementable stories        |
+| `grill-me`            | Stress-tests plans with tough questions           |
+| `verify-feature`      | Verifies a change against its story in context    |
+| `security-audit`      | Security-focused codebase audit                   |
+| `debugging`           | Systematic root-cause debugging methodology       |
+| `repo-scaffolding`    | Repository structure and scaffolding              |
+| `user-story`          | Authors user stories                              |
+| `acceptance-criteria` | Authors acceptance criteria                       |
+| `pr-description`      | Authors PR descriptions                           |
+| `doc-writer`          | Writes and updates documentation                  |
 
 ## Adapting for a new project
 
@@ -242,7 +239,7 @@ Once installed, your scheduled task prompts become one-liners:
 | Routine            | Prompt                                       |
 | ------------------ | -------------------------------------------- |
 | Work on next story | `Run /github-workflow:execute`               |
-| Fix bugs           | `Run /github-workflow:execute --mode bug`    |
+| Fix bugs           | `Run /github-workflow:execute --mode maintenance` |
 | Audit codebase     | `Run /github-workflow:execute --mode audit`  |
 | Review a PR        | `Run /github-workflow:code-review`           |
 | Fix review feedback| `Run /github-workflow:update-pr`             |
