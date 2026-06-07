@@ -486,9 +486,18 @@ with details (it releases the claim for you), then run **Exit cleanup**
 (release is a no-op at this point; delete the scratch file). Then pick
 the next story.
 
-**Bug found**: If you discover an unrelated bug during development,
-run `/github-workflow:report-issue`. Do not fix it inline unless it is
-trivial and within the same scope.
+**Problem found**: If you detect any problem during development that you
+are not fixing in this story — an unrelated bug, a security flaw, a
+layering/architecture violation, or tech debt — file it to the board so
+it is fixed automatically. Run `/github-workflow:report-issue`
+(autonomous — do not pause for confirmation). **No human approval is
+needed**: it classifies the problem, applies the **actual issue type**
+(bug, security, architecture, or tech debt) and priority, sets
+`status-ready`, and places it on the board so the normal pickup flow
+fixes it. Do not fix it inline unless it is trivial and within the same
+scope. When you report what you did this session, name each filed item by
+its actual type and number (e.g. "Filed bug #45", "Filed tech-debt
+#46").
 
 **Dependency**: If this story depends on another unmerged story
 (discovered during planning, not caught by the Phase 1 filter), there is
