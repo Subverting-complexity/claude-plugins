@@ -24,7 +24,7 @@ edit plugin copies directly** — edit here, then run `sync-skills.ps1`.
 
 | Directory | Deployed to | Notes |
 |-----------|-------------|-------|
-| `_shared/` | `{plugin}/skills/_shared/` | Banned patterns, shared across all skills |
+| `_shared/` | `{plugin}/skills/_shared/` | Banned patterns and wording standards, shared across all skills |
 | `references/` | `{plugin}/references/` | Story template, shared across plugins |
 
 ## Template variables
