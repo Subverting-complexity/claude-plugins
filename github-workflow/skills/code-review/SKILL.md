@@ -200,79 +200,21 @@ label safe to apply under a shared identity.
 ### Step 2b — Reconcile duplicate PRs for the same issue
 
 Before spending a full review on the claimed PR, check whether **another
-open PR resolves the same issue**. Duplicates should be rare — the atomic
-issue claim (`refs/claims/issue-N`) stops two agents selecting one story —
-but they can still arise at the boundaries the claim does not cover:
-starting a story by explicit number after a PR already exists, a
-`block-story` that returned an already-PR'd issue to the pool, a
-hand-reaped claim ref, or a genuine create-time race where two sessions
-each opened a PR on a different branch. When two open PRs close one issue,
-exactly one must survive.
+open PR resolves the same issue** and, if so, keep exactly one. Duplicates
+should be rare (the atomic issue claim prevents most), so this whole
+procedure lives in `references/duplicate-reconciliation.md` to keep the
+common single-PR path light.
 
-1. Determine the claimed PR's linked issue(s). Use GitHub's own closing
-   parse, not the PR body: the claimed PR's `closingIssuesReferences`
-   (returned by the lookup in `templates/sibling-pr-lookup.md`) is the
-   authoritative set `{issues}`. If the PR closes no issue, skip this step.
-2. For each `#N` in `{issues}`, find every open PR that will close it by
-   running the lookup in `templates/sibling-pr-lookup.md` with that `N`.
-   That returns the **duplicate set** `S` (oldest-first), each node already
-   carrying `number`, `title`, `headRefName`, `isDraft`, and `labels` — the
-   claimed PR will be in it.
-3. If `S` contains only the claimed PR, there are no duplicates — skip the
-   rest of this step and continue to Step 3.
+- **Trigger:** read and follow `references/duplicate-reconciliation.md`
+  whenever the claimed PR closes at least one issue. If it closes no issue,
+  skip straight to Step 3.
 
-**When `S` has more than one PR, pick the winner and close the rest.**
-
-4. Determine the **winner** `W` by these criteria, in order — stop at the
-   first that clearly separates them:
-   a. **Mergeable & gate-green beats broken.** A PR with the `approved`
-      review-state label, or whose required CI checks pass, beats one
-      carrying `changes-requested` / `failed` or with failing checks.
-   b. **Acceptance-criteria coverage.** The PR that satisfies more of the
-      linked issue's acceptance criteria wins — but only when the gap is
-      objective (one PR omits an entire criterion the other implements).
-      Do not adjudicate on subjective polish.
-   c. **Test coverage.** A PR that exercises its new code paths beats one
-      that does not.
-   d. **Tie-break — lowest PR number.** If the above do not clearly
-      separate them, keep the **lowest-numbered** PR (opened first). This
-      is deterministic, so two agents evaluating the same set
-      independently reach the same winner and never close each other's
-      keeper.
-
-   To compare objectively, read each PR's diff against its base
-   (`git fetch origin <headRefName>`, then
-   `git diff origin/<baseRef>...origin/<headRefName>`) and the linked
-   issue body.
-
-5. Close every loser `L` in `S \ {W}` — but only one you can safely take:
-   a. Acquire `refs/claims/pr-L` (`templates/claim-procedure.md`
-      **Acquire**, target `pr-L`) — skip this for the PR you already hold.
-      If Acquire fails, another agent is reviewing or updating `L` right
-      now: **skip it this round** and note it. That agent runs this same
-      reconciliation, finds the same winner, and closes its own PR.
-   b. Close it with an explaining comment that links the winner:
-      ```bash
-      gh pr close L --repo <org>/<repo> \
-        --comment "Closing as a duplicate of #W, which resolves the same issue (#N) and is the better-implemented of the two (<one-line reason>). Work here is preserved on branch \`<headRefName>\` if anything needs salvaging into #W."
-      ```
-      Do not delete the branch — leave it so the work is recoverable.
-   c. Release the claim you took on `L` (`templates/claim-procedure.md`
-      **Release**, target `pr-L`). Do **not** touch the linked issue's
-      assignee or lifecycle label — the surviving PR `W` still drives it.
-6. Resolve where the PR you hold sits:
-   - **You hold the winner `W`:** continue to Step 3 and review it.
-   - **You hold a loser:** you just closed it in 5b. Remove its
-     `reviewing` label, release your claim
-     (`templates/claim-procedure.md` **Release**), and **exit** — never
-     review a closed PR. The winner keeps its current review-state label
-     and is reviewed on this or a later run.
-
-Closing a duplicate PR is the **only** circumstance in which this skill
-closes a PR (see Rules). In **read-only mode**, close nothing: identify
-the winner, list the duplicate set under a "Duplicate PRs" note in the
-review comment (Step 9) recommending which to keep, and continue the
-normal review of the claimed PR.
+That reference resolves the duplicate set, picks the winner
+(mergeable/gate-green → acceptance-criteria → test coverage → lowest PR
+number), closes the losers it can safely claim, and tells you whether to
+continue reviewing or exit. Closing a duplicate is the **only** circumstance
+this skill closes a PR (see Rules); read-only mode closes nothing and only
+notes the duplicate set in the review comment.
 
 ### Step 3 — Check out the PR branch
 
@@ -324,77 +266,18 @@ Run all of the following. If any command fails, treat as a review failure
 
 ### Step 4b — Assess re-review significance (re-reviews only)
 
-This step applies only when reviewing a PR that was previously reviewed
-(a prior review comment with a footer exists). Skip this step for
-first-time reviews.
+This step applies **only** when reviewing a PR that was previously reviewed
+(a prior review comment with a footer exists). It can fast-track or skip the
+full pass when the changes since the last review are trivial, so it lives in
+`references/re-review.md` rather than weighing on the first-review path.
 
-Extract the SHA from the previous review footer. Compute the diff between
-that SHA and the current HEAD:
+- **Trigger:** read and follow `references/re-review.md` whenever a prior
+  review footer exists. Skip it entirely for first-time reviews and proceed
+  to Step 5.
 
-```bash
-git diff <previous-review-SHA>..HEAD --stat
-git diff <previous-review-SHA>..HEAD
-```
-
-Classify the changes since the last review as **trivial** or
-**substantial**:
-
-**Trivial** — all of the following are true:
-- Only whitespace, formatting, or import-ordering changes
-- Comment or documentation text fixes (typos, wording)
-- Renaming that doesn't change behaviour (variable names, file renames
-  with no logic change)
-- Removing dead code that was flagged in the previous review
-
-**Substantial** — any of the following:
-- New or modified logic, control flow, or calculations
-- New files, new dependencies, or changed APIs
-- Test additions or changes to test assertions
-- Security-relevant changes (auth, input validation, data handling)
-- Anything that alters the observable behaviour of the code
-
-**If trivial and previous verdict was `approved`:**
-Skip the full re-review. Post an abbreviated comment:
-
-```
-## Re-review by Claude
-
-**Verdict: Approved**
-
-Changes since last review are trivial (formatting / typos / cleanup).
-Original approval stands.
-
-<footer from review.config.md>
-```
-
-Remove the `needs-re-review` label, ensure the `approved` label is
-present, then run **Step 11** (auto-merge on approval, if enabled) and
-exit. Do not proceed to Step 5.
-
-**If trivial and previous verdict was `changes-requested`:**
-Check whether the trivial changes address every item in the previous
-review's Issues Remaining list. If they do — all flagged issues are
-resolved by the diff — post an abbreviated approval:
-
-```
-## Re-review by Claude
-
-**Verdict: Approved**
-
-All previously flagged issues have been addressed with trivial fixes.
-
-<footer from review.config.md>
-```
-
-Remove the `needs-re-review` and `changes-requested` labels, apply
-`approved`, then run **Step 11** (auto-merge on approval, if enabled) and
-exit. Do not proceed to Step 5.
-
-If the trivial changes do NOT address all Issues Remaining, proceed to
-Step 5 for a full re-review — the original issues are still unresolved.
-
-**If substantial:**
-Proceed to Step 5 for a full re-review regardless of previous verdict.
+That reference classifies the diff since the last review as trivial or
+substantial, may post an abbreviated approval (routing to **Step 11** then
+exiting), and otherwise sends you to Step 5 for a full re-review.
 
 ---
 
@@ -557,8 +440,8 @@ came from (`Detected during review of #<pr-number>`) and the
 `file:line` location.
 
 Record each created issue's number, title, and type — Step 9 lists them
-under "Issues remaining (filed to board)" and the final report
-(Step 11.5 / Step 10) names them. Filing a non-blocking issue does **not**
+under "Issues remaining (filed to board)" and the **Final report format**
+(Step 10 / Step 11) names them. Filing a non-blocking issue does **not**
 force a "Changes Requested" verdict; the work is now tracked and
 auto-pickable.
 
@@ -661,8 +544,8 @@ the updated SHA from Step 7 if fixes were pushed).
 7. Check out the original branch you were on before the review.
 8. Report `Reviewed PR #<number> <title> — <verdict>` (always name the
    PR by number **and** title together, never the number alone), followed
-   by the **Changed** / **Added to the board** outline from the final
-   report format in Step 11.5, then exit. If the verdict is Approved,
+   by the **Changed** / **Added to the board** outline from the **Final
+   report format** below, then exit. If the verdict is Approved,
    Step 11 runs first and produces the merged/queued lead line instead.
 
 Resolve every label name by purpose key through the single path in
@@ -696,224 +579,21 @@ Otherwise the review is complete — exit here.
 
 ### Step 11 — Auto-merge on approval (if enabled)
 
-Run this step **only** when all of the following hold. If any is false,
-skip it and exit normally:
+This is the heaviest, most conditional path in the review, and auto-merge
+is off by default — so the full procedure lives in
+`references/auto-merge.md` rather than in this file.
 
-- The verdict is **Approved** — including the abbreviated re-review
-  approvals in Step 4b, which route here before exiting.
-- `review.config.md`'s **Auto-Merge on Approval** setting is `enabled`.
-  If there is no `review.config.md`, or the section is absent, the
-  setting is `disabled` — **never merge**.
-- The session is **not** in read-only mode.
+- **Trigger:** when (and only when) the verdict is **Approved**, read and
+  follow `references/auto-merge.md`. For any non-Approved verdict, Step 11
+  does not run — the review is already complete at Step 10b.
 
-Also read **`require-ci-before-merge`** from the same Auto-Merge on
-Approval section. Absent ⇒ `false`. It takes three values:
-
-- **`false`** (default) — behaviour is unchanged; an unprotected branch
-  merges immediately whether or not checks exist.
-- **`true`** — the skill must see a **green CI gate** before it merges: a
-  PR with no checks at all, or with a failing check it cannot fix, is
-  **paused**, not merged. An absolute gate, even on a repo with no
-  pipeline.
-- **`if-present`** — gate on CI **only when CI exists**: a PR whose head
-  SHA has checks must see them green (a red check it cannot fix pauses),
-  but a PR with **no checks at all merges** (there is no gate to wait
-  for). Use this for "require CI to pass *if there is CI*, otherwise
-  merge."
-
-The exact branches are in step 3 below.
-
-This is opt-in and **off by default**. Merging a PR is otherwise
-forbidden (see Rules); this is the one sanctioned merge, and only under
-an explicit `enabled` setting. The review comment from Step 9 must
-already be posted before you merge — never merge before the verdict is
-on the PR.
-
-When all conditions hold, drive the PR to a merged state. Conflicts and
-red CI are **blockers to clear, not reasons to give up** — fix them on the
-branch (the same auto-fix discipline as Step 7: fix concrete, objectively
-correct problems; never guess at changes that need product or design
-judgment), then merge. You are already on the PR branch from Step 3.
-Whenever a conflict or a failing check is genuinely **not yours to fix**,
-do not just pause for a human: file it to the board with
-`/github-workflow:report-issue` (autonomous, `status-ready`, correct
-type, referencing this PR) so the fix is picked up automatically, then
-leave `approved` and exit. The fallbacks below say where.
-
-1. **Confirm the PR is still what you reviewed.** Re-read its state:
-   ```bash
-   gh pr view <number> --repo <org>/<repo> --json state,mergeable,headRefOid
-   ```
-   - `state` not `OPEN` (already merged or closed) → nothing to do;
-     report and exit.
-   - `headRefOid` differs from the SHA you reviewed (recorded in Step 3,
-     or the updated SHA from Step 7, and written to the footer) → commits
-     you did not review landed mid-run. Do **not** merge: ensure
-     `needs-re-review` is applied and exit so the next run re-reviews the
-     new head. (Commits **you** push in steps 2–3 below are excluded —
-     update your recorded SHA as you push them.)
-
-2. **Resolve merge conflicts if there are any.** When `mergeable` is
-   `CONFLICTING`, bring the base branch in and resolve, rather than
-   bailing:
-   ```bash
-   git fetch origin <baseRef>
-   git merge origin/<baseRef>
-   ```
-   For each conflicted file, read **both** sides in full context (not just
-   the hunk) and resolve so the PR's intent **and** the incoming base
-   change are both preserved. Then re-run the project quality gate locally
-   to prove the resolution compiles and the tests pass. Commit the
-   resolution and push:
-   ```bash
-   git add -A && git commit -m "Resolve merge conflicts with <baseRef>"
-   git push
-   ```
-   Update your recorded SHA to the new `HEAD` and append a line to the
-   review comment noting the conflict resolution.
-
-   **Fallback — only when the resolution genuinely needs human judgment**
-   (the two sides made incompatible product/design decisions and no
-   objectively correct merge exists): `git merge --abort`, then file the
-   rebase to the board with `/github-workflow:report-issue` (autonomous,
-   `status-ready`, referencing this PR and the conflicting files) so it is
-   picked up automatically — no human approval needed. Post a one-line
-   comment naming the filed issue, leave the `approved` verdict, and exit.
-   Do not guess at the merge.
-
-3. **Fix a failing pipeline if there is one.** Read the required-check
-   rollup:
-   ```bash
-   gh pr checks <number> --repo <org>/<repo> --required
-   ```
-   - Any **required** check **failing** → fetch the failure detail and fix
-     the cause on the branch:
-     ```bash
-     gh run view <run-id> --repo <org>/<repo> --log-failed
-     ```
-     Diagnose the actual failure — a compile/type error, a lint
-     violation, a test the change broke, a stale snapshot/lockfile — and
-     fix it the same way Step 7 fixes findings. Reproduce the failing
-     check locally (run that test/lint/build) to confirm it now passes,
-     then commit and push:
-     ```bash
-     git add -A && git commit -m "Fix <check> failure"
-     git push
-     ```
-     Update your recorded SHA and note the fix in the review comment.
-     Pushing re-triggers the pipeline, so the checks will be **pending**
-     again — proceed to step 4 and enqueue `--auto` so the PR merges the
-     moment the now-fixed pipeline is green.
-
-     **Fallback — only when the failure is not yours to fix** (flaky or
-     infrastructure failures outside the diff, or a fix that needs design
-     judgment): file the failing check to the board with
-     `/github-workflow:report-issue` (autonomous, `status-ready`,
-     referencing this PR and naming the check) so the fix is picked up
-     automatically — no human approval needed. Post a one-line comment
-     naming the filed issue, leave `approved`, and exit. Never force a
-     merge over a genuinely red required check.
-   - Required checks **pending** (including right after you pushed a fix)
-     → enqueue auto-merge: step 4 (`--auto`).
-   - Required checks **passing** → merge now (step 4, immediate path),
-     provided you pushed nothing in steps 2–3 (a push leaves checks
-     pending → enqueue `--auto` instead).
-   - **No required checks reported** → the branch is unprotected. What to
-     do depends on `require-ci-before-merge`:
-     - **`false` (default)** → preserve today's behaviour: if you pushed
-       nothing in steps 2–3, merge now (step 4, immediate path).
-     - **`true` or `if-present`** → gate on CI when checks exist. Read the
-       full check rollup (not just required ones):
-       ```bash
-       gh pr checks <number> --repo <org>/<repo>
-       ```
-       - **No checks at all** on the head SHA → the two values diverge
-         here:
-         - **`true`** → **pause**: post a one-line comment "auto-merge
-           paused: require-ci-before-merge is set but no CI checks are
-           configured", leave `approved`, and exit. Never merge.
-         - **`if-present`** → **merge now** (step 4, immediate path),
-           provided you pushed nothing in steps 2–3. There is no CI to
-           wait for, so `if-present` does not block an unchecked branch.
-       - Some checks **failing** → fix-or-pause exactly as for a failing
-         required check above (read the run logs, fix the cause on the
-         branch and push — which makes the checks pending, then enqueue
-         `--auto`; or, when the failure is not yours to fix, pause with a
-         one-line comment and leave `approved`).
-       - All checks **passing** and you pushed nothing in steps 2–3 →
-         merge now (step 4, immediate path).
-       - Any check **pending** (none required, so `--auto` would *not*
-         wait for them) → **watch for a short, bounded window** to catch a
-         fast pipeline in this run, then hand off if it is still running.
-         Do **not** block indefinitely — this skill reviews one PR per
-         invocation and exits. Watch for ~3 minutes (or any bounded poll —
-         the point is a short wait, not an open-ended block):
-         ```bash
-         timeout 180 gh pr checks <number> --repo <org>/<repo> --watch
-         ```
-         - Settles **green** within the window → merge now (step 4,
-           immediate path).
-         - Settles **red** within the window → fix-or-pause exactly as for
-           a failing check above.
-         - **Still pending** when the window elapses → stop watching and
-           hand off. Leave the `approved` verdict, post a one-line comment
-           ("auto-merge deferred: CI still running — PR stays approved and
-           will merge once green via a re-run or a human"), and exit. The
-           PR is safe — it is never merged without a green gate. It
-           completes when a human merges it, or when a later review pass
-           re-selects it (after new commits land).
-
-4. **Merge.** Squash-merge and delete the branch.
-   - **Immediate** (nothing pushed in steps 2–3, required checks already
-     green or none):
-     ```bash
-     gh pr merge <number> --repo <org>/<repo> --squash --delete-branch
-     ```
-     If this fails because branch protection requires an approving review,
-     retry once as an admin merge — this skill records its approval as a
-     comment and the `approved` label, **not** as a GitHub review (see
-     Rules), so the required-review rule must be satisfied
-     administratively:
-     ```bash
-     gh pr merge <number> --repo <org>/<repo> --squash --delete-branch --admin
-     ```
-     If the admin retry also fails (the actor lacks admin rights), fall
-     back to the enqueue path below.
-   - **Enqueue** (checks pending — including after a fix push — or admin
-     unavailable):
-     ```bash
-     gh pr merge <number> --repo <org>/<repo> --squash --delete-branch --auto
-     ```
-     GitHub merges automatically once its branch-protection requirements
-     (the now-fixed checks, any required review) are met.
-
-     `--auto` requires the repo's "Allow auto-merge" setting to be on. If
-     this call **fails** because auto-merge is disabled on the repo, do
-     **not** fall back to an unguarded immediate merge — that would defeat
-     the gate you just enqueued behind. Instead **pause**: post a one-line
-     comment ("auto-merge paused: repo-level auto-merge is disabled —
-     enable it with `/github-workflow:setup harden`"), leave `approved`,
-     and exit. Confirm the enqueue actually took in step 5 below.
-
-5. **Verify the outcome — never assume.** Re-read the state:
-   ```bash
-   gh pr view <number> --repo <org>/<repo> --json state,mergedAt,autoMergeRequest
-   ```
-   - `state` `MERGED` → report in the **final report format** below,
-     leading with `Approved and merged PR #<number>: <title>`.
-   - `autoMergeRequest` is non-null (auto-merge enqueued) → report in the
-     same format, leading with `Approved PR #<number>: <title> —
-     auto-merge queued, will land when checks / branch protection clear`.
-   - You took the **Enqueue** path but `autoMergeRequest` is null and
-     `state` is still `OPEN` → the `--auto` call did not take (repo
-     auto-merge disabled). Pause per step 4: post the one-line comment,
-     leave `approved`, and exit. Do not claim success.
-   - Neither merged nor queued → report exactly why the merge did not
-     complete. Do not claim success.
-
-6. **The linked issue closes itself.** The PR's `closingIssuesReferences`
-   close the issue on merge — do not close it by hand. The branch was
-   deleted by the merge; there is nothing else to clean up.
+That reference re-states the three enabling conditions (verdict Approved,
+`review.config.md` Auto-Merge on Approval `enabled`, not read-only), reads
+`require-ci-before-merge`, then drives the PR to merged — resolving
+conflicts, fixing or filing failing checks, and squash-merging or enqueuing
+`--auto`. Merging a PR is otherwise forbidden (see Rules); this is the one
+sanctioned merge. On success it reports using the **Final report format**
+below (shared with Step 10).
 
 #### Final report format
 
@@ -964,6 +644,15 @@ review thoroughly):
 ---
 
 ## Reference Material
+
+The conditional, low-frequency paths are split into `references/` and
+loaded only when their step's trigger fires — keeping the common
+single-PR review path light:
+
+- `references/duplicate-reconciliation.md` — Step 2b, when the claimed PR
+  shares an issue with another open PR.
+- `references/re-review.md` — Step 4b, when a prior review footer exists.
+- `references/auto-merge.md` — Step 11, when the verdict is Approved.
 
 For label definitions, state transitions, concurrency rules, and
 feedback workflow details, see `references/review-workflow.md`.
