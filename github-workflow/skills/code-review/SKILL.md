@@ -115,9 +115,12 @@ When `$ARGUMENTS.mode` is `read-only`:
   winner and list the duplicate set under a "Duplicate PRs" note in the
   review comment, recommending which to keep. Then continue reviewing the
   claimed PR.
-- **Skip Step 7** (Fix issues) entirely — do not edit any files or push commits.
+- **Skip Step 7** (Fix issues) entirely — do not edit any files or push
+  commits, and do not file anything to the board (Step 7f is a mutation).
 - In Step 8, determine the verdict based on raw findings (nothing was auto-fixed).
-- In Step 9, post the review comment with "Fixes applied: None (read-only mode)."
+- In Step 9, post the review comment with "Fixes applied: None (read-only
+  mode)." The "Issues remaining" section lists the raw findings (nothing
+  was filed to the board), so drop the "(filed to board)" qualifier.
 - In Step 10, apply labels normally.
 - **Skip Step 11** (auto-merge) entirely — read-only mode never merges,
   closes, or pushes, regardless of the Auto-Merge on Approval setting.
@@ -476,17 +479,21 @@ changed? Are unrelated code paths in the same files untouched and correct?
 Is every changed line necessary for the PR's stated purpose? Flag
 unrelated refactors, formatting changes, or comment edits.
 
-### Step 7 — Fix issues (critical-first, budget-aware)
+### Step 7 — Fix issues (blocking-first, then non-blocking)
 
 Fix concrete, objectively wrong problems directly on the PR branch. Work
-in priority order so that if the session runs out of budget, the most
-important fixes have already landed.
+in priority order so the most important fixes land first — but fix
+**both** tiers before approving. Non-blocking cleanups are no longer
+deferred for budget: they are amended and pushed before the PR is
+approved and merged. Anything you genuinely cannot fix in place is filed
+to the board in Step 7f so it is fixed automatically later — it is never
+silently dropped.
 
 #### 7a — Triage findings into tiers
 
 Sort every finding from Step 6 into two tiers:
 
-- **Critical** — must be fixed before the PR is mergeable:
+- **Blocking** — must be fixed before the PR is mergeable:
   - Hard non-compliance gate failures
   - Security problems (injection, missing input validation, secrets in
     logs)
@@ -494,38 +501,30 @@ Sort every finding from Step 6 into two tiers:
     incorrect tests
   - Missing test coverage on non-trivial new code paths
   - Regressions to existing callers or consumers
-- **Trivial** — correct to fix, but non-blocking:
+- **Non-blocking** — correct to fix, but does not block merge:
   - Missing trailing newlines, formatting inconsistencies
   - Dead code removal, utility method placement, misplaced code
   - Null-forgiving operators, unnecessary casts
   - Comment or naming cleanups where the fix is obvious
 
-#### 7b — Fix the critical tier
+#### 7b — Fix the blocking tier
 
-Fix every critical finding. Commit each fix (or a small logical group)
-with a clear message. These are non-negotiable — do not skip them for
-budget reasons. If a critical issue genuinely cannot be auto-fixed
-(needs human or design judgment), leave it for the verdict in Step 8
-rather than guessing.
+Fix every blocking finding. Commit each fix (or a small logical group)
+with a clear message. These are non-negotiable. If a blocking issue
+genuinely cannot be auto-fixed (needs human or design judgment), do not
+guess — leave it for the verdict in Step 8 and file it to the board in
+Step 7f.
 
-#### 7c — Assess remaining budget
+#### 7c — Fix the non-blocking tier
 
-Before starting the trivial tier, check whether there is room to
-continue. Treat the budget as spent if **any** of these is true:
+Fix the non-blocking findings too, and commit them. Do **not** skip them
+for budget reasons: non-blocking changes are amended and pushed before
+the PR is approved and merged, not left for a follow-up. The only
+non-blocking items that survive to the review comment are the ones you
+genuinely **cannot** fix in place (see Step 7f) — there is no "deferred
+for budget" tier any more.
 
-- The session has been running a long time or context is approaching its
-  limit.
-- Many files have already been read and edited this session.
-
-If the budget is spent, **skip to Step 7e** and record the unfixed
-trivial findings so Step 9 can list them under "Issues remaining" as
-non-blocking cleanups for a follow-up.
-
-#### 7d — Fix the trivial tier
-
-If budget remains, fix the trivial findings too. Commit them.
-
-#### 7e — Push
+#### 7d — Push
 
 Push all fixes:
 
@@ -538,32 +537,55 @@ Do **not** fix:
 - Architectural decisions that require human judgment
 - Issues where the "right fix" depends on product or design context
 
-Flag anything you cannot fix — and any trivial items deferred for budget
-in Step 7c — in the review comment. Deferred trivial items are
-non-blocking and do not by themselves force a "Changes Requested"
-verdict.
-
 After pushing fixes, update the recorded commit SHA to the new `HEAD`.
+
+#### 7f — File anything you could not fix to the board
+
+For every problem you detected but did **not** fix on the branch — a
+blocking issue that needs design judgment, a non-blocking cleanup you
+could not safely automate, or an out-of-scope problem you noticed in
+code this PR touches — file a GitHub issue so it is picked up and fixed
+automatically. **No human approval is required**: the issue lands in the
+ready pool and the normal pickup flow handles it.
+
+For each such problem, run `/github-workflow:report-issue` (autonomous
+mode — do not pause for confirmation). It classifies the problem, applies
+the **actual issue type** (bug, security, architecture, or tech debt) and
+priority, sets `status-ready` so the issue is immediately eligible for
+pickup, and places it on the board. In the issue body, name the PR it
+came from (`Detected during review of #<pr-number>`) and the
+`file:line` location.
+
+Record each created issue's number, title, and type — Step 9 lists them
+under "Issues remaining (filed to board)" and the final report
+(Step 11.5 / Step 10) names them. Filing a non-blocking issue does **not**
+force a "Changes Requested" verdict; the work is now tracked and
+auto-pickable.
 
 ### Step 8 — Determine the verdict
 
 Re-evaluate the PR state **after** Step 7 fixes. Issues that were
-auto-fixed do not count as remaining issues.
+auto-fixed do not count as remaining issues. Non-blocking problems you
+could not fix in place have been filed to the board in Step 7f, so they
+are tracked for automatic pickup and do **not** count against the
+verdict either.
 
 - **Approved** — Zero hard non-compliance failures and zero remaining
-  *critical* issues. All critical problems were either absent or
-  auto-fixed. Trivial cleanups that were deferred for budget (Step 7c)
-  do **not** block approval — list them as non-blocking notes. PR is
-  ready to merge.
+  *blocking* issues. All blocking problems were either absent or
+  auto-fixed. Non-blocking problems were either fixed and pushed
+  (Step 7c) or filed to the board (Step 7f); neither blocks approval. PR
+  is ready to merge.
 - **Changes Requested** — Any hard non-compliance failure, or any remaining
-  *critical* problem that could not be auto-fixed and needs human action.
+  *blocking* problem that could not be auto-fixed and needs human
+  judgment (it was also filed to the board in Step 7f for automatic
+  pickup).
 - **Needs Discussion** — No hard failures, but architectural questions or
   ambiguities need human judgment before merge.
 
-If every critical issue found in Step 6 was resolved in Step 7, the
+If every blocking issue found in Step 6 was resolved in Step 7, the
 verdict is **Approved** — not "Changes Requested with observations" —
-even if some trivial cleanups were deferred for budget. The fixes are
-already pushed; nothing blocking is left for the builder to do.
+even though non-blocking cleanups may have been filed to the board. The
+fixes are already pushed; nothing blocking is left for the builder to do.
 
 ### Step 9 — Post the review
 
@@ -607,9 +629,12 @@ Reference specific file:line locations.]
 ### Fixes applied
 [List of commits pushed, or "None" if no fixes were needed.]
 
-### Issues remaining
-[Numbered list of problems that could not be auto-fixed, with file paths
-and line numbers. If none, say "No issues remaining."]
+### Issues remaining (filed to board)
+[Numbered list of problems that could not be auto-fixed, each naming the
+issue filed for it in Step 7f by its actual type and number — e.g.
+"bug #45: null deref in `parse()` (`src/parse.ts:12`)". These are queued
+for automatic pickup, no human approval needed. If none, say "No issues
+remaining."]
 
 <footer from review.config.md>
 ```
@@ -635,7 +660,10 @@ the updated SHA from Step 7 if fixes were pushed).
    remove non-matching ones that were previously applied by a review.
 7. Check out the original branch you were on before the review.
 8. Report `Reviewed PR #<number> <title> — <verdict>` (always name the
-   PR by number **and** title together, never the number alone) and exit.
+   PR by number **and** title together, never the number alone), followed
+   by the **Changed** / **Added to the board** outline from the final
+   report format in Step 11.5, then exit. If the verdict is Approved,
+   Step 11 runs first and produces the merged/queued lead line instead.
 
 Resolve every label name by purpose key through the single path in
 `templates/default-labels.md` (review-state purposes via
@@ -706,6 +734,11 @@ red CI are **blockers to clear, not reasons to give up** — fix them on the
 branch (the same auto-fix discipline as Step 7: fix concrete, objectively
 correct problems; never guess at changes that need product or design
 judgment), then merge. You are already on the PR branch from Step 3.
+Whenever a conflict or a failing check is genuinely **not yours to fix**,
+do not just pause for a human: file it to the board with
+`/github-workflow:report-issue` (autonomous, `status-ready`, correct
+type, referencing this PR) so the fix is picked up automatically, then
+leave `approved` and exit. The fallbacks below say where.
 
 1. **Confirm the PR is still what you reviewed.** Re-read its state:
    ```bash
@@ -741,9 +774,12 @@ judgment), then merge. You are already on the PR branch from Step 3.
 
    **Fallback — only when the resolution genuinely needs human judgment**
    (the two sides made incompatible product/design decisions and no
-   objectively correct merge exists): `git merge --abort`, post a one-line
-   comment that auto-merge is paused pending a human rebase, leave the
-   `approved` verdict, and exit. Do not guess.
+   objectively correct merge exists): `git merge --abort`, then file the
+   rebase to the board with `/github-workflow:report-issue` (autonomous,
+   `status-ready`, referencing this PR and the conflicting files) so it is
+   picked up automatically — no human approval needed. Post a one-line
+   comment naming the filed issue, leave the `approved` verdict, and exit.
+   Do not guess at the merge.
 
 3. **Fix a failing pipeline if there is one.** Read the required-check
    rollup:
@@ -771,9 +807,12 @@ judgment), then merge. You are already on the PR branch from Step 3.
 
      **Fallback — only when the failure is not yours to fix** (flaky or
      infrastructure failures outside the diff, or a fix that needs design
-     judgment): post a one-line comment naming the check and that
-     auto-merge is paused pending a fix, leave `approved`, and exit. Never
-     force a merge over a genuinely red required check.
+     judgment): file the failing check to the board with
+     `/github-workflow:report-issue` (autonomous, `status-ready`,
+     referencing this PR and naming the check) so the fix is picked up
+     automatically — no human approval needed. Post a one-line comment
+     naming the filed issue, leave `approved`, and exit. Never force a
+     merge over a genuinely red required check.
    - Required checks **pending** (including right after you pushed a fix)
      → enqueue auto-merge: step 4 (`--auto`).
    - Required checks **passing** → merge now (step 4, immediate path),
@@ -860,10 +899,11 @@ judgment), then merge. You are already on the PR branch from Step 3.
    ```bash
    gh pr view <number> --repo <org>/<repo> --json state,mergedAt,autoMergeRequest
    ```
-   - `state` `MERGED` → report `Merged PR #<number> <title> (squash)`.
-   - `autoMergeRequest` is non-null (auto-merge enqueued) → report
-     `Auto-merge queued for PR #<number> <title> — will land when checks
-     / branch protection clear`.
+   - `state` `MERGED` → report in the **final report format** below,
+     leading with `Approved and merged PR #<number>: <title>`.
+   - `autoMergeRequest` is non-null (auto-merge enqueued) → report in the
+     same format, leading with `Approved PR #<number>: <title> —
+     auto-merge queued, will land when checks / branch protection clear`.
    - You took the **Enqueue** path but `autoMergeRequest` is null and
      `state` is still `OPEN` → the `--auto` call did not take (repo
      auto-merge disabled). Pause per step 4: post the one-line comment,
@@ -875,7 +915,26 @@ judgment), then merge. You are already on the PR branch from Step 3.
    close the issue on merge — do not close it by hand. The branch was
    deleted by the merge; there is nothing else to clean up.
 
-Report the merge outcome alongside the Step 10 review line, then exit.
+#### Final report format
+
+When the PR is merged or auto-merge is queued, report to the user in this
+shape (this replaces the bare Step 10 review line):
+
+```
+Approved and merged PR #<number>: <title>
+
+Changed:
+- <each fix you pushed in Step 7 / 11, one line each — or "Nothing; the PR was already correct.">
+
+Added to the board:
+- <each issue filed in Step 7f / 11, named by its actual type and number — e.g. "bug #45: null deref in parse()" — or "Nothing.">
+```
+
+Always name added items by their **actual issue type** (bug, security,
+architecture, tech debt, feature, user story, or epic), never just
+"issue". If the verdict was not Approved (Step 11 did not run), use the
+Step 10 line `Reviewed PR #<number> <title> — <verdict>` followed by the
+same **Changed** / **Added to the board** outline.
 
 ---
 
@@ -893,7 +952,14 @@ review thoroughly):
    name `review-failed`).
 4. Post a comment explaining what failed, including the review footer so
    the failure is tied to a specific commit and future runs will retry.
-5. Exit immediately. Do not attempt to recover, retry, or continue.
+5. **If the failure represents fixable work** rather than a transient
+   infrastructure problem (for example the PR is too large to review in
+   one pass and should be split, or a structural issue blocks review),
+   file it to the board best-effort with `/github-workflow:report-issue`
+   (autonomous, `status-ready`, referencing this PR) so it is picked up
+   automatically — no human approval needed. Skip this for transient
+   failures (auth, network, rate limit) where filing would also fail.
+6. Exit immediately. Do not attempt to recover, retry, or continue.
 
 ---
 
@@ -921,5 +987,15 @@ feedback workflow details, see `references/review-workflow.md`.
   winner. That is the one sanctioned close; never close a PR for any other
   reason, and never in read-only mode.
 - Do not make discretionary refactors or stylistic changes.
-- Push fixes for all concrete, objectively wrong problems (blocking and minor).
+- Push fixes for all concrete, objectively wrong problems — both blocking
+  and non-blocking — before approving or merging. Non-blocking cleanups
+  are no longer deferred for budget.
+- File any problem you cannot fix in place — blocking, non-blocking, an
+  unresolvable conflict, or a failing check that is not yours to fix — to
+  the board with `/github-workflow:report-issue` (autonomous,
+  `status-ready`, correct type) so it is picked up automatically. No
+  human approval is needed, and no detected problem is ever silently
+  dropped.
+- Report merged PRs as `Approved and merged PR #<number>: <title>`
+  followed by the **Changed** and **Added to the board** outline.
 - Review one PR per invocation, then exit.
