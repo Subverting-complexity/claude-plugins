@@ -73,24 +73,14 @@ check treats it as a no-op and proceeds.
 ## 4. Update project board (if configured)
 
 Resolve the board, the issue's `{item_id}`, and the target column's
-`{column_option_id}` via `templates/board-resolution.md`. The target column
-for `status-in-progress` is **In Progress** (`col-in-progress`) per the
-label ⇄ column pairing in `templates/default-labels.md`. Only run the
-mutation once it returns a verified `{item_id}` and `{column_option_id}`:
+`{column_option_id}` via `templates/board-resolution.md`, then run its
+**Step 5** mutation. The target column for `status-in-progress` is **In
+Progress** (`col-in-progress`) per the label ⇄ column pairing in
+`templates/default-labels.md`.
 
-```
-gh api graphql -f query='mutation {
-  updateProjectV2ItemFieldValue(input: {
-    projectId: "{project_node_id}"
-    itemId: "{item_id}"
-    fieldId: "{status_field_id}"
-    value: { singleSelectOptionId: "{column_option_id}" }
-  }) { projectV2Item { id } }
-}'
-```
-
-Set the board start date too if a `start-date-field-id` is configured (same
-mutation shape, `value: { date: "{today}" }`). Independently of the board,
+Set the board start date too if a `start-date-field-id` is configured (the
+Step 5 date-field form, `value: { date: "{today}" }`). Independently of the
+board,
 set the org-level **`Start date`** issue field to today (best-effort,
 capability-gated) per `templates/issue-fields-resolution.md` (Steps 2, 3,
 5) — skip silently if the org does not define it.

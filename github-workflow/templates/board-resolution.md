@@ -118,13 +118,33 @@ The label ⇄ column pairing (which purpose key a given lifecycle label
 moves to) is defined once in `templates/default-labels.md` — callers cite
 the pairing rather than re-deriving it.
 
-## Step 5 — Use it, and fail loud on errors
+## Step 5 — Run the mutation, and fail loud on errors
 
-Pass the resolved `{item_id}`, `{project_node_id}`, and
-`{column_option_id}` into the board mutation the calling command runs.
+With a verified `{item_id}`, `{project_node_id}`, and
+`{column_option_id}` in hand, set the issue's Status to the target column.
+This is the **one** copy of the board mutation — callers name the target
+column by purpose key (Step 4) and run this; they do not inline their own:
+
+```
+gh api graphql -f query='mutation {
+  updateProjectV2ItemFieldValue(input: {
+    projectId: "{project_node_id}"
+    itemId: "{item_id}"
+    fieldId: "{status_field_id}"
+    value: { singleSelectOptionId: "{column_option_id}" }
+  }) { projectV2Item { id } }
+}'
+```
+
+**Date fields use the same mutation shape** with `value: { date:
+"{today}" }` against the relevant date field id (e.g.
+`start-date-field-id`, `end-date-field-id`) — a caller that stamps a board
+date runs this form in addition to the Status write.
+
 Because a board is configured, a failure of the identity check (Step 2),
 the item_id resolution (Step 3), the column resolution (Step 4), or the
-mutation itself is **reported loudly** to the user — never swallowed. The
+mutation itself is **reported loudly** to the user — never swallowed (e.g.
+"Board update failed: {error}. Continuing without board update."). The
 workflow still continues past the board step; only the board write is
 skipped.
 

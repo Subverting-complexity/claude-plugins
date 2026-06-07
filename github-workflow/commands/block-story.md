@@ -57,8 +57,8 @@ for this project."
 
 ### 2. Comment the blocker
 
-Write the comment body to a temporary file and post using `--body-file`
-(avoids Windows shell-escaping issues with multi-line content):
+Post a comment — write it following `templates/body-file-write.md` (temp
+file + `--body-file`):
 
 ```
 gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
@@ -66,7 +66,6 @@ gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
 
 The comment should include: the blocker reason, what was attempted,
 what failed or is missing, and a suggested resolution if known.
-Delete the temp file after.
 
 If the blocker is another issue, also record it in the issue body under a
 `## Dependencies` section as `Blocked by #N` (edit the body via
@@ -149,31 +148,13 @@ not present.
 
 ### 5. Update project board (if configured)
 
-First resolve the board, the issue's `{item_id}`, and the target column's
-`{column_option_id}` following `templates/board-resolution.md`
-(board-configured check, identity verification by title,
-add-to-board-if-missing, and column-option-id resolution). The target
-column for `status-blocked` is **Blocked** (`col-blocked`) per the label ⇄
-column pairing in `templates/default-labels.md`. Only run the mutation
-below once it returns a verified `{item_id}` and `{column_option_id}`.
-
-Set status to Blocked:
-
-```
-gh api graphql -f query='mutation {
-  updateProjectV2ItemFieldValue(input: {
-    projectId: "{project_node_id}"
-    itemId: "{item_id}"
-    fieldId: "{status_field_id}"
-    value: { singleSelectOptionId: "{column_option_id}" }
-  }) { projectV2Item { id } }
-}'
-```
-
-When **no** board is configured, skip this step silently. When a board
-**is** configured, board failures are loud: report the failure to the
-user (e.g., "Board update failed: {error}. Continuing without board
-update.") and proceed with the rest of the workflow.
+Resolve the board, the issue's `{item_id}`, and the target column's
+`{column_option_id}` following `templates/board-resolution.md`, then run
+its **Step 5** mutation to set Status. The target column for
+`status-blocked` is **Blocked** (`col-blocked`) per the label ⇄ column
+pairing in `templates/default-labels.md`. The board-configured check (skip
+silently when unconfigured), the identity verification, and the
+loud-on-failure contract all live in that template.
 
 ### 6. Reconcile the working tree to clean
 
