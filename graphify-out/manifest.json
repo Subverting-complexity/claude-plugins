@@ -1,0 +1,592 @@
+{
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\.claude-plugin\\marketplace.json": {
+    "mtime": 1780839796.4535,
+    "ast_hash": "108d073ddecb62c176e26dce1fa3dc87",
+    "semantic_hash": "108d073ddecb62c176e26dce1fa3dc87"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\bootstrap.ps1": {
+    "mtime": 1780839796.4708886,
+    "ast_hash": "37988e2ef6c0681d84708a5d890c2e84",
+    "semantic_hash": "37988e2ef6c0681d84708a5d890c2e84"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\bootstrap.sh": {
+    "mtime": 1780839796.4708886,
+    "ast_hash": "f1ae9b000a6f9690165073722412fcaf",
+    "semantic_hash": "f1ae9b000a6f9690165073722412fcaf"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\.claude-plugin\\plugin.json": {
+    "mtime": 1780839796.4732108,
+    "ast_hash": "4243ba727cd88d21b8bbd2a1396570c9",
+    "semantic_hash": "4243ba727cd88d21b8bbd2a1396570c9"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\hooks\\hooks.json": {
+    "mtime": 1780839796.4786649,
+    "ast_hash": "abbdb98d1f0c32e292fc68e102e9ce3a",
+    "semantic_hash": "abbdb98d1f0c32e292fc68e102e9ce3a"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\settings.json": {
+    "mtime": 1780839796.4786649,
+    "ast_hash": "eceafadb9fbfbb440d2002e3d9f7696e",
+    "semantic_hash": "eceafadb9fbfbb440d2002e3d9f7696e"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\hooks\\pre-commit": {
+    "mtime": 1780839796.4990797,
+    "ast_hash": "28a39baf770f8141ade10a3f18793a8a",
+    "semantic_hash": "28a39baf770f8141ade10a3f18793a8a"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\lint-skills.sh": {
+    "mtime": 1780839796.4990797,
+    "ast_hash": "281506172f001c3382d79baf3ae489f4",
+    "semantic_hash": "281506172f001c3382d79baf3ae489f4"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\.claude-plugin\\plugin.json": {
+    "mtime": 1780839796.501083,
+    "ast_hash": "92666506002d7d6f8f523ca0deee7ca9",
+    "semantic_hash": "92666506002d7d6f8f523ca0deee7ca9"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\hooks\\hooks.json": {
+    "mtime": 1780839796.501083,
+    "ast_hash": "6743b3e1a4b443f838e37cfe489e7c85",
+    "semantic_hash": "6743b3e1a4b443f838e37cfe489e7c85"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\settings.json": {
+    "mtime": 1780839796.502534,
+    "ast_hash": "5b76b0eef9af8a2300673e0553f609f9",
+    "semantic_hash": "5b76b0eef9af8a2300673e0553f609f9"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\sync-skills.ps1": {
+    "mtime": 1780839796.5159576,
+    "ast_hash": "e4ce0fdc8f4a22f157cf5f000f0fe131",
+    "semantic_hash": "e4ce0fdc8f4a22f157cf5f000f0fe131"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\sync-skills.sh": {
+    "mtime": 1780839796.5159576,
+    "ast_hash": "101caacfd01db248f8c622765fc9784b",
+    "semantic_hash": "101caacfd01db248f8c622765fc9784b"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\.github\\workflows\\ci.yml": {
+    "mtime": 1780839796.4576647,
+    "ast_hash": "ae5668a9db14bd79bfdec0b62b8b9869",
+    "semantic_hash": "ae5668a9db14bd79bfdec0b62b8b9869"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\CLAUDE.md": {
+    "mtime": 1780839796.3707333,
+    "ast_hash": "846cde0ce0850b16ae998a75e0d5b9b6",
+    "semantic_hash": "846cde0ce0850b16ae998a75e0d5b9b6"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\ClaudeProject.md": {
+    "mtime": 1780839796.4576647,
+    "ast_hash": "8597fe01e9d32948a0f58bf5b176b5d1",
+    "semantic_hash": "8597fe01e9d32948a0f58bf5b176b5d1"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\README.md": {
+    "mtime": 1780839796.4576647,
+    "ast_hash": "d1c0d620463085cdc52c1fe4114758f1",
+    "semantic_hash": "d1c0d620463085cdc52c1fe4114758f1"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\MANIFEST.md": {
+    "mtime": 1780839796.4576647,
+    "ast_hash": "8825b3ae4eb409630b68e8e3d32e745e",
+    "semantic_hash": "8825b3ae4eb409630b68e8e3d32e745e"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\_shared\\banned-patterns.md": {
+    "mtime": 1780839796.4609962,
+    "ast_hash": "8888f6842948efc6604c0ed36abc580a",
+    "semantic_hash": "8888f6842948efc6604c0ed36abc580a"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\_shared\\wording-standard.md": {
+    "mtime": 1780839796.4609962,
+    "ast_hash": "563e32631d20cba5b06cf592a07aaac4",
+    "semantic_hash": "563e32631d20cba5b06cf592a07aaac4"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\acceptance-criteria\\SKILL.md": {
+    "mtime": 1780839796.4620142,
+    "ast_hash": "ccf6751ef3ea6ac552d7e26f5bfc9337",
+    "semantic_hash": "ccf6751ef3ea6ac552d7e26f5bfc9337"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\code-architect\\SKILL.md": {
+    "mtime": 1780839796.4620142,
+    "ast_hash": "04ff320cef4230a166cb6563146ed16e",
+    "semantic_hash": "04ff320cef4230a166cb6563146ed16e"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\code-architect\\references\\clean-architecture.md": {
+    "mtime": 1780839796.4620142,
+    "ast_hash": "29239ec90765d38b70bdc249d59189c7",
+    "semantic_hash": "29239ec90765d38b70bdc249d59189c7"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\code-architect\\references\\design-patterns.md": {
+    "mtime": 1780839796.4620142,
+    "ast_hash": "cdc890b7d4d74b2ca32f3304bf5b2a9c",
+    "semantic_hash": "cdc890b7d4d74b2ca32f3304bf5b2a9c"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\code-architect\\references\\fundamentals-of-software-architecture.md": {
+    "mtime": 1780839796.4620142,
+    "ast_hash": "173951a59a061f44ae610fba5123f1b5",
+    "semantic_hash": "173951a59a061f44ae610fba5123f1b5"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\debugging\\SKILL.md": {
+    "mtime": 1780839796.4620142,
+    "ast_hash": "4decebdee577d8455136ace4ae360c86",
+    "semantic_hash": "4decebdee577d8455136ace4ae360c86"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\doc-writer\\SKILL.md": {
+    "mtime": 1780839796.466024,
+    "ast_hash": "5fa61781d48463ba63ed294508e6489d",
+    "semantic_hash": "5fa61781d48463ba63ed294508e6489d"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\feature-discovery\\SKILL.md": {
+    "mtime": 1780839796.466024,
+    "ast_hash": "becf56c060e4335c580595e4338780c7",
+    "semantic_hash": "becf56c060e4335c580595e4338780c7"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\grill-me\\SKILL.md": {
+    "mtime": 1780839796.466024,
+    "ast_hash": "379f5de668ff8e7d7afb4cef9af07c95",
+    "semantic_hash": "379f5de668ff8e7d7afb4cef9af07c95"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\pr-description\\SKILL.md": {
+    "mtime": 1780839796.466024,
+    "ast_hash": "147308ff065197613168ab3622b79e90",
+    "semantic_hash": "147308ff065197613168ab3622b79e90"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\references\\story-template.md": {
+    "mtime": 1780839796.466024,
+    "ast_hash": "22ed876c5c70ec752ff2e427d2699d93",
+    "semantic_hash": "22ed876c5c70ec752ff2e427d2699d93"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\repo-scaffolding\\SKILL.md": {
+    "mtime": 1780839796.466024,
+    "ast_hash": "7614af39fbd25a143e0af4abb073f2f3",
+    "semantic_hash": "7614af39fbd25a143e0af4abb073f2f3"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\security-audit\\SKILL.md": {
+    "mtime": 1780839796.4691887,
+    "ast_hash": "c4cb562b21e39c16d8b85fcc102e133f",
+    "semantic_hash": "c4cb562b21e39c16d8b85fcc102e133f"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\structured-coding\\SKILL.md": {
+    "mtime": 1780839796.4691887,
+    "ast_hash": "976990b1b7a637431fdbfc011c7b60f0",
+    "semantic_hash": "976990b1b7a637431fdbfc011c7b60f0"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\user-story\\SKILL.md": {
+    "mtime": 1780839796.4708886,
+    "ast_hash": "b0c7689df95108f4f8e6cc0ada1b4f5f",
+    "semantic_hash": "b0c7689df95108f4f8e6cc0ada1b4f5f"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\_shared-skills\\verify-feature\\SKILL.md": {
+    "mtime": 1780839796.4708886,
+    "ast_hash": "799b62d9e061129198ba5483bad1c652",
+    "semantic_hash": "799b62d9e061129198ba5483bad1c652"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\docs\\worktree-config.md": {
+    "mtime": 1780839796.4708886,
+    "ast_hash": "b8066c87da21ad4799056b4e79eb6b86",
+    "semantic_hash": "b8066c87da21ad4799056b4e79eb6b86"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\README.md": {
+    "mtime": 1780839796.4732108,
+    "ast_hash": "600b436d57fdfac6d9d500ff27073e3f",
+    "semantic_hash": "600b436d57fdfac6d9d500ff27073e3f"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\agents\\builder.md": {
+    "mtime": 1780839796.4732108,
+    "ast_hash": "0327ee991b48e592d8e555c04e19a6ea",
+    "semantic_hash": "0327ee991b48e592d8e555c04e19a6ea"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\agents\\doc-writer.md": {
+    "mtime": 1780839796.4732108,
+    "ast_hash": "52db26e9db245daabc4c29a0b1555154",
+    "semantic_hash": "52db26e9db245daabc4c29a0b1555154"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\agents\\reviewer.md": {
+    "mtime": 1780839796.4732108,
+    "ast_hash": "3c3579ec6ec62a385e40e2aca2efd87e",
+    "semantic_hash": "3c3579ec6ec62a385e40e2aca2efd87e"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\commands\\block-story.md": {
+    "mtime": 1780839796.4732108,
+    "ast_hash": "878ddc61af1376041b9db15ee9fc4363",
+    "semantic_hash": "878ddc61af1376041b9db15ee9fc4363"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\commands\\finish-story.md": {
+    "mtime": 1780839796.4732108,
+    "ast_hash": "c238fd57bf2b6b25b18ae5215918e520",
+    "semantic_hash": "c238fd57bf2b6b25b18ae5215918e520"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\commands\\guide.md": {
+    "mtime": 1780839796.4732108,
+    "ast_hash": "2fc0754959ab22e61449daf7e324c727",
+    "semantic_hash": "2fc0754959ab22e61449daf7e324c727"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\commands\\pick-story.md": {
+    "mtime": 1780839796.4732108,
+    "ast_hash": "5d557dd149d7a1222a8d8e59ea9ad972",
+    "semantic_hash": "5d557dd149d7a1222a8d8e59ea9ad972"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\commands\\report-issue.md": {
+    "mtime": 1780839796.4732108,
+    "ast_hash": "9d9e6c0b2839c514df7258b48c345f76",
+    "semantic_hash": "9d9e6c0b2839c514df7258b48c345f76"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\commands\\setup.md": {
+    "mtime": 1780839796.4772782,
+    "ast_hash": "e284281421868c79338fd036b5a45e62",
+    "semantic_hash": "e284281421868c79338fd036b5a45e62"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\commands\\start-story.md": {
+    "mtime": 1780839796.4772782,
+    "ast_hash": "bef61fc585fb7852f2e4c23f31a12119",
+    "semantic_hash": "bef61fc585fb7852f2e4c23f31a12119"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\commands\\update-pr.md": {
+    "mtime": 1780839796.4772782,
+    "ast_hash": "f97dcaaeec7bcd12b5e9030af06f38b3",
+    "semantic_hash": "f97dcaaeec7bcd12b5e9030af06f38b3"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\references\\story-template.md": {
+    "mtime": 1780839796.4786649,
+    "ast_hash": "1e68097fa1b8a310966ad78595639053",
+    "semantic_hash": "1e68097fa1b8a310966ad78595639053"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\_shared\\banned-patterns.md": {
+    "mtime": 1780839796.4786649,
+    "ast_hash": "becb33734415abf377a5d1f1c82732df",
+    "semantic_hash": "becb33734415abf377a5d1f1c82732df"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\_shared\\wording-standard.md": {
+    "mtime": 1780839796.4806705,
+    "ast_hash": "7e6febc9f58813494c9a7bf96049dd1c",
+    "semantic_hash": "7e6febc9f58813494c9a7bf96049dd1c"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\acceptance-criteria\\SKILL.md": {
+    "mtime": 1780839796.4806705,
+    "ast_hash": "089233f03ff0342a018fd42d6f73c7c8",
+    "semantic_hash": "089233f03ff0342a018fd42d6f73c7c8"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\code-architect\\SKILL.md": {
+    "mtime": 1780839796.4816892,
+    "ast_hash": "5e349a831047723e4ac7b3f597ac0e2c",
+    "semantic_hash": "5e349a831047723e4ac7b3f597ac0e2c"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\code-architect\\references\\clean-architecture.md": {
+    "mtime": 1780839796.4816892,
+    "ast_hash": "abe1637329b26f64bb8c5a24fc2c8205",
+    "semantic_hash": "abe1637329b26f64bb8c5a24fc2c8205"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\code-architect\\references\\design-patterns.md": {
+    "mtime": 1780839796.4816892,
+    "ast_hash": "4b52ab99fc4ae7c871e37691ded1040d",
+    "semantic_hash": "4b52ab99fc4ae7c871e37691ded1040d"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\code-architect\\references\\fundamentals-of-software-architecture.md": {
+    "mtime": 1780839796.4816892,
+    "ast_hash": "327e3ed5379e3b237f9c33384fbd1198",
+    "semantic_hash": "327e3ed5379e3b237f9c33384fbd1198"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\code-review\\SKILL.md": {
+    "mtime": 1780839796.4816892,
+    "ast_hash": "18e295f964ab5a084bc1946bb37eef84",
+    "semantic_hash": "18e295f964ab5a084bc1946bb37eef84"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\code-review\\references\\auto-merge.md": {
+    "mtime": 1780839796.4816892,
+    "ast_hash": "0233449d82d57ea41f8df33d18cebeb5",
+    "semantic_hash": "0233449d82d57ea41f8df33d18cebeb5"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\code-review\\references\\duplicate-reconciliation.md": {
+    "mtime": 1780839796.4851797,
+    "ast_hash": "ec40c4c40ac5aa3bb2d220e1748a6bd3",
+    "semantic_hash": "ec40c4c40ac5aa3bb2d220e1748a6bd3"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\code-review\\references\\re-review.md": {
+    "mtime": 1780839796.4851797,
+    "ast_hash": "b534f6d4c2376eb0b0d6b6dd10e319af",
+    "semantic_hash": "b534f6d4c2376eb0b0d6b6dd10e319af"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\code-review\\references\\review-config-guide.md": {
+    "mtime": 1780839796.4859262,
+    "ast_hash": "92312e11cc6fdb25d2c442d77c97f613",
+    "semantic_hash": "92312e11cc6fdb25d2c442d77c97f613"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\code-review\\references\\review-workflow.md": {
+    "mtime": 1780839796.4859262,
+    "ast_hash": "fe35026d5fe68faae4debbcfc0542e70",
+    "semantic_hash": "fe35026d5fe68faae4debbcfc0542e70"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\code-review\\references\\review.config.template.md": {
+    "mtime": 1780839796.4859262,
+    "ast_hash": "9722842c5583baad93db4736042b8e42",
+    "semantic_hash": "9722842c5583baad93db4736042b8e42"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\debugging\\SKILL.md": {
+    "mtime": 1780839796.487267,
+    "ast_hash": "710da1417d50e25f060078d04dd42ff3",
+    "semantic_hash": "710da1417d50e25f060078d04dd42ff3"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\doc-writer\\SKILL.md": {
+    "mtime": 1780839796.487267,
+    "ast_hash": "32546f6f743f8daa6a2b3dc1ce25a726",
+    "semantic_hash": "32546f6f743f8daa6a2b3dc1ce25a726"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\execute\\SKILL.md": {
+    "mtime": 1780839796.487267,
+    "ast_hash": "43127fbf8fb5d1e6a07b588dfee44de7",
+    "semantic_hash": "43127fbf8fb5d1e6a07b588dfee44de7"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\execute\\references\\finish-and-self-review.md": {
+    "mtime": 1780839796.487267,
+    "ast_hash": "a878be5b726b66674d9c529cb4312992",
+    "semantic_hash": "a878be5b726b66674d9c529cb4312992"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\feature-discovery\\SKILL.md": {
+    "mtime": 1780839796.487267,
+    "ast_hash": "b84155ed81285edcb312336c7e24f7bb",
+    "semantic_hash": "b84155ed81285edcb312336c7e24f7bb"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\grill-me\\SKILL.md": {
+    "mtime": 1780839796.487267,
+    "ast_hash": "e2f5ab75e3b406a908341f0f0c5a6993",
+    "semantic_hash": "e2f5ab75e3b406a908341f0f0c5a6993"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\pr-description\\SKILL.md": {
+    "mtime": 1780839796.487267,
+    "ast_hash": "e04227d7ec7608418997536a77ed1443",
+    "semantic_hash": "e04227d7ec7608418997536a77ed1443"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\preflight\\SKILL.md": {
+    "mtime": 1780839796.4908242,
+    "ast_hash": "733b7aa844588ef49f9675b9e4c5611e",
+    "semantic_hash": "733b7aa844588ef49f9675b9e4c5611e"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\preflight\\references\\review-auto-merge-checks.md": {
+    "mtime": 1780839796.4908242,
+    "ast_hash": "37b4e1a1a995681f679fced13e415aee",
+    "semantic_hash": "37b4e1a1a995681f679fced13e415aee"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\repo-scaffolding\\SKILL.md": {
+    "mtime": 1780839796.4908242,
+    "ast_hash": "4e683cfb9adbfc6a4741b6a89a354253",
+    "semantic_hash": "4e683cfb9adbfc6a4741b6a89a354253"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\security-audit\\SKILL.md": {
+    "mtime": 1780839796.4908242,
+    "ast_hash": "72553ddf372580621e789f41da7bed97",
+    "semantic_hash": "72553ddf372580621e789f41da7bed97"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\structured-coding\\SKILL.md": {
+    "mtime": 1780839796.4908242,
+    "ast_hash": "b5f8ed209c9fca424aee527471322cb5",
+    "semantic_hash": "b5f8ed209c9fca424aee527471322cb5"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\user-story\\SKILL.md": {
+    "mtime": 1780839796.4908242,
+    "ast_hash": "068e875b03b28e22fadac769f19b520d",
+    "semantic_hash": "068e875b03b28e22fadac769f19b520d"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\skills\\verify-feature\\SKILL.md": {
+    "mtime": 1780839796.4908242,
+    "ast_hash": "937f07f65819e5989295f3221b0522b0",
+    "semantic_hash": "937f07f65819e5989295f3221b0522b0"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\CLAUDE.md": {
+    "mtime": 1780839796.4949207,
+    "ast_hash": "5c22b78238fcf10084e89597e18c1639",
+    "semantic_hash": "5c22b78238fcf10084e89597e18c1639"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\ClaudeProject.md": {
+    "mtime": 1780839796.4949207,
+    "ast_hash": "650d4f9b9ce7b792df5adcd2d9862e12",
+    "semantic_hash": "650d4f9b9ce7b792df5adcd2d9862e12"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\board-resolution.md": {
+    "mtime": 1780839796.4949207,
+    "ast_hash": "90509f0150e7ed56c41522e883c13ede",
+    "semantic_hash": "90509f0150e7ed56c41522e883c13ede"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\body-file-write.md": {
+    "mtime": 1780839796.4949207,
+    "ast_hash": "af9b7ce3d0f4cdedec65d1fc5581d23a",
+    "semantic_hash": "af9b7ce3d0f4cdedec65d1fc5581d23a"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\claim-procedure-rationale.md": {
+    "mtime": 1780839796.4949207,
+    "ast_hash": "8bdca355e30071f60e49d745b45d362b",
+    "semantic_hash": "8bdca355e30071f60e49d745b45d362b"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\claim-procedure.md": {
+    "mtime": 1780839796.4949207,
+    "ast_hash": "fe8e8379ee9754ec6b79fd1aae559a6e",
+    "semantic_hash": "fe8e8379ee9754ec6b79fd1aae559a6e"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\default-labels.md": {
+    "mtime": 1780839796.4949207,
+    "ast_hash": "3febec509bb0eac4a7fdc0cbe0a4daaa",
+    "semantic_hash": "3febec509bb0eac4a7fdc0cbe0a4daaa"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\issue-fields-resolution.md": {
+    "mtime": 1780839796.4949207,
+    "ast_hash": "f937df16a0e782a609b190474df8e3f3",
+    "semantic_hash": "f937df16a0e782a609b190474df8e3f3"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\label-reference.md": {
+    "mtime": 1780839796.4949207,
+    "ast_hash": "d95fec2148d5829d367b5acccd1629cd",
+    "semantic_hash": "d95fec2148d5829d367b5acccd1629cd"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\sibling-pr-lookup.md": {
+    "mtime": 1780839796.4949207,
+    "ast_hash": "d0047881cc2a8b471c24fda2f73a743a",
+    "semantic_hash": "d0047881cc2a8b471c24fda2f73a743a"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\story-selection-rationale.md": {
+    "mtime": 1780839796.4990797,
+    "ast_hash": "87a2c113ac4506694578184aab630d54",
+    "semantic_hash": "87a2c113ac4506694578184aab630d54"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\story-selection.md": {
+    "mtime": 1780839796.4990797,
+    "ast_hash": "a146f85744b9488f93a3c338360edb9e",
+    "semantic_hash": "a146f85744b9488f93a3c338360edb9e"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\github-workflow\\templates\\worktree-hygiene.md": {
+    "mtime": 1780839796.4990797,
+    "ast_hash": "362ad9d454bc094fc19d75e0e2dd2e29",
+    "semantic_hash": "362ad9d454bc094fc19d75e0e2dd2e29"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\README.md": {
+    "mtime": 1780839796.501083,
+    "ast_hash": "fa6a94759f54b03e76bc4ae62f8ec4ba",
+    "semantic_hash": "fa6a94759f54b03e76bc4ae62f8ec4ba"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\references\\story-template.md": {
+    "mtime": 1780839796.502534,
+    "ast_hash": "1e68097fa1b8a310966ad78595639053",
+    "semantic_hash": "1e68097fa1b8a310966ad78595639053"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\_shared\\banned-patterns.md": {
+    "mtime": 1780839796.503541,
+    "ast_hash": "becb33734415abf377a5d1f1c82732df",
+    "semantic_hash": "becb33734415abf377a5d1f1c82732df"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\_shared\\wording-standard.md": {
+    "mtime": 1780839796.503541,
+    "ast_hash": "7e6febc9f58813494c9a7bf96049dd1c",
+    "semantic_hash": "7e6febc9f58813494c9a7bf96049dd1c"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\acceptance-criteria\\SKILL.md": {
+    "mtime": 1780839796.503541,
+    "ast_hash": "089233f03ff0342a018fd42d6f73c7c8",
+    "semantic_hash": "089233f03ff0342a018fd42d6f73c7c8"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\code-architect\\SKILL.md": {
+    "mtime": 1780839796.503541,
+    "ast_hash": "e13b567febf8d17edb5a4bf151600b54",
+    "semantic_hash": "e13b567febf8d17edb5a4bf151600b54"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\code-architect\\references\\clean-architecture.md": {
+    "mtime": 1780839796.503541,
+    "ast_hash": "abe1637329b26f64bb8c5a24fc2c8205",
+    "semantic_hash": "abe1637329b26f64bb8c5a24fc2c8205"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\code-architect\\references\\design-patterns.md": {
+    "mtime": 1780839796.503541,
+    "ast_hash": "4b52ab99fc4ae7c871e37691ded1040d",
+    "semantic_hash": "4b52ab99fc4ae7c871e37691ded1040d"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\code-architect\\references\\fundamentals-of-software-architecture.md": {
+    "mtime": 1780839796.503541,
+    "ast_hash": "327e3ed5379e3b237f9c33384fbd1198",
+    "semantic_hash": "327e3ed5379e3b237f9c33384fbd1198"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\code-review\\SKILL.md": {
+    "mtime": 1780839796.5075624,
+    "ast_hash": "1b09db7b2b69d84e14c60f98246c9fbd",
+    "semantic_hash": "1b09db7b2b69d84e14c60f98246c9fbd"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\debugging\\SKILL.md": {
+    "mtime": 1780839796.5075624,
+    "ast_hash": "710da1417d50e25f060078d04dd42ff3",
+    "semantic_hash": "710da1417d50e25f060078d04dd42ff3"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\doc-writer\\SKILL.md": {
+    "mtime": 1780839796.5075624,
+    "ast_hash": "32546f6f743f8daa6a2b3dc1ce25a726",
+    "semantic_hash": "32546f6f743f8daa6a2b3dc1ce25a726"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\execute\\SKILL.md": {
+    "mtime": 1780839796.5075624,
+    "ast_hash": "2f31bea4c7f967b66c18b73331d785fd",
+    "semantic_hash": "2f31bea4c7f967b66c18b73331d785fd"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\feature-discovery\\SKILL.md": {
+    "mtime": 1780839796.5075624,
+    "ast_hash": "e21c4d24232f927be4fc5c7d336e4f67",
+    "semantic_hash": "e21c4d24232f927be4fc5c7d336e4f67"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\grill-me\\SKILL.md": {
+    "mtime": 1780839796.5075624,
+    "ast_hash": "e2f5ab75e3b406a908341f0f0c5a6993",
+    "semantic_hash": "e2f5ab75e3b406a908341f0f0c5a6993"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\mobile-audit\\SKILL.md": {
+    "mtime": 1780839796.5108292,
+    "ast_hash": "ef3655605415de283019218826bbf5ad",
+    "semantic_hash": "ef3655605415de283019218826bbf5ad"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\pr-description\\SKILL.md": {
+    "mtime": 1780839796.5108292,
+    "ast_hash": "e04227d7ec7608418997536a77ed1443",
+    "semantic_hash": "e04227d7ec7608418997536a77ed1443"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\repo-scaffolding\\SKILL.md": {
+    "mtime": 1780839796.511846,
+    "ast_hash": "7408420b12752d4404cd891353223874",
+    "semantic_hash": "7408420b12752d4404cd891353223874"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\security-audit\\SKILL.md": {
+    "mtime": 1780839796.511846,
+    "ast_hash": "7c7c1093b97d17c9f92ffa34201e7910",
+    "semantic_hash": "7c7c1093b97d17c9f92ffa34201e7910"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\structured-coding\\SKILL.md": {
+    "mtime": 1780839796.511846,
+    "ast_hash": "93496514b23d2635ab9d601ab8a4d3ec",
+    "semantic_hash": "93496514b23d2635ab9d601ab8a4d3ec"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\support-request\\SKILL.md": {
+    "mtime": 1780839796.511846,
+    "ast_hash": "0d3ad77b1d4c4207f2068bdfbe0d3439",
+    "semantic_hash": "0d3ad77b1d4c4207f2068bdfbe0d3439"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\tone\\SKILL.md": {
+    "mtime": 1780839796.511846,
+    "ast_hash": "61d47cfcc6bd6dd8fcf397bdd27909dc",
+    "semantic_hash": "61d47cfcc6bd6dd8fcf397bdd27909dc"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\tone\\references\\examples.md": {
+    "mtime": 1780839796.511846,
+    "ast_hash": "cbb9ed15a62741b719156d6853606bcc",
+    "semantic_hash": "cbb9ed15a62741b719156d6853606bcc"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\tone\\references\\glossary.md": {
+    "mtime": 1780839796.511846,
+    "ast_hash": "e279d3916d65f5a26ae5eed98954ddcc",
+    "semantic_hash": "e279d3916d65f5a26ae5eed98954ddcc"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\user-story\\SKILL.md": {
+    "mtime": 1780839796.511846,
+    "ast_hash": "068e875b03b28e22fadac769f19b520d",
+    "semantic_hash": "068e875b03b28e22fadac769f19b520d"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\skills\\verify-feature\\SKILL.md": {
+    "mtime": 1780839796.5159576,
+    "ast_hash": "937f07f65819e5989295f3221b0522b0",
+    "semantic_hash": "937f07f65819e5989295f3221b0522b0"
+  },
+  "C:\\Users\\adrie\\Software Development\\SubvertingComplexity\\claude-plugins\\.claude\\worktrees\\elated-hoover-198a9c\\local-workflow\\templates\\worktree-hygiene.md": {
+    "mtime": 1780839796.5159576,
+    "ast_hash": "5b0629ca69dcce1b2bb3e5d76f24883a",
+    "semantic_hash": "5b0629ca69dcce1b2bb3e5d76f24883a"
+  }
+}

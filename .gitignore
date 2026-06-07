@@ -3,3 +3,7 @@
 
 # github-workflow plugin scratch files (per-session, never commit)
 **/.claude/plan.md
+
+# graphify machine-specific state (absolute paths, not portable)
+graphify-out/.graphify_python
+graphify-out/.graphify_root
