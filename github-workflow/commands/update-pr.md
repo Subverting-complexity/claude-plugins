@@ -1,5 +1,6 @@
 ---
 description: 'Address review feedback on a PR. Trigger: "update the PR", "fix the PR", "address review feedback", "changes were requested", "update PR N", "fix review issues", "apply feedback", "respond to review", "address comments".'
+argument-hint: '[pr#]'
 ---
 
 # Update PR

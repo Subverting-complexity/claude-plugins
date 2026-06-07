@@ -1,7 +1,7 @@
 ---
 name: execute
-description: 'End-to-end story execution: pick → plan → build → test → PR'
-when_to_use: >-
+description: >-
+  End-to-end story execution: pick → plan → build → test → PR.
   Trigger when the user wants development work done. Any of these:
   "next story", "start the next story", "pick up a story", "what's next",
   "work on story N", "do story N", "story #N", "#N", "do N", just a bare issue number,

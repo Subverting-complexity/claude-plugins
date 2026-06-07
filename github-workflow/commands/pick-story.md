@@ -1,5 +1,6 @@
 ---
 description: 'Pick the next story from the backlog without starting it. Supports mode filtering: default picks highest priority regardless of type, --mode feature for features only, --mode maintenance for bugs/security/arch/debt. Trigger: "what''s next", "pick a story", "show me the next story", "what should I work on", "next issue", "show backlog", "what''s in the queue", "grab a story", "next bug", "next maintenance item", "next feature".'
+argument-hint: '[--mode feature|maintenance]'
 ---
 
 # Pick Story
