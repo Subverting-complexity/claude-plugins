@@ -4,6 +4,10 @@
 # github-workflow plugin scratch files (per-session, never commit)
 **/.claude/plan.md
 
-# graphify machine-specific state (absolute paths, not portable)
+# graphify — generated graph artifacts (large, derived, or machine-local)
+# Agents rebuild graph.json locally from cache: `graphify . --update` (0 tokens, ~10s)
+graphify-out/graph.json
+graphify-out/graph.html
+graphify-out/cost.json
 graphify-out/.graphify_python
 graphify-out/.graphify_root
