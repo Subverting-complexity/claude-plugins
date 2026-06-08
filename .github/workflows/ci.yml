@@ -88,6 +88,14 @@ jobs:
               echo "FAIL: $f missing 'description'"
               status=1
             fi
+            # Reject keys the Claude Code plugin schema does not recognize.
+            # Unknown keys (e.g. displayName, userConfig) make the plugin
+            # fail to load in the CLI, even though the file is valid JSON.
+            extra=$(python3 -c "import json,sys; allowed={'name','version','description','author','homepage','repository','license','keywords','commands','agents','hooks','skills','mcpServers'}; print(','.join(sorted(set(json.load(sys.stdin).keys())-allowed)))" < "$f")
+            if [ -n "$extra" ]; then
+              echo "FAIL: $f has unrecognized key(s): $extra — the Claude Code plugin schema rejects these and the plugin will fail to load"
+              status=1
+            fi
             echo "OK: $plugin_dir ($name@$version)"
           done
           exit $status
