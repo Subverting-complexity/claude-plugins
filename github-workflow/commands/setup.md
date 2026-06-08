@@ -1,6 +1,6 @@
 ---
-description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "onboard", "initialize the workflow", "help me set up", "setup", "init", "bootstrap", "configure the plugin", "first time setup", "harden auto-merge", "enforce CI before merge", "require CI".'
-argument-hint: '[harden]'
+description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "onboard", "initialize the workflow", "help me set up", "setup", "init", "bootstrap", "configure the plugin", "first time setup", "harden auto-merge", "enforce CI before merge", "require CI", "set up ecosystem tools", "configure graphify", "set up fallow", "configure RTK".'
+argument-hint: '[harden|ecosystem]'
 ---
 
 # Setup
@@ -18,6 +18,12 @@ for wiring up (or repairing) the CI/merge gate after the repo already
 has a `ClaudeProject.md`/`review.config.md`. Verify prerequisites
 (Step 1) and locate `docs/review.config.md`, then jump straight to
 Step 7b. Otherwise run all steps in order.
+
+If `$ARGUMENTS` is `ecosystem`, **skip the full onboarding** and run
+**only Step 8 — Claude Code Ecosystem Tools** against the
+already-configured project. Use this to install, update, or add tools
+to an existing repo without re-running the full wizard. Verify
+prerequisites (Step 1), then jump straight to Step 8.
 
 ## Steps
 
@@ -526,7 +532,210 @@ sub-step is **best-effort** and degrades to a warning.
    "neither — auto-merge is unguarded; merge a CI pipeline first") is now
    in effect.
 
-### 8. Verify and report
+### 8. Claude Code Ecosystem Tools (optional)
+
+Offer to set up commonly used Claude Code companion tools. This step is
+entirely optional — skip any tool the user declines or that is not
+relevant. Ask once at the start: "Do you want to set up any Claude Code
+ecosystem tools?" If the user says no to all, skip the step entirely —
+no files are written, no tokens added to future contexts.
+
+Track which tools the user enables. At the end of this step, if at
+least one tool is enabled, write `.claude/ecosystem.md` containing
+only those tools' entries and add one row to the project's CLAUDE.md
+Supplementary Files table. If nothing is enabled, do nothing — no
+file, no table row, zero impact on future context windows.
+
+---
+
+#### Graphify — codebase knowledge graph
+
+Graphify builds a queryable graph of the codebase so agents get
+graph-grounded answers instead of file-searching blind.
+
+**Detect:** `graphify --version`
+
+If not installed, offer install commands and skip remaining config if
+the user declines:
+```
+uv tool install graphifyy   # preferred (isolated env)
+# or: pip install graphifyy
+```
+
+If installed (or just installed), run these checks in order:
+
+1. **First build** — if `graphify-out/manifest.json` does not exist,
+   run `graphify .` from the repo root. Large repos (>500 files) will
+   prompt for confirmation; remind the user that docs/images cost tokens
+   per file (~200–500 each) while code files are free. After the build:
+   ```
+   git mv graphify-out/GRAPH_REPORT.md docs/GRAPH_REPORT.md
+   git add graphify-out/cache/ graphify-out/manifest.json graphify-out/.graphify_labels.json docs/GRAPH_REPORT.md
+   ```
+   Tell the user to include these in their next commit. (The cache is the
+   token receipt — once committed, any fresh clone rebuilds the graph for
+   free via `graphify . --update`.)
+
+2. **`.gitignore`** — add entries if not already present:
+   ```
+   # graphify — generated artifacts (rebuild via `graphify . --update`, ~10s, 0 tokens)
+   graphify-out/graph.json
+   graphify-out/graph.html
+   graphify-out/cost.json
+   graphify-out/.graphify_python
+   graphify-out/.graphify_root
+   ```
+
+3. **Stop hook** — add to `.claude/settings.json` if not already
+   present. Merge under `hooks.Stop[0].hooks` rather than replacing:
+   ```json
+   { "type": "command", "command": "graphify . --update --no-viz" }
+   ```
+   This keeps the graph fresh automatically at the end of every Claude
+   Code session — right after files change, before the next agent starts.
+
+Ecosystem entry (written to `.claude/ecosystem.md`):
+```
+## Graphify
+After git pull / fresh worktree: `graphify . --update` (~10s, 0 tokens — reads committed cache).
+Query: `graphify query "..."` · `graphify path A B` · `graphify explain X`
+```
+
+---
+
+#### RTK — token optimizer
+
+RTK filters boilerplate from Bash output (passing tests, repeated
+headers) while keeping errors, diffs, and stack traces. Runs as a
+global PreToolUse hook — transparent to normal usage, no per-project
+configuration needed.
+
+**Detect:** `rtk --version`
+
+If not installed, show: `cargo install rtk` (requires Rust). Cannot
+auto-install — note it and skip config if the user declines.
+
+If installed, check whether a PreToolUse/Bash hook referencing `rtk`
+exists in `~/.claude/settings.json`. If missing, prompt the user to
+install it (refer them to the RTK documentation for the exact hook
+command — it varies by version). Do not auto-write to the user's global
+settings file without explicit confirmation.
+
+Ecosystem entry:
+```
+## RTK
+Active via global PreToolUse hook — transparent on all Bash commands.
+`rtk gain` — savings analytics · `rtk gain --history` — command history with savings
+```
+
+---
+
+#### ccusage — Claude Code cost history
+
+ccusage reads local Claude Code JSONL session files and shows cost
+breakdowns by day, month, session, or project. Zero-install (npx), no
+configuration required. Complements the built-in `/cost` (which only
+shows the current session) with full historical data.
+
+Ask if the user wants it in their cheat-sheet. No detection or
+installation needed.
+
+Ecosystem entry:
+```
+## ccusage
+`npx ccusage` — cost by day/month/session/project
+`npx ccusage blocks` — billing window / rate-limit predictor
+```
+
+---
+
+#### ecc-agentshield — config security scanner
+
+ecc-agentshield runs 102 deterministic rules across CLAUDE.md,
+settings.json, MCP configs, hooks, and skills — looking for hardcoded
+secrets, prompt injection vectors, overly permissive allowlists, and
+risky MCP endpoints. Zero-install (npx), no configuration required.
+Results are reproducible (no AI involved).
+
+Offer to run it now to get an initial baseline report:
+```
+npx ecc-agentshield scan
+```
+
+No configuration step — it is always `npx ecc-agentshield scan`.
+
+Ecosystem entry:
+```
+## ecc-agentshield
+`npx ecc-agentshield scan` — 102-rule static security audit of Claude Code config files (A–F report, reproducible, no AI)
+```
+
+---
+
+#### Fallow — codebase intelligence (TS/JS projects only)
+
+Fallow analyzes TypeScript/JavaScript codebases for unused exports,
+duplication, complexity hotspots, and architectural drift. Available
+as a CLI, VS Code extension, and MCP server for agent tool-call access
+directly from Claude Code.
+
+**Only offer this tool if the project is TypeScript/JavaScript** —
+check for `package.json`, `tsconfig.json`, or `.ts`/`.js` files at the
+repo root. Skip silently for other stacks.
+
+**Detect:** `npx fallow --version`
+
+If the user wants to enable it, direct them to
+[fallow.tools](https://fallow.tools/) for the current install and MCP
+server configuration steps — the exact commands depend on installation
+method. The MCP integration registers Fallow as a tool server in
+`.claude/settings.json` so agents can query codebase intelligence
+directly during coding tasks.
+
+Ecosystem entry:
+```
+## Fallow
+Codebase intelligence for TS/JS: unused exports, duplication, complexity hotspots.
+CLI: `npx fallow` · MCP tools available when configured (see fallow.tools for setup)
+```
+
+---
+
+#### Generate `.claude/ecosystem.md`
+
+If at least one tool was enabled:
+
+1. **Write `.claude/ecosystem.md`** — include only the sections for the
+   enabled tools, using the compact entries above. Prefix the file with:
+   ```markdown
+   <!-- Generated by /github-workflow:setup ecosystem — do not hand-edit. -->
+   <!-- Regenerate: /github-workflow:setup ecosystem                      -->
+
+   # Ecosystem Tools
+
+   ```
+   Then append each enabled tool's section in the order: Graphify, RTK,
+   ccusage, ecc-agentshield, Fallow.
+
+2. **Update CLAUDE.md** — in the Supplementary Files table (added in
+   Step 6 or pre-existing), add a row if not already present:
+   ```
+   | `.claude/ecosystem.md` | Installed Claude Code companion tool cheat-sheet — graphify queries, cost tracking, security scanning, and codebase intelligence. |
+   ```
+   If no table exists yet, note that the user should add a reference
+   once they add a Supplementary Files section.
+
+3. **Commit question** — ask whether to commit `.claude/ecosystem.md`
+   with the project (team-shared, all agents benefit) or add it to
+   `.gitignore` (personal-only). If personal-only, append
+   `.claude/ecosystem.md` to `.gitignore`.
+
+If no tools were enabled, skip this entirely — no file, no table row,
+zero tokens in future contexts.
+
+---
+
+### 9. Verify and report
 
 Confirm all required sections are present in `ClaudeProject.md`.
 Display a summary of what was configured:
@@ -537,6 +746,7 @@ Display a summary of what was configured:
 - Backlog mode (sprint or flat)
 - Board (configured or skipped)
 - Labels configured
+- Ecosystem tools enabled (if any)
 
 Suggest running `/github-workflow:execute` to start the first story.
 
