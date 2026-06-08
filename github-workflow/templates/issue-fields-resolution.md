@@ -5,7 +5,7 @@ Shared procedure for every command that **creates or classifies an issue**
 `feature-discovery` skill), and for the selector
 (`templates/story-selection.md`) when it filters by kind or sorts by
 priority. It resolves the org's **native issue types** (Bug, Feature, User
-Story, Epic) and **org issue fields** (Priority, Effort, Type of issue,
+Story, Epic) and **org issue fields** (Priority, Effort, Classification,
 Start date, Target date, Parent, Status reason, Origin) **by name at
 runtime**, so the plugin never hardcodes an org-specific node id and works
 against any target org.
@@ -20,7 +20,7 @@ Inputs:
 
 - `{org}` / `{repo}` from `ClaudeProject.md` `## Identity`.
 - The purpose→value maps in `templates/default-labels.md` →
-  *Issue Types & Field Values* (the native-type map, the Type-of-issue
+  *Issue Types & Field Values* (the native-type map, the Classification
   map, the priority/effort maps, and the Origin map), overridable per
   project in `ClaudeProject.md` → `## Issue Types & Fields`.
 
@@ -61,14 +61,34 @@ for that one issue and note it.
 
 ## Step 2 — Discover org issue fields (per-field capability gate)
 
-List the org's issue fields with their options:
+List the org's issue fields with their options. **Use the GraphQL query
+below, not the REST endpoint** — the REST endpoint (`/orgs/{org}/issue-fields`)
+returns `null` for all option IDs, making single-select fields unusable:
 
 ```
-gh api "orgs/{org}/issue-fields" \
-  --jq '[.[] | {name, id: .node_id, data_type, options: [(.options // [])[] | {name, id: .node_id}]}]'
+gh api graphql -f query='query($org:String!){
+  organization(login:$org){
+    issueFields(first:20){
+      nodes {
+        ... on IssueFieldSingleSelect {
+          id name
+          options { id name }
+        }
+        ... on IssueFieldDate {
+          id name
+        }
+        ... on IssueFieldText {
+          id name
+        }
+      }
+    }
+  }
+}' -F org='{org}' \
+  --jq '[.data.organization.issueFields.nodes[] | select(. != null) | {name, id, options}]'
 ```
 
-Build a name→`{node_id, data_type, options}` map. Each field is gated
+Build a name→`{id, options}` map (for single-select fields, `options` is a
+list of `{name, id}` pairs with real node IDs). Each field is gated
 **independently**: populate only the fields the org actually defines, and
 silently skip any that are absent. A target org that defines none of these
 fields creates issues exactly as it does today (labels only) — that is a
@@ -80,11 +100,11 @@ Resolve a field's purpose to its concrete name through `ClaudeProject.md`
 | Purpose key      | Default field name | Type          | Set by |
 |------------------|--------------------|---------------|--------|
 | `field-priority` | `Priority`         | single-select | report-issue, finish-story, feature-discovery |
-| `field-effort`   | `Effort`           | single-select | feature-discovery (from size estimate) |
-| `field-type`     | `Type of issue`    | single-select | report-issue, feature-discovery |
+| `field-effort`   | `Effort`           | single-select | every issue-creating command |
+| `field-type`     | `Classification`   | single-select | every issue-creating command |
 | `field-origin`   | `Origin`           | single-select | every issue-creating command |
 | `field-start`    | `Start date`       | date          | start-story / execute (on claim) |
-| `field-target`   | `Target date`      | date          | (set by humans / planning; read-only here) |
+| `field-target`   | `Target date`      | date          | finish-story (on PR creation — records actual completion date) |
 | `field-parent`   | `Parent`           | text          | feature-discovery (epic-child link) |
 | `field-status-reason` | `Status reason` | text         | block-story (blocker description) |
 
@@ -123,31 +143,59 @@ claimed to be type-capable but the set failed).
 Set every resolved, applicable field in **one** call. Build the
 `issueFields` list from whichever fields Step 2 found and the command has
 values for — single-select fields take `singleSelectOptionId` (resolve the
-option **name** to its id via the field's option map), date fields take
-`dateValue: "YYYY-MM-DD"`, text fields take `textValue`:
+option **name** to its id via the field's option map from Step 2), date
+fields take `dateValue: "YYYY-MM-DD"`, text fields take `textValue`.
+
+**Important:** Pass the fields **inline in the mutation string**, not as a
+GraphQL variable. The `gh api graphql` CLI serialises `-f fields='[...]'`
+as a JSON string, not a list of objects, causing a GraphQL type error.
+Build the mutation with the actual field and option IDs substituted in:
 
 ```
-gh api graphql -f query='mutation($issue:ID!,$fields:[IssueFieldCreateOrUpdateInput!]!){
-  setIssueFieldValue(input:{ issueId:$issue, issueFields:$fields }){
+gh api graphql -f query='mutation {
+  setIssueFieldValue(input:{
+    issueId:"<issue_id>",
+    issueFields:[
+      { fieldId:"<priority_field_id>", singleSelectOptionId:"<priority_option_id>" },
+      { fieldId:"<classification_field_id>", singleSelectOptionId:"<classification_option_id>" },
+      { fieldId:"<effort_field_id>",   singleSelectOptionId:"<effort_option_id>" },
+      { fieldId:"<origin_field_id>",   singleSelectOptionId:"<origin_option_id>" }
+    ]
+  }){
     issue { id }
   }
-}' -F issue='<issue_id>' -f fields='[
-  { "fieldId": "<priority_field_id>", "singleSelectOptionId": "<option_id>" },
-  { "fieldId": "<type_field_id>",     "singleSelectOptionId": "<option_id>" },
-  { "fieldId": "<origin_field_id>",   "singleSelectOptionId": "<option_id>" }
-]'
+}' --jq '.data.setIssueFieldValue.issue.id'
 ```
 
-Omit any field the org does not define or the command has no value for —
-never send a placeholder id. A `setIssueFieldValue` failure is best-effort:
-report it and continue; the issue still exists and still carries its
-labels.
+For a **date field** (Start date, Target date), use `dateValue` instead
+of `singleSelectOptionId`. Get today's date with `date -u +%Y-%m-%d` and
+substitute it inline:
+
+```
+gh api graphql -f query='mutation {
+  setIssueFieldValue(input:{
+    issueId:"<issue_id>",
+    issueFields:[
+      { fieldId:"<start_date_field_id>", dateValue:"2026-06-08" }
+    ]
+  }){
+    issue { id }
+  }
+}' --jq '.data.setIssueFieldValue.issue.id'
+```
+
+Include only the fields that apply — omit any field the org does not
+define or the command has no value for. A `setIssueFieldValue` failure is
+best-effort: report it and continue; the issue still exists and still
+carries its labels.
 
 **Priority is dual-tracked.** Populate the `Priority` field **and** keep
 applying the `priority-*` label. The label keeps the selector's existing
 priority sort cheap (no per-issue field read), while the field gives the
-GitHub UI and reporting a first-class value. Type is **not** dual-tracked
-on type-capable orgs (native type replaces the `type-*` label).
+GitHub UI and reporting a first-class value. `Classification` and the
+native type are **not** dual-tracked on type-capable orgs — the native
+type replaces the `type-*` label, and `Classification` is an independent
+subcategory field (always set, never blank).
 
 ## Step 6 — Selector: filter by kind, with label fallback
 

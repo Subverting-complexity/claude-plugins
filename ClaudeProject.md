@@ -114,7 +114,7 @@ Field names match the defaults:
 | -------------------- | --------------- |
 | field-priority       | `Priority`      |
 | field-effort         | `Effort`        |
-| field-type           | `Type of issue` |
+| field-type           | `Classification` |
 | field-origin         | `Origin`        |
 | field-start          | `Start date`    |
 | field-target         | `Target date`   |

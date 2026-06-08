@@ -154,7 +154,8 @@ a new PR, determine whether the current work has an associated issue:
      `/github-workflow:report-issue` **Step 5c**
      (`templates/issue-fields-resolution.md`, capability-gated,
      best-effort): set the native issue type per the *Native issue type
-     map* in `templates/default-labels.md`, populate `Type of issue` /
+     map* in `templates/default-labels.md`, populate `Classification` (per
+     that map's classification column), `Effort` (assess scope: Low/Medium/High),
      `Priority` (dual-tracked with the label), and remove the redundant
      `type-*` label on a type-capable org. `Origin` here is **Development**
      (the issue is being filed as the work is wrapped up).
@@ -357,6 +358,13 @@ Review** (`col-in-review`) per the label ⇄ column pairing in
 `templates/default-labels.md`. The board-configured check (skip silently
 when unconfigured), the identity verification, and the loud-on-failure
 contract all live in that template.
+
+**Target date (best-effort, capability-gated).** Record today as the
+actual completion date by setting the org-level `Target date` issue field
+following `templates/issue-fields-resolution.md` (Steps 2, 3, 5 — use
+the date field form with `dateValue: "YYYY-MM-DD"` for today's date).
+The issue node id is already available from Step 4b. Skip silently if the
+org does not define this field.
 
 ### 9. Release the claim
 

@@ -206,8 +206,19 @@ label-only result from the steps above with no error.
      the classification.
 4. **Field values (Step 5)** — populate, for whichever fields the org
    defines, in one `setIssueFieldValue` call:
-   - `Type of issue` ← Security / Architecture / Tech Debt per the map
-     (leave unset for a plain Bug).
+   - `Classification` ← choose the most accurate option from the full set
+     (never leave blank):
+     - Bug (default broken behaviour) → **Bug Fix**
+     - Bug that is a regression (worked before) → **Regression**
+     - Bug that is a speed/memory degradation → **Performance**
+     - Security → **Security**
+     - Architecture → **Architecture**
+     - Tech Debt → **Tech Debt**
+   - `Effort` ← assess scope and pick one option (always set):
+     - **Low** — a targeted fix, a few files, clear solution
+     - **Medium** — moderate scope, some investigation or refactoring needed
+     - **High** — broad impact, architectural change, or significant
+       unknowns
    - `Priority` ← the option mapped from the priority you chose in Step 3
      (Critical→Urgent, High→High, Medium→Medium, Low→Low). **Keep** the
      `priority-*` label too — priority is dual-tracked.
