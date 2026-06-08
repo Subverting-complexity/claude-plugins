@@ -123,10 +123,16 @@ After merging changes to main, the local Claude Code marketplace cache
 is stale. You must refresh it before updating:
 
 ```powershell
-claude plugins marketplace update subverting-complexity
-claude plugins update github-workflow@subverting-complexity
-claude plugins update local-workflow@subverting-complexity
+claude plugin marketplace update subverting-complexity
+claude plugin update github-workflow@subverting-complexity
+claude plugin update local-workflow@subverting-complexity
 ```
 
-Without the marketplace refresh, `plugins update` reports "already at
+Without the marketplace refresh, `plugin update` reports "already at
 latest" against the cached version — not the actual latest on main.
+
+> The command is `claude plugin` (singular). Run it from a normal shell,
+> not inside a Claude Code session — the CLI blocks nested sessions; if
+> needed, prefix with `env -u CLAUDECODE`. Verify a manifest before
+> shipping with `claude plugin validate ./<plugin>` — it catches schema
+> errors (e.g. unrecognized keys) that plain JSON validation misses.
