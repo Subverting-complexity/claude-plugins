@@ -111,6 +111,19 @@ Use `/local-workflow:code-architect` to plan the implementation:
 If the plan reveals the task exceeds one session's budget, tell the user
 and propose splitting it. Implement the highest-priority slice.
 
+**Ecosystem tools (if configured).** If `.claude/ecosystem.md` exists, it
+lists codebase-intelligence tools installed for this project and how to
+use them — honor it here:
+
+- **Graphify** listed → run `graphify . --update` (fast, 0 tokens from the
+  committed cache), then use `graphify query "..."` / `graphify explain X`
+  to ground the plan in how the codebase actually connects, instead of
+  reading files blind.
+- **Fallow** listed (TS/JS) → query it for existing exports and duplication
+  so the plan reuses what is there rather than rebuilding it.
+
+Skip silently if the file does not exist or lists neither tool.
+
 ## Phase 3 -- Build
 
 **Start clean.** Before making any edits, run the **Start clean** check in
@@ -202,6 +215,18 @@ When `$ARGUMENTS.mode` is `audit`:
 1. Read `CLAUDE.md` for project rules if it exists.
 2. Review the codebase for issues: bugs, security vulnerabilities,
    architecture problems, code quality concerns.
+
+   **Ecosystem tools (if configured).** If `.claude/ecosystem.md` exists,
+   run the tools it lists as part of the audit and fold their findings
+   into the report:
+   - **Graphify** → `graphify . --update` then `graphify query` for
+     architecture/dependency questions across the whole tree.
+   - **Fallow** (TS/JS) → run it for unused exports, duplication, and
+     complexity hotspots.
+   - **ecc-agentshield** → `npx ecc-agentshield scan` to audit the Claude
+     Code config (CLAUDE.md, `.claude/`, hooks, skills, MCP) for secrets,
+     prompt-injection openings, and over-broad allowlists.
+   Skip silently for any tool not listed.
 3. Report findings organized by severity (critical, warning, suggestion).
 4. Do not make code changes. Do not create branches or commits.
 5. Run the **Exit cleanup** so the tree ends clean. Audit makes no code
