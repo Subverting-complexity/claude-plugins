@@ -61,14 +61,34 @@ for that one issue and note it.
 
 ## Step 2 — Discover org issue fields (per-field capability gate)
 
-List the org's issue fields with their options:
+List the org's issue fields with their options. **Use the GraphQL query
+below, not the REST endpoint** — the REST endpoint (`/orgs/{org}/issue-fields`)
+returns `null` for all option IDs, making single-select fields unusable:
 
 ```
-gh api "orgs/{org}/issue-fields" \
-  --jq '[.[] | {name, id: .node_id, data_type, options: [(.options // [])[] | {name, id: .node_id}]}]'
+gh api graphql -f query='query($org:String!){
+  organization(login:$org){
+    issueFields(first:20){
+      nodes {
+        ... on IssueFieldSingleSelect {
+          id name
+          options { id name }
+        }
+        ... on IssueFieldDate {
+          id name
+        }
+        ... on IssueFieldText {
+          id name
+        }
+      }
+    }
+  }
+}' -F org='{org}' \
+  --jq '[.data.organization.issueFields.nodes[] | select(. != null) | {name, id, options}]'
 ```
 
-Build a name→`{node_id, data_type, options}` map. Each field is gated
+Build a name→`{id, options}` map (for single-select fields, `options` is a
+list of `{name, id}` pairs with real node IDs). Each field is gated
 **independently**: populate only the fields the org actually defines, and
 silently skip any that are absent. A target org that defines none of these
 fields creates issues exactly as it does today (labels only) — that is a
@@ -123,25 +143,33 @@ claimed to be type-capable but the set failed).
 Set every resolved, applicable field in **one** call. Build the
 `issueFields` list from whichever fields Step 2 found and the command has
 values for — single-select fields take `singleSelectOptionId` (resolve the
-option **name** to its id via the field's option map), date fields take
-`dateValue: "YYYY-MM-DD"`, text fields take `textValue`:
+option **name** to its id via the field's option map from Step 2), date
+fields take `dateValue: "YYYY-MM-DD"`, text fields take `textValue`.
+
+**Important:** Pass the fields **inline in the mutation string**, not as a
+GraphQL variable. The `gh api graphql` CLI serialises `-f fields='[...]'`
+as a JSON string, not a list of objects, causing a GraphQL type error.
+Build the mutation with the actual field and option IDs substituted in:
 
 ```
-gh api graphql -f query='mutation($issue:ID!,$fields:[IssueFieldCreateOrUpdateInput!]!){
-  setIssueFieldValue(input:{ issueId:$issue, issueFields:$fields }){
+gh api graphql -f query='mutation {
+  setIssueFieldValue(input:{
+    issueId:"<issue_id>",
+    issueFields:[
+      { fieldId:"<priority_field_id>", singleSelectOptionId:"<priority_option_id>" },
+      { fieldId:"<type_field_id>",     singleSelectOptionId:"<type_option_id>" },
+      { fieldId:"<origin_field_id>",   singleSelectOptionId:"<origin_option_id>" }
+    ]
+  }){
     issue { id }
   }
-}' -F issue='<issue_id>' -f fields='[
-  { "fieldId": "<priority_field_id>", "singleSelectOptionId": "<option_id>" },
-  { "fieldId": "<type_field_id>",     "singleSelectOptionId": "<option_id>" },
-  { "fieldId": "<origin_field_id>",   "singleSelectOptionId": "<option_id>" }
-]'
+}' --jq '.data.setIssueFieldValue.issue.id'
 ```
 
-Omit any field the org does not define or the command has no value for —
-never send a placeholder id. A `setIssueFieldValue` failure is best-effort:
-report it and continue; the issue still exists and still carries its
-labels.
+Include only the fields that apply — omit any field the org does not
+define or the command has no value for. A `setIssueFieldValue` failure is
+best-effort: report it and continue; the issue still exists and still
+carries its labels.
 
 **Priority is dual-tracked.** Populate the `Priority` field **and** keep
 applying the `priority-*` label. The label keeps the selector's existing
