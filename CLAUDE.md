@@ -120,7 +120,9 @@ works if you only want the hook.
 ## Updating installed plugins
 
 After merging changes to main, the local Claude Code marketplace cache
-is stale. You must refresh it before updating:
+is stale. Refresh it, update each plugin, then restart to apply:
+
+**1. Refresh the marketplace cache, then update each plugin:**
 
 ```powershell
 claude plugin marketplace update subverting-complexity
@@ -131,8 +133,24 @@ claude plugin update local-workflow@subverting-complexity
 Without the marketplace refresh, `plugin update` reports "already at
 latest" against the cached version — not the actual latest on main.
 
+**2. Restart Claude Code to apply.** `plugin update` only swaps the
+cached files on disk; a running session keeps the *old* version loaded
+and prints "Restart to apply changes." Exit the session (`/exit`, or
+Ctrl-C twice) and relaunch `claude`. There is no in-session reload.
+
+**3. Verify the new versions loaded:**
+
+```powershell
+claude plugin list
+```
+
+Each plugin should show its new semver version and `Status: ✔ enabled`.
+A commit hash instead of a semver version, or `✘ failed to load`, means
+the manifest is invalid — see the validation note below.
+
 > The command is `claude plugin` (singular). Run it from a normal shell,
 > not inside a Claude Code session — the CLI blocks nested sessions; if
 > needed, prefix with `env -u CLAUDECODE`. Verify a manifest before
 > shipping with `claude plugin validate ./<plugin>` — it catches schema
-> errors (e.g. unrecognized keys) that plain JSON validation misses.
+> errors (e.g. unrecognized keys) that plain JSON validation misses and
+> that make a plugin fail to load.
