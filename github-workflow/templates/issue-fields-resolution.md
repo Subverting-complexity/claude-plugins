@@ -5,7 +5,7 @@ Shared procedure for every command that **creates or classifies an issue**
 `feature-discovery` skill), and for the selector
 (`templates/story-selection.md`) when it filters by kind or sorts by
 priority. It resolves the org's **native issue types** (Bug, Feature, User
-Story, Epic) and **org issue fields** (Priority, Effort, Type of issue,
+Story, Epic) and **org issue fields** (Priority, Effort, Classification,
 Start date, Target date, Parent, Status reason, Origin) **by name at
 runtime**, so the plugin never hardcodes an org-specific node id and works
 against any target org.
@@ -20,7 +20,7 @@ Inputs:
 
 - `{org}` / `{repo}` from `ClaudeProject.md` `## Identity`.
 - The purpose→value maps in `templates/default-labels.md` →
-  *Issue Types & Field Values* (the native-type map, the Type-of-issue
+  *Issue Types & Field Values* (the native-type map, the Classification
   map, the priority/effort maps, and the Origin map), overridable per
   project in `ClaudeProject.md` → `## Issue Types & Fields`.
 
@@ -100,8 +100,8 @@ Resolve a field's purpose to its concrete name through `ClaudeProject.md`
 | Purpose key      | Default field name | Type          | Set by |
 |------------------|--------------------|---------------|--------|
 | `field-priority` | `Priority`         | single-select | report-issue, finish-story, feature-discovery |
-| `field-effort`   | `Effort`           | single-select | feature-discovery (from size estimate) |
-| `field-type`     | `Type of issue`    | single-select | report-issue, feature-discovery |
+| `field-effort`   | `Effort`           | single-select | every issue-creating command |
+| `field-type`     | `Classification`   | single-select | every issue-creating command |
 | `field-origin`   | `Origin`           | single-select | every issue-creating command |
 | `field-start`    | `Start date`       | date          | start-story / execute (on claim) |
 | `field-target`   | `Target date`      | date          | finish-story (on PR creation — records actual completion date) |
@@ -157,7 +157,8 @@ gh api graphql -f query='mutation {
     issueId:"<issue_id>",
     issueFields:[
       { fieldId:"<priority_field_id>", singleSelectOptionId:"<priority_option_id>" },
-      { fieldId:"<type_field_id>",     singleSelectOptionId:"<type_option_id>" },
+      { fieldId:"<classification_field_id>", singleSelectOptionId:"<classification_option_id>" },
+      { fieldId:"<effort_field_id>",   singleSelectOptionId:"<effort_option_id>" },
       { fieldId:"<origin_field_id>",   singleSelectOptionId:"<origin_option_id>" }
     ]
   }){
@@ -191,8 +192,10 @@ carries its labels.
 **Priority is dual-tracked.** Populate the `Priority` field **and** keep
 applying the `priority-*` label. The label keeps the selector's existing
 priority sort cheap (no per-issue field read), while the field gives the
-GitHub UI and reporting a first-class value. Type is **not** dual-tracked
-on type-capable orgs (native type replaces the `type-*` label).
+GitHub UI and reporting a first-class value. `Classification` and the
+native type are **not** dual-tracked on type-capable orgs — the native
+type replaces the `type-*` label, and `Classification` is an independent
+subcategory field (always set, never blank).
 
 ## Step 6 — Selector: filter by kind, with label fallback
 

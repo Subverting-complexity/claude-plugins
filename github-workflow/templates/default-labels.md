@@ -114,24 +114,36 @@ selector's priority sort stays a cheap label read.
 
 ### Native issue type map ("by nature")
 
-The workflow's kind → native issue type, the finer `Type of issue` field
-option, and the `type-*` label used as the fallback on a non-type-capable
-org:
+The workflow's kind → native issue type, the `Classification` field option
+(subcategory; always set — never leave blank), and the `type-*` label used
+as the fallback on a non-type-capable org:
 
-| Workflow kind | Native issue type | `Type of issue` option | `type-*` fallback label |
-|---------------|-------------------|------------------------|-------------------------|
-| story         | User Story        | New Feature            | `type-story` |
-| bug           | Bug               | _(unset)_              | `type-bug` |
-| security      | Bug               | Security               | `type-security` |
-| tech debt     | Feature           | Tech Debt              | `type-debt` |
-| architecture  | Feature           | Architecture           | `type-arch` |
-| feature       | Feature           | New Feature            | `type-story` |
-| epic          | Epic              | _(unset)_              | `type-story` |
-| spike         | User Story        | Spike                  | `type-story` |
-| chore         | User Story        | Chore                  | `type-bug` |
+| Workflow kind | Native issue type | `Classification` option | `type-*` fallback label |
+|---------------|-------------------|-------------------------|-------------------------|
+| story         | User Story        | New Feature             | `type-story` |
+| bug           | Bug               | Bug Fix ¹               | `type-bug` |
+| security      | Bug               | Security                | `type-security` |
+| tech debt     | Feature           | Tech Debt               | `type-debt` |
+| architecture  | Feature           | Architecture            | `type-arch` |
+| feature       | Feature           | New Feature ²           | `type-story` |
+| epic          | Epic              | New Feature             | `type-story` |
+| spike         | User Story        | Spike                   | `type-story` |
+| chore         | User Story        | Chore                   | `type-bug` |
 
-A `Type of issue` option of _(unset)_ means the native type already says
-it (a `Bug` needs no sub-category); leave the field empty.
+¹ Use **Regression** if something previously worked and broke; use
+**Performance** if the bug is a speed or memory degradation. Bug Fix is
+the default for any other broken behaviour.
+
+² Use **Enhancement** if the feature improves something existing rather
+than delivering new capability. Use **Integration** if the primary work
+is connecting to an external system, API, or third-party service.
+Use **Documentation** if the issue is tracking docs/guides only.
+Use **Performance** if the primary goal is a speed or efficiency improvement.
+
+The full set of valid `Classification` options:
+New Feature · Enhancement · Bug Fix · Regression · Performance ·
+Security · Tech Debt · Architecture · Integration · Spike · Chore ·
+Documentation
 
 ### Field-name inventory
 
@@ -141,7 +153,7 @@ Resolved via `ClaudeProject.md` → `## Issue Types & Fields`; defaults here.
 |------------------------|--------------------|---------------|
 | `field-priority`       | `Priority`         | single-select |
 | `field-effort`         | `Effort`           | single-select |
-| `field-type`           | `Type of issue`    | single-select |
+| `field-type`           | `Classification`   | single-select |
 | `field-origin`         | `Origin`           | single-select |
 | `field-start`          | `Start date`       | date          |
 | `field-target`         | `Target date`      | date          |

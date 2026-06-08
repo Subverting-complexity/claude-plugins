@@ -154,7 +154,8 @@ a new PR, determine whether the current work has an associated issue:
      `/github-workflow:report-issue` **Step 5c**
      (`templates/issue-fields-resolution.md`, capability-gated,
      best-effort): set the native issue type per the *Native issue type
-     map* in `templates/default-labels.md`, populate `Type of issue` /
+     map* in `templates/default-labels.md`, populate `Classification` (per
+     that map's classification column), `Effort` (assess scope: Low/Medium/High),
      `Priority` (dual-tracked with the label), and remove the redundant
      `type-*` label on a type-capable org. `Origin` here is **Development**
      (the issue is being filed as the work is wrapped up).
