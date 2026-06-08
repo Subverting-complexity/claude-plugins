@@ -369,6 +369,19 @@ Use `/github-workflow:code-architect` to plan the implementation:
   them in the plan. Only stop if the issue is so underspecified that
   any implementation would be a guess.
 
+**Ecosystem tools (if configured).** If `.claude/ecosystem.md` exists, it
+lists the codebase-intelligence tools installed for this project and how
+to use them — honor it here:
+
+- **Graphify** listed → run `graphify . --update` (fast, 0 tokens from the
+  committed cache), then use `graphify query "..."` / `graphify explain X`
+  to ground the plan in how the codebase actually connects, instead of
+  reading files blind.
+- **Fallow** listed (TS/JS) → query it for existing exports and duplication
+  so the plan reuses what is there rather than rebuilding it.
+
+Skip silently if the file does not exist or lists neither tool.
+
 ## Phase 4 — Build
 
 Use `/github-workflow:structured-coding` to implement:
@@ -437,6 +450,18 @@ When `$ARGUMENTS.mode` is `audit`:
    from the code-review skill (non-compliance gates, correctness,
    security, test coverage) but apply them to the codebase at large,
    not to a specific PR diff.
+
+   **Ecosystem tools (if configured).** If `.claude/ecosystem.md` exists,
+   run the tools it lists as part of the audit and turn their findings
+   into issues like any other:
+   - **Graphify** → `graphify . --update` then `graphify query` for
+     architecture/dependency questions across the whole tree.
+   - **Fallow** (TS/JS) → run it for unused exports, duplication, and
+     complexity hotspots.
+   - **ecc-agentshield** → `npx ecc-agentshield scan` to audit the Claude
+     Code config (CLAUDE.md, `.claude/`, hooks, skills, MCP) for secrets,
+     prompt-injection openings, and over-broad allowlists.
+   Skip silently for any tool not listed.
 3. For each finding, run `/github-workflow:report-issue` to create
    a GitHub issue with the appropriate type and priority labels.
    Cap at 10 issues per audit session to keep scope manageable.

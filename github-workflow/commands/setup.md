@@ -596,9 +596,19 @@ If installed (or just installed), run these checks in order:
 
 Ecosystem entry (written to `.claude/ecosystem.md`):
 ```
-## Graphify
-After git pull / fresh worktree: `graphify . --update` (~10s, 0 tokens — reads committed cache).
-Query: `graphify query "..."` · `graphify path A B` · `graphify explain X`
+## Graphify — codebase knowledge graph
+**What it is:** Builds a searchable map of how the codebase connects —
+which files, functions, and modules depend on which — so agents answer
+"how does X relate to Y" from the graph instead of guessing from a few
+open files.
+**Use it:** `graphify . --update` after any pull or fresh worktree
+(rebuilds from committed cache, ~10s, 0 tokens), then
+`graphify query "..."`, `graphify path A B`, `graphify explain X`. Never
+load `graph.json` into context directly — it is megabytes of mostly
+irrelevant detail.
+**The workflow uses it:** in `/github-workflow:execute` Phase 3 (Plan)
+and `/github-workflow:code-review` Step 5 (read code in context) — prefer
+a `graphify query` over blind file search for structure questions.
 ```
 
 ---
@@ -623,9 +633,16 @@ settings file without explicit confirmation.
 
 Ecosystem entry:
 ```
-## RTK
-Active via global PreToolUse hook — transparent on all Bash commands.
-`rtk gain` — savings analytics · `rtk gain --history` — command history with savings
+## RTK — terminal output token optimizer
+**What it is:** Sits between Claude and the terminal and trims the noise
+from command output — passing-test spam, repeated headers, verbose
+boilerplate — while keeping everything that matters (errors, diffs, stack
+traces). Claimed 60–90% fewer tokens on typical dev commands.
+**Use it:** nothing to invoke — it runs automatically as a global
+PreToolUse hook on every Bash command. `rtk gain` shows savings
+analytics; `rtk gain --history` shows per-command history.
+**The workflow uses it:** ambient — every command the workflow runs is
+already filtered. No phase calls it directly.
 ```
 
 ---
@@ -642,9 +659,16 @@ installation needed.
 
 Ecosystem entry:
 ```
-## ccusage
-`npx ccusage` — cost by day/month/session/project
-`npx ccusage blocks` — billing window / rate-limit predictor
+## ccusage — Claude Code cost history
+**What it is:** Reads your local Claude Code session logs and reports
+what you spent, broken down by day, month, session, or project — the
+history the built-in `/cost` (current session only) does not show.
+**Use it:** `npx ccusage` for the cost breakdown; `npx ccusage blocks`
+to see your current billing window and a prediction of when you will hit
+the rate limit.
+**The workflow uses it:** diagnostic — run it yourself to check spend or
+pace a long autonomous run against the ~100k-per-session budget. No phase
+calls it automatically.
 ```
 
 ---
@@ -666,8 +690,17 @@ No configuration step — it is always `npx ecc-agentshield scan`.
 
 Ecosystem entry:
 ```
-## ecc-agentshield
-`npx ecc-agentshield scan` — 102-rule static security audit of Claude Code config files (A–F report, reproducible, no AI)
+## ecc-agentshield — Claude Code config security scanner
+**What it is:** A static scanner that runs 102 fixed rules over your
+Claude Code config — CLAUDE.md, settings.json, MCP configs, hooks, and
+skills — looking for hardcoded secrets, prompt-injection openings,
+overly permissive allowlists, and risky MCP endpoints. No AI, so the
+same input always gives the same A–F report.
+**Use it:** `npx ecc-agentshield scan` from the repo root.
+**The workflow uses it:** `/github-workflow:execute --mode audit` and
+`/github-workflow:code-review` Step 6 — run it when the change touches
+Claude Code config files (CLAUDE.md, `.claude/`, hooks, skills, MCP
+config), and fold any finding into the Security section.
 ```
 
 ---
@@ -694,10 +727,44 @@ directly during coding tasks.
 
 Ecosystem entry:
 ```
-## Fallow
-Codebase intelligence for TS/JS: unused exports, duplication, complexity hotspots.
-CLI: `npx fallow` · MCP tools available when configured (see fallow.tools for setup)
+## Fallow — codebase intelligence (TS/JS)
+**What it is:** Analyzes a TypeScript/JavaScript codebase for unused
+exports, duplicated logic, complexity hotspots, and architectural drift —
+the "what connects to what, and what is dead" picture. Available as a CLI
+and as an MCP server agents can query directly.
+**Use it:** `npx fallow` for a CLI report; when the MCP server is
+configured, query its tools during a task. See fallow.tools for setup.
+**The workflow uses it:** `/github-workflow:execute` Phase 3 (Plan) — to
+avoid rebuilding logic that already exists — and `/github-workflow:code-review`
+Step 6 (Minimality / dead-code) — to flag unused exports and duplication
+the diff introduces.
 ```
+
+---
+
+#### Commit & PR reminder hook (optional)
+
+Offer a small Stop hook that nudges *you, the user* at the end of a
+session if work was left uncommitted — the deterministic backstop for
+this plugin's "always commit and open a PR when work is complete" rule.
+A hook fires reliably because the harness runs it; a guideline in
+CLAUDE.md only fires if the agent remembers it.
+
+Ask: "Add a reminder that warns you at session end if you have
+uncommitted changes (so work always gets committed and a PR opened)?"
+If yes, merge this into the project's `.claude/settings.json` under
+`hooks.Stop[0].hooks` (append — never replace an existing graphify or
+other Stop hook):
+```json
+{
+  "type": "command",
+  "command": "git status --porcelain | grep -q . && echo '⚠ Uncommitted changes — commit and open a PR before ending (see CLAUDE.md). Run /github-workflow:finish-story to ship it.' || true"
+}
+```
+
+This prints the reminder only when the working tree is dirty; a clean
+tree stays silent. It is a nudge, not a blocker — it never fails the
+session or auto-commits. Skip silently if the user declines.
 
 ---
 
