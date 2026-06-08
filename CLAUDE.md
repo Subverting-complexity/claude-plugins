@@ -99,6 +99,7 @@ reap routine in [`docs/worktree-config.md`](docs/worktree-config.md).
 | `lint-skills.sh` | Validate skill frontmatter and detect unreplaced placeholders |
 | `hooks/pre-commit` | Git hook that blocks commits editing synced copies directly and blocks CRLF line endings |
 | `.github/workflows/ci.yml` | CI: drift check, skill lint, plugin.json validation |
+| `.claude/ecosystem.md` | Cheat-sheet for installed Claude Code companion tools (graphify, RTK, ccusage, ecc-agentshield) and when the workflow uses each. Consult it before searching the codebase blind or running an audit/review. Regenerate via `/github-workflow:setup ecosystem`. |
 
 ### Bootstrapping your clone
 

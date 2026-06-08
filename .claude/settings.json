@@ -6,6 +6,10 @@
           {
             "type": "command",
             "command": "graphify . --update --no-viz"
+          },
+          {
+            "type": "command",
+            "command": "git status --porcelain | grep -q . && echo '⚠ Uncommitted changes — commit and open a PR before ending (see CLAUDE.md rule 4). Run /github-workflow:finish-story to ship it.' || true"
           }
         ]
       }

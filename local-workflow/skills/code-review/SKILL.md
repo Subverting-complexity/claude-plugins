@@ -102,6 +102,22 @@ what was already covered and what the changes add or modify.
 
 Work through each area using the full codebase context.
 
+**Ecosystem tools (if configured).** If `.claude/ecosystem.md` exists, it
+lists codebase-intelligence tools installed for this project — use them to
+sharpen the relevant areas below and fold their output into the matching
+finding:
+
+- **Graphify** → `graphify . --update` then `graphify query`/`graphify path`
+  to trace how the changed functions connect to the rest of the tree
+  (feeds *Regressions* and *Architectural consistency*).
+- **Fallow** (TS/JS) → run it to surface unused exports and duplication the
+  diff introduces (feeds *Minimality* and dead-code findings).
+- **ecc-agentshield** → when the diff touches Claude Code config (CLAUDE.md,
+  `.claude/`, hooks, skills, MCP config), `npx ecc-agentshield scan` and
+  fold any finding into *Security*.
+
+Skip silently for any tool not listed or not relevant to this diff.
+
 ### Logic and correctness
 
 Trace every logic path step by step through the actual code. For
