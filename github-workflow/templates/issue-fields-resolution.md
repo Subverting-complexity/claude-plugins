@@ -104,7 +104,7 @@ Resolve a field's purpose to its concrete name through `ClaudeProject.md`
 | `field-type`     | `Type of issue`    | single-select | report-issue, feature-discovery |
 | `field-origin`   | `Origin`           | single-select | every issue-creating command |
 | `field-start`    | `Start date`       | date          | start-story / execute (on claim) |
-| `field-target`   | `Target date`      | date          | (set by humans / planning; read-only here) |
+| `field-target`   | `Target date`      | date          | finish-story (on PR creation — records actual completion date) |
 | `field-parent`   | `Parent`           | text          | feature-discovery (epic-child link) |
 | `field-status-reason` | `Status reason` | text         | block-story (blocker description) |
 
@@ -159,6 +159,23 @@ gh api graphql -f query='mutation {
       { fieldId:"<priority_field_id>", singleSelectOptionId:"<priority_option_id>" },
       { fieldId:"<type_field_id>",     singleSelectOptionId:"<type_option_id>" },
       { fieldId:"<origin_field_id>",   singleSelectOptionId:"<origin_option_id>" }
+    ]
+  }){
+    issue { id }
+  }
+}' --jq '.data.setIssueFieldValue.issue.id'
+```
+
+For a **date field** (Start date, Target date), use `dateValue` instead
+of `singleSelectOptionId`. Get today's date with `date -u +%Y-%m-%d` and
+substitute it inline:
+
+```
+gh api graphql -f query='mutation {
+  setIssueFieldValue(input:{
+    issueId:"<issue_id>",
+    issueFields:[
+      { fieldId:"<start_date_field_id>", dateValue:"2026-06-08" }
     ]
   }){
     issue { id }

@@ -358,6 +358,13 @@ Review** (`col-in-review`) per the label ⇄ column pairing in
 when unconfigured), the identity verification, and the loud-on-failure
 contract all live in that template.
 
+**Target date (best-effort, capability-gated).** Record today as the
+actual completion date by setting the org-level `Target date` issue field
+following `templates/issue-fields-resolution.md` (Steps 2, 3, 5 — use
+the date field form with `dateValue: "YYYY-MM-DD"` for today's date).
+The issue node id is already available from Step 4b. Skip silently if the
+org does not define this field.
+
 ### 9. Release the claim
 
 The PR now exists, so the issue's assignment and the open PR are the
