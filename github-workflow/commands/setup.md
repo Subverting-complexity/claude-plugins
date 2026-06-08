@@ -620,16 +620,31 @@ headers) while keeping errors, diffs, and stack traces. Runs as a
 global PreToolUse hook — transparent to normal usage, no per-project
 configuration needed.
 
-**Detect:** `rtk --version`
+**Detect:** `rtk --version`, then `rtk gain` (the real test — it must
+print savings stats). A bare `rtk --version` can succeed against the
+wrong binary: there is a separate, unrelated `rtk` ("Rust Type Kit") on
+crates.io. If `rtk gain` errors with "command not found", the wrong
+package is installed.
 
-If not installed, show: `cargo install rtk` (requires Rust). Cannot
-auto-install — note it and skip config if the user declines.
+If not installed (or the wrong one is), show the collision-safe install
+(`rtk-ai/rtk`):
+```
+curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh
+# or, with Rust: cargo install --git https://github.com/rtk-ai/rtk
+```
+**Do not suggest plain `cargo install rtk`** — that pulls the wrong
+package from crates.io. Cannot auto-install; note it and skip config if
+the user declines.
 
-If installed, check whether a PreToolUse/Bash hook referencing `rtk`
-exists in `~/.claude/settings.json`. If missing, prompt the user to
-install it (refer them to the RTK documentation for the exact hook
-command — it varies by version). Do not auto-write to the user's global
-settings file without explicit confirmation.
+If installed correctly, the PreToolUse hook is set up by RTK's own
+initializer — do not hand-write it. Check `rtk init --show`; if no hook
+is present, offer to run:
+```
+rtk init -g            # global hook, interactive (patches ~/.claude/settings.json)
+# or: rtk init -g --hook-only   # hook only, zero RTK tokens in context
+```
+Only run it with the user's confirmation, since it edits their global
+settings. `rtk init` (no `-g`) installs a project-local hook instead.
 
 Ecosystem entry:
 ```
@@ -638,9 +653,11 @@ Ecosystem entry:
 from command output — passing-test spam, repeated headers, verbose
 boilerplate — while keeping everything that matters (errors, diffs, stack
 traces). Claimed 60–90% fewer tokens on typical dev commands.
-**Use it:** nothing to invoke — it runs automatically as a global
-PreToolUse hook on every Bash command. `rtk gain` shows savings
-analytics; `rtk gain --history` shows per-command history.
+**Use it:** nothing to invoke — once `rtk init -g` has installed the
+PreToolUse hook, it runs automatically on every Bash command. `rtk gain`
+shows savings analytics (and is the test that the correct binary is
+installed — there is a same-named "Rust Type Kit" on crates.io);
+`rtk gain --history` shows per-command history.
 **The workflow uses it:** ambient — every command the workflow runs is
 already filtered. No phase calls it directly.
 ```
@@ -663,9 +680,10 @@ Ecosystem entry:
 **What it is:** Reads your local Claude Code session logs and reports
 what you spent, broken down by day, month, session, or project — the
 history the built-in `/cost` (current session only) does not show.
-**Use it:** `npx ccusage` for the cost breakdown; `npx ccusage blocks`
-to see your current billing window and a prediction of when you will hit
-the rate limit.
+**Use it:** `npx ccusage@latest` (also `daily` / `weekly` / `monthly` /
+`session` subcommands, and `--instances` to group by project);
+`npx ccusage blocks` shows your current 5-hour billing window and a
+prediction of when you will hit the rate limit.
 **The workflow uses it:** diagnostic — run it yourself to check spend or
 pace a long autonomous run against the ~100k-per-session budget. No phase
 calls it automatically.
@@ -683,10 +701,14 @@ Results are reproducible (no AI involved).
 
 Offer to run it now to get an initial baseline report:
 ```
-npx ecc-agentshield scan
+npx ecc-agentshield scan      # or: npm install -g ecc-agentshield
 ```
 
-No configuration step — it is always `npx ecc-agentshield scan`.
+No configuration step. It auto-discovers the `~/.claude/` directory and
+the project's `.claude/` config and prints a graded A–F report (0–100).
+The default `scan` is the deterministic, no-AI path; the package also
+offers a deeper Claude-powered adversarial mode, but the workflow only
+relies on the reproducible `scan`.
 
 Ecosystem entry:
 ```
@@ -716,24 +738,39 @@ directly from Claude Code.
 check for `package.json`, `tsconfig.json`, or `.ts`/`.js` files at the
 repo root. Skip silently for other stacks.
 
-**Detect:** `npx fallow --version`
+**Detect:** `npx fallow --version` (npx — no install needed for the CLI).
 
-If the user wants to enable it, direct them to
-[fallow.tools](https://fallow.tools/) for the current install and MCP
-server configuration steps — the exact commands depend on installation
-method. The MCP integration registers Fallow as a tool server in
-`.claude/settings.json` so agents can query codebase intelligence
-directly during coding tasks.
+The CLI runs with zero config: `npx fallow` for a first scan, then
+`npx fallow dead-code`, `npx fallow dupes`, `npx fallow health`, or
+`npx fallow fix --dry-run`.
+
+If the user wants agents to query Fallow directly during tasks, register
+its **MCP server** in `.claude/settings.json` (merge under `mcpServers`,
+do not replace existing servers):
+```json
+{
+  "mcpServers": {
+    "fallow": { "command": "fallow-mcp" }
+  }
+}
+```
+That exposes tools such as `analyze` (dead code), `find_dupes`,
+`check_health` (complexity), and `audit` (changed-file dead code +
+complexity + duplication) for agent tool calls. See
+[fallow.tools](https://fallow.tools/) for the paid runtime-intelligence
+tier (`check_runtime_coverage`, `get_hot_paths`, `get_blast_radius`).
 
 Ecosystem entry:
 ```
 ## Fallow — codebase intelligence (TS/JS)
 **What it is:** Analyzes a TypeScript/JavaScript codebase for unused
 exports, duplicated logic, complexity hotspots, and architectural drift —
-the "what connects to what, and what is dead" picture. Available as a CLI
-and as an MCP server agents can query directly.
-**Use it:** `npx fallow` for a CLI report; when the MCP server is
-configured, query its tools during a task. See fallow.tools for setup.
+the "what connects to what, and what is dead" picture. Free static
+analysis (MIT); an optional paid tier adds production runtime data.
+**Use it:** `npx fallow` (no install), then `npx fallow dead-code`,
+`npx fallow dupes`, `npx fallow health`, or `npx fallow fix --dry-run`.
+With the `fallow-mcp` server in settings.json, agents can call its tools
+(`analyze`, `find_dupes`, `check_health`, `audit`) directly.
 **The workflow uses it:** `/github-workflow:execute` Phase 3 (Plan) — to
 avoid rebuilding logic that already exists — and `/github-workflow:code-review`
 Step 6 (Minimality / dead-code) — to flag unused exports and duplication

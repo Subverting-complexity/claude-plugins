@@ -27,9 +27,13 @@ fresh automatically by the `Stop` hook in `.claude/settings.json`.
 from command output — passing-test spam, repeated headers, verbose
 boilerplate — while keeping everything that matters (errors, diffs, stack
 traces). Claimed 60–90% fewer tokens on typical dev commands.
-**Use it:** nothing to invoke — it runs automatically as a global
-PreToolUse hook on every Bash command. `rtk gain` shows savings
-analytics; `rtk gain --history` shows per-command history.
+**Use it:** nothing to invoke — once `rtk init -g` has installed the
+PreToolUse hook, it runs automatically on every Bash command. `rtk gain`
+shows savings analytics (and is the test that the correct binary is
+installed — a same-named "Rust Type Kit" exists on crates.io; install
+the real one with the `rtk-ai/rtk` install script or
+`cargo install --git https://github.com/rtk-ai/rtk`, never plain
+`cargo install rtk`). `rtk gain --history` shows per-command history.
 **The workflow uses it:** ambient — every command the workflow runs is
 already filtered. No phase calls it directly.
 
@@ -37,9 +41,10 @@ already filtered. No phase calls it directly.
 **What it is:** Reads your local Claude Code session logs and reports
 what you spent, broken down by day, month, session, or project — the
 history the built-in `/cost` (current session only) does not show.
-**Use it:** `npx ccusage` for the cost breakdown; `npx ccusage blocks`
-to see your current billing window and a prediction of when you will hit
-the rate limit.
+**Use it:** `npx ccusage@latest` (also `daily` / `weekly` / `monthly` /
+`session` subcommands, and `--instances` to group by project);
+`npx ccusage blocks` shows your current 5-hour billing window and a
+prediction of when you will hit the rate limit.
 **The workflow uses it:** diagnostic — run it yourself to check spend or
 pace a long autonomous run against the ~100k-per-session budget. No phase
 calls it automatically.
@@ -49,8 +54,10 @@ calls it automatically.
 Claude Code config — CLAUDE.md, settings.json, MCP configs, hooks, and
 skills — looking for hardcoded secrets, prompt-injection openings,
 overly permissive allowlists, and risky MCP endpoints. No AI, so the
-same input always gives the same A–F report.
-**Use it:** `npx ecc-agentshield scan` from the repo root.
+same input always gives the same A–F report (0–100). It auto-discovers
+`~/.claude/` and the project's `.claude/` config.
+**Use it:** `npx ecc-agentshield scan` from the repo root (or
+`npm install -g ecc-agentshield`).
 **The workflow uses it:** `/github-workflow:execute --mode audit` and
 `/github-workflow:code-review` Step 6 — run it when the change touches
 Claude Code config files (CLAUDE.md, `.claude/`, hooks, skills, MCP
