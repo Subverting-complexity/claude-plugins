@@ -81,21 +81,32 @@ unlike the old assignment lock, it does **not** self-heal. If a session
 is hard-killed, the machine reboots, or the process dies before its
 release runs, the ref survives with no live owner. Every future Acquire
 for that target then returns non-zero and the item silently drops out of
-the pool — un-pickable (issues) or un-reviewable (PRs) until a human
-frees it. This is the deliberate trade for atomicity: there is no
-background reaper, so removing an orphan is a manual, intentional act.
+the pool — un-pickable (issues) or un-reviewable (PRs) until the ref is
+freed.
 
-This is rare (only an ungraceful exit causes it) but has no automatic
-remedy, so the recovery is by hand. List in-flight claims and confirm one
-is truly orphaned — its issue has no open session and no open PR, or its
-PR review is plainly abandoned — before freeing it:
+**Automated reaper.** Run `/github-workflow:setup reap` to scan all
+active claim refs, cross-check each against the corresponding issue or
+PR's current state, and free any that no longer back live work. The
+reaper applies a staleness threshold (default 4 hours) before touching
+any ref, so a normally running session is never interrupted. It flags
+claims that are old but still show an in-progress marker as "suspect" —
+reporting the manual one-liner below — rather than auto-reaping them.
+
+Run it ad-hoc when a story is stuck, or schedule it as a periodic
+maintenance routine via `/schedule`.
+
+**Manual recovery.** If the reaper flags a ref as suspect and you have
+confirmed no session is actively using it, free it by hand:
 
 ```
 # List every active claim ref and the object each points at.
 git ls-remote origin 'refs/claims/*'
 
+# Inspect a specific claim to see its age and which session created it.
+git fetch origin refs/claims/issue-{number} && git log -1 FETCH_HEAD
+
 # Cross-check: is the issue still being worked, or the PR still in review?
-gh issue view {number} --repo {org}/{repo} --json assignees,state
+gh issue view {number} --repo {org}/{repo} --json assignees,state,labels
 gh pr list --repo {org}/{repo} --state open
 
 # Once certain no live session holds it, delete the orphaned ref.
