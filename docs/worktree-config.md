@@ -217,14 +217,22 @@ metadata.
 ## Reaping stale claim refs
 
 The github-workflow plugin locks each in-flight issue/PR with a ref under
-`refs/claims/` (see `github-workflow/templates/claim-procedure.md` →
-"Reaping orphaned claims"). The lock is only a race-protector for the brief
-select-to-claim window; **durable ownership is the assignment + the issue's
-lifecycle label**, not the ref. There is deliberately **no automatic
-reaper** — auto-deleting a ref by age could yank the claim of a session
-that is still legitimately running and let a second agent grab the same
-item. So a ref left behind by a crashed or killed session is freed **by
-hand**, after confirming no live session holds it:
+`refs/claims/` (see `github-workflow/templates/claim-procedure.md`). The
+lock is only a race-protector for the brief select-to-claim window;
+**durable ownership is the assignment + the issue's lifecycle label**, not
+the ref.
+
+**Automated reaper.** Run `/github-workflow:setup reap` to scan all
+active claim refs, cross-check each one against the corresponding issue
+or PR's current state, and free any that no longer back live work. It
+applies a staleness threshold (default 4 hours) before touching any ref,
+so a normally running session is never interrupted. Use this whenever a
+story is stuck and no agent will pick it, or run it as a scheduled
+routine via `/schedule`.
+
+**Manual recovery.** If you need to free a specific claim by hand —
+or if the reaper flags one as "suspect" and you have confirmed no
+session holds it — use:
 
 ```bash
 # List all claim refs on the remote.
