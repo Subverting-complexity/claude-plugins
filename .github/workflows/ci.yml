@@ -27,6 +27,16 @@ jobs:
         shell: bash
         run: bash lint-skills.sh
 
+  decision-logic-tests:
+    name: Test workflow decision logic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run decision logic tests
+        shell: bash
+        run: python3 tests/test_decision_logic.py
+
   version-bump-check:
     name: Check plugin versions are bumped
     runs-on: ubuntu-latest
