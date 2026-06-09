@@ -5,10 +5,13 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$REPO_ROOT"
 status=0
 
 # Collect all SKILL.md files
-mapfile -t skill_files < <(find "$REPO_ROOT" -name 'SKILL.md' -not -path '*/.claude/worktrees/*')
+# Use relative paths so the exclusion pattern isn't defeated when REPO_ROOT itself
+# is inside a git worktree (e.g. .claude/worktrees/<name>/).
+mapfile -t skill_files < <(find . -name 'SKILL.md' -not -path './.claude/worktrees/*')
 
 echo "=== Skill Frontmatter Linter ==="
 echo "Found ${#skill_files[@]} skill files"
@@ -18,7 +21,7 @@ echo ""
 declare -A trigger_map
 
 for file in "${skill_files[@]}"; do
-    rel="${file#"$REPO_ROOT"/}"
+    rel="${file#./}"
     has_frontmatter=false
     has_name=false
     has_description=false
