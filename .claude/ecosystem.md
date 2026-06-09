@@ -17,10 +17,10 @@ open files.
 `graphify query "..."`, `graphify path A B`, `graphify explain X`. Never
 load `graph.json` into context directly — it is megabytes of mostly
 irrelevant detail.
-**The workflow uses it:** in `/github-workflow:execute` Phase 3 (Plan)
-and `/github-workflow:code-review` Step 5 (read code in context) — prefer
-a `graphify query` over blind file search for structure questions. Kept
-fresh automatically by the `Stop` hook in `.claude/settings.json`.
+**The workflow uses it:** in the execute **Plan** phase and the
+code-review **evaluation** step — prefer a `graphify query` over blind
+file search for structure questions. Kept fresh automatically by the
+`Stop` hook in `.claude/settings.json`.
 
 ## RTK — terminal output token optimizer
 **What it is:** Sits between Claude and the terminal and trims the noise
@@ -58,7 +58,7 @@ same input always gives the same A–F report (0–100). It auto-discovers
 `~/.claude/` and the project's `.claude/` config.
 **Use it:** `npx ecc-agentshield scan` from the repo root (or
 `npm install -g ecc-agentshield`).
-**The workflow uses it:** `/github-workflow:execute --mode audit` and
-`/github-workflow:code-review` Step 6 — run it when the change touches
-Claude Code config files (CLAUDE.md, `.claude/`, hooks, skills, MCP
-config), and fold any finding into the Security section.
+**The workflow uses it:** the execute **audit** mode and the code-review
+**evaluation** step — run it when the change touches Claude Code config
+files (CLAUDE.md, `.claude/`, hooks, skills, MCP config), and fold any
+finding into the Security section.

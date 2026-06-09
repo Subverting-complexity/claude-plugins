@@ -606,9 +606,11 @@ open files.
 `graphify query "..."`, `graphify path A B`, `graphify explain X`. Never
 load `graph.json` into context directly — it is megabytes of mostly
 irrelevant detail.
-**The workflow uses it:** in `/github-workflow:execute` Phase 3 (Plan)
-and `/github-workflow:code-review` Step 5 (read code in context) — prefer
-a `graphify query` over blind file search for structure questions.
+**The workflow uses it:** in the execute **Plan** phase and the
+code-review **evaluation** step — prefer a `graphify query` over blind
+file search for structure questions. (Both the `github-workflow` and
+`local-workflow` plugins read this file; references stay phase-named, not
+numbered, so they hold for either.)
 ```
 
 ---
@@ -719,10 +721,10 @@ skills — looking for hardcoded secrets, prompt-injection openings,
 overly permissive allowlists, and risky MCP endpoints. No AI, so the
 same input always gives the same A–F report.
 **Use it:** `npx ecc-agentshield scan` from the repo root.
-**The workflow uses it:** `/github-workflow:execute --mode audit` and
-`/github-workflow:code-review` Step 6 — run it when the change touches
-Claude Code config files (CLAUDE.md, `.claude/`, hooks, skills, MCP
-config), and fold any finding into the Security section.
+**The workflow uses it:** the execute **audit** mode and the code-review
+**evaluation** step — run it when the change touches Claude Code config
+files (CLAUDE.md, `.claude/`, hooks, skills, MCP config), and fold any
+finding into the Security section.
 ```
 
 ---
@@ -771,10 +773,10 @@ analysis (MIT); an optional paid tier adds production runtime data.
 `npx fallow dupes`, `npx fallow health`, or `npx fallow fix --dry-run`.
 With the `fallow-mcp` server in settings.json, agents can call its tools
 (`analyze`, `find_dupes`, `check_health`, `audit`) directly.
-**The workflow uses it:** `/github-workflow:execute` Phase 3 (Plan) — to
-avoid rebuilding logic that already exists — and `/github-workflow:code-review`
-Step 6 (Minimality / dead-code) — to flag unused exports and duplication
-the diff introduces.
+**The workflow uses it:** the execute **Plan** phase — to avoid rebuilding
+logic that already exists — and the code-review **evaluation** step
+(Minimality / dead-code) — to flag unused exports and duplication the diff
+introduces.
 ```
 
 ---
