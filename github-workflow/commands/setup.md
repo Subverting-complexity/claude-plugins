@@ -37,7 +37,29 @@ jump straight to Step 10.
 
 ### 1. Verify prerequisites
 
-Before doing anything else, verify `gh` is authenticated:
+Before doing anything else, verify the required shell tools are available.
+
+**bash** (required — all auto-run `!`-blocks in this plugin use bash syntax):
+
+```
+bash --version
+```
+
+If bash is not found, stop and tell the user to install it. On Windows,
+[Git for Windows](https://git-scm.com) includes Git Bash; alternatively
+enable WSL. Without bash on PATH the plugin's auto-run blocks will not
+work.
+
+**awk** (required — used to project `ClaudeProject.md` at session start):
+
+```
+awk --version
+```
+
+If awk is not found, stop and tell the user to install it (included with
+Git for Windows and any standard Unix environment).
+
+**GitHub CLI** (required — all workflow commands use `gh`):
 
 ```
 gh auth status

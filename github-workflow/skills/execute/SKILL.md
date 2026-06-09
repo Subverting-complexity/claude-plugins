@@ -65,7 +65,7 @@ at that point — the board/field templates already say they read it.
 
 ```!
 if [ -f ClaudeProject.md ]; then
-  awk '/^## /{drop=($0 ~ /^## (Issue Types & Fields|Project Board|Story Template|Session Budget|Reference Docs|Bundled Skills)/)} !drop' ClaudeProject.md
+  awk '/^## /{d=0} /^## Issue Types/{d=1} /^## Project Board/{d=1} /^## Story Template/{d=1} /^## Session Budget/{d=1} /^## Reference Docs/{d=1} /^## Bundled Skills/{d=1} !d' ClaudeProject.md
 else
   echo "ClaudeProject.md NOT FOUND"
 fi
