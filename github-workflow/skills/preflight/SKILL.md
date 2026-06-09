@@ -34,6 +34,13 @@ if [ -f .claude/preflight-dismiss.md ]; then
 else
   echo "PREFLIGHT_ACTIVE"
 
+  # Shell environment: awk required by auto-run projection blocks
+  if command -v awk >/dev/null 2>&1; then
+    echo "OK shell-awk"
+  else
+    echo "WARNING shell-awk: awk not found on PATH — ClaudeProject.md projection blocks in execute/pick-story/finish-story will fail"
+  fi
+
   # GitHub CLI auth (CRITICAL)
   if gh auth status >/dev/null 2>&1; then
     echo "OK gh-auth"

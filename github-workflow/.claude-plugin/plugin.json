@@ -1,6 +1,6 @@
 {
   "name": "github-workflow",
-  "version": "1.49.2",
+  "version": "1.49.3",
   "description": "Community plugin for GitHub-based development workflows. Say 'start the next story' and the plugin picks an issue from your backlog, plans the architecture, builds the implementation, runs tests, and opens a PR. Supports sprint-based and flat backlogs with configurable label mappings. Bundles a suite of skills, commands, and agents with least-privilege tool access. Includes an interactive setup wizard that auto-detects your project configuration.",
   "author": {
     "name": "Subverting Complexity"
