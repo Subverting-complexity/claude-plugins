@@ -232,7 +232,8 @@ in one command:
 
 ```
 rm -f .claude/plan.md .claude/preflight-passed.txt \
-      .claude/label-cache.json .claude/candidates.json
+      .claude/label-cache.json .claude/candidates.json \
+      .claude/issue-fields-cache.json
 ```
 
 All are gitignored, but they must still be cleaned up explicitly.
