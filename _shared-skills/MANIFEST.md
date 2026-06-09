@@ -11,6 +11,7 @@ edit plugin copies directly** — edit here, then run `sync-skills.ps1`.
 | `code-architect` | github-workflow, local-workflow | Includes `references/` subdirectory with architecture book summaries |
 | `debugging` | github-workflow, local-workflow | Systematic reproduce → hypothesize → isolate → fix → verify cycle |
 | `doc-writer` | github-workflow, local-workflow | README, API docs, architecture guides, migration guides, changelogs |
+| `ecosystem-setup` | github-workflow, local-workflow | Detect/install/configure companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and write `.claude/ecosystem.md`. github-workflow's `setup` Step 8 delegates here |
 | `feature-discovery` | github-workflow, local-workflow | Uses `references/story-template.md` |
 | `grill-me` | github-workflow, local-workflow | `disable-model-invocation: true`, no filesystem output |
 | `pr-description` | github-workflow, local-workflow | Structured PR bodies from committed changes |
