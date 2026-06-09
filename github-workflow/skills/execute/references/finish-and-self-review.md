@@ -65,9 +65,12 @@ here are only needed once you are ready to open the PR.
      set. Exactly one review-state label. This ensures the PR is never
      unlabelled and the reviewer can find it.
 
-   After applying, verify by reading back the PR labels. If a label is
-   missing, create it with the guarded create-if-missing pattern from
-   `templates/default-labels.md` (no `--force`) and retry once.
+   Do not read the labels back to confirm: `gh pr edit --add-label X`
+   fails loudly (non-zero exit, "could not add label") when `X` does not
+   exist, so the edit's exit status is the presence signal. On exit 0 you
+   are done; only on a non-zero exit citing a missing label do you create
+   it with the guarded create-if-missing pattern from
+   `templates/default-labels.md` (no `--force`) and retry the edit once.
 
 4. Move the linked issue to the `status-in-review` lifecycle label,
    removing `status-in-progress` so exactly one state is present (resolve
@@ -77,7 +80,10 @@ here are only needed once you are ready to open the PR.
    gh issue edit {number} --repo {org}/{repo} \
      --remove-label "{status_in_progress_label}" --add-label "{status_in_review_label}"
    ```
-   Verify per `templates/default-labels.md`. Then update the project
+   Trust the edit's exit code — do not read the labels back. Exit 0
+   confirms the label is set; only a non-zero exit citing a missing label
+   triggers a guarded create-if-missing (no `--force`,
+   `templates/default-labels.md`) and one retry. Then update the project
    board to the **In Review** column (`col-in-review`) — best-effort, if
    configured. The auto-loaded projection dropped `## Project Board`, so
    read that section from `ClaudeProject.md` now for the board id/title/

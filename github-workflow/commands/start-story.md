@@ -66,8 +66,9 @@ Acquire it with `templates/claim-procedure.md` (**Acquire**, target
 agent wins, a loser exits cleanly having made no changes. Acquire also
 applies the durable markers — it assigns `@me` **and** moves the issue to
 `status-in-progress` (removing any prior lifecycle label). Do not assign or
-set a status label separately; just verify the read-back (guarded
-create-if-missing pattern in `templates/default-labels.md`).
+set a status label separately, and do not read the labels back: Acquire's
+Step 4 already applies the verify-after-create-only contract (trust the
+`gh issue edit` exit code; only the rare missing-label branch reads).
 
 If Acquire reports the claim is lost, stop — another agent owns this story.
 If `pick-story` already claimed it in this same flow, Acquire's re-entry

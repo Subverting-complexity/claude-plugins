@@ -257,13 +257,17 @@ missing, add it (via `gh pr edit --body-file`) before proceeding.
 
 ### 6. Resolve merge conflicts
 
-Check if the PR has merge conflicts with the base branch:
+Read the PR's post-create state **once**, fetching every field the
+remaining steps need from this same object in a single round trip — the
+conflict status here plus the labels Step 7 confirms — instead of one
+`gh pr view` per step:
 
 ```
-gh pr view {pr_number} --repo {org}/{repo} --json mergeable,mergeStateStatus
+gh pr view {pr_number} --repo {org}/{repo} --json number,mergeable,mergeStateStatus,labels
 ```
 
-If `mergeable` is `CONFLICTING`:
+Keep this result; Step 7 reuses its `labels` field rather than issuing its
+own read. If `mergeable` is `CONFLICTING`:
 
 1. Fetch the latest base branch and rebase onto it:
    ```
@@ -322,22 +326,23 @@ Apply two labels, both resolved by purpose key through the single path in
 Skip this entirely if Step 4 found an existing PR that already carries a
 review-state label (e.g. `approved`, `needs-re-review`) — do not reset a
 reviewed PR back to `needs-review`; leave its existing state (Step 6 may
-have moved it to `needs-re-review`).
+have moved it to `needs-re-review`). Decide this from the `labels` field
+already read in Step 6 — no extra `gh pr view` here.
 
 ```
 gh pr edit {pr_number} --add-label "{claude_authored_label}" --add-label "{needs_review_label}"
 ```
 
-After applying, verify the labels were applied:
+Do not read the labels back to confirm: `gh pr edit --add-label X` fails
+loudly (non-zero exit, "could not add label") when `X` does not exist, so
+the edit's exit status is the presence signal. Apply the contract:
 
-```
-gh pr view {pr_number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'
-```
-
-If a label is missing, it was not created at setup. Create it with the
-guarded create-if-missing pattern from `templates/default-labels.md` —
-**without `--force`** so existing metadata is never overwritten — then
-retry. Use the colours from `templates/default-labels.md`.
+- **Exit 0** → both labels are set; done.
+- **Non-zero citing an unknown/missing label** → it was not created at
+  setup. Create it with the guarded create-if-missing pattern from
+  `templates/default-labels.md` — **without `--force`** so existing
+  metadata is never overwritten, using the colours there — then retry the
+  edit once.
 
 ### 8. Move the issue to In Review
 
@@ -351,10 +356,13 @@ gh issue edit {number} --repo {org}/{repo} \
   --remove-label "{status_in_progress_label}" --add-label "{status_in_review_label}"
 ```
 
-Verify per `templates/default-labels.md` (read back; guarded
-create-if-missing without `--force` if absent, then retry once). This
-label — not the board — is the authoritative "in review" signal, so it
-works even when no board is configured.
+Trust the edit's exit code — do not read the labels back. `gh issue edit
+--add-label X` fails loudly when `X` does not exist, so exit 0 already
+confirms the label is set. Only on a non-zero exit citing a missing label
+do you create it (guarded create-if-missing, no `--force`, per
+`templates/default-labels.md`) and retry the edit once. This label — not
+the board — is the authoritative "in review" signal, so it works even when
+no board is configured.
 
 **Project board (best-effort, if configured).** The auto-loaded
 projection dropped `## Project Board`, so read that section from
