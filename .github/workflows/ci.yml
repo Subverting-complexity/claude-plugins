@@ -8,7 +8,7 @@ on:
 
 jobs:
   sync-check:
-    name: Verify shared skills are in sync
+    name: Verify shared skills and runtime variants are in sync
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
