@@ -27,6 +27,26 @@ Read `ClaudeProject.md` for project-specific settings before starting.
 3. For user-facing: create or update user flow documentation.
 4. For infrastructure: create or update technical documentation.
 
+## Tool permissions
+
+Each entry is scoped to the minimum needed for documentation-only
+work.
+
+**Read, Edit, Write, Glob, Grep** — reading existing docs, writing
+new pages, searching within the repo.
+
+**Bash(cat \*), Bash(ls \*)** — inspect file content and directory
+structure when the dedicated tools are insufficient for quick
+comparisons.
+
+**Bash(find docs/ \*)** — find documentation files. Intentionally
+scoped to `docs/` to prevent searching outside the documentation
+directory.
+
+**Bash(gh issue view \*), Bash(gh pr view \*)** — read GitHub issues
+and PRs to understand what was built. Narrowed to the specific gh
+subcommands needed (view only), not the full `gh *`.
+
 ## Rules
 
 - Do not modify any source code files.
