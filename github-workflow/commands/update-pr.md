@@ -149,12 +149,31 @@ git push
 
 ### 7. Resolve merge conflicts
 
-After pushing, check if the PR has merge conflicts with the base
-branch:
+After pushing, check if the PR has merge conflicts with the base branch:
 
 ```
 gh pr view {pr_number} --repo {org}/{repo} --json mergeable,mergeStateStatus
 ```
+
+**Handle `UNKNOWN` before branching.** GitHub computes mergeability
+asynchronously after a push lands; the first read can return `UNKNOWN`
+for a short window. If `mergeable` is `UNKNOWN`, poll with a bounded
+backoff before acting on the value:
+
+```
+# Retry at 3 s, 5 s, and 10 s (three attempts; ~18 s total)
+for delay in 3 5 10; do
+  sleep $delay
+  result=$(gh pr view {pr_number} --repo {org}/{repo} \
+    --json mergeable,mergeStateStatus)
+  mergeable=$(echo "$result" | jq -r '.mergeable')
+  [ "$mergeable" != "UNKNOWN" ] && break
+done
+```
+
+If `mergeable` is still `UNKNOWN` after all retries, treat it as
+`MERGEABLE` and say so: "Merge status remained UNKNOWN after polling;
+assuming no conflict — a reviewer will catch any issues before merge."
 
 If `mergeable` is `CONFLICTING`:
 

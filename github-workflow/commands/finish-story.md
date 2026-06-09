@@ -257,17 +257,39 @@ missing, add it (via `gh pr edit --body-file`) before proceeding.
 
 ### 6. Resolve merge conflicts
 
-Read the PR's post-create state **once**, fetching every field the
-remaining steps need from this same object in a single round trip — the
-conflict status here plus the labels Step 7 confirms — instead of one
-`gh pr view` per step:
+Read the PR's post-create state, fetching every field the remaining steps
+need in a single round trip — the conflict status here plus the labels
+Step 7 confirms — instead of one `gh pr view` per step:
 
 ```
 gh pr view {pr_number} --repo {org}/{repo} --json number,mergeable,mergeStateStatus,labels
 ```
 
-Keep this result; Step 7 reuses its `labels` field rather than issuing its
-own read. If `mergeable` is `CONFLICTING`:
+**Handle `UNKNOWN` before branching.** GitHub computes mergeability
+asynchronously after a PR is created or a force-push lands; the first
+read can return `UNKNOWN` for a short window. If `mergeable` is
+`UNKNOWN`, poll with a bounded backoff before acting on the value:
+
+```
+# Retry at 3 s, 5 s, and 10 s (three attempts; ~18 s total)
+for delay in 3 5 10; do
+  sleep $delay
+  result=$(gh pr view {pr_number} --repo {org}/{repo} \
+    --json number,mergeable,mergeStateStatus,labels)
+  mergeable=$(echo "$result" | jq -r '.mergeable')
+  [ "$mergeable" != "UNKNOWN" ] && break
+done
+```
+
+If `mergeable` is still `UNKNOWN` after all retries, treat it as
+`MERGEABLE` and say so: "Merge status remained UNKNOWN after polling;
+assuming no conflict — a reviewer will catch any issues before merge."
+This is the safe default: spuriously triggering a rebase on a branch
+that GitHub just hasn't evaluated yet is more disruptive than leaving a
+real conflict for the reviewer, who will catch it before merge.
+
+Keep the final result object; Step 7 reuses its `labels` field rather
+than issuing its own read. If `mergeable` is `CONFLICTING`:
 
 1. Fetch the latest base branch and rebase onto it:
    ```
