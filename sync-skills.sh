@@ -176,6 +176,113 @@ remove_orphaned_files() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# Runtime variant compilation
+#
+# Strips <!-- rationale:start --> ... <!-- rationale:end --> blocks from
+# github-workflow/templates/*.md and writes lean compiled copies to
+# github-workflow/templates/runtime/. Authors keep the full prose; at
+# runtime only the lean copy is loaded. Templates that already have a
+# separate *-rationale.md file need no markers — they are skipped.
+# ---------------------------------------------------------------------------
+
+# Read stdin; remove rationale blocks; collapse consecutive blank lines.
+strip_rationale_blocks() {
+    awk '
+        BEGIN { skip=0; prev_blank=0 }
+        /<!-- rationale:start -->/ { skip=1; next }
+        /<!-- rationale:end -->/ { skip=0; next }
+        skip { next }
+        /^[[:space:]]*$/ {
+            if (!prev_blank) { print "" }
+            prev_blank=1
+            next
+        }
+        { print; prev_blank=0 }
+    '
+}
+
+compile_runtime_variants() {
+    local templates_dir="$REPO_ROOT/github-workflow/templates"
+    local runtime_dir="$templates_dir/runtime"
+    local compiled=0
+    declare -A expected_runtime
+
+    if [ ! -d "$templates_dir" ]; then
+        return
+    fi
+
+    for src_file in "$templates_dir"/*.md; do
+        [ -f "$src_file" ] || continue
+        local filename
+        filename=$(basename "$src_file")
+
+        # Skip files that already have a separate rationale file
+        [[ "$filename" == *-rationale.md ]] && continue
+
+        # Skip files with no rationale markers
+        grep -q '<!-- rationale:start -->' "$src_file" 2>/dev/null || continue
+
+        expected_runtime["$filename"]=1
+        local dst_file="$runtime_dir/$filename"
+        local header="<!-- COMPILED from templates/$filename — edit the source, not this file. -->"
+        local stripped
+        stripped=$(strip_rationale_blocks < "$src_file")
+        local full_content="$header
+$stripped"
+
+        if [ "$VERIFY" = true ]; then
+            if [ ! -f "$dst_file" ]; then
+                echo "  MISSING: runtime/$filename"
+                drift_found=true
+            else
+                local existing fc_trimmed existing_trimmed
+                existing=$(cat "$dst_file")
+                fc_trimmed=$(echo "$full_content" | sed 's/[[:space:]]*$//')
+                existing_trimmed=$(echo "$existing" | sed 's/[[:space:]]*$//')
+                if [ "$fc_trimmed" != "$existing_trimmed" ]; then
+                    echo "  DRIFT: runtime/$filename"
+                    drift_found=true
+                else
+                    echo "  OK: runtime/$filename"
+                fi
+            fi
+        else
+            mkdir -p "$runtime_dir"
+            local existing="" fc_trimmed existing_trimmed
+            [ -f "$dst_file" ] && existing=$(cat "$dst_file")
+            fc_trimmed=$(echo "$full_content" | sed 's/[[:space:]]*$//')
+            existing_trimmed=$(echo "$existing" | sed 's/[[:space:]]*$//')
+            if [ "$fc_trimmed" != "$existing_trimmed" ]; then
+                echo "$full_content" > "$dst_file"
+                echo "  Compiled: runtime/$filename"
+                compiled=$((compiled + 1))
+            fi
+        fi
+    done
+
+    # Remove orphaned runtime files whose source no longer has markers
+    if [ -d "$runtime_dir" ]; then
+        while IFS= read -r -d '' dst_file; do
+            local filename
+            filename=$(basename "$dst_file")
+            if [ -z "${expected_runtime[$filename]+x}" ]; then
+                if [ "$VERIFY" = true ]; then
+                    echo "  ORPHAN: runtime/$filename (would be deleted)"
+                    drift_found=true
+                else
+                    rm -f "$dst_file"
+                    echo "  Deleted orphan: runtime/$filename"
+                fi
+            fi
+        done < <(find "$runtime_dir" -maxdepth 1 -name '*.md' -type f -print0 2>/dev/null)
+    fi
+
+    if [ "$VERIFY" = false ] && [ "$compiled" -gt 0 ]; then
+        echo "  $compiled runtime variant(s) compiled."
+    fi
+}
+
 # Collect shared skill directories (excluding _shared and references)
 mapfile -t skill_dirs < <(find "$SHARED_DIR" -maxdepth 1 -mindepth 1 -type d \
     ! -name '_shared' ! -name 'references' | sort)
@@ -230,6 +337,10 @@ for plugin_name in "${PLUGINS[@]}"; do
         remove_orphaned_files "$REPO_ROOT/$plugin_name/references"
     fi
 done
+
+echo ""
+echo "[runtime variants]"
+compile_runtime_variants
 
 echo ""
 if [ "$VERIFY" = true ]; then
