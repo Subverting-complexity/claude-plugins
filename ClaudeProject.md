@@ -21,13 +21,14 @@ scripts. There is nothing to install.
 Command to run before each commit:
 
 ```
-bash sync-skills.sh --verify && bash lint-skills.sh
+bash sync-skills.sh --verify && bash lint-skills.sh && python3 tests/test_decision_logic.py
 ```
 
 This mirrors CI: verifies shared skills are in sync (no drift between
-`_shared-skills/` and the deployed plugin copies) and lints skill
-frontmatter for unreplaced placeholders. Plugin version-bump and
-manifest validation are enforced at PR time by `.github/workflows/ci.yml`.
+`_shared-skills/` and the deployed plugin copies), lints skill
+frontmatter for unreplaced placeholders, and runs the offline decision
+logic tests. Plugin version-bump and manifest validation are enforced at
+PR time by `.github/workflows/ci.yml`.
 
 ## Branch Convention
 
