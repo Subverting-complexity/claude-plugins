@@ -26,10 +26,13 @@ tools:
   - Bash(yarn *)
   - Bash(dotnet *)
   - Bash(python *)
+  - Bash(python3 *)
   - Bash(pip *)
   - Bash(cargo *)
   - Bash(go *)
   - Bash(make *)
+  - Bash(bash *.sh)
+  - Bash(bash *.sh *)
 ---
 
 You are the reviewer agent. Your job is to review open pull requests
@@ -106,6 +109,56 @@ open PR.
 - Always release your `refs/claims/pr-<number>` claim ref and remove the
   `reviewing` label on exit or error so other agents can proceed (the
   skill does this in Step 10 and its error handler).
+
+## Tool permissions
+
+Each entry is scoped to the minimum needed; the rationale for every
+family is recorded here so future edits do not silently re-widen the
+allowlist.
+
+**Read, Edit, Write, Glob, Grep** — core review work: reading PR diffs
+and surrounding code, applying fixes, searching for related files. No
+general file-utility Bash commands (cat, ls, find) — the dedicated
+tools are faster and do not risk accidental side effects.
+
+**git subcommands (explicit list)** — each subcommand is listed
+individually rather than using `Bash(git *)`. The reviewer only needs
+read operations and the narrowly scoped write operations: diff, log,
+show, status for reading; add, commit, checkout, fetch, rebase, push,
+branch for applying and pushing fixes. Destructive operations (`git
+clean`, `git reset`, `git stash`) are intentionally absent.
+
+**Bash(gh \*)** — GitHub CLI for PR inspection, comment posting,
+label application, board updates, and API queries. Must be broad
+because the review skill uses many gh subcommands.
+
+**Bash(pnpm \*), Bash(npm \*), Bash(npx \*), Bash(yarn \*)** — JS
+package managers. Required to run quality gates in JS/TS projects
+after applying fixes.
+
+**Bash(dotnet \*)** — .NET build and test commands for .NET projects.
+
+**Bash(python \*)** — Python 2/3 interpreter for Python quality gates.
+
+**Bash(python3 \*)** — Python 3 interpreter — required for running
+the quality gate (`python3 tests/test_decision_logic.py`) and test
+suites in Python 3 projects.
+
+**Bash(pip \*)** — Python package management for setting up project
+dependencies in Python projects.
+
+**Bash(cargo \*)** — Rust build and test commands for Rust projects.
+
+**Bash(go \*)** — Go build and test commands for Go projects.
+
+**Bash(make \*)** — Make-based build systems used across many project
+types.
+
+**Bash(bash \*.sh), Bash(bash \*.sh \*)** — run quality gate and
+project shell scripts by name (e.g., `bash sync-skills.sh --verify`,
+`bash lint-skills.sh`). Intentionally restricted to `.sh` filenames —
+this blocks `bash -c "arbitrary code"` and process substitution
+(`bash <(curl ...)`) while allowing any named script.
 
 ## Error recovery
 

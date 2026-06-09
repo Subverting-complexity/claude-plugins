@@ -14,10 +14,13 @@ tools:
   - Bash(yarn *)
   - Bash(dotnet *)
   - Bash(python *)
+  - Bash(python3 *)
   - Bash(pip *)
   - Bash(cargo *)
   - Bash(go *)
   - Bash(make *)
+  - Bash(bash *.sh)
+  - Bash(bash *.sh *)
   - Bash(git add *)
   - Bash(git branch *)
   - Bash(git checkout *)
@@ -72,6 +75,68 @@ When given a specific issue number, run `/github-workflow:execute <number>`.
   Do not fix unrelated problems inline.
 - If blocked, run `/github-workflow:block-story` and then pick the next one.
 - Do not ask for confirmation. Build autonomously.
+
+## Tool permissions
+
+Each entry is scoped to the minimum needed; the rationale for every
+family is recorded here so future edits do not silently re-widen the
+allowlist.
+
+**Read, Edit, Write, Glob, Grep** — core implementation: read existing
+code, make edits, create new files, search.
+
+**git subcommands (explicit list)** — each subcommand is listed
+individually rather than using `Bash(git *)` to block operations that
+are never needed in normal story execution: `git clean`, `git reset`,
+`git stash`, `git bisect`, etc.
+
+**Bash(gh \*)** — GitHub CLI for issue management, PR creation, board
+updates, and API queries. Must be broad because the harness uses many
+gh subcommands across the workflow.
+
+**Bash(pnpm \*), Bash(npm \*), Bash(npx \*), Bash(yarn \*)** — JS
+package managers. Required to install dependencies and run tests in
+JS/TS projects that adopt this plugin. `npx` is included for local
+tool invocation (e.g., `npx jest`, `npx prettier`).
+
+**Bash(dotnet \*)** — .NET build and test commands for .NET projects.
+
+**Bash(python \*)** — Python 2/3 interpreter for Python quality gates.
+
+**Bash(python3 \*)** — Python 3 interpreter — required for the quality
+gate (`python3 tests/test_decision_logic.py`) and test runners in
+Python 3 projects.
+
+**Bash(pip \*)** — Python package management for setting up project
+dependencies in Python projects.
+
+**Bash(cargo \*)** — Rust build and test commands for Rust projects.
+
+**Bash(go \*)** — Go build and test commands for Go projects.
+
+**Bash(make \*)** — Make-based build systems used across many project
+types.
+
+**Bash(bash \*.sh), Bash(bash \*.sh \*)** — run quality gate and
+project shell scripts by name (e.g., `bash sync-skills.sh --verify`,
+`bash lint-skills.sh`). Intentionally restricted to `.sh` filenames —
+this blocks `bash -c "arbitrary code"` and process substitution
+(`bash <(curl ...)`) while allowing any named script.
+
+**Bash(cat \*), Bash(ls \*), Bash(find \*), etc.** — read-only and
+utility filesystem operations for inspecting the working tree when the
+dedicated Read/Glob/Grep tools are insufficient (e.g., piping output
+for comparison).
+
+**Bash(mkdir \*), Bash(cp \*), Bash(mv \*)** — directory and file
+management needed when creating new modules and reorganising code.
+
+**Bash(scripts/\*)** — run scripts from the repo's `scripts/`
+directory directly. Scoped to that path to avoid executing arbitrary
+named scripts elsewhere.
+
+**WebSearch** — research when implementation requires external
+documentation or solutions.
 
 ## Error recovery
 
