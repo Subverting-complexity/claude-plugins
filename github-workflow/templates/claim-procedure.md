@@ -45,7 +45,14 @@ you perform **no** side effects.
 
 **Step 1 — Re-entry check (already ours?).** A prior step in this same
 flow records its winning object in `.claude/claim-{target}.sha`;
-re-acquiring must be a no-op, not a self-collision:
+re-acquiring must be a no-op, not a self-collision.
+
+**First claim of the session — skip this step (no network probe).** When
+`.claude/claim-{target}.sha` does **not** exist, there is no prior claim to
+reconcile, so skip Step 1 entirely — do not run `git ls-remote` — and go
+straight to Step 2. This is the common case (the first time you claim this
+target), and it costs **zero** round trips. Only when the marker file
+*exists* is the re-entry probe worth a network call:
 
 ```
 test -f .claude/claim-{target}.sha \
@@ -99,9 +106,17 @@ to `templates/default-labels.md` only for a purpose key the map omits):
   ```
 
 No read-back is needed for *exclusivity* (the atomic push already proved
-it), but verify the **label** took effect (read-back, guarded
-create-if-missing — pattern in `default-labels.md`) so the item is never
-left without a state label.
+it). No read-back is needed for the **label** either: `gh ... edit
+--add-label X` fails loudly (non-zero exit, "could not add label") when `X`
+does not exist — it never silently drops the label — so the edit's own exit
+status is the presence signal. Apply the contract:
+
+- **Exit 0** → the label is set; done, no read-back.
+- **Non-zero citing an unknown/missing label** → the label was never
+  created at setup. Create it with the guarded create-if-missing pattern in
+  `default-labels.md` (no `--force`), then retry the edit once. This is the
+  only branch that reads, and only when a label had to be created — verify
+  after create, not after every edit.
 
 ---
 
