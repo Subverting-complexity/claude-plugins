@@ -56,6 +56,32 @@ jobs:
           done
           exit $status
 
+  footprint-check:
+    name: Check instruction-token footprint budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check execute skill footprint (budget 32000 tokens)
+        shell: bash
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 32000
+
+      - name: Check code-review skill footprint (budget 37000 tokens)
+        shell: bash
+        run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 37000
+
+      - name: Report round-trip counts (informational)
+        shell: bash
+        run: |
+          echo "--- execute workflow ---"
+          bash count-roundtrips.sh --workflow execute
+          echo ""
+          echo "--- pick workflow ---"
+          bash count-roundtrips.sh --workflow pick
+          echo ""
+          echo "--- finish workflow ---"
+          bash count-roundtrips.sh --workflow finish
+
   validate-plugin-json:
     name: Validate plugin manifests
     runs-on: ubuntu-latest
