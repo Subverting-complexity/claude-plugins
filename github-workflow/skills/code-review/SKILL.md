@@ -85,16 +85,11 @@ identical string other skills filter on.
 Read `review.config.md` fully before starting. Everything project-specific
 lives there. This workflow is generic.
 
-**Auto-merge.** `review.config.md` may define an **Auto-Merge on Approval**
-setting (purpose: squash-merge a PR once the review verdict is Approved).
-It is **opt-in and defaults to `disabled`** — treat it as disabled whenever
-the section, or the whole file, is absent (including the autonomous minimal
-review). The same section may set **`require-ci-before-merge`** (default
-`false`; also `true` or `if-present`); when set, Step 11 gates the merge on
-CI — `true` refuses to merge a PR with no green CI gate (no checks at all,
-or a red check), while `if-present` gates only when checks exist and merges
-a PR that has no checks. Step 11 reads both settings and is the only place
-this skill merges.
+**Auto-merge.** `review.config.md` may set `auto-merge-on-approval: enabled`
+(defaults to `disabled` when the section or file is absent — including the
+autonomous minimal review). Step 11 reads it and is the only place this skill
+merges. Full merge procedure and `require-ci-before-merge` handling are in
+`references/auto-merge.md`, loaded only when Step 11 fires.
 
 ---
 
@@ -380,13 +375,10 @@ unrelated refactors, formatting changes, or comment edits.
 
 ### Step 7 — Fix issues (blocking-first, then non-blocking)
 
-Fix concrete, objectively wrong problems directly on the PR branch. Work
-in priority order so the most important fixes land first — but fix
-**both** tiers before approving. Non-blocking cleanups are no longer
-deferred for budget: they are amended and pushed before the PR is
-approved and merged. Anything you genuinely cannot fix in place is filed
-to the board in Step 7f so it is fixed automatically later — it is never
-silently dropped.
+Fix concrete, objectively wrong problems directly on the PR branch. Fix
+**both** tiers (blocking and non-blocking) before approving — non-blocking
+cleanups are pushed, not deferred. Anything you cannot fix in place is filed
+to the board in Step 7f; nothing is silently dropped.
 
 #### 7a — Triage findings into tiers
 
@@ -416,12 +408,9 @@ Step 7f.
 
 #### 7c — Fix the non-blocking tier
 
-Fix the non-blocking findings too, and commit them. Do **not** skip them
-for budget reasons: non-blocking changes are amended and pushed before
-the PR is approved and merged, not left for a follow-up. The only
-non-blocking items that survive to the review comment are the ones you
-genuinely **cannot** fix in place (see Step 7f) — there is no "deferred
-for budget" tier any more.
+Fix the non-blocking findings too, and commit them. The only non-blocking
+items that survive to the review comment are ones you genuinely **cannot**
+fix in place (see Step 7f).
 
 #### 7d — Push
 
@@ -440,26 +429,16 @@ After pushing fixes, update the recorded commit SHA to the new `HEAD`.
 
 #### 7f — File anything you could not fix to the board
 
-For every problem you detected but did **not** fix on the branch — a
-blocking issue that needs design judgment, a non-blocking cleanup you
-could not safely automate, or an out-of-scope problem you noticed in
-code this PR touches — file a GitHub issue so it is picked up and fixed
-automatically. **No human approval is required**: the issue lands in the
-ready pool and the normal pickup flow handles it.
-
-For each such problem, run `/github-workflow:report-issue` (autonomous
-mode — do not pause for confirmation). It classifies the problem, applies
-the **actual issue type** (bug, security, architecture, or tech debt) and
-priority, sets `status-ready` so the issue is immediately eligible for
-pickup, and places it on the board. In the issue body, name the PR it
-came from (`Detected during review of #<pr-number>`) and the
-`file:line` location.
+For every problem you detected but did **not** fix on the branch, run
+`/github-workflow:report-issue` (autonomous — do not pause for confirmation).
+Apply the actual issue type (bug, security, architecture, or tech debt),
+set `status-ready`, and in the body name the source PR
+(`Detected during review of #<pr-number>`) and the `file:line` location.
 
 Record each created issue's number, title, and type — Step 9 lists them
 under "Issues remaining (filed to board)" and the **Final report format**
-(Step 10 / Step 11) names them. Filing a non-blocking issue does **not**
-force a "Changes Requested" verdict; the work is now tracked and
-auto-pickable.
+names them. Filing a non-blocking issue does **not** force a "Changes
+Requested" verdict.
 
 ### Step 8 — Determine the verdict
 
@@ -669,9 +648,14 @@ single-PR review path light:
   shares an issue with another open PR.
 - `references/re-review.md` — Step 4b, when a prior review footer exists.
 - `references/auto-merge.md` — Step 11, when the verdict is Approved.
+- `references/review-workflow.md` — Label reference table and concurrency
+  rules. Read only when you need to look up a specific label's purpose key or
+  verify the claim-release procedure (Steps 2, 10). Do not load it upfront.
+- `references/review-config-guide.md` — Interactive config generation only
+  (no `review.config.md` found in an interactive session).
 
-For label definitions, state transitions, concurrency rules, and
-feedback workflow details, see `references/review-workflow.md`.
+Rationale files (maintainers only — not read at runtime):
+`SKILL-rationale.md`, `references/review-workflow-rationale.md`.
 
 ---
 
