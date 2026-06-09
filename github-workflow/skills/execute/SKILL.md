@@ -53,9 +53,19 @@ If the user chooses "Continue anyway" or "Don't remind me", proceed.
 
 ## Project configuration (auto-loaded)
 
+This emits a **projection** of `ClaudeProject.md`: the hot-path config
+the pick/plan/build window needs (Identity, Branch Convention, Label Map,
+Ready Gate, Agent Gating, Quality Gate, Package Manager, Refinement) and
+drops the heavy sections that are only needed later, and only sometimes
+(Issue Types & Fields, Project Board, Story Template, Session Budget,
+Reference Docs, Bundled Skills). When a later phase resolves the **board**
+(Phase 2, Phase 7) or **org issue fields**, read the omitted `## Project
+Board` / `## Issue Types & Fields` section straight from `ClaudeProject.md`
+at that point — the board/field templates already say they read it.
+
 ```!
 if [ -f ClaudeProject.md ]; then
-  cat ClaudeProject.md
+  awk '/^## /{drop=($0 ~ /^## (Issue Types & Fields|Project Board|Story Template|Session Budget|Reference Docs|Bundled Skills)/)} !drop' ClaudeProject.md
 else
   echo "ClaudeProject.md NOT FOUND"
 fi
@@ -308,6 +318,9 @@ agents never validate or build the same issue.
    `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
 
 2. Update project board to In Progress (if board configured in ClaudeProject.md).
+   The auto-loaded projection dropped `## Project Board`, so read that
+   section from `ClaudeProject.md` now for `project-node-id`,
+   `project-title`, `status-field-id`, and the Status option ids.
    Resolve the board, the issue's `{item_id}`, and the target column's
    `{column_option_id}` following `templates/board-resolution.md`, then run
    its **Step 5** mutation to set Status — it decides whether a board is

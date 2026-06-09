@@ -28,9 +28,17 @@ re-run this command. Otherwise, proceed.
 
 ## Project configuration (auto-loaded)
 
+This emits a **projection** of `ClaudeProject.md` — the hot-path config
+sections (Identity, Branch Convention, Label Map, Ready Gate, Agent
+Gating, …) and drops the heavy sections the selection path never reads
+(Issue Types & Fields, Project Board, Story Template, Session Budget,
+Reference Docs, Bundled Skills). Pick-story needs none of those. If a
+`board-column` ready-gate later needs the board, read that section from
+`ClaudeProject.md` directly.
+
 ```!
 if [ -f ClaudeProject.md ]; then
-  cat ClaudeProject.md
+  awk '/^## /{drop=($0 ~ /^## (Issue Types & Fields|Project Board|Story Template|Session Budget|Reference Docs|Bundled Skills)/)} !drop' ClaudeProject.md
 else
   echo "ClaudeProject.md NOT FOUND — run /github-workflow:setup first."
 fi

@@ -26,10 +26,15 @@ re-run this command. Otherwise, proceed.
 git log --oneline -5 2>/dev/null || echo "(no commits)"
 ```
 
-**Project configuration:**
+**Project configuration:** a **projection** — the hot-path config
+(Identity, Branch Convention, Label Map, …) with the heavy sections
+dropped (Issue Types & Fields, Project Board, Story Template, Session
+Budget, Reference Docs, Bundled Skills). The board move (Step 8) and any
+org-field write read the omitted `## Project Board` / `## Issue Types &
+Fields` section from `ClaudeProject.md` at that point.
 ```!
 if [ -f ClaudeProject.md ]; then
-  cat ClaudeProject.md
+  awk '/^## /{drop=($0 ~ /^## (Issue Types & Fields|Project Board|Story Template|Session Budget|Reference Docs|Bundled Skills)/)} !drop' ClaudeProject.md
 else
   echo "ClaudeProject.md NOT FOUND"
 fi
@@ -42,8 +47,9 @@ fi
 Extract from the project configuration above:
 
 - `org`, `repo`, `default-branch` from Identity
-- Project board settings (if configured)
 - Label map (for claude labels and the issue lifecycle states)
+- Project board settings are **not** in the projection — Step 8 reads the
+  `## Project Board` section from `ClaudeProject.md` when it moves the board
 
 Resolve every label by **purpose key** through the single path in
 `templates/default-labels.md`:
@@ -350,7 +356,10 @@ create-if-missing without `--force` if absent, then retry once). This
 label — not the board — is the authoritative "in review" signal, so it
 works even when no board is configured.
 
-**Project board (best-effort, if configured).** Resolve the board, the
+**Project board (best-effort, if configured).** The auto-loaded
+projection dropped `## Project Board`, so read that section from
+`ClaudeProject.md` now for the board id, title, status field, and option
+ids. Resolve the board, the
 issue's `{item_id}`, and the target column's `{column_option_id}`
 following `templates/board-resolution.md`, then run its **Step 5**
 mutation to set Status. The target column for `status-in-review` is **In
