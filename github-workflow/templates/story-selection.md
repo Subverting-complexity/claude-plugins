@@ -14,8 +14,11 @@ whole list. (Why this is cheaper and still race-safe:
 ## Inputs
 
 From `ClaudeProject.md` (already in context — do not re-read it): `org`,
-`repo`, the label map, `agent-gating`, `ready-gate`, and project-board
-settings. Plus the caller's `mode` (`story` / `feature` / `maintenance`)
+`repo`, the label map, `agent-gating`, and `ready-gate`. The auto-loaded
+config is a projection that omits `## Project Board`; when `ready-gate` is
+`board-column` or `both`, read that section from `ClaudeProject.md` for the
+`project-node-id` the Step 1 "Ready" column query needs. Plus the caller's
+`mode` (`story` / `feature` / `maintenance`)
 and any explicit issue number. Resolve every label by **purpose key** from
 the in-context `ClaudeProject.md` label map — never filter on a bare
 literal, and do not open `templates/default-labels.md` unless a purpose key
