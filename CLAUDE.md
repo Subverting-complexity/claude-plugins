@@ -136,3 +136,14 @@ latest" against the cached version — not the actual latest on main.
 > needed, prefix with `env -u CLAUDECODE`. Verify a manifest before
 > shipping with `claude plugin validate ./<plugin>` — it catches schema
 > errors (e.g. unrecognized keys) that plain JSON validation misses.
+
+## Supplementary Files
+
+These files provide context for specific workflows. You don't need to
+read all of them every session — consult them when the topic is
+relevant to what you're working on.
+
+| File | When to consult |
+| ---- | --------------- |
+| `ClaudeProject.md` | Project identity, labels, quality gate, branch convention, board config. Read at the start of any workflow command. |
+| `.claude/ecosystem.md` | Installed Claude Code companion tool cheat-sheet. Read before searching the codebase or running an audit/review — prefer `graphify query` over blind file search for structure questions. |
