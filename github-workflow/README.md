@@ -57,6 +57,7 @@ github-workflow/
 │   ├── acceptance-criteria/   # Author acceptance criteria
 │   ├── pr-description/        # Author PR descriptions
 │   ├── doc-writer/            # Write and update documentation
+│   ├── ecosystem-setup/       # Set up companion tools, write ecosystem.md
 │   └── _shared/               # Wording + banned-patterns standards
 ├── commands/                  # 8 slash commands — see "Usage" above
 ├── agents/                    # builder, reviewer, doc-writer
@@ -80,6 +81,11 @@ Run `/github-workflow:setup` to onboard your project. The wizard:
 4. Asks for your label scheme, branch convention, and quality gate.
 5. Generates `ClaudeProject.md` (project settings) and `CLAUDE.md`
    (project rules) at your repo root.
+6. Optionally sets up Claude Code companion tools (Graphify, RTK,
+   ccusage, ecc-agentshield, Fallow) and writes `.claude/ecosystem.md`
+   so `execute` and `code-review` use them automatically. This step is
+   the shared `ecosystem-setup` skill — run it again any time with
+   `/github-workflow:setup ecosystem`.
 
 If you already have these files, the setup wizard detects them and
 offers to fill in missing sections rather than overwrite.

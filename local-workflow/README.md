@@ -33,6 +33,7 @@ claude --plugin-dir ./plugins/local-workflow
 | `/local-workflow:support-request`        | Document a support ticket or investigation    |
 | `/local-workflow:verify-feature`         | Verify feature completeness and safety        |
 | `/local-workflow:mobile-audit`           | React Native / Expo specific audit            |
+| `/local-workflow:ecosystem-setup`        | Set up companion tools + write `.claude/ecosystem.md` |
 
 ## What's in the box
 
@@ -68,8 +69,10 @@ local-workflow/
 │   │   └── SKILL.md           # Support documentation
 │   ├── verify-feature/
 │   │   └── SKILL.md           # Feature verification
-│   └── mobile-audit/
-│       └── SKILL.md           # React Native / Expo audit
+│   ├── mobile-audit/
+│   │   └── SKILL.md           # React Native / Expo audit
+│   └── ecosystem-setup/
+│       └── SKILL.md           # Set up companion tools, write ecosystem.md
 ├── references/
 │   └── story-template.md      # Shared story issue template
 ├── settings.json
@@ -112,6 +115,12 @@ local-workflow/
 | -------------- | --------------------------------------- |
 | `mobile-audit` | React Native / Expo codebase audit      |
 
+### Tooling & setup
+
+| Skill             | What it does                                                  |
+| ----------------- | ------------------------------------------------------------ |
+| `ecosystem-setup` | Detect, install, and configure Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and write the `.claude/ecosystem.md` cheat-sheet that `execute` and `code-review` read to use those tools automatically |
+
 ## Differences from github-workflow
 
 This plugin is the counterpart to `github-workflow`. The key differences:
@@ -124,5 +133,8 @@ This plugin is the counterpart to `github-workflow`. The key differences:
 | Board integration | None                               | Project board updates                  |
 | Unique skills     | tone, user-story, acceptance-criteria, pr-description, support-request, verify-feature, mobile-audit | code-review (GitHub-specific), setup |
 
-Both plugins share 5 core skills: `code-architect`, `structured-coding`,
-`feature-discovery`, `grill-me`, and `repo-scaffolding`.
+Both plugins share a set of core skills (the full list is in
+`_shared-skills/MANIFEST.md`) — among them `code-architect`,
+`structured-coding`, `feature-discovery`, `grill-me`, `repo-scaffolding`,
+and `ecosystem-setup`. In `github-workflow`, `ecosystem-setup` also backs
+the `setup` wizard's ecosystem step; here it is invoked on its own.
