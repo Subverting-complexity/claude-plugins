@@ -79,7 +79,9 @@ here are only needed once you are ready to open the PR.
    ```
    Verify per `templates/default-labels.md`. Then update the project
    board to the **In Review** column (`col-in-review`) — best-effort, if
-   configured — following `templates/board-resolution.md` (which resolves
+   configured. The auto-loaded projection dropped `## Project Board`, so
+   read that section from `ClaudeProject.md` now for the board id/title/
+   field/option ids, then follow `templates/board-resolution.md` (which resolves
    the column option id by purpose key); the label ⇄ column pairing lives
    in `templates/default-labels.md`.
 

@@ -53,9 +53,19 @@ If the user chooses "Continue anyway" or "Don't remind me", proceed.
 
 ## Project configuration (auto-loaded)
 
+This emits a **projection** of `ClaudeProject.md`: the hot-path config
+the pick/plan/build window needs (Identity, Branch Convention, Label Map,
+Ready Gate, Agent Gating, Quality Gate, Package Manager, Refinement) and
+drops the heavy sections that are only needed later, and only sometimes
+(Issue Types & Fields, Project Board, Story Template, Session Budget,
+Reference Docs, Bundled Skills). When a later phase resolves the **board**
+(Phase 2, Phase 7) or **org issue fields**, read the omitted `## Project
+Board` / `## Issue Types & Fields` section straight from `ClaudeProject.md`
+at that point — the board/field templates already say they read it.
+
 ```!
 if [ -f ClaudeProject.md ]; then
-  cat ClaudeProject.md
+  awk '/^## /{drop=($0 ~ /^## (Issue Types & Fields|Project Board|Story Template|Session Budget|Reference Docs|Bundled Skills)/)} !drop' ClaudeProject.md
 else
   echo "ClaudeProject.md NOT FOUND"
 fi
@@ -70,75 +80,46 @@ Read `CLAUDE.md` for project rules and build principles.
 
 ## Session budget
 
-Each agent session should stay under ~100k tokens. This means one story
-per session, scoped to what can be completed within that budget. The
-workflow is designed to produce a shippable artifact (branch + PR) every
-session, not to run indefinitely.
+Stay under ~100k tokens: **one story per session**, scoped to a shippable
+artifact (branch + PR). (Why: `references/execute-rationale.md`, not read
+at runtime.)
 
-**Practical guidelines:**
+- **Commit early, push periodically.** Atomic commits per logical unit;
+  push after each major phase (plan done, core done, tests passing) so an
+  unexpected end leaves recoverable work on the branch.
+- **One story, one session.** Do not pick a second story after finishing.
+- **Wrap up, don't run out.** Deep into a session, prioritise getting to a
+  committable state; a partial PR with "remaining work" notes beats an
+  abandoned session.
+- **Too large for one session** → implement the highest-priority slice,
+  open a PR for it, and file follow-ups with `/github-workflow:report-issue`.
 
-- **Commit early and often.** Make atomic commits as you complete each
-  logical unit of work. If the session ends unexpectedly, committed work
-  on a pushed branch is recoverable; uncommitted work is lost.
-- **Push periodically.** After each major phase (plan complete, core
-  implementation done, tests passing), push the branch. This creates a
-  recovery point.
-- **Scope to one session.** If Phase 3 (Plan) reveals the story is too
-  large for a single session, split it: implement the highest-priority
-  slice, open a PR for that slice, and create follow-up issues for the
-  remainder using `/github-workflow:report-issue`.
-- **Wrap up, don't run out.** If you sense you are deep into a session
-  (many files read, many edits made, long planning phase), prioritise
-  getting to a committable state. A partial PR with clear "remaining
-  work" notes is better than an abandoned session with no artifact.
-- **One story, one session.** Do not pick a second story after finishing
-  the first. End the session so the next one starts with a fresh context.
+**45-minute timeout.** Record the start time (`date +%s`); before each
+phase, check elapsed. Past 45 minutes:
 
-**Session timeout awareness:**
-
-Record the start time at the beginning of execution (use `date +%s` or
-equivalent). Before starting each new phase, check elapsed time. If the
-session has been running for more than 45 minutes:
-
-1. Commit and push all current work immediately.
-2. If the work has reached a shippable state, run Phase 7 to open a
-   **real** PR (never a draft). If it has not, leave the branch pushed
-   and move the issue to the `status-needs-attention` lifecycle label
-   (removing `status-in-progress`) with a comment listing what remains —
-   do **not** open a PR for incomplete work.
-3. Create follow-up issues for any unfinished work.
-4. Run **Exit cleanup** — release the claim ref and delete the scratch
-   file.
-5. Exit cleanly — do not start a new phase that you may not finish.
-
-This prevents the harness from killing the session mid-work with nothing
-saved.
+1. Commit and push everything now.
+2. **Shippable** → run Phase 7 for a **real** PR (never a draft).
+   **Not shippable** → leave the branch pushed, move the issue to
+   `status-needs-attention` (remove `status-in-progress`) with a comment
+   listing what remains; do **not** open a PR.
+3. File follow-up issues for unfinished work.
+4. Run **Exit cleanup** (release the claim ref, delete the scratch file).
+5. Exit — do not start a phase you may not finish.
 
 ## API rate limiting
 
-GitHub API has rate limits (5,000 requests/hour for authenticated
-users). Long autonomous sessions can accumulate many `gh` calls.
+Before a batch of `gh` calls, check remaining quota:
 
-- Before making a batch of API calls (e.g., listing issues, checking
-  milestones, updating board fields), check remaining quota:
-  ```
-  gh api rate_limit --jq '.rate.remaining'
-  ```
-- If remaining quota is below **100**, pause API-heavy operations.
-  Commit and push any current work, move the issue to
-  `status-needs-attention` (removing `status-in-progress`) with a comment
-  noting the rate-limit pause, run **Exit cleanup** (release the claim ref
-  and delete the scratch file), then exit. The next session will continue
-  from the pushed state.
-- Do not retry rate-limited requests in a loop — that makes it worse.
+```
+gh api rate_limit --jq '.rate.remaining'
+```
 
-If the story turns out to need more than one session's worth of work,
-ship the shippable slice as a **real** PR via Phase 7 and file follow-up
-issues for the remainder (see **Story too large** below). Never open a
-draft. If no slice is shippable, leave the branch pushed, move the issue
-to `status-needs-attention` with a comment on what remains, run **Exit
-cleanup** (release the claim ref and delete the scratch file), and exit.
-The next session can pick up from the branch.
+If it is below **100**, pause: commit and push current work, move the
+issue to `status-needs-attention` (remove `status-in-progress`) with a
+comment noting the pause, run **Exit cleanup**, then exit — the next
+session resumes from the pushed branch. Do **not** retry rate-limited
+requests in a loop. (Why: `references/execute-rationale.md`, not read at
+runtime.)
 
 ## Mode selection
 
@@ -308,6 +289,9 @@ agents never validate or build the same issue.
    `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
 
 2. Update project board to In Progress (if board configured in ClaudeProject.md).
+   The auto-loaded projection dropped `## Project Board`, so read that
+   section from `ClaudeProject.md` now for `project-node-id`,
+   `project-title`, `status-field-id`, and the Status option ids.
    Resolve the board, the issue's `{item_id}`, and the target column's
    `{column_option_id}` following `templates/board-resolution.md`, then run
    its **Step 5** mutation to set Status — it decides whether a board is

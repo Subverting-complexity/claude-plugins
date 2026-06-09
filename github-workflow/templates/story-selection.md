@@ -8,19 +8,17 @@ so both behave identically.
 ## Claim-first, validate-lazily
 
 **Claim the top candidate first, then validate only that one** — never the
-whole list. The atomic claim is two cheap git pushes; dependency and
-already-merged checks are the expensive per-candidate `gh` calls. Claiming
-first makes the common case ~3 calls instead of ~60, and stays race-safe
-because the ref is acquired before any side effect (validation runs only
-after you provably own the item). The rare failed candidate costs a little
-label/assignee churn — which does useful work (marks it `status-blocked` or
-closes it).
+whole list. (Why this is cheaper and still race-safe:
+`templates/story-selection-rationale.md`, not read at runtime.)
 
 ## Inputs
 
 From `ClaudeProject.md` (already in context — do not re-read it): `org`,
-`repo`, the label map, `agent-gating`, `ready-gate`, and project-board
-settings. Plus the caller's `mode` (`story` / `feature` / `maintenance`)
+`repo`, the label map, `agent-gating`, and `ready-gate`. The auto-loaded
+config is a projection that omits `## Project Board`; when `ready-gate` is
+`board-column` or `both`, read that section from `ClaudeProject.md` for the
+`project-node-id` the Step 1 "Ready" column query needs. Plus the caller's
+`mode` (`story` / `feature` / `maintenance`)
 and any explicit issue number. Resolve every label by **purpose key** from
 the in-context `ClaudeProject.md` label map — never filter on a bare
 literal, and do not open `templates/default-labels.md` unless a purpose key
@@ -52,15 +50,13 @@ determined depends on `ready-gate`:
   ```
   gh issue list --repo {org}/{repo} --state open --assignee "" --json number,title,labels,body,milestone --jq '.[] | {number, title, labels: [.labels[].name], body, milestone: .milestone.title}'
   ```
-  Then **drop any candidate carrying `status-blocked`**: those are
-  unassigned (so the `--assignee ""` filter does not catch them) but have
-  an unresolved blocker — including them just claims, re-checks, and
-  re-blocks them, wasting calls. Other non-pickable states need no special
-  handling here: `status-parked` / `status-in-progress` / `status-in-review`
-  stay **assigned**, so the unassigned filter already excludes them, and
-  `needs-refinement` is dropped by the refinement filter below. A
-  `status-blocked` issue whose dependencies have actually closed is restored
-  to `status-ready` by Step 4 and becomes eligible on the next pass.
+  Then **drop any candidate carrying `status-blocked`** — those are
+  unassigned but still blocked. The other non-pickable states
+  (`status-parked` / `status-in-progress` / `status-in-review`) stay
+  assigned, so the unassigned filter already excludes them, and
+  `needs-refinement` is dropped by the refinement filter below. (Why only
+  `status-blocked` needs the explicit drop:
+  `templates/story-selection-rationale.md`, not read at runtime.)
 
 ## 2. Detect backlog mode (from the candidates just fetched)
 
@@ -169,10 +165,10 @@ If the walk exhausts every candidate without a valid claim, go to Step 4.
 ## 4. Lazy auto-ready (only when the pool is empty)
 
 Reached only when Steps 1–2 produced no candidates, or Step 3 exhausted
-them all. *Now* — and only now — is it worth spending API calls to see whether
-anything can be unblocked, because there is nothing else to pick. (This is
-deliberately **off** the hot path: in the common case a story is claimed in
-Step 3 and these calls never run.)
+them all. *Now* — and only now — spend API calls to see whether anything
+can be unblocked, because there is nothing else to pick. (Why this scan is
+off the hot path: `templates/story-selection-rationale.md`, not read at
+runtime.)
 
 Scan two groups, regardless of assignee, for issues whose dependencies may
 now be resolved:
