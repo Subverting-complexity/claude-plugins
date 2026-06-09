@@ -90,9 +90,24 @@ gh api graphql -f query='query($org:String!){
 Build a name→`{id, options}` map (for single-select fields, `options` is a
 list of `{name, id}` pairs with real node IDs). Each field is gated
 **independently**: populate only the fields the org actually defines, and
-silently skip any that are absent. A target org that defines none of these
-fields creates issues exactly as it does today (labels only) — that is a
-valid configuration, not a failure.
+skip any that are absent. A target org that defines none of these fields
+creates issues exactly as it does today (labels only) — that is a valid
+configuration, not a failure.
+
+**Surface each skip, don't swallow it.** When a field the command *intends*
+to set (per the table below) is not in the discovered map — the org never
+defined it, or it was renamed away from the configured name — the skip is
+still correct, but do it **visibly**: emit one concise line per missing
+field so an org that *expects* those fields populated gets a signal instead
+of silent blanks. Report them together after discovery (Step 5):
+
+```
+skipped field 'Effort' (not found in org issue fields)
+skipped field 'Origin' (not found in org issue fields)
+```
+
+This is informational, never an error — the issue is still created and
+still carries its labels.
 
 Resolve a field's purpose to its concrete name through `ClaudeProject.md`
 → `## Issue Types & Fields` (defaults in `templates/default-labels.md`):
@@ -185,9 +200,12 @@ gh api graphql -f query='mutation {
 ```
 
 Include only the fields that apply — omit any field the org does not
-define or the command has no value for. A `setIssueFieldValue` failure is
-best-effort: report it and continue; the issue still exists and still
-carries its labels.
+define or the command has no value for. For a field the command *intended*
+to set but the org does not define, emit the `skipped field 'X' (not found
+in org issue fields)` line from Step 2 — distinguish "nothing to set here"
+from "this org is missing a field you expected." A `setIssueFieldValue`
+failure is best-effort: report it and continue; the issue still exists and
+still carries its labels.
 
 **Priority is dual-tracked.** Populate the `Priority` field **and** keep
 applying the `priority-*` label. The label keeps the selector's existing

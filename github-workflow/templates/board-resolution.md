@@ -95,24 +95,62 @@ gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){
 
 You now have a verified `{item_id}` on the confirmed board.
 
-## Step 4 — Resolve the target column's option id
+## Step 4 — Resolve the target column's option id (live, by name)
 
 The calling command names the destination by **column purpose key**
 (`col-in-progress`, `col-in-review`, `col-blocked`, `col-ready`,
-`col-backlog`, `col-done`) — never by a hardcoded column name. Resolve it
-to a Status option id through the single path in
-`templates/default-labels.md` → Board Columns:
+`col-backlog`, `col-done`) — never by a hardcoded column name. The
+snapshotted Option IDs in `ClaudeProject.md` are a setup-time convenience,
+**not** the source of truth: a user who renames or reorders columns in the
+GitHub UI leaves them stale, and trusting a stale id moves the issue to the
+**wrong column** with no error. So resolve the option id **live by column
+name** at write time, and use the snapshot only to detect drift.
 
-1. Look up the purpose key's row in `ClaudeProject.md` → `## Project
-   Board` → `### Status Options` and read its **Option ID**.
-2. If that id is present and real (not `n/a`, not a `{placeholder}`), use
-   it as `{column_option_id}`.
-3. If the id is `n/a`/absent, the column does not exist on the board.
-   This is the `board-columns-incomplete` condition preflight flags — do
-   **not** invent an id. Skip the board move and report it loudly (a
-   configured board is missing a required column; run
+1. **Resolve the expected column name.** Map the purpose key to its column
+   **name** through `templates/default-labels.md` → Board Columns
+   (`col-in-progress`→`In Progress`, `col-in-review`→`In Review`,
+   `col-blocked`→`Blocked`, `col-ready`→`Ready`, `col-backlog`→`Backlog`,
+   `col-done`→`Done`), preferring any per-project override name in
+   `ClaudeProject.md` → `### Status Options`.
+
+2. **Fetch the live Status field and its options** (one call — this also
+   yields the live field id, so a renamed/stale `status-field-id` cannot
+   misdirect the write either):
+
+   ```
+   gh api graphql -f query='query($id:ID!){ node(id:$id){ ... on ProjectV2 {
+     field(name:"Status"){ ... on ProjectV2SingleSelectField { id options { id name } } }
+   } } }' -F id='<project-node-id>' --jq '.data.node.field | {fieldId:.id, options:.options}'
+   ```
+
+3. **Match the option by name** (case-insensitive, trimmed) against the
+   expected column name. The matched option's `id` is `{column_option_id}`
+   and the returned `fieldId` is the live `{status_field_id}` for Step 5.
+
+4. **Validate the snapshot and warn on drift.** Compare the live id to the
+   purpose key's snapshotted Option ID in `ClaudeProject.md`. If they
+   differ (snapshot stale, column reordered, or the id now names a
+   different option), proceed with the **live** id and report it loudly,
+   non-fatally:
+
+   ```
+   Board snapshot stale: column '<name>' resolves live to <live_id> but
+   ClaudeProject.md records <snapshot_id>. Using the live id; run
+   /github-workflow:setup to refresh the board snapshot.
+   ```
+
+5. **No option matches the expected name** → the column genuinely does not
+   exist on the board. This is the `board-columns-incomplete` condition
+   preflight flags — do **not** invent an id. Skip the board move and
+   report it loudly (a configured board is missing a required column; run
    `/github-workflow:setup` to create it). The rest of the workflow
    continues.
+
+If the live query itself fails (network/permission), fall back to the
+snapshotted Option ID for the purpose key — a best-effort write with a
+possibly-stale id beats no write — and note that live resolution could not
+run. A snapshot id that is `n/a`/absent in that fallback is the
+`board-columns-incomplete` case (point 5 above): skip and report.
 
 The label ⇄ column pairing (which purpose key a given lifecycle label
 moves to) is defined once in `templates/default-labels.md` — callers cite
@@ -120,10 +158,12 @@ the pairing rather than re-deriving it.
 
 ## Step 5 — Run the mutation, and fail loud on errors
 
-With a verified `{item_id}`, `{project_node_id}`, and
-`{column_option_id}` in hand, set the issue's Status to the target column.
-This is the **one** copy of the board mutation — callers name the target
-column by purpose key (Step 4) and run this; they do not inline their own:
+With a verified `{item_id}`, `{project_node_id}`, the live
+`{column_option_id}` and the live `{status_field_id}` (both resolved in
+Step 4 — the snapshot is fallback only), set the issue's Status to the
+target column. This is the **one** copy of the board mutation — callers
+name the target column by purpose key (Step 4) and run this; they do not
+inline their own:
 
 ```
 gh api graphql -f query='mutation {

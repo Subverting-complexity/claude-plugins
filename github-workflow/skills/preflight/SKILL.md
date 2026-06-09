@@ -176,13 +176,23 @@ Classify:
   setup creates these columns and records their option ids. A project with
   **no** board configured produces no finding here (the board is
   optional). The label ⇄ column pairing is in
-  `templates/default-labels.md` → Board Columns.
-- **Board identity (required boards only)** — run this network check
-  **only when the board is required** (ready-gate `board-column`/`both`).
-  Resolve `project-node-id` and compare its title to `project-title`:
+  `templates/default-labels.md` → Board Columns. This is a **presence**
+  check only (is an id recorded at all). Whether a recorded id still
+  matches the live column — *staleness* — is a different question: it is
+  validated by the live network check below on required boards, and on
+  every board write by `templates/board-resolution.md` Step 4 (which now
+  resolves the option id live by column name, so a stale snapshot
+  self-heals at write time rather than misrouting an issue).
+- **Board identity + snapshot freshness (required boards only)** — run this
+  network check **only when the board is required** (ready-gate
+  `board-column`/`both`). One query resolves the title **and** the live
+  Status options, so both checks share a single round-trip:
 
   ```
-  gh api graphql -f query='query($id:ID!){ node(id:$id){ ... on ProjectV2 { title } } }' -F id='<project-node-id>' --jq '.data.node.title'
+  gh api graphql -f query='query($id:ID!){ node(id:$id){ ... on ProjectV2 {
+    title
+    field(name:"Status"){ ... on ProjectV2SingleSelectField { options { id name } } }
+  } } }' -F id='<project-node-id>' --jq '{title:.data.node.title, options:.data.node.field.options}'
   ```
 
   - Resolves and the title **matches** `project-title` →
@@ -191,10 +201,19 @@ Classify:
     `project-title` → emit
     `CRITICAL board-identity: stored project-node-id resolves to '<resolved>' but project-title is '<configured>'`
     (or `... does not resolve to a ProjectV2`).
+  - **Snapshot freshness** — for each lifecycle column recorded in
+    `### Status Options`, find the live option with the matching name and
+    compare its id to the snapshotted Option ID. Any that differ (or whose
+    name no longer exists live) → emit
+    `WARNING board-snapshot-stale: column(s) {names} recorded id(s) no longer match the live board; run /github-workflow:setup to refresh the snapshot`.
+    This is a WARNING, not CRITICAL — write-time live resolution
+    (`board-resolution.md` Step 4) keeps moves correct regardless; the
+    warning just prompts a cleanup so the snapshot stays honest.
 - **Best-effort board (`label`/`none` ready-gate)** — do **not** make the
-  network call. Board writes are best-effort and
-  `templates/board-resolution.md` verifies identity at write time, so a
-  stale id there fails loudly then, not on every preflight. No finding here.
+  network call. Board writes are best-effort and `board-resolution.md`
+  both verifies identity and resolves the column id live at write time, so
+  a stale title or stale option id is caught and self-healed there, not on
+  every preflight. No finding here.
 - **Board not required and not configured** — no finding. A `label` or
   `none` ready-gate with no board section is valid.
 
@@ -265,7 +284,10 @@ Read all output from the checks above. Categorize:
   workflow proceeds: an unmapped label purpose (resolves to its default
   name via `templates/default-labels.md`), unreplaced placeholders,
   CLAUDE.md missing, quality gate not set, a referenced
-  `review.config.md` missing, `auto-merge-on-approval` enabled while the
+  `review.config.md` missing, a **required** board whose recorded column
+  option-ids no longer match the live board (`board-snapshot-stale` —
+  write-time live resolution keeps moves correct; the warning just prompts
+  a snapshot refresh), `auto-merge-on-approval` enabled while the
   repo's "Allow auto-merge" setting is off (reviews still run; only the
   queued-merge step is affected), or `auto-merge-on-approval` enabled with
   **no CI gate** — neither GitHub required status checks nor
