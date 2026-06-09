@@ -146,4 +146,4 @@ relevant to what you're working on.
 | File | When to consult |
 | ---- | --------------- |
 | `ClaudeProject.md` | Project identity, labels, quality gate, branch convention, board config. Read at the start of any workflow command. |
-| `.claude/ecosystem.md` | Installed Claude Code companion tool cheat-sheet. Read before searching the codebase or running an audit/review — prefer `graphify query` over blind file search for structure questions. |
+| `.claude/ecosystem.md` | Installed Claude Code companion tool cheat-sheet (Graphify, RTK, ccusage, ecc-agentshield). Read before searching the codebase or running an audit/review: prefer `graphify query` over blind file search; run `ecc-agentshield scan` when touching config files; use `npx ccusage` to check token spend. |
