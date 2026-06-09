@@ -21,7 +21,7 @@ scripts. There is nothing to install.
 Command to run before each commit:
 
 ```
-bash sync-skills.sh --verify && bash lint-skills.sh && python3 tests/test_decision_logic.py
+bash sync-skills.sh --verify && bash lint-skills.sh && bash run-tests.sh
 ```
 
 This mirrors CI: verifies shared skills are in sync (no drift between
@@ -29,6 +29,11 @@ This mirrors CI: verifies shared skills are in sync (no drift between
 frontmatter for unreplaced placeholders, and runs the offline decision
 logic tests. Plugin version-bump and manifest validation are enforced at
 PR time by `.github/workflows/ci.yml`.
+
+`run-tests.sh` automatically picks the right Python interpreter (`python3`,
+then the Windows Python Launcher `py -3`, then `python`). On Windows,
+you can also run `.\run-tests.ps1` directly from PowerShell — it does the
+same detection and prints a `winget` install hint if Python is not found.
 
 ## Branch Convention
 

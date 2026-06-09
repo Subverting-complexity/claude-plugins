@@ -41,11 +41,22 @@ drift_found=false
 sync_count=0
 delete_count=0
 
+# Resolve Python once: try python3, then Windows Launcher (py -3), then python.
+# Uses the version-check guard so Windows' non-functional python3 Store shim is skipped.
+PYTHON=()
+if command -v python3 >/dev/null 2>&1 && python3 --version >/dev/null 2>&1; then
+    PYTHON=(python3)
+elif command -v py >/dev/null 2>&1 && py -3 --version >/dev/null 2>&1; then
+    PYTHON=(py -3)
+elif command -v python >/dev/null 2>&1 && python --version >/dev/null 2>&1; then
+    PYTHON=(python)
+fi
+
 get_plugin_version() {
     local plugin_name="$1"
     local pj="$REPO_ROOT/$plugin_name/.claude-plugin/plugin.json"
-    if [ -f "$pj" ]; then
-        python3 -c "import json,sys; print(json.load(sys.stdin).get('version','0.0.0'))" < "$pj"
+    if [ -f "$pj" ] && [ ${#PYTHON[@]} -gt 0 ]; then
+        "${PYTHON[@]}" -c "import json,sys; print(json.load(sys.stdin).get('version','0.0.0'))" < "$pj"
     else
         echo "0.0.0"
     fi
