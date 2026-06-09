@@ -118,11 +118,11 @@ here are only needed once you are ready to open the PR.
    label-presence guarantees still hold: the individual calls verify via
    exit code and create-if-missing as before.
 
-5. Release the atomic claim now that the PR exists — the open PR plus the
+4. Release the atomic claim now that the PR exists — the open PR plus the
    assignment are the ownership markers, so the claim ref is no longer
    needed (`templates/claim-procedure.md` **Release**). This is the same
    release **Exit cleanup** runs; doing it here, the moment the PR is
-   live, just frees the ref sooner. Then delete the scratch file now that
+   live, just frees the ref sooner. Then delete the scratch files now that
    the work is shipped:
    ```
    git push origin :refs/claims/issue-{number}
@@ -132,7 +132,7 @@ here are only needed once you are ready to open the PR.
    The claim-ref delete is idempotent — ignore an error if it is already
    gone. The issue stays assigned to @me through review.
 
-6. Report: display the PR by number **and** title together (e.g.
+5. Report: display the PR by number **and** title together (e.g.
    `#123 Add login button`, never the number alone) plus its URL, the
    linked issues (each by number **and** title), and labels applied.
 
