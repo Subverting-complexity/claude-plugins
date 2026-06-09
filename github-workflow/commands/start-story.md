@@ -17,14 +17,19 @@ that number. Do not ask the user which story to start.
 
 ## Preflight
 
-Invoke `/github-workflow:preflight` first. If it finds issues and the user
-chooses "Configure now", wait for setup, then ask the user to re-run this
-command. Otherwise proceed.
+Check whether preflight already ran and passed this session — if
+`.claude/preflight-passed.txt` exists, skip the invocation entirely and
+proceed directly to Step 1. The file is written by `preflight` on a clean
+or WARNING-only run and deleted on exit, so it is valid for exactly this
+session:
 
-**Skip preflight if it already passed this session.** When this command
-runs straight after `/github-workflow:pick-story` in the same session,
-preflight has already run green and nothing has changed — do **not** invoke
-it again. Only run it on a fresh, standalone start.
+```
+test -f .claude/preflight-passed.txt && echo "PREFLIGHT_ALREADY_PASSED"
+```
+
+If the file is absent, invoke `/github-workflow:preflight`. If it finds
+issues and the user chooses "Configure now", wait for setup, then ask the
+user to re-run this command. Otherwise proceed.
 
 ## Steps
 

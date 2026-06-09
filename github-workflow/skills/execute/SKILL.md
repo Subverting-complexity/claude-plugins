@@ -45,8 +45,19 @@ are:
 
 ## Preflight
 
-Before doing anything else, invoke `/github-workflow:preflight` to
-verify project configuration. If it finds issues and the user chooses
+Before doing anything else, check whether preflight already ran and
+passed this session — if `.claude/preflight-passed.txt` exists, skip
+the invocation entirely and proceed directly to the project configuration
+block below. The file is written by `preflight` on a clean or
+WARNING-only run and deleted by **Exit cleanup**, so it is valid for
+exactly this session:
+
+```
+test -f .claude/preflight-passed.txt && echo "PREFLIGHT_ALREADY_PASSED"
+```
+
+If the file is absent, invoke `/github-workflow:preflight` to verify
+project configuration. If it finds issues and the user chooses
 "Configure now", wait for setup to complete, then ask the user to
 re-run this command (the configuration loaded below will be stale).
 If the user chooses "Continue anyway" or "Don't remind me", proceed.
@@ -79,6 +90,47 @@ Do not attempt to proceed without it — every subsequent step depends
 on the values defined there.
 
 Read `CLAUDE.md` for project rules and build principles.
+
+## Session prewarm
+
+Immediately after preflight passes and the projected config is loaded,
+issue the following three reads **in a single parallel tool-call batch**
+(fire all three at once, do not wait for one before starting the next).
+This front-loads every API call Phase 1 would otherwise make sequentially
+and caches the results so later phases pay zero network overhead for
+them:
+
+1. **Candidate list** — fetch the `status-ready` unassigned open issues:
+   ```
+   gh issue list --repo {org}/{repo} --label "{status_ready_label}" \
+     --state open --json number,title,labels,assignees --limit 50
+   ```
+   Write the JSON result to `.claude/candidates.json` so Phase 1
+   story-selection reads from this file instead of re-querying.
+
+2. **Label inventory** — fetch every repo label with its node ID:
+   ```
+   gh label list --repo {org}/{repo} \
+     --json name,id,color,description --limit 1000
+   ```
+   Write the JSON result to `.claude/label-cache.json`. Later phases use
+   this mapping (label name → node ID) to build single-mutation GraphQL
+   calls without per-write existence reads. If a label is needed but
+   absent from the cache, create it with the guarded create-if-missing
+   pattern in `templates/default-labels.md`, then append the new entry
+   to the cache before proceeding.
+
+3. **Rate check** — read the current API quota:
+   ```
+   gh api rate_limit --jq '.rate.remaining'
+   ```
+   Keep the result in context only. If the count is already below 100
+   here, treat this as the rate-limit pause described in **API rate
+   limiting** below and exit after cleanup.
+
+Skip this section (leave the cache files absent) when running in
+`audit` mode — the audit flow does not use the candidate list or
+issue-finish mutations.
 
 ## Session budget
 
@@ -171,16 +223,19 @@ assignment) is intentionally left in place on a failed or timed-out exit
 as a "this was attempted" signal next to the failure comment; only
 `block-story` and a successful finish also clear ownership.
 
-### 2. Delete the scratch file
+### 2. Delete the scratch files
 
-This skill writes one per-session scratch file: `.claude/plan.md`
-(Phase 3). It is gitignored, but it must still be removed so no stale
-scratch lingers in the worktree — a leftover scratch file is what
-originally blocked harness worktree auto-cleanup:
+This skill writes several per-session scratch files that must be removed
+so no stale data lingers in the worktree — leftover scratch files are
+what originally blocked harness worktree auto-cleanup. Delete them all
+in one command:
 
 ```
-rm -f .claude/plan.md
+rm -f .claude/plan.md .claude/preflight-passed.txt \
+      .claude/label-cache.json .claude/candidates.json
 ```
+
+All are gitignored, but they must still be cleaned up explicitly.
 
 ### 3. Reconcile the working tree to clean
 

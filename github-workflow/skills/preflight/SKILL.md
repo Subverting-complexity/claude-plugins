@@ -313,15 +313,25 @@ no default (identity, auth, required board). Never escalate a
 default-covered gap to the wizard.
 
 **If every check is OK**: proceed silently. Do not mention preflight
-to the user. Return control to the calling command.
+to the user. Write `.claude/preflight-passed.txt` (creating `.claude/`
+if it does not exist) so subsequent commands in this session can skip
+the redundant re-run:
+
+```
+mkdir -p .claude
+echo "preflight-passed" > .claude/preflight-passed.txt
+```
+
+Return control to the calling command.
 
 **If there are WARNINGs but NO CRITICAL items**: do **not** prompt or run
 the wizard. Print one concise line noting what is using defaults — e.g.
 "Using default labels for {purposes}; run `/github-workflow:setup` to
-customise" — then return control to the calling command and let it
-proceed. The command resolves the missing names through
-`templates/default-labels.md` (and creates any missing GitHub labels with
-the guarded create-if-missing pattern) on its own.
+customise" — then write `.claude/preflight-passed.txt` (same command as
+above) and return control to the calling command. The command resolves
+the missing names through `templates/default-labels.md` (and creates any
+missing GitHub labels with the guarded create-if-missing pattern) on its
+own.
 
 **If any CRITICAL item is present**: continue to step 4 (the wizard).
 

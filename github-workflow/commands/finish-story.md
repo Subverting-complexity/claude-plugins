@@ -86,118 +86,83 @@ is clean before pushing:
    section to the PR body with the last error output. The blocking label
    (not draft status) is what signals "do not merge yet."
 
-### 3. Push the branch
+### 3–4c. Push, pre-flight reads, and duplicate detection — in parallel
 
-```
-git push -u origin HEAD
-```
+Issue the following as a single tool-call batch. All four have no
+ordering dependency on each other; the push just has to finish before
+you can *create* the PR in Step 5:
 
-### 4. Check for existing PR
+- **Push the branch:**
+  ```
+  git push -u origin HEAD
+  ```
 
-Before creating a new PR, check if one already exists for this branch
-(e.g., from a previous session that pushed but didn't finish cleanly):
+- **Check for an existing PR on this branch** (from a prior session that
+  pushed but didn't finish cleanly):
+  ```
+  gh pr list --repo {org}/{repo} --head {branch} --state open --json number,title
+  ```
 
-```
-gh pr list --repo {org}/{repo} --head {branch} --state open --json number,title
-```
+- **Determine issue linkage** — check session context for a story number
+  from `execute` or `start-story`; if none, check the branch name for an
+  issue number (`feature/42/description` → #42) and verify it exists:
+  ```
+  gh issue view {number} --repo {org}/{repo} --json state,id --jq '{state:.state,id:.id}'
+  ```
+  If the branch carries no number and context has none, defer issue
+  creation to after the push (Step 4b-create below).
 
-If a PR already exists, update it instead of creating a new one:
+- **Sibling-PR detection** — check for another open PR that closes the
+  same issue on a different branch. Run the authoritative lookup in
+  `templates/sibling-pr-lookup.md` with this `{number}` and ignore any
+  result whose `headRefName` equals `{branch}`.
 
-```
-gh pr edit {pr_number} --body-file {tempfile}
-```
+Wait for all four to complete, then act on the results:
 
-Write the updated body to a temporary file first, then use
-`--body-file` to avoid Windows/PowerShell shell-escaping issues.
-Delete the temp file after. Then validate the body was applied
-(same as Step 5b).
+**If an existing PR was found on this branch** — update it instead of
+creating a new one (write body to temp file, use `gh pr edit --body-file`,
+delete temp file, validate per Step 5b) and skip to Step 6. Only create
+a new PR if none exists.
 
-Skip to Step 6 (labels). Only create a new PR if none exists.
-
-### 4b. Ensure issue linkage
-
-Every PR must link to a GitHub issue for traceability. Before creating
-a new PR, determine whether the current work has an associated issue:
-
-1. Check session context for a story number from `/github-workflow:execute`
-   or `/github-workflow:start-story`.
-2. If no story number is known, check the branch name for an issue
-   number (e.g., `feature/42/description` → issue #42). Verify it
-   exists:
-   ```
-   gh issue view {number} --repo {org}/{repo} --json state --jq '.state'
-   ```
-3. If no issue is found from context or branch name, create one now.
-   Use the commit history and diff to build a proper issue body:
-
-   - **Title**: derive from the branch name or first commit message.
-     Apply the appropriate issue prefix (`[STORY]`, `[BUG]`,
-     `[SECURITY]`, `[ARCH]`, or `[DEBT]`) from ClaudeProject.md.
-   - **Body**: include Context (what was built and why), Requirements
-     (what the changes accomplish), and Notes (any caveats).
-   - **Labels**: resolve the appropriate type and priority labels, the
-     `claude-authored` provenance marker (this issue is Claude-created),
-     and the `status-in-review` lifecycle label (a PR is being opened for
-     it now) — all by purpose key via `templates/default-labels.md`. Then
-     run label validation (check existence, create-if-missing without
-     `--force`) before applying:
-     ```
-     gh label list --repo {org}/{repo} --json name --jq '.[].name'
-     gh label create "{label}" --repo {org}/{repo} --description "{desc}" --color "{color}"
-     ```
-   - **Milestone**: if in sprint mode, attach to the current milestone.
-
-   Write the issue body to a temporary file, then create using
-   `--body-file` to avoid Windows/PowerShell shell-escaping issues:
-
-   ```
-   gh issue create --repo {org}/{repo} --title "{title}" --body-file {tempfile} --label "{labels}"
-   ```
-
-   Delete the temp file after. Then validate the issue body and
-   labels were applied correctly — read back and verify, same as
-   the validation in `/github-workflow:report-issue` Steps 5b and 6.
-
-   - **Native type + fields**: then upgrade the issue exactly as
-     `/github-workflow:report-issue` **Step 5c**
-     (`templates/issue-fields-resolution.md`, capability-gated,
-     best-effort): set the native issue type per the *Native issue type
-     map* in `templates/default-labels.md`, populate `Classification` (per
-     that map's classification column), `Effort` (assess scope: Low/Medium/High),
-     `Priority` (dual-tracked with the label), and remove the redundant
-     `type-*` label on a type-capable org. `Origin` here is **Development**
-     (the issue is being filed as the work is wrapped up).
-
-   **Leave the assignee blank.** Do not pass `--assignee`/`--add-assignee`
-   on this `gh issue create`, and do not edit the new issue to assign it.
-   A follow-up issue must enter the unassigned pool so it is eligible for
-   normal pickup; assignment happens only at claim time, never at
-   creation.
-
-   Record the new issue number for use in Step 5.
-
-The issue number (from context, branch, or newly created) is used in
-Step 5 to add `Closes #N` to the PR body.
-
-### 4c. Duplicate-PR detection
-
-Step 4 already ruled out an existing PR on **this** branch. Now check for
-a sibling open PR that closes the **same issue** on a **different** branch
-(a second session may have built the same story — see the duplicate
-vectors in `skills/code-review/references/review-workflow.md`). Run the
-authoritative lookup in `templates/sibling-pr-lookup.md` with this
-`{number}` and ignore any result whose `headRefName` equals `{branch}`.
-
-If a sibling PR exists, still create your PR in Step 5 (so both are real
-and comparable) but prepend this flag line to the body so code review
+**If a sibling PR was found on a different branch** — still create your
+PR in Step 5, but prepend this flag line to the body so code review
 reconciles them:
-
 ```
 > ⚠ Possible duplicate of #{sibling_number} — both close #{number}. Pending reconciliation by code review, which keeps the better-implemented PR and closes the other.
 ```
+Report the duplicate to the user. Do not pick the winner here.
 
-Report the duplicate to the user. Do not pick the winner or close the
-other PR here — code review's Step 2b does that with full context.
+### 4b-create. Create missing issue (if needed)
+
+Skip this step if issue linkage was confirmed above. Only run it when no
+issue number is available from context or branch name:
+
+Use the commit history and diff to build a proper issue body:
+
+- **Title**: derive from the branch name or first commit message; apply
+  the appropriate issue prefix (`[STORY]`, `[BUG]`, `[SECURITY]`,
+  `[ARCH]`, or `[DEBT]`) from ClaudeProject.md.
+- **Body**: Context (what was built and why), Requirements (what the
+  changes accomplish), Notes (any caveats).
+- **Labels**: resolve type, priority, `claude-authored`, and
+  `status-in-review` — all by purpose key via `templates/default-labels.md`.
+  If `.claude/label-cache.json` exists, look up each label ID from the
+  cache to confirm existence before applying; create any that are missing
+  (guarded create-if-missing, no `--force`) and add them to the cache.
+- **Milestone**: if in sprint mode, attach to the current milestone.
+
+Write the body to a temp file and create:
+```
+gh issue create --repo {org}/{repo} --title "{title}" --body-file {tempfile} --label "{labels}"
+```
+Delete the temp file. Validate and apply native type + fields exactly as
+`/github-workflow:report-issue` Step 5c (`templates/issue-fields-resolution.md`,
+capability-gated, best-effort); set `Origin` to **Development**.
+
+**Leave the assignee blank** — a follow-up issue must enter the unassigned
+pool for normal pickup; assignment happens only at claim time.
+
+Record the new issue number for use in Step 5.
 
 ### 5. Create new PR
 
@@ -332,80 +297,81 @@ than issuing its own read. If `mergeable` is `CONFLICTING`:
   After applying, verify the label is present (same as Step 7 below).
   If missing, create it and retry.
 
-### 7. Add labels to PR
+### 7–8. Apply labels, move the issue, and update the board — one mutation
 
-Apply two labels, both resolved by purpose key through the single path in
-`templates/default-labels.md`:
+Skip this step entirely if Step 4 found an existing PR that already
+carries a review-state label (e.g. `approved`, `needs-re-review`) — do
+not reset a reviewed PR back to `needs-review`. Use the `labels` field
+already read in Step 6; no extra `gh pr view` here. (Step 6 may already
+have moved it to `needs-re-review` on a complex conflict.)
 
-1. **Provenance** — `claude-authored` (default `claude-authored`), to
-   mark this as a Claude-built PR.
-2. **Review-state entry label** — so the PR is never unlabelled and the
-   reviewer can find it:
-   - Quality gate passed → `needs-review` (default `review-needs-review`).
-   - Quality gate failed (Step 2 flag) → `changes-requested` (default
-     `review-changes-requested`), which blocks merge until the gate is
-     green. Do **not** also apply `needs-review` — exactly one
-     review-state label.
+Otherwise, apply the following changes in a **single combined GraphQL
+mutation** instead of separate `gh pr edit`, `gh issue edit`, and board
+calls:
 
-Skip this entirely if Step 4 found an existing PR that already carries a
-review-state label (e.g. `approved`, `needs-re-review`) — do not reset a
-reviewed PR back to `needs-review`; leave its existing state (Step 6 may
-have moved it to `needs-re-review`). Decide this from the `labels` field
-already read in Step 6 — no extra `gh pr view` here.
+- **PR labels:** `claude-authored` (provenance) + the review-state entry
+  label (`review-needs-review` when the gate passed;
+  `review-changes-requested` when the gate-failed flag is set — exactly
+  one). Exactly one review-state label.
+- **Issue lifecycle label:** remove `status-in-progress`, add
+  `status-in-review`. This is the authoritative "in review" signal — not
+  the board.
+- **Board move (best-effort, if configured):** set the issue to the **In
+  Review** column (`col-in-review`, per the label ⇄ column pairing in
+  `templates/default-labels.md`).
+- **Target date (best-effort, capability-gated):** if the org defines a
+  `Target date` issue field (`templates/issue-fields-resolution.md` Steps
+  2–3), set it to today in the same mutation.
 
+**Prerequisites** — resolve before building the mutation:
+- PR and issue node IDs: available from Step 5 (PR create result) and
+  Step 4b (issue view result). Fetch any that are missing.
+- Label node IDs: look up `claude-authored`, the review-state entry
+  label, `status-in-progress`, and `status-in-review` from
+  `.claude/label-cache.json` (written by session prewarm; if absent, fall
+  back to `gh label list`). If any label is missing from the cache,
+  create it with the guarded create-if-missing pattern from
+  `templates/default-labels.md` (no `--force`), append the new entry to
+  the cache, and use that ID.
+- Board item ID, project ID, field ID, and column option ID: follow
+  `templates/board-resolution.md`. Skip the board alias if no board is
+  configured. Resolve the `Target date` field node ID from
+  `templates/issue-fields-resolution.md` if needed.
+
+**Combined mutation:**
 ```
-gh pr edit {pr_number} --add-label "{claude_authored_label}" --add-label "{needs_review_label}"
+gh api graphql -f query='
+  mutation FinishCombined(
+    $prId:ID!, $issueId:ID!,
+    $prAddLabels:[ID!]!,
+    $issueRemoveLabels:[ID!]!, $issueAddLabels:[ID!]!,
+    $projId:ID!, $itemId:ID!, $fieldId:ID!, $colVal:String!
+  ){
+    addPRLabels:      addLabelsToLabelable(input:{labelableId:$prId, labelIds:$prAddLabels}){ __typename }
+    removeIssueLabel: removeLabelsFromLabelable(input:{labelableId:$issueId, labelIds:$issueRemoveLabels}){ __typename }
+    addIssueLabel:    addLabelsToLabelable(input:{labelableId:$issueId, labelIds:$issueAddLabels}){ __typename }
+    moveBoard:        updateProjectV2ItemFieldValue(input:{projectId:$projId, itemId:$itemId, fieldId:$fieldId, value:{singleSelectOptionId:$colVal}}){ __typename }
+  }' \
+  -F prId="$PR_NODE_ID" \
+  -F issueId="$ISSUE_NODE_ID" \
+  -F prAddLabels="[\"$CLAUDE_AUTHORED_ID\",\"$REVIEW_STATE_LABEL_ID\"]" \
+  -F issueRemoveLabels="[\"$STATUS_IN_PROGRESS_ID\"]" \
+  -F issueAddLabels="[\"$STATUS_IN_REVIEW_ID\"]" \
+  -F projId="$PROJ_NODE_ID" \
+  -F itemId="$ITEM_ID" \
+  -F fieldId="$STATUS_FIELD_ID" \
+  -F colVal="$IN_REVIEW_OPTION_ID"
 ```
 
-Do not read the labels back to confirm: `gh pr edit --add-label X` fails
-loudly (non-zero exit, "could not add label") when `X` does not exist, so
-the edit's exit status is the presence signal. Apply the contract:
+Omit the `moveBoard` alias (and its variables) when no board is
+configured. Add a fifth alias for the `Target date` field when it exists.
 
-- **Exit 0** → both labels are set; done.
-- **Non-zero citing an unknown/missing label** → it was not created at
-  setup. Create it with the guarded create-if-missing pattern from
-  `templates/default-labels.md` — **without `--force`** so existing
-  metadata is never overwritten, using the colours there — then retry the
-  edit once.
-
-### 8. Move the issue to In Review
-
-**Issue lifecycle label (authoritative).** Move the linked issue to the
-`status-in-review` lifecycle label, removing its current lifecycle label
-(`status-in-progress`) so exactly one state is present. Resolve both
-names by purpose key through `templates/default-labels.md`:
-
-```
-gh issue edit {number} --repo {org}/{repo} \
-  --remove-label "{status_in_progress_label}" --add-label "{status_in_review_label}"
-```
-
-Trust the edit's exit code — do not read the labels back. `gh issue edit
---add-label X` fails loudly when `X` does not exist, so exit 0 already
-confirms the label is set. Only on a non-zero exit citing a missing label
-do you create it (guarded create-if-missing, no `--force`, per
-`templates/default-labels.md`) and retry the edit once. This label — not
-the board — is the authoritative "in review" signal, so it works even when
-no board is configured.
-
-**Project board (best-effort, if configured).** The auto-loaded
-projection dropped `## Project Board`, so read that section from
-`ClaudeProject.md` now for the board id, title, status field, and option
-ids. Resolve the board, the
-issue's `{item_id}`, and the target column's `{column_option_id}`
-following `templates/board-resolution.md`, then run its **Step 5**
-mutation to set Status. The target column for `status-in-review` is **In
-Review** (`col-in-review`) per the label ⇄ column pairing in
-`templates/default-labels.md`. The board-configured check (skip silently
-when unconfigured), the identity verification, and the loud-on-failure
-contract all live in that template.
-
-**Target date (best-effort, capability-gated).** Record today as the
-actual completion date by setting the org-level `Target date` issue field
-following `templates/issue-fields-resolution.md` (Steps 2, 3, 5 — use
-the date field form with `dateValue: "YYYY-MM-DD"` for today's date).
-The issue node id is already available from Step 4b. Skip silently if the
-org does not define this field.
+**Fallback** — if the combined mutation fails (e.g. a label ID was stale
+in the cache), fall back to the three individual calls: `gh pr edit` for
+PR labels, `gh issue edit` for the lifecycle label, and
+`board-resolution.md` Step 5 for the board. The label-presence guarantee
+still holds: the individual calls verify via exit code and
+create-if-missing as before.
 
 ### 9. Release the claim
 
@@ -427,11 +393,12 @@ Idempotent — ignore an error if the ref is already gone. This does
 
 The PR is pushed, so local state is no longer the source of truth. Leave
 the worktree clean so the harness can reap it (`docs/worktree-config.md` —
-a dirty tree is never auto-removed). Delete the per-session scratch file
+a dirty tree is never auto-removed). Delete all per-session scratch files
 and run the **End clean** procedure in `templates/worktree-hygiene.md`:
 
 ```
-rm -f .claude/plan.md
+rm -f .claude/plan.md .claude/preflight-passed.txt \
+      .claude/label-cache.json .claude/candidates.json
 git status --porcelain    # reconcile until empty
 ```
 

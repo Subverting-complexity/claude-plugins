@@ -7,32 +7,34 @@ here are only needed once you are ready to open the PR.
 
 ## Phase 7 — Finish
 
-1. Push the branch:
+1. **Push and duplicate-PR detection in parallel.** Issue both calls in
+   a single tool-call batch — they have no ordering dependency on each
+   other:
 
-   ```
-   git push -u origin HEAD
-   ```
+   - Push the branch:
+     ```
+     git push -u origin HEAD
+     ```
+   - Check for a sibling open PR that already closes this issue on a
+     different branch — run the authoritative lookup in
+     `templates/sibling-pr-lookup.md` with this `{number}`.
 
-1b. **Duplicate-PR detection.** Before creating, check whether another
-   open PR already closes this issue on a different branch. Holding the
-   issue claim through PR creation (it is released only in step 5, below)
-   already serializes builders, so this should never fire — it is the
-   backstop for a sub-second create-time race. Run the authoritative
-   lookup in `templates/sibling-pr-lookup.md` with this `{number}` and
-   ignore any result whose `headRefName` equals `{branch}` (that is your
-   own about-to-be-pushed PR).
+   Wait for both to complete before proceeding. The push must finish
+   before you can create the PR in Step 2; the sibling lookup result is
+   used to optionally prepend a flag line to the PR body.
 
-   If a sibling PR exists, still create your PR (so both are real and
-   comparable) but prepend a flag line to the body so code review
-   reconciles them and keeps the better one:
+   Holding the issue claim through PR creation (released only in step 5)
+   already serializes builders, so a sibling should never be found — this
+   is the backstop for a sub-second race. If one is found, ignore any
+   result whose `headRefName` equals `{branch}` (that is your own PR).
+   Still create your PR in Step 2, but prepend:
 
    ```
    > ⚠ Possible duplicate of #{sibling_number} — both close #{number}. Pending reconciliation by code review, which keeps the better-implemented PR and closes the other.
    ```
 
-   Report the duplicate to the user. Do not attempt to pick the winner or
-   close the other PR here — that is code review's job (Step 2b of the
-   code-review skill), where both PRs have full context.
+   Report the duplicate to the user. Do not pick the winner or close the
+   other PR here — that is code review's job.
 
 2. Create a real PR (never a draft — this workflow does not open drafts).
    Write the body following `templates/body-file-write.md` (temp file +
@@ -56,40 +58,65 @@ here are only needed once you are ready to open the PR.
    issue; if any is missing, add it via `gh pr edit --body-file` before
    proceeding.
 
-3. Add PR labels — both resolved by purpose key through
-   `templates/default-labels.md`:
-   - `claude-authored` (provenance, default `claude-authored`).
-   - The review-state **entry label**: `needs-review` (default
-     `review-needs-review`) when the gate passed, or `changes-requested`
-     (default `review-changes-requested`) when the gate-failed flag is
-     set. Exactly one review-state label. This ensures the PR is never
-     unlabelled and the reviewer can find it.
+3. **Apply PR labels, move the issue, and update the board in one
+   combined GraphQL mutation.** Instead of a separate `gh pr edit`, a
+   `gh issue edit`, and a board mutation, send them all in a single
+   `gh api graphql` call.
 
-   Do not read the labels back to confirm: `gh pr edit --add-label X`
-   fails loudly (non-zero exit, "could not add label") when `X` does not
-   exist, so the edit's exit status is the presence signal. On exit 0 you
-   are done; only on a non-zero exit citing a missing label do you create
-   it with the guarded create-if-missing pattern from
-   `templates/default-labels.md` (no `--force`) and retry the edit once.
+   **Prerequisites** — resolve before building the mutation:
+   - PR node ID: `gh pr view {pr_number} --repo {org}/{repo} --json id --jq '.id'`
+   - Label node IDs from `.claude/label-cache.json` (written by session
+     prewarm): look up `claude-authored`, the review-state entry label
+     (`review-needs-review` or `review-changes-requested`),
+     `status-in-progress`, and `status-in-review` by name. If any label
+     is missing from the cache, create it with the guarded
+     create-if-missing pattern from `templates/default-labels.md`
+     (no `--force`), append the new `{name, id}` entry to the cache, and
+     use that ID.
+   - Issue node ID: available from context (stored when the issue was
+     added to the board in Phase 2); if not in context, fetch it with
+     `gh issue view {number} --repo {org}/{repo} --json id --jq '.id'`.
+   - Board item ID and column option ID: follow
+     `templates/board-resolution.md`; the target column for
+     `status-in-review` is `col-in-review`.
 
-4. Move the linked issue to the `status-in-review` lifecycle label,
-   removing `status-in-progress` so exactly one state is present (resolve
-   both by purpose key). This — not the board — is the authoritative
-   "in review" signal:
+   **Combined mutation:**
    ```
-   gh issue edit {number} --repo {org}/{repo} \
-     --remove-label "{status_in_progress_label}" --add-label "{status_in_review_label}"
+   gh api graphql -f query='
+     mutation FinishCombined(
+       $prId:ID!, $issueId:ID!,
+       $prAddLabels:[ID!]!,
+       $issueRemoveLabels:[ID!]!, $issueAddLabels:[ID!]!,
+       $projId:ID!, $itemId:ID!, $fieldId:ID!, $colVal:String!
+     ){
+       addPRLabels:       addLabelsToLabelable(input:{labelableId:$prId, labelIds:$prAddLabels}){ __typename }
+       removeIssueLabel:  removeLabelsFromLabelable(input:{labelableId:$issueId, labelIds:$issueRemoveLabels}){ __typename }
+       addIssueLabel:     addLabelsToLabelable(input:{labelableId:$issueId, labelIds:$issueAddLabels}){ __typename }
+       moveBoard:         updateProjectV2ItemFieldValue(input:{projectId:$projId, itemId:$itemId, fieldId:$fieldId, value:{singleSelectOptionId:$colVal}}){ __typename }
+     }' \
+     -F prId="$PR_NODE_ID" \
+     -F issueId="$ISSUE_NODE_ID" \
+     -F prAddLabels="[\"$CLAUDE_AUTHORED_ID\",\"$REVIEW_STATE_LABEL_ID\"]" \
+     -F issueRemoveLabels="[\"$STATUS_IN_PROGRESS_ID\"]" \
+     -F issueAddLabels="[\"$STATUS_IN_REVIEW_ID\"]" \
+     -F projId="$PROJ_NODE_ID" \
+     -F itemId="$ITEM_ID" \
+     -F fieldId="$STATUS_FIELD_ID" \
+     -F colVal="$IN_REVIEW_OPTION_ID"
    ```
-   Trust the edit's exit code — do not read the labels back. Exit 0
-   confirms the label is set; only a non-zero exit citing a missing label
-   triggers a guarded create-if-missing (no `--force`,
-   `templates/default-labels.md`) and one retry. Then update the project
-   board to the **In Review** column (`col-in-review`) — best-effort, if
-   configured. The auto-loaded projection dropped `## Project Board`, so
-   read that section from `ClaudeProject.md` now for the board id/title/
-   field/option ids, then follow `templates/board-resolution.md` (which resolves
-   the column option id by purpose key); the label ⇄ column pairing lives
-   in `templates/default-labels.md`.
+
+   **If no board is configured**, omit the `moveBoard` alias (build the
+   mutation without that variable/alias); the PR label and issue label
+   changes still go in the same call. **If the org's `Target date` field
+   exists** (check via `templates/issue-fields-resolution.md` capability
+   probe), add a fifth alias to the same mutation to record today's date.
+
+   **Fallback** — if the combined mutation fails (e.g. a label ID was
+   stale in the cache), fall back to the three individual calls:
+   `gh pr edit` for PR labels, `gh issue edit` for the lifecycle label,
+   and `board-resolution.md` Step 5 for the board. The atomic-claim and
+   label-presence guarantees still hold: the individual calls verify via
+   exit code and create-if-missing as before.
 
 5. Release the atomic claim now that the PR exists — the open PR plus the
    assignment are the ownership markers, so the claim ref is no longer
@@ -99,7 +126,8 @@ here are only needed once you are ready to open the PR.
    the work is shipped:
    ```
    git push origin :refs/claims/issue-{number}
-   rm -f .claude/claim-issue-{number}.sha .claude/plan.md
+   rm -f .claude/claim-issue-{number}.sha .claude/plan.md \
+         .claude/preflight-passed.txt .claude/label-cache.json .claude/candidates.json
    ```
    The claim-ref delete is idempotent — ignore an error if it is already
    gone. The issue stays assigned to @me through review.
