@@ -37,8 +37,10 @@ Reference Docs, Bundled Skills). Pick-story needs none of those. If a
 `ClaudeProject.md` directly.
 
 ```!
-if [ -f ClaudeProject.md ]; then
-  awk '/^## /{d=0} /^## Issue Types/{d=1} /^## Project Board/{d=1} /^## Story Template/{d=1} /^## Session Budget/{d=1} /^## Reference Docs/{d=1} /^## Bundled Skills/{d=1} !d' ClaudeProject.md
+if [ -f .claude/projected-config.md ] && [ .claude/projected-config.md -nt ClaudeProject.md ] 2>/dev/null; then
+  cat .claude/projected-config.md
+elif [ -f ClaudeProject.md ]; then
+  awk '/^## /{drop=($0 ~ /^## (Issue Types & Fields|Project Board|Story Template|Session Budget|Reference Docs|Bundled Skills)/)} !drop' ClaudeProject.md | tee .claude/projected-config.md
 else
   echo "ClaudeProject.md NOT FOUND — run /github-workflow:setup first."
 fi

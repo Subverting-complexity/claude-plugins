@@ -3,6 +3,7 @@
 
 # github-workflow plugin scratch files (per-session, never commit)
 **/.claude/plan.md
+**/.claude/projected-config.md
 
 # graphify — generated graph artifacts (large, derived, or machine-local)
 # Agents rebuild graph.json locally from cache: `graphify . --update` (0 tokens, ~10s)
