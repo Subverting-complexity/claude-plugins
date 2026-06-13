@@ -1,6 +1,6 @@
 ---
 name: ecosystem-setup
-description: "Detect, install, and configure Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow), then write a `.claude/ecosystem.md` cheat-sheet the execute and code-review skills read so the tools get used automatically. Trigger on: 'set up ecosystem tools', 'configure ecosystem', 'install companion tools', 'set up graphify', 'configure graphify', 'set up fallow', 'configure rtk', 'set up ccusage', 'set up ecc-agentshield', 'add a codebase knowledge graph', 'token optimizer', 'config security scanner', 'regenerate ecosystem.md'. Also trigger when the user wants their workflow to automatically use a codebase-intelligence or cost/security tool. Do NOT use for general project onboarding unrelated to these tools."
+description: "Detect, install, and configure Claude Code companion tools (Graphify, RTK, Headroom, ccusage, ecc-agentshield, Fallow), then write a `.claude/ecosystem.md` cheat-sheet the execute and code-review skills read so the tools get used automatically. Trigger on: 'set up ecosystem tools', 'configure ecosystem', 'install companion tools', 'set up graphify', 'configure graphify', 'set up fallow', 'configure rtk', 'set up headroom', 'context compression', 'compress context', 'set up ccusage', 'set up ecc-agentshield', 'add a codebase knowledge graph', 'token optimizer', 'config security scanner', 'regenerate ecosystem.md'. Also trigger when the user wants their workflow to automatically use a codebase-intelligence or cost/security tool. Do NOT use for general project onboarding unrelated to these tools."
 ---
 
 # Ecosystem Setup
@@ -147,6 +147,63 @@ installed — there is a same-named "Rust Type Kit" on crates.io);
 `rtk gain --history` shows per-command history.
 **The workflow uses it:** ambient — every command the workflow runs is
 already filtered. No phase calls it directly.
+```
+
+---
+
+## Headroom — context compression layer
+
+Headroom compresses what the agent feeds the model — tool outputs, logs,
+file contents, retrieved chunks, and conversation history — before the
+model reads it, claiming 60–95% fewer tokens with answer quality intact.
+It runs locally and is reversible: the originals stay on your machine and
+the model pulls full context back when it needs it. It overlaps with RTK
+(which only trims terminal output) but covers far more, so the two are
+complementary — run one or both.
+
+**Detect:** `headroom --version`, then `headroom perf` to confirm it runs
+and show any savings so far.
+
+If not installed, offer install commands and skip the rest if the user
+declines (requires Python 3.10+):
+```
+pip install "headroom-ai[all]"   # Python
+# or: npm install headroom-ai    # Node / TypeScript
+```
+
+Two ways to wire it into Claude Code — offer whichever the user prefers:
+
+1. **Transparent wrapper** — `headroom wrap claude` launches Claude Code
+   with compression applied to its context automatically. Add `--memory`
+   and `--code-graph` to carry more project context per token. Nothing to
+   configure; the user just launches through the wrapper.
+
+2. **MCP server** — `headroom mcp install` registers an MCP server so
+   agents can compress and recover context through tool calls
+   (`headroom_compress`, `headroom_retrieve`, `headroom_stats`). Only run
+   it with the user's confirmation, since it edits MCP config.
+
+`headroom learn` mines past failed sessions and writes corrections into
+`CLAUDE.md` / `AGENTS.md`. Mention it, but do not run it automatically —
+it edits project instruction files.
+
+Ecosystem entry:
+```
+## Headroom — context compression layer
+**What it is:** Compresses what the agent sends the model — tool outputs,
+file contents, retrieved chunks, and conversation history — before the
+model reads it, claiming 60–95% fewer tokens while keeping answers intact.
+Runs locally and is reversible: originals stay on your machine and the
+model pulls full text back when it needs it.
+**Use it:** `headroom wrap claude` runs Claude Code with compression
+applied transparently (add `--memory` / `--code-graph` for more context
+per token); `headroom perf` shows the token savings. For agent tool-call
+access instead of the wrapper, `headroom mcp install` registers an MCP
+server exposing `headroom_compress`, `headroom_retrieve`, and
+`headroom_stats`.
+**The workflow uses it:** ambient — like RTK, it shrinks context with
+nothing to invoke per phase. It overlaps with RTK (terminal output) but
+goes broader (files, history, RAG).
 ```
 
 ---
@@ -304,7 +361,7 @@ If at least one tool was enabled:
 
    ```
    Then append each enabled tool's section in the order: Graphify, RTK,
-   ccusage, ecc-agentshield, Fallow. If a tool was offered but skipped
+   Headroom, ccusage, ecc-agentshield, Fallow. If a tool was offered but skipped
    for a reason worth recording (e.g. Fallow on a non-TS/JS repo), add a
    one-line note under the title explaining the omission.
 
