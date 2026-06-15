@@ -33,6 +33,31 @@ user to re-run this command. Otherwise proceed.
 
 ## Steps
 
+### Fast path — pick + start in one call (no explicit number)
+
+When you were **not** given a specific issue number, the bundled `wf`
+picker selects, claims, moves the board to In Progress, and creates the
+working branch in a single call — the mechanical whole of Steps 1–4 and 6.
+Run it from the repo root:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout
+```
+
+On `status: ok` it returns the claimed issue plus `branch`, `checked_out`,
+`board_moved`, and `side_effects`. The claim ref and the
+`status-in-progress` + `@me` markers are held and you are on the working
+branch, so do **only Step 5** (validate the issue body) next, then stop.
+Surface anything in `side_effects`. If `checked_out` is false, read
+`branch_message` (e.g. a rebase conflict against the default branch) and run
+`/github-workflow:block-story` instead of continuing.
+
+Fall back to the numbered steps below when any of these hold: an explicit
+number was given (the picker auto-selects, so it cannot target one); the
+status is `unsupported`, `no-candidates`, `all-blocked`, or `error`; or the
+launcher reports Python is missing. The steps are the same logic `wf`
+encodes, kept as the source of truth and the degraded-mode path.
+
 ### 1. Read configuration
 
 Extract `org`, `repo`, `default-branch`, the branch convention, the label

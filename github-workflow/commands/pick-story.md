@@ -78,8 +78,51 @@ When falling back to defaults in an interactive session, warn the user:
 
 ### 2. Select a story
 
+Selection is fully mechanical — priority order, then lowest issue number,
+then an atomic claim. There are two ways to run it; **prefer the fast
+path**, which collapses the whole select → claim → validate loop into one
+process call instead of a dozen sequential `gh` round-trips.
+
+#### Fast path — the bundled `wf` picker
+
+The plugin ships a `wf` CLI (`scripts/wf.py`, with a `wf.sh` launcher that
+finds a working Python 3) that does the entire selection and claim in a
+single call and returns the chosen story as JSON. Run it from the repo root
+so it can read `ClaudeProject.md` and the git remote:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick
+```
+
+Interpret the result by its `status` field (the process exit code mirrors
+it):
+
+- **`ok`** — a story is claimed. The JSON carries `number`, `title`, `url`,
+  `labels`, `milestone`, `body`, and `claim_ref`; the
+  `status-in-progress` + `@me` markers are already applied and the claim ref
+  is held. Go straight to Step 3 — do **not** re-run any selection. If
+  `side_effects` is non-empty, tell the user what it touched (issues it
+  returned to blocked, or closed as already-resolved by a merged PR).
+- **`no-candidates`** or **`all-blocked`** — nothing was pickable. Run
+  **only Step 4** (lazy auto-ready) of `templates/story-selection.md`; if it
+  restores anything, retry the fast path once, else report "No stories
+  available for pickup".
+- **`unsupported`** — this path isn't in `wf` yet (a `feature` /
+  `maintenance` mode, or a `board-column` / `both` ready-gate). Use the
+  inline procedure below.
+- **`error`**, or the launcher prints that Python is missing — `wf` can't
+  run in this environment. Use the inline procedure below.
+
+`wf` implements the default **story** mode only. For `--mode feature` or
+`--mode maintenance`, skip the fast path entirely and use the inline
+procedure (it filters by native issue type / `type-*` label).
+
+#### Inline procedure (fallback)
+
 Run the canonical selection procedure in `templates/story-selection.md`
-with the configuration above and this command's `mode`. It:
+with the configuration above and this command's `mode`. It is the same
+logic `wf` encodes, kept here as the source of truth and the degraded-mode
+path when `wf` is unavailable. It:
 
 1. detects backlog mode (sprint vs flat),
 2. assembles the unassigned candidate list per `ready-gate`

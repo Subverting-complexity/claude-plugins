@@ -11,117 +11,33 @@ No GitHub API calls, no file I/O.  Feed fixture data in, assert outputs.
 Reference: github-workflow/templates/story-selection.md,
            github-workflow/templates/default-labels.md
 """
+import os
+import sys
 import unittest
 
-# ── Reference implementation ─────────────────────────────────────────────────
-# These functions encode the decision rules from the workflow templates.
-# They are the test subject, not production code — but they serve as a
-# canonical, executable description of the same logic Claude applies at
-# runtime.
+# ── Subject under test ───────────────────────────────────────────────────────
+# The decision rules now live in the `wf` CLI's pure core
+# (github-workflow/scripts/wf_core.py), which is the single canonical,
+# executable encoding of the logic the workflow templates describe. The CLI's
+# I/O shell (wf.py) imports the same module, so these offline tests exercise
+# exactly the code that runs in production — no second copy to drift.
 
-_PRIORITY_ORDER = ['priority-critical', 'priority-high', 'priority-medium', 'priority-low']
-
-
-def _priority_rank(labels):
-    """Returns sort key: 0=critical … 3=low, 4=no priority label."""
-    for i, p in enumerate(_PRIORITY_ORDER):
-        if p in labels:
-            return i
-    return len(_PRIORITY_ORDER)
-
-
-def _filter_by_mode(candidates, mode):
-    """Apply mode filter.
-
-    story       — no type filter; all issues are eligible.
-    feature     — keep type-story issues only.
-    maintenance — keep bug / security / debt / architecture issues only.
-    """
-    if mode == 'story':
-        return list(candidates)
-    feature_labels = {'type-story'}
-    maintenance_labels = {'type-bug', 'type-security', 'type-debt', 'type-arch'}
-    keep = feature_labels if mode == 'feature' else maintenance_labels
-    return [c for c in candidates if any(lbl in keep for lbl in c.get('labels', []))]
-
-
-def _filter_refinement(candidates):
-    """Exclude issues that carry needs-refinement — not yet ready for pickup."""
-    return [c for c in candidates if 'needs-refinement' not in c.get('labels', [])]
-
-
-def _filter_agent_gating(candidates, agent_gating):
-    """If gating is enabled, keep only human-approved (claude-ready) issues."""
-    if agent_gating != 'enabled':
-        return list(candidates)
-    return [c for c in candidates if 'claude-ready' in c.get('labels', [])]
-
-
-def _sort_candidates(candidates):
-    """Sort by priority descending (critical first), then ascending issue number."""
-    return sorted(candidates, key=lambda c: (_priority_rank(c.get('labels', [])), c['number']))
-
-
-def select_story(candidates, mode='story', agent_gating='disabled'):
-    """Full selection pipeline: filter → sort → top candidate (or None)."""
-    pool = _filter_by_mode(candidates, mode)
-    pool = _filter_refinement(pool)
-    pool = _filter_agent_gating(pool, agent_gating)
-    pool = _sort_candidates(pool)
-    return pool[0] if pool else None
-
-
-# Default label names from github-workflow/templates/default-labels.md.
-# Each entry maps a purpose key to the concrete label name used when a
-# project has not defined a custom mapping.
-_DEFAULT_LABELS = {
-    'type-story': 'type-story',
-    'type-bug': 'type-bug',
-    'type-security': 'type-security',
-    'type-debt': 'type-debt',
-    'type-arch': 'type-arch',
-    'priority-critical': 'priority-critical',
-    'priority-high': 'priority-high',
-    'priority-medium': 'priority-medium',
-    'priority-low': 'priority-low',
-    'claude-ready': 'claude-ready',
-    'claude-authored': 'claude-authored',
-    'status-ready': 'status-ready',
-    'needs-refinement': 'needs-refinement',
-    'status-in-progress': 'status-in-progress',
-    'status-parked': 'status-parked',
-    'status-blocked': 'status-blocked',
-    'status-in-review': 'status-in-review',
-    'status-needs-attention': 'status-needs-attention',
-}
-
-
-def resolve_label(purpose_key, project_map, defaults=None):
-    """Resolve a purpose key to a concrete label name.
-
-    Resolution order (from default-labels.md — "The single resolution path"):
-    1. Project map (ClaudeProject.md label map, already in context at runtime).
-    2. Default inventory (the table in default-labels.md).
-    3. The key itself as a last resort so callers never get an empty string.
-    """
-    if defaults is None:
-        defaults = _DEFAULT_LABELS
-    return project_map.get(purpose_key) or defaults.get(purpose_key) or purpose_key
-
-
-def detect_backlog_mode(candidates):
-    """Return 'sprint' if any candidate has a milestone, otherwise 'flat'.
-
-    From story-selection.md Step 2: presence of any milestone field triggers
-    sprint mode; the active sprint is then resolved via a separate API call.
-    An empty pool has no milestones and therefore defaults to flat.
-    """
-    return 'sprint' if any(c.get('milestone') for c in candidates) else 'flat'
-
-
-def get_sprint_candidates(candidates, sprint_title):
-    """Narrow candidates to those belonging to the active sprint."""
-    return [c for c in candidates if c.get('milestone') == sprint_title]
+sys.path.insert(
+    0,
+    os.path.join(os.path.dirname(__file__), '..', 'github-workflow', 'scripts'),
+)
+from wf_core import (  # noqa: E402
+    _filter_by_mode,
+    branch_name,
+    branch_slug,
+    current_lifecycle_label,
+    detect_backlog_mode,
+    get_sprint_candidates,
+    parse_dependencies,
+    resolve_label,
+    select_pool,
+    select_story,
+)
 
 
 # ── Tests ────────────────────────────────────────────────────────────────────
@@ -332,6 +248,110 @@ class TestBacklogMode(unittest.TestCase):
         sprint_pool = get_sprint_candidates(candidates, 'Sprint 5')
         result = select_story(sprint_pool)
         self.assertEqual(result['number'], 2)
+
+
+class TestSelectPool(unittest.TestCase):
+    """select_pool returns the full ordered list; select_story is its head."""
+
+    def test_pool_is_sorted_best_first(self):
+        candidates = [
+            _issue(5, ['priority-low', 'status-ready']),
+            _issue(3, ['priority-critical', 'status-ready']),
+            _issue(4, ['priority-medium', 'status-ready']),
+        ]
+        pool = select_pool(candidates)
+        self.assertEqual([c['number'] for c in pool], [3, 4, 5])
+
+    def test_pool_head_matches_select_story(self):
+        candidates = [
+            _issue(2, ['priority-high', 'status-ready']),
+            _issue(1, ['priority-low', 'status-ready']),
+        ]
+        self.assertEqual(select_pool(candidates)[0]['number'], select_story(candidates)['number'])
+
+    def test_empty_pool_is_empty_list(self):
+        self.assertEqual(select_pool([]), [])
+
+
+class TestDependencyParsing(unittest.TestCase):
+    """Fixed dependency markers from story-selection.md Step 3."""
+
+    def test_extracts_each_marker_form(self):
+        body = "Depends on #1. Blocked by #2. After #3. Requires #4."
+        deps, overflow = parse_dependencies(body)
+        self.assertEqual(deps, [1, 2, 3, 4])
+        self.assertFalse(overflow)
+
+    def test_is_case_insensitive(self):
+        deps, _ = parse_dependencies("DEPENDS ON #7 and Requires #8")
+        self.assertEqual(deps, [7, 8])
+
+    def test_dependencies_section_hash_refs(self):
+        body = "## Context\nbuild it\n## Dependencies\n- #11\n- #12\n## Notes\nsee #99"
+        deps, _ = parse_dependencies(body)
+        # #99 is in Notes, not Dependencies, and matches no marker → excluded
+        self.assertEqual(deps, [11, 12])
+
+    def test_bare_hash_outside_section_is_ignored(self):
+        deps, _ = parse_dependencies("Fixes the thing in #50 area generally")
+        self.assertEqual(deps, [])
+
+    def test_dedupes_and_sorts(self):
+        deps, _ = parse_dependencies("Depends on #5. Blocked by #5. Requires #2.")
+        self.assertEqual(deps, [2, 5])
+
+    def test_overflow_flag_set_above_limit(self):
+        body = " ".join("Depends on #%d." % n for n in range(1, 8))
+        deps, overflow = parse_dependencies(body)
+        self.assertTrue(overflow)
+        self.assertGreater(len(deps), 5)
+
+    def test_empty_or_none_body(self):
+        self.assertEqual(parse_dependencies('')[0], [])
+        self.assertEqual(parse_dependencies(None)[0], [])
+
+
+class TestBranchNaming(unittest.TestCase):
+    """Deterministic slug + convention rendering from start-story.md Step 6."""
+
+    def test_slug_example_from_template(self):
+        self.assertEqual(branch_slug('Fix: User login broken!!!'), 'fix-user-login-broken')
+
+    def test_slug_collapses_and_trims(self):
+        self.assertEqual(branch_slug('  --Multiple   Spaces-- '), 'multiple-spaces')
+
+    def test_slug_truncates_to_40_chars_without_trailing_hyphen(self):
+        slug = branch_slug('a' * 30 + ' ' + 'b' * 30)
+        self.assertLessEqual(len(slug), 40)
+        self.assertFalse(slug.endswith('-'))
+
+    def test_branch_name_renders_convention(self):
+        self.assertEqual(
+            branch_name('feature/{number}/{short-desc}', 42, 'Add login button'),
+            'feature/42/add-login-button',
+        )
+
+    def test_branch_name_leaves_unknown_placeholders(self):
+        self.assertEqual(
+            branch_name('wip/{number}/{user}/{short-desc}', 7, 'Tidy up'),
+            'wip/7/{user}/tidy-up',
+        )
+
+
+class TestCurrentLifecycleLabel(unittest.TestCase):
+    """Find the concrete lifecycle label to remove when claiming."""
+
+    def test_finds_default_named_lifecycle_label(self):
+        labels = ['priority-high', 'status-ready', 'type-story']
+        self.assertEqual(current_lifecycle_label(labels, {}), 'status-ready')
+
+    def test_respects_project_custom_name(self):
+        labels = ['custom-ready', 'priority-low']
+        project_map = {'status-ready': 'custom-ready'}
+        self.assertEqual(current_lifecycle_label(labels, project_map), 'custom-ready')
+
+    def test_returns_none_when_no_lifecycle_label_present(self):
+        self.assertIsNone(current_lifecycle_label(['priority-high'], {}))
 
 
 if __name__ == '__main__':
