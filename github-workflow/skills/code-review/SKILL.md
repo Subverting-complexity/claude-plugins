@@ -132,6 +132,35 @@ Once you have a valid `review.config.md`, proceed with the review.
 
 ### Step 1 — Find a PR that needs review
 
+#### Fast path — the bundled `wf` picker
+
+Try the `wf` CLI first. It selects **and claims** the next PR carrying a
+`needs-review` or `needs-re-review` label (re-review first, then lowest
+number) and, with `--checkout`, checks out its branch — Steps 1–2 plus the
+Step 3 checkout in one call:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-next --checkout
+```
+
+- **`ok`** — a PR is claimed: the JSON gives `number`, `title`, `url`,
+  `branch`, `labels`, and `claim_ref`; the `reviewing` marker is applied (the
+  prior review-state label removed) and the claim ref is held. Proceed to
+  **Step 2b** (duplicate reconciliation), then Step 3. Surface any
+  `side_effects`.
+- **`no-candidates`** — no open PR carries an explicit review-needed label.
+  This is **not** conclusive: a PR whose head SHA changed since its last
+  review needs review *without* a label, and `wf` does not detect that. Fall
+  back to the inline procedure below before concluding there is nothing to
+  review.
+- **`error`**, or the launcher reports Python is missing — use the inline
+  procedure below.
+
+Selection and claiming run the same in read-only mode, so the fast path
+applies there too.
+
+#### Inline procedure (fallback)
+
 ```bash
 gh pr list --state open --repo <org>/<repo> --json number,title,labels,headRefName,baseRefName,headRefOid
 ```

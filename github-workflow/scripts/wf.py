@@ -167,8 +167,8 @@ def parse_claude_project(text):
     cfg = {
         'org': None, 'repo': None, 'default_branch': 'main',
         'branch_convention': 'feature/{number}/{short-desc}',
-        'labels': {}, 'ready_gate': 'label', 'agent_gating': 'disabled',
-        'type_capable': False,
+        'labels': {}, 'review_labels': {}, 'ready_gate': 'label',
+        'agent_gating': 'disabled', 'type_capable': False,
         'board': {'project_node_id': None, 'project_title': None,
                   'status_field_id': None, 'start_date_field_id': None,
                   'columns': {}},
@@ -231,6 +231,26 @@ def parse_claude_project(text):
     return cfg
 
 
+def load_review_labels(root):
+    """Parse review-state label names from docs/review.config.md if present.
+
+    Best-effort: keep any table row whose first cell is a known review-state
+    purpose key, mapping it to the next backtick-stripped cell. Absent file →
+    empty map, and the resolver falls back to the `review-` prefixed defaults.
+    """
+    path = os.path.join(root, 'docs', 'review.config.md')
+    if not os.path.isfile(path):
+        return {}
+    with open(path, encoding='utf-8') as fh:
+        text = fh.read()
+    purposes = set(wf_core.REVIEW_DEFAULT_LABELS)
+    out = {}
+    for cells in _rows(text):
+        if len(cells) >= 2 and cells[0] in purposes and cells[1]:
+            out[cells[0]] = cells[1]
+    return out
+
+
 def config_paths(root):
     return (os.path.join(root, '.claude', 'wf-config.json'),
             os.path.join(root, 'ClaudeProject.md'))
@@ -252,7 +272,9 @@ def load_config():
     if not os.path.isfile(source):
         return False, None, 'no ClaudeProject.md found at %s' % root
     with open(source, encoding='utf-8') as fh:
-        return True, parse_claude_project(fh.read()), ''
+        cfg = parse_claude_project(fh.read())
+    cfg['review_labels'] = load_review_labels(root)
+    return True, cfg, ''
 
 
 def label(cfg, purpose):
@@ -494,7 +516,79 @@ def checkout_branch(cfg, issue):
     return branch, True, 'created from origin/%s' % default
 
 
+# ── PR pickers (update-pr / code-review pools) ───────────────────────────────
+
+def _norm_pr(raw):
+    return {
+        'number': raw['number'],
+        'title': raw.get('title', '') or '',
+        'labels': [l['name'] for l in raw.get('labels', [])],
+        'branch': raw.get('headRefName', '') or '',
+        'url': raw.get('url', '') or '',
+    }
+
+
+def assemble_prs(cfg, mine):
+    """Fetch open PRs (optionally only @me's). Returns (ok, prs, err)."""
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    args = ['pr', 'list', '--repo', repo, '--state', 'open',
+            '--json', 'number,title,labels,headRefName,url', '--limit', '200']
+    if mine:
+        args += ['--assignee', '@me']
+    ok, data, err = gh_json(args)
+    if not ok:
+        return False, None, err
+    return True, [_norm_pr(r) for r in data or []], ''
+
+
+def apply_pr_labels(cfg, number, add, remove=None):
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    args = ['pr', 'edit', str(number), '--repo', repo, '--add-label', add]
+    if remove:
+        args += ['--remove-label', remove]
+    code, _, err = run(['gh'] + args)
+    if code != 0:
+        eprint('wf: warning — could not apply PR label (%s)' % err.strip())
+
+
+def checkout_pr(cfg, number):
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    code, _, err = run(['gh', 'pr', 'checkout', str(number), '--repo', repo])
+    if code != 0:
+        return False, 'gh pr checkout failed (%s)' % err.strip()
+    return True, 'checked out the PR branch'
+
+
+def claim_first_pr(pool, apply_marker):
+    """Walk the ordered pool, claim the first PR we win, apply its marker.
+
+    Unlike stories there is no per-candidate validation — the first successful
+    claim is the selection. Returns (selected_pr_or_None, side_effects).
+    """
+    side_effects = []
+    for pr in pool:
+        if not acquire_claim('pr-%d' % pr['number']):
+            side_effects.append({'pr': pr['number'], 'action': 'claim-lost'})
+            continue
+        apply_marker(pr)
+        return pr, side_effects
+    return None, side_effects
+
+
 # ── commands ─────────────────────────────────────────────────────────────────
+
+def prepare_cfg():
+    """Shared command preamble: verify environment + load config, or emit+exit."""
+    env_err = check_environment()
+    if env_err:
+        emit('error', EXIT_ENV, reason=env_err)
+    ok, cfg, err = load_config()
+    if not ok:
+        emit('error', EXIT_ENV, reason=err)
+    if not cfg.get('org') or not cfg.get('repo'):
+        emit('error', EXIT_ENV, reason='org/repo missing from config')
+    return cfg
+
 
 def cmd_pick(args):
     if args.mode != 'story':
@@ -583,6 +677,82 @@ def cmd_pick(args):
     emit('ok', EXIT_OK, **result)
 
 
+def cmd_update_next(args):
+    cfg = prepare_cfg()
+    names = wf_core.review_names(cfg.get('review_labels'))
+    ok, prs, err = assemble_prs(cfg, mine=True)
+    if not ok:
+        emit('error', EXIT_ENV, reason='PR fetch failed: %s' % err)
+    pool = wf_core.select_update_pool(prs, names)
+    if not pool:
+        emit('no-candidates', EXIT_NO_CANDIDATES,
+             reason='no PRs assigned to you have feedback to address')
+
+    # Marker: add `updating`, but keep the actionable state label so the
+    # update-pr skill can make its final relabel decision (Step 8).
+    selected, side_effects = claim_first_pr(
+        pool, lambda pr: apply_pr_labels(cfg, pr['number'], add=names['updating']))
+    if not selected:
+        emit('all-blocked', EXIT_ALL_BLOCKED,
+             reason='every candidate PR is already claimed by another agent',
+             side_effects=side_effects)
+
+    result = {
+        'kind': 'pr-update',
+        'number': selected['number'], 'title': selected['title'],
+        'url': selected['url'], 'branch': selected['branch'],
+        'labels': selected['labels'],
+        'claim_ref': 'refs/claims/pr-%d' % selected['number'],
+        'prior_state': wf_core.actionable_update_label(selected['labels'], names),
+        'side_effects': side_effects, 'checked_out': False,
+    }
+    if args.checkout:
+        okc, msg = checkout_pr(cfg, selected['number'])
+        result['checked_out'] = okc
+        result['checkout_message'] = msg
+        if not okc:
+            eprint('wf: %s' % msg)
+    emit('ok', EXIT_OK, **result)
+
+
+def cmd_review_next(args):
+    cfg = prepare_cfg()
+    names = wf_core.review_names(cfg.get('review_labels'))
+    ok, prs, err = assemble_prs(cfg, mine=False)
+    if not ok:
+        emit('error', EXIT_ENV, reason='PR fetch failed: %s' % err)
+    pool = wf_core.select_review_pool(prs, names)
+    if not pool:
+        emit('no-candidates', EXIT_NO_CANDIDATES, reason='no open PRs need review')
+
+    def marker(pr):
+        labels = set(pr['labels'])
+        prior = names['needs-re-review'] if names['needs-re-review'] in labels else names['needs-review']
+        apply_pr_labels(cfg, pr['number'], add=names['reviewing'], remove=prior)
+
+    selected, side_effects = claim_first_pr(pool, marker)
+    if not selected:
+        emit('all-blocked', EXIT_ALL_BLOCKED,
+             reason='every candidate PR is already claimed by another agent',
+             side_effects=side_effects)
+
+    result = {
+        'kind': 'pr-review',
+        'number': selected['number'], 'title': selected['title'],
+        'url': selected['url'], 'branch': selected['branch'],
+        'labels': selected['labels'],
+        'claim_ref': 'refs/claims/pr-%d' % selected['number'],
+        'side_effects': side_effects, 'checked_out': False,
+    }
+    if args.checkout:
+        okc, msg = checkout_pr(cfg, selected['number'])
+        result['checked_out'] = okc
+        result['checkout_message'] = msg
+        if not okc:
+            eprint('wf: %s' % msg)
+    emit('ok', EXIT_OK, **result)
+
+
 def cmd_config(args):
     root = repo_root()
     cache, source = config_paths(root)
@@ -590,6 +760,7 @@ def cmd_config(args):
         emit('error', EXIT_ENV, reason='no ClaudeProject.md at %s' % root)
     with open(source, encoding='utf-8') as fh:
         cfg = parse_claude_project(fh.read())
+    cfg['review_labels'] = load_review_labels(root)
     os.makedirs(os.path.dirname(cache), exist_ok=True)
     with open(cache, 'w', encoding='utf-8') as fh:
         json.dump(cfg, fh, indent=2)
@@ -607,6 +778,17 @@ def build_parser():
     pick.add_argument('--checkout', action='store_true',
                       help='also move the board to In Progress and create/check out the branch')
     pick.set_defaults(func=cmd_pick)
+
+    upd = sub.add_parser('update-next',
+                         help='claim the next PR of mine that needs review feedback addressed')
+    upd.add_argument('--checkout', action='store_true',
+                     help='also check out the PR branch (gh pr checkout)')
+    upd.set_defaults(func=cmd_update_next)
+
+    rev = sub.add_parser('review-next', help='claim the next PR that needs reviewing')
+    rev.add_argument('--checkout', action='store_true',
+                     help='also check out the PR branch (gh pr checkout)')
+    rev.set_defaults(func=cmd_review_next)
 
     cfg = sub.add_parser('config', help='emit .claude/wf-config.json from ClaudeProject.md')
     cfg.set_defaults(func=cmd_config)
