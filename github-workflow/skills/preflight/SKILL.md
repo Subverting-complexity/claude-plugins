@@ -34,13 +34,6 @@ if [ -f .claude/preflight-dismiss.md ]; then
 else
   echo "PREFLIGHT_ACTIVE"
 
-  # Shell environment: awk required by auto-run projection blocks
-  if command -v awk >/dev/null 2>&1; then
-    echo "OK shell-awk"
-  else
-    echo "WARNING shell-awk: awk not found on PATH — ClaudeProject.md projection blocks in execute/pick-story/finish-story will fail"
-  fi
-
   # GitHub CLI auth (CRITICAL)
   if gh auth status >/dev/null 2>&1; then
     echo "OK gh-auth"
@@ -229,8 +222,12 @@ Classify:
 ```!
 if [ -f ClaudeProject.md ]; then
   # Extract the ## Label Map section body (subsections use ###, which
-  # does not match the ^## top-level header that ends the range).
-  labelmap=$(awk '/^## Label Map$/{f=1; next} f && /^## /{exit} f' ClaudeProject.md)
+  # does not match the ^## top-level header that ends the range). Pure POSIX
+  # shell (no awk) so preflight runs even where awk is absent from PATH.
+  labelmap=$(f=0; while IFS= read -r line || [ -n "$line" ]; do
+      if [ "$f" -eq 1 ]; then case "$line" in '## '*) break ;; esac; printf '%s\n' "$line"; fi
+      [ "$line" = "## Label Map" ] && f=1
+    done < ClaudeProject.md)
   missing=0
   for purpose in priority-critical priority-high priority-medium priority-low \
                  type-story type-bug type-security type-arch type-debt \
