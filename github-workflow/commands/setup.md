@@ -1,6 +1,6 @@
 ---
 description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "onboard", "initialize the workflow", "help me set up", "setup", "init", "bootstrap", "configure the plugin", "first time setup", "harden auto-merge", "enforce CI before merge", "require CI", "set up ecosystem tools", "configure graphify", "set up fallow", "configure RTK", "reap claims", "reap orphaned claims", "clean up stale claim refs", "reap locks".'
-argument-hint: '[harden|ecosystem|reap]'
+argument-hint: '[harden|ecosystem|reap|wf]'
 ---
 
 # Setup
@@ -32,6 +32,12 @@ no agent will pick it up (a crashed session left a lock behind), or
 as a scheduled routine to keep the claim namespace clean. Verify
 prerequisites (Step 1), read `ClaudeProject.md` for org/repo, then
 jump straight to Step 10.
+
+If `$ARGUMENTS` is `wf` (or `picker`), **skip the full onboarding** and
+run **only Step 1b — Set up the `wf` picker runtime** against the
+already-configured project. Use this to create (or repair, with
+`--force`) the dedicated Python virtualenv the fast-path picker reuses.
+Verify prerequisites (Step 1), then jump straight to Step 1b.
 
 ## Steps
 
@@ -66,6 +72,36 @@ gh auth status
 ```
 
 If this fails, stop and tell the user to run `gh auth login` first.
+
+### 1b. Set up the `wf` picker runtime (recommended)
+
+`pick-story` / `start-story` (and the `execute` skill) have a **fast
+path**: a bundled `wf` CLI that runs the whole select → claim → validate
+loop in one call instead of a dozen sequential `gh` round-trips. It needs a
+Python 3 interpreter. This step pins a **dedicated virtualenv** for it —
+created once under the plugin's persistent data dir and reused on every
+later call — so the picker never depends on whatever Python is on PATH (and
+sidesteps the broken `python3` Store shim on Windows).
+
+Run the bootstrap. It finds a working Python 3, creates the venv, installs
+`requirements.txt`, and verifies it; it is idempotent — a valid venv is
+reused, not rebuilt:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" setup
+```
+
+- **Exit 0** — the virtualenv is ready; report the interpreter it pinned.
+- **Exit 20, "Python 3 … not found"** — no Python is available. Show the
+  user the platform install command it printed and ask them to install
+  Python, then re-run this step. If they want it done for them, re-run as
+  `wf.sh setup --install-python` — that installs system Python via
+  winget/brew/apt, and runs **only** with this explicit opt-in.
+
+This step is **optional but recommended**. Without it the fast path still
+works by probing a system Python, and falls back to the inline selection
+procedure when none is found — so the workflow is never blocked on it. To
+rebuild a broken venv, re-run with `--force`.
 
 ### 2. Check for existing configuration
 
