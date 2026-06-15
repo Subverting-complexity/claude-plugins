@@ -17,6 +17,9 @@ around that core.
 ## Commands
 
 ```bash
+# One-time bootstrap: pin a dedicated Python virtualenv (reused thereafter)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" setup
+
 # Claim the next story (priority → lowest number → atomic claim) and print it
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick
 
@@ -28,8 +31,26 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config
 ```
 
 Run from the **target repo root** so the CLI can read `ClaudeProject.md`
-and the git remote. The `wf.sh` / `wf.ps1` launchers find a working Python 3
-(same detection as `run-tests`) and exec `wf.py`, preserving its exit code.
+and the git remote.
+
+## The interpreter: a pinned virtualenv
+
+`wf.sh` / `wf.ps1` resolve which Python runs `wf.py` like this:
+
+1. **A dedicated virtualenv**, if `wf.sh setup` has created one. It lives
+   under `${CLAUDE_PLUGIN_DATA}/wf-venv` (the plugin's persistent data dir,
+   which survives plugin updates), with `requirements.txt` installed into
+   it. This is the steady state — pinned, isolated, never affected by PATH.
+2. **A probed system Python** otherwise (`python3` verified, then `py -3`,
+   then `python` — the broken Windows `python3` Store shim fails its
+   `--version` probe and is skipped), with a one-line hint to run setup.
+3. **Nothing found** → exit 20; the caller falls back to the inline skill.
+
+`wf.sh setup` is idempotent: a valid venv is reused, `--force` rebuilds it.
+If no Python 3 exists it prints the platform install command and stops
+(exit 20) — or, with the explicit `--install-python` opt-in, installs system
+Python via winget/brew/apt first. Wire it via
+`/github-workflow:setup wf` (or it's offered during full setup, Step 1b).
 
 ## Contract
 
