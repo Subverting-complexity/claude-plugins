@@ -36,7 +36,21 @@ Fields` section from `ClaudeProject.md` at that point.
 if [ -f .claude/projected-config.md ] && [ .claude/projected-config.md -nt ClaudeProject.md ] 2>/dev/null; then
   cat .claude/projected-config.md
 elif [ -f ClaudeProject.md ]; then
-  awk '/^## /{drop=($0 ~ /^## (Issue Types & Fields|Project Board|Story Template|Session Budget|Reference Docs|Bundled Skills)/)} !drop' ClaudeProject.md | tee .claude/projected-config.md
+  # Project ClaudeProject.md → drop the heavy sections only needed later.
+  # Pure POSIX shell (no awk/tee) so it works wherever bash runs, including
+  # a Windows bash whose PATH lacks the Unix coreutils that ship awk/tee.
+  mkdir -p .claude 2>/dev/null
+  drop=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '## '*) case "$line" in
+          '## Issue Types & Fields'*|'## Project Board'*|'## Story Template'*|'## Session Budget'*|'## Reference Docs'*|'## Bundled Skills'*) drop=1 ;;
+          *) drop=0 ;;
+        esac ;;
+    esac
+    [ "$drop" -eq 0 ] && printf '%s\n' "$line"
+  done < ClaudeProject.md > .claude/projected-config.md
+  cat .claude/projected-config.md
 else
   echo "ClaudeProject.md NOT FOUND"
 fi

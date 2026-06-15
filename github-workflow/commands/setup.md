@@ -56,15 +56,6 @@ If bash is not found, stop and tell the user to install it. On Windows,
 enable WSL. Without bash on PATH the plugin's auto-run blocks will not
 work.
 
-**awk** (required — used to project `ClaudeProject.md` at session start):
-
-```
-awk --version
-```
-
-If awk is not found, stop and tell the user to install it (included with
-Git for Windows and any standard Unix environment).
-
 **GitHub CLI** (required — all workflow commands use `gh`):
 
 ```

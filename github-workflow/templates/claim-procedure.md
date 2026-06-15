@@ -56,7 +56,7 @@ target), and it costs **zero** round trips. Only when the marker file
 
 ```
 test -f .claude/claim-{target}.sha \
-  && [ "$(cat .claude/claim-{target}.sha)" = "$(git ls-remote origin refs/claims/{target} | awk '{print $1}')" ] \
+  && [ "$(cat .claude/claim-{target}.sha)" = "$(git ls-remote origin refs/claims/{target} | sed 's/[[:space:]].*//')" ] \
   && echo HELD
 ```
 
