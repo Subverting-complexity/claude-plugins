@@ -150,6 +150,105 @@ def current_lifecycle_label(labels, project_map):
     return None
 
 
+# ── PR review-state labels + selection ───────────────────────────────────────
+# Mirrors github-workflow/commands/update-pr.md (Step 2) and the code-review
+# skill (Step 1). Review-state names default to the `review-` prefix
+# (templates/label-reference.md) and are overridden by review.config.md.
+
+REVIEW_DEFAULT_LABELS = {
+    'needs-review': 'review-needs-review',
+    'reviewing': 'review-reviewing',
+    'approved': 'review-approved',
+    'changes-requested': 'review-changes-requested',
+    'needs-discussion': 'review-needs-discussion',
+    'needs-re-review': 'review-needs-re-review',
+    'failed': 'review-failed',
+    'updating': 'review-updating',
+    'fixes-applied': 'review-fixes-applied',
+}
+
+
+def resolve_review_label(purpose_key, review_map=None, defaults=None):
+    """Resolve a review-state purpose key to a concrete label name.
+
+    Same three-step path as resolve_label: review.config.md map →
+    `review-` prefixed default → the key itself.
+    """
+    review_map = review_map or {}
+    if defaults is None:
+        defaults = REVIEW_DEFAULT_LABELS
+    return review_map.get(purpose_key) or defaults.get(purpose_key) or purpose_key
+
+
+def review_names(review_map=None):
+    """Resolve every review-state purpose to its concrete name (one dict)."""
+    return {k: resolve_review_label(k, review_map) for k in REVIEW_DEFAULT_LABELS}
+
+
+def select_update_pool(prs, names):
+    """Order PRs that need *my* review feedback addressed (update-pr pool).
+
+    Keep PRs carrying an actionable state — changes-requested >
+    needs-discussion > needs-re-review (priority order) — and drop any
+    carrying reviewing / updating / approved / needs-review / failed (another
+    agent owns it, or there is no feedback to apply). Sort by that priority,
+    then ascending PR number. `names` maps purpose keys to concrete labels.
+    """
+    priority = [names['changes-requested'], names['needs-discussion'], names['needs-re-review']]
+    skip = {names[k] for k in ('reviewing', 'updating', 'approved', 'needs-review', 'failed')}
+    ranked = []
+    for pr in prs:
+        labels = set(pr.get('labels', []))
+        if labels & skip:
+            continue
+        rank = next((i for i, name in enumerate(priority) if name in labels), None)
+        if rank is None:
+            continue
+        ranked.append((rank, pr['number'], pr))
+    ranked.sort(key=lambda t: (t[0], t[1]))
+    return [pr for _, _, pr in ranked]
+
+
+def select_review_pool(prs, names):
+    """Order PRs that need reviewing (code-review pool).
+
+    Keep PRs carrying needs-re-review or needs-review; drop any carrying
+    reviewing / updating (an agent is on it), and drop approved unless it also
+    carries needs-re-review (approved + new commits still needs a re-review).
+    needs-re-review is reviewed before needs-review; ties break on ascending
+    number. (SHA-drift detection — a PR whose head changed since the last
+    review without a label — stays in the skill; this is the label-driven
+    subset.)
+    """
+    skip = {names['reviewing'], names['updating']}
+    ranked = []
+    for pr in prs:
+        labels = set(pr.get('labels', []))
+        if labels & skip:
+            continue
+        has_rereview = names['needs-re-review'] in labels
+        has_review = names['needs-review'] in labels
+        if not (has_rereview or has_review):
+            continue
+        if names['approved'] in labels and not has_rereview:
+            continue
+        ranked.append((0 if has_rereview else 1, pr['number'], pr))
+    ranked.sort(key=lambda t: (t[0], t[1]))
+    return [pr for _, _, pr in ranked]
+
+
+def actionable_update_label(labels, names):
+    """The highest-priority actionable state label present on an update PR.
+
+    Returned so the caller can record which feedback state it claimed (the
+    update-pr skill needs it for its final relabel decision).
+    """
+    for purpose in ('changes-requested', 'needs-discussion', 'needs-re-review'):
+        if names[purpose] in labels:
+            return names[purpose]
+    return None
+
+
 # ── Backlog-mode detection ───────────────────────────────────────────────────
 # story-selection.md Step 2 — sprint vs flat from milestone presence.
 

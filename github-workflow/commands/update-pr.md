@@ -40,8 +40,36 @@ When falling back to defaults in an interactive session, warn the user:
 
 ### 2. Find the PR to update
 
-If a PR number is provided, use it directly. Otherwise, find PRs that
-need attention:
+If a PR number is provided, use it directly (skip the fast path — it
+auto-selects and cannot target one) and continue with Step 2b.
+
+#### Fast path — the bundled `wf` picker (no explicit number)
+
+When no number is given, the `wf` CLI selects **and claims** the next PR
+needing your feedback in one call — Steps 2 + 2b together — and with
+`--checkout` also checks out its branch (Step 3's checkout):
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" update-next --checkout
+```
+
+Interpret the `status` field:
+
+- **`ok`** — a PR is claimed. The JSON gives `number`, `title`, `url`,
+  `branch`, `labels`, `claim_ref`, and **`prior_state`** (the actionable
+  feedback label it claimed — `changes-requested` / `needs-discussion` /
+  `needs-re-review`); the `updating` marker is applied and the claim ref is
+  held. The actionable label is intentionally **left in place** so Step 8 can
+  decide the final state. With `--checkout` you are on the PR branch
+  (`checked_out: true`) — go to **Step 3's "read the review"**; otherwise run
+  `gh pr checkout {number}` first. Surface any `side_effects`.
+- **`no-candidates`** — no PR of yours needs updating; report that and exit.
+- **`error`**, or the launcher reports Python is missing — use the inline
+  procedure below.
+
+#### Inline procedure (fallback)
+
+Find PRs that need attention:
 
 ```
 gh pr list --state open --repo {org}/{repo} --assignee @me --json number,title,labels,headRefName

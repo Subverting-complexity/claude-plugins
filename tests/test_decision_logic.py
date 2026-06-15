@@ -28,6 +28,7 @@ sys.path.insert(
 )
 from wf_core import (  # noqa: E402
     _filter_by_mode,
+    actionable_update_label,
     branch_name,
     branch_slug,
     current_lifecycle_label,
@@ -35,8 +36,12 @@ from wf_core import (  # noqa: E402
     get_sprint_candidates,
     parse_dependencies,
     resolve_label,
+    resolve_review_label,
+    review_names,
     select_pool,
+    select_review_pool,
     select_story,
+    select_update_pool,
 )
 
 
@@ -352,6 +357,92 @@ class TestCurrentLifecycleLabel(unittest.TestCase):
 
     def test_returns_none_when_no_lifecycle_label_present(self):
         self.assertIsNone(current_lifecycle_label(['priority-high'], {}))
+
+
+def _pr(number, labels):
+    return {'number': number, 'labels': labels}
+
+
+# Resolve review-state names through the default (`review-`) path once.
+_RN = review_names()
+
+
+class TestReviewLabelResolution(unittest.TestCase):
+    def test_defaults_use_review_prefix(self):
+        self.assertEqual(resolve_review_label('changes-requested'), 'review-changes-requested')
+        self.assertEqual(resolve_review_label('reviewing'), 'review-reviewing')
+
+    def test_project_override_wins(self):
+        self.assertEqual(
+            resolve_review_label('approved', {'approved': 'ship-it'}), 'ship-it')
+
+    def test_review_names_covers_every_purpose(self):
+        for purpose in ('needs-review', 'reviewing', 'approved', 'changes-requested',
+                        'needs-discussion', 'needs-re-review', 'failed', 'updating'):
+            self.assertTrue(_RN[purpose])
+
+
+class TestUpdatePool(unittest.TestCase):
+    """update-pr pool: my PRs with actionable feedback, prioritised."""
+
+    def test_changes_requested_beats_needs_re_review(self):
+        prs = [
+            _pr(10, [_RN['needs-re-review']]),
+            _pr(11, [_RN['changes-requested']]),
+        ]
+        self.assertEqual([p['number'] for p in select_update_pool(prs, _RN)], [11, 10])
+
+    def test_priority_then_lowest_number(self):
+        prs = [
+            _pr(5, [_RN['needs-discussion']]),
+            _pr(3, [_RN['changes-requested']]),
+            _pr(9, [_RN['changes-requested']]),
+        ]
+        self.assertEqual([p['number'] for p in select_update_pool(prs, _RN)], [3, 9, 5])
+
+    def test_skips_reviewing_updating_approved_needsreview_failed(self):
+        for skip in ('reviewing', 'updating', 'approved', 'needs-review', 'failed'):
+            prs = [_pr(1, [_RN[skip], _RN['changes-requested']])]
+            self.assertEqual(select_update_pool(prs, _RN), [], msg=skip)
+
+    def test_pr_without_actionable_label_excluded(self):
+        self.assertEqual(select_update_pool([_pr(1, ['unrelated'])], _RN), [])
+
+    def test_actionable_label_reports_highest_priority(self):
+        labels = [_RN['needs-re-review'], _RN['changes-requested']]
+        self.assertEqual(actionable_update_label(labels, _RN), _RN['changes-requested'])
+
+    def test_actionable_label_none_when_absent(self):
+        self.assertIsNone(actionable_update_label(['x'], _RN))
+
+
+class TestReviewPool(unittest.TestCase):
+    """code-review pool: open PRs needing review, re-review first."""
+
+    def test_needs_re_review_before_needs_review(self):
+        prs = [
+            _pr(2, [_RN['needs-review']]),
+            _pr(8, [_RN['needs-re-review']]),
+        ]
+        self.assertEqual([p['number'] for p in select_review_pool(prs, _RN)], [8, 2])
+
+    def test_same_tier_lowest_number(self):
+        prs = [_pr(7, [_RN['needs-review']]), _pr(4, [_RN['needs-review']])]
+        self.assertEqual([p['number'] for p in select_review_pool(prs, _RN)], [4, 7])
+
+    def test_skips_reviewing_and_updating(self):
+        for skip in ('reviewing', 'updating'):
+            prs = [_pr(1, [_RN[skip], _RN['needs-review']])]
+            self.assertEqual(select_review_pool(prs, _RN), [], msg=skip)
+
+    def test_approved_excluded_unless_needs_re_review(self):
+        self.assertEqual(select_review_pool([_pr(1, [_RN['approved'], _RN['needs-review']])], _RN), [])
+        # approved + new commits (needs-re-review) stays in the pool
+        kept = select_review_pool([_pr(1, [_RN['approved'], _RN['needs-re-review']])], _RN)
+        self.assertEqual([p['number'] for p in kept], [1])
+
+    def test_pr_without_review_label_excluded(self):
+        self.assertEqual(select_review_pool([_pr(1, ['type-bug'])], _RN), [])
 
 
 if __name__ == '__main__':

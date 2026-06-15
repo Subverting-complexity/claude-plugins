@@ -26,6 +26,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick
 # …also move the board to In Progress and create/check out the branch
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout
 
+# Claim the next PR of mine that needs review feedback addressed (update-pr)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" update-next --checkout
+
+# Claim the next PR that needs reviewing (code-review)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-next --checkout
+
 # Emit the parsed config cache (.claude/wf-config.json) from ClaudeProject.md
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config
 ```
@@ -70,16 +76,28 @@ silent; mutations to **other** issues (returning a dependency-blocked one to
 `status-blocked`, closing one already resolved by a merged PR) are always
 reported in the `side_effects` array.
 
-## Scope of the first cut
+## The three pickers
 
-Implemented: `--mode story` (the default) under the `label` and `none`
-ready-gates. Deferred to the skill via exit 30: `--mode feature` /
-`--mode maintenance` (native-issue-type filtering) and the `board-column` /
-`both` ready-gates. The empty-pool auto-ready scan also stays in the skill
-(`templates/story-selection-auto-ready.md`). The callers
-(`pick-story`, `start-story`) try `wf` first and fall back to the inline
-procedure on any non-`ok` status or a missing interpreter, so behaviour is
-identical whether or not `wf` can run.
+| Subcommand     | Pool                                              | Claims          | Marker applied        | Used by      |
+| -------------- | ------------------------------------------------- | --------------- | --------------------- | ------------ |
+| `pick`         | Ready, unassigned issues                          | `issue-{n}` ref | `status-in-progress`  | pick-story, start-story |
+| `update-next`  | My open PRs with actionable review feedback       | `pr-{n}` ref    | `updating` (keeps the feedback label) | update-pr |
+| `review-next`  | Open PRs labelled `needs-review` / `needs-re-review` | `pr-{n}` ref | `reviewing` (removes prior) | code-review |
 
-PR-side pickers (`update-pr`, `code-review`) reuse this same core and are
-the planned next increment.
+All share the same atomic claim/checkout core and JSON contract. `--checkout`
+creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
+
+## Scope / deferrals
+
+- **`pick`** — `--mode story` (default) under `label` / `none` ready-gates.
+  Deferred to the skill via exit 30: `--mode feature` / `--mode maintenance`
+  (native-issue-type filtering), the `board-column` / `both` ready-gates, and
+  the empty-pool auto-ready scan.
+- **`review-next`** — the *label-driven* subset. A PR whose head SHA changed
+  since its last review (needing review without a label) is **not** detected
+  here, so `code-review` treats `no-candidates` as non-conclusive and falls
+  back to its inline SHA check.
+
+Every caller tries `wf` first and falls back to the inline procedure on any
+non-`ok` status or a missing interpreter, so behaviour is identical whether
+or not `wf` can run.
