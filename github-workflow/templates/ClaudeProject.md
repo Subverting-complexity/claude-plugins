@@ -33,7 +33,7 @@ Pattern for feature branches:
 {branch_pattern}
 ```
 
-Example: `feature/{number}/{short-description}`
+Example: `feature/{number}/{short-desc}`
 
 ## Label Map
 

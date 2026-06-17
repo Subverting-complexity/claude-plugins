@@ -9,6 +9,13 @@ Assign the story, update the board, and create a working branch. This is
 the manual single-step equivalent of `execute` Phase 1–2; it shares the
 same procedures, so behaviour is identical.
 
+> **This is a building block, not the main entry point.** It only *sets up*
+> a story — it does not plan, build, test, or open a PR. To take a story all
+> the way to a pull request in one command, use **`/github-workflow:execute`**
+> (it picks the next story, or a named one, then runs this setup plus the full
+> implementation). Reach for `start-story` only when you deliberately want to
+> stop after setup and implement by hand.
+
 **Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
 
 Requires a story number. If none is given, run the

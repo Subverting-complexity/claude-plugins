@@ -150,8 +150,13 @@ def _section(text, heading):
 
     Level-aware so a `## Label Map` section keeps its `### Priority`/`### Type`
     sub-tables instead of ending at the first deeper heading.
+
+    A trailing parenthetical qualifier on the heading is tolerated, so the
+    template's `## Project Board (optional)` / `## Reference Docs (optional)`
+    authoring hint still resolves the section — without it the board block
+    parses empty and a configured board is silently read as "no board".
     """
-    m = re.search(r'^(#{1,6})\s*%s\s*$' % re.escape(heading), text,
+    m = re.search(r'^(#{1,6})\s*%s\s*(?:\(.*\))?\s*$' % re.escape(heading), text,
                   re.IGNORECASE | re.MULTILINE)
     if not m:
         return ''
@@ -190,7 +195,11 @@ def parse_claude_project(text):
     conv = _section(text, 'Branch Convention')
     m = re.search(r'(\S*\{number\}\S*)', conv)
     if m:
-        cfg['branch_convention'] = m.group(1)
+        # The token may come from the backtick-wrapped `Example:` line when the
+        # fenced pattern block was left unfilled — strip those backticks so they
+        # never leak into a branch name. (Unrecognised slug placeholders are
+        # normalised later by wf_core.branch_name.)
+        cfg['branch_convention'] = m.group(1).strip('`')
 
     label_block = _section(text, 'Label Map')
     for cells in _rows(label_block):
