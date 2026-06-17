@@ -4,6 +4,8 @@ description: Review open pull requests — find the first PR needing review, che
 arguments:
   - name: mode
     description: 'Review mode: full (default) — evaluate and fix; read-only — evaluate only, no edits or pushes'
+  - name: bypass-ci
+    description: 'When set, the CI gate in auto-merge (Step 11) is treated as satisfied even if remote checks are red or absent. Explicit, never default — use only when CI cannot run for reasons outside the PR (e.g. GitHub Actions billing).'
 allowed-tools:
   - Read
   - Edit
@@ -105,11 +107,17 @@ user through creating one.
 
 When `$ARGUMENTS.mode` is `read-only`:
 
-- Execute Steps 1–6 normally (find, claim, checkout, gather, read, evaluate).
+- Execute Steps 1–6, but **do not claim**. Selection uses the fast path with
+  `--no-claim` (Step 1) — read-only has no push access, so it never writes a
+  `refs/claims/pr-<number>` ref or applies the `reviewing` marker. In the
+  inline fallback (Step 1), skip **Step 2** (Claim) entirely: just pick the
+  PR by the prioritisation rules and go straight to checkout. Because no
+  claim was held, **Step 10's claim release is a no-op** and there is no
+  `reviewing` label to remove.
 - In **Step 2b** (duplicate reconciliation), close nothing: identify the
   winner and list the duplicate set under a "Duplicate PRs" note in the
   review comment, recommending which to keep. Then continue reviewing the
-  claimed PR.
+  selected PR.
 - **Skip Step 7** (Fix issues) entirely — do not edit any files or push
   commits, and do not file anything to the board (Step 7f is a mutation).
 - In Step 8, determine the verdict based on raw findings (nothing was auto-fixed).
@@ -143,11 +151,23 @@ Step 3 checkout in one call:
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-next --checkout
 ```
 
-- **`ok`** — a PR is claimed: the JSON gives `number`, `title`, `url`,
-  `branch`, `labels`, and `claim_ref`; the `reviewing` marker is applied (the
-  prior review-state label removed) and the claim ref is held. Proceed to
-  **Step 2b** (duplicate reconciliation), then Step 3. Surface any
-  `side_effects`.
+In **read-only mode**, add `--no-claim` — read-only has no push access, so
+it must select **without** writing a claim ref or applying the `reviewing`
+marker (otherwise every claim push fails and the picker reports a phantom
+`all-blocked`):
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-next --checkout --no-claim
+```
+
+- **`ok`** — a PR is selected: the JSON gives `number`, `title`, `url`,
+  `branch`, `labels`, and `claimed`. In full mode `claimed` is `true` — the
+  `reviewing` marker is applied (the prior review-state label removed), the
+  claim ref is held (`claim_ref`), and you proceed owning the PR. In
+  read-only mode `claimed` is `false` — nothing was locked or relabelled and
+  there is no claim ref to release later. Either way, **stop selecting — the
+  picker already chose; do not re-derive it.** Proceed to **Step 2b**
+  (duplicate reconciliation), then Step 3. Surface any `side_effects`.
 - **`no-candidates`** — no open PR carries an explicit review-needed label.
   This is **not** conclusive: a PR whose head SHA changed since its last
   review needs review *without* a label, and `wf` does not detect that. Fall
@@ -155,9 +175,6 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-next --checkout
   review.
 - **`error`**, or the launcher reports Python is missing — use the inline
   procedure below.
-
-Selection and claiming run the same in read-only mode, so the fast path
-applies there too.
 
 #### Inline procedure (fallback)
 
@@ -619,6 +636,13 @@ conflicts, fixing or filing failing checks, and squash-merging or enqueuing
 sanctioned merge. On success it reports using the **Final report format**
 below (shared with Step 10).
 
+If `$ARGUMENTS.bypass-ci` is set, pass that through — `auto-merge.md` treats
+the CI gate as satisfied even when remote checks are red or absent. This is
+an explicit operator override for when CI cannot run for reasons outside the
+PR (e.g. GitHub Actions billing); it never fixes or files a check, it skips
+the gate. It does **not** override a merge **conflict** — a conflicting PR is
+still resolved or filed as usual.
+
 #### Final report format
 
 When the PR is merged or auto-merge is queued, report to the user in this
@@ -699,7 +723,11 @@ Rationale files (maintainers only — not read at runtime):
   never force-merges over a genuinely red required check. When
   `require-ci-before-merge` is set, it also never merges a PR that has no
   CI gate at all (no checks, or a red check it cannot fix) — it pauses and
-  leaves `approved`. Never merge in read-only mode.
+  leaves `approved`. **Exception:** when invoked with `--bypass-ci`, the CI
+  gate is treated as satisfied (red or absent checks no longer block or
+  pause) — an explicit operator override for when CI cannot run for reasons
+  outside the PR, e.g. Actions billing. It does not bypass a merge conflict.
+  Never merge in read-only mode.
 - Do not close a PR **except** to reconcile duplicates in Step 2b — when
   two or more open PRs close the same issue, close the losers and keep the
   winner. That is the one sanctioned close; never close a PR for any other

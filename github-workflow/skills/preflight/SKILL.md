@@ -29,16 +29,19 @@ these checks contain a code-fence delimiter, so they are safe in an
 auto-run block — see issue #33.)
 
 ```!
-if [ -f .claude/preflight-dismiss.md ]; then
+if [ -f .claude/preflight-passed.txt ]; then
+  echo "PREFLIGHT_ALREADY_PASSED"
+elif [ -f .claude/preflight-dismiss.md ]; then
   echo "PREFLIGHT_SUPPRESSED"
 else
   echo "PREFLIGHT_ACTIVE"
+  crit=0
 
   # GitHub CLI auth (CRITICAL)
   if gh auth status >/dev/null 2>&1; then
     echo "OK gh-auth"
   else
-    echo "CRITICAL gh-auth: not authenticated — run 'gh auth login'"
+    echo "CRITICAL gh-auth: not authenticated — run 'gh auth login'"; crit=1
   fi
 
   # ClaudeProject.md: existence (CRITICAL), placeholders (WARNING), sections (CRITICAL)
@@ -57,11 +60,11 @@ else
       if grep -q "$section" ClaudeProject.md 2>/dev/null; then
         echo "OK section-$slug"
       else
-        echo "CRITICAL section-$slug: $section section missing"
+        echo "CRITICAL section-$slug: $section section missing"; crit=1
       fi
     done
   else
-    echo "CRITICAL file-ClaudeProject: ClaudeProject.md not found"
+    echo "CRITICAL file-ClaudeProject: ClaudeProject.md not found"; crit=1
   fi
 
   # CLAUDE.md (WARNING-level)
@@ -75,13 +78,37 @@ else
   else
     echo "WARNING file-CLAUDE: CLAUDE.md not found"
   fi
+
+  # One verdict token for the cheap checks above. "OK" means nothing here is
+  # CRITICAL — the only CRITICALs still possible come from the by-hand
+  # required-board checks in Section 2, which apply *only* on a
+  # board-column/both ready-gate. On the common label/none gate, a cheap
+  # verdict of OK is the whole verdict: return silently, no report.
+  if [ "$crit" -eq 0 ]; then
+    echo "PREFLIGHT_CHEAP_VERDICT: OK"
+  else
+    echo "PREFLIGHT_CHEAP_VERDICT: CRITICAL"
+  fi
 fi
 ```
 
-If the block printed `PREFLIGHT_SUPPRESSED`, skip all remaining checks.
-Return silently and let the calling command proceed. The user has dismissed
-preflight reminders. They can re-enable by deleting
-`.claude/preflight-dismiss.md` or running `/github-workflow:setup`.
+**React to the token, do not re-derive it.** The block prints exactly one
+of three lead tokens — branch on it without re-reading files:
+
+- `PREFLIGHT_ALREADY_PASSED` — preflight already passed earlier this
+  session (the marker exists). **Return silently and immediately**; run no
+  further checks. The calling command proceeds.
+- `PREFLIGHT_SUPPRESSED` — the user dismissed preflight reminders. Skip all
+  remaining checks, return silently, and let the calling command proceed.
+  They can re-enable by deleting `.claude/preflight-dismiss.md` or running
+  `/github-workflow:setup`.
+- `PREFLIGHT_ACTIVE` — the checks ran. Read `PREFLIGHT_CHEAP_VERDICT`: if it
+  is `OK` **and** the ready-gate is `label` or `none` (no required board —
+  confirm from the config already in context, no file re-read), there are no
+  further CRITICAL checks to run. Write the pass marker (Section 3) and
+  return silently. Only continue to the by-hand checks below when the gate is
+  `board-column`/`both` (a required board can be CRITICAL) or
+  `PREFLIGHT_CHEAP_VERDICT` is `CRITICAL`.
 
 ## 2. Run diagnostics
 

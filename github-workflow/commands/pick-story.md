@@ -21,10 +21,20 @@ If mode is "bug", treat it as "maintenance".
 
 ## Preflight
 
-Before doing anything else, invoke `/github-workflow:preflight` to
-verify project configuration. If it finds issues and the user chooses
-"Configure now", wait for setup to complete, then ask the user to
-re-run this command. Otherwise, proceed.
+Check whether preflight already ran and passed this session — if
+`.claude/preflight-passed.txt` exists, skip the invocation entirely and
+proceed to the project configuration below. The file is written by
+`preflight` on a clean or WARNING-only run and is valid for exactly this
+session:
+
+```
+test -f .claude/preflight-passed.txt && echo "PREFLIGHT_ALREADY_PASSED"
+```
+
+If the file is absent, invoke `/github-workflow:preflight` to verify
+project configuration. If it finds issues and the user chooses "Configure
+now", wait for setup to complete, then ask the user to re-run this
+command. Otherwise, proceed.
 
 ## Project configuration (auto-loaded)
 
@@ -102,10 +112,11 @@ process call instead of a dozen sequential `gh` round-trips.
 The plugin ships a `wf` CLI (`scripts/wf.py`, with a `wf.sh` launcher that
 finds a working Python 3) that does the entire selection and claim in a
 single call and returns the chosen story as JSON. Run it from the repo root
-so it can read `ClaudeProject.md` and the git remote:
+so it can read `ClaudeProject.md` and the git remote (pass the command's
+`mode` through):
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --mode {mode}
 ```
 
 Interpret the result by its `status` field (the process exit code mirrors
@@ -114,22 +125,25 @@ it):
 - **`ok`** — a story is claimed. The JSON carries `number`, `title`, `url`,
   `labels`, `milestone`, `body`, and `claim_ref`; the
   `status-in-progress` + `@me` markers are already applied and the claim ref
-  is held. Go straight to Step 3 — do **not** re-run any selection. If
+  is held. Go straight to Step 3 — **do not re-run any selection or
+  re-derive the choice; the picker already chose and locked it.** If
   `side_effects` is non-empty, tell the user what it touched (issues it
   returned to blocked, or closed as already-resolved by a merged PR).
 - **`no-candidates`** or **`all-blocked`** — nothing was pickable. Run
   **only Step 4** (lazy auto-ready) of `templates/story-selection.md`; if it
   restores anything, retry the fast path once, else report "No stories
   available for pickup".
-- **`unsupported`** — this path isn't in `wf` yet (a `feature` /
-  `maintenance` mode, or a `board-column` / `both` ready-gate). Use the
-  inline procedure below.
+- **`unsupported`** — `wf` deferred this case (a `feature` / `maintenance`
+  mode on a **type-capable** org, where the native issue type is
+  authoritative, or a `board-column` / `both` ready-gate). Use the inline
+  procedure below.
 - **`error`**, or the launcher prints that Python is missing — `wf` can't
   run in this environment. Use the inline procedure below.
 
-`wf` implements the default **story** mode only. For `--mode feature` or
-`--mode maintenance`, skip the fast path entirely and use the inline
-procedure (it filters by native issue type / `type-*` label).
+`wf pick` covers **story, feature, and maintenance** modes on label-typed
+projects (it filters by the `type-*` label). It defers to the inline
+procedure only on a type-capable org, where feature/maintenance must filter
+by the native issue type.
 
 #### Inline procedure (fallback)
 

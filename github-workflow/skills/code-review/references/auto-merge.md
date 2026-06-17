@@ -32,6 +32,14 @@ Approval section. Absent ⇒ `false`. It takes three values:
 
 The exact branches are in step 3 below.
 
+**`--bypass-ci` overrides all three.** When the skill is invoked with
+`--bypass-ci`, the CI gate is treated as satisfied regardless of
+`require-ci-before-merge` — red, pending, or absent checks no longer block
+or pause the merge. It is a deliberate per-invocation operator override for
+when CI cannot run for reasons outside the PR (most commonly GitHub Actions
+billing). It never bypasses a merge **conflict** (step 2 still runs). See the
+override note at the top of step 3.
+
 This is opt-in and **off by default**. Merging a PR is otherwise
 forbidden (see Rules); this is the one sanctioned merge, and only under
 an explicit `enabled` setting. The review comment from Step 9 must
@@ -90,8 +98,21 @@ leave `approved` and exit. The fallbacks below say where.
    comment naming the filed issue, leave the `approved` verdict, and exit.
    Do not guess at the merge.
 
-3. **Fix a failing pipeline if there is one.** Read the required-check
-   rollup:
+3. **Fix a failing pipeline if there is one.**
+
+   **CI bypass override.** If the skill was invoked with `--bypass-ci`, skip
+   this entire step: do **not** read the check rollup, fix a failing check
+   for the gate's sake, or pause on red/absent CI. Treat the CI gate as
+   satisfied and go to **step 4's immediate path** — and because CI is being
+   overridden (a red or never-completing pipeline must not strand the merge
+   behind `--auto`), prefer the immediate `--squash --delete-branch` merge,
+   falling back to `--admin` if branch protection requires an approving
+   review. Do this even if you pushed a conflict resolution in step 2. This
+   override is for when CI cannot run for reasons outside the PR (e.g. Actions
+   billing); it does **not** bypass the step-2 conflict resolution, only the
+   CI gate. Skip the rest of this step.
+
+   Otherwise, read the required-check rollup:
    ```bash
    gh pr checks <number> --repo <org>/<repo> --required
    ```

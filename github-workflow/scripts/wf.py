@@ -27,9 +27,12 @@ Contract:
     silent; mutations to *other* issues (marking blocked, closing resolved) are
     always reported back in the `side_effects` array.
 
-Only `--mode story` and the `label` / `none` ready-gates are implemented here;
-`feature`/`maintenance` modes and `board-column` gates exit 30 so the skill
-keeps handling them. See github-workflow/templates/story-selection.md.
+Selection covers `--mode story` plus `--mode feature` / `--mode maintenance`
+on label-typed projects, under the `label` / `none` ready-gates. The paths
+that still exit 30 so the skill handles them: feature/maintenance on a
+*type-capable* org (native issue type is authoritative, not resolved here),
+and the `board-column` / `both` ready-gates. See
+github-workflow/templates/story-selection.md.
 """
 
 import argparse
@@ -344,11 +347,25 @@ def _claim_marker_path(root, target):
 
 
 def acquire_claim(target):
-    """Atomically acquire refs/claims/<target> (compare-and-swap). Returns True if won."""
+    """Atomically acquire refs/claims/<target> (compare-and-swap).
+
+    Returns one of three outcomes — never a bare bool, so the caller can tell
+    a rival apart from a broken environment:
+
+      'won'   — the ref was created and we hold the claim (marker written).
+      'lost'  — the ref already exists with a different object: a rival agent
+                got there first. A normal outcome — try the next pool item.
+      'error' — the push failed for a reason that is *not* a lost claim: no
+                write access to refs/claims/*, an auth or network failure, a
+                missing remote. The caller must surface this instead of
+                walking the pool, so a broken environment is never mistaken
+                for "every candidate was already claimed" (a phantom
+                all-blocked the user reads as an empty backlog).
+    """
     code, tree, _ = run(['git', 'rev-parse', 'HEAD^{tree}'])
     if code != 0:
         eprint('wf: cannot read HEAD tree to build a claim object')
-        return False
+        return 'error'
     msg = 'claim %s %s pid%d-%d' % (
         target,
         datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
@@ -357,16 +374,27 @@ def acquire_claim(target):
     code, sha, err = run(['git', 'commit-tree', tree.strip(), '-m', msg])
     if code != 0:
         eprint('wf: git commit-tree failed (%s)' % err.strip())
-        return False
+        return 'error'
     sha = sha.strip()
-    code, _, _ = run(['git', 'push', 'origin', '%s:refs/claims/%s' % (sha, target)])
+    code, _, push_err = run(['git', 'push', 'origin', '%s:refs/claims/%s' % (sha, target)])
     if code != 0:
-        return False  # ref already exists with a different object → another agent won
+        # A failed push is a *lost claim* only if the ref now exists on the
+        # remote (a rival pushed a different object first). Probe it: if the
+        # ref is present the rival won; if it is absent the push failed for
+        # another reason (no write access, auth, network) and we must report
+        # an error rather than silently pretend a rival took it.
+        exists, _, _ = run(['git', 'ls-remote', '--exit-code', 'origin',
+                            'refs/claims/%s' % target])
+        if exists == 0:
+            return 'lost'
+        eprint('wf: claim push for %s failed and the ref is absent — treating '
+               'as an environment error (%s)' % (target, push_err.strip() or 'no detail'))
+        return 'error'
     root = repo_root()
     os.makedirs(os.path.join(root, '.claude'), exist_ok=True)
     with open(_claim_marker_path(root, target), 'w', encoding='utf-8') as fh:
         fh.write(sha)
-    return True
+    return 'won'
 
 
 def release_claim(target):
@@ -559,20 +587,34 @@ def checkout_pr(cfg, number):
     return True, 'checked out the PR branch'
 
 
-def claim_first_pr(pool, apply_marker):
+def claim_first_pr(pool, apply_marker, no_claim=False):
     """Walk the ordered pool, claim the first PR we win, apply its marker.
 
     Unlike stories there is no per-candidate validation — the first successful
-    claim is the selection. Returns (selected_pr_or_None, side_effects).
+    claim is the selection. Returns (outcome, selected_pr_or_None, side_effects)
+    where outcome is:
+      'ok'    — a PR is selected (claimed and marked, or — in no_claim mode —
+                simply chosen without a lock).
+      'none'  — the pool was exhausted; every candidate was lost to a rival.
+      'error' — a claim push failed for a non-rival reason (no write access,
+                network); abort rather than walking on.
+
+    With no_claim=True (read-only review, which has no push access), the first
+    pool item is returned as-is — no ref is pushed and no marker is applied.
     """
     side_effects = []
     for pr in pool:
-        if not acquire_claim('pr-%d' % pr['number']):
+        if no_claim:
+            return 'ok', pr, side_effects
+        outcome = acquire_claim('pr-%d' % pr['number'])
+        if outcome == 'error':
+            return 'error', None, side_effects
+        if outcome == 'lost':
             side_effects.append({'pr': pr['number'], 'action': 'claim-lost'})
             continue
         apply_marker(pr)
-        return pr, side_effects
-    return None, side_effects
+        return 'ok', pr, side_effects
+    return 'none', None, side_effects
 
 
 # ── commands ─────────────────────────────────────────────────────────────────
@@ -591,11 +633,6 @@ def prepare_cfg():
 
 
 def cmd_pick(args):
-    if args.mode != 'story':
-        emit('unsupported', EXIT_UNSUPPORTED,
-             reason="mode %r not implemented in wf; use the skill's inline selection" % args.mode,
-             mode=args.mode)
-
     env_err = check_environment()
     if env_err:
         emit('error', EXIT_ENV, reason=env_err)
@@ -605,6 +642,17 @@ def cmd_pick(args):
         emit('error', EXIT_ENV, reason=err)
     if not cfg.get('org') or not cfg.get('repo'):
         emit('error', EXIT_ENV, reason='org/repo missing from config')
+
+    # feature / maintenance modes: wf filters them by the type-* LABEL
+    # (wf_core._filter_by_mode). On a type-capable org the *native* issue type
+    # is authoritative and wf does not resolve it — defer those to the skill's
+    # inline native-type path. Plain label-typed projects (the common case) run
+    # here, so the fast path covers feature/maintenance too.
+    if args.mode != 'story' and cfg.get('type_capable'):
+        emit('unsupported', EXIT_UNSUPPORTED,
+             reason="mode %r needs native-issue-type resolution on a type-capable "
+                    "org; use the skill's inline selection" % args.mode,
+             mode=args.mode)
 
     if cfg.get('ready_gate', 'label') not in ('label', 'none'):
         emit('unsupported', EXIT_UNSUPPORTED,
@@ -624,7 +672,13 @@ def cmd_pick(args):
     selected = None
     for cand in pool:
         target = 'issue-%d' % cand['number']
-        if not acquire_claim(target):
+        outcome = acquire_claim(target)
+        if outcome == 'error':
+            emit('error', EXIT_ENV,
+                 reason='could not write claim ref %s — no push access to '
+                        'refs/claims/* or a remote failure (not a lost claim)' % target,
+                 backlog_mode=backlog_mode, side_effects=side_effects)
+        if outcome == 'lost':
             side_effects.append({'issue': cand['number'], 'action': 'claim-lost'})
             continue
         apply_in_progress(cfg, cand)
@@ -690,9 +744,14 @@ def cmd_update_next(args):
 
     # Marker: add `updating`, but keep the actionable state label so the
     # update-pr skill can make its final relabel decision (Step 8).
-    selected, side_effects = claim_first_pr(
+    outcome, selected, side_effects = claim_first_pr(
         pool, lambda pr: apply_pr_labels(cfg, pr['number'], add=names['updating']))
-    if not selected:
+    if outcome == 'error':
+        emit('error', EXIT_ENV,
+             reason='could not write a PR claim ref — no push access to '
+                    'refs/claims/* or a remote failure (not a lost claim)',
+             side_effects=side_effects)
+    if outcome == 'none':
         emit('all-blocked', EXIT_ALL_BLOCKED,
              reason='every candidate PR is already claimed by another agent',
              side_effects=side_effects)
@@ -730,8 +789,14 @@ def cmd_review_next(args):
         prior = names['needs-re-review'] if names['needs-re-review'] in labels else names['needs-review']
         apply_pr_labels(cfg, pr['number'], add=names['reviewing'], remove=prior)
 
-    selected, side_effects = claim_first_pr(pool, marker)
-    if not selected:
+    no_claim = getattr(args, 'no_claim', False)
+    outcome, selected, side_effects = claim_first_pr(pool, marker, no_claim=no_claim)
+    if outcome == 'error':
+        emit('error', EXIT_ENV,
+             reason='could not write a PR claim ref — no push access to '
+                    'refs/claims/* or a remote failure (not a lost claim)',
+             side_effects=side_effects)
+    if outcome == 'none':
         emit('all-blocked', EXIT_ALL_BLOCKED,
              reason='every candidate PR is already claimed by another agent',
              side_effects=side_effects)
@@ -741,7 +806,10 @@ def cmd_review_next(args):
         'number': selected['number'], 'title': selected['title'],
         'url': selected['url'], 'branch': selected['branch'],
         'labels': selected['labels'],
-        'claim_ref': 'refs/claims/pr-%d' % selected['number'],
+        # In read-only (no_claim) mode nothing was locked or relabelled, so
+        # there is no claim ref to release and the `reviewing` marker is absent.
+        'claimed': not no_claim,
+        'claim_ref': None if no_claim else 'refs/claims/pr-%d' % selected['number'],
         'side_effects': side_effects, 'checked_out': False,
     }
     if args.checkout:
@@ -774,7 +842,8 @@ def build_parser():
 
     pick = sub.add_parser('pick', help='claim the next story and return it as JSON')
     pick.add_argument('--mode', default='story', choices=['story', 'feature', 'maintenance'],
-                      help='selection mode (only "story" is implemented in wf for now)')
+                      help='selection mode; feature/maintenance run here on label-typed '
+                           'projects and defer to the skill on type-capable orgs')
     pick.add_argument('--checkout', action='store_true',
                       help='also move the board to In Progress and create/check out the branch')
     pick.set_defaults(func=cmd_pick)
@@ -788,6 +857,9 @@ def build_parser():
     rev = sub.add_parser('review-next', help='claim the next PR that needs reviewing')
     rev.add_argument('--checkout', action='store_true',
                      help='also check out the PR branch (gh pr checkout)')
+    rev.add_argument('--no-claim', action='store_true',
+                     help='select without pushing a claim ref or applying the '
+                          'reviewing marker (read-only review, which has no push access)')
     rev.set_defaults(func=cmd_review_next)
 
     cfg = sub.add_parser('config', help='emit .claude/wf-config.json from ClaudeProject.md')

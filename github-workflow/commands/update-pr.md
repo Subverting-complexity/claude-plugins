@@ -12,10 +12,19 @@ push fixes, and flag it for re-review.
 
 ## Preflight
 
-Before doing anything else, invoke `/github-workflow:preflight` to
-verify project configuration. If it finds issues and the user chooses
-"Configure now", wait for setup to complete, then ask the user to
-re-run this command. Otherwise, proceed.
+Check whether preflight already ran and passed this session — if
+`.claude/preflight-passed.txt` exists, skip the invocation entirely and
+proceed to Step 1. The file is written by `preflight` on a clean or
+WARNING-only run and is valid for exactly this session:
+
+```
+test -f .claude/preflight-passed.txt && echo "PREFLIGHT_ALREADY_PASSED"
+```
+
+If the file is absent, invoke `/github-workflow:preflight` to verify
+project configuration. If it finds issues and the user chooses "Configure
+now", wait for setup to complete, then ask the user to re-run this
+command. Otherwise, proceed.
 
 ## Steps
 

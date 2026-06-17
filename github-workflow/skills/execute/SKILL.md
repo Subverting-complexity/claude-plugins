@@ -108,19 +108,39 @@ Read `CLAUDE.md` for project rules and build principles.
 ## Session prewarm
 
 Immediately after preflight passes and the projected config is loaded,
-issue the following three reads **in a single parallel tool-call batch**
-(fire all three at once, do not wait for one before starting the next).
-This front-loads every API call Phase 1 would otherwise make sequentially
-and caches the results so later phases pay zero network overhead for
-them:
+issue the following reads **in a single parallel tool-call batch** (fire
+them at once, do not wait for one before starting the next). This
+front-loads the API calls the **inline** Phase 1 fallback would otherwise
+make sequentially and caches the results so later phases pay zero network
+overhead for them.
 
-1. **Candidate list** — fetch the `status-ready` unassigned open issues:
-   ```
-   gh issue list --repo {org}/{repo} --label "{status_ready_label}" \
-     --state open --json number,title,labels,assignees --limit 50
-   ```
-   Write the JSON result to `.claude/candidates.json` so Phase 1
-   story-selection reads from this file instead of re-querying.
+> **The candidate prewarm feeds only the inline fallback.** When the Phase 1
+> **fast path** (`wf pick`) returns `ok`, it has already selected and claimed
+> the story, so `.claude/candidates.json` is never read. Treat the candidate
+> fetch as a cheap warm-up for the degraded path, not the selection itself —
+> never hand-pick a story from this cache when the fast path succeeded.
+
+1. **Candidate list (ready-gate-aware).** Fetch the unassigned open pool the
+   way this project's `ready-gate` defines "ready" — a blind `status-ready`
+   query is **wrong** on a `none` or board gate (it returns empty and sends
+   the inline path improvising):
+   - **`label` / `both`** — gated by the ready label:
+     ```
+     gh issue list --repo {org}/{repo} --label "{status_ready_label}" \
+       --state open --assignee "" --json number,title,labels,assignees --limit 50
+     ```
+   - **`none`** — every unassigned open issue is eligible (the inline path
+     drops `status-blocked` ones itself):
+     ```
+     gh issue list --repo {org}/{repo} --state open --assignee "" \
+       --json number,title,labels,assignees --limit 50
+     ```
+   - **`board-column`** — readiness is column membership, not a label; **skip
+     this fetch** (leave `.claude/candidates.json` absent) and let the inline
+     board path resolve it.
+
+   Write the JSON result to `.claude/candidates.json` so the inline Phase 1
+   fallback reads from this file instead of re-querying.
 
 2. **Label inventory** — fetch every repo label with its node ID:
    ```
@@ -287,6 +307,47 @@ the files remain on disk for the duration of the run.)
 ---
 
 ## Phase 1 — Pick
+
+### Fast path — pick + start in one call (no explicit number)
+
+When you were **not** given a `$ARGUMENTS.story_number` and the mode is
+`story`, `feature`, or `maintenance` (not `audit`), the bundled `wf` picker
+collapses the whole select → claim → board-move → branch loop — Phase 1's
+selection *and* Phase 2's claim/board/branch — into a single deterministic
+call. **Prefer it.** Run it from the repo root:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout --mode {mode}
+```
+
+Interpret the result by its `status` field (the exit code mirrors it):
+
+- **`ok`** — a story is claimed and you are on its branch. The JSON carries
+  `number`, `title`, `url`, `labels`, `milestone`, `body`, `claim_ref`,
+  `branch`, `checked_out`, `board_moved`, and `side_effects`; the
+  `status-in-progress` + `@me` markers are applied and the claim ref is held.
+  **Stop selecting — do not run the inline procedure or re-derive anything.**
+  Surface any `side_effects` (issues returned to blocked, or closed as
+  already-resolved). Then do **only** the body-validation check at the end of
+  this phase (Context + Requirements), and go to Phase 2 — its claim/board/
+  branch steps are already done, so treat them as no-ops. If `checked_out` is
+  false, read `branch_message` (e.g. a rebase conflict against the default
+  branch) and run `/github-workflow:block-story` instead of building.
+- **`no-candidates`** / **`all-blocked`** — nothing was pickable. Run **only
+  Step 4** (lazy auto-ready scan) of `templates/story-selection.md`; if it
+  restores anything, retry the fast path once, else stop with "No stories
+  available for pickup".
+- **`unsupported`** — `wf` deferred this case (feature/maintenance on a
+  type-capable org). Use the inline selection below.
+- **`error`**, or the launcher reports Python is missing — `wf` cannot run
+  here. Use the inline selection below.
+
+The fast path replaces the manual candidate fetch in **Session prewarm** for
+the common case; that prewarm only pre-loads the inline fallback (see its
+note). Skip the fast path entirely for an explicit number (it auto-selects)
+and for `audit` mode.
+
+### Explicit number / inline fallback
 
 If `$ARGUMENTS.story_number` is provided, use that issue directly — but
 first run the **already-in-flight guard**. The auto-pick pool below
