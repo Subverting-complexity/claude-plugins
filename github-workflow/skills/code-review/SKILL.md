@@ -277,6 +277,19 @@ git rev-parse HEAD
 
 Save this SHA for the review footer.
 
+**Fetch the base branch so the diff is computed against the *current*
+base, not a stale local copy.** In a worktree the local `<baseRef>` (e.g.
+`main`) is often far behind `origin` — diffing against it makes
+`git diff <baseRef>...HEAD` pick an old merge-base and report files the PR
+never touched (the classic "the diff shows far more files than the PR
+changed"). Always refresh it first:
+
+```bash
+git fetch origin <baseRef>
+```
+
+Step 4 then diffs against `origin/<baseRef>`.
+
 ### Step 4 — Gather context
 
 Run all of the following. If any command fails, treat as a review failure
@@ -295,15 +308,25 @@ Run all of the following. If any command fails, treat as a review failure
   there is no linked issue and the config lists that as a hard gate, it is
   a non-compliance failure, but continue the review.
 
-- **Changed files:**
+- **Changed files:** diff against the freshly-fetched remote base
+  (`origin/<baseRef>` from Step 3), never the local branch:
   ```bash
-  git diff <baseRef>...HEAD --name-status
+  git diff origin/<baseRef>...HEAD --name-status
   ```
 
 - **Full diff** (for reference, but do not review from the diff alone):
   ```bash
-  git diff <baseRef>...HEAD
+  git diff origin/<baseRef>...HEAD
   ```
+
+- **Cross-check the file set against GitHub's.** Compare the file list above
+  with the `files` array from the PR metadata (`gh pr view --json files` —
+  GitHub's authoritative changed-file set for this PR). They should match. If
+  the local diff shows **more** files than GitHub reports, the base is still
+  stale or the branch carries commits already merged elsewhere — re-fetch
+  (`git fetch origin <baseRef>`) and re-diff, and if it still disagrees,
+  trust GitHub's `files` list and review exactly those paths. Never review
+  files GitHub does not list as part of the PR.
 
 ### Step 4b — Assess re-review significance (re-reviews only)
 
