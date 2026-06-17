@@ -59,11 +59,24 @@ Read the story or issue. Extract:
 
 ### When no story or issue is provided
 
-Derive the scope from the code changes:
+Derive the scope from the code changes. First resolve the comparison base:
+local `main` is often stale (especially in worktrees), so prefer the remote's
+default branch when an `origin` remote exists, and fetch it so the ref is
+current. This is a local verification skill that may run in a repo with no
+`origin`, so fall back to local `main` when there is no remote.
 
-```
-git log main..HEAD --oneline
-git diff main...HEAD --stat
+```sh
+default_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+default_branch=${default_branch:-main}
+if git remote get-url origin >/dev/null 2>&1; then
+  git fetch --quiet origin "$default_branch"
+  base="origin/$default_branch"
+else
+  base="$default_branch"
+fi
+
+git log "$base"..HEAD --oneline
+git diff "$base"...HEAD --stat
 ```
 
 Read the commit messages and the changed files to infer:
@@ -82,9 +95,20 @@ State the inferred scope to the user before proceeding:
 Build a complete picture of what changed and what it touches.
 
 1. **List all changed files** with change type (added, modified, deleted,
-   renamed):
-   ```
-   git diff main...HEAD --name-status
+   renamed). Resolve the comparison base the same way as in Step 1 (prefer
+   the remote default branch, fall back to local `main`) — do this here too,
+   since the base may not have been resolved if a story was provided:
+   ```sh
+   default_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+   default_branch=${default_branch:-main}
+   if git remote get-url origin >/dev/null 2>&1; then
+     git fetch --quiet origin "$default_branch"
+     base="origin/$default_branch"
+   else
+     base="$default_branch"
+   fi
+
+   git diff "$base"...HEAD --name-status
    ```
 
 2. **For each changed file**, read the full file and identify:
