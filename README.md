@@ -13,6 +13,21 @@ Both plugins share a single canonical set of skills (architecture design,
 feature discovery, structured coding, code review, security audit, and more),
 so the two stay consistent. See [Repository layout](#repository-layout) below.
 
+> **Install one, not both.** The two plugins overlap heavily — 13 of their
+> skills are identical copies. Installing both loads those skill descriptions
+> into every session *twice* and puts duplicate entries in the skill picker,
+> which wastes context and can make Claude trigger the wrong copy. Pick the one
+> that matches how you work:
+>
+> - **`github-workflow`** — your work flows through GitHub issues, boards, and PRs.
+> - **`local-workflow`** — you want the same engineering methodology with no
+>   platform dependencies (and the local-only extras: mobile-audit, tone, and
+>   support-request).
+>
+> Everything in the shared library is in both, so you don't lose any of the
+> core skills by choosing one. (This repo is the exception — it installs both
+> only because it dogfoods them against itself.)
+
 ---
 
 ## Installation
@@ -23,7 +38,8 @@ Add the marketplace, then install whichever plugin(s) you want:
 # 1. Add this marketplace
 claude plugin marketplace add Subverting-complexity/claude-plugins
 
-# 2. Install a plugin (scope defaults to "user")
+# 2. Install the ONE plugin you chose (see "Install one, not both" above).
+#    Run only one of these:
 claude plugin install github-workflow@subverting-complexity
 claude plugin install local-workflow@subverting-complexity
 ```
