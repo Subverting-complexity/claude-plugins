@@ -306,6 +306,34 @@ def parse_dependencies(body):
     return deps, len(deps) > DEP_LIMIT
 
 
+# ── Closing-reference normalisation ──────────────────────────────────────────
+# GitHub reports an issue a PR closes as `closingIssuesReferences`, but the
+# shape differs by API — see the helper for the two forms and the crash that
+# conflating them caused.
+
+def closing_issue_numbers(refs):
+    """Normalise GitHub's `closingIssuesReferences` to a list of issue numbers.
+
+    The field arrives in two different shapes depending on which API the I/O
+    shell used, and the two must not be confused:
+
+      - `gh pr view --json closingIssuesReferences` returns a **flat list** of
+        issue objects: ``[{'number': 5}, ...]``.
+      - The GraphQL API returns the connection wrapped in ``nodes``:
+        ``{'nodes': [{'number': 5}, ...]}``.
+
+    Passing the gh-CLI list to ``.get('nodes')`` is what crashed cmd_post_merge
+    with ``'list' object has no attribute 'get'``. This accepts either shape
+    (and a ``None``/missing value) and always returns a plain list of ints, so
+    callers never have to know which API produced the data.
+    """
+    if not refs:
+        return []
+    if isinstance(refs, dict):
+        refs = refs.get('nodes') or []
+    return [n['number'] for n in refs if isinstance(n, dict) and 'number' in n]
+
+
 # ── Branch naming ────────────────────────────────────────────────────────────
 # start-story.md Step 6 — deterministic slug from the issue title.
 
