@@ -1,16 +1,11 @@
 ---
 name: execute
 description: >-
-  End-to-end story execution: pick → plan → build → test → PR.
-  Trigger when the user wants development work done. Any of these:
-  "next story", "start the next story", "pick up a story", "what's next",
-  "work on story N", "do story N", "story #N", "#N", "do N", just a bare issue number,
-  "start working", "build the next feature", "execute", "run the workflow",
-  "implement", "develop", "build this", "implement story N", "develop N",
-  "new feature", "start a feature" (use mode=feature),
-  "fix bugs", "fix the next bug", "fix security issues", "tech debt", "maintenance" (use mode=maintenance),
-  "audit the codebase", "audit for security", "security audit", "code audit", "run an audit" (use mode=audit).
-  Also trigger when the user pastes a GitHub issue URL or references an issue number.
+  End-to-end GitHub story execution: pick → plan → build → test → PR. Trigger
+  when the user wants development work done — "next story", "work on story N",
+  a bare issue number, "build this", "implement", "run the workflow", or a pasted
+  GitHub issue URL. Use mode=feature for features, mode=maintenance for
+  bugs/security/debt, mode=audit for a no-code-change codebase audit.
 depends-on:
   - code-architect
   - structured-coding

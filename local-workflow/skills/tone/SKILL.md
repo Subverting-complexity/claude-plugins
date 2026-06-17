@@ -1,6 +1,6 @@
 ---
 name: tone
-description: "Format and polish correspondence (emails, messages, updates) in the user's own writing tone. Use this skill whenever the user asks to write, edit, rewrite, polish, or format any message, email, update, status report, follow-up, or written communication of any kind. Also trigger when the user pastes a rough draft and asks to clean it up, fix the tone, or make it sound like them. Also trigger when the user pastes AI-generated output, a technical explanation, or someone else's writing and asks to rewrite it in their voice, strip the AI tells, or remove em dashes and generic phrasing. The skill handles both minimal polishing of dictated drafts and full rewrites of non-user input. Applies to all correspondence: work, technical, and personal."
+description: "Format and polish correspondence — emails, messages, updates, status reports — in the user's own writing tone. Use whenever the user wants to write, rewrite, or clean up any message, or to strip AI tells (em dashes, generic phrasing) from drafted or pasted text. Handles both light polishing of dictated drafts and full rewrites of non-user input."
 ---
 
 # Correspondence Tone Skill

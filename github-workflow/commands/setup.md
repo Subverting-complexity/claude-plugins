@@ -510,84 +510,14 @@ state labels are a mutex managed by the code-review skill.
 
 Run this when the user **enables `auto-merge-on-approval`** (from Step 7),
 or standalone via `/github-workflow:setup harden`. It makes "merge only
-after CI passes" actually enforceable. Without it, an approved PR on a
-branch with no **required** checks merges immediately — no CI guarantee.
+after CI passes" actually enforceable — without it, an approved PR on a
+branch with no **required** checks merges immediately.
 
-The goal is **one** of two safe configurations:
-
-- **(a) GitHub enforces it** — branch protection with required status
-  checks. Preferred, but needs a public repo or GitHub Pro/Team on a
-  private one.
-- **(b) The plugin enforces it** — `require-ci-before-merge: true` in
-  `docs/review.config.md` + a real PR pipeline. The fallback when (a)
-  isn't available.
-
-Resolve `{org}`, `{repo}`, `{branch}` from `ClaudeProject.md`. Each
-sub-step is **best-effort** and degrades to a warning.
-
-1. **Enable repo-level auto-merge** (needed by `gh pr merge --auto`):
-   ```bash
-   gh api -X PATCH repos/{org}/{repo} -F allow_auto_merge=true
-   allowed=$(gh api repos/{org}/{repo} --jq '.allow_auto_merge')
-   ```
-   **Read it back** — some orgs accept the PATCH (200) but silently keep
-   it `false` via policy. If `allowed` is not `true`, warn: repo-level
-   auto-merge is blocked by org/repo policy; an admin must enable "Allow
-   auto-merge" in Settings → Pull Requests, or queued merges never fire.
-
-2. **Branch protection + required checks.** Find candidate check
-   contexts — the job names in `.github/workflows/*.yml`, or the check
-   names on a recent PR (`gh pr checks <recent-pr> --repo {org}/{repo}`).
-   Ask the user which contexts must pass before merge. Apply protection
-   with **strict** mode (require branches up to date):
-   ```bash
-   gh api -X PUT repos/{org}/{repo}/branches/{branch}/protection \
-     --input - <<'JSON'
-   {
-     "required_status_checks": { "strict": true, "contexts": ["<ctx>", "..."] },
-     "enforce_admins": false,
-     "required_pull_request_reviews": null,
-     "restrictions": null
-   }
-   JSON
-   ```
-   If this returns **403** ("Upgrade to GitHub Pro or make this
-   repository public"), GitHub cannot enforce required checks on this
-   repo — required status checks are paid-plan-only for private repos, so
-   a private repo on the Free plan can never use configuration (a). Note
-   it and proceed to step 3 (the plugin-side fallback is the only gate
-   available); to get server-side enforcement instead, the repo must go
-   public or move to GitHub Pro/Team. See the "Plan limitation" note in
-   `skills/code-review/references/review-config-guide.md`. If there are no
-   CI workflows at all, say so: there is nothing to require yet (merge the
-   pipeline first), and step 3 is the only available guard.
-
-3. **Plugin-side fallback.** If step 1 or 2 could **not** be fully
-   enforced (repo auto-merge stuck off, branch protection unavailable, or
-   no required checks now exist), set in `docs/review.config.md`'s
-   Auto-Merge on Approval section:
-   ```
-   | require-ci-before-merge | `true` |
-   ```
-   Tell the user why: GitHub isn't enforcing the gate, so the code-review
-   skill will — it waits for a green CI run and **pauses** an approved PR
-   that has no checks or a red check, instead of merging it. (If
-   server-side enforcement via step 2 fully succeeded, leaving this
-   `false` is fine; configuration (a) already covers it.)
-
-   Harden sets `true` because that is the strict guarantee — it pauses
-   even when a repo runs no pipeline. If the user instead wants "gate when
-   the PR runs CI, otherwise just merge," offer **`if-present`**: it
-   behaves identically to `true` on a repo that has a pipeline, and merges
-   an unchecked PR rather than pausing it. Note the trade-off — `if-present`
-   is **not** an absolute gate, so a repo with no pipeline merges
-   unguarded. When no pipeline exists at all, say so plainly: neither
-   value gates anything until a PR pipeline is running.
-
-4. **Report** what landed: repo auto-merge on/off, branch protection
-   applied or blocked, and which enforcement configuration ((a), (b), or
-   "neither — auto-merge is unguarded; merge a CI pipeline first") is now
-   in effect.
+Follow the full procedure in `templates/harden-auto-merge.md`. Resolve
+`{org}`, `{repo}`, `{branch}` from `ClaudeProject.md` first. It aims for
+one of two safe configurations — GitHub-enforced branch protection, or
+the plugin-side `require-ci-before-merge` fallback — and each sub-step is
+best-effort, degrading to a warning. Report what landed.
 
 ### 8. Claude Code Ecosystem Tools (recommended, skippable)
 
@@ -643,114 +573,17 @@ Suggest running `/github-workflow:execute` to start the first story.
 ### 10. Reap orphaned claim refs
 
 The workflow locks each in-flight issue or PR with a git ref under
-`refs/claims/`. These refs are released automatically on every normal
-exit, but a crash or hard kill skips the release and leaves an
-orphaned ref that silently blocks future pickup of that item. This step
-scans all active claim refs, identifies which ones no longer back live
-work, frees them, and reports anything that needs manual review.
+`refs/claims/`. A crash or hard kill can leave an orphaned ref that
+silently blocks future pickup of that item. This step scans active claim
+refs, frees those that no longer back live work, and flags anything that
+needs manual review.
 
-**Parse the threshold argument.** If `$ARGUMENTS` contains
-`--threshold N`, use `N` hours as the staleness threshold; otherwise
-default to **4 hours**. A claim younger than the threshold is never
-reaped — it may belong to a normally running session.
-
-**List all active claims:**
-
-```bash
-git fetch --prune origin '+refs/claims/*:refs/remotes/origin/claims/*'
-git ls-remote origin 'refs/claims/*'
-```
-
-If the output is empty, report "No active claim refs found." and stop.
-
-**For each claim ref** `{sha}\trefs/claims/{target}` (where `{target}`
-is `issue-{N}` or `pr-{N}`):
-
-1. **Fetch the claim object and measure its age** (in hours):
-
-   ```bash
-   git fetch origin "refs/claims/{target}"
-   CLAIM_TS=$(git log -1 --format="%ct" FETCH_HEAD)
-   NOW=$(date +%s)
-   AGE_H=$(( (NOW - CLAIM_TS) / 3600 ))
-   ```
-
-   If `AGE_H < threshold`, skip this ref (too recent).
-
-2. **Cross-check for issue claims** (`issue-{N}`):
-
-   ```bash
-   gh issue view {N} --repo {org}/{repo} --json state,labels \
-     --jq '{state: .state, labels: [.labels[].name]}'
-   ```
-
-   - Issue state is **CLOSED** → **reap** (work is done; the ref was
-     not freed on the session's last exit).
-   - Issue does **not** have the `status-in-progress` label → **reap**
-     (the lifecycle label moved on — e.g. back to `status-ready` or
-     to `status-in-review` — but the claim ref was never freed).
-   - Issue **has** `status-in-progress` AND no open PR → **flag as
-     suspect** (the in-progress marker is still set; this might be an
-     active but slow session, or a crashed one — report it for manual
-     review, do not auto-reap).
-   - Issue **has** `status-in-progress` AND an open PR exists
-     (checked below) → **reap** (the PR was opened but the
-     post-create claim release failed; the normal `execute` flow
-     always releases after PR creation).
-
-   To check for an open PR, use a simplified lookup — check whether
-   the issue has a `status-in-review` lifecycle label (set by
-   `finish-story` when the PR is opened) **or** run a quick PR search:
-
-   ```bash
-   gh pr list --repo {org}/{repo} --state open \
-     --search "closes #{N}" --json number,title
-   ```
-
-   A non-empty result means a PR was opened for this issue.
-
-3. **Cross-check for PR claims** (`pr-{N}`):
-
-   ```bash
-   gh pr view {N} --repo {org}/{repo} --json state,labels \
-     --jq '{state: .state, labels: [.labels[].name]}'
-   ```
-
-   - PR state is **CLOSED** or **MERGED** → **reap**.
-   - PR is **OPEN** but has neither a `reviewing` nor an `updating`
-     review-state label → **reap** (the review completed but the
-     claim was not freed).
-   - PR is **OPEN** with `reviewing` or `updating` label → **flag as
-     suspect** (might be an active review session).
-
-**When reaping** a ref:
-
-```bash
-git push origin ":refs/claims/{target}"
-```
-
-Report: `Reaped: refs/claims/{target} — {AGE_H}h old ({reason})`
-
-**When flagging as suspect**, do not delete the ref. Report:
-
-```
-Suspect: refs/claims/{target} — {AGE_H}h old (issue #{N} is still
-in-progress with no open PR). Verify no active session is running,
-then free it manually:
-  git push origin :refs/claims/{target}
-```
-
-**Summary line** at the end:
-
-```
-Claim refs: {N} reaped, {K} suspect (manual review needed), {M} skipped (too recent).
-```
-
-If the user wants to run this on a schedule, they can use
-`/schedule` to create a routine that calls
-`/github-workflow:setup reap` daily or weekly. The command is
-safe to run at any time — it never reaps a ref that still backs a
-running session.
+Follow the full procedure in `templates/reap-claims.md`: parse an optional
+`--threshold N` hours (default **4**), resolve `{org}`/`{repo}` from
+`ClaudeProject.md`, then cross-check every claim ref against its issue/PR
+state. It is safe to run any time — it never reaps a ref that still backs
+a running session — and is schedulable via `/schedule` calling
+`/github-workflow:setup reap`.
 
 ## Troubleshooting
 

@@ -1,6 +1,6 @@
 ---
 name: structured-coding
-description: A methodology skill for approaching all coding tasks with discipline and structure. Use this skill whenever the user asks to write, modify, fix, refactor, or review code — including bug fixes, new features, refactoring, architecture changes, or any task that touches a codebase. Trigger whenever the user shares code, references a codebase, asks for implementation help, or describes a feature/bug/change they want made. Even if the request seems small, use this skill — small changes done well prevent big problems later. Note that execute calls this skill as its build phase — when the user wants end-to-end task execution (plan, build, verify, commit), prefer execute over calling this skill directly.
+description: "Methodology for approaching any coding task with discipline and structure — bug fixes, new features, refactors, or architecture changes. Use whenever the user wants code written or modified, even small changes. Note: execute calls this as its build phase; prefer execute when the user wants end-to-end task execution (plan, build, verify, commit)."
 allowed-tools:
   - Read
   - Edit

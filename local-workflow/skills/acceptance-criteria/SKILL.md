@@ -1,6 +1,6 @@
 ---
 name: acceptance-criteria
-description: Write user-facing acceptance criteria for testing a PR or feature branch. Use this skill whenever the user wants acceptance criteria, test steps, QA steps, or asks what to test on the front end. Trigger on phrases like "write acceptance criteria", "what should be tested", "QA steps", "test steps for this PR", "write AC", "acceptance criteria for this branch", or any request to produce testable criteria from code changes. Also trigger when the user says "how do I test this" or "what should I check" in the context of a feature or PR. Do NOT use for writing user stories (use user-story instead). Do NOT use for reviewing code quality (use code-review instead).
+description: "Write user-facing acceptance criteria — test/QA steps — for a PR or feature branch, aimed at testers and stakeholders using the UI. Use when the user wants AC, test steps, or 'what should I test' for a feature or PR. Do NOT use for writing user stories (use user-story) or reviewing code quality (use code-review)."
 ---
 <!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 

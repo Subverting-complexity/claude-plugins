@@ -1,6 +1,6 @@
 ---
 name: user-story
-description: Write, format, or structure a single user story for a development work item. Use this skill whenever the user mentions user stories, feature specs, work items, dev tickets, or asks to write up a feature, enhancement, or change for a development team. Also trigger when the user pastes rough notes, bullet points, or a verbal description and wants it turned into a structured user story. Trigger on phrases like "write a user story", "spec this out", "write this up as a story", "create a ticket for", "write up this feature", or any request to document a planned development change. Also trigger when the user has an existing user story and wants acceptance criteria written for it. Do NOT use for breaking a feature into multiple stories or planning a body of work (use feature-discovery instead). Do NOT use for scaffolding a new project (use repo-scaffolding instead).
+description: "Write or format a single user story for a development work item, with acceptance criteria. Use when the user wants to spec out a feature, write up a ticket, or turn rough notes into a structured story. Do NOT use for breaking a feature into multiple stories (use feature-discovery) or scaffolding a new project (use repo-scaffolding)."
 ---
 <!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
