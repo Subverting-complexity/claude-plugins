@@ -483,8 +483,7 @@ def merged_pr_closing(cfg, number):
     except (KeyError, TypeError):
         return None
     for pr in nodes:
-        refs = (pr.get('closingIssuesReferences') or {}).get('nodes') or []
-        if any(ref.get('number') == number for ref in refs):
+        if number in wf_core.closing_issue_numbers(pr.get('closingIssuesReferences')):
             return pr['number']
     return None
 
@@ -957,8 +956,10 @@ def cmd_post_merge(args):
                     % (args.pr, data.get('state')),
              pr=args.pr)
 
-    linked = [n['number'] for n in
-              (data.get('closingIssuesReferences') or {}).get('nodes', [])]
+    # `gh pr view --json` returns the references as a flat list, unlike the
+    # GraphQL API (used by merged_pr_closing) which wraps them as {nodes: [...]};
+    # closing_issue_numbers normalises both so this can't crash on the shape.
+    linked = wf_core.closing_issue_numbers(data.get('closingIssuesReferences'))
     for extra in (args.issue or []):
         if extra not in linked:
             linked.append(extra)

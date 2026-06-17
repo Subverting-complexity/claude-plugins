@@ -31,6 +31,7 @@ from wf_core import (  # noqa: E402
     actionable_update_label,
     branch_name,
     branch_slug,
+    closing_issue_numbers,
     current_lifecycle_label,
     detect_backlog_mode,
     get_sprint_candidates,
@@ -503,6 +504,34 @@ class TestProjectBoardParsing(unittest.TestCase):
             parse_claude_project(text)['branch_convention'],
             'feature/{number}/{short-desc}',
         )
+
+
+class TestClosingIssueNumbers(unittest.TestCase):
+    """Normalising `closingIssuesReferences` across the two API shapes.
+
+    Regression guard for the cmd_post_merge crash where the flat list returned
+    by `gh pr view --json` was fed to `.get('nodes')` as if it were the GraphQL
+    connection shape, raising `'list' object has no attribute 'get'`.
+    """
+
+    def test_gh_cli_flat_list_shape(self):
+        """`gh pr view --json` returns a flat list of issue objects."""
+        refs = [{'number': 5}, {'number': 12}]
+        self.assertEqual(closing_issue_numbers(refs), [5, 12])
+
+    def test_graphql_nodes_shape(self):
+        """The GraphQL API wraps the same data in a `nodes` connection."""
+        refs = {'nodes': [{'number': 5}, {'number': 12}]}
+        self.assertEqual(closing_issue_numbers(refs), [5, 12])
+
+    def test_empty_and_missing(self):
+        self.assertEqual(closing_issue_numbers(None), [])
+        self.assertEqual(closing_issue_numbers([]), [])
+        self.assertEqual(closing_issue_numbers({'nodes': []}), [])
+        self.assertEqual(closing_issue_numbers({}), [])
+
+    def test_skips_entries_without_a_number(self):
+        self.assertEqual(closing_issue_numbers([{'number': 7}, {}, {'title': 'x'}]), [7])
 
 
 if __name__ == '__main__':
