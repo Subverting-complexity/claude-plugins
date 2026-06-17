@@ -48,7 +48,24 @@ if [ -f CLAUDE.md ]; then
 else
   echo "No CLAUDE.md found"
 fi
+
+# Ecosystem tools onboarding nudge (informational — never blocks). local-workflow
+# has no preflight, so this is its equivalent. Speak up only inside a real project
+# (a git repo) that has neither opted in (.claude/ecosystem.md) nor out
+# (.claude/ecosystem-declined). Declining once writes the marker, silencing it.
+if [ -e .git ] && [ ! -f .claude/ecosystem.md ] && [ ! -f .claude/ecosystem-declined ]; then
+  echo "ECOSYSTEM_TIP: companion tools (Graphify/RTK/etc.) not set up — optional"
+fi
 ```
+
+**`ECOSYSTEM_TIP` is informational, not a gate.** If the block above printed an
+`ECOSYSTEM_TIP` line, this project has not opted into *or* out of the companion
+tools. Surface it as **one** plain line early in your response — e.g. "Tip:
+companion tools like Graphify aren't set up. Run `/local-workflow:ecosystem-setup`
+to enable them, or skip — it's optional." — then carry on with the task. It never
+blocks, never repeats within a run, and stops entirely once the user sets up or
+declines (declining writes `.claude/ecosystem-declined`). If no `ECOSYSTEM_TIP`
+line was printed, say nothing about ecosystem tools.
 
 ## Session budget
 
