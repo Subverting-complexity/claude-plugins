@@ -368,21 +368,26 @@ what was already covered and what the PR adds or modifies.
 
 Work through each area below using the full codebase context.
 
-**Ecosystem tools (if configured).** If `.claude/ecosystem.md` exists, it
-lists codebase-intelligence tools installed for this project — use them to
-sharpen the relevant areas below, and fold their output into the matching
-section of the review:
+**Ecosystem tools.** If `.claude/ecosystem.md` exists, the project has opted
+into the codebase-intelligence tools it lists — reach for them before
+tracing the diff by hand, and fold their output into the matching section
+of the review:
 
-- **Graphify** → `graphify . --update` then `graphify query`/`graphify path`
-  to trace how the changed functions connect to the rest of the tree
-  (feeds *Regressions* and *Architectural consistency*).
+- **Graphify** → `graphify . --update` first, then prefer `graphify
+  query`/`graphify path` over blind file search to trace how the changed
+  functions connect to the rest of the tree (feeds *Regressions* and
+  *Architectural consistency*). A graph trace is the accelerant, not a
+  mandate — use it when it beats reading files, skip it when the blast
+  radius is obvious.
 - **Fallow** (TS/JS) → run it to surface unused exports and duplication the
   diff introduces (feeds *Minimality* and dead-code findings).
 - **ecc-agentshield** → when the PR touches Claude Code config (CLAUDE.md,
   `.claude/`, hooks, skills, MCP config), `npx ecc-agentshield scan` and
   fold any finding into *Security*.
 
-Skip silently for any tool not listed or not relevant to this diff.
+If `.claude/ecosystem.md` is absent, the project opted out — review by hand
+as normal and never nag about it. If a listed tool is not on `PATH`, note it
+in one line and continue; a missing tool never blocks the review.
 
 #### Hard non-compliance gates
 

@@ -589,12 +589,24 @@ sub-step is **best-effort** and degrades to a warning.
    "neither — auto-merge is unguarded; merge a CI pipeline first") is now
    in effect.
 
-### 8. Claude Code Ecosystem Tools (optional)
+### 8. Claude Code Ecosystem Tools (recommended, skippable)
+
+This is where a project actually starts *using* the companion tools, so
+present it as a recommended step rather than a footnote — but one the user
+can wave off in a sentence. Give the one-line reason it is worth a minute:
+the workflow's `execute` and `code-review` skills read `.claude/ecosystem.md`
+to run a codebase knowledge graph (Graphify) and token/cost/security tools
+automatically; without that cheat-sheet they have no idea the tools are
+installed, so the tools sit unused. Set them up once and every future run
+benefits.
 
 Offer to set up commonly used Claude Code companion tools (Graphify, RTK,
 ccusage, ecc-agentshield, Fallow) and record what was enabled in
 `.claude/ecosystem.md` — the cheat-sheet that `/github-workflow:execute`
 and `/github-workflow:code-review` read to use those tools automatically.
+If the user declines everything, the step is a clean no-op: it leaves a
+small opt-out marker so onboarding never nags again, and nothing is
+blocked.
 
 This is handled by the shared **`ecosystem-setup`** skill
 (`skills/ecosystem-setup/SKILL.md`), so the github-workflow and

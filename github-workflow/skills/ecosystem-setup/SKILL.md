@@ -19,19 +19,51 @@ the patterns in `_shared/banned-patterns.md`. Full standard:
 `_shared/wording-standard.md`.
 
 This whole skill is **optional and additive** — skip any tool the user
-declines or that is not relevant. Ask once at the start: "Do you want to
-set up any Claude Code ecosystem tools?" If the user says no to all, stop
-here — no files are written, no tokens added to future contexts.
+declines or that is not relevant. Ask once at the start, with a one-line
+sense of what is on offer: "Want to set up any Claude Code companion
+tools? They are optional and skippable — a codebase knowledge graph
+(Graphify) for graph-grounded answers, terminal/context token optimizers
+(RTK, Headroom), cost history (ccusage), a config security scanner
+(ecc-agentshield), and TS/JS code intelligence (Fallow)."
 
 Track which tools the user enables. At the end, if at least one tool is
 enabled, write `.claude/ecosystem.md` containing only those tools'
-entries (see **Generate `.claude/ecosystem.md`** below). If nothing is
-enabled, do nothing — no file, no row, zero impact on future context
-windows.
+entries (see **Generate `.claude/ecosystem.md`** below) and **delete any
+`.claude/ecosystem-declined` marker** left by a previous decline — the
+project is now opted in.
+
+**If the user declines everything**, write **no** tool cheat-sheet, but do
+drop a tiny opt-out marker so nothing nags them again:
+
+```
+.claude/ecosystem-declined
+```
+
+with this content:
+
+```markdown
+# Ecosystem tools declined
+
+This project opted out of Claude Code companion tools. Workflow skills
+skip the ecosystem step silently and never prompt for it. To enable tools
+later, run `/github-workflow:ecosystem-setup` (or
+`/github-workflow:setup ecosystem`) — that deletes this marker and writes
+`.claude/ecosystem.md`.
+```
+
+This marker is the deliberate-opt-out signal: it carries no tool content
+and adds nothing to a workflow context window (skills only check whether
+it exists), but it tells the onboarding nudge in `preflight` to stay
+quiet. Mention the user can `.gitignore` it if the opt-out is personal
+rather than a team decision. (A project with **neither** `ecosystem.md`
+**nor** this marker is simply one that never ran setup — that is the only
+state the nudge speaks up in.)
 
 If `.claude/ecosystem.md` already exists, this skill **regenerates** it:
 re-run detection, let the user add or drop tools, and rewrite the file
-from the enabled set.
+from the enabled set. If the user drops every tool during a regenerate,
+remove `.claude/ecosystem.md` and write the `ecosystem-declined` marker
+instead.
 
 ---
 

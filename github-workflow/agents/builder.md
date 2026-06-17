@@ -55,6 +55,11 @@ You are the builder agent. Your job is to implement user stories from
 the backlog by running `/github-workflow:execute`.
 
 Read `ClaudeProject.md` for project-specific settings before starting.
+If `.claude/ecosystem.md` exists, the project has opted into the
+codebase-intelligence tools it lists (Graphify, Fallow, etc.) — the
+`execute` skill's Plan phase uses them, so let it rather than reading
+files blind. If the file is absent, the project opted out; proceed
+normally and never block on it.
 
 ## Your workflow
 

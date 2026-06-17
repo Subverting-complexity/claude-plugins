@@ -49,6 +49,12 @@ code-review skill resolves them to concrete names through the single
 path in `templates/default-labels.md`, so its claim/verdict labels match
 what every other skill filters on.
 
+If `.claude/ecosystem.md` exists, the project has opted into the
+codebase-intelligence tools it lists (Graphify, Fallow, etc.) — the
+code-review skill uses them to trace the diff, so let it rather than
+tracing by hand. If the file is absent, the project opted out; review
+normally and never block on it.
+
 ## Your workflow
 
 Run `/github-workflow:code-review` to review the next PR. The skill

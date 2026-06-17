@@ -84,6 +84,14 @@ gh auth status 2>&1 | head -3
 > - `/github-workflow:start-story` → Assign, branch, board update.
 > - `/github-workflow:finish-story` → Push, PR, board update.
 >
+> **Faster, better-grounded runs (optional):**
+>
+> - `/github-workflow:setup ecosystem` → Turn on companion tools so the
+>   workflow uses them automatically: a codebase knowledge graph
+>   (Graphify) for graph-grounded planning and review, plus token, cost,
+>   and config-security helpers. Fully skippable — decline and nothing
+>   changes.
+>
 > Most people just say "start the next story" and let me handle it.
 
 **No git repo or gh not authenticated:**
