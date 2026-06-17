@@ -1,4 +1,4 @@
-<!-- COMPILED from templates/worktree-hygiene.md — edit the source, not this file. -->
+<!-- COMPILED from templates/worktree-hygiene.md -- edit the source, not this file. -->
 # Worktree hygiene
 
 The harness gives each parallel/background agent its own git worktree and

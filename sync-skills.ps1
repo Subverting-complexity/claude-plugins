@@ -60,10 +60,28 @@ function Process-MdContent {
     $version = Get-PluginVersion -PluginName $PluginName
     $result = $result -replace '\{\{PLUGIN_VERSION\}\}', $version
     $result = $result -replace "`r`n", "`n"
-    if (-not $result.StartsWith($syncComment)) {
-        $result = $syncComment + "`n" + $result
+
+    # Already carries the banner -- leave it untouched (idempotent re-sync).
+    if ($result.Contains($syncComment)) {
+        return $result
     }
-    return $result
+
+    # The banner is an HTML comment, but a SKILL.md must keep its YAML
+    # frontmatter ('---') on line 1 or the skill loader cannot parse it and
+    # the skill silently fails to register. So when the file opens with
+    # frontmatter, insert the banner on its own line immediately AFTER the
+    # closing '---'. Files without frontmatter get the banner prepended.
+    $lines = $result -split "`n", -1
+    if ($lines.Count -gt 1 -and $lines[0] -eq '---') {
+        for ($i = 1; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -eq '---') {
+                $before = $lines[0..$i]
+                $after = if ($i + 1 -le $lines.Count - 1) { $lines[($i + 1)..($lines.Count - 1)] } else { @() }
+                return (($before + $syncComment + $after) -join "`n")
+            }
+        }
+    }
+    return $syncComment + "`n" + $result
 }
 
 $script:expectedFiles = @{}
@@ -214,7 +232,7 @@ function Compile-RuntimeVariants {
 
         $expectedRuntime[$filename] = $true
         $dstFile = Join-Path $runtimeDir $filename
-        $header = "<!-- COMPILED from templates/$filename — edit the source, not this file. -->"
+        $header = "<!-- COMPILED from templates/$filename -- edit the source, not this file. -->"
         $stripped = Strip-RationaleBlocks -Content ($srcContent -replace "`r`n", "`n")
         $fullContent = $header + "`n" + $stripped
 

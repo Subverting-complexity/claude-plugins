@@ -11,9 +11,11 @@ This repo contains multiple Claude Code plugins that share skills.
 
 ## CRITICAL RULES
 
-1. **NEVER edit a synced skill copy directly.** If the file starts
-   with `<!-- SYNCED from _shared-skills/ -->`, it is generated.
-   Edit the canonical source in `_shared-skills/` instead. See the
+1. **NEVER edit a synced skill copy directly.** If the file contains
+   a line starting with `<!-- SYNCED from _shared-skills/ -->`, it is
+   generated. (In a `SKILL.md` the banner sits just below the YAML
+   frontmatter — which must stay on line 1 — so it is not always the
+   first line.) Edit the canonical source in `_shared-skills/` instead. See the
    shared skills list in `_shared-skills/MANIFEST.md`. Before editing
    ANY skill file, check whether it exists in `_shared-skills/` — if
    it does, that is the only file you may edit.

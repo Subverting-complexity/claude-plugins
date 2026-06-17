@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: security-audit
 description: "Dedicated security audit of the codebase: dependency vulnerabilities, secrets detection, OWASP Top 10 checks, input validation, and auth review. Use when the user says 'security audit', 'check for vulnerabilities', 'find security issues', 'scan for secrets', 'is this secure', 'security review', 'pen test', 'threat model', or 'check dependencies for CVEs'. Also trigger on 'audit for security' or 'check for leaked credentials'. Do NOT use for general code review (use code-review) or architecture audits (use code-architect --mode audit)."
@@ -21,6 +20,7 @@ allowed-tools:
   - Bash(grep *)
   - Bash(rg *)
 ---
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Security Audit
 

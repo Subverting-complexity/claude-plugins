@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: structured-coding
 description: A methodology skill for approaching all coding tasks with discipline and structure. Use this skill whenever the user asks to write, modify, fix, refactor, or review code — including bug fixes, new features, refactoring, architecture changes, or any task that touches a codebase. Trigger whenever the user shares code, references a codebase, asks for implementation help, or describes a feature/bug/change they want made. Even if the request seems small, use this skill — small changes done well prevent big problems later. Note that execute calls this skill as its build phase — when the user wants end-to-end task execution (plan, build, verify, commit), prefer execute over calling this skill directly.
@@ -16,6 +15,7 @@ allowed-tools:
   - Bash(grep *)
   - Bash(rg *)
 ---
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Structured Coding
 

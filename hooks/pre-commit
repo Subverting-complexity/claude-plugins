@@ -66,7 +66,11 @@ fi
 violations=()
 for file in $staged_files; do
     if [[ "$file" != _shared-skills/* ]] && [[ -f "$file" ]]; then
-        head -n1 "$file" 2>/dev/null | grep -qF "$SYNC_MARKER" && violations+=("$file")
+        # The banner sits at column 0 on its own line. In SKILL.md it follows
+        # the YAML frontmatter rather than leading the file, so match it
+        # anchored at line-start anywhere (not just line 1). Anchoring avoids
+        # false positives on docs that quote the marker inline (e.g. CLAUDE.md).
+        grep -q "^${SYNC_MARKER}" "$file" 2>/dev/null && violations+=("$file")
     fi
 done
 
