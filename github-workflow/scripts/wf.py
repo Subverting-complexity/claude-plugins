@@ -92,14 +92,42 @@ def gh_json(args):
         return False, None, 'could not parse gh JSON: %s' % exc
 
 
-def gh_graphql(query, **fields):
-    """Run a GraphQL query/mutation via `gh api graphql`. Returns (ok, data, err).
+def _graphql_args(query, fields):
+    """Build the `gh api graphql` argv, typing each field by its Python type.
 
-    String fields are passed with -F (typed: ints stay ints, etc.).
+    Each field reaches GitHub as the matching GraphQL scalar:
+
+      - ``bool`` → ``-F key=true/false`` (typed JSON boolean → ``Boolean!``)
+      - ``int``  → ``-F key=123`` (typed JSON number → ``Int!``)
+      - other    → ``-f key=value`` (raw string → ``String!`` / ``ID!``)
+
+    The type split matters: ``-F`` coerces any all-digit value to an int, so an
+    ``ID!``/``String!`` variable whose value is digit-only — e.g. a numeric
+    single-select option id like ``98236657`` (the board's Done column) — would
+    arrive as an Int and GitHub rejects it with *"Variable $o of type String!
+    was provided invalid value"*. Routing strings through ``-f`` keeps digit-only
+    ids as strings, while genuine ``Int!`` args (Python ints, e.g. an issue
+    ``number``) still go through ``-F``. ``bool`` is checked before ``int``
+    because ``bool`` is an ``int`` subclass.
     """
     args = ['gh', 'api', 'graphql', '-f', 'query=%s' % query]
     for key, value in fields.items():
-        args += ['-F', '%s=%s' % (key, value)]
+        if isinstance(value, bool):
+            args += ['-F', '%s=%s' % (key, 'true' if value else 'false')]
+        elif isinstance(value, int):
+            args += ['-F', '%s=%d' % (key, value)]
+        else:
+            args += ['-f', '%s=%s' % (key, value)]
+    return args
+
+
+def gh_graphql(query, **fields):
+    """Run a GraphQL query/mutation via `gh api graphql`. Returns (ok, data, err).
+
+    Fields are typed by Python type via `_graphql_args` so digit-only ID/String
+    values are not coerced to ints (see that helper for the full rationale).
+    """
+    args = _graphql_args(query, fields)
     code, out, err = run(args)
     if code != 0:
         return False, None, err.strip()
@@ -498,8 +526,25 @@ def mark_blocked(cfg, issue, detail):
          '--body', 'Blocked — open dependency(ies): %s. Returned to blocked until they close.' % detail])
 
 
+def clear_lifecycle_label(cfg, number, labels):
+    """Strip whatever open-state lifecycle label a now-closed issue still carries.
+
+    Closed/Done issues must not advertise an open-state lifecycle label such as
+    `status-ready` or `status-in-review`: the closed state plus the Done board
+    column are the authoritative "done" signal, and there is no "done" lifecycle
+    label to swap in. Best-effort. Returns the removed label name, or None when
+    there was nothing to clear.
+    """
+    stale = wf_core.current_lifecycle_label(labels, cfg.get('labels', {}))
+    if not stale:
+        return None
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    run(['gh', 'issue', 'edit', str(number), '--repo', repo, '--remove-label', stale])
+    return stale
+
+
 def close_resolved(cfg, issue, pr_number):
-    """Close an already-resolved issue and move its board item to Done.
+    """Close an already-resolved issue, clear its lifecycle label, move it to Done.
 
     Returns (board_moved, board_message) so the caller can report whether the
     board mirror was updated — the close itself is the authoritative state, the
@@ -508,6 +553,7 @@ def close_resolved(cfg, issue, pr_number):
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     run(['gh', 'issue', 'close', str(issue['number']), '--repo', repo,
          '--comment', 'Closing — already resolved by #%s.' % pr_number])
+    clear_lifecycle_label(cfg, issue['number'], issue.get('labels', []))
     return board_move(cfg, issue['number'], 'Done')
 
 
@@ -966,13 +1012,19 @@ def cmd_post_merge(args):
 
     settled = []
     for number in linked:
-        ok, idata, _ = gh_json(['issue', 'view', str(number), '--repo', repo, '--json', 'state'])
+        ok, idata, _ = gh_json(['issue', 'view', str(number), '--repo', repo,
+                                '--json', 'state,labels'])
         was_open = ok and idata and (idata.get('state') or '').upper() == 'OPEN'
+        label_names = [l['name'] for l in (idata or {}).get('labels', [])]
         if was_open:
             run(['gh', 'issue', 'close', str(number), '--repo', repo,
                  '--comment', 'Closing — resolved by merged PR #%d.' % args.pr])
+        # A settled issue is Done: strip any open-state lifecycle label it still
+        # carries (e.g. a PR that auto-closed the issue but left status-ready on).
+        cleared = clear_lifecycle_label(cfg, number, label_names)
         board_moved, board_msg = board_move(cfg, number, 'Done')
         settled.append({'issue': number, 'closed_now': bool(was_open),
+                        'lifecycle_label_cleared': cleared,
                         'board_moved_done': board_moved, 'board_message': board_msg})
 
     emit('ok', EXIT_OK, pr=args.pr, base=data.get('baseRefName'), settled=settled)
