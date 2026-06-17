@@ -138,3 +138,11 @@ Both plugins share a set of core skills (the full list is in
 `structured-coding`, `feature-discovery`, `grill-me`, `repo-scaffolding`,
 and `ecosystem-setup`. In `github-workflow`, `ecosystem-setup` also backs
 the `setup` wizard's ecosystem step; here it is invoked on its own.
+
+Because local-workflow has no setup wizard or preflight check, `execute`
+serves as the onboarding entry point for companion tools: the first time
+you build in a project that has not opted into *or* out of the tools, it
+surfaces a single optional, non-blocking tip pointing at
+`/local-workflow:ecosystem-setup`. Run that once to enable the tools (it
+writes `.claude/ecosystem.md`), or decline (it writes
+`.claude/ecosystem-declined`) — either way the tip goes quiet for good.
