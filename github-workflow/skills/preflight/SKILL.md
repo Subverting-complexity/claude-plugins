@@ -79,6 +79,15 @@ else
     echo "WARNING file-CLAUDE: CLAUDE.md not found"
   fi
 
+  # Ecosystem tools onboarding nudge (informational — never blocks, never
+  # CRITICAL). Speak up only when the project is configured (ClaudeProject.md
+  # present) but has neither opted in (.claude/ecosystem.md) nor explicitly
+  # opted out (.claude/ecosystem-declined). Declining once writes the marker,
+  # which silences this permanently.
+  if [ -f ClaudeProject.md ] && [ ! -f .claude/ecosystem.md ] && [ ! -f .claude/ecosystem-declined ]; then
+    echo "ECOSYSTEM_TIP: companion tools (Graphify/RTK/etc.) not set up — optional"
+  fi
+
   # One verdict token for the cheap checks above. "OK" means nothing here is
   # CRITICAL — the only CRITICALs still possible come from the by-hand
   # required-board checks in Section 2, which apply *only* on a
@@ -109,6 +118,18 @@ of three lead tokens — branch on it without re-reading files:
   return silently. Only continue to the by-hand checks below when the gate is
   `board-column`/`both` (a required board can be CRITICAL) or
   `PREFLIGHT_CHEAP_VERDICT` is `CRITICAL`.
+
+**`ECOSYSTEM_TIP` is informational, not a finding.** If the block printed an
+`ECOSYSTEM_TIP` line, the project is configured but has not opted into *or*
+out of the companion tools. It is **never** CRITICAL or WARNING and never
+gates a command. The only thing it changes: when you would otherwise return
+silently (everything OK, or WARNINGs-but-no-CRITICAL), print **one** plain
+line first — e.g. "Tip: companion tools like Graphify aren't set up. Run
+`/github-workflow:setup ecosystem` to enable them, or skip — it's optional."
+Then proceed exactly as before (write the pass marker, return control). It
+shows at most once per session (the pass marker short-circuits later runs),
+and once the user sets up or declines it stops entirely. If no `ECOSYSTEM_TIP`
+line was printed, say nothing about ecosystem tools.
 
 ## 2. Run diagnostics
 
@@ -336,8 +357,10 @@ at runtime. The wizard exists only for the few things that genuinely have
 no default (identity, auth, required board). Never escalate a
 default-covered gap to the wizard.
 
-**If every check is OK**: proceed silently. Do not mention preflight
-to the user. Write `.claude/preflight-passed.txt` (creating `.claude/`
+**If every check is OK**: proceed silently — do not mention preflight to
+the user. (The one exception is the `ECOSYSTEM_TIP` line described in
+Section 1: if it was printed, emit that single optional-tools line first,
+then continue.) Write `.claude/preflight-passed.txt` (creating `.claude/`
 if it does not exist) so subsequent commands in this session can skip
 the redundant re-run:
 

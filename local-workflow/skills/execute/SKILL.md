@@ -111,18 +111,24 @@ Use `/local-workflow:code-architect` to plan the implementation:
 If the plan reveals the task exceeds one session's budget, tell the user
 and propose splitting it. Implement the highest-priority slice.
 
-**Ecosystem tools (if configured).** If `.claude/ecosystem.md` exists, it
-lists codebase-intelligence tools installed for this project and how to
-use them — honor it here:
+**Ecosystem tools.** Before reading files blind to plan, check whether
+`.claude/ecosystem.md` exists. If it does, the project has opted into the
+codebase-intelligence tools it lists — use them here as the first move, not
+an afterthought:
 
-- **Graphify** listed → run `graphify . --update` (fast, 0 tokens from the
-  committed cache), then use `graphify query "..."` / `graphify explain X`
-  to ground the plan in how the codebase actually connects, instead of
-  reading files blind.
+- **Graphify** listed → run `graphify . --update` first (fast, 0 tokens from
+  the committed cache), then prefer `graphify query "..."` / `graphify
+  explain X` over blind file search for any "how does X connect to Y"
+  structure question. It is a planning accelerant, not a mandate — reach for
+  it when a graph view beats opening files, skip it when the answer is
+  obvious.
 - **Fallow** listed (TS/JS) → query it for existing exports and duplication
   so the plan reuses what is there rather than rebuilding it.
 
-Skip silently if the file does not exist or lists neither tool.
+If `.claude/ecosystem.md` does **not** exist, the project opted out — skip
+this whole step silently, plan as normal, and never nag about it. If the
+file lists a tool but the command is not on `PATH`, note that in one line
+and carry on with normal planning — a missing tool never blocks the run.
 
 ## Phase 3 -- Build
 
@@ -216,9 +222,9 @@ When `$ARGUMENTS.mode` is `audit`:
 2. Review the codebase for issues: bugs, security vulnerabilities,
    architecture problems, code quality concerns.
 
-   **Ecosystem tools (if configured).** If `.claude/ecosystem.md` exists,
-   run the tools it lists as part of the audit and fold their findings
-   into the report:
+   **Ecosystem tools.** If `.claude/ecosystem.md` exists, the project has
+   opted into the tools it lists — run them as part of the audit and fold
+   their findings into the report:
    - **Graphify** → `graphify . --update` then `graphify query` for
      architecture/dependency questions across the whole tree.
    - **Fallow** (TS/JS) → run it for unused exports, duplication, and
@@ -226,7 +232,9 @@ When `$ARGUMENTS.mode` is `audit`:
    - **ecc-agentshield** → `npx ecc-agentshield scan` to audit the Claude
      Code config (CLAUDE.md, `.claude/`, hooks, skills, MCP) for secrets,
      prompt-injection openings, and over-broad allowlists.
-   Skip silently for any tool not listed.
+   If `.claude/ecosystem.md` is absent the project opted out — skip this
+   step silently. If a listed tool is not installed, note it in one line
+   and continue the audit; a missing tool never blocks it.
 3. Report findings organized by severity (critical, warning, suggestion).
 4. Do not make code changes. Do not create branches or commits.
 5. Run the **Exit cleanup** so the tree ends clean. Audit makes no code
