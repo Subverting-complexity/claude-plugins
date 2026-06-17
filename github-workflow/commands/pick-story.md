@@ -7,6 +7,11 @@ argument-hint: '[--mode feature|maintenance]'
 
 Select the next story from the backlog.
 
+> **This is a building block.** It only *shows* the next story; it does not
+> claim, branch, or implement it. To actually work a story end-to-end, use
+> **`/github-workflow:execute`**. Use `pick-story` when you just want to see
+> what is next without committing to it.
+
 **Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
 
 ## Mode
