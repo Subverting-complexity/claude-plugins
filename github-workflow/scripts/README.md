@@ -89,14 +89,28 @@ creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
 
 ## Scope / deferrals
 
-- **`pick`** — `--mode story` (default) under `label` / `none` ready-gates.
-  Deferred to the skill via exit 30: `--mode feature` / `--mode maintenance`
-  (native-issue-type filtering), the `board-column` / `both` ready-gates, and
-  the empty-pool auto-ready scan.
+- **`pick`** — `--mode story` / `feature` / `maintenance` under the `label` /
+  `none` ready-gates. feature/maintenance filter by the `type-*` **label**, so
+  they run here on label-typed projects. Deferred to the skill via exit 30:
+  feature/maintenance on a **type-capable** org (the native issue type is
+  authoritative and is not resolved here), the `board-column` / `both`
+  ready-gates, and the empty-pool auto-ready scan.
 - **`review-next`** — the *label-driven* subset. A PR whose head SHA changed
   since its last review (needing review without a label) is **not** detected
   here, so `code-review` treats `no-candidates` as non-conclusive and falls
-  back to its inline SHA check.
+  back to its inline SHA check. Pass `--no-claim` for a read-only review
+  (no push access): it selects the next PR without writing a claim ref or
+  applying the `reviewing` marker, and the JSON reports `claimed: false`.
+
+## Claim outcomes vs. environment errors
+
+A claim push that fails is only a **lost claim** (a rival got there first)
+when the `refs/claims/<target>` ref actually exists on the remote afterward.
+`acquire_claim` probes with `git ls-remote`; if the ref is absent the push
+failed for another reason — no write access, auth, or network — and the
+picker emits `status: error` rather than walking the pool and reporting a
+phantom `all-blocked`. So "nothing to pick" always means the backlog is
+genuinely empty, never that claims could not be written.
 
 Every caller tries `wf` first and falls back to the inline procedure on any
 non-`ok` status or a missing interpreter, so behaviour is identical whether
