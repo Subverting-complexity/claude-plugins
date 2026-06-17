@@ -440,12 +440,44 @@ def validate_issue(cfg, issue):
             open_deps.append(dep)
     if open_deps:
         return 'blocked', ', '.join('#%d' % d for d in open_deps)
-    ok, data, _ = gh_json(['pr', 'list', '--repo', repo, '--state', 'merged',
-                           '--search', 'closes #%d OR fixes #%d' % (issue['number'], issue['number']),
-                           '--json', 'number'])
-    if ok and data:
-        return 'resolved', data[0]['number']
+    pr_number = merged_pr_closing(cfg, issue['number'])
+    if pr_number is not None:
+        return 'resolved', pr_number
     return 'valid', None
+
+
+def merged_pr_closing(cfg, number):
+    """Return the number of a *merged* PR that closes issue `number`, or None.
+
+    Uses GitHub's own parse of closing references (`closingIssuesReferences`) —
+    the same authoritative signal `templates/sibling-pr-lookup.md` mandates
+    everywhere — rather than a free-text body search. That catches the real
+    "merged but the issue is still open" case (a PR merged into a non-default
+    base, e.g. a chained story, where GitHub recognises the reference but does
+    not auto-close), and never misfires on a stray "closes"/"#N" in prose.
+
+    Returns the lowest such PR number (oldest-first) so the result is
+    deterministic when more than one merged PR references the issue.
+    """
+    query = (
+        'query($owner:String!,$repo:String!){'
+        ' repository(owner:$owner,name:$repo){'
+        ' pullRequests(states:MERGED, first:100,'
+        ' orderBy:{field:CREATED_AT, direction:ASC}){'
+        ' nodes { number closingIssuesReferences(first:10){ nodes { number } } } } } }'
+    )
+    ok, data, _ = gh_graphql(query, owner=cfg['org'], repo=cfg['repo'])
+    if not ok or not data:
+        return None
+    try:
+        nodes = data['repository']['pullRequests']['nodes']
+    except (KeyError, TypeError):
+        return None
+    for pr in nodes:
+        refs = (pr.get('closingIssuesReferences') or {}).get('nodes') or []
+        if any(ref.get('number') == number for ref in refs):
+            return pr['number']
+    return None
 
 
 def mark_blocked(cfg, issue, detail):
@@ -459,15 +491,33 @@ def mark_blocked(cfg, issue, detail):
 
 
 def close_resolved(cfg, issue, pr_number):
+    """Close an already-resolved issue and move its board item to Done.
+
+    Returns (board_moved, board_message) so the caller can report whether the
+    board mirror was updated — the close itself is the authoritative state, the
+    board move is a best-effort mirror.
+    """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     run(['gh', 'issue', 'close', str(issue['number']), '--repo', repo,
          '--comment', 'Closing — already resolved by #%s.' % pr_number])
+    return board_move(cfg, issue['number'], 'Done')
 
 
 # ── board move + branch (--checkout) ─────────────────────────────────────────
 
 def board_move_in_progress(cfg, number):
     """Move the issue to the In Progress column. Returns (moved, message)."""
+    return board_move(cfg, number, 'In Progress')
+
+
+def board_move(cfg, number, column_name):
+    """Move the issue's board item to the named Status column. Returns (moved, message).
+
+    Best-effort and gated on a configured board: with no `project-node-id`
+    the board is simply not in use, so this is a silent no-op. The column is
+    resolved by name (case-insensitive) against the live Status field options,
+    so the same code moves an issue to In Progress, In Review, or Done.
+    """
     board = cfg.get('board', {})
     node = board.get('project_node_id')
     if not node:
@@ -508,9 +558,9 @@ def board_move_in_progress(cfg, number):
         return False, 'could not resolve Status field (%s)' % err
     field = data['node']['field']
     option_id = next((o['id'] for o in field['options']
-                      if o['name'].strip().lower() == 'in progress'), None)
+                      if o['name'].strip().lower() == column_name.strip().lower()), None)
     if not option_id:
-        return False, "no 'In Progress' column on the board"
+        return False, "no '%s' column on the board" % column_name
 
     ok, _, err = gh_graphql(
         'mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){ updateProjectV2ItemFieldValue('
@@ -519,7 +569,7 @@ def board_move_in_progress(cfg, number):
         p=node, i=item_id, f=field['id'], o=option_id)
     if not ok:
         return False, 'board mutation failed (%s)' % err
-    return True, 'moved to In Progress'
+    return True, 'moved to %s' % column_name
 
 
 def checkout_branch(cfg, issue):
@@ -632,6 +682,68 @@ def prepare_cfg():
     return cfg
 
 
+def claim_validate_walk(cfg, pool, backlog_mode):
+    """Walk the ordered pool: claim the top, validate only that one, act.
+
+    The single claim-first/validate-lazily loop shared by auto-pick and the
+    explicit `--issue` path. For each candidate it acquires the atomic claim,
+    applies the in-progress marker, then validates: a dependency-blocked issue
+    is returned to `status-blocked`, an already-resolved one is closed **and
+    moved to Done**, and the claim is released in both cases before walking on.
+    The first valid claim is returned as the selection.
+
+    Returns (selected_or_None, side_effects). Emits + exits on a hard claim
+    error (no push access / remote failure), never on a lost claim.
+    """
+    side_effects = []
+    for cand in pool:
+        target = 'issue-%d' % cand['number']
+        outcome = acquire_claim(target)
+        if outcome == 'error':
+            emit('error', EXIT_ENV,
+                 reason='could not write claim ref %s — no push access to '
+                        'refs/claims/* or a remote failure (not a lost claim)' % target,
+                 backlog_mode=backlog_mode, side_effects=side_effects)
+        if outcome == 'lost':
+            side_effects.append({'issue': cand['number'], 'action': 'claim-lost'})
+            continue
+        apply_in_progress(cfg, cand)
+        verdict, detail = validate_issue(cfg, cand)
+        if verdict == 'blocked':
+            mark_blocked(cfg, cand, detail)
+            release_claim(target)
+            side_effects.append({'issue': cand['number'], 'action': 'marked-blocked', 'detail': detail})
+            continue
+        if verdict == 'resolved':
+            board_moved, _ = close_resolved(cfg, cand, detail)
+            release_claim(target)
+            side_effects.append({'issue': cand['number'], 'action': 'closed-already-resolved',
+                                 'pr': detail, 'board_moved_done': board_moved})
+            continue
+        return cand, side_effects
+    return None, side_effects
+
+
+def fetch_issue_candidate(cfg, number):
+    """Fetch one issue as a normalized candidate for the explicit `--issue` path.
+
+    Emits + exits when the issue cannot be worked: not found (error) or already
+    closed (all-blocked — there is nothing to pick, and closing-on-pickup only
+    applies to *open* issues a merged PR resolved). Otherwise returns the
+    single normalized candidate for `claim_validate_walk`.
+    """
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    ok, data, err = gh_json(['issue', 'view', str(number), '--repo', repo,
+                             '--json', 'number,title,labels,body,milestone,url,state'])
+    if not ok or not data:
+        emit('error', EXIT_ENV, reason='could not read issue #%d (%s)' % (number, err))
+    if (data.get('state') or '').upper() == 'CLOSED':
+        emit('all-blocked', EXIT_ALL_BLOCKED,
+             reason='issue #%d is already closed — nothing to pick' % number,
+             number=number)
+    return _norm_issue(data)
+
+
 def cmd_pick(args):
     env_err = check_environment()
     if env_err:
@@ -642,6 +754,19 @@ def cmd_pick(args):
         emit('error', EXIT_ENV, reason=err)
     if not cfg.get('org') or not cfg.get('repo'):
         emit('error', EXIT_ENV, reason='org/repo missing from config')
+
+    # Explicit target: skip selection/sort entirely and run the same claim +
+    # validate machinery against the one named issue, so the explicit-number
+    # path auto-closes an already-resolved story exactly like auto-pick does.
+    if getattr(args, 'issue', None):
+        cand = fetch_issue_candidate(cfg, args.issue)
+        selected, side_effects = claim_validate_walk(cfg, [cand], None)
+        if not selected:
+            emit('all-blocked', EXIT_ALL_BLOCKED,
+                 reason='issue #%d is not workable (claimed away, blocked, or '
+                        'already resolved by a merged PR)' % args.issue,
+                 side_effects=side_effects)
+        finish_pick(args, cfg, selected, side_effects, backlog_mode=None)
 
     # feature / maintenance modes: wf filters them by the type-* LABEL
     # (wf_core._filter_by_mode). On a type-capable org the *native* issue type
@@ -668,39 +793,17 @@ def cmd_pick(args):
         emit('no-candidates', EXIT_NO_CANDIDATES,
              reason='no ready, unassigned issues match', backlog_mode=backlog_mode)
 
-    side_effects = []
-    selected = None
-    for cand in pool:
-        target = 'issue-%d' % cand['number']
-        outcome = acquire_claim(target)
-        if outcome == 'error':
-            emit('error', EXIT_ENV,
-                 reason='could not write claim ref %s — no push access to '
-                        'refs/claims/* or a remote failure (not a lost claim)' % target,
-                 backlog_mode=backlog_mode, side_effects=side_effects)
-        if outcome == 'lost':
-            side_effects.append({'issue': cand['number'], 'action': 'claim-lost'})
-            continue
-        apply_in_progress(cfg, cand)
-        verdict, detail = validate_issue(cfg, cand)
-        if verdict == 'blocked':
-            mark_blocked(cfg, cand, detail)
-            release_claim(target)
-            side_effects.append({'issue': cand['number'], 'action': 'marked-blocked', 'detail': detail})
-            continue
-        if verdict == 'resolved':
-            close_resolved(cfg, cand, detail)
-            release_claim(target)
-            side_effects.append({'issue': cand['number'], 'action': 'closed-already-resolved', 'pr': detail})
-            continue
-        selected = cand
-        break
-
+    selected, side_effects = claim_validate_walk(cfg, pool, backlog_mode)
     if not selected:
         emit('all-blocked', EXIT_ALL_BLOCKED,
              reason='every candidate was claimed-away, blocked, or already resolved',
              backlog_mode=backlog_mode, side_effects=side_effects)
 
+    finish_pick(args, cfg, selected, side_effects, backlog_mode)
+
+
+def finish_pick(args, cfg, selected, side_effects, backlog_mode):
+    """Build the `ok` result for a selected story, optionally checking out, and emit."""
     result = {
         'number': selected['number'],
         'title': selected['title'],
@@ -709,7 +812,7 @@ def cmd_pick(args):
         'milestone': selected['milestone'],
         'body': selected['body'],
         'claim_ref': 'refs/claims/issue-%d' % selected['number'],
-        'mode': args.mode,
+        'mode': getattr(args, 'mode', 'story'),
         'backlog_mode': backlog_mode,
         'side_effects': side_effects,
         'checked_out': False,
@@ -821,6 +924,50 @@ def cmd_review_next(args):
     emit('ok', EXIT_OK, **result)
 
 
+def cmd_post_merge(args):
+    """Settle a merged PR's linked issues: force-close any still open, move all to Done.
+
+    GitHub only auto-closes a linked issue when the PR carried a recognised
+    closing keyword **and** merged into the default branch — so a chained-story
+    PR (non-default base) or an unparsed reference leaves the issue open with
+    nothing to notice. And even when the issue does auto-close, nothing moves
+    its board item out of In Review. This makes both deterministic: for every
+    issue the PR closes (GitHub's own `closingIssuesReferences` parse, plus any
+    `--issue` the caller names for an unrecognised reference), close it if still
+    open and move its board item to Done.
+    """
+    cfg = prepare_cfg()
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    ok, data, err = gh_json(['pr', 'view', str(args.pr), '--repo', repo,
+                             '--json', 'number,state,mergedAt,baseRefName,closingIssuesReferences'])
+    if not ok or not data:
+        emit('error', EXIT_ENV, reason='could not read PR #%d (%s)' % (args.pr, err))
+    if (data.get('state') or '').upper() != 'MERGED':
+        emit('not-merged', EXIT_ALL_BLOCKED,
+             reason='PR #%d is %s, not MERGED — refusing to close its issues'
+                    % (args.pr, data.get('state')),
+             pr=args.pr)
+
+    linked = [n['number'] for n in
+              (data.get('closingIssuesReferences') or {}).get('nodes', [])]
+    for extra in (args.issue or []):
+        if extra not in linked:
+            linked.append(extra)
+
+    settled = []
+    for number in linked:
+        ok, idata, _ = gh_json(['issue', 'view', str(number), '--repo', repo, '--json', 'state'])
+        was_open = ok and idata and (idata.get('state') or '').upper() == 'OPEN'
+        if was_open:
+            run(['gh', 'issue', 'close', str(number), '--repo', repo,
+                 '--comment', 'Closing — resolved by merged PR #%d.' % args.pr])
+        board_moved, board_msg = board_move(cfg, number, 'Done')
+        settled.append({'issue': number, 'closed_now': bool(was_open),
+                        'board_moved_done': board_moved, 'board_message': board_msg})
+
+    emit('ok', EXIT_OK, pr=args.pr, base=data.get('baseRefName'), settled=settled)
+
+
 def cmd_config(args):
     root = repo_root()
     cache, source = config_paths(root)
@@ -844,9 +991,22 @@ def build_parser():
     pick.add_argument('--mode', default='story', choices=['story', 'feature', 'maintenance'],
                       help='selection mode; feature/maintenance run here on label-typed '
                            'projects and defer to the skill on type-capable orgs')
+    pick.add_argument('--issue', type=int, default=None,
+                      help='target this specific issue instead of auto-selecting; runs the '
+                           'same claim + validate machinery (auto-closes it if a merged PR '
+                           'already resolved it)')
     pick.add_argument('--checkout', action='store_true',
                       help='also move the board to In Progress and create/check out the branch')
     pick.set_defaults(func=cmd_pick)
+
+    pm = sub.add_parser('post-merge',
+                        help='settle a merged PR: close any still-open linked issue and '
+                             'move every linked issue to Done')
+    pm.add_argument('--pr', type=int, required=True, help='the merged PR number')
+    pm.add_argument('--issue', type=int, action='append', default=None,
+                    help='also settle this issue (repeatable) — for a reference GitHub did '
+                         'not parse into closingIssuesReferences')
+    pm.set_defaults(func=cmd_post_merge)
 
     upd = sub.add_parser('update-next',
                          help='claim the next PR of mine that needs review feedback addressed')

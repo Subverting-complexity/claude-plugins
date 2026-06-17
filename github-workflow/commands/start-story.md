@@ -33,16 +33,27 @@ user to re-run this command. Otherwise proceed.
 
 ## Steps
 
-### Fast path — pick + start in one call (no explicit number)
+### Fast path — pick + start in one call
 
-When you were **not** given a specific issue number, the bundled `wf`
-picker selects, claims, moves the board to In Progress, and creates the
-working branch in a single call — the mechanical whole of Steps 1–4 and 6.
-Run it from the repo root:
+The bundled `wf` picker selects (or targets), claims, validates, moves the
+board to In Progress, and creates the working branch in a single call — the
+mechanical whole of Steps 1–4 and 6. Run it from the repo root:
 
 ```bash
+# no explicit number — auto-select the next story:
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout
+
+# explicit number — target that issue (run Step 2's in-flight guard first):
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout
 ```
+
+For an **explicit number**, first run the **Step 2 already-in-flight guard**
+below (it stops a second PR for a story already in review). If the guard
+clears, pass the number to `wf pick --issue` — it runs the *same* claim +
+validate machinery as auto-pick, so a story a merged PR already resolved is
+**auto-closed and moved to Done with no prompt** (reported as a
+`closed-already-resolved` side effect, then `status: all-blocked` — report it
+and pick the next story).
 
 On `status: ok` it returns the claimed issue plus `branch`, `checked_out`,
 `board_moved`, and `side_effects`. The claim ref and the
@@ -52,11 +63,10 @@ Surface anything in `side_effects`. If `checked_out` is false, read
 `branch_message` (e.g. a rebase conflict against the default branch) and run
 `/github-workflow:block-story` instead of continuing.
 
-Fall back to the numbered steps below when any of these hold: an explicit
-number was given (the picker auto-selects, so it cannot target one); the
-status is `unsupported`, `no-candidates`, `all-blocked`, or `error`; or the
-launcher reports Python is missing. The steps are the same logic `wf`
-encodes, kept as the source of truth and the degraded-mode path.
+Fall back to the numbered steps below when any of these hold: the status is
+`unsupported`, `no-candidates`, `all-blocked`, or `error`; or the launcher
+reports Python is missing. The steps are the same logic `wf` encodes, kept as
+the source of truth and the degraded-mode path.
 
 ### 1. Read configuration
 
@@ -85,6 +95,16 @@ lookup in `templates/sibling-pr-lookup.md` with this `{number}`.
 - Issue **closed** → report and stop.
 - **Open PR already closes it** → do not start fresh; report the PR
   (number + title), point the user at `/github-workflow:update-pr`, stop.
+- **A merged PR already closes it** (no open PR, but a **merged** PR lists
+  this issue in its `closingIssuesReferences` — the same authoritative lookup,
+  `states: MERGED`) → the story is already done but was never closed.
+  **Auto-close it and move on — do not ask:** close the issue, move its board
+  item to Done (`col-done`, best-effort), and re-run `/github-workflow:pick-story`
+  for the next story.
+  ```
+  gh issue close {number} --repo {org}/{repo} --comment "Closing — already resolved by #{pr_number}."
+  # then move {number} to col-done per templates/board-resolution.md Step 5
+  ```
 - Carries `status-in-review` with no open PR found → surface the
   inconsistency and stop rather than guessing.
 - Otherwise → proceed to claim.

@@ -242,6 +242,38 @@ leave `approved` and exit. The fallbacks below say where.
    - Neither merged nor queued → report exactly why the merge did not
      complete. Do not claim success.
 
-6. **The linked issue closes itself.** The PR's `closingIssuesReferences`
-   close the issue on merge — do not close it by hand. The branch was
-   deleted by the merge; there is nothing else to clean up.
+6. **Settle the linked issues — close them and move the board to Done.**
+   Run this **only when Step 5 confirmed `state` is `MERGED`** (the immediate
+   path). On the **queued** path (`autoMergeRequest` non-null, still `OPEN`),
+   the PR has not merged yet — skip this step; `wf post-merge` would correctly
+   refuse with `not-merged`. The issue is settled when the queued merge lands
+   (by GitHub's auto-close, and a later board reconcile or its built-in
+   automation), not in this run.
+
+   Do **not** assume the merge closed the issue. GitHub auto-closes a linked
+   issue only when the PR carried a recognised closing keyword **and** merged
+   into the default branch — a chained-story PR (non-default base) or an
+   unparsed reference leaves the issue open, and even a clean auto-close never
+   moves the board item out of In Review. Make both deterministic with one
+   call (the branch was already deleted by the merge):
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr <number>
+   ```
+
+   It reads the PR's own `closingIssuesReferences`, force-closes any of those
+   issues still open, and moves every one of them to the **Done** board column
+   (best-effort — a no-op when no board is configured). Report each entry in
+   the returned `settled` array (`closed_now`, `board_moved_done`). If the PR
+   body used a closing keyword GitHub did not parse, pass the issue explicitly:
+   `... post-merge --pr <number> --issue <N>`.
+
+   **Fallback** when `wf` cannot run (Python missing, or it returns `error`):
+   read the linked issues yourself and settle them by hand —
+   ```bash
+   gh pr view <number> --repo <org>/<repo> --json closingIssuesReferences \
+     --jq '.closingIssuesReferences[].number'
+   # for each still-open issue:
+   gh issue close <N> --repo <org>/<repo> --comment "Closing — resolved by merged PR #<number>."
+   # then move its board item to col-done per templates/board-resolution.md Step 5.
+   ```

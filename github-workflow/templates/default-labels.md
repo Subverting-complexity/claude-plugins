@@ -226,6 +226,13 @@ board mirrors them. For design rationale, see `default-labels-rationale.md`.
 | `status-blocked`                         | Blocked (`col-blocked`)      | block-story |
 | `status-ready` (unblock)                 | Ready (`col-ready`)          | pick-story |
 | `needs-refinement` / `status-ready` (new issue) | Backlog / Ready             | report-issue (best-effort placement) |
+| issue **closed** (resolved / merged)     | Done (`col-done`)            | `wf pick` (already-resolved), `wf post-merge` (after merge), code-review auto-merge |
+
+The Done move has no lifecycle *label* (a closed issue carries none — the
+GitHub closed state is authoritative); the board is mirrored to `col-done` by
+the commands above so a finished story leaves the In Review column instead of
+lingering there. Best-effort, like every board move: a no-op when no board is
+configured.
 
 When a board is configured, the three active columns — In Progress,
 In Review, Blocked — must exist (preflight emits
