@@ -1,21 +1,13 @@
 ---
 name: mobile-audit
 description: >-
-  Audit React Native (Expo) code for the current feature. Checks for reusable
-  components, magic strings, magic components, data bleed, redundant code,
-  buggy patterns, and API calls without proper retries. Use when the user
-  wants to audit mobile code quality, check a React Native feature for
-  problems, review Expo-specific patterns, or ensure a mobile feature is
-  production-ready. Trigger on "audit the mobile code", "check the React
-  Native code", "mobile audit", "audit this feature for mobile", "check for
-  magic strings", "check for data bleed", "audit the app code", "is this
-  mobile-ready", "review the Expo code", "check for reusable components".
-  Also trigger when the user is working in a React Native / Expo project and
-  asks for a quality check on their current branch. Uses a linked user story
-  or GitHub issue as the scope baseline when available; falls back to the
-  branch diff when neither is provided. Do NOT use for non-mobile codebases
-  (use code-review or verify-feature instead). Do NOT use for architecture-level
-  audits (use code-architect audit mode instead).
+  Audit React Native (Expo) code for the current feature — reusable components,
+  magic strings/components, data bleed, redundant code, buggy patterns, and API
+  calls missing retries. Use to check a React Native/Expo feature for quality or
+  production-readiness. Uses a linked story/issue as the scope baseline when
+  available, else the branch diff. Do NOT use for non-mobile codebases (use
+  code-review or verify-feature) or architecture-level audits (use code-architect
+  audit mode).
 allowed-tools:
   - Read
   - Glob

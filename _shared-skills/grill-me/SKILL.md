@@ -1,6 +1,6 @@
 ---
 name: grill-me
-description: "Interview the user relentlessly about a plan or design until reaching shared understanding, resolving every open question. Use this skill whenever the user wants to stress-test a plan, get grilled on their design, or says anything like \"grill me\", \"stress-test this\", \"challenge my thinking\", \"poke holes in this\", \"walk me through the decisions\", or \"interview me about this\". Also trigger when the user shares a plan, architecture, feature design, or technical approach and wants it interrogated rather than just reviewed. If a codebase is available, explore it instead of asking when the answer can be found there. Do NOT use for code-specific feature planning or backlog work (use feature-discovery for that). Do NOT use for reviewing code changes (use code-review instead)."
+description: "Interview the user relentlessly about a plan or design until every open question is resolved. Use to stress-test a plan, challenge thinking, or poke holes in a design or technical approach. Explore the codebase for answers when available rather than asking. Do NOT use for feature/backlog planning (use feature-discovery) or reviewing code (use code-review)."
 disable-model-invocation: true
 ---
 

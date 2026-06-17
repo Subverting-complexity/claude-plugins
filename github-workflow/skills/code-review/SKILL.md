@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review open pull requests — find the first PR needing review, check out its branch, review the code in full codebase context, fix concrete issues, post a structured review comment, and apply state labels. Reviews one PR per invocation. Trigger when the user asks to review PRs, check PRs, run a PR review, do a code review, look at open PRs, or when invoked by a scheduled routine. Also trigger on "/code-review". If the user says "review", "check PRs", "any PRs to review", "run reviews", or anything about pull request quality, use this skill. Pass --read-only to evaluate without making fixes (used by the Reviewer agent).
+description: Review open pull requests — find the next PR needing review, check out its branch, review in full codebase context, fix concrete issues, post a structured review comment, and apply state labels. One PR per invocation. Trigger on review/check PRs, run a review, code review, "/code-review", or a scheduled routine. Pass --read-only to evaluate without making fixes (used by the Reviewer agent).
 arguments:
   - name: mode
     description: 'Review mode: full (default) — evaluate and fix; read-only — evaluate only, no edits or pushes'

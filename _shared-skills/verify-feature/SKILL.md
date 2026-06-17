@@ -1,20 +1,13 @@
 ---
 name: verify-feature
 description: >-
-  Verify that the feature on the current branch is contained, well implemented,
-  free of problems, and has no unexpected downstream side effects. Produces a
-  structured report with a fix plan for every issue found. Use when the user
-  wants to verify a feature before merge, check that a branch is safe, audit
-  a feature's blast radius, or confirm implementation completeness. Trigger on
-  "verify this feature", "is this branch safe", "check for side effects",
-  "audit this feature", "review the feature", "is this ready to merge",
-  "check the blast radius", "does this break anything", "verify before merge",
-  "feature check". Also trigger when the user has finished building a feature
-  and wants a final quality gate before committing or pushing. Uses a linked
-  user story or GitHub issue as the scope baseline when available; falls back
-  to the branch diff when neither is provided. Do NOT use for general code
-  review without feature context (use code-review instead). Do NOT use for
-  architecture-level codebase audits (use code-architect audit mode instead).
+  Verify that the feature on the current branch is contained, complete, and free
+  of unexpected downstream side effects, producing a structured report with a fix
+  plan per issue. Use to check a feature before merge, audit its blast radius, or
+  confirm completeness. Uses a linked story/issue as the scope baseline when
+  available, else the branch diff. Do NOT use for general code review without
+  feature context (use code-review) or architecture-level codebase audits (use
+  code-architect audit mode).
 allowed-tools:
   - Read
   - Glob

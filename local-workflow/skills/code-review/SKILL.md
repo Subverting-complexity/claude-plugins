@@ -2,18 +2,11 @@
 name: code-review
 description: >-
   Review code changes for correctness, security, architecture, and quality.
-  Use when the user asks to review changes, check their code, audit a diff,
-  look at what changed, or review before committing or pushing. Trigger on
-  "review this", "review my changes", "check this code", "look at this diff",
-  "audit these changes", "is this ready to commit", "review before I push",
-  "code review", "review the last commit", or any request to evaluate code
-  quality on a set of changes. Also trigger when the user shares a diff or
-  branch and asks for feedback on correctness or quality. Do NOT use for
-  architecture-level audits of an entire codebase (use code-architect audit
-  mode instead). Do NOT use for writing or implementing code (use execute or
-  structured-coding instead). Do NOT use for feature-level verification with
-  containment and downstream analysis (use verify-feature instead). Do NOT
-  use for React Native / Expo-specific audits (use mobile-audit instead).
+  Use when the user wants to review a diff, branch, or recent commit, or to
+  check their code before committing or pushing. Do NOT use for whole-codebase
+  architecture audits (use code-architect audit mode), writing code (use execute
+  or structured-coding), feature-level verification with downstream analysis
+  (use verify-feature), or React Native/Expo audits (use mobile-audit).
 allowed-tools:
   - Read
   - Edit

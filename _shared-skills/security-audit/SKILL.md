@@ -1,6 +1,6 @@
 ---
 name: security-audit
-description: "Dedicated security audit of the codebase: dependency vulnerabilities, secrets detection, OWASP Top 10 checks, input validation, and auth review. Use when the user says 'security audit', 'check for vulnerabilities', 'find security issues', 'scan for secrets', 'is this secure', 'security review', 'pen test', 'threat model', or 'check dependencies for CVEs'. Also trigger on 'audit for security' or 'check for leaked credentials'. Do NOT use for general code review (use code-review) or architecture audits (use code-architect --mode audit)."
+description: "Dedicated security audit: dependency vulnerabilities, secrets detection, OWASP Top 10, input validation, and auth review. Use when the user wants a security audit, vulnerability/CVE scan, secret-leak check, threat model, or pen-test-style review. Do NOT use for general code review (use code-review) or architecture audits (use code-architect --mode audit)."
 allowed-tools:
   - Read
   - Glob
