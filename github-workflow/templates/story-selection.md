@@ -131,9 +131,22 @@ Walk the sorted list from the top. For each candidate:
      gh issue view {N} --repo {org}/{repo} --json state --jq '.state'
      ```
      If **any** is `OPEN`, the dependencies are unresolved.
-   - **Already resolved.** Check whether a merged PR already closes it:
+   - **Already resolved.** Check whether a **merged** PR already closes it,
+     using GitHub's own `closingIssuesReferences` parse — the authoritative
+     signal (same as `templates/sibling-pr-lookup.md`), not a free-text body
+     search, which misfires and misses non-default-base merges:
      ```
-     gh pr list --repo {org}/{repo} --search "closes #{number} OR fixes #{number}" --state merged --json number --jq '.[0].number'
+     gh api graphql -f owner='{org}' -f repo='{repo}' -f query='
+     query($owner:String!, $repo:String!) {
+       repository(owner:$owner, name:$repo) {
+         pullRequests(states: MERGED, first: 100,
+                      orderBy: {field: CREATED_AT, direction: ASC}) {
+           nodes { number closingIssuesReferences(first: 10) { nodes { number } } }
+         }
+       }
+     }' --jq "[.data.repository.pullRequests.nodes[]
+               | select(any(.closingIssuesReferences.nodes[]?; .number == {number}))]
+               | .[0].number"
      ```
 3. **Act on the verdict:**
    - **Unresolved dependencies** → the issue is genuinely blocked. Move it
@@ -148,10 +161,14 @@ Walk the sorted list from the top. For each candidate:
      git push origin :refs/claims/issue-{number}
      rm -f .claude/claim-issue-{number}.sha
      ```
-   - **Already resolved by a merged PR** → close it, **release the claim**,
-     and continue:
+   - **Already resolved by a merged PR** → close it, **move its board item to
+     Done** (`col-done`, best-effort — skip silently if no board is
+     configured, per `templates/board-resolution.md`), **release the claim**,
+     and continue. No prompt — an already-finished story is closed and the
+     walk moves to the next candidate:
      ```
      gh issue close {number} --repo {org}/{repo} --comment "Closing — already resolved by #{pr_number}."
+     # then move {number} to col-done per templates/board-resolution.md Step 5
      git push origin :refs/claims/issue-{number}
      rm -f .claude/claim-issue-{number}.sha
      ```

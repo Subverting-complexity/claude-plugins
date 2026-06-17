@@ -373,7 +373,23 @@ authoritative lookup in `templates/sibling-pr-lookup.md` with this
 - If the issue carries `status-in-review` but no open PR is found, the PR
   may have been closed without the label being reset — surface this to the
   user and stop rather than guessing.
-- Otherwise proceed to claim and build as normal.
+- Otherwise **delegate the claim to the same engine the auto-pick fast path
+  uses** — it targets this one issue, validates it, and (the point of this
+  change) **auto-closes it without a prompt if a merged PR already resolved
+  it**:
+  ```bash
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout
+  ```
+  Interpret the result exactly as the fast path above: `ok` → on the branch,
+  do only the body-validation check, then Phase 2 is a no-op. A
+  `closed-already-resolved` side effect followed by `status: all-blocked`
+  means the story was already finished — it has been closed and moved to Done;
+  report that and pick the **next** story instead of stopping. Fall back to
+  the inline claim/validate below only on `error` or a missing interpreter; in
+  that fallback, run the **already-resolved check** from
+  `templates/story-selection.md` Step 3 (authoritative `closingIssuesReferences`
+  over merged PRs) and auto-close + move to Done + advance the same way — never
+  rebuild a story a merged PR already closed.
 
 If no number is provided, **select a story** with the canonical procedure
 in `templates/story-selection.md`, passing `$ARGUMENTS.mode` (default

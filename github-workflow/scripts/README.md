@@ -26,6 +26,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick
 # …also move the board to In Progress and create/check out the branch
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout
 
+# Target one specific issue instead of auto-selecting (same claim/validate;
+# auto-closes it + moves it to Done if a merged PR already resolved it)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue 42 --checkout
+
+# After merging a PR: close any still-open linked issue and move it to Done
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr 123
+
 # Claim the next PR of mine that needs review feedback addressed (update-pr)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" update-next --checkout
 
@@ -73,8 +80,22 @@ run carries a `status` field and the exit code mirrors it:
 
 Mutations to the **winning** issue (claim, assign, `status-in-progress`) are
 silent; mutations to **other** issues (returning a dependency-blocked one to
-`status-blocked`, closing one already resolved by a merged PR) are always
-reported in the `side_effects` array.
+`status-blocked`, closing one already resolved by a merged PR — which also
+moves it to the **Done** board column) are always reported in the
+`side_effects` array.
+
+## Settling a merged PR — `post-merge`
+
+`post-merge --pr <n>` makes "the story is closed and off the board" a
+deterministic step instead of trusting GitHub. It reads the PR's own
+`closingIssuesReferences`, **force-closes** any of those issues still open
+(GitHub only auto-closes on a default-branch merge of a recognised keyword —
+a chained-story PR or an unparsed reference leaves it open), and moves every
+linked issue to the **Done** column. It refuses (`status: not-merged`, exit
+11) on a PR that has not actually merged, so it is safe to call on the queued
+`--auto` path. Add `--issue <N>` (repeatable) to settle a reference GitHub did
+not parse. `code-review`'s auto-merge step calls this after a successful
+immediate merge.
 
 ## The three pickers
 
