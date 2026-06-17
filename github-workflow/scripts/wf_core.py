@@ -321,12 +321,30 @@ def branch_slug(title, max_len=40):
     return slug
 
 
+# Every placeholder that means "the title slug here". `{short-desc}` is the
+# canonical form the template and docs use, but a config (or the example a
+# half-finished setup leaves behind) often spells it out as
+# `{short-description}` or uses a near-synonym — all of these must render to
+# the slug so a literal `{...}` never survives into a git branch name. A
+# genuinely unrecognised placeholder is still left untouched (see branch_name).
+_SLUG_PLACEHOLDERS = (
+    '{short-desc}', '{short-description}', '{short_desc}',
+    '{description}', '{desc}', '{slug}', '{title}',
+)
+
+
 def branch_name(convention, number, title):
     """Render the branch convention with the issue number and a title slug.
 
     `convention` is the pattern from ClaudeProject.md, e.g.
-    "feature/{number}/{short-desc}". Unknown placeholders are left untouched.
+    "feature/{number}/{short-desc}". Any of the slug aliases in
+    `_SLUG_PLACEHOLDERS` (`{short-description}`, `{slug}`, …) renders to the
+    title slug, so a config that spells the placeholder out does not leak a
+    literal `{short-description}` into the branch name. Other, genuinely
+    unknown placeholders are left untouched.
     """
-    return (convention
-            .replace('{number}', str(number))
-            .replace('{short-desc}', branch_slug(title)))
+    out = convention.replace('{number}', str(number))
+    slug = branch_slug(title)
+    for token in _SLUG_PLACEHOLDERS:
+        out = out.replace(token, slug)
+    return out

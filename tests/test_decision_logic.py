@@ -43,6 +43,9 @@ from wf_core import (  # noqa: E402
     select_story,
     select_update_pool,
 )
+# parse_claude_project lives in the I/O shell (wf.py) but does no I/O itself —
+# it is pure text parsing, so it is exercised offline here alongside the core.
+from wf import parse_claude_project  # noqa: E402
 
 
 # ── Tests ────────────────────────────────────────────────────────────────────
@@ -342,6 +345,23 @@ class TestBranchNaming(unittest.TestCase):
             'wip/7/{user}/tidy-up',
         )
 
+    def test_branch_name_renders_spelled_out_slug_placeholder(self):
+        """A config that spells the slug as {short-description} must not leak it."""
+        self.assertEqual(
+            branch_name('feature/{number}/{short-description}', 73, 'Fix label'),
+            'feature/73/fix-label',
+        )
+
+    def test_branch_name_renders_every_slug_alias(self):
+        for token in ('{short-desc}', '{short-description}', '{short_desc}',
+                      '{description}', '{desc}', '{slug}', '{title}'):
+            self.assertEqual(
+                branch_name('feat/{number}/%s' % token, 5, 'Do a thing'),
+                'feat/5/do-a-thing',
+                msg=token,
+            )
+            self.assertNotIn('{', branch_name('feat/{number}/%s' % token, 5, 'Do a thing'))
+
 
 class TestCurrentLifecycleLabel(unittest.TestCase):
     """Find the concrete lifecycle label to remove when claiming."""
@@ -443,6 +463,46 @@ class TestReviewPool(unittest.TestCase):
 
     def test_pr_without_review_label_excluded(self):
         self.assertEqual(select_review_pool([_pr(1, ['type-bug'])], _RN), [])
+
+
+class TestProjectBoardParsing(unittest.TestCase):
+    """parse_claude_project must resolve the board even when the template's
+    `## Project Board (optional)` authoring qualifier is left on the heading."""
+
+    _BOARD_TABLE = (
+        "| Setting         | Value        |\n"
+        "| --------------- | ------------ |\n"
+        "| project-node-id | `PVT_abc123` |\n"
+        "| project-title   | `My Board`   |\n"
+    )
+
+    def test_optional_qualifier_heading_is_parsed(self):
+        text = "## Project Board (optional)\n\n" + self._BOARD_TABLE
+        board = parse_claude_project(text)['board']
+        self.assertEqual(board['project_node_id'], 'PVT_abc123')
+        self.assertEqual(board['project_title'], 'My Board')
+
+    def test_plain_heading_still_parsed(self):
+        text = "## Project Board\n\n" + self._BOARD_TABLE
+        self.assertEqual(parse_claude_project(text)['board']['project_node_id'], 'PVT_abc123')
+
+    def test_na_node_id_resolves_to_none(self):
+        text = ("## Project Board (optional)\n\n"
+                "| Setting         | Value |\n"
+                "| --------------- | ----- |\n"
+                "| project-node-id | `n/a` |\n")
+        self.assertIsNone(parse_claude_project(text)['board']['project_node_id'])
+
+    def test_branch_convention_strips_example_backticks(self):
+        """When the fenced pattern is unfilled, the backtick-wrapped example is
+        used — its backticks must not survive into the convention."""
+        text = ("## Branch Convention\n\n"
+                "```\n{branch_pattern}\n```\n\n"
+                "Example: `feature/{number}/{short-desc}`\n")
+        self.assertEqual(
+            parse_claude_project(text)['branch_convention'],
+            'feature/{number}/{short-desc}',
+        )
 
 
 if __name__ == '__main__':

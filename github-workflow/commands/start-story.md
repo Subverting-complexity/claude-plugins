@@ -1,13 +1,17 @@
 ---
-description: 'Assign a story, update the board, and create a working branch. Trigger: "start story N", "begin working on N", "assign me story N".'
+description: 'Start a story and take it all the way to a pull request — assign it, branch, then plan, build, test, and open the PR. Trigger: "start story N", "begin working on N", "work on N".'
 argument-hint: '[issue#]'
 ---
 
 # Start Story
 
-Assign the story, update the board, and create a working branch. This is
-the manual single-step equivalent of `execute` Phase 1–2; it shares the
-same procedures, so behaviour is identical.
+Start a story and carry it through to a pull request: assign it, move the
+board, create the working branch, then plan, build, test, and open the PR.
+The setup half (assign + board + branch) is the manual single-step
+equivalent of `execute` Phase 1–2 and shares the same procedures; once setup
+is done this command hands straight off to `execute` Phase 3 onward, so the
+end result is identical to running `execute` on a named story — one
+invocation finishes the story.
 
 **Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
 
@@ -58,10 +62,11 @@ and pick the next story).
 On `status: ok` it returns the claimed issue plus `branch`, `checked_out`,
 `board_moved`, and `side_effects`. The claim ref and the
 `status-in-progress` + `@me` markers are held and you are on the working
-branch, so do **only Step 5** (validate the issue body) next, then stop.
-Surface anything in `side_effects`. If `checked_out` is false, read
-`branch_message` (e.g. a rebase conflict against the default branch) and run
-`/github-workflow:block-story` instead of continuing.
+branch, so do **Step 5** (validate the issue body) next, then continue into
+**Step 7** (build the story end-to-end). Surface anything in `side_effects`.
+If `checked_out` is false, read `branch_message` (e.g. a rebase conflict
+against the default branch) and run `/github-workflow:block-story` instead of
+continuing.
 
 Fall back to the numbered steps below when any of these hold: the status is
 `unsupported`, `no-candidates`, `all-blocked`, or `error`; or the launcher
@@ -187,3 +192,25 @@ git ls-remote --heads origin {branch}
   ```
   git checkout -b {branch} origin/{default-branch}
   ```
+
+### 7. Build the story end-to-end
+
+Setup is complete — the story is claimed and assigned, it carries
+`status-in-progress`, the board is at In Progress, and you are on the working
+branch. Do not stop here. Carry the story the rest of the way by continuing
+with the `execute` workflow from **Phase 3 (Plan)** onward.
+
+Read `../skills/execute/SKILL.md` and follow its **Phases 3–8** (Plan →
+Build → Verify → Commit → Finish → Self-Review) on issue `{number}`, together
+with that skill's **Exit cleanup** and **Escape hatches**. Phases 1 (Pick) and
+2 (Start) are already done — the claim ref, the `status-in-progress` + `@me`
+markers, the board move, and the branch this command just made all carry
+straight through, so treat those phases as no-ops. Do **not** re-pick,
+re-claim, or select a different story, and do not re-run `wf pick`.
+
+This is what makes one `start-story` invocation finish the story: it ends with
+a pull request open and the issue moved to In Review, exactly as `execute`
+would. The only reasons to stop short are the ones `execute` itself defines —
+the issue is too underspecified to implement (block it), it must be broken into
+sub-stories first, or a phase hits a blocker — all handled by that skill's
+escape hatches.
