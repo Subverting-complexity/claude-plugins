@@ -90,12 +90,15 @@ moves it to the **Done** board column) are always reported in the
 deterministic step instead of trusting GitHub. It reads the PR's own
 `closingIssuesReferences`, **force-closes** any of those issues still open
 (GitHub only auto-closes on a default-branch merge of a recognised keyword —
-a chained-story PR or an unparsed reference leaves it open), and moves every
-linked issue to the **Done** column. It refuses (`status: not-merged`, exit
-11) on a PR that has not actually merged, so it is safe to call on the queued
-`--auto` path. Add `--issue <N>` (repeatable) to settle a reference GitHub did
-not parse. `code-review`'s auto-merge step calls this after a successful
-immediate merge.
+a chained-story PR or an unparsed reference leaves it open), **clears any
+open-state lifecycle label** the issue still carries (e.g. a `status-ready`
+or `status-in-review` left behind when GitHub auto-closed it), and moves every
+linked issue to the **Done** column. Each settled issue is reported with
+`closed_now`, `lifecycle_label_cleared`, and `board_moved_done`. It refuses
+(`status: not-merged`, exit 11) on a PR that has not actually merged, so it is
+safe to call on the queued `--auto` path. Add `--issue <N>` (repeatable) to
+settle a reference GitHub did not parse. `code-review`'s auto-merge step calls
+this after a successful immediate merge.
 
 ## The three pickers
 

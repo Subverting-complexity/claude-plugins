@@ -46,7 +46,7 @@ from wf_core import (  # noqa: E402
 )
 # parse_claude_project lives in the I/O shell (wf.py) but does no I/O itself —
 # it is pure text parsing, so it is exercised offline here alongside the core.
-from wf import parse_claude_project  # noqa: E402
+from wf import parse_claude_project, _graphql_args  # noqa: E402
 
 
 # ── Tests ────────────────────────────────────────────────────────────────────
@@ -532,6 +532,53 @@ class TestClosingIssueNumbers(unittest.TestCase):
 
     def test_skips_entries_without_a_number(self):
         self.assertEqual(closing_issue_numbers([{'number': 7}, {}, {'title': 'x'}]), [7])
+
+
+class TestGraphqlArgTyping(unittest.TestCase):
+    """`gh api graphql` argv typing.
+
+    Regression guard for the post-merge move-to-Done failure: a digit-only
+    single-select option id (e.g. the board's Done column `98236657`) was passed
+    via `-F`, which coerces all-digit values to ints, so the `$o:String!` /
+    `ID!` variable arrived as an Int and GitHub rejected it with "Variable $o of
+    type String! was provided invalid value". String/ID fields must use `-f`;
+    only genuine Int args use `-F`.
+    """
+
+    @staticmethod
+    def _pairs(args):
+        """Collect (flag, key, value) for each variable, skipping the query."""
+        out = []
+        i = 0
+        while i < len(args):
+            if args[i] in ('-f', '-F') and not args[i + 1].startswith('query='):
+                key, _, val = args[i + 1].partition('=')
+                out.append((args[i], key, val))
+            i += 2 if args[i] in ('-f', '-F') else 1
+        return out
+
+    def test_digit_only_string_id_uses_lowercase_f(self):
+        """A digit-only option id stays a string (`-f`), not a coerced int."""
+        args = _graphql_args('mutation($o:String!){ x }', {'o': '98236657'})
+        self.assertIn(('-f', 'o', '98236657'), self._pairs(args))
+
+    def test_alphanumeric_id_uses_lowercase_f(self):
+        args = _graphql_args('mutation($id:ID!){ x }', {'id': 'PVT_kwDO'})
+        self.assertIn(('-f', 'id', 'PVT_kwDO'), self._pairs(args))
+
+    def test_int_uses_uppercase_f(self):
+        """A real Int! arg (Python int) keeps typed `-F`."""
+        args = _graphql_args('query($number:Int!){ x }', {'number': 73})
+        self.assertIn(('-F', 'number', '73'), self._pairs(args))
+
+    def test_bool_uses_uppercase_f_lowercased(self):
+        args = _graphql_args('mutation($b:Boolean!){ x }', {'b': True})
+        self.assertIn(('-F', 'b', 'true'), self._pairs(args))
+
+    def test_query_is_first_arg_via_lowercase_f(self):
+        args = _graphql_args('query { x }', {})
+        self.assertEqual(args[:4], ['gh', 'api', 'graphql', '-f'])
+        self.assertEqual(args[4], 'query=query { x }')
 
 
 if __name__ == '__main__':
