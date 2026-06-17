@@ -1,8 +1,8 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: pr-description
 description: Write, format, or structure Pull Request descriptions for development work. Use this skill whenever the user wants to write a PR description, document a code change, create a pull request summary, or document what changed in a branch or merge request. Also trigger when the user pastes rough notes, a list of changed files, or a verbal description of code changes and wants it turned into a structured PR. Trigger on phrases like "write a PR description", "document this PR", "write up these changes", "PR for this branch", "describe these code changes", or any request to create or format a pull request description. Works with any platform (GitHub, GitLab, Azure DevOps, Bitbucket, etc.). Do NOT use for reviewing code quality (use code-review instead). Do NOT use for writing user stories or feature specs (use user-story instead).
 ---
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # PR Description Skill
 

@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: doc-writer
 description: "Write or update project documentation: README, API docs, architecture guides, migration guides, and changelogs. Use when the user says 'write docs', 'update the README', 'document this', 'write API documentation', 'create a migration guide', 'generate docs', 'write an architecture guide', or 'update the changelog'. Also trigger on 'help me document', 'write up how this works', or 'explain this system in docs'. Do NOT use for code comments (those go in the code itself), PR descriptions (use pr-description), or user stories (use user-story)."
@@ -15,6 +14,7 @@ allowed-tools:
   - Bash(ls *)
   - Bash(find *)
 ---
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Documentation Writer
 

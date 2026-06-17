@@ -71,7 +71,23 @@ process_md_content() {
     local result
     result=$(echo "$content" | sed "s/{{PLUGIN_NAME}}/$plugin_name/g" | sed "s/{{PLUGIN_VERSION}}/$version/g")
 
-    if ! echo "$result" | head -n1 | grep -qF "$SYNC_COMMENT"; then
+    # Already carries the banner -- leave it untouched (idempotent re-sync).
+    if echo "$result" | grep -qF "$SYNC_COMMENT"; then
+        echo "$result"
+        return
+    fi
+
+    # The banner is an HTML comment, but a SKILL.md must keep its YAML
+    # frontmatter ('---') on line 1 or the skill loader cannot parse it and
+    # the skill silently fails to register. So when the file opens with
+    # frontmatter, insert the banner on its own line immediately AFTER the
+    # closing '---'. Files without frontmatter get the banner prepended.
+    if [ "$(echo "$result" | head -n1)" = "---" ]; then
+        result=$(echo "$result" | awk -v banner="$SYNC_COMMENT" '
+            { print }
+            /^---$/ { n++; if (n == 2 && !done) { print banner; done = 1 } }
+        ')
+    else
         result="$SYNC_COMMENT
 $result"
     fi
@@ -183,7 +199,7 @@ remove_orphaned_files() {
 # github-workflow/templates/*.md and writes lean compiled copies to
 # github-workflow/templates/runtime/. Authors keep the full prose; at
 # runtime only the lean copy is loaded. Templates that already have a
-# separate *-rationale.md file need no markers — they are skipped.
+# separate *-rationale.md file need no markers -- they are skipped.
 # ---------------------------------------------------------------------------
 
 # Read stdin; remove rationale blocks; collapse consecutive blank lines.
@@ -225,7 +241,7 @@ compile_runtime_variants() {
 
         expected_runtime["$filename"]=1
         local dst_file="$runtime_dir/$filename"
-        local header="<!-- COMPILED from templates/$filename — edit the source, not this file. -->"
+        local header="<!-- COMPILED from templates/$filename -- edit the source, not this file. -->"
         local stripped
         stripped=$(strip_rationale_blocks < "$src_file")
         local full_content="$header
