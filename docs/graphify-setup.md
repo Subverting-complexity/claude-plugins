@@ -57,7 +57,8 @@ graphify-out/
   cache/                ← extraction cache (the spent-tokens record)
     ast/                ← one file per code module, deterministic
     semantic/           ← one file per doc/image, keyed by sha256(content)
-  manifest.json         ← file-hash snapshot for incremental --update
+    stat-index.json     ← local size/mtime fast-path index (ignored — churns)
+  manifest.json         ← local path→hash index for --update (ignored — churns)
   .graphify_labels.json ← community names (edit these to be meaningful)
   cost.json             ← cumulative token cost tracker
   .graphify_python      ← local interpreter path
@@ -81,13 +82,17 @@ graphify-out/graph.html
 graphify-out/cost.json
 graphify-out/.graphify_python
 graphify-out/.graphify_root
+# Path/mtime indexes: embed absolute worktree paths + timestamps, so they
+# churn on every run in every worktree. The content-addressed cache stays
+# committed; these rebuild locally for free.
+graphify-out/manifest.json
+graphify-out/cache/stat-index.json
 ```
 
 ### Commit these files
 
 ```
-git add graphify-out/cache/
-git add graphify-out/manifest.json
+git add graphify-out/cache/            # cache/ast + cache/semantic only — stat-index.json is ignored
 git add graphify-out/.graphify_labels.json
 git mv graphify-out/GRAPH_REPORT.md docs/GRAPH_REPORT.md
 git add docs/GRAPH_REPORT.md
@@ -97,8 +102,7 @@ git add docs/GRAPH_REPORT.md
 
 | File | Why commit |
 |------|------------|
-| `cache/` | Content-addressed: `sha256(file)` → extraction result. This is the token receipt. Any agent cloning the repo runs `--update` and hits 100% cache — zero tokens, ~10s. Without this, every fresh clone spends the full token cost again. |
-| `manifest.json` | Tells `--update` exactly which files changed since the last run. Without it, `--update` rescans everything (still hits cache, but slower and can't detect deleted files). |
+| `cache/ast/`, `cache/semantic/` | Content-addressed: `sha256(file)` → extraction result. This is the token receipt. Any agent cloning the repo runs `--update` and hits 100% cache — zero tokens, ~10s. Without this, every fresh clone spends the full token cost again. |
 | `.graphify_labels.json` | Your hand-curated community names. Small (5–15 KB), took real effort, used in the report and visualisation on every re-run. Lose it and you're back to "Community 0", "Community 1". |
 | `docs/GRAPH_REPORT.md` | Human-readable point-in-time architecture snapshot — god nodes, surprising connections, community map. Diffs cleanly, renders in GitHub, useful alongside ADRs. In `docs/` so it's findable. |
 
@@ -111,6 +115,8 @@ git add docs/GRAPH_REPORT.md
 | `cost.json` | Personal/per-machine token spend tracker. Irrelevant to other developers. |
 | `.graphify_python` | Absolute path to your local Python interpreter. Breaks on every other machine. |
 | `.graphify_root` | Absolute path to your local repo root. Same problem. |
+| `manifest.json` | Path→hash index keyed by **absolute** worktree paths, with mtimes. Rewritten on every run, so it churns in every worktree and dirties the tree. `--update` rebuilds it locally for free by re-hashing against the committed content cache (CPU only, zero tokens). |
+| `cache/stat-index.json` | Same problem as `manifest.json` — a size/mtime fast-path index of absolute paths. Local rebuild state, not a token receipt. |
 
 ---
 

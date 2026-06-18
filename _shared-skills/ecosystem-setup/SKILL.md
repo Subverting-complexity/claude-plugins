@@ -88,11 +88,16 @@ If installed (or just installed), run these checks in order:
    per file (~200–500 each) while code files are free. After the build:
    ```
    git mv graphify-out/GRAPH_REPORT.md docs/GRAPH_REPORT.md
-   git add graphify-out/cache/ graphify-out/manifest.json graphify-out/.graphify_labels.json docs/GRAPH_REPORT.md
+   git add graphify-out/cache/ graphify-out/.graphify_labels.json docs/GRAPH_REPORT.md
    ```
    Tell the user to include these in their next commit. (The cache is the
    token receipt — once committed, any fresh clone rebuilds the graph for
-   free via `graphify . --update`.)
+   free via `graphify . --update`.) Commit only the content-addressed
+   `cache/ast/` and `cache/semantic/` files — NOT `manifest.json` or
+   `cache/stat-index.json`. Those are path/mtime indexes that embed
+   absolute worktree paths, so they churn on every run in every worktree
+   and dirty the tree; they belong in `.gitignore` (next step) and rebuild
+   locally for free.
 
 2. **`.gitignore`** — add entries if not already present:
    ```
@@ -102,6 +107,11 @@ If installed (or just installed), run these checks in order:
    graphify-out/cost.json
    graphify-out/.graphify_python
    graphify-out/.graphify_root
+   # Path/mtime indexes: embed absolute worktree paths + timestamps, so they
+   # churn on every run in every worktree. The content-addressed cache stays
+   # committed; these rebuild locally for free.
+   graphify-out/manifest.json
+   graphify-out/cache/stat-index.json
    ```
 
 3. **Stop hook** — add to `.claude/settings.json` if not already
