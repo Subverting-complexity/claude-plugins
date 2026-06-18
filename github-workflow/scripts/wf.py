@@ -842,7 +842,9 @@ def cmd_pick(args):
         emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
 
     backlog_mode, issues = narrow_to_sprint(cfg, issues)
-    pool = wf_core.select_pool(issues, mode=args.mode, agent_gating=cfg.get('agent_gating', 'disabled'))
+    pool = wf_core.select_pool(issues, mode=args.mode,
+                               agent_gating=cfg.get('agent_gating', 'disabled'),
+                               project_map=cfg.get('labels', {}))
     if not pool:
         emit('no-candidates', EXIT_NO_CANDIDATES,
              reason='no ready, unassigned issues match', backlog_mode=backlog_mode)

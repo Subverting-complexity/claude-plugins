@@ -27,52 +27,64 @@ import re
 _PRIORITY_ORDER = ['priority-critical', 'priority-high', 'priority-medium', 'priority-low']
 
 
-def _priority_rank(labels):
-    """Returns sort key: 0=critical … 3=low, 4=no priority label."""
-    for i, p in enumerate(_PRIORITY_ORDER):
-        if p in labels:
+def _priority_rank(labels, project_map=None):
+    """Returns sort key: 0=critical … 3=low, 4=no priority label.
+
+    Priority labels are matched through the project map (`resolve_label`), so a
+    project that renames `priority-high` → `P1` still sorts correctly instead of
+    treating every issue as unprioritised.
+    """
+    project_map = project_map or {}
+    for i, key in enumerate(_PRIORITY_ORDER):
+        if resolve_label(key, project_map) in labels:
             return i
     return len(_PRIORITY_ORDER)
 
 
-def _filter_by_mode(candidates, mode):
+def _filter_by_mode(candidates, mode, project_map=None):
     """Apply mode filter.
 
     story       — no type filter; all issues are eligible.
     feature     — keep type-story issues only.
     maintenance — keep bug / security / debt / architecture issues only.
 
-    This is the `type-*` **label** path. On a type-capable org the native
-    issue type is authoritative; that refinement happens in wf.py before this
-    is called (it annotates each candidate's `labels` with the resolved
-    fallback purpose key), so this function stays the single sort/filter core.
+    This is the `type-*` **label** path, matched through the project map so a
+    project that renames the type labels is filtered correctly. On a type-capable
+    org the native issue type is authoritative; wf.py defers feature/maintenance
+    there to the skill's inline native-type path (it emits `unsupported`), so this
+    label path only ever runs for label-typed projects.
     """
     if mode == 'story':
         return list(candidates)
-    feature_labels = {'type-story'}
-    maintenance_labels = {'type-bug', 'type-security', 'type-debt', 'type-arch'}
-    keep = feature_labels if mode == 'feature' else maintenance_labels
+    project_map = project_map or {}
+    feature_keys = {'type-story'}
+    maintenance_keys = {'type-bug', 'type-security', 'type-debt', 'type-arch'}
+    keys = feature_keys if mode == 'feature' else maintenance_keys
+    keep = {resolve_label(k, project_map) for k in keys}
     return [c for c in candidates if any(lbl in keep for lbl in c.get('labels', []))]
 
 
-def _filter_refinement(candidates):
+def _filter_refinement(candidates, project_map=None):
     """Exclude issues that carry needs-refinement — not yet ready for pickup."""
-    return [c for c in candidates if 'needs-refinement' not in c.get('labels', [])]
+    needs = resolve_label('needs-refinement', project_map or {})
+    return [c for c in candidates if needs not in c.get('labels', [])]
 
 
-def _filter_agent_gating(candidates, agent_gating):
+def _filter_agent_gating(candidates, agent_gating, project_map=None):
     """If gating is enabled, keep only human-approved (claude-ready) issues."""
     if agent_gating != 'enabled':
         return list(candidates)
-    return [c for c in candidates if 'claude-ready' in c.get('labels', [])]
+    ready = resolve_label('claude-ready', project_map or {})
+    return [c for c in candidates if ready in c.get('labels', [])]
 
 
-def _sort_candidates(candidates):
+def _sort_candidates(candidates, project_map=None):
     """Sort by priority descending (critical first), then ascending issue number."""
-    return sorted(candidates, key=lambda c: (_priority_rank(c.get('labels', [])), c['number']))
+    return sorted(candidates,
+                  key=lambda c: (_priority_rank(c.get('labels', []), project_map), c['number']))
 
 
-def select_story(candidates, mode='story', agent_gating='disabled'):
+def select_story(candidates, mode='story', agent_gating='disabled', project_map=None):
     """Full selection pipeline: filter → sort → top candidate (or None).
 
     Returns the single best candidate, never a list — the caller claims it.
@@ -80,16 +92,23 @@ def select_story(candidates, mode='story', agent_gating='disabled'):
     a claim is lost or a candidate proves blocked, so this returns the ordered
     survivors via `select_pool`; `select_story` is the convenience head.
     """
-    pool = select_pool(candidates, mode, agent_gating)
+    pool = select_pool(candidates, mode, agent_gating, project_map)
     return pool[0] if pool else None
 
 
-def select_pool(candidates, mode='story', agent_gating='disabled'):
-    """The ordered, filtered candidate list (best first). Empty list if none."""
-    pool = _filter_by_mode(candidates, mode)
-    pool = _filter_refinement(pool)
-    pool = _filter_agent_gating(pool, agent_gating)
-    return _sort_candidates(pool)
+def select_pool(candidates, mode='story', agent_gating='disabled', project_map=None):
+    """The ordered, filtered candidate list (best first). Empty list if none.
+
+    `project_map` is the ClaudeProject.md label map; every label the filters and
+    the priority sort key on is resolved through it (`resolve_label`) so the fast
+    path matches the canonical purpose-key resolution in `story-selection.md`
+    rather than diverging on a project that renames labels. Defaults to `{}` so
+    a default-labelled project (and the offline tests) need not pass it.
+    """
+    pool = _filter_by_mode(candidates, mode, project_map)
+    pool = _filter_refinement(pool, project_map)
+    pool = _filter_agent_gating(pool, agent_gating, project_map)
+    return _sort_candidates(pool, project_map)
 
 
 # ── Label resolution ─────────────────────────────────────────────────────────

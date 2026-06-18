@@ -168,6 +168,76 @@ class TestStorySelection(unittest.TestCase):
         self.assertIsNone(select_story(candidates, agent_gating='enabled'))
 
 
+class TestSelectionHonoursProjectLabelMap(unittest.TestCase):
+    """The fast path must resolve every label it filters/sorts on through the
+    project map, exactly like the inline `story-selection.md` path — otherwise a
+    project that renames labels diverges from the inline path and the pool comes
+    up spuriously empty (the `no-candidates` / ready-gate-mismatch symptom)."""
+
+    # A project that renames the defaults.
+    PROJECT_MAP = {
+        'priority-high': 'P1',
+        'priority-medium': 'P2',
+        'needs-refinement': 'triage',
+        'claude-ready': 'bot-ok',
+        'type-story': 'kind-story',
+        'type-bug': 'kind-bug',
+    }
+
+    def test_priority_sort_uses_remapped_labels(self):
+        """A renamed priority label still outranks a lower-priority issue with a
+        smaller number — without the map it would sort as 'no priority'."""
+        candidates = [
+            _issue(1, ['P2']),
+            _issue(10, ['P1']),
+        ]
+        self.assertEqual(
+            select_story(candidates, project_map=self.PROJECT_MAP)['number'], 10)
+
+    def test_refinement_filter_uses_remapped_label(self):
+        candidates = [
+            _issue(1, ['P1', 'triage']),   # renamed needs-refinement → excluded
+            _issue(2, ['P2']),
+        ]
+        self.assertEqual(
+            select_story(candidates, project_map=self.PROJECT_MAP)['number'], 2)
+
+    def test_agent_gating_uses_remapped_label(self):
+        candidates = [
+            _issue(1, ['P1']),             # not approved
+            _issue(2, ['P2', 'bot-ok']),   # renamed claude-ready
+        ]
+        self.assertEqual(
+            select_story(candidates, agent_gating='enabled',
+                         project_map=self.PROJECT_MAP)['number'], 2)
+
+    def test_feature_mode_uses_remapped_type_label(self):
+        candidates = [
+            _issue(1, ['P1', 'kind-bug']),     # renamed type-bug → excluded
+            _issue(2, ['P2', 'kind-story']),   # renamed type-story → kept
+        ]
+        self.assertEqual(
+            select_story(candidates, mode='feature',
+                         project_map=self.PROJECT_MAP)['number'], 2)
+
+    def test_remapped_project_does_not_come_up_empty(self):
+        """Regression: without map-aware filters this pool emptied to no-candidates."""
+        candidates = [
+            _issue(5, ['P1']),
+            _issue(6, ['P2', 'triage']),   # excluded by refinement
+        ]
+        pool = select_pool(candidates, project_map=self.PROJECT_MAP)
+        self.assertEqual([c['number'] for c in pool], [5])
+
+    def test_omitting_map_falls_back_to_default_names(self):
+        """No project map → default literals still work (backwards compatible)."""
+        candidates = [
+            _issue(1, ['priority-medium', 'status-ready']),
+            _issue(10, ['priority-high', 'status-ready']),
+        ]
+        self.assertEqual(select_story(candidates)['number'], 10)
+
+
 class TestLabelResolution(unittest.TestCase):
     """Purpose-key → concrete-name resolution with project map and default fallback."""
 
@@ -504,6 +574,47 @@ class TestProjectBoardParsing(unittest.TestCase):
             parse_claude_project(text)['branch_convention'],
             'feature/{number}/{short-desc}',
         )
+
+
+class TestReadyGateParsing(unittest.TestCase):
+    """parse_claude_project must read `ready-gate` so the fast path queries the
+    right pool. A missed parse silently defaults to `label`, which on a `none`
+    or board gate fetches the wrong pool and reports a spurious no-candidates."""
+
+    def _gate(self, value):
+        text = ("## Ready Gate\n\n"
+                "| Setting    | Value      |\n"
+                "| ---------- | ---------- |\n"
+                "| ready-gate | %s |\n" % value)
+        return parse_claude_project(text)['ready_gate']
+
+    def test_label_gate_parsed(self):
+        self.assertEqual(self._gate('`label`'), 'label')
+
+    def test_none_gate_parsed(self):
+        self.assertEqual(self._gate('`none`'), 'none')
+
+    def test_board_column_gate_parsed(self):
+        self.assertEqual(self._gate('`board-column`'), 'board-column')
+
+    def test_value_without_backticks_parsed(self):
+        self.assertEqual(self._gate('none'), 'none')
+
+    def test_missing_section_defaults_to_label(self):
+        """No Ready Gate section → default `label`, never empty/None."""
+        self.assertEqual(parse_claude_project('## Identity\n')['ready_gate'], 'label')
+
+    def test_label_map_resolves_purpose_keys(self):
+        """The label map drives the purpose-key resolution the fast-path filters
+        now rely on — a renamed label must land in cfg['labels']."""
+        text = ("## Label Map\n\n"
+                "| Purpose          | Label       |\n"
+                "| ---------------- | ----------- |\n"
+                "| status-ready     | `my-ready`  |\n"
+                "| needs-refinement | `triage`    |\n")
+        labels = parse_claude_project(text)['labels']
+        self.assertEqual(labels['status-ready'], 'my-ready')
+        self.assertEqual(labels['needs-refinement'], 'triage')
 
 
 class TestClosingIssueNumbers(unittest.TestCase):
