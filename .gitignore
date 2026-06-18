@@ -20,3 +20,9 @@ graphify-out/graph.html
 graphify-out/cost.json
 graphify-out/.graphify_python
 graphify-out/.graphify_root
+# Path/mtime indexes: embed absolute worktree paths + timestamps, so they
+# churn on every run in every worktree. The content-addressed cache/ast/ and
+# cache/semantic/ files are portable and stay committed; these are rebuilt
+# locally for free.
+graphify-out/manifest.json
+graphify-out/cache/stat-index.json
