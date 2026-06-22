@@ -48,10 +48,11 @@ Remove this section if you don't use custom labels.
 
 ## Auto-Merge on Approval
 
-| Setting                 | Value      |
-| ----------------------- | ---------- |
-| auto-merge-on-approval  | `disabled` |
-| require-ci-before-merge | `false`    |
+| Setting                      | Value      |
+| ---------------------------- | ---------- |
+| auto-merge-on-approval       | `disabled` |
+| require-ci-before-merge      | `false`    |
+| bypass-ci-on-billing-failure | `false`    |
 
 When `enabled`, the code-review skill squash-merges a PR (deleting its
 branch) as soon as the review verdict is **Approved** and the review
@@ -86,6 +87,31 @@ enforcement.
 > For a hard guarantee that an approved PR can *never* merge without green
 > CI — including before any check has reported — use GitHub-enforced
 > required status checks (configuration (a) in the setup guide) or `true`.
+
+`bypass-ci-on-billing-failure` (default `false`) is a narrow escape hatch
+for a specific, common situation: GitHub Actions stops running because of a
+**billing or account problem** — the org ran out of included Actions
+minutes, a spending limit was hit, or a payment failed — so the pipeline
+cannot report green no matter how correct the PR is. CI here is red (or
+never starts) for a reason that has nothing to do with the change.
+
+- **`false`** (default) — a billing-induced CI failure is treated like any
+  other red check: the skill tries to fix it, cannot (it is not a code
+  problem), and so pauses or files it. The PR does not merge.
+- **`true`** — when the **only** thing blocking the merge is a billing or
+  account failure (every failing check is attributable to it, and no
+  genuine code/test/lint check is red), the skill treats the CI gate as
+  satisfied and merges the approved PR anyway. A normal red check — a real
+  test or build failure — is **never** bypassed by this setting; it is
+  still fixed or filed as usual.
+
+This is the persistent, per-project, billing-scoped form of the
+per-invocation `--bypass-ci` flag (which bypasses the CI gate for *any*
+reason, for one run only). Turn it on for repos on a plan where Actions
+billing can lapse and you would rather an approved review land than sit
+blocked behind a pipeline that cannot run. Like `--bypass-ci`, it never
+bypasses a merge **conflict**, and it only takes effect when
+`auto-merge-on-approval` is `enabled`.
 
 This is **off by default** — turn it on only for repos where you trust an
 approved Claude review to land unattended. When on, the skill drives the

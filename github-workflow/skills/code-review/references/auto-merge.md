@@ -40,6 +40,16 @@ when CI cannot run for reasons outside the PR (most commonly GitHub Actions
 billing). It never bypasses a merge **conflict** (step 2 still runs). See the
 override note at the top of step 3.
 
+Also read **`bypass-ci-on-billing-failure`** from the same Auto-Merge on
+Approval section. Absent ⇒ `false`. When `true`, it is a **persistent,
+billing-scoped** form of `--bypass-ci`: if the only thing blocking the merge
+is a GitHub Actions **billing or account failure** (out of minutes, spending
+limit hit, payment failed — a pipeline that cannot run for a reason outside
+the PR), the skill treats the CI gate as satisfied and merges anyway. Unlike
+`--bypass-ci`, it is narrow: it bypasses **only** billing-induced failures, so
+a genuine red check (a real test/build/lint failure) is still fixed or filed.
+It is handled in **step 3a** below.
+
 This is opt-in and **off by default**. Merging a PR is otherwise
 forbidden (see Rules); this is the one sanctioned merge, and only under
 an explicit `enabled` setting. The review comment from Step 9 must
@@ -111,6 +121,45 @@ leave `approved` and exit. The fallbacks below say where.
    override is for when CI cannot run for reasons outside the PR (e.g. Actions
    billing); it does **not** bypass the step-2 conflict resolution, only the
    CI gate. Skip the rest of this step.
+
+   **3a — Billing-induced CI failure (config bypass).** If `--bypass-ci` was
+   **not** passed but `review.config.md`'s `bypass-ci-on-billing-failure` is
+   `true`, check whether the failing CI is a GitHub Actions **billing or
+   account** problem before trying to fix anything. Read the full rollup and
+   inspect each non-green check's run:
+
+   ```bash
+   gh pr checks <number> --repo <org>/<repo>
+   # for each failing / never-started check, find its run id, then:
+   gh run view <run-id> --repo <org>/<repo> --json conclusion --jq .conclusion
+   gh run view <run-id> --repo <org>/<repo> 2>&1 \
+     | grep -iE 'billing|spending limit|recent account payments|payment(s)? (have )?failed|exceeded.*(minutes|spending)'
+   ```
+
+   A check is **billing-induced** when its run never executed for an account
+   reason: a `startup_failure` conclusion (or a run that was created but never
+   ran) **together with** a billing/account/spending/payment signal in the run
+   detail or annotations. A `startup_failure` with no such signal (e.g.
+   malformed workflow YAML) is **not** billing — do not bypass it.
+
+   Then decide:
+
+   - There is at least one failing check, **every** failing check is
+     billing-induced, and **no** genuine red check remains (no real
+     test/build/lint failure) → the only thing blocking the merge is billing.
+     Treat the CI gate as satisfied and go to **step 4's immediate path** —
+     prefer the immediate `--squash --delete-branch` merge, falling back to
+     `--admin` if branch protection requires an approving review (a red or
+     never-completing pipeline must not strand the merge behind `--auto`).
+     Append a line to the review comment: "Merged despite red CI: GitHub
+     Actions billing/account failure, bypassed per
+     `bypass-ci-on-billing-failure`." Skip the rest of this step. This never
+     bypasses a merge **conflict** — step 2 already ran.
+   - **Any** failing check is a genuine code failure (not billing) → do **not**
+     bypass. Fall through to the normal rollup handling below; the genuine
+     failure is fixed or filed, and the PR does not merge over it. (The billing
+     check among them is "not yours to fix" and is handled as such there.)
+   - No checks are failing → fall through to the normal rollup handling below.
 
    Otherwise, read the required-check rollup:
    ```bash
