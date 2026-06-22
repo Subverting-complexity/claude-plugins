@@ -671,6 +671,13 @@ PR (e.g. GitHub Actions billing); it never fixes or files a check, it skips
 the gate. It does **not** override a merge **conflict** — a conflicting PR is
 still resolved or filed as usual.
 
+`auto-merge.md` also honours `review.config.md`'s
+`bypass-ci-on-billing-failure` (default `false`): the persistent, per-project,
+**billing-scoped** form of `--bypass-ci`. When `true`, an approved PR merges
+even though CI is red **if** the only thing blocking it is a GitHub Actions
+billing/account failure (out of minutes, spending limit hit, payment failed).
+A genuine red check is never bypassed by it. See step 3a in `auto-merge.md`.
+
 #### Final report format
 
 When the PR is merged or auto-merge is queued, report to the user in this
@@ -754,7 +761,11 @@ Rationale files (maintainers only — not read at runtime):
   leaves `approved`. **Exception:** when invoked with `--bypass-ci`, the CI
   gate is treated as satisfied (red or absent checks no longer block or
   pause) — an explicit operator override for when CI cannot run for reasons
-  outside the PR, e.g. Actions billing. It does not bypass a merge conflict.
+  outside the PR, e.g. Actions billing. A persistent, billing-scoped form of
+  this is the per-project `bypass-ci-on-billing-failure` setting (default
+  `false`): when `true`, an approved PR merges over red CI **only** when the
+  sole blocker is a GitHub Actions billing/account failure — a genuine red
+  check is still fixed or filed. Neither bypasses a merge conflict.
   Never merge in read-only mode.
 - Do not close a PR **except** to reconcile duplicates in Step 2b — when
   two or more open PRs close the same issue, close the losers and keep the

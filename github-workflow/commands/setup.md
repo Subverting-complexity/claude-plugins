@@ -497,6 +497,14 @@ PR reviews. If yes:
      finishing — that step turns on repo-level auto-merge, attempts
      branch protection with required checks, and sets the
      `require-ci-before-merge` fallback when GitHub can't enforce them.
+   - Ask, **only if auto-merge was enabled**, what to do when CI can't run
+     because of a GitHub Actions **billing or account** problem (out of
+     minutes, spending limit hit, a failed payment): should an approved PR
+     merge anyway? Default **no**. Stored as `bypass-ci-on-billing-failure`
+     in `docs/review.config.md` — `true` merges an approved PR over red CI
+     only when a billing/account failure is the sole blocker (a real
+     test/build/lint failure is never bypassed). It is the persistent,
+     per-project form of the one-off `--bypass-ci` flag.
    - Create the labels on the GitHub repo
    - Write `docs/review.config.md`
 3. If the user declines, note that the code-review skill will prompt

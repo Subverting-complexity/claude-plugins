@@ -124,6 +124,21 @@ today's behaviour — an approved PR with no *required* checks merges
 immediately, which is only safe under configuration (a). Without either
 (a) or (b), an approved PR can land with no CI guarantee at all.
 
+Then ask one more, about the **billing edge case**: **"If CI can't run
+because of a GitHub Actions billing or account problem (out of minutes,
+spending limit hit, a failed payment), should an approved PR merge anyway?"**
+**Default to no** — record `bypass-ci-on-billing-failure: false`. If they say
+yes, set it to `true` and explain the guardrail: it merges an approved PR
+over red CI **only** when the sole blocker is a billing/account failure that
+keeps the pipeline from running; a real test, build, or lint failure is never
+bypassed (it is still fixed or filed), and a merge conflict is still
+resolved. This is the persistent, per-project form of the one-off
+`--bypass-ci` flag, scoped to billing. It is worth turning on for repos on a
+plan where Actions billing can lapse and you would rather an approved review
+land than sit blocked behind a pipeline that cannot run. See the Auto-Merge
+on Approval section in `references/review.config.template.md` for the exact
+semantics.
+
 The repo-level auto-merge toggle the skill's `gh pr merge --auto` needs
 is handled by the same hardening step:
 
