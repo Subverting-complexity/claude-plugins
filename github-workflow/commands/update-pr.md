@@ -73,6 +73,10 @@ Interpret the `status` field:
   (`checked_out: true`) — go to **Step 3's "read the review"**; otherwise run
   `gh pr checkout {number}` first. Surface any `side_effects`.
 - **`no-candidates`** — no PR of yours needs updating; report that and exit.
+- **`all-blocked`** — every PR of yours that needs updating is currently
+  claimed by another agent. Report that all candidate PRs are being handled
+  by other agents and exit cleanly; do **not** fall through to the inline
+  procedure below.
 - **`error`**, or the launcher reports Python is missing — use the inline
   procedure below.
 
