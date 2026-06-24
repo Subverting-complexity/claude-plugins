@@ -185,92 +185,42 @@ Default mode is `story`. Override with `$ARGUMENTS.mode`:
 
 If mode is "bug", treat it as "maintenance" (backward compatibility).
 
-If mode is `audit`, skip to the Audit section at the bottom.
+If mode is `audit`, do not run the phases below — read
+`references/audit-mode.md` and follow it (a no-code-change codebase audit
+that files issues for findings).
 
 ---
 
 ## Exit cleanup
 
 Every exit path must leave three things clean: the **atomic claim ref**,
-the **per-session scratch file**, and the **working tree itself**. All
-three cleanups are idempotent, so run them on *every* exit without
-reasoning about which earlier step may already have handled them. Do this
-as the **final** step before the session ends, and always **after** any
-commit/push (so the pushed branch — not local state — is the source of
-truth). Run them in order: release the claim, delete the scratch file,
-then reconcile the tree (so the scratch file is gone before the tree
-check runs).
+the **per-session scratch files**, and the **working tree**. All three are
+idempotent — run them on *every* exit, in this order, as the **final** step
+before the session ends and **after** any commit/push (so the pushed branch
+is the source of truth). Why each one matters, and the full list of exits
+this covers: `references/exit-cleanup-rationale.md`.
 
 ### 1. Release the claim ref
-
-Phase 1 acquired `refs/claims/issue-{number}` as the exclusive lock
-(`templates/claim-procedure.md`). Because each session is self-contained
-and **there is no cross-session resume**, a session that exits for *any*
-reason no longer needs the claim. Holding it past exit would block every
-future agent from ever picking the issue — and nothing reaps an
-abandoned claim ref, so the issue would silently drop out of the pool
-forever. Release it (idempotent — a harmless no-op if Phase 7.5 or
-`block-story` already released it):
 
 ```
 git push origin :refs/claims/issue-{number}
 rm -f .claude/claim-issue-{number}.sha
 ```
 
-Releasing frees only the **lock**. The human-visible marker (the
-assignment) is intentionally left in place on a failed or timed-out exit
-as a "this was attempted" signal next to the failure comment; only
-`block-story` and a successful finish also clear ownership.
-
 ### 2. Delete the scratch files
-
-This skill writes several per-session scratch files that must be removed
-so no stale data lingers in the worktree — leftover scratch files are
-what originally blocked harness worktree auto-cleanup. Delete them all
-in one command:
 
 ```
 rm -f .claude/plan.md .claude/preflight-passed.txt \
       .claude/label-cache.json .claude/issue-fields-cache.json
 ```
 
-(`.claude/candidates.json` is no longer written — the candidate fetch was
-removed as dead weight — so it is not listed here. A stray copy from an older
-session is still swept by the **Reconcile the working tree** step below.)
-
-All are gitignored, but they must still be cleaned up explicitly.
-
 ### 3. Reconcile the working tree to clean
 
-A worktree is auto-removed by the harness **only when it is clean**
-(`docs/worktree-config.md`). A leftover uncommitted change — even a stray
-formatter reflow — pins the worktree open forever. Run the **End clean**
-procedure in `templates/worktree-hygiene.md`: `git status --porcelain`
-must end empty. Because Phase 2 started from a clean tree, anything still
-dirty here was produced by this session — commit a forgotten story file,
-commit incidental formatting on unrelated files as a **separate `chore:`
-commit** (do not fold it into the feature diff), or discard disposable
-generated noise. **Never `git stash`** — the stash is shared across every
-worktree on the clone. Leaving the tree dirty is never an option.
-
-### Applies to all exits without exception
-
-- Phase 7 completes successfully (claim already released in 7.5; the
-  re-run here is a harmless no-op).
-- Blocked via `/github-workflow:block-story` (which releases the claim
-  for you — the re-run here is a no-op).
-- Unrecoverable error (after leaving the failure comment).
-- Session-budget or 45-minute timeout exit.
-- API rate-limit pause.
-- One-session overflow (partial slice shipped, follow-ups filed).
-
-A crash, hard kill, or machine reboot can still skip this cleanup
-entirely and orphan a claim ref. That residue cannot be prevented from
-inside a session — run `/github-workflow:setup reap` to scan and free
-stale refs automatically, or see **Reaping orphaned claims** in
-`templates/claim-procedure-rationale.md` for the manual one-liner.
-(Within-session context compaction is unaffected — no exit occurs, so
-the files remain on disk for the duration of the run.)
+Run the **End clean** procedure in `templates/worktree-hygiene.md`:
+`git status --porcelain` must end empty. Commit a forgotten story file,
+commit incidental formatting as a **separate `chore:` commit** (do not fold
+it into the feature diff), or discard disposable generated noise. **Never
+`git stash`** — the stash is shared across every worktree on the clone.
 
 ---
 
@@ -548,117 +498,10 @@ earlier in the session.
 
 ---
 
-## Audit mode
-
-When `$ARGUMENTS.mode` is `audit`:
-
-1. Read `ClaudeProject.md` for org, repo, and label map.
-2. Audit the default branch — read the codebase structure, key files,
-   and patterns. Check for architecture violations, security issues,
-   test gaps, dead code, and tech debt. Use the evaluation criteria
-   from the code-review skill (non-compliance gates, correctness,
-   security, test coverage) but apply them to the codebase at large,
-   not to a specific PR diff.
-
-   **Ecosystem tools.** If `.claude/ecosystem.md` exists, the project has
-   opted into the tools it lists — run them as part of the audit and turn
-   their findings into issues like any other:
-   - **Graphify** → `graphify . --update` then `graphify query` for
-     architecture/dependency questions across the whole tree.
-   - **Fallow** (TS/JS) → run it for unused exports, duplication, and
-     complexity hotspots.
-   - **ecc-agentshield** → `npx ecc-agentshield scan` to audit the Claude
-     Code config (CLAUDE.md, `.claude/`, hooks, skills, MCP) for secrets,
-     prompt-injection openings, and over-broad allowlists.
-   If `.claude/ecosystem.md` is absent the project opted out — skip this
-   step silently. If a listed tool is not installed, note it in one line
-   and continue the audit; a missing tool never blocks it.
-3. For each finding, run `/github-workflow:report-issue` to create
-   a GitHub issue with the appropriate type and priority labels.
-   Cap at 10 issues per audit session to keep scope manageable.
-4. Report a summary of all issues created.
-5. Do not make code changes. Do not create a branch or PR.
-
----
-
 ## Escape hatches
 
-**Failure reporting**: If execution fails at any phase and cannot
-recover, leave a structured comment on the issue before exiting.
-Write the comment body to a temporary file and post using
-`--body-file` (avoids Windows shell-escaping issues):
-
-```
-gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
-```
-
-The comment should include: phase name, error summary, branch name,
-whether commits were pushed, what was completed, and what remains.
-Delete the temp file after.
-
-Then move the issue to the `status-needs-attention` lifecycle label
-(removing `status-in-progress` so exactly one state is present, resolved
-by purpose key) so the failure is visible in the issues list. Do **not**
-open a PR for failed/incomplete work.
-
-This ensures the next session (or human) can pick up exactly where
-this one failed without guessing what happened. After the comment is
-posted, run **Exit cleanup** (release the claim ref so the issue can be
-picked again, and delete the scratch file) before exiting.
-
-**Blocked**: If any phase cannot proceed, run `/github-workflow:block-story`
-with details (it releases the claim for you), then run **Exit cleanup**
-(release is a no-op at this point; delete the scratch file). Then pick
-the next story.
-
-**Problem found**: If you detect any problem during development that you
-are not fixing in this story — an unrelated bug, a security flaw, a
-layering/architecture violation, or tech debt — file it to the board so
-it is fixed automatically. Run `/github-workflow:report-issue`
-(autonomous — do not pause for confirmation). **No human approval is
-needed**: it classifies the problem, applies the **actual issue type**
-(bug, security, architecture, or tech debt) and priority, sets
-`status-ready`, and places it on the board so the normal pickup flow
-fixes it. Do not fix it inline unless it is trivial and within the same
-scope. When you report what you did this session, name each filed item by
-its actual type and number (e.g. "Filed bug #45", "Filed tech-debt
-#46").
-
-**Dependency**: If this story depends on another unmerged story
-(discovered during planning, not caught by the Phase 1 filter), there is
-**one** rule — chaining is only allowed when the dependency's branch is
-already published; otherwise block:
-
-- **Dependency branch exists on the remote** (the other story is in
-  review or in progress and has pushed): you can chain off it.
-  1. Branch the dependent story off the dependency branch.
-  2. Set the dependent PR's base to the dependency branch.
-  3. After the dependency merges, rebase onto the default branch and
-     update the PR base.
-- **Dependency branch does not exist on the remote** (not started, or
-  started but unpushed — you cannot build on what you cannot fetch):
-  do **not** fork a parallel copy. Block this story
-  (`/github-workflow:block-story`, recording `Blocked by #N`) and pick
-  the dependency — or the next available story — instead.
-
-This is the same policy the Phase 1 dependency filter enforces (skip a
-dependent story while its dependency issue is open): chaining is the
-narrow exception for a dependency that is already pushed, not a parallel
-route around an unfinished one.
-
-**Story too broad**: If the story covers multiple distinct changes and
-needs to be broken into sub-stories before implementation can begin,
-run `/github-workflow:feature-discovery` to plan the breakdown with the
-user, then pick the first sub-story.
-
-**Review feedback**: After the PR is created, the code-review skill may
-flag issues. Run `/github-workflow:update-pr` to address the feedback,
-push fixes, and flag the PR for re-review.
-
-**Story too large**: If the plan reveals the story exceeds one session's
-budget, implement the highest-priority slice, open a PR for that slice,
-and create follow-up issues for the remaining work using
-`/github-workflow:report-issue`. Do not attempt to complete everything
-in one session — a partial PR with clear notes is the expected outcome.
-Run **Exit cleanup** (the open PR already released the claim in Phase
-7.5; delete the scratch file) before exiting.
+If a run leaves the happy path — execution **fails** unrecoverably, a phase
+is **blocked**, you find an unrelated **problem** to file, the story has an
+unmerged **dependency**, it is **too broad** to start or **too large** for
+one session, or **review feedback** arrives after the PR opens — **read
+`references/escape-hatches.md`** and follow the procedure for that condition.
