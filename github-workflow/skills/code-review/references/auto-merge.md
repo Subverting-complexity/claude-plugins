@@ -1,7 +1,7 @@
 # Step 11 — Auto-merge on approval (if enabled)
 
 Read this when the SKILL's **Step 11** trigger fires: the verdict is
-**Approved** and Step 10b has sent you here. It is the heaviest, most
+**Approved** and Step 10 has sent you here. It is the heaviest, most
 conditional path in the review and almost never runs (auto-merge is
 off by default), so it lives outside `SKILL.md`.
 

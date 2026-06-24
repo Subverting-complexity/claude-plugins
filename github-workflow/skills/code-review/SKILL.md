@@ -581,54 +581,66 @@ remaining."]
 The `Reviewed at <SHA>` line must contain the commit SHA from Step 3 (or
 the updated SHA from Step 7 if fixes were pushed).
 
-### Step 10 — Apply labels and exit
+### Step 10 — Reconcile labels and exit
 
-1. Remove the `reviewing` state label, then release the atomic claim now
-   that the verdict is being recorded (`templates/claim-procedure.md`
-   **Release** for target `pr-<number>`): `git push origin :refs/claims/pr-<number>`
-   and `rm -f .claude/claim-pr-<number>.sha`. Idempotent — ignore an
-   error if the ref is already gone.
-2. Remove the `needs-re-review` state label (no-op if not present).
-3. Remove all other state labels that don't match the new verdict (the
-   remove commands will no-op if the label isn't present).
-4. Apply exactly one state label matching the verdict.
-5. If fixes were pushed in Step 7, ensure the `fixes-applied` action label
-   is present. Do not remove it if it was already there (it is sticky).
-6. If `review.config.md` defines custom labels, evaluate each one's
+1. Release the atomic claim now that the verdict is being recorded
+   (`templates/claim-procedure.md` **Release** for target `pr-<number>`):
+   `git push origin :refs/claims/pr-<number>` and
+   `rm -f .claude/claim-pr-<number>.sha`. Idempotent — ignore an error if
+   the ref is already gone.
+
+2. Reconcile the PR's review-state labels to exactly the verdict. This is a
+   deterministic dance — strip every stale state label, leave exactly the
+   one verdict label, then read back and create-if-missing — so it runs as a
+   tested code path rather than by hand. Run it from the repo root:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr <number> --verdict <approved|changes-requested|needs-discussion>
+   ```
+
+   Add `--fixes-applied` when Step 7 pushed fix commits, so the sticky
+   `fixes-applied` label is kept. The JSON reports `verdict_label`, the
+   `added`/`removed` labels, `created_label` (whether a missing verdict label
+   had to be created), and `verified`. On `verified: true` the label state is
+   correct — continue. On `verified: false`, report the failure but do not
+   block. `wf review-finish` resolves every name by purpose key
+   (`review.config.md` overrides, `review-` defaults otherwise) and creates a
+   missing verdict label guarded — never with `--force`.
+
+   **Thin fallback** — only when `wf` errors or Python is absent. Apply the
+   verdict label and remove the other state labels with plain `gh`, resolving
+   each name by purpose key through `templates/default-labels.md`
+   (review-state purposes via `review.config.md` when present):
+
+   ```bash
+   gh pr edit <number> --repo <org>/<repo> --add-label <verdict-label> \
+     --remove-label <reviewing> --remove-label <needs-review> \
+     --remove-label <needs-re-review> --remove-label <other-verdict-labels…>
+   ```
+
+   The remove commands no-op if the label isn't present. If the add fails
+   because the verdict label doesn't exist on the repo, create it guarded —
+   **without `--force`** so existing metadata is never overwritten — then
+   retry the add:
+
+   ```bash
+   gh label create "<verdict-label>" --repo <org>/<repo> --description "<desc>" --color "<color>"
+   gh pr edit <number> --repo <org>/<repo> --add-label "<verdict-label>"
+   ```
+
+3. If `review.config.md` defines custom labels, evaluate each one's
    "When to apply" criteria against the PR. Apply matching labels and
    remove non-matching ones that were previously applied by a review.
-7. Check out the original branch you were on before the review.
-8. Report `Reviewed PR #<number> <title> — <verdict>` (always name the
+   (`wf review-finish` reconciles only the standard review-state labels;
+   project-specific custom labels stay your judgment.)
+
+4. Check out the original branch you were on before the review.
+
+5. Report `Reviewed PR #<number> <title> — <verdict>` (always name the
    PR by number **and** title together, never the number alone), followed
    by the **Changed** / **Added to the board** outline from the **Final
    report format** below, then exit. If the verdict is Approved,
    Step 11 runs first and produces the merged/queued lead line instead.
-
-Resolve every label name by purpose key through the single path in
-`templates/default-labels.md` (review-state purposes via
-`review.config.md` when present, defaults otherwise). Do not hardcode a
-concrete name.
-
-### Step 10b — Verify labels were applied
-
-After applying labels in Step 10, immediately read back the PR labels:
-
-```bash
-gh pr view <number> --repo <org>/<repo> --json labels --jq '[.labels[].name]'
-```
-
-Confirm the expected state label is present. If missing, the label
-likely doesn't exist on the repo (setup should have created it). Create
-it with the guarded create-if-missing pattern from
-`templates/default-labels.md` — **without `--force`** so existing label
-metadata is never overwritten — then retry:
-
-```bash
-gh label create "<label>" --repo <org>/<repo> --description "<desc>" --color "<color>"
-gh pr edit <number> --repo <org>/<repo> --add-label "<label>"
-```
-
-If still missing after retry, report the failure but do not block.
 
 If the verdict is **Approved**, proceed to Step 11 before exiting.
 Otherwise the review is complete — exit here.
@@ -641,7 +653,7 @@ is off by default — so the full procedure lives in
 
 - **Trigger:** when (and only when) the verdict is **Approved**, read and
   follow `references/auto-merge.md`. For any non-Approved verdict, Step 11
-  does not run — the review is already complete at Step 10b.
+  does not run — the review is already complete at Step 10.
 
 That reference re-states the three enabling conditions (verdict Approved,
 `review.config.md` Auto-Merge on Approval `enabled`, not read-only), reads

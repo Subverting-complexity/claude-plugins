@@ -36,8 +36,10 @@ from wf_core import (  # noqa: E402
     detect_backlog_mode,
     get_sprint_candidates,
     parse_dependencies,
+    reconcile_review_labels,
     resolve_label,
     resolve_review_label,
+    review_label_missing,
     review_names,
     select_pool,
     select_review_pool,
@@ -534,6 +536,70 @@ class TestReviewPool(unittest.TestCase):
 
     def test_pr_without_review_label_excluded(self):
         self.assertEqual(select_review_pool([_pr(1, ['type-bug'])], _RN), [])
+
+
+class TestReviewFinish(unittest.TestCase):
+    """review-finish label dance: strip stale state labels, leave the verdict."""
+
+    def test_each_verdict_applies_exactly_its_label(self):
+        # Start from a typical in-review PR (reviewing + the entry needs-review)
+        # and confirm each verdict adds its own label and removes the rest.
+        for verdict in ('approved', 'changes-requested', 'needs-discussion'):
+            current = [_RN['reviewing'], _RN['needs-review']]
+            add, remove = reconcile_review_labels(current, verdict, _RN)
+            self.assertEqual(add, [_RN[verdict]], msg=verdict)
+            self.assertEqual(set(remove), {_RN['reviewing'], _RN['needs-review']}, msg=verdict)
+
+    def test_removes_every_other_state_label_but_keeps_verdict(self):
+        # All seven state labels present (pathological) → remove the six that
+        # are not the verdict, and do not re-add the one already present.
+        current = [_RN[k] for k in (
+            'needs-review', 'reviewing', 'approved', 'changes-requested',
+            'needs-discussion', 'needs-re-review', 'failed')]
+        add, remove = reconcile_review_labels(current, 'approved', _RN)
+        self.assertEqual(add, [])  # approved already present
+        self.assertNotIn(_RN['approved'], remove)
+        self.assertEqual(len(remove), 6)
+
+    def test_unrelated_labels_untouched(self):
+        current = [_RN['reviewing'], 'priority-high', 'type-debt']
+        add, remove = reconcile_review_labels(current, 'changes-requested', _RN)
+        self.assertEqual(add, [_RN['changes-requested']])
+        self.assertEqual(remove, [_RN['reviewing']])  # non-state labels left alone
+
+    def test_fixes_applied_added_when_flagged_and_absent(self):
+        current = [_RN['reviewing']]
+        add, remove = reconcile_review_labels(current, 'approved', _RN, fixes_applied=True)
+        self.assertIn(_RN['fixes-applied'], add)
+        self.assertIn(_RN['approved'], add)
+
+    def test_fixes_applied_not_duplicated_when_present(self):
+        current = [_RN['reviewing'], _RN['fixes-applied']]
+        add, remove = reconcile_review_labels(current, 'approved', _RN, fixes_applied=True)
+        self.assertNotIn(_RN['fixes-applied'], add)        # already there, not re-added
+        self.assertNotIn(_RN['fixes-applied'], remove)     # sticky, never removed
+
+    def test_fixes_applied_never_removed_even_without_flag(self):
+        current = [_RN['reviewing'], _RN['fixes-applied']]
+        _, remove = reconcile_review_labels(current, 'approved', _RN, fixes_applied=False)
+        self.assertNotIn(_RN['fixes-applied'], remove)
+
+    def test_unknown_verdict_raises(self):
+        with self.assertRaises(ValueError):
+            reconcile_review_labels([_RN['reviewing']], 'shipped', _RN)
+
+    def test_project_override_resolves_verdict_label(self):
+        names = review_names({'approved': 'ship-it'})
+        add, _ = reconcile_review_labels([names['reviewing']], 'approved', names)
+        self.assertEqual(add, ['ship-it'])
+
+    def test_create_if_missing_decision(self):
+        # The verdict label did not stick → its name is returned for create.
+        self.assertEqual(
+            review_label_missing([_RN['reviewing']], 'approved', _RN), _RN['approved'])
+        # It stuck → nothing to create.
+        self.assertIsNone(
+            review_label_missing([_RN['approved']], 'approved', _RN))
 
 
 class TestProjectBoardParsing(unittest.TestCase):
