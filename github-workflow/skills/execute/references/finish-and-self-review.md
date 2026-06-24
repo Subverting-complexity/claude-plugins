@@ -65,14 +65,17 @@ here are only needed once you are ready to open the PR.
 
    **Prerequisites** — resolve before building the mutation:
    - PR node ID: `gh pr view {pr_number} --repo {org}/{repo} --json id --jq '.id'`
-   - Label node IDs from `.claude/label-cache.json` (written by session
-     prewarm): look up `claude-authored`, the review-state entry label
+   - Label node IDs: look up `claude-authored`, the review-state entry label
      (`review-needs-review` or `review-changes-requested`),
-     `status-in-progress`, and `status-in-review` by name. If any label
-     is missing from the cache, create it with the guarded
-     create-if-missing pattern from `templates/default-labels.md`
-     (no `--force`), append the new `{name, id}` entry to the cache, and
-     use that ID.
+     `status-in-progress`, and `status-in-review` by name. The session no
+     longer prewarms a label inventory, so `.claude/label-cache.json` is
+     usually absent here — fetch the IDs now with `gh label list --repo
+     {org}/{repo} --json name,id --limit 1000` (this is the deferred,
+     first-use fetch). If the cache *does* exist from an earlier fallback this
+     session, read it instead of re-querying. If any label is missing, create
+     it with the guarded create-if-missing pattern from
+     `templates/default-labels.md` (no `--force`), write/append the new
+     `{name, id}` entry to `.claude/label-cache.json`, and use that ID.
    - Issue node ID: available from context (stored when the issue was
      added to the board in Phase 2); if not in context, fetch it with
      `gh issue view {number} --repo {org}/{repo} --json id --jq '.id'`.
@@ -127,7 +130,7 @@ here are only needed once you are ready to open the PR.
    ```
    git push origin :refs/claims/issue-{number}
    rm -f .claude/claim-issue-{number}.sha .claude/plan.md \
-         .claude/preflight-passed.txt .claude/label-cache.json .claude/candidates.json
+         .claude/preflight-passed.txt .claude/label-cache.json
    ```
    The claim-ref delete is idempotent — ignore an error if it is already
    gone. The issue stays assigned to @me through review.
