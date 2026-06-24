@@ -153,6 +153,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-next --checkout --no-claim
   review needs review *without* a label, and `wf` does not detect that. Fall
   back to the inline procedure below before concluding there is nothing to
   review.
+- **`all-blocked`** — every reviewable PR is currently claimed by another
+  review agent. Report that all candidate PRs are being handled by other
+  agents and exit cleanly. Do **not** fall through to the inline procedure
+  below — a blind re-scan would just skip the same `reviewing`-labelled PRs
+  and surface nothing new. (This status only arises in full mode; read-only
+  passes `--no-claim`, so its picker never claims and never reports
+  `all-blocked` — see the phantom-`all-blocked` note above.)
 - **`error`**, or the launcher reports Python is missing — use the inline
   procedure below.
 
