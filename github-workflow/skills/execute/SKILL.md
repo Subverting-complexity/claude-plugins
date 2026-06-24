@@ -102,64 +102,34 @@ Read `CLAUDE.md` for project rules and build principles.
 
 ## Session prewarm
 
-Immediately after preflight passes and the projected config is loaded,
-issue the following reads **in a single parallel tool-call batch** (fire
-them at once, do not wait for one before starting the next). This
-front-loads the API calls the **inline** Phase 1 fallback would otherwise
-make sequentially and caches the results so later phases pay zero network
-overhead for them.
+Immediately after preflight passes and the projected config is loaded, read
+the current API quota — this is the only eager warm-up:
 
-> **The candidate prewarm feeds only the inline fallback.** When the Phase 1
-> **fast path** (`wf pick`) returns `ok`, it has already selected and claimed
-> the story, so `.claude/candidates.json` is never read. Treat the candidate
-> fetch as a cheap warm-up for the degraded path, not the selection itself —
-> never hand-pick a story from this cache when the fast path succeeded.
+```
+gh api rate_limit --jq '.rate.remaining'
+```
 
-1. **Candidate list (ready-gate-aware).** Fetch the unassigned open pool the
-   way this project's `ready-gate` defines "ready" — a blind `status-ready`
-   query is **wrong** on a `none` or board gate (it returns empty and sends
-   the inline path improvising):
-   - **`label` / `both`** — gated by the ready label:
-     ```
-     gh issue list --repo {org}/{repo} --label "{status_ready_label}" \
-       --state open --assignee "" --json number,title,labels,assignees --limit 50
-     ```
-   - **`none`** — every unassigned open issue is eligible (the inline path
-     drops `status-blocked` ones itself):
-     ```
-     gh issue list --repo {org}/{repo} --state open --assignee "" \
-       --json number,title,labels,assignees --limit 50
-     ```
-   - **`board-column`** — readiness is column membership, not a label; **skip
-     this fetch** (leave `.claude/candidates.json` absent) and let the inline
-     board path resolve it.
+Keep the result in context only. If the count is already below 100 here,
+treat this as the rate-limit pause described in **API rate limiting** below
+and exit after cleanup.
 
-   Write the JSON result to `.claude/candidates.json` so the inline Phase 1
-   fallback reads from this file instead of re-querying.
+**Candidate and label fetches are deliberately *not* prewarmed.** The Phase 1
+fast path (`wf pick`) selects, claims, board-moves, and checks out the story
+in one call, so on the happy path there is nothing to warm up — eagerly
+fetching a candidate list or a full label inventory here would pay latency and
+rate-limit budget up front for data the happy path never reads. Each is
+fetched lazily, only on the path that needs it:
 
-2. **Label inventory** — fetch every repo label with its node ID:
-   ```
-   gh label list --repo {org}/{repo} \
-     --json name,id,color,description --limit 1000
-   ```
-   Write the JSON result to `.claude/label-cache.json`. Later phases use
-   this mapping (label name → node ID) to build single-mutation GraphQL
-   calls without per-write existence reads. If a label is needed but
-   absent from the cache, create it with the guarded create-if-missing
-   pattern in `templates/default-labels.md`, then append the new entry
-   to the cache before proceeding.
+- **Candidate list** — fetched by the inline fallback itself
+  (`templates/story-selection.md` Step 1, ready-gate-aware) only when `wf pick`
+  does not return `ok`. There is no `.claude/candidates.json` cache.
+- **Label inventory** — fetched at the **finish phase** (Phase 7) only if
+  reached; `references/finish-and-self-review.md` falls back to `gh label list`
+  when `.claude/label-cache.json` is absent.
 
-3. **Rate check** — read the current API quota:
-   ```
-   gh api rate_limit --jq '.rate.remaining'
-   ```
-   Keep the result in context only. If the count is already below 100
-   here, treat this as the rate-limit pause described in **API rate
-   limiting** below and exit after cleanup.
-
-Skip this section (leave the cache files absent) when running in
-`audit` mode — the audit flow does not use the candidate list or
-issue-finish mutations.
+When you do enter the inline fallback, read
+`references/inline-fallback-prewarm.md` for the details. (Skip the rate check
+too in `audit` mode if you prefer — the audit flow makes few writes.)
 
 ## Session budget
 
@@ -261,9 +231,12 @@ in one command:
 
 ```
 rm -f .claude/plan.md .claude/preflight-passed.txt \
-      .claude/label-cache.json .claude/candidates.json \
-      .claude/issue-fields-cache.json
+      .claude/label-cache.json .claude/issue-fields-cache.json
 ```
+
+(`.claude/candidates.json` is no longer written — the candidate fetch was
+removed as dead weight — so it is not listed here. A stray copy from an older
+session is still swept by the **Reconcile the working tree** step below.)
 
 All are gitignored, but they must still be cleaned up explicitly.
 
@@ -337,10 +310,11 @@ Interpret the result by its `status` field (the exit code mirrors it):
 - **`error`**, or the launcher reports Python is missing — `wf` cannot run
   here. Use the inline selection below.
 
-The fast path replaces the manual candidate fetch in **Session prewarm** for
-the common case; that prewarm only pre-loads the inline fallback (see its
-note). Skip the fast path entirely for an explicit number (it auto-selects)
-and for `audit` mode.
+When you fall through to the inline selection (any case other than `ok`),
+first read `references/inline-fallback-prewarm.md` — it covers how candidate
+fetching and label caching are handled lazily on this degraded path. Skip the
+fast path entirely for an explicit number (it auto-selects) and for `audit`
+mode.
 
 ### Explicit number / inline fallback
 

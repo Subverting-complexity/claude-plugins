@@ -346,12 +346,13 @@ calls:
 - PR and issue node IDs: available from Step 5 (PR create result) and
   Step 4b (issue view result). Fetch any that are missing.
 - Label node IDs: look up `claude-authored`, the review-state entry
-  label, `status-in-progress`, and `status-in-review` from
-  `.claude/label-cache.json` (written by session prewarm; if absent, fall
-  back to `gh label list`). If any label is missing from the cache,
-  create it with the guarded create-if-missing pattern from
-  `templates/default-labels.md` (no `--force`), append the new entry to
-  the cache, and use that ID.
+  label, `status-in-progress`, and `status-in-review`. The execute session
+  no longer prewarms a label inventory, so `.claude/label-cache.json` is
+  usually absent — fall back to `gh label list` to fetch the IDs (this is the
+  deferred, first-use fetch); read the cache instead only if it exists from an
+  earlier fallback this session. If any label is missing, create it with the
+  guarded create-if-missing pattern from `templates/default-labels.md` (no
+  `--force`), write/append the new entry to the cache, and use that ID.
 - Board item ID, project ID, field ID, and column option ID: follow
   `templates/board-resolution.md`. Skip the board alias if no board is
   configured. Resolve the `Target date` field node ID from
@@ -417,7 +418,7 @@ and run the **End clean** procedure in `templates/worktree-hygiene.md`:
 
 ```
 rm -f .claude/plan.md .claude/preflight-passed.txt \
-      .claude/label-cache.json .claude/candidates.json
+      .claude/label-cache.json
 git status --porcelain    # reconcile until empty
 ```
 
