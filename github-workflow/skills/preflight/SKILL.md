@@ -4,9 +4,8 @@ description: >-
   Check project configuration health before running workflow commands.
   Verifies critical files exist, required sections are present, and
   settings are consistent. Invoked automatically by other commands —
-  can also be run directly as a diagnostic. Trigger on: "check my
-  config", "is my project set up", "preflight", "config check",
-  "validate setup", "check configuration".
+  can also be run directly as a diagnostic. Trigger on "check my
+  config", "preflight", or "validate setup".
 ---
 
 # Preflight Check

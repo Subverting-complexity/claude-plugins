@@ -1,5 +1,5 @@
 ---
-description: 'Push the branch, create a PR, and update the board. Trigger: "finish", "done", "open a PR", "ship it", "create the PR", "submit", "wrap up", "push it", "send for review".'
+description: 'Push the branch, create a PR, and update the board. Trigger: "finish", "open a PR", "ship it", "send for review".'
 ---
 
 # Finish Story

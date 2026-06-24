@@ -1,5 +1,5 @@
 ---
-description: 'Create a bug, security, architecture, or tech debt issue. Trigger: "report a bug", "log an issue", "found a bug", "report tech debt", "create an issue", "file a bug", "something''s broken", "found a problem", "raise an issue", "security issue", "vulnerability".'
+description: 'Create a bug, security, architecture, or tech debt issue. Trigger: "report a bug", "report tech debt", "security issue", "create an issue".'
 ---
 
 # Report Issue

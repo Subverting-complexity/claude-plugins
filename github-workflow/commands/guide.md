@@ -1,5 +1,5 @@
 ---
-description: 'Orientation and help. Trigger: "how do I use this", "what can you do", "help", "get started", "guide me", "what''s available", "walkthrough", "show capabilities", "tutorial".'
+description: 'Orientation and help. Trigger: "help", "how do I use this", "get started", "what can you do".'
 ---
 
 # Guide
