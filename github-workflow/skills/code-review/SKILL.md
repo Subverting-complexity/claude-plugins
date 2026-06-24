@@ -105,32 +105,12 @@ user through creating one.
 
 ## Read-Only Mode
 
-When `$ARGUMENTS.mode` is `read-only`:
-
-- Execute Steps 1–6, but **do not claim**. Selection uses the fast path with
-  `--no-claim` (Step 1) — read-only has no push access, so it never writes a
-  `refs/claims/pr-<number>` ref or applies the `reviewing` marker. In the
-  inline fallback (Step 1), skip **Step 2** (Claim) entirely: just pick the
-  PR by the prioritisation rules and go straight to checkout. Because no
-  claim was held, **Step 10's claim release is a no-op** and there is no
-  `reviewing` label to remove.
-- In **Step 2b** (duplicate reconciliation), close nothing: identify the
-  winner and list the duplicate set under a "Duplicate PRs" note in the
-  review comment, recommending which to keep. Then continue reviewing the
-  selected PR.
-- **Skip Step 7** (Fix issues) entirely — do not edit any files or push
-  commits, and do not file anything to the board (Step 7f is a mutation).
-- In Step 8, determine the verdict based on raw findings (nothing was auto-fixed).
-- In Step 9, post the review comment with "Fixes applied: None (read-only
-  mode)." The "Issues remaining" section lists the raw findings (nothing
-  was filed to the board), so drop the "(filed to board)" qualifier.
-- In Step 10, apply labels normally.
-- **Skip Step 11** (auto-merge) entirely — read-only mode never merges,
-  closes, or pushes, regardless of the Auto-Merge on Approval setting.
-
-Read-only mode is intended for the Reviewer agent, which has no write
-access. It produces the same structured evaluation without modifying
-the PR branch.
+When invoked with `--read-only` (`$ARGUMENTS.mode` is `read-only`), read and
+follow `references/read-only-mode.md` — it overrides specific steps (no
+claim, skip the Step 7 fixes, skip the Step 11 auto-merge, close nothing in
+Step 2b) so the review evaluates without writing to the PR. Full-mode
+reviews skip the reference entirely. The per-step read-only notes inline
+below restate the key overrides at their point of use.
 
 ---
 
@@ -732,6 +712,8 @@ The conditional, low-frequency paths are split into `references/` and
 loaded only when their step's trigger fires — keeping the common
 single-PR review path light:
 
+- `references/read-only-mode.md` — the Read-Only Mode step overrides, loaded
+  only when invoked with `--read-only` (the Reviewer agent path).
 - `references/duplicate-reconciliation.md` — Step 2b, when the claimed PR
   shares an issue with another open PR.
 - `references/re-review.md` — Step 4b, when a prior review footer exists.
@@ -750,27 +732,13 @@ Rationale files (maintainers only — not read at runtime):
 ## Rules
 
 - Never use `gh pr review --approve`. Always use `gh pr comment`.
-- Do not merge a PR **except** the one sanctioned auto-merge in Step 11 —
-  only when the verdict is Approved, `review.config.md` sets Auto-Merge on
-  Approval to `enabled` (off by default), and the review comment is already
-  posted. Step 11 first resolves any merge conflicts and fixes any failing
-  required check on the branch, then merges (or enqueues `--auto`); it
-  never force-merges over a genuinely red required check. When
-  `require-ci-before-merge` is set, it also never merges a PR that has no
-  CI gate at all (no checks, or a red check it cannot fix) — it pauses and
-  leaves `approved`. **Exception:** when invoked with `--bypass-ci`, the CI
-  gate is treated as satisfied (red or absent checks no longer block or
-  pause) — an explicit operator override for when CI cannot run for reasons
-  outside the PR, e.g. Actions billing. A persistent, billing-scoped form of
-  this is the per-project `bypass-ci-on-billing-failure` setting (default
-  `false`): when `true`, an approved PR merges over red CI **only** when the
-  sole blocker is a GitHub Actions billing/account failure — a genuine red
-  check is still fixed or filed. Neither bypasses a merge conflict.
-  Never merge in read-only mode.
-- Do not close a PR **except** to reconcile duplicates in Step 2b — when
-  two or more open PRs close the same issue, close the losers and keep the
-  winner. That is the one sanctioned close; never close a PR for any other
-  reason, and never in read-only mode.
+- **Do not merge a PR** except the one sanctioned auto-merge in Step 11, and
+  only under the conditions and CI-gate/`--bypass-ci`/
+  `bypass-ci-on-billing-failure` rules stated once in
+  `references/auto-merge.md` (off by default). Never merge in read-only mode.
+- **Do not close a PR** except to reconcile duplicates in Step 2b, per
+  `references/duplicate-reconciliation.md` — the one sanctioned close. Never
+  close a PR for any other reason, and never in read-only mode.
 - Do not make discretionary refactors or stylistic changes.
 - Push fixes for all concrete, objectively wrong problems — both blocking
   and non-blocking — before approving or merging. Non-blocking cleanups
