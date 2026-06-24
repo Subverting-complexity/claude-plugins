@@ -673,6 +673,32 @@ def assemble_prs(cfg, mine):
     return True, [_norm_pr(r) for r in data or []], ''
 
 
+# Color + description for each review-state purpose, mirroring
+# templates/label-reference.md → Review State Labels. Used only by the
+# review-finish readback to recreate a verdict label the repo is missing
+# (guarded create, never `--force`).
+REVIEW_LABEL_META = {
+    'needs-review': ('C2E0C6', 'Open PR awaiting its first review'),
+    'reviewing': ('0E8A16', 'Review in progress'),
+    'approved': ('1D76DB', 'Ready for human merge'),
+    'changes-requested': ('E4E669', 'Issues need human action'),
+    'needs-discussion': ('D93F0B', 'Architectural questions'),
+    'needs-re-review': ('FBCA04', 'New commits since last review'),
+    'failed': ('B60205', 'Review could not complete'),
+    'updating': ('0E8A16', 'Builder addressing feedback'),
+    'fixes-applied': ('5319E7', 'Claude pushed fix commits (sticky)'),
+}
+
+
+def pr_label_names(cfg, number):
+    """Read a PR's current label names. Returns (names_or_None, err)."""
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    ok, data, err = gh_json(['pr', 'view', str(number), '--repo', repo, '--json', 'labels'])
+    if not ok or not data:
+        return None, err
+    return [l['name'] for l in data.get('labels', [])], ''
+
+
 def apply_pr_labels(cfg, number, add, remove=None):
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     args = ['pr', 'edit', str(number), '--repo', repo, '--add-label', add]
@@ -980,6 +1006,56 @@ def cmd_review_next(args):
     emit('ok', EXIT_OK, **result)
 
 
+def cmd_review_finish(args):
+    """Reconcile a reviewed PR's state labels to exactly the verdict label.
+
+    Encodes the code-review skill's Step 10/10b deterministic label dance:
+    read the PR's labels, strip every stale review-state label, leave exactly
+    the verdict label (keeping the sticky `fixes-applied` when fixes were
+    pushed), then read back and — if the verdict label did not stick because
+    the repo lacks it — create it guarded (no `--force`) and re-apply. The
+    label decisions are the pure, tested `wf_core` functions; this shell only
+    does the `gh` I/O.
+    """
+    cfg = prepare_cfg()
+    names = wf_core.review_names(cfg.get('review_labels'))
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+
+    current, err = pr_label_names(cfg, args.pr)
+    if current is None:
+        emit('error', EXIT_ENV, reason='could not read PR #%d labels (%s)' % (args.pr, err))
+
+    add, remove = wf_core.reconcile_review_labels(
+        current, args.verdict, names, fixes_applied=args.fixes_applied)
+    if add or remove:
+        edit = ['gh', 'pr', 'edit', str(args.pr), '--repo', repo]
+        for a in add:
+            edit += ['--add-label', a]
+        for r in remove:
+            edit += ['--remove-label', r]
+        code, _, eerr = run(edit)
+        if code != 0:
+            eprint('wf: review-finish label edit warning (%s)' % eerr.strip())
+
+    target = names[args.verdict]
+    created_label = False
+    after, _ = pr_label_names(cfg, args.pr)
+    if after is not None and wf_core.review_label_missing(after, args.verdict, names):
+        color, desc = REVIEW_LABEL_META.get(args.verdict, ('ededed', 'review-state label'))
+        run(['gh', 'label', 'create', target, '--repo', repo,
+             '--description', desc, '--color', color])
+        run(['gh', 'pr', 'edit', str(args.pr), '--repo', repo, '--add-label', target])
+        created_label = True
+        after, _ = pr_label_names(cfg, args.pr)
+
+    verified = after is not None and target in after
+    if not verified:
+        eprint('wf: review-finish could not confirm %r on PR #%d' % (target, args.pr))
+    emit('ok', EXIT_OK, pr=args.pr, verdict=args.verdict, verdict_label=target,
+         added=add, removed=remove, created_label=created_label,
+         verified=verified, labels=after)
+
+
 def cmd_post_merge(args):
     """Settle a merged PR's linked issues: force-close any still open, move all to Done.
 
@@ -1085,6 +1161,18 @@ def build_parser():
                      help='select without pushing a claim ref or applying the '
                           'reviewing marker (read-only review, which has no push access)')
     rev.set_defaults(func=cmd_review_next)
+
+    fin = sub.add_parser('review-finish',
+                         help='reconcile a reviewed PR to exactly its verdict label '
+                              '(strip stale state labels, readback-verify, create-if-missing)')
+    fin.add_argument('--pr', type=int, required=True, help='the reviewed PR number')
+    fin.add_argument('--verdict', required=True,
+                     choices=list(wf_core.REVIEW_VERDICT_KEYS),
+                     help='the review verdict; resolves to exactly one state label')
+    fin.add_argument('--fixes-applied', action='store_true',
+                     help='also ensure the sticky fixes-applied label is present '
+                          '(set when Step 7 pushed fix commits)')
+    fin.set_defaults(func=cmd_review_finish)
 
     cfg = sub.add_parser('config', help='emit .claude/wf-config.json from ClaudeProject.md')
     cfg.set_defaults(func=cmd_config)

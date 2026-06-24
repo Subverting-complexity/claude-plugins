@@ -268,6 +268,63 @@ def actionable_update_label(labels, names):
     return None
 
 
+# ── Review-finish label reconciliation ───────────────────────────────────────
+# Encodes the code-review skill's Step 10/10b: on a verdict, strip every stale
+# review-state label and leave exactly the one verdict label. The seven state
+# labels are mutually exclusive — exactly one belongs on a settled PR.
+
+REVIEW_STATE_KEYS = [
+    'needs-review', 'reviewing', 'approved', 'changes-requested',
+    'needs-discussion', 'needs-re-review', 'failed',
+]
+# The verdicts code-review can record (the three a review can conclude with;
+# `failed` is set on the error path, not by review-finish).
+REVIEW_VERDICT_KEYS = ('approved', 'changes-requested', 'needs-discussion')
+
+
+def reconcile_review_labels(current_labels, verdict, names, fixes_applied=False):
+    """Compute the (add, remove) label deltas that record a review verdict.
+
+    Given the PR's current labels and a verdict purpose key, returns the
+    concrete label names to add and to remove so the PR ends carrying exactly
+    one review-state label (the verdict) — the deterministic "label dance" the
+    code-review skill used to spell out in prose.
+
+      - remove: every managed state label currently present except the verdict.
+      - add:    the verdict label if not already present, plus `fixes-applied`
+                when `fixes_applied` is set and it is not already present
+                (the sticky action label, never removed here).
+
+    `names` is the resolved review-name map (`review_names`). Both lists are
+    sorted for deterministic output. Raises ValueError on an unknown verdict so
+    a caller can never silently apply the wrong label.
+    """
+    if verdict not in REVIEW_VERDICT_KEYS:
+        raise ValueError('unknown review verdict %r (expected one of %s)'
+                         % (verdict, ', '.join(REVIEW_VERDICT_KEYS)))
+    target = names[verdict]
+    current = set(current_labels)
+    managed = {names[k] for k in REVIEW_STATE_KEYS}
+    remove = sorted((managed & current) - {target})
+    add = []
+    if target not in current:
+        add.append(target)
+    if fixes_applied and names['fixes-applied'] not in current:
+        add.append(names['fixes-applied'])
+    return add, remove
+
+
+def review_label_missing(labels_after, verdict, names):
+    """Return the verdict label if it did not stick after the edit, else None.
+
+    Drives the guarded create-if-missing readback: when the verdict label is
+    absent from the post-edit labels, the label likely does not exist on the
+    repo and must be created (without `--force`) and re-applied.
+    """
+    target = names[verdict]
+    return None if target in labels_after else target
+
+
 # ── Backlog-mode detection ───────────────────────────────────────────────────
 # story-selection.md Step 2 — sprint vs flat from milestone presence.
 
