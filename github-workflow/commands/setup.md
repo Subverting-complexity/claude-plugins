@@ -1,5 +1,5 @@
 ---
-description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "onboard", "initialize the workflow", "help me set up", "setup", "init", "bootstrap", "configure the plugin", "first time setup", "harden auto-merge", "enforce CI before merge", "require CI", "set up ecosystem tools", "configure graphify", "set up fallow", "configure RTK", "reap claims", "reap orphaned claims", "clean up stale claim refs", "reap locks".'
+description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "harden auto-merge", "set up ecosystem tools", "reap claims".'
 argument-hint: '[harden|ecosystem|reap|wf]'
 ---
 
