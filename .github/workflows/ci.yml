@@ -28,14 +28,16 @@ jobs:
         run: bash lint-skills.sh
 
   decision-logic-tests:
-    name: Test workflow decision logic
+    name: Test workflow decision logic and wf.py I/O shell
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run decision logic tests
+      - name: Run the offline test suite
         shell: bash
-        run: python3 tests/test_decision_logic.py
+        # Discovery runs every tests/test_*.py module: the pure decision-logic
+        # suite plus the wf.py I/O-shell integration tests.
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
 
   version-bump-check:
     name: Check plugin versions are bumped
