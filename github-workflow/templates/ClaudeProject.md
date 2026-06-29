@@ -129,7 +129,8 @@ How stories signal eligibility for pickup:
 - `board-column` — the "Ready" column on the project board.
 - `both` — label AND board column.
 - `none` — no gate; any open unassigned issue is eligible (fully unattended
-  pickup; pair with `agent-gating: disabled`).
+  pickup; pair with `agent-gating: disabled`). `off` / `disabled` are accepted
+  synonyms and normalise to `none`.
 
 `board-column`/`both` require a configured board with a "Ready" option;
 `label`/`none` need no board.

@@ -44,7 +44,8 @@ determined depends on `ready-gate`:
   Keep items where Status is "Ready", state is OPEN, assignees is empty.
 - **`both`** — the `label` query, then drop any candidate not also in the
   "Ready" board column.
-- **`none`** — no readiness gate at all. Any open unassigned issue is
+- **`none`** (also written `off` / `disabled`, which normalise to `none`) —
+  no readiness gate at all. Any open unassigned issue is
   eligible. Use this for fully autonomous pickup where no human readiness
   signal (label or column) is required:
   ```
