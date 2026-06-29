@@ -344,5 +344,47 @@ class TestShapeRegressionGuards(unittest.TestCase):
         self.assertEqual(args[n_idx - 1], '-F')
 
 
+class TestRunDecoding(unittest.TestCase):
+    """`run()` must decode subprocess output as UTF-8 regardless of host locale.
+
+    `gh` emits UTF-8 (issue bodies carry smart quotes, em dashes, emoji). On
+    Windows `subprocess(text=True)` defaults to cp1252, whose reader thread
+    dies with `UnicodeDecodeError` on the first unmappable byte — leaving
+    `stdout=None` and surfacing only a downstream `'NoneType' … strip` error.
+    The picker's fast path crashed exactly here on a real run. These guards
+    drive the real `run()` (no mocks) to lock the UTF-8 + errors='replace'
+    contract.
+    """
+
+    def _emit_bytes(self, raw):
+        """Run a child that writes `raw` to stdout's byte buffer; return run()'s stdout."""
+        code, out, _ = wf.run([
+            sys.executable, '-c',
+            'import sys; sys.stdout.buffer.write(%r)' % (raw,),
+        ])
+        self.assertEqual(code, 0)
+        return out
+
+    def test_utf8_output_is_decoded_not_mojibaked(self):
+        """An em dash (UTF-8 e2 80 94) round-trips as U+2014, not cp1252 mojibake."""
+        self.assertEqual(self._emit_bytes('em—dash'.encode('utf-8')), 'em—dash')
+
+    def test_byte_undefined_in_cp1252_does_not_crash(self):
+        """A lone 0x8f (undefined in cp1252, the byte that killed the real run)
+        degrades to U+FFFD instead of dropping stdout to None."""
+        out = self._emit_bytes(b'before\x8fafter')
+        self.assertIsInstance(out, str)
+        self.assertIn('before', out)
+        self.assertIn('after', out)
+
+    def test_gh_json_tolerates_none_stdout(self):
+        """Belt-and-suspenders: even if a future seam hands back None stdout,
+        gh_json reports a clean parse outcome rather than an AttributeError."""
+        with mock.patch.object(wf, 'run', return_value=(0, None, None)):
+            ok, parsed, err = wf.gh_json(['anything'])
+        self.assertTrue(ok)
+        self.assertIsNone(parsed)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
