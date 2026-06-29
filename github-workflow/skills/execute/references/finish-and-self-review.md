@@ -97,16 +97,27 @@ here are only needed once you are ready to open the PR.
        addIssueLabel:     addLabelsToLabelable(input:{labelableId:$issueId, labelIds:$issueAddLabels}){ __typename }
        moveBoard:         updateProjectV2ItemFieldValue(input:{projectId:$projId, itemId:$itemId, fieldId:$fieldId, value:{singleSelectOptionId:$colVal}}){ __typename }
      }' \
-     -F prId="$PR_NODE_ID" \
-     -F issueId="$ISSUE_NODE_ID" \
-     -F prAddLabels="[\"$CLAUDE_AUTHORED_ID\",\"$REVIEW_STATE_LABEL_ID\"]" \
-     -F issueRemoveLabels="[\"$STATUS_IN_PROGRESS_ID\"]" \
-     -F issueAddLabels="[\"$STATUS_IN_REVIEW_ID\"]" \
-     -F projId="$PROJ_NODE_ID" \
-     -F itemId="$ITEM_ID" \
-     -F fieldId="$STATUS_FIELD_ID" \
-     -F colVal="$IN_REVIEW_OPTION_ID"
+     -f prId="$PR_NODE_ID" \
+     -f issueId="$ISSUE_NODE_ID" \
+     -f 'prAddLabels[]'="$CLAUDE_AUTHORED_ID" \
+     -f 'prAddLabels[]'="$REVIEW_STATE_LABEL_ID" \
+     -f 'issueRemoveLabels[]'="$STATUS_IN_PROGRESS_ID" \
+     -f 'issueAddLabels[]'="$STATUS_IN_REVIEW_ID" \
+     -f projId="$PROJ_NODE_ID" \
+     -f itemId="$ITEM_ID" \
+     -f fieldId="$STATUS_FIELD_ID" \
+     -f colVal="$IN_REVIEW_OPTION_ID"
    ```
+
+   Build the `[ID!]!` label arrays by repeating `-f 'name[]'=<id>` once per
+   label — that is how `gh api graphql` constructs a JSON array variable. Do
+   **not** collapse them into a single `-F name="[...]"`: `-F` never parses
+   `[...]` as JSON, so the array arrives as one literal string and GitHub
+   rejects the `[ID!]!` variable (the "array-label" failure that forces a
+   fallback to per-name `gh` edits). Pass every other field with `-f` too —
+   all are `ID!`/`String!`, and `-f` keeps a digit-only single-select option
+   id in `colVal` from being coerced to `Int` (which GitHub rejects against
+   `String!`).
 
    **If no board is configured**, omit the `moveBoard` alias (build the
    mutation without that variable/alias); the PR label and issue label
