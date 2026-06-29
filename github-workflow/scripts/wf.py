@@ -238,7 +238,11 @@ def parse_claude_project(text):
 
     for cells in _rows(_section(text, 'Ready Gate')):
         if len(cells) >= 2 and cells[0].lower() == 'ready-gate':
-            cfg['ready_gate'] = cells[1].lower()
+            gate = cells[1].lower()
+            # `off` / `disabled` are natural ways to write "no readiness gate";
+            # normalise them to the canonical `none` so the fast path picks a
+            # story instead of bouncing an unrecognised token to inline selection.
+            cfg['ready_gate'] = 'none' if gate in ('off', 'disabled') else gate
     for cells in _rows(_section(text, 'Agent Gating')):
         if len(cells) >= 2 and cells[0].lower() == 'agent-gating':
             cfg['agent_gating'] = cells[1].lower()

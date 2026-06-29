@@ -666,6 +666,15 @@ class TestReadyGateParsing(unittest.TestCase):
     def test_value_without_backticks_parsed(self):
         self.assertEqual(self._gate('none'), 'none')
 
+    def test_off_and_disabled_normalise_to_none(self):
+        """`off` / `disabled` are synonyms for "no gate"; they must normalise
+        to `none` so `wf pick` handles them on the fast path instead of
+        bouncing an unrecognised token to inline selection."""
+        self.assertEqual(self._gate('`off`'), 'none')
+        self.assertEqual(self._gate('off'), 'none')
+        self.assertEqual(self._gate('`disabled`'), 'none')
+        self.assertEqual(self._gate('disabled'), 'none')
+
     def test_missing_section_defaults_to_label(self):
         """No Ready Gate section → default `label`, never empty/None."""
         self.assertEqual(parse_claude_project('## Identity\n')['ready_gate'], 'label')
