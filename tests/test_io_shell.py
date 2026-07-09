@@ -142,17 +142,20 @@ class TestPickStatusContract(unittest.TestCase):
         # Each lost claim is reported as a side effect.
         self.assertEqual({s['issue'] for s in payload['side_effects']}, {1, 2})
 
-    def test_board_column_gate_emits_unsupported(self):
+    def test_board_column_gate_without_board_emits_error(self):
+        """board-column gate with no project-node-id configured → error."""
         self._use_cfg(_cfg(ready_gate='board-column'))
         code, payload = _capture(wf.cmd_pick, _pick_args())
-        self.assertEqual(code, wf.EXIT_UNSUPPORTED)
-        self.assertEqual(payload['status'], 'unsupported')
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertEqual(payload['status'], 'error')
 
-    def test_both_gate_emits_unsupported(self):
+    def test_both_gate_without_board_emits_error(self):
+        """both gate with no project-node-id configured → error."""
         self._use_cfg(_cfg(ready_gate='both'))
-        code, payload = _capture(wf.cmd_pick, _pick_args())
-        self.assertEqual(code, wf.EXIT_UNSUPPORTED)
-        self.assertEqual(payload['status'], 'unsupported')
+        with mock.patch.object(wf, 'gh_json', return_value=(True, [], '')):
+            code, payload = _capture(wf.cmd_pick, _pick_args())
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertEqual(payload['status'], 'error')
 
     def test_type_capable_non_story_mode_emits_unsupported(self):
         """feature/maintenance on a type-capable org defers to the skill."""
