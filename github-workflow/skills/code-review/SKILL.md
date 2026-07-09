@@ -212,11 +212,15 @@ target `pr-<number>`. It pushes a unique object to `refs/claims/pr-<number>`
 — a genuine server-side compare-and-swap — and applies the `reviewing`
 state label as the human-visible marker on success.
 
-If Acquire reports the claim is lost, another agent owns this PR: exit
-without removing any labels and without making changes. The `reviewing`
-label remains a display signal that other skills filter on; the
-`refs/claims/pr-<number>` ref is the actual lock. No label read-back is
-needed — the atomic push already proved exclusivity.
+If Acquire reports the claim is lost, another agent owns this PR:
+**move to the next candidate** in the priority-ordered list from Step 1
+and attempt Acquire on that one. Do not remove any labels or make
+changes to the lost PR. Repeat until a claim succeeds or the pool is
+exhausted. If every candidate was lost, report that all PRs are being
+handled by other agents and exit cleanly — do not retry or fall back.
+The `reviewing` label remains a display signal that other skills filter
+on; the `refs/claims/pr-<number>` ref is the actual lock. No label
+read-back is needed — the atomic push already proved exclusivity.
 
 **The `reviewing` label is the first mutating action of any review — it
 must be applied (via this Acquire) before checkout, gathering context,

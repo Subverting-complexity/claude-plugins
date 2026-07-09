@@ -692,6 +692,38 @@ class TestReadyGateParsing(unittest.TestCase):
         self.assertEqual(labels['needs-refinement'], 'triage')
 
 
+class TestBoardConfigParsing(unittest.TestCase):
+    """parse_claude_project must read the board config including the new
+    status-field-name setting so wf.py queries the correct field."""
+
+    def _board(self, table_rows):
+        text = ("## Project Board\n\n"
+                "| Setting             | Value      |\n"
+                "| ------------------- | ---------- |\n"
+                + table_rows)
+        return parse_claude_project(text)['board']
+
+    def test_status_field_name_parsed(self):
+        board = self._board("| status-field-name   | `Estado`   |\n")
+        self.assertEqual(board['status_field_name'], 'Estado')
+
+    def test_status_field_name_defaults_to_status(self):
+        board = self._board("| project-node-id     | `PVT_abc`  |\n")
+        self.assertEqual(board['status_field_name'], 'Status')
+
+    def test_missing_board_section_defaults_to_status(self):
+        cfg = parse_claude_project('## Identity\n')
+        self.assertEqual(cfg['board']['status_field_name'], 'Status')
+
+    def test_project_node_id_parsed(self):
+        board = self._board("| project-node-id     | `PVT_abc`  |\n")
+        self.assertEqual(board['project_node_id'], 'PVT_abc')
+
+    def test_project_node_id_na_is_none(self):
+        board = self._board("| project-node-id     | `n/a`      |\n")
+        self.assertIsNone(board['project_node_id'])
+
+
 class TestClosingIssueNumbers(unittest.TestCase):
     """Normalising `closingIssuesReferences` across the two API shapes.
 

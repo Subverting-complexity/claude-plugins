@@ -323,7 +323,8 @@ directly from Claude Code.
 
 **Only offer this tool if the project is TypeScript/JavaScript** —
 check for `package.json`, `tsconfig.json`, or `.ts`/`.js` files at the
-repo root. Skip silently for other stacks.
+repo root. For other stacks, report "Fallow: skipped (not a TS/JS
+project)" so the user knows it was considered.
 
 **Detect:** `npx fallow --version` (npx — no install needed for the CLI).
 
@@ -422,5 +423,17 @@ If at least one tool was enabled:
    `.gitignore` (personal-only). If personal-only, append
    `.claude/ecosystem.md` to `.gitignore`.
 
-If no tools were enabled, skip this entirely — no file, no table row,
-zero tokens in future contexts.
+4. **Print a summary** after setup completes, listing every tool and its
+   disposition so the user can see at a glance what was configured:
+   ```
+   Ecosystem setup complete:
+     Configured: Graphify, RTK, ccusage
+     Skipped:    Fallow (not a TS/JS project)
+     Declined:   Headroom, ecc-agentshield
+   ```
+   Omit a category if it is empty (e.g. no "Skipped" line when every tool
+   was either configured or declined).
+
+If no tools were enabled, skip file generation entirely — no file, no
+table row, zero tokens in future contexts — but still print the summary
+so the user sees what was available and why nothing was configured.

@@ -113,12 +113,13 @@ creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
 
 ## Scope / deferrals
 
-- **`pick`** — `--mode story` / `feature` / `maintenance` under the `label` /
-  `none` ready-gates. feature/maintenance filter by the `type-*` **label**, so
-  they run here on label-typed projects. Deferred to the skill via exit 30:
-  feature/maintenance on a **type-capable** org (the native issue type is
-  authoritative and is not resolved here), the `board-column` / `both`
-  ready-gates, and the empty-pool auto-ready scan.
+- **`pick`** — `--mode story` / `feature` / `maintenance` under all four
+  ready-gates (`label`, `none`, `board-column`, `both`).
+  feature/maintenance filter by the `type-*` **label**, so they run here
+  on label-typed projects. The empty-pool auto-ready dependency scan runs
+  inline before returning `no-candidates`. Deferred to the skill via
+  exit 30: feature/maintenance on a **type-capable** org (the native
+  issue type is authoritative and is not resolved here).
 - **`review-next`** — the *label-driven* subset. A PR whose head SHA changed
   since its last review (needing review without a label) is **not** detected
   here, so `code-review` treats `no-candidates` as non-conclusive and falls

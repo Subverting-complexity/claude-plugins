@@ -134,21 +134,20 @@ it):
   re-derive the choice; the picker already chose and locked it.** If
   `side_effects` is non-empty, tell the user what it touched (issues it
   returned to blocked, or closed as already-resolved by a merged PR).
-- **`no-candidates`** or **`all-blocked`** — nothing was pickable. Run
-  **only Step 4** (lazy auto-ready) of `templates/story-selection.md`; if it
-  restores anything, retry the fast path once, else report "No stories
-  available for pickup".
+- **`no-candidates`** or **`all-blocked`** — nothing was pickable. `wf`
+  already ran the auto-ready dependency scan and retried once internally;
+  report "No stories available for pickup".
 - **`unsupported`** — `wf` deferred this case (a `feature` / `maintenance`
   mode on a **type-capable** org, where the native issue type is
-  authoritative, or a `board-column` / `both` ready-gate). Use the inline
-  procedure below.
+  authoritative). Use the inline procedure below.
 - **`error`**, or the launcher prints that Python is missing — `wf` can't
   run in this environment. Use the inline procedure below.
 
-`wf pick` covers **story, feature, and maintenance** modes on label-typed
+`wf pick` covers **story, feature, and maintenance** modes under all four
+ready-gates (`label`, `none`, `board-column`, `both`) on label-typed
 projects (it filters by the `type-*` label). It defers to the inline
-procedure only on a type-capable org, where feature/maintenance must filter
-by the native issue type.
+procedure only on a type-capable org, where feature/maintenance must
+filter by the native issue type.
 
 #### Inline procedure (fallback)
 

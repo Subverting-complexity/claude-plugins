@@ -28,10 +28,10 @@ Contract:
     always reported back in the `side_effects` array.
 
 Selection covers `--mode story` plus `--mode feature` / `--mode maintenance`
-on label-typed projects, under the `label` / `none` ready-gates. The paths
-that still exit 30 so the skill handles them: feature/maintenance on a
-*type-capable* org (native issue type is authoritative, not resolved here),
-and the `board-column` / `both` ready-gates. See
+on label-typed projects, under all four ready-gates (`label`, `none`,
+`board-column`, `both`). The path that still exits 30 so the skill
+handles it: feature/maintenance on a *type-capable* org (native issue
+type is authoritative, not resolved here). See
 github-workflow/templates/story-selection.md.
 """
 
@@ -218,8 +218,8 @@ def parse_claude_project(text):
         'labels': {}, 'review_labels': {}, 'ready_gate': 'label',
         'agent_gating': 'disabled', 'type_capable': False,
         'board': {'project_node_id': None, 'project_title': None,
-                  'status_field_id': None, 'start_date_field_id': None,
-                  'columns': {}},
+                  'status_field_name': 'Status', 'status_field_id': None,
+                  'start_date_field_id': None, 'columns': {}},
     }
 
     for cells in _rows(_section(text, 'Identity')):
@@ -270,6 +270,8 @@ def parse_claude_project(text):
                 cfg['board']['project_node_id'] = None if val in ('n/a', '') else val
             elif key == 'project-title':
                 cfg['board']['project_title'] = val
+            elif key == 'status-field-name':
+                cfg['board']['status_field_name'] = val or 'Status'
             elif key == 'status-field-id':
                 cfg['board']['status_field_id'] = None if val in ('n/a', '') else val
             elif key == 'start-date-field-id':
@@ -351,6 +353,60 @@ def _norm_issue(raw):
     }
 
 
+def _board_column_candidates(cfg, column_name):
+    """Fetch unassigned open issues in the named board column via GraphQL.
+
+    Returns (ok, issues, err) with issues in the same normalised shape as
+    the label-gate path.
+    """
+    board = cfg.get('board', {})
+    node = board.get('project_node_id')
+    if not node:
+        return False, None, 'board-column gate requires a configured board (project-node-id)'
+    field_name = board.get('status_field_name', 'Status')
+    ok, data, err = gh_graphql(
+        'query($id:ID!){ node(id:$id){ ... on ProjectV2 {'
+        ' items(first:200){ nodes {'
+        '   fieldValueByName(name:"%s"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }'
+        '   content { ... on Issue {'
+        '     number title body state url'
+        '     labels(first:20){ nodes { name } }'
+        '     milestone { title }'
+        '     assignees(first:1){ nodes { login } }'
+        '   } }'
+        ' } } } } }' % field_name.replace('"', '\\"'),
+        id=node)
+    if not ok or not data:
+        return False, None, 'board-column query failed: %s' % err
+    try:
+        nodes = data['node']['items']['nodes']
+    except (KeyError, TypeError):
+        return False, None, 'unexpected board-column response shape'
+    issues = []
+    for item in nodes:
+        fv = item.get('fieldValueByName')
+        status = fv.get('name', '') if fv else ''
+        content = item.get('content')
+        if not content or not content.get('number'):
+            continue
+        if status.strip().lower() != column_name.strip().lower():
+            continue
+        if content.get('state', '').upper() != 'OPEN':
+            continue
+        assignees = content.get('assignees', {}).get('nodes', [])
+        if assignees:
+            continue
+        issues.append({
+            'number': content['number'],
+            'title': content.get('title', ''),
+            'labels': [l['name'] for l in content.get('labels', {}).get('nodes', [])],
+            'body': content.get('body', '') or '',
+            'milestone': content.get('milestone', {}).get('title') if content.get('milestone') else None,
+            'url': content.get('url', ''),
+        })
+    return True, issues, ''
+
+
 def assemble_candidates(cfg):
     """Fetch the unassigned ready pool per ready-gate. Returns (ok, issues, err)."""
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
@@ -373,7 +429,19 @@ def assemble_candidates(cfg):
         blocked = label(cfg, 'status-blocked')
         issues = [_norm_issue(r) for r in data or []]
         return True, [i for i in issues if blocked not in i['labels']], ''
-    return False, None, 'ready-gate %r not supported by wf (use the skill)' % gate
+    if gate == 'board-column':
+        return _board_column_candidates(cfg, 'Ready')
+    if gate == 'both':
+        label_ok, label_issues, label_err = assemble_candidates(
+            dict(cfg, ready_gate='label'))
+        if not label_ok:
+            return False, None, label_err
+        board_ok, board_issues, board_err = _board_column_candidates(cfg, 'Ready')
+        if not board_ok:
+            return False, None, board_err
+        board_numbers = {i['number'] for i in board_issues}
+        return True, [i for i in label_issues if i['number'] in board_numbers], ''
+    return False, None, 'ready-gate %r not supported by wf' % gate
 
 
 def narrow_to_sprint(cfg, issues):
@@ -620,12 +688,13 @@ def board_move(cfg, number, column_name):
             return False, 'could not add issue to board (%s)' % err
         item_id = data['addProjectV2ItemById']['item']['id']
 
+    field_name = board.get('status_field_name', 'Status')
     ok, data, err = gh_graphql(
-        'query($id:ID!){ node(id:$id){ ... on ProjectV2 {'
-        ' field(name:"Status"){ ... on ProjectV2SingleSelectField { id options { id name } } } } } }',
-        id=node)
+        'query($id:ID!,$fname:String!){ node(id:$id){ ... on ProjectV2 {'
+        ' field(name:$fname){ ... on ProjectV2SingleSelectField { id options { id name } } } } } }',
+        id=node, fname=field_name)
     if not ok or not data or not data.get('node', {}).get('field'):
-        return False, 'could not resolve Status field (%s)' % err
+        return False, 'could not resolve %s field (%s)' % (field_name, err)
     field = data['node']['field']
     option_id = next((o['id'] for o in field['options']
                       if o['name'].strip().lower() == column_name.strip().lower()), None)
@@ -778,6 +847,47 @@ def prepare_cfg():
     return cfg
 
 
+def auto_ready_scan(cfg):
+    """Scan blocked issues and restore any whose dependencies are all closed.
+
+    Mirrors story-selection-auto-ready.md Step 4: fetch issues with the
+    status-blocked label, parse their dependency markers, check whether all
+    referenced issues are now closed, and if so swap their label to
+    status-ready so the next selection round can pick them.
+
+    Returns the count of issues restored (0 means nothing was unblocked).
+    """
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    blocked_label = label(cfg, 'status-blocked')
+    ready_label = label(cfg, 'status-ready')
+    ok, data, _ = gh_json(['issue', 'list', '--repo', repo, '--state', 'open',
+                            '--label', blocked_label,
+                            '--json', 'number,body', '--limit', '100'])
+    if not ok or not data:
+        return 0
+    restored = 0
+    for raw in data:
+        deps, overflow = wf_core.parse_dependencies(raw.get('body', ''))
+        if overflow or not deps:
+            continue
+        all_closed = True
+        for dep in deps:
+            dep_ok, dep_data, _ = gh_json(
+                ['issue', 'view', str(dep), '--repo', repo, '--json', 'state'])
+            if not dep_ok or not dep_data or dep_data.get('state', '').upper() != 'CLOSED':
+                all_closed = False
+                break
+        if all_closed:
+            code, _, _ = run(['gh', 'issue', 'edit', str(raw['number']), '--repo', repo,
+                              '--remove-label', blocked_label,
+                              '--add-label', ready_label])
+            if code == 0:
+                run(['gh', 'issue', 'comment', str(raw['number']), '--repo', repo,
+                     '--body', 'Dependencies resolved — restored to ready.'])
+                restored += 1
+    return restored
+
+
 def claim_validate_walk(cfg, pool, backlog_mode):
     """Walk the ordered pool: claim the top, validate only that one, act.
 
@@ -875,9 +985,10 @@ def cmd_pick(args):
                     "org; use the skill's inline selection" % args.mode,
              mode=args.mode)
 
-    if cfg.get('ready_gate', 'label') not in ('label', 'none'):
+    gate = cfg.get('ready_gate', 'label')
+    if gate not in ('label', 'none', 'board-column', 'both'):
         emit('unsupported', EXIT_UNSUPPORTED,
-             reason="ready-gate %r not implemented in wf; use the skill" % cfg['ready_gate'])
+             reason="ready-gate %r not recognised" % gate)
 
     ok, issues, err = assemble_candidates(cfg)
     if not ok:
@@ -887,11 +998,28 @@ def cmd_pick(args):
     pool = wf_core.select_pool(issues, mode=args.mode,
                                agent_gating=cfg.get('agent_gating', 'disabled'),
                                project_map=cfg.get('labels', {}))
-    if not pool:
+
+    selected, side_effects = None, []
+    if pool:
+        selected, side_effects = claim_validate_walk(cfg, pool, backlog_mode)
+
+    if not selected:
+        restored = auto_ready_scan(cfg)
+        if restored:
+            eprint('wf: auto-ready scan restored %d issue(s) — retrying' % restored)
+            ok, issues, err = assemble_candidates(cfg)
+            if ok and issues:
+                backlog_mode, issues = narrow_to_sprint(cfg, issues)
+                pool = wf_core.select_pool(issues, mode=args.mode,
+                                           agent_gating=cfg.get('agent_gating', 'disabled'),
+                                           project_map=cfg.get('labels', {}))
+                if pool:
+                    selected, more_effects = claim_validate_walk(cfg, pool, backlog_mode)
+                    side_effects.extend(more_effects)
+
+    if not selected and not pool:
         emit('no-candidates', EXIT_NO_CANDIDATES,
              reason='no ready, unassigned issues match', backlog_mode=backlog_mode)
-
-    selected, side_effects = claim_validate_walk(cfg, pool, backlog_mode)
     if not selected:
         emit('all-blocked', EXIT_ALL_BLOCKED,
              reason='every candidate was claimed-away, blocked, or already resolved',
