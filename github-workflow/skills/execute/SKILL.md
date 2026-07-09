@@ -254,8 +254,9 @@ Interpret the result by its `status` field (the exit code mirrors it):
 - **`no-candidates`** / **`all-blocked`** — nothing was pickable. `wf`
   already ran the auto-ready dependency scan and retried once internally;
   stop with "No stories available for pickup".
-- **`unsupported`** — `wf` deferred this case (feature/maintenance on a
-  type-capable org). Use the inline selection below.
+- **`unsupported`** — `wf` deferred this case (not expected under normal
+  conditions; reserved for future unrecognised configurations). Use the
+  inline selection below.
 - **`error`**, or the launcher reports Python is missing — `wf` cannot run
   here. Use the inline selection below.
 

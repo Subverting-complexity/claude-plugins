@@ -137,17 +137,17 @@ it):
 - **`no-candidates`** or **`all-blocked`** — nothing was pickable. `wf`
   already ran the auto-ready dependency scan and retried once internally;
   report "No stories available for pickup".
-- **`unsupported`** — `wf` deferred this case (a `feature` / `maintenance`
-  mode on a **type-capable** org, where the native issue type is
-  authoritative). Use the inline procedure below.
+- **`unsupported`** — `wf` deferred this case (not expected under normal
+  conditions; reserved for future unrecognised configurations). Use the
+  inline procedure below.
 - **`error`**, or the launcher prints that Python is missing — `wf` can't
   run in this environment. Use the inline procedure below.
 
 `wf pick` covers **story, feature, and maintenance** modes under all four
-ready-gates (`label`, `none`, `board-column`, `both`) on label-typed
-projects (it filters by the `type-*` label). It defers to the inline
-procedure only on a type-capable org, where feature/maintenance must
-filter by the native issue type.
+ready-gates (`label`, `none`, `board-column`, `both`) on both label-typed
+and type-capable orgs. On a type-capable org, feature/maintenance filter
+by the native `issueType` field via GraphQL; if the query fails, `wf`
+falls back to label-based filtering.
 
 #### Inline procedure (fallback)
 

@@ -34,6 +34,7 @@ from wf_core import (  # noqa: E402
     closing_issue_numbers,
     current_lifecycle_label,
     detect_backlog_mode,
+    filter_by_native_type,
     get_sprint_candidates,
     parse_dependencies,
     reconcile_review_labels,
@@ -722,6 +723,100 @@ class TestBoardConfigParsing(unittest.TestCase):
     def test_project_node_id_na_is_none(self):
         board = self._board("| project-node-id     | `n/a`      |\n")
         self.assertIsNone(board['project_node_id'])
+
+
+class TestNativeTypeFiltering(unittest.TestCase):
+    """Native issue type filtering for type-capable orgs.
+
+    On a type-capable org, feature/maintenance modes filter by the native
+    issueType field instead of the type-* label. The type_map is built from
+    a GraphQL query in wf.py and passed through select_pool.
+    """
+
+    TYPE_MAP = {
+        1: 'User Story',
+        2: 'Bug',
+        3: 'Feature',
+        4: 'Feature',
+        5: 'User Story',
+        6: 'Epic',
+    }
+
+    def test_story_mode_returns_all(self):
+        candidates = [_issue(1, []), _issue(2, []), _issue(3, [])]
+        result = filter_by_native_type(candidates, 'story', self.TYPE_MAP)
+        self.assertEqual(len(result), 3)
+
+    def test_feature_mode_keeps_user_story(self):
+        candidates = [_issue(1, []), _issue(2, []), _issue(3, []),
+                       _issue(5, []), _issue(6, [])]
+        result = filter_by_native_type(candidates, 'feature', self.TYPE_MAP)
+        numbers = [c['number'] for c in result]
+        self.assertEqual(numbers, [1, 5])
+
+    def test_feature_mode_excludes_bug_feature_epic(self):
+        candidates = [_issue(2, []), _issue(3, []), _issue(6, [])]
+        result = filter_by_native_type(candidates, 'feature', self.TYPE_MAP)
+        self.assertEqual(result, [])
+
+    def test_maintenance_mode_keeps_bug(self):
+        candidates = [_issue(1, []), _issue(2, []), _issue(5, [])]
+        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)
+        self.assertEqual([c['number'] for c in result], [2])
+
+    def test_maintenance_mode_includes_feature_without_classification(self):
+        """Without classification data, all Feature-typed issues are included."""
+        candidates = [_issue(2, []), _issue(3, []), _issue(4, [])]
+        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)
+        self.assertEqual([c['number'] for c in result], [2, 3, 4])
+
+    def test_maintenance_mode_with_classification_filters_feature(self):
+        classification_map = {3: 'Tech Debt', 4: 'New Feature'}
+        candidates = [_issue(2, []), _issue(3, []), _issue(4, [])]
+        result = filter_by_native_type(candidates, 'maintenance',
+                                        self.TYPE_MAP, classification_map)
+        numbers = [c['number'] for c in result]
+        self.assertIn(2, numbers)
+        self.assertIn(3, numbers)
+        self.assertNotIn(4, numbers)
+
+    def test_maintenance_classification_accepts_architecture_and_security(self):
+        classification_map = {3: 'Architecture', 4: 'Security'}
+        candidates = [_issue(3, []), _issue(4, [])]
+        result = filter_by_native_type(candidates, 'maintenance',
+                                        self.TYPE_MAP, classification_map)
+        self.assertEqual([c['number'] for c in result], [3, 4])
+
+    def test_candidate_without_type_info_excluded(self):
+        candidates = [_issue(99, [])]
+        result = filter_by_native_type(candidates, 'feature', self.TYPE_MAP)
+        self.assertEqual(result, [])
+
+    def test_select_pool_uses_type_map_when_provided(self):
+        """select_pool routes through native-type filter when type_map is set."""
+        candidates = [
+            _issue(1, ['priority-high']),
+            _issue(2, ['priority-medium']),
+            _issue(3, ['priority-low']),
+        ]
+        pool = select_pool(candidates, mode='feature', type_map=self.TYPE_MAP)
+        numbers = [c['number'] for c in pool]
+        self.assertEqual(numbers, [1])
+
+    def test_select_pool_ignores_type_map_for_story_mode(self):
+        """story mode never filters by type, even when type_map is provided."""
+        candidates = [_issue(1, []), _issue(2, []), _issue(3, [])]
+        pool = select_pool(candidates, mode='story', type_map=self.TYPE_MAP)
+        self.assertEqual(len(pool), 3)
+
+    def test_select_pool_falls_back_to_labels_without_type_map(self):
+        """Without type_map, select_pool uses label-based filtering as before."""
+        candidates = [
+            _issue(1, ['priority-high', 'type-story']),
+            _issue(2, ['priority-medium', 'type-bug']),
+        ]
+        pool = select_pool(candidates, mode='feature')
+        self.assertEqual([c['number'] for c in pool], [1])
 
 
 class TestClosingIssueNumbers(unittest.TestCase):
