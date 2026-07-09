@@ -115,12 +115,13 @@ name** at write time, and use the snapshot only to detect drift.
 
 2. **Fetch the live Status field and its options** (one call — this also
    yields the live field id, so a renamed/stale `status-field-id` cannot
-   misdirect the write either):
+   misdirect the write either). Use the `status-field-name` from the
+   `## Project Board` table (defaults to `Status` if absent):
 
    ```
-   gh api graphql -f query='query($id:ID!){ node(id:$id){ ... on ProjectV2 {
-     field(name:"Status"){ ... on ProjectV2SingleSelectField { id options { id name } } }
-   } } }' -F id='<project-node-id>' --jq '.data.node.field | {fieldId:.id, options:.options}'
+   gh api graphql -f query='query($id:ID!,$fname:String!){ node(id:$id){ ... on ProjectV2 {
+     field(name:$fname){ ... on ProjectV2SingleSelectField { id options { id name } } }
+   } } }' -F id='<project-node-id>' -f fname='<status-field-name>' --jq '.data.node.field | {fieldId:.id, options:.options}'
    ```
 
 3. **Match the option by name** (case-insensitive, trimmed) against the

@@ -182,14 +182,15 @@ Remove this entire section if you don't use a GitHub project board.
 `project-title` is re-checked against `project-node-id` before any board
 write, so a stale id fails loudly instead of mutating the wrong board.
 
-| Setting             | Value     |
-| ------------------- | --------- |
-| project-number      | `{n}`     |
-| project-title       | `{title}` |
-| project-node-id     | `{id}`    |
-| status-field-id     | `{id}`    |
-| start-date-field-id | `{id}`    |
-| end-date-field-id   | `{id}`    |
+| Setting             | Value      |
+| ------------------- | ---------- |
+| project-number      | `{n}`      |
+| project-title       | `{title}`  |
+| project-node-id     | `{id}`     |
+| status-field-name   | `Status`   |
+| status-field-id     | `{id}`     |
+| start-date-field-id | `{id}`     |
+| end-date-field-id   | `{id}`     |
 
 ### Status Options
 

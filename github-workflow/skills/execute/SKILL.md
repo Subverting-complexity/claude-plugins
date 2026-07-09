@@ -251,10 +251,9 @@ Interpret the result by its `status` field (the exit code mirrors it):
   branch steps are already done, so treat them as no-ops. If `checked_out` is
   false, read `branch_message` (e.g. a rebase conflict against the default
   branch) and run `/github-workflow:block-story` instead of building.
-- **`no-candidates`** / **`all-blocked`** — nothing was pickable. Run **only
-  Step 4** (lazy auto-ready scan) of `templates/story-selection.md`; if it
-  restores anything, retry the fast path once, else stop with "No stories
-  available for pickup".
+- **`no-candidates`** / **`all-blocked`** — nothing was pickable. `wf`
+  already ran the auto-ready dependency scan and retried once internally;
+  stop with "No stories available for pickup".
 - **`unsupported`** — `wf` deferred this case (feature/maintenance on a
   type-capable org). Use the inline selection below.
 - **`error`**, or the launcher reports Python is missing — `wf` cannot run

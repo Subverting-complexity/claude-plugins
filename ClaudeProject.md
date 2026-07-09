@@ -199,6 +199,7 @@ Board: **claude-plugins** (org project #8) —
 | project-number      | `8`                              |
 | project-title       | `claude-plugins`                 |
 | project-node-id     | `PVT_kwDODj6aos4BZkaL`           |
+| status-field-name   | `Status`                         |
 | status-field-id     | `PVTSSF_lADODj6aos4BZkaLzhUiKRs` |
 | start-date-field-id | `n/a`                            |
 | end-date-field-id   | `n/a`                            |
