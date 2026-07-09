@@ -71,10 +71,21 @@ def emit(status, exit_code, **fields):
 
 
 def run(args, input_text=None):
-    """Run a subprocess, capturing text output. Returns (code, stdout, stderr)."""
+    """Run a subprocess, capturing text output. Returns (code, stdout, stderr).
+
+    Decoding is pinned to UTF-8 with ``errors='replace'`` rather than the
+    platform locale codec. ``gh`` emits UTF-8 (issue bodies routinely carry
+    smart quotes, em dashes, emoji), but on Windows ``text=True`` defaults to
+    cp1252, whose reader thread dies with ``UnicodeDecodeError`` on the first
+    byte it can't map — leaving ``stdout`` as ``None`` and surfacing only a
+    downstream ``NoneType`` error. Pinning the codec keeps the picker working
+    on any locale; ``errors='replace'`` degrades stray bytes to U+FFFD instead
+    of crashing.
+    """
     try:
         proc = subprocess.run(
             args, input=input_text, capture_output=True, text=True,
+            encoding='utf-8', errors='replace',
         )
     except FileNotFoundError:
         return 127, '', '%s: not found' % args[0]
@@ -85,7 +96,8 @@ def gh_json(args):
     """Run `gh <args>` expecting JSON on stdout. Returns (ok, parsed, stderr)."""
     code, out, err = run(['gh'] + args)
     if code != 0:
-        return False, None, err.strip()
+        return False, None, (err or '').strip()
+    out = out or ''
     try:
         return True, json.loads(out) if out.strip() else None, ''
     except json.JSONDecodeError as exc:
