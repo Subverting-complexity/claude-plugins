@@ -152,8 +152,8 @@ can be picked.
 | refinement-skill | `feature-discovery` |
 
 Skill the execute flow offers when a `needs-refinement` story is next:
-`feature-discovery` (default, code-aware spec+AC) or `grill-me`
-(lightweight Q&A, no codebase exploration).
+`feature-discovery` (default). Runs in validation mode for lightweight
+Q&A or discovery mode for full spec+AC.
 
 ## Session Budget
 
@@ -217,6 +217,6 @@ not covered in individual issues.
 ## Bundled Skills
 
 Available as `/github-workflow:*`: code-architect (planning),
-structured-coding (implementation), code-review (review/audit), grill-me
-(plan validation), feature-discovery (backlog creation), repo-scaffolding
+structured-coding (implementation), code-review (review/audit),
+feature-discovery (backlog creation + plan validation), repo-scaffolding
 (project setup).

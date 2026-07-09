@@ -273,8 +273,7 @@ For anything not auto-detected, ask the user interactively:
     (`#0E8A16` green). If `ready-gate` is `label` or `both` this is the
     pickup signal; under `board-column` it is optional.
   - `needs-refinement` — created with minimal spec, needs a refinement
-    session (feature-discovery or grill-me) before pickup (`#D4C5F9`
-    purple).
+    session (feature-discovery) before pickup (`#D4C5F9` purple).
   - `status-in-progress` — an agent is actively working it (`#1D76DB`).
   - `status-parked` — a human deliberately set it aside and will resume;
     keeps it out of the pick pool without losing ownership (`#C5DEF5`).
@@ -304,9 +303,9 @@ For anything not auto-detected, ask the user interactively:
 - **Quality gate command** — if not auto-detected
 - **Issue prefixes** — suggest `[STORY]`, `[BUG]`, `[SECURITY]`, `[ARCH]`, `[DEBT]`
 - **Refinement skill** — which skill to use when a `needs-refinement`
-  story is next in the queue. Options: `feature-discovery` (default,
-  code-aware) or `grill-me` (lightweight Q&A). Store as
-  `refinement-skill` in ClaudeProject.md.
+  story is next in the queue. Default: `feature-discovery` (runs in
+  validation mode for lightweight Q&A, or discovery mode for full
+  spec+AC). Store as `refinement-skill` in ClaudeProject.md.
 
 For each setting, show the detected or suggested default and let the
 user confirm or override. For labels, also list any existing labels

@@ -7,12 +7,12 @@ when_to_use: >-
   description to build. This is the primary local orchestrator; prefer it over
   calling structured-coding or code-architect directly for end-to-end work. Do
   NOT use for reviewing code (use code-review), scoping features without
-  building (use feature-discovery or grill-me), or pre-merge verification (use
+  building (use feature-discovery), or pre-merge verification (use
   verify-feature).
 depends-on:
   - code-architect
   - structured-coding
-  - grill-me
+  - feature-discovery
 arguments:
   - name: mode
     description: 'Execution mode: build (default), audit (codebase audit, no code changes)'
@@ -103,7 +103,7 @@ Check if the task has enough guidance to proceed:
 - Are there acceptance criteria?
 
 If the task is underspecified, ask focused questions to fill the gaps. Use
-`/local-workflow:grill-me` if the task is complex enough to warrant a full
+`/local-workflow:feature-discovery` if the task is complex enough to warrant a full
 interview.
 
 ## Phase 2 -- Plan
@@ -113,7 +113,7 @@ Use `/local-workflow:code-architect` to plan the implementation:
 - Pass the task requirements and relevant codebase context.
 - Code-architect should scan the existing codebase and plan changes
   based on the task description. Do not run an interactive design
-  interview or call grill-me.
+  interview or call feature-discovery.
 - Consume the architecture plan output and proceed to Build.
 - Do not pause for confirmation.
 - If requirements have gaps, make reasonable assumptions and note

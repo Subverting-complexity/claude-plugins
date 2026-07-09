@@ -29,7 +29,7 @@ Everything you write for a person to read (the plan, progress notes, the PR desc
 
 **This workflow is fully autonomous.** Every phase flows into the next
 without pausing for user input. Do not ask the user to choose, confirm,
-or approve at any step. Do not call grill-me. The only reasons to stop
+or approve at any step. Do not call feature-discovery. The only reasons to stop
 are:
 
 - The issue is so underspecified that any implementation would be a
@@ -341,7 +341,7 @@ agents never validate or build the same issue.
   now?" Use `AskUserQuestion`:
   - "Refine now (Recommended)" — run the refinement skill from
     `refinement-skill` (default `feature-discovery`; alternative
-    `grill-me`). After refinement, remove `needs-refinement`, apply
+    `feature-discovery`). After refinement, remove `needs-refinement`, apply
     `status-ready`, and continue with Phase 2.
   - "Skip and pick next" — release the claim
     (`templates/claim-procedure.md` **Release**) and re-run the selection.
@@ -402,7 +402,7 @@ Use `/github-workflow:code-architect` to plan the implementation:
   reference docs listed in ClaudeProject.md.
 - Code-architect should scan the existing codebase and plan changes
   based on the issue requirements. Do not run an interactive design
-  interview or call grill-me.
+  interview or call feature-discovery.
 - Write the architecture plan to `.claude/plan.md` so it survives
   context compaction. Include a checklist of files to create or modify,
   each with a `[ ]` checkbox. Example:

@@ -26,7 +26,7 @@ The creating command/session → `Origin` field option:
 | Creating command / session                       | `Origin` option     |
 |--------------------------------------------------|---------------------|
 | `feature-discovery`                              | Feature Discovery   |
-| `grill-me` refinement session                    | Grill-Me Session    |
+| `feature-discovery` validation session             | Feature Discovery   |
 | `security-audit` / `execute` audit (security)    | Security Audit      |
 | `code-review`                                    | Code Review         |
 | `report-issue` (found during dev), `finish-story`| Development         |
