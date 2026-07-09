@@ -440,7 +440,7 @@ record it so the generated `ClaudeProject.md` reflects reality.
    create them — the workflow simply skips a missing field at runtime.
 4. **Origin field** — if `Origin` is absent, point the user at
    `/github-workflow:setup`'s field guidance or the GitHub *Issue fields*
-   settings UI to add it (single-select: Grill-Me Session, Security Audit,
+   settings UI to add it (single-select: Security Audit,
    Feature Discovery, Code Review, Development, Stakeholder Request). It is
    the one field the workflow populates that GitHub does not create by
    default.

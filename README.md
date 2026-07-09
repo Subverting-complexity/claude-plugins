@@ -13,7 +13,7 @@ Both plugins share a single canonical set of skills (architecture design,
 feature discovery, structured coding, code review, security audit, and more),
 so the two stay consistent. See [Repository layout](#repository-layout) below.
 
-> **Install one, not both.** The two plugins overlap heavily — 13 of their
+> **Install one, not both.** The two plugins overlap heavily — 12 of their
 > skills are identical copies. Installing both loads those skill descriptions
 > into every session *twice* and puts duplicate entries in the skill picker,
 > which wastes context and can make Claude trigger the wrong copy. Pick the one
@@ -47,11 +47,6 @@ claude plugin install local-workflow@subverting-complexity
 Or run `/plugin` inside Claude Code (after step 1) to browse and install
 interactively. Restart your session afterward so the plugins' skills,
 commands, agents, and hooks load.
-
-> **Requires a recent Claude Code.** The plugin manifests use the `userConfig`
-> manifest field; older Claude Code versions will reject it on install. If
-> `claude plugin install` fails validation, update first (`claude update`, or
-> your package manager — e.g. `winget upgrade Anthropic.ClaudeCode`).
 
 ### Configuring `github-workflow`
 

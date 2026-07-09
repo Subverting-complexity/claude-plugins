@@ -47,45 +47,10 @@ Example: `feature/27/fix-wrong-board`
 
 ## Label Map
 
-Map workflow purposes to this repository's actual label names.
-
-### Priority
-
-| Purpose           | Label                |
-| ----------------- | -------------------- |
-| priority-critical | `priority-critical`  |
-| priority-high     | `priority-high`      |
-| priority-medium   | `priority-medium`    |
-| priority-low      | `priority-low`       |
-
-### Type
-
-| Purpose       | Label           |
-| ------------- | --------------- |
-| type-story    | `type-story`    |
-| type-bug      | `type-bug`      |
-| type-security | `type-security` |
-| type-debt     | `type-debt`     |
-| type-arch     | `type-arch`     |
-
-### Status (issue lifecycle)
-
-Every issue always carries exactly one of these lifecycle labels — the
-issue-side mirror of the PR review-state machine (see
-`github-workflow/templates/default-labels.md` → Issue Lifecycle State
-Labels). They make each issue's current state visible in the issues list
-without depending on the project board — and the board now mirrors them
-(its active lifecycle columns are configured; see Project Board below).
-
-| Purpose                | Label                    |
-| ---------------------- | ------------------------ |
-| status-ready           | `status-ready`           |
-| needs-refinement       | `needs-refinement`       |
-| status-in-progress     | `status-in-progress`     |
-| status-parked          | `status-parked`          |
-| status-blocked         | `status-blocked`         |
-| status-in-review       | `status-in-review`       |
-| status-needs-attention | `status-needs-attention` |
+All priority, type, and status labels use their default purpose-key
+names (e.g., `priority-critical`, `status-ready`, `type-bug`). See
+`github-workflow/templates/default-labels.md` for the full list and
+the lifecycle state machine.
 
 ### Claude
 
@@ -128,8 +93,8 @@ Field names match the defaults:
 | field-status-reason  | `Status reason` |
 
 > The `Origin` field must exist in the org for it to be populated (single
-> select: Grill-Me Session, Security Audit, Feature Discovery, Code Review,
-> Development, Stakeholder Request). All other fields above already exist.
+> select: Security Audit, Feature Discovery, Code Review, Development,
+> Stakeholder Request). All other fields above already exist.
 
 ## Ready Gate
 
@@ -241,12 +206,7 @@ section above) remain the authoritative state; the board mirrors them.
 
 ## Bundled Skills
 
-These skills are bundled with the plugin and available as `/github-workflow:*`:
-
-| Skill                              | Used in          |
-| ---------------------------------- | ---------------- |
-| /github-workflow:code-architect    | Planning                        |
-| /github-workflow:structured-coding | Implementation                  |
-| /github-workflow:code-review       | Review and audit                |
-| /github-workflow:feature-discovery | Backlog creation + plan validation |
-| /github-workflow:repo-scaffolding  | Project setup                   |
+Available as `/github-workflow:*`: acceptance-criteria, code-architect,
+code-review, debugging, doc-writer, ecosystem-setup, execute,
+feature-discovery, pr-description, preflight, repo-scaffolding,
+security-audit, structured-coding, user-story, verify-feature.
