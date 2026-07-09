@@ -244,9 +244,8 @@ These skills are bundled with the plugin and available as `/github-workflow:*`:
 
 | Skill                              | Used in          |
 | ---------------------------------- | ---------------- |
-| /github-workflow:code-architect    | Planning         |
-| /github-workflow:structured-coding | Implementation   |
-| /github-workflow:code-review       | Review and audit |
-| /github-workflow:grill-me          | Plan validation  |
-| /github-workflow:feature-discovery | Backlog creation |
-| /github-workflow:repo-scaffolding  | Project setup    |
+| /github-workflow:code-architect    | Planning                        |
+| /github-workflow:structured-coding | Implementation                  |
+| /github-workflow:code-review       | Review and audit                |
+| /github-workflow:feature-discovery | Backlog creation + plan validation |
+| /github-workflow:repo-scaffolding  | Project setup                   |

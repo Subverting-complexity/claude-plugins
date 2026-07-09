@@ -12,8 +12,7 @@ edit plugin copies directly** — edit here, then run `sync-skills.ps1`.
 | `debugging` | github-workflow, local-workflow | Systematic reproduce → hypothesize → isolate → fix → verify cycle |
 | `doc-writer` | github-workflow, local-workflow | README, API docs, architecture guides, migration guides, changelogs |
 | `ecosystem-setup` | github-workflow, local-workflow | Detect/install/configure companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and write `.claude/ecosystem.md`. github-workflow's `setup` Step 8 delegates here |
-| `feature-discovery` | github-workflow, local-workflow | Uses `references/story-template.md` |
-| `grill-me` | github-workflow, local-workflow | `disable-model-invocation: true`, no filesystem output |
+| `feature-discovery` | github-workflow, local-workflow | Discovery mode (stories) + validation mode (plan stress-test). Uses `references/story-template.md` |
 | `pr-description` | github-workflow, local-workflow | Structured PR bodies from committed changes |
 | `repo-scaffolding` | github-workflow, local-workflow | Uses `references/story-template.md`, no spec docs |
 | `security-audit` | github-workflow, local-workflow | Dependency scanning, secrets detection, OWASP Top 10, input validation |

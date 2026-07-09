@@ -1,6 +1,22 @@
 ---
 name: feature-discovery
-description: "Plan a single feature or change in an existing codebase: interview the user, explore the code, and produce user stories with acceptance criteria. Use to scope a feature, break a change into stories, or decompose a requirement/ticket/spec into work items. Do NOT use for scaffolding a new project (use repo-scaffolding), writing one story from notes (use user-story), or implementing code (use execute)."
+description: >-
+  Interview the user about a feature, change, plan, or design — whether or not
+  a codebase is involved. Two modes: **discovery** (plan a feature and
+  decompose it into user stories) and **validation** (stress-test a plan or
+  design until every open question is resolved). Auto-detects the mode from
+  context.
+
+  Trigger whenever the conversation involves: scoping a feature, breaking work
+  into stories, discussing a new story or requirement, challenging a plan or
+  design, refining a backlog item, or any discussion where open questions about
+  what to build or how to build it remain unresolved. Prefer triggering early —
+  it is better to start the interview while context is fresh than to wait until
+  the user explicitly asks.
+
+  Do NOT use for scaffolding a new project (use repo-scaffolding), writing one
+  story from notes (use user-story), implementing code (use execute), or
+  reviewing code (use code-review).
 depends-on:
   - code-architect
 ---
@@ -8,7 +24,11 @@ depends-on:
 
 # Feature Discovery
 
-Plan and decompose a feature or change into user stories. Get to the core of the design as fast as possible. The interview should be relentless: probe every vague answer, challenge weak reasoning, surface conflicts between decisions, and don't move on until each question has a concrete answer or a conscious deferral with a stated reason.
+Interview the user to resolve every open question about a feature, change,
+plan, or design. Get to the core as fast as possible. Be relentless: probe
+every vague answer, challenge weak reasoning, surface conflicts between
+decisions, and don't move on until each question has a concrete answer or a
+conscious deferral with a stated reason.
 
 ## Skills Used
 
@@ -16,7 +36,24 @@ Read each skill's SKILL.md when you reach the phase that needs it.
 
 - **code-architect** (`/local-workflow:code-architect`) — Architecture design and validation.
 
-## Scope Detection
+## Mode Detection
+
+Determine the mode before starting. This drives whether the interview
+produces stories or just resolves decisions.
+
+| Mode | Signal | Output |
+|------|--------|--------|
+| **Discovery** | User wants to plan a feature, break work into stories, scope a change, decompose a requirement or ticket | Stories with acceptance criteria |
+| **Validation** | User wants to stress-test a plan, challenge a design, poke holes in an approach, validate thinking, or refine an existing story | Conversation only — no files, no documents |
+
+State the mode after detection: "I'll run this as a **discovery** session —
+we'll end with stories." or "I'll run this as a **validation** session —
+we'll work through every open question." The user can override.
+
+When called as a refinement skill for a `needs-refinement` story, default
+to **discovery** mode (the story needs fleshing out into actionable work).
+
+## Scope Detection (discovery mode)
 
 Determine scope before starting. This drives how deep the interview goes.
 
@@ -26,34 +63,51 @@ Determine scope before starting. This drives how deep the interview goes.
 | **Medium** | Multi-concern feature: touches 2-4 modules, new user journey, new data model | 8-15 questions. Scope, journeys, data, integration, architecture. |
 | **Large** | Major feature: new subsystem, significant rewrite, 5+ stories of work | Full interview. All sections. |
 
-State the tier after research: "This looks like a medium-scope feature, so I'll focus on scope, data model, and integration points." The user can override.
+State the tier after research: "This looks like a medium-scope feature, so
+I'll focus on scope, data model, and integration points." The user can
+override.
+
+In **validation** mode, skip scope detection — interview depth is driven
+by the number of open questions, not feature size.
 
 ---
 
-## Phase 1: Research (always do this first)
+## Phase 1: Research
 
-Before asking the user anything, gather what you can. The more you learn here, the fewer questions you need to ask.
+Before asking the user anything, gather what you can. The more you learn
+here, the fewer questions you need to ask.
+
+**When a codebase is available:**
 
 1. Read the README, any project documentation, or config files for project structure, conventions, and context.
 2. Read any backlog docs or task lists if accessible.
 3. Explore the codebase: directory structure, key files, existing patterns, architectural approach.
 4. Identify the modules, files, and patterns the feature will touch or extend.
 
+**When no codebase is available** (plan validation, early-stage design):
+
+1. Work from what the user has described so far.
+2. Identify gaps, ambiguities, and unstated assumptions in their description.
+3. Note any constraints or context clues from the conversation.
+
 ### Codebase exploration discipline
 
-When the codebase can answer a question, explore it instead of asking. Use file reads, search, and bash. Show a brief summary of what you found (file name, relevant finding), state what you're recording based on that finding, and continue. Do not silently resolve. Always show the user what was found.
+When the codebase can answer a question, explore it instead of asking. Use
+file reads, search, and bash. Show a brief summary of what you found (file
+name, relevant finding), state what you're recording based on that finding,
+and continue. Do not silently resolve. Always show the user what was found.
 
 ### Research output
 
 Present a brief summary of what you found:
-- Relevant existing code and patterns
+- Relevant existing code and patterns (if codebase available)
 - Related existing stories or tasks
 - Potential integration points and constraints
 
-Then state the scope tier and which interview sections you plan to
-cover. Use `AskUserQuestion` to confirm:
+Then state the mode and (for discovery) the scope tier and which interview
+sections you plan to cover. Use `AskUserQuestion` to confirm:
 
-- "Agree with scope (Recommended)" — proceed with the detected tier
+- "Agree with scope (Recommended)" — proceed with the detected mode/tier
 - "This is bigger than that" — bump up a tier
 - "This is smaller" — bump down a tier
 
@@ -63,7 +117,13 @@ cover. Use `AskUserQuestion` to confirm:
 
 ### Interview posture
 
-Be relentless. The goal is shared understanding with every open question resolved. Don't accept hand-waving. If the user gives a surface-level answer, dig deeper. If they say "probably" or "it depends", that's your cue to probe until the answer is concrete or the user explicitly defers (with a reason). Every resolved question informs the stories. Every deferred question becomes a noted open issue.
+Be relentless. The goal is shared understanding with every open question
+resolved. Don't accept hand-waving. If the user gives a surface-level
+answer, dig deeper. If they say "probably" or "it depends", that's your
+cue to probe until the answer is concrete or the user explicitly defers
+(with a reason). In discovery mode, every resolved question informs the
+stories. In validation mode, every resolved question strengthens the plan.
+Every deferred question becomes a noted open issue.
 
 ### Wording and Clarity
 
@@ -109,7 +169,7 @@ example.
 - **Push back on vague answers.** "It depends", "probably X", "we'll figure it out later" are not answers. Probe until concrete or explicitly deferred.
 - **Flag conflicts.** If a later answer contradicts an earlier one, surface it immediately. Don't silently accept the contradiction.
 - **Defer consciously.** If something genuinely can't be decided yet, note it as an open issue with a stated reason and move on. Never silently skip.
-- **Track context.** Maintain a running internal record of resolved questions and deferrals as you go. This ensures nothing falls through the cracks during decomposition.
+- **Track context.** Maintain a running internal record of resolved questions and deferrals as you go. This ensures nothing falls through the cracks during decomposition (discovery) or summary (validation).
 
 ### Using AskUserQuestion
 
@@ -131,14 +191,16 @@ recommendations, scope in/out decisions, phase-gate confirmations.
 
 ### Interview sections
 
-**Only cover sections relevant to the scope tier.** Within each section, skip questions the codebase already answered.
+**Only cover sections relevant to the scope tier (discovery) or the plan
+being validated (validation).** Within each section, skip questions the
+codebase already answered.
 
-#### 1. Scope and boundaries (all tiers)
+#### 1. Scope and boundaries (all tiers, both modes)
 - What is being built or changed? (the user's opening message often covers this, don't re-ask)
 - What's out of scope?
 - Who are the affected users?
 
-#### 2. User journeys (medium + large)
+#### 2. User journeys (medium + large, or validation of user-facing plans)
 - Happy path end-to-end
 - Critical failure modes
 - Edge cases
@@ -153,12 +215,12 @@ recommendations, scope in/out decisions, phase-gate confirmations.
 - Auth/permission changes
 - Contract changes and backwards compatibility
 
-#### 5. Integration points (all tiers)
+#### 5. Integration points (all tiers, both modes)
 - Which existing modules does this touch?
 - Existing patterns to follow?
 - Potential ripple effects on other features
 
-#### 6. Architecture (large, or when trade-offs arise)
+#### 6. Architecture (large, or when trade-offs arise, or validation mode)
 - Patterns and trade-offs
 - Constraints
 - Deviations from existing architecture (and why)
@@ -175,10 +237,14 @@ recommendations, scope in/out decisions, phase-gate confirmations.
 
 ### Interview completion
 
-When all relevant sections are covered, use `AskUserQuestion`:
+**Discovery mode:** When all relevant sections are covered, use `AskUserQuestion`:
 
 - "Show me the breakdown (Recommended)"
 - "I have more to add"
+
+**Validation mode:** When all open questions have a resolved answer or
+conscious deferral, present a summary of all decisions in the
+conversation and propose closure. Do **not** write any files.
 
 ---
 
@@ -190,7 +256,9 @@ Skip for small-scope work unless the user raises architecture concerns. For medi
 
 ---
 
-## Phase 4: Decomposition
+## Phase 4: Decomposition (discovery mode only)
+
+Skip this phase entirely in validation mode.
 
 Break the work into stories (and optionally epics if the feature is large enough to warrant grouping).
 
@@ -235,10 +303,6 @@ When a large-scope feature produces more than 4 stories:
    to deferred stories. This excludes them from the execute pick pool
    until their dependencies are resolved and a refinement session has
    been run.
-4. The user can later refine deferred stories by running the
-   configured refinement skill (feature-discovery in continuous mode
-   or grill-me, per the `refinement-skill` setting in
-   ClaudeProject.md).
 
 ### Dependency chain enforcement
 
@@ -263,7 +327,9 @@ After decomposition, verify:
 
 ---
 
-## Phase 5: Review
+## Phase 5: Review (discovery mode only)
+
+Skip this phase entirely in validation mode.
 
 Present the plan before finalising:
 1. Story list with one-line summaries (grouped by epic if applicable)
@@ -283,10 +349,17 @@ Iterate until confirmed.
 
 ## Output
 
-The final deliverable is stories (optionally grouped into epics) with
-acceptance criteria and dependency ordering.
+**Discovery mode:** The final deliverable is stories (optionally grouped
+into epics) with acceptance criteria and dependency ordering. Do **not**
+write decision documents, design specs, or summary files to the
+filesystem. The conversation is the decision record; the stories are the
+actionable output.
 
-### Creating issues on GitHub
+**Validation mode:** The conversation is the entire deliverable. Present
+a summary of resolved decisions and open issues when the interview is
+complete. Do **not** write any files.
+
+### Creating issues on GitHub (discovery mode only)
 
 When the user approves the plan, offer to create the stories as GitHub
 issues. If they accept:

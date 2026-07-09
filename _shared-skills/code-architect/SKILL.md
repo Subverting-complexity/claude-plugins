@@ -3,12 +3,13 @@ name: code-architect
 description: >-
   Design, audit, or document a codebase using Clean Architecture, GoF patterns, and
   architecture fundamentals. Three modes: design new systems (SOLID, boundaries,
-  style selection; auto-triggers grill-me), audit existing code for SOLID/dependency/
-  testability violations with a refactor plan, or produce architecture docs and coding
-  standards. Trigger on design/architect/audit architecture, SOLID violations,
-  dependency inversion, document the architecture, or the "/code-a" shortcut.
+  style selection; auto-triggers feature-discovery in validation mode), audit
+  existing code for SOLID/dependency/testability violations with a refactor plan,
+  or produce architecture docs and coding standards. Trigger on design/architect/
+  audit architecture, SOLID violations, dependency inversion, document the
+  architecture, or the "/code-a" shortcut.
 depends-on:
-  - grill-me
+  - feature-discovery
 allowed-tools:
   - Read
   - Glob
@@ -46,10 +47,10 @@ find . -maxdepth 2 -type d ! -path '*/node_modules/*' ! -path '*/.git/*' ! -path
 ### Workflow 1: Design New Codebase
 When user asks to design, architect, or build a new system/codebase:
 
-1. **Establish shared understanding** - Call the `grill-me` skill to clarify
-   (skip this step when called from an autonomous workflow like
-   `/{{PLUGIN_NAME}}:execute` that explicitly says not to pause or call
-   grill-me):
+1. **Establish shared understanding** - Call `feature-discovery` in
+   validation mode to clarify (skip this step when called from an
+   autonomous workflow like `/{{PLUGIN_NAME}}:execute` that explicitly
+   says not to pause or call feature-discovery):
    - What problem does this solve?
    - Who are the users/actors?
    - What are the core business rules?

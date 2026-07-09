@@ -23,8 +23,7 @@ claude --plugin-dir ./plugins/local-workflow
 | `/local-workflow:code-architect`          | Architecture design, audit, or documentation  |
 | `/local-workflow:structured-coding`       | 5-step structured coding methodology          |
 | `/local-workflow:code-review`             | Deep code review and analysis                 |
-| `/local-workflow:feature-discovery`       | Break a feature into implementable stories    |
-| `/local-workflow:grill-me`               | Stress-test a plan with tough questions       |
+| `/local-workflow:feature-discovery`       | Break features into stories + stress-test plans |
 | `/local-workflow:repo-scaffolding`        | Scaffold a new repository                     |
 | `/local-workflow:user-story`             | Write or format a single user story           |
 | `/local-workflow:acceptance-criteria`     | Generate testable acceptance criteria         |
@@ -52,9 +51,7 @@ local-workflow/
 │   ├── code-review/
 │   │   └── SKILL.md           # Deep code review and analysis
 │   ├── feature-discovery/
-│   │   └── SKILL.md           # Break features into stories
-│   ├── grill-me/
-│   │   └── SKILL.md           # Stress-test plans with tough questions
+│   │   └── SKILL.md           # Break features into stories + stress-test plans
 │   ├── repo-scaffolding/
 │   │   └── SKILL.md           # Repository structure and setup
 │   ├── user-story/
@@ -86,8 +83,7 @@ local-workflow/
 | Skill                | What it does                                       |
 | -------------------- | -------------------------------------------------- |
 | `code-architect`     | Design new codebases, audit existing, document architecture |
-| `feature-discovery`  | Explore and decompose features into user stories   |
-| `grill-me`           | Relentless stress-testing of plans and assumptions |
+| `feature-discovery`  | Explore and decompose features, or stress-test plans |
 | `repo-scaffolding`   | Scaffold a new repository from requirements        |
 
 ### Implementation
@@ -135,7 +131,7 @@ This plugin is the counterpart to `github-workflow`. The key differences:
 
 Both plugins share a set of core skills (the full list is in
 `_shared-skills/MANIFEST.md`) — among them `code-architect`,
-`structured-coding`, `feature-discovery`, `grill-me`, `repo-scaffolding`,
+`structured-coding`, `feature-discovery`, `repo-scaffolding`,
 and `ecosystem-setup`. In `github-workflow`, `ecosystem-setup` also backs
 the `setup` wizard's ecosystem step; here it is invoked on its own.
 

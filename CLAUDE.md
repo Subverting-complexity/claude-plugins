@@ -50,7 +50,6 @@ plugins. The full list is in `_shared-skills/MANIFEST.md`:
 
 - `code-architect`
 - `feature-discovery`
-- `grill-me`
 - `repo-scaffolding`
 - `structured-coding`
 - `_shared/` (banned-patterns)

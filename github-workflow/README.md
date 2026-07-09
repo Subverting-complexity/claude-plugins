@@ -47,8 +47,7 @@ github-workflow/
 │   ├── structured-coding/     # Structured coding methodology
 │   ├── code-review/           # Deep PR review, labels, optional auto-merge
 │   ├── preflight/             # Project-config health check
-│   ├── feature-discovery/     # Break features into stories
-│   ├── grill-me/              # Stress-test plans with tough questions
+│   ├── feature-discovery/     # Break features into stories + stress-test plans
 │   ├── verify-feature/        # Verify a change against its story
 │   ├── security-audit/        # Security-focused codebase audit
 │   ├── debugging/             # Systematic root-cause debugging
@@ -219,8 +218,7 @@ directly.
 | `structured-coding`   | Structured coding methodology                     |
 | `code-review`         | Deep PR review, labels, optional auto-merge       |
 | `preflight`           | Checks project-config health before a run         |
-| `feature-discovery`   | Breaks features into implementable stories        |
-| `grill-me`            | Stress-tests plans with tough questions           |
+| `feature-discovery`   | Breaks features into stories + stress-tests plans |
 | `verify-feature`      | Verifies a change against its story in context    |
 | `security-audit`      | Security-focused codebase audit                   |
 | `debugging`           | Systematic root-cause debugging methodology       |
