@@ -157,13 +157,21 @@ class TestPickStatusContract(unittest.TestCase):
         self.assertEqual(code, wf.EXIT_ENV)
         self.assertEqual(payload['status'], 'error')
 
-    def test_type_capable_non_story_mode_emits_unsupported(self):
-        """feature/maintenance on a type-capable org defers to the skill."""
+    def test_type_capable_feature_mode_uses_native_types(self):
+        """feature mode on a type-capable org filters by native issueType."""
         self._use_cfg(_cfg(type_capable=True))
-        code, payload = _capture(wf.cmd_pick, _pick_args('--mode', 'feature'))
-        self.assertEqual(code, wf.EXIT_UNSUPPORTED)
-        self.assertEqual(payload['status'], 'unsupported')
-        self.assertEqual(payload['mode'], 'feature')
+        with mock.patch.object(wf, 'fetch_native_types',
+                               return_value=(True, {1: 'User Story', 2: 'Bug'}, '')), \
+                mock.patch.object(wf, 'assemble_candidates',
+                                  return_value=(True, [_candidate(1), _candidate(2)], '')):
+            # Only issue 1 (User Story) passes the native-type filter;
+            # then all claims are lost → all-blocked.
+            with mock.patch.object(wf, 'acquire_claim', return_value='lost'):
+                code, payload = _capture(wf.cmd_pick, _pick_args('--mode', 'feature'))
+        self.assertEqual(code, wf.EXIT_ALL_BLOCKED)
+        self.assertEqual(payload['status'], 'all-blocked')
+        # Only the User Story candidate was attempted (issue 2 / Bug was filtered out).
+        self.assertEqual([s['issue'] for s in payload['side_effects']], [1])
 
     def test_label_typed_feature_mode_does_not_defer(self):
         """The same feature mode on a label-typed org runs here (not unsupported)."""
