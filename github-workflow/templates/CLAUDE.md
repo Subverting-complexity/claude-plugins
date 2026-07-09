@@ -71,7 +71,7 @@ relevant to what you're working on.
 | File | When to consult |
 | ---- | --------------- |
 | `ClaudeProject.md` | Project identity, labels, quality gate, branch convention, board config. Read at the start of any workflow command. |
-| `docs/review.config.md` | Review label definitions, non-compliance gates, tech-stack review rules. Read when performing or preparing for code review. |
+| `docs/review.config.md` | (Optional — created by setup step 7.) Review label definitions, non-compliance gates, tech-stack review rules. Read when performing or preparing for code review. |
 
 Add your own reference docs to this table as needed — architecture
 decisions, coding standards, API specs, etc. — so future sessions

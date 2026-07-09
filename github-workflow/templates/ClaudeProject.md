@@ -110,7 +110,7 @@ if your org named one differently from the default.
 | -------------------- | --------------- |
 | field-priority       | `Priority`      |
 | field-effort         | `Effort`        |
-| field-type           | `Type of issue` |
+| field-type           | `Classification` |
 | field-origin         | `Origin`        |
 | field-start          | `Start date`    |
 | field-target         | `Target date`   |
@@ -217,7 +217,7 @@ not covered in individual issues.
 
 ## Bundled Skills
 
-Available as `/github-workflow:*`: code-architect (planning),
-structured-coding (implementation), code-review (review/audit),
-feature-discovery (backlog creation + plan validation), repo-scaffolding
-(project setup).
+Available as `/github-workflow:*`: acceptance-criteria, code-architect,
+code-review, debugging, doc-writer, ecosystem-setup, execute,
+feature-discovery, pr-description, preflight, repo-scaffolding,
+security-audit, structured-coding, user-story, verify-feature.

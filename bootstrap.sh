@@ -25,4 +25,18 @@ mkdir -p "$hookdir"
 cp hooks/pre-commit "$hookdir/pre-commit"
 chmod +x "$hookdir/pre-commit"
 
+echo "==> Checking for Python 3 (required by run-tests.sh)"
+if command -v python3 >/dev/null 2>&1; then
+    echo "    Found $(python3 --version)"
+elif command -v py >/dev/null 2>&1 && py -3 --version >/dev/null 2>&1; then
+    echo "    Found $(py -3 --version) (Windows Python Launcher)"
+elif command -v python >/dev/null 2>&1; then
+    echo "    Found $(python --version)"
+else
+    echo "    WARNING: Python not found. Install Python 3.x to run the test suite."
+    echo "      Windows: winget install Python.Python.3.12"
+    echo "      macOS:   brew install python"
+    echo "      Linux:   sudo apt install python3"
+fi
+
 echo "==> Done. If 'git status' now lists renormalized files, commit them once."
