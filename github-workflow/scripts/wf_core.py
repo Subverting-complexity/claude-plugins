@@ -42,7 +42,7 @@ def _priority_rank(labels, project_map=None):
 
 
 def _filter_by_mode(candidates, mode, project_map=None):
-    """Apply mode filter.
+    """Apply mode filter (label path — non-type-capable orgs).
 
     story       — no type filter; all issues are eligible.
     feature     — keep type-story issues only.
@@ -50,9 +50,8 @@ def _filter_by_mode(candidates, mode, project_map=None):
 
     This is the `type-*` **label** path, matched through the project map so a
     project that renames the type labels is filtered correctly. On a type-capable
-    org the native issue type is authoritative; wf.py defers feature/maintenance
-    there to the skill's inline native-type path (it emits `unsupported`), so this
-    label path only ever runs for label-typed projects.
+    org the caller passes a `type_map` to `select_pool` instead, which routes
+    through `filter_by_native_type` and never reaches this function.
     """
     if mode == 'story':
         return list(candidates)
@@ -62,6 +61,54 @@ def _filter_by_mode(candidates, mode, project_map=None):
     keys = feature_keys if mode == 'feature' else maintenance_keys
     keep = {resolve_label(k, project_map) for k in keys}
     return [c for c in candidates if any(lbl in keep for lbl in c.get('labels', []))]
+
+
+# ── Native issue type filtering (type-capable orgs) ────────────────────────
+# When the org has native GitHub issue types, the authoritative classification
+# is the issueType field, not the type-* label. The type_map is built from a
+# single GraphQL query in wf.py and passed through select_pool.
+#
+# Native type map (from templates/default-labels.md):
+#   feature mode  → keep User Story
+#   maintenance   → keep Bug + Feature (with Classification filter if available)
+
+NATIVE_FEATURE_TYPES = frozenset({'User Story'})
+NATIVE_MAINTENANCE_TYPES = frozenset({'Bug'})
+NATIVE_MAINTENANCE_CLASSIFIABLE_TYPES = frozenset({'Feature'})
+MAINTENANCE_CLASSIFICATIONS = frozenset({
+    'Tech Debt', 'Architecture', 'Security',
+})
+
+
+def filter_by_native_type(candidates, mode, type_map, classification_map=None):
+    """Filter candidates by native issue type (type-capable orgs).
+
+    feature mode: keep only User Story.
+    maintenance mode: keep Bug unconditionally, plus Feature when the
+    Classification field indicates tech debt / architecture / security.
+    When classification_map is unavailable (None), all Feature-typed
+    candidates are included as a best-effort fallback.
+    story mode: no filter (returns all).
+    """
+    if mode == 'story':
+        return list(candidates)
+    result = []
+    for c in candidates:
+        native_type = type_map.get(c['number'])
+        if not native_type:
+            continue
+        if mode == 'feature':
+            if native_type in NATIVE_FEATURE_TYPES:
+                result.append(c)
+        elif mode == 'maintenance':
+            if native_type in NATIVE_MAINTENANCE_TYPES:
+                result.append(c)
+            elif native_type in NATIVE_MAINTENANCE_CLASSIFIABLE_TYPES:
+                if classification_map is None:
+                    result.append(c)
+                elif classification_map.get(c['number']) in MAINTENANCE_CLASSIFICATIONS:
+                    result.append(c)
+    return result
 
 
 def _filter_refinement(candidates, project_map=None):
@@ -96,7 +143,8 @@ def select_story(candidates, mode='story', agent_gating='disabled', project_map=
     return pool[0] if pool else None
 
 
-def select_pool(candidates, mode='story', agent_gating='disabled', project_map=None):
+def select_pool(candidates, mode='story', agent_gating='disabled', project_map=None,
+                type_map=None, classification_map=None):
     """The ordered, filtered candidate list (best first). Empty list if none.
 
     `project_map` is the ClaudeProject.md label map; every label the filters and
@@ -104,8 +152,18 @@ def select_pool(candidates, mode='story', agent_gating='disabled', project_map=N
     path matches the canonical purpose-key resolution in `story-selection.md`
     rather than diverging on a project that renames labels. Defaults to `{}` so
     a default-labelled project (and the offline tests) need not pass it.
+
+    `type_map`, when provided, activates native-type filtering (type-capable
+    orgs): a dict of ``{issue_number: native_type_name}`` built from a GraphQL
+    query. When set, mode filtering uses ``filter_by_native_type`` instead of
+    the label-based ``_filter_by_mode``. `classification_map` is an optional
+    companion dict of ``{issue_number: classification_option_name}`` for
+    refining Feature-typed issues in maintenance mode.
     """
-    pool = _filter_by_mode(candidates, mode, project_map)
+    if type_map and mode != 'story':
+        pool = filter_by_native_type(candidates, mode, type_map, classification_map)
+    else:
+        pool = _filter_by_mode(candidates, mode, project_map)
     pool = _filter_refinement(pool, project_map)
     pool = _filter_agent_gating(pool, agent_gating, project_map)
     return _sort_candidates(pool, project_map)

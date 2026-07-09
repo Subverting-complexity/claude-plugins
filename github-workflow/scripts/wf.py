@@ -28,10 +28,11 @@ Contract:
     always reported back in the `side_effects` array.
 
 Selection covers `--mode story` plus `--mode feature` / `--mode maintenance`
-on label-typed projects, under all four ready-gates (`label`, `none`,
-`board-column`, `both`). The path that still exits 30 so the skill
-handles it: feature/maintenance on a *type-capable* org (native issue
-type is authoritative, not resolved here). See
+under all four ready-gates (`label`, `none`, `board-column`, `both`), on
+both label-typed and type-capable orgs. On a type-capable org,
+feature/maintenance filter by the native `issueType` field via a single
+GraphQL query instead of the `type-*` label; if the query fails, wf
+falls back to label filtering gracefully. See
 github-workflow/templates/story-selection.md.
 """
 
@@ -405,6 +406,33 @@ def _board_column_candidates(cfg, column_name):
             'url': content.get('url', ''),
         })
     return True, issues, ''
+
+
+def fetch_native_types(cfg):
+    """Fetch native issue types for all open issues via GraphQL.
+
+    Returns (ok, type_map, err) where type_map is {issue_number: type_name}.
+    Used on type-capable orgs so the fast path can filter by native type
+    instead of deferring to the inline skill procedure.
+    """
+    ok, data, err = gh_graphql(
+        'query($owner:String!,$repo:String!){'
+        ' repository(owner:$owner,name:$repo){'
+        '  issues(first:200,states:OPEN){ nodes { number issueType { name } } }'
+        ' } }',
+        owner=cfg['org'], repo=cfg['repo'])
+    if not ok or not data:
+        return False, None, 'native type query failed: %s' % err
+    try:
+        nodes = data['repository']['issues']['nodes']
+    except (KeyError, TypeError):
+        return False, None, 'unexpected native type response shape'
+    type_map = {}
+    for node in nodes:
+        it = node.get('issueType')
+        if it and it.get('name'):
+            type_map[node['number']] = it['name']
+    return True, type_map, ''
 
 
 def assemble_candidates(cfg):
@@ -974,16 +1002,16 @@ def cmd_pick(args):
                  side_effects=side_effects)
         finish_pick(args, cfg, selected, side_effects, backlog_mode=None)
 
-    # feature / maintenance modes: wf filters them by the type-* LABEL
-    # (wf_core._filter_by_mode). On a type-capable org the *native* issue type
-    # is authoritative and wf does not resolve it — defer those to the skill's
-    # inline native-type path. Plain label-typed projects (the common case) run
-    # here, so the fast path covers feature/maintenance too.
+    # On a type-capable org, feature/maintenance modes filter by native
+    # issueType instead of the type-* label. Fetch once before selection.
+    type_map = None
     if args.mode != 'story' and cfg.get('type_capable'):
-        emit('unsupported', EXIT_UNSUPPORTED,
-             reason="mode %r needs native-issue-type resolution on a type-capable "
-                    "org; use the skill's inline selection" % args.mode,
-             mode=args.mode)
+        ok_t, type_map, t_err = fetch_native_types(cfg)
+        if not ok_t:
+            eprint('wf: native type query failed (%s); falling back to label filtering' % t_err)
+            type_map = None
+        elif type_map:
+            eprint('wf: type-capable org — filtering %s mode by native issueType' % args.mode)
 
     gate = cfg.get('ready_gate', 'label')
     if gate not in ('label', 'none', 'board-column', 'both'):
@@ -997,7 +1025,8 @@ def cmd_pick(args):
     backlog_mode, issues = narrow_to_sprint(cfg, issues)
     pool = wf_core.select_pool(issues, mode=args.mode,
                                agent_gating=cfg.get('agent_gating', 'disabled'),
-                               project_map=cfg.get('labels', {}))
+                               project_map=cfg.get('labels', {}),
+                               type_map=type_map)
 
     selected, side_effects = None, []
     if pool:
@@ -1012,7 +1041,8 @@ def cmd_pick(args):
                 backlog_mode, issues = narrow_to_sprint(cfg, issues)
                 pool = wf_core.select_pool(issues, mode=args.mode,
                                            agent_gating=cfg.get('agent_gating', 'disabled'),
-                                           project_map=cfg.get('labels', {}))
+                                           project_map=cfg.get('labels', {}),
+                                           type_map=type_map)
                 if pool:
                     selected, more_effects = claim_validate_walk(cfg, pool, backlog_mode)
                     side_effects.extend(more_effects)
@@ -1273,8 +1303,9 @@ def build_parser():
 
     pick = sub.add_parser('pick', help='claim the next story and return it as JSON')
     pick.add_argument('--mode', default='story', choices=['story', 'feature', 'maintenance'],
-                      help='selection mode; feature/maintenance run here on label-typed '
-                           'projects and defer to the skill on type-capable orgs')
+                      help='selection mode; feature/maintenance filter by type-* label '
+                           'on label-typed projects and by native issueType on '
+                           'type-capable orgs')
     pick.add_argument('--issue', type=int, default=None,
                       help='target this specific issue instead of auto-selecting; runs the '
                            'same claim + validate machinery (auto-closes it if a merged PR '
