@@ -36,6 +36,13 @@ here are only needed once you are ready to open the PR.
    Report the duplicate to the user. Do not pick the winner or close the
    other PR here — that is code review's job.
 
+   A sibling lookup can go stale in the moments before PR creation.
+   Immediately before composing the PR body in Step 2, re-verify a found
+   sibling is still open with one cheap call:
+   `gh pr view {sibling_number} --repo {org}/{repo} --json state --jq '.state'`.
+   If it is no longer `OPEN`, drop the duplicate flag line and proceed
+   normally.
+
 2. Create a real PR (never a draft — this workflow does not open drafts).
    Write the body following `templates/body-file-write.md` (temp file +
    `--body-file`):
@@ -126,11 +133,22 @@ here are only needed once you are ready to open the PR.
    probe), add a fifth alias to the same mutation to record today's date.
 
    **Fallback** — if the combined mutation fails (e.g. a label ID was
-   stale in the cache), fall back to the three individual calls:
-   `gh pr edit` for PR labels, `gh issue edit` for the lifecycle label,
-   and `board-resolution.md` Step 5 for the board. The atomic-claim and
-   label-presence guarantees still hold: the individual calls verify via
-   exit code and create-if-missing as before.
+   stale in the cache), fall back to three individual calls, in this
+   order:
+
+   1. **PR labels** — `gh pr edit {pr_number} --repo {org}/{repo}
+      --add-label claude-authored --add-label {review-state-label}`
+      (`review-needs-review`, or `review-changes-requested` when the
+      gate-failed flag is set).
+   2. **Issue lifecycle label** — `gh issue edit {number} --repo
+      {org}/{repo} --remove-label status-in-progress --add-label
+      status-in-review`.
+   3. **Board move** — the Step 5 mutation in
+      `templates/board-resolution.md`, targeting `col-in-review` (skip
+      when no board is configured).
+
+   The atomic-claim and label-presence guarantees still hold: the
+   individual calls verify via exit code and create-if-missing as before.
 
 4. Release the atomic claim now that the PR exists — the open PR plus the
    assignment are the ownership markers, so the claim ref is no longer

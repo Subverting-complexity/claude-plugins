@@ -1,3 +1,4 @@
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: feature-discovery
 description: >-
@@ -20,7 +21,6 @@ description: >-
 depends-on:
   - code-architect
 ---
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Feature Discovery
 

@@ -1,3 +1,4 @@
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: structured-coding
 description: "Methodology for approaching any coding task with discipline and structure — bug fixes, new features, refactors, or architecture changes. Use whenever the user wants code written or modified, even small changes. Note: execute calls this as its build phase; prefer execute when the user wants end-to-end task execution (plan, build, verify, commit)."
@@ -15,7 +16,6 @@ allowed-tools:
   - Bash(grep *)
   - Bash(rg *)
 ---
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Structured Coding
 

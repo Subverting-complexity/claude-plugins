@@ -23,7 +23,21 @@ sense of what is on offer: "Want to set up any Claude Code companion
 tools? They are optional and skippable — a codebase knowledge graph
 (Graphify) for graph-grounded answers, terminal/context token optimizers
 (RTK, Headroom), cost history (ccusage), a config security scanner
-(ecc-agentshield), and TS/JS code intelligence (Fallow)."
+(ecc-agentshield), and code intelligence for JS/TS projects only
+(Fallow)."
+
+**Filter what you offer** before asking, on two grounds:
+
+1. **Project allowlist** — if the project config declares one (an
+   `Ecosystem tools:` line or `## Ecosystem Tools` section in
+   `ClaudeProject.md` where the project has one, or an `Ecosystem tools:`
+   line in the header of an existing `.claude/ecosystem.md`), offer
+   **only** the tools it names. No allowlist means every tool is on the
+   table.
+2. **Language family** — never offer a tool outside the stack it supports:
+   Fallow is **JS/TS projects only** (see its section for the detection
+   check). Report each filtered-out tool with a one-line reason so the
+   user knows it was considered, and drop it from the ask-line above.
 
 Track which tools the user enables. At the end, if at least one tool is
 enabled, write `.claude/ecosystem.md` containing only those tools'
@@ -70,6 +84,9 @@ instead.
 
 Graphify builds a queryable graph of the codebase so agents get
 graph-grounded answers instead of file-searching blind.
+
+> The setup steps below assume git (`git mv`, `git add`, `.gitignore`) —
+> adapt the staging and ignore steps for projects on another VCS.
 
 **Detect:** `graphify --version`
 

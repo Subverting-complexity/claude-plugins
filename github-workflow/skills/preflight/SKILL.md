@@ -63,7 +63,7 @@ else
       fi
     done
   else
-    echo "CRITICAL file-ClaudeProject: ClaudeProject.md not found"; crit=1
+    echo "CRITICAL file-ClaudeProject: ClaudeProject.md not found — run /github-workflow:setup"; crit=1
   fi
 
   # CLAUDE.md (WARNING-level)

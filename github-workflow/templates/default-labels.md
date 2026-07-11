@@ -47,27 +47,34 @@ churn. A skill may only **create a missing label as a guarded fallback**:
 check whether it exists, create it without `--force` if absent, warn that
 setup should have created it, then proceed.
 
-Guarded create-if-missing pattern:
+Guarded create-if-missing pattern. Do **not** suppress the create's
+errors with `|| true` — that swallows permission failures. Capture
+stderr; only "already exists" (a benign race with another agent) may be
+ignored:
 
 ```
 # resolve <name> from the purpose key via the path above, then:
 existing=$(gh label list --repo {org}/{repo} --json name --jq '.[].name')
 case "$existing" in
   *"<name>"*) : ;;  # already present — leave its metadata untouched
-  *) gh label create "<name>" --repo {org}/{repo} \
-       --description "<description>" --color "<color>" || true ;;
+  *) err=$(gh label create "<name>" --repo {org}/{repo} \
+       --description "<description>" --color "<color>" 2>&1) \
+     || case "$err" in
+          *already?exists*) : ;;  # benign — created concurrently
+          *) echo "label create failed: $err" >&2 ;;  # surface the real error
+        esac ;;
 esac
 ```
 
-After applying any label, verify it took effect by reading back:
+Any other failure — especially a permission denial — must be surfaced
+with the real stderr, never swallowed: a caller whose step is explicitly
+best-effort warns and continues; every other caller stops.
 
-```
-gh issue view {number} --json labels --jq '[.labels[].name]'
-gh pr view {number} --json labels --jq '[.labels[].name]'
-```
-
-If a label is missing after apply, it did not exist and `gh` silently
-skipped it. Create it with the guarded pattern above and retry once.
+After a create-and-retry, confirm the label took by reading back
+(`gh issue view {number} --json labels --jq '[.labels[].name]'`, or
+`gh pr view` for a PR). On a clean apply, trust the edit's exit code
+instead — see the label read-back policy in
+`templates/claim-procedure.md` (Acquire, Step 4).
 
 ## Workflow Labels
 

@@ -70,8 +70,11 @@ extra API call in the common case:
   active sprint. *Only now* spend one call to order milestones by due date
   and take the earliest open one as `{sprint_title}`:
   ```
-  gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | map(select(.open_issues > 0)) | .[0].title'
+  gh api repos/{org}/{repo}/milestones --jq 'map(select(.due_on != null)) | sort_by(.due_on) | map(select(.open_issues > 0)) | .[0].title'
   ```
+  (Milestones without a due date are excluded — `sort_by` misorders
+  nulls. If this yields nothing because none has a due date, say so and
+  treat the backlog as flat.)
   Then **locally** drop any candidate whose `milestone` ≠ `{sprint_title}`.
 
 Then narrow the list with **local** filters (no API calls):
@@ -126,12 +129,16 @@ Walk the sorted list from the top. For each candidate:
 2. **Validate the claimed issue** (only this one — never the whole list):
    - **Dependencies.** Parse the body for `Depends on #N`, `Blocked by #N`,
      `After #N`, `Requires #N`, and `#N` references in a `## Dependencies`
-     section. For each (at most 5; if more than 5, treat as a meta-issue →
-     unresolved), check state:
+     section, keeping only markers whose `N` is purely numeric — discard
+     anything else (e.g. `#TBD`); never pass it to `gh`. For each (at most
+     5; if more than 5, treat as a meta-issue → unresolved), check state:
      ```
      gh issue view {N} --repo {org}/{repo} --json state --jq '.state'
      ```
-     If **any** is `OPEN`, the dependencies are unresolved.
+     If **any** is `OPEN`, the dependencies are unresolved. If the view
+     exits non-zero (deleted, transferred, or no access), do not surface
+     the raw `gh` error — report "dependency #N not found or inaccessible
+     — treating story as blocked" and count it as unresolved.
    - **Already resolved.** Check whether a **merged** PR already closes it,
      using GitHub's own `closingIssuesReferences` parse — the authoritative
      signal (same as `templates/sibling-pr-lookup.md`), not a free-text body

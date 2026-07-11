@@ -1,5 +1,7 @@
 # Project Configuration
 
+<!-- ClaudeProject schema: v1 -->
+
 Settings for the `github-workflow` plugin. All commands and the
 execute skill read this file.
 

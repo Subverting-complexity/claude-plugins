@@ -1,3 +1,4 @@
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: security-audit
 description: "Dedicated security audit: dependency vulnerabilities, secrets detection, OWASP Top 10, input validation, and auth review. Use when the user wants a security audit, vulnerability/CVE scan, secret-leak check, threat model, or pen-test-style review. Do NOT use for general code review (use code-review) or architecture audits (use code-architect --mode audit)."
@@ -20,7 +21,6 @@ allowed-tools:
   - Bash(grep *)
   - Bash(rg *)
 ---
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Security Audit
 

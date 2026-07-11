@@ -1,6 +1,6 @@
 {
   "name": "local-workflow",
-  "version": "1.19.1",
+  "version": "1.20.0",
   "description": "Project-agnostic plugin for local development work. Provides structured coding methodology, architecture design and audit, feature discovery and plan validation, user story writing, PR descriptions, support documentation, and tone-matched correspondence. No GitHub or platform dependencies required.",
   "author": {
     "name": "Subverting Complexity"

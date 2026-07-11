@@ -52,7 +52,11 @@ Cache keys:
 To check for a key: parse `.claude/issue-fields-cache.json` and test whether
 the key is present. To write (merge, not overwrite): read the file if it
 exists, update the dict, write it back. Use `python3`, `py -3`, or `python`
-(whichever is available) for the JSON read-merge-write.
+(whichever is available) for the JSON read-merge-write. If none of them
+runs (no Python on this machine), **skip the cache write** and proceed
+with the freshly-resolved values, noting once "field cache skipped: no
+Python available" — the cache is an optimisation; never fail the workflow
+over it.
 
 ## Step 1 — Discover native issue types (capability gate)
 

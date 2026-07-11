@@ -93,11 +93,16 @@ echo "claim-exit=$?"
 by purpose key from the in-context `ClaudeProject.md` label map — fall back
 to `templates/default-labels.md` only for a purpose key the map omits):
 
-- **Issue** — assign **and** move to `status-in-progress`, removing
-  whatever lifecycle label it had so exactly one state is present:
+- **Issue** — assign **and** move to `status-in-progress` so exactly one
+  lifecycle state remains. Do not assume one prior label: take the
+  issue's current labels (reuse labels already fetched for it this
+  session — e.g. the picker's candidate list — else `gh issue view
+  {number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'`)
+  and remove **every** lifecycle label present (zero is fine; more than
+  one is drift this edit repairs), adding one `--remove-label` per match:
   ```
   gh issue edit {number} --repo {org}/{repo} --add-assignee @me \
-    --remove-label "{previous_lifecycle_label}" --add-label "{status_in_progress_label}"
+    --remove-label "{each_lifecycle_label_present}" --add-label "{status_in_progress_label}"
   ```
 - **PR** — apply `reviewing`, removing the prior review-state label:
   ```
@@ -109,14 +114,16 @@ No read-back is needed for *exclusivity* (the atomic push already proved
 it). No read-back is needed for the **label** either: `gh ... edit
 --add-label X` fails loudly (non-zero exit, "could not add label") when `X`
 does not exist — it never silently drops the label — so the edit's own exit
-status is the presence signal. Apply the contract:
+status is the presence signal. This is the canonical **label read-back
+policy**; every command that applies labels follows it and cites it here
+rather than restating it:
 
 - **Exit 0** → the label is set; done, no read-back.
 - **Non-zero citing an unknown/missing label** → the label was never
   created at setup. Create it with the guarded create-if-missing pattern in
-  `default-labels.md` (no `--force`), then retry the edit once. This is the
-  only branch that reads, and only when a label had to be created — verify
-  after create, not after every edit.
+  `default-labels.md` (no `--force`), then retry the edit once and read the
+  labels back to confirm. That retried failure is the **only** case that
+  reads — never read back after a clean apply.
 
 ---
 

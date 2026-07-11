@@ -91,7 +91,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" setup
 
 This step is **optional but recommended**. Without it the fast path still
 works by probing a system Python, and falls back to the inline selection
-procedure when none is found — so the workflow is never blocked on it. To
+procedure when the probe fails (the launcher exits non-zero reporting no
+Python 3) — so the workflow is never blocked on it. To
 rebuild a broken venv, re-run with `--force`.
 
 ### 2. Check for existing configuration
@@ -126,7 +127,12 @@ gh repo view --json owner,name,defaultBranchRef --jq '{org: .owner.login, repo: 
 - `*.sln` or `*.csproj` → dotnet
 - `go.mod` → go
 - `Cargo.toml` → cargo
+- `uv.lock` → python (uv)
 - `requirements.txt` or `pyproject.toml` → python
+- `Gemfile.lock` → ruby (bundler)
+- `pubspec.lock` → dart/flutter
+- `mix.lock` → elixir
+- `build.gradle`, `build.gradle.kts`, or `gradlew` → JVM (gradle)
 
 **Quality gate** — look for common patterns:
 
@@ -146,7 +152,12 @@ gh api graphql -f query='query { organization(login: "{org}") { projectsV2(first
 gh api graphql -f query='query { user(login: "{org}") { projectsV2(first: 20) { nodes { id number title } } } }'
 ```
 
-Merge the results. If boards are found, list them by **title** (and
+Merge the results. **Zero boards returned does not prove none exists** —
+the token may lack the `read:project` scope, or the board may be private
+and invisible to it. Say so, suggest checking `gh auth status` (scopes)
+and the board's visibility, and get the user's explicit confirmation
+that there is no board before configuring the project boardless. If
+boards are found, list them by **title** (and
 number) and ask which to use (or none). Record the chosen board's
 `number` as `project-number`, its `id` as `project-node-id`, and its
 `title` as `project-title` — `project-title` lets later commands confirm
@@ -229,7 +240,8 @@ board; pass back **all** pre-existing options or they are deleted.) The
 mutation returns the full option list (existing + new) with their ids. Read the returned `options` to capture the option id for every
 canonical column — these become the Status Options values written to
 `ClaudeProject.md` in Step 5. This step is best-effort: if the mutation
-fails (permissions, etc.), warn the user that the columns must be created
+fails (non-zero exit, or a response with an `errors` array — GraphQL can
+return HTTP 200 with errors), warn the user that the columns must be created
 manually in the board UI, record the option ids that do exist, and
 continue.
 
@@ -424,8 +436,9 @@ record it so the generated `ClaudeProject.md` reflects reality.
    ```
    gh api graphql -f query='query($login:String!){ organization(login:$login){ issueTypes(first:20){ nodes { name isEnabled } } } }' -F login='{org}' --jq '[.data.organization.issueTypes.nodes[] | select(.isEnabled) | .name]'
    ```
-   If this errors or the owner is a user account (issue types are
-   org-only), the project is **not** type-capable — leave the
+   If this fails (non-zero exit, or `.data.organization` is null — the
+   owner is a user account; issue types are org-only), the project is
+   **not** type-capable — leave the
    `## Issue Types & Fields` section out (the Label Map's `type-*` labels
    remain the classification) and skip step 2.
 2. **Issue fields** — list configured fields:

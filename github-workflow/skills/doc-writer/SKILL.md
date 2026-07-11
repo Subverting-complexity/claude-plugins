@@ -1,3 +1,4 @@
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: doc-writer
 description: "Write or update project documentation — README, API docs, architecture guides, migration guides, changelogs. Use when the user wants to write, generate, or update docs for a project or system. Do NOT use for code comments, PR descriptions (use pr-description), or user stories (use user-story)."
@@ -14,7 +15,6 @@ allowed-tools:
   - Bash(ls *)
   - Bash(find *)
 ---
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Documentation Writer
 

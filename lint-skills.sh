@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Skill frontmatter linter
-# Validates: required fields, unreplaced placeholders, trigger phrase collisions
+# Validates: required fields, unreplaced placeholders, trigger phrase
+# collisions, template coverage of canonical shared skills
 
 set -euo pipefail
 
@@ -105,6 +106,20 @@ for file in "${skill_files[@]}"; do
             fi
         fi
         trigger_map[$name_value]="$rel"
+    fi
+done
+
+# Template coverage: canonical files under _shared-skills/ are deployed to
+# every plugin, so a hardcoded /github-workflow: or /local-workflow: slash
+# command leaks the wrong plugin's command into the other plugin's copy.
+# Only MANIFEST.md is exempt — it documents the plugins and is never synced.
+mapfile -t shared_md < <(find ./_shared-skills -type f -name '*.md' ! -name 'MANIFEST.md' 2>/dev/null)
+for file in "${shared_md[@]}"; do
+    rel="${file#./}"
+    if grep -qE '/(github|local)-workflow:' "$file"; then
+        echo "FAIL: $rel — hardcoded plugin slash-command reference; use /{{PLUGIN_NAME}}: instead"
+        grep -nE '/(github|local)-workflow:' "$file" | head -5 | sed 's/^/      /'
+        status=1
     fi
 done
 

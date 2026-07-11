@@ -91,10 +91,19 @@ offers to fill in missing sections rather than overwrite.
 
 ### Prerequisites
 
-The plugin reads two files from the host project:
+Tools the plugin expects on the host machine:
+
+| Tool | Needed for | Notes |
+| ---- | ---------- | ----- |
+| `gh` (GitHub CLI) | every issue, PR, label, and board operation | Must be authenticated: `gh auth login`. This is a **hard dependency by design** — the plugin has no REST-API fallback. |
+| `git` | branching, claims, worktrees | Any recent version. |
+| Python ≥ 3.8 | the `wf` story-picker (`scripts/wf.py`) | Recommended, not strictly required — every picker path has an inline fallback, but the fallbacks are slower (many sequential `gh` round-trips). |
+
+The plugin also reads two files from the host project:
 
 **`ClaudeProject.md`** (required) — The single source of truth for all
 project-specific values. Every command and the skill read this file.
+Full format specification: [`docs/claudeproject-spec.md`](../docs/claudeproject-spec.md).
 
 Required sections: Identity, Package Manager, Quality Gate, Branch
 Convention, Label Map, Story Template, Issue Prefixes.
@@ -108,6 +117,14 @@ session hygiene.
 non-compliance gates, and tech-stack review rules. Required by the
 `code-review` skill. Generated automatically on first code-review run,
 or during setup.
+
+### Known limitations
+
+The `wf` story-picker resolves a single repo root via
+`git rev-parse --show-toplevel` and reads one `ClaudeProject.md` from it.
+Monorepos that want per-subproject boards, labels, or quality gates are
+not supported: configure one `ClaudeProject.md` at the repository root
+that covers the whole repo. Per-subproject configuration is unsupported.
 
 ## Backlog modes
 
@@ -204,6 +221,12 @@ A project with no board configured skips all of this silently.
 
 Each agent follows least privilege — only the tools it needs.
 The builder is the default agent when the plugin is active.
+
+Unlike the skills, the agents are **plugin-specific and not shared or
+synced** from `_shared-skills/`: each agent's tool allowlist is
+least-privilege-scoped to this GitHub workflow (specific `gh` and `git`
+operations, board mutations), so the definitions would not transfer to a
+plugin with a different surface.
 
 ## Skills
 

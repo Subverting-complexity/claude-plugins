@@ -83,12 +83,17 @@ If in sprint mode, find the current milestone so the new issue lands
 in the right sprint:
 
 ```
-gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | .[] | select(.open_issues > 0) | .title' | head -1
+gh api repos/{org}/{repo}/milestones --jq 'map(select(.due_on != null)) | sort_by(.due_on) | .[] | select(.open_issues > 0) | .title' | head -1
 ```
 
-If this returns nothing (flat backlog mode, or no open milestones), the
-issue is created without a milestone — do **not** pass an empty
-`--milestone` flag, as `gh` rejects it.
+Milestones without a due date are filtered out before sorting —
+`sort_by(.due_on)` misorders nulls. If open milestones exist but **all**
+lack due dates, sprint mode is not detected: say so explicitly ("open
+milestones found, but none has a due date — creating without a
+milestone") rather than silently skipping. If this returns nothing (that
+case, flat backlog mode, or no open milestones), the issue is created
+without a milestone — do **not** pass an empty `--milestone` flag, as
+`gh` rejects it.
 
 ### 4b. Validate and create labels
 
@@ -161,27 +166,21 @@ Include in the body:
 - Suggested fix (if known)
 - Whether it blocks the current story
 
-### 5b. Verify labels were applied
+### 5b. Verify labels (exit-code contract)
 
-After creating the issue, verify the labels were actually applied:
+Follow the label read-back policy in `templates/claim-procedure.md`
+(Acquire, Step 4): `gh issue create`/`gh issue edit` fail loudly on an
+unknown label, so **exit 0 means every label applied — do not read the
+labels back**. Only on a non-zero exit citing an unknown/missing label:
+create it with the guarded create-if-missing pattern from
+`templates/default-labels.md` (colors there too, no `--force`), retry
+the apply once, then read back to confirm — only after that retried
+failure:
 
 ```
+gh issue edit {number} --repo {org}/{repo} --add-label "{label}"
 gh issue view {number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'
 ```
-
-For each expected label (type, priority, lifecycle state, and
-`claude-authored`), if missing, create it with the guarded
-create-if-missing pattern from `templates/default-labels.md`
-— **without `--force`** — and reapply:
-
-```
-gh label create "{label}" --repo {org}/{repo} --description "{desc}" --color "{color}"
-gh issue edit {number} --repo {org}/{repo} --add-label "{label}"
-```
-
-Use label colors from `templates/default-labels.md`. If the label map
-in `ClaudeProject.md` is missing or incomplete, use the default names
-from `templates/default-labels.md`.
 
 ### 5c. Native issue type + field values (best-effort)
 

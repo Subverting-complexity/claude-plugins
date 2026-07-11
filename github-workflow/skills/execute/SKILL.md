@@ -51,11 +51,15 @@ exactly this session:
 test -f .claude/preflight-passed.txt && echo "PREFLIGHT_ALREADY_PASSED"
 ```
 
-If the file is absent, invoke `/github-workflow:preflight` to verify
-project configuration. If it finds issues and the user chooses
-"Configure now", wait for setup to complete, then ask the user to
-re-run this command (the configuration loaded below will be stale).
-If the user chooses "Continue anyway" or "Don't remind me", proceed.
+If the file is absent and the configuration block below did **not** print
+"ClaudeProject.md NOT FOUND", invoke `/github-workflow:preflight` to
+verify project configuration. (On NOT FOUND, skip preflight — the handling
+below the block produces the single actionable message, and invoking
+preflight would only repeat the same root cause.) If preflight finds
+issues and the user chooses "Configure now", wait for setup to complete,
+then ask the user to re-run this command (the configuration loaded below
+will be stale). If the user chooses "Continue anyway" or "Don't remind
+me", proceed.
 
 ## Project configuration (auto-loaded)
 
@@ -93,10 +97,16 @@ else
 fi
 ```
 
-If the above shows "NOT FOUND" and preflight did not already handle
-this, stop and tell the user to run `/github-workflow:setup` first.
-Do not attempt to proceed without it — every subsequent step depends
-on the values defined there.
+If the above shows "NOT FOUND", stop with exactly one message —
+"ClaudeProject.md not found — run /github-workflow:setup." — and do not
+chain into preflight for the same root cause. Do not attempt to proceed:
+every subsequent step depends on the values defined there.
+
+Otherwise validate the projection before proceeding: it must contain both
+an `## Identity` and a `## Quality Gate` section. If either is missing,
+stop with "ClaudeProject.md is missing required section: <name> — run
+/github-workflow:setup." A projection silently missing them would fail
+much later, far from the cause.
 
 Read `CLAUDE.md` for project rules and build principles.
 
@@ -111,31 +121,21 @@ gh api rate_limit --jq '.rate.remaining'
 
 Keep the result in context only. If the count is already below 100 here,
 treat this as the rate-limit pause described in **API rate limiting** below
-and exit after cleanup.
+and exit after cleanup. (Skip the check in `audit` mode if you prefer —
+the audit flow makes few writes.)
 
-**Candidate and label fetches are deliberately *not* prewarmed.** The Phase 1
-fast path (`wf pick`) selects, claims, board-moves, and checks out the story
-in one call, so on the happy path there is nothing to warm up — eagerly
-fetching a candidate list or a full label inventory here would pay latency and
-rate-limit budget up front for data the happy path never reads. Each is
-fetched lazily, only on the path that needs it:
-
-- **Candidate list** — fetched by the inline fallback itself
-  (`templates/story-selection.md` Step 1, ready-gate-aware) only when `wf pick`
-  does not return `ok`. There is no `.claude/candidates.json` cache.
-- **Label inventory** — fetched at the **finish phase** (Phase 7) only if
-  reached; `references/finish-and-self-review.md` falls back to `gh label list`
-  when `.claude/label-cache.json` is absent.
-
-When you do enter the inline fallback, read
-`references/inline-fallback-prewarm.md` for the details. (Skip the rate check
-too in `audit` mode if you prefer — the audit flow makes few writes.)
+**Candidate and label fetches are deliberately *not* prewarmed** — the
+happy path (`wf pick` → `ok`) never reads them, so each is fetched lazily
+on the only path that needs it: the inline fallback fetches its own
+candidate list (`templates/story-selection.md` Step 1), and Phase 7
+fetches the label inventory on first use. When you enter the inline
+fallback, read `references/inline-fallback-prewarm.md` for the details.
 
 ## Session budget
 
 Stay under ~100k tokens: **one story per session**, scoped to a shippable
-artifact (branch + PR). (Why: `references/execute-rationale.md`, not read
-at runtime.)
+artifact (branch + PR). (design rationale: `references/execute-rationale.md`
+— not read at runtime.)
 
 - **Commit early, push periodically.** Atomic commits per logical unit;
   push after each major phase (plan done, core done, tests passing) so an
@@ -146,6 +146,11 @@ at runtime.)
   abandoned session.
 - **Too large for one session** → implement the highest-priority slice,
   open a PR for it, and file follow-ups with `/github-workflow:report-issue`.
+- **Retries respect the budget.** If the Phase 5 quality gate still fails
+  after 2 retries and the session is near its token budget or the
+  45-minute mark, stop retrying — take Phase 5's gate-failed exit (commit
+  what you have) or block the story rather than burning the remaining
+  budget on more runs.
 
 **45-minute timeout.** Record the start time (`date +%s`); before each
 phase, check elapsed. Past 45 minutes:
@@ -156,7 +161,7 @@ phase, check elapsed. Past 45 minutes:
    `status-needs-attention` (remove `status-in-progress`) with a comment
    listing what remains; do **not** open a PR.
 3. File follow-up issues for unfinished work.
-4. Run **Exit cleanup** (release the claim ref, delete the scratch file).
+4. Run **Exit cleanup** (`references/exit-cleanup.md`).
 5. Exit — do not start a phase you may not finish.
 
 ## API rate limiting
@@ -171,8 +176,8 @@ If it is below **100**, pause: commit and push current work, move the
 issue to `status-needs-attention` (remove `status-in-progress`) with a
 comment noting the pause, run **Exit cleanup**, then exit — the next
 session resumes from the pushed branch. Do **not** retry rate-limited
-requests in a loop. (Why: `references/execute-rationale.md`, not read at
-runtime.)
+requests in a loop. (design rationale: `references/execute-rationale.md`
+— not read at runtime.)
 
 ## Mode selection
 
@@ -193,34 +198,13 @@ that files issues for findings).
 
 ## Exit cleanup
 
-Every exit path must leave three things clean: the **atomic claim ref**,
-the **per-session scratch files**, and the **working tree**. All three are
-idempotent — run them on *every* exit, in this order, as the **final** step
-before the session ends and **after** any commit/push (so the pushed branch
-is the source of truth). Why each one matters, and the full list of exits
-this covers: `references/exit-cleanup-rationale.md`.
-
-### 1. Release the claim ref
-
-```
-git push origin :refs/claims/issue-{number}
-rm -f .claude/claim-issue-{number}.sha
-```
-
-### 2. Delete the scratch files
-
-```
-rm -f .claude/plan.md .claude/preflight-passed.txt \
-      .claude/label-cache.json .claude/issue-fields-cache.json
-```
-
-### 3. Reconcile the working tree to clean
-
-Run the **End clean** procedure in `templates/worktree-hygiene.md`:
-`git status --porcelain` must end empty. Commit a forgotten story file,
-commit incidental formatting as a **separate `chore:` commit** (do not fold
-it into the feature diff), or discard disposable generated noise. **Never
-`git stash`** — the stash is shared across every worktree on the clone.
+Every exit path — successful finish, block, failure, timeout, rate-limit
+pause — ends by running the canonical procedure in
+`references/exit-cleanup.md`: release the claim ref, delete the scratch
+files, reconcile the working tree to clean. Run it as the **final** step,
+**after** any commit/push. That file is the only place the procedure is
+specified — read it rather than improvising the steps. (design rationale:
+`references/exit-cleanup-rationale.md` — not read at runtime.)
 
 ---
 
@@ -393,6 +377,12 @@ agents never validate or build the same issue.
 When **no** board is configured, skip the board update silently. When a
 board **is** configured, board failures are loud: report the failure to
 the user (e.g., "Board update failed: {error}. Continuing.") and proceed.
+**Claim–board consistency:** the claim acquired in Phase 1 must never
+outlive the session's intent to build. If the board move fails and the
+run is abandoned rather than continued, release the claim
+(`templates/claim-procedure.md` **Release**) and restore the prior
+lifecycle state — remove `status-in-progress` and the `@me` assignment,
+re-apply `status-ready` — so the claim does not leak.
 
 ## Phase 3 — Plan
 
@@ -465,7 +455,10 @@ Run the quality gate command from `ClaudeProject.md`:
    a. Read the error output carefully.
    b. Fix the specific failing check.
    c. Re-run the quality gate.
-   d. Repeat up to 3 times (4 total runs maximum).
+   d. Repeat up to 3 times (4 total runs maximum). If the gate still
+      fails after 2 retries (3 runs) and the session is near its token
+      budget or the 45-minute mark, stop retrying early and treat it as
+      still-failing (step 3) — do not burn the remaining budget on runs.
 3. If still failing after 4 total runs, the code is complete but the gate
    is red. Commit what you have and proceed to Phase 7, but set the
    **gate-failed flag**: Phase 7 will open a **real** PR (never a draft)
@@ -486,15 +479,10 @@ Run the quality gate command from `ClaudeProject.md`:
 ## Phase 7 — Finish & Phase 8 — Self-Review
 
 When the quality gate has passed and the work is committed, **read
-`references/finish-and-self-review.md`** and follow it. It covers Phase 7
-(push, duplicate-PR detection, create the PR, apply review-state labels,
-move the issue to `status-in-review`, release the claim, report) and
-Phase 8 (the advisory self-review pass over the diff against the
-acceptance criteria).
-
-These steps live in a reference file, read only when you reach this point,
-so the PR-creation machinery does not weigh on the pick/plan/build window
-earlier in the session.
+`references/finish-and-self-review.md`** and follow it end-to-end. It
+covers Phase 7 (push, duplicate-PR detection, create the PR, labels,
+board move, claim release, report) and Phase 8 (the advisory self-review
+pass against the acceptance criteria).
 
 ---
 

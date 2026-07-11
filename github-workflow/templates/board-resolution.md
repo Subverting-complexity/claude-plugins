@@ -35,11 +35,17 @@ Resolve the stored `project-node-id` and confirm it still points at the
 intended board by comparing its live title to `project-title`:
 
 ```
-gh api graphql -f query='query($id:ID!){ node(id:$id){ ... on ProjectV2 { title } } }' -F id='<project-node-id>' --jq '.data.node.title'
+gh api graphql -f query='query($id:ID!){ node(id:$id){ ... on ProjectV2 { title } } }' -F id='<project-node-id>' --jq 'if .data.node == null then "BOARD_NOT_FOUND" else .data.node.title end'
 ```
 
+- **`.data.node` is null** (output `BOARD_NOT_FOUND`) → check this
+  **before** any title comparison — a deleted board must not be reported
+  as a title mismatch against "null". **ABORT all board writes** with:
+  "Board not found — it may have been deleted. Re-run
+  /github-workflow:setup or fix the board number in ClaudeProject.md."
+  The rest of the workflow continues without a board update.
 - Title **matches** `project-title` → identity confirmed, continue.
-- Node does **not** resolve to a ProjectV2, or the resolved title
+- Node resolves but **not** to a ProjectV2, or the resolved title
   **differs** from `project-title` → **ABORT all board writes** with a
   clear error. Do **not** guess or fall back to another board:
 
