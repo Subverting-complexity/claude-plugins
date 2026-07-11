@@ -3,6 +3,7 @@
 
 # Python bytecode (from wf CLI / offline tests)
 **/__pycache__/
+*.pyc
 
 # github-workflow plugin scratch files (per-session, never commit)
 **/.claude/plan.md

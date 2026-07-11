@@ -26,15 +26,15 @@ open a PR for failed/incomplete work.
 
 This ensures the next session (or human) can pick up exactly where
 this one failed without guessing what happened. After the comment is
-posted, run **Exit cleanup** (release the claim ref so the issue can be
-picked again, and delete the scratch file) before exiting.
+posted, run **Exit cleanup** (`references/exit-cleanup.md` — it releases
+the claim ref so the issue can be picked again) before exiting.
 
 ## Blocked
 
 If any phase cannot proceed, run `/github-workflow:block-story`
 with details (it releases the claim for you), then run **Exit cleanup**
-(release is a no-op at this point; delete the scratch file). Then pick
-the next story.
+(`references/exit-cleanup.md`; the claim release is a no-op at this
+point). Then pick the next story.
 
 ## Problem found
 
@@ -93,5 +93,6 @@ If the plan reveals the story exceeds one session's budget, implement the
 highest-priority slice, open a PR for that slice, and create follow-up
 issues for the remaining work using `/github-workflow:report-issue`. Do not
 attempt to complete everything in one session — a partial PR with clear
-notes is the expected outcome. Run **Exit cleanup** (the open PR already
-released the claim in Phase 7.5; delete the scratch file) before exiting.
+notes is the expected outcome. Run **Exit cleanup**
+(`references/exit-cleanup.md`; opening the PR already released the claim)
+before exiting.

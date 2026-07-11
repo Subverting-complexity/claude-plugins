@@ -3,6 +3,15 @@
 <!-- This file is yours — add whatever guidance you need for your project. -->
 <!-- The sections below are suggestions from the github-workflow plugin.   -->
 <!-- Edit, reorder, or remove anything that doesn't fit your workflow.     -->
+<!--
+The workflow itself only checks two things about this file (both
+WARNING-level, never blocking): that it exists, and that it references
+ClaudeProject.md so sessions discover the project settings. Everything
+else is yours. Recommended sections, in rough priority order: General
+Rules, Autonomous Execution, Story Execution (with Build Principles),
+Bug/Security/Maintenance Workflow, Session Hygiene, and a Supplementary
+Files table pointing at ClaudeProject.md and any project reference docs.
+-->
 
 ## General Rules
 

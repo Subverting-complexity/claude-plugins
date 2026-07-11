@@ -18,17 +18,27 @@ skip it and exit normally:
 Also read **`require-ci-before-merge`** from the same Auto-Merge on
 Approval section. Absent ⇒ `false`. It takes three values:
 
-- **`false`** (default) — behaviour is unchanged; an unprotected branch
-  merges immediately whether or not checks exist.
+- **`false`** (default) — no green-CI requirement: an unprotected branch
+  merges immediately when checks exist, whatever their state. A PR with
+  **no checks at all** is handled by the no-checks guard in step 3
+  (CI status unknown — explicit confirmation required).
 - **`true`** — the skill must see a **green CI gate** before it merges: a
   PR with no checks at all, or with a failing check it cannot fix, is
   **paused**, not merged. An absolute gate, even on a repo with no
   pipeline.
 - **`if-present`** — gate on CI **only when CI exists**: a PR whose head
-  SHA has checks must see them green (a red check it cannot fix pauses),
-  but a PR with **no checks at all merges** (there is no gate to wait
-  for). Use this for "require CI to pass *if there is CI*, otherwise
-  merge."
+  SHA has checks must see them green (a red check it cannot fix pauses).
+  A PR with **no checks at all** is handled by the no-checks guard in
+  step 3 (CI status unknown — explicit confirmation required).
+
+**Scope of the CI gate.** Every CI decision in this file reads the checks
+GitHub reports for the PR's head SHA (`gh pr checks`) — in practice
+GitHub Actions, plus any external CI that posts its status back to
+GitHub. A pipeline that runs entirely outside GitHub (Buildkite,
+CircleCI, Jenkins, …) without reporting to GitHub is **invisible** to
+this gate. That is why a PR reporting **no checks at all** is treated as
+CI status **UNKNOWN**, never as passing — see the no-checks guard in
+step 3.
 
 The exact branches are in step 3 below.
 
@@ -81,32 +91,19 @@ leave `approved` and exit. The fallbacks below say where.
      update your recorded SHA as you push them.)
 
 2. **Resolve merge conflicts if there are any.** When `mergeable` is
-   `CONFLICTING`, bring the base branch in and resolve, rather than
-   bailing:
-   ```bash
-   git fetch origin <baseRef>
-   git merge origin/<baseRef>
-   ```
-   For each conflicted file, read **both** sides in full context (not just
-   the hunk) and resolve so the PR's intent **and** the incoming base
-   change are both preserved. Then re-run the project quality gate locally
-   to prove the resolution compiles and the tests pass. Commit the
-   resolution and push:
-   ```bash
-   git add -A && git commit -m "Resolve merge conflicts with <baseRef>"
-   git push
-   ```
-   Update your recorded SHA to the new `HEAD` and append a line to the
-   review comment noting the conflict resolution.
+   `CONFLICTING`, do not bail: load `references/conflict-resolution.md`
+   and follow it, with the PR branch (already checked out) as the working
+   branch and `<baseRef>` as the incoming branch. On success, update your
+   recorded SHA to the new `HEAD` and append a line to the review comment
+   noting the conflict resolution.
 
-   **Fallback — only when the resolution genuinely needs human judgment**
-   (the two sides made incompatible product/design decisions and no
-   objectively correct merge exists): `git merge --abort`, then file the
-   rebase to the board with `/github-workflow:report-issue` (autonomous,
-   `status-ready`, referencing this PR and the conflicting files) so it is
-   picked up automatically — no human approval needed. Post a one-line
-   comment naming the filed issue, leave the `approved` verdict, and exit.
-   Do not guess at the merge.
+   If the reference **escalates** (it aborted the merge because the
+   resolution genuinely needs human judgment), file the rebase to the
+   board with `/github-workflow:report-issue` (autonomous, `status-ready`,
+   referencing this PR and the conflicting files) so it is picked up
+   automatically — no human approval needed. Post a one-line comment
+   naming the filed issue, leave the `approved` verdict, and exit. Do not
+   guess at the merge.
 
 3. **Fix a failing pipeline if there is one.**
 
@@ -197,23 +194,37 @@ leave `approved` and exit. The fallbacks below say where.
    - Required checks **passing** → merge now (step 4, immediate path),
      provided you pushed nothing in steps 2–3 (a push leaves checks
      pending → enqueue `--auto` instead).
-   - **No required checks reported** → the branch is unprotected. What to
-     do depends on `require-ci-before-merge`:
-     - **`false` (default)** → preserve today's behaviour: if you pushed
-       nothing in steps 2–3, merge now (step 4, immediate path).
-     - **`true` or `if-present`** → gate on CI when checks exist. Read the
-       full check rollup (not just required ones):
-       ```bash
-       gh pr checks <number> --repo <org>/<repo>
-       ```
-       - **No checks at all** on the head SHA → the two values diverge
-         here:
-         - **`true`** → **pause**: post a one-line comment "auto-merge
-           paused: require-ci-before-merge is set but no CI checks are
-           configured", leave `approved`, and exit. Never merge.
-         - **`if-present`** → **merge now** (step 4, immediate path),
-           provided you pushed nothing in steps 2–3. There is no CI to
-           wait for, so `if-present` does not block an unchecked branch.
+   - **No required checks reported** → the branch is unprotected. Read
+     the full check rollup (not just required ones):
+     ```bash
+     gh pr checks <number> --repo <org>/<repo>
+     ```
+     - **No checks at all** on the head SHA → the **no-checks guard**
+       applies, for every `require-ci-before-merge` value. CI status is
+       **UNKNOWN**, not passing — this gate sees only checks reported to
+       GitHub, and the project may run its CI elsewhere (Buildkite,
+       CircleCI, Jenkins, …) where the gate cannot see it. Never treat
+       an empty rollup as green:
+       - **`true`** → **pause** (strictest, unchanged): post a one-line
+         comment "auto-merge paused: require-ci-before-merge is set but
+         no CI checks are configured", leave `approved`, and exit. Never
+         merge.
+       - **`false` or `if-present`** → merge only with **explicit user
+         confirmation**. In an interactive session, ask: "PR #<number>
+         reports no CI checks at all — CI status is unknown (the project
+         may use a CI system that does not report to GitHub). Merge
+         anyway?" Merge (step 4, immediate path) only on an explicit yes.
+         In an autonomous session (no user to ask), do **not** merge:
+         post a one-line comment ("auto-merge paused: no CI checks
+         reported — CI status unknown; merge manually or re-run with
+         `--bypass-ci`"), leave `approved`, and exit. Only the explicit
+         `--bypass-ci` override (top of this step) treats absent checks
+         as satisfied.
+     - Checks exist and `require-ci-before-merge` is **`false`**
+       (default) → no green-CI requirement: if you pushed nothing in
+       steps 2–3, merge now (step 4, immediate path) regardless of the
+       checks' state.
+     - Checks exist and it is **`true` or `if-present`** → gate on them:
        - Some checks **failing** → fix-or-pause exactly as for a failing
          required check above (read the run logs, fix the cause on the
          branch and push — which makes the checks pending, then enqueue

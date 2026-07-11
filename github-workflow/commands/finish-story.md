@@ -95,7 +95,8 @@ Run the quality gate command from `ClaudeProject.md` to verify the code
 is clean before pushing:
 
 1. Execute the quality gate script/command.
-2. If it fails, read the error output, fix the issue, and re-run.
+2. If it fails (non-zero exit), read the error output, fix the issue,
+   and re-run.
 3. Repeat up to 3 times (4 total runs maximum).
 4. If still failing after 4 runs, **do not create a draft PR** (this
    workflow never opens drafts). The work is complete but the gate is
@@ -123,13 +124,18 @@ you can *create* the PR in Step 5:
   ```
 
 - **Determine issue linkage** — check session context for a story number
-  from `execute` or `start-story`; if none, check the branch name for an
-  issue number (`feature/42/description` → #42) and verify it exists:
+  from `execute` or `start-story`; if none, extract the number segment
+  from the branch name (`feature/42/description` → `42`). Only if that
+  segment is **purely numeric** — never pass anything else to `gh` —
+  verify it exists:
   ```
   gh issue view {number} --repo {org}/{repo} --json state,id --jq '{state:.state,id:.id}'
   ```
-  If the branch carries no number and context has none, defer issue
-  creation to after the push (Step 4b-create below).
+  If context has no number and the branch yields none (no segment, or a
+  non-numeric one like `feature/wip/tidy`), report "cannot infer an issue
+  number from branch '{branch}' — tell me which issue this PR closes to
+  link it explicitly" and, absent an answer, defer issue creation to
+  after the push (Step 4b-create below).
 
 - **Sibling-PR detection** — check for another open PR that closes the
   same issue on a different branch. Run the authoritative lookup in
@@ -396,8 +402,10 @@ GitHub would reject against `String!`).
 Omit the `moveBoard` alias (and its variables) when no board is
 configured. Add a fifth alias for the `Target date` field when it exists.
 
-**Fallback** — if the combined mutation fails (e.g. a label ID was stale
-in the cache), fall back to the three individual calls: `gh pr edit` for
+**Fallback** — if the combined mutation fails (non-zero exit, **or** a
+response carrying an `errors` array — GraphQL can return HTTP 200 with
+errors, e.g. a label ID stale in the cache), fall back to the three
+individual calls: `gh pr edit` for
 PR labels, `gh issue edit` for the lifecycle label, and
 `board-resolution.md` Step 5 for the board. The label-presence guarantee
 still holds: the individual calls verify via exit code and

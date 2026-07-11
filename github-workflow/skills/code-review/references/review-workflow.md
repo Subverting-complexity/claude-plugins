@@ -1,8 +1,10 @@
 # Review Workflow Reference
 
-Read this when you need to look up a **label purpose** or verify the
-**claim/release procedure** for a PR. Skip it on the common path when
-label names and claim steps are already clear from `SKILL.md`.
+Read this when you need to look up a **label purpose**, verify the
+**claim/release procedure** for a PR, or run the **label reconciliation
+fallback** for Step 10 (when `wf review-finish` is unavailable). Skip it
+on the common path when label names and claim steps are already clear
+from `SKILL.md`.
 
 For background on the feedback loop (how builders address review
 comments, how change significance is classified) and why duplicate PRs
@@ -68,3 +70,29 @@ and the reviewer's push would make that push a non-fast-forward reject —
 but the shared `refs/claims/pr-<number>` mutex means a reviewer and an
 updater can never hold the PR at the same time, so this race cannot occur.
 The claim ref, not the labels, is what guarantees it.
+
+---
+
+## Label reconciliation fallback (Step 10)
+
+Use this **only** when `wf review-finish` errors or Python is absent.
+Apply the verdict label and remove the other state labels with plain
+`gh`, resolving each name by purpose key through
+`templates/default-labels.md` (review-state purposes via
+`review.config.md` when present):
+
+```bash
+gh pr edit <number> --repo <org>/<repo> --add-label <verdict-label> \
+  --remove-label <reviewing> --remove-label <needs-review> \
+  --remove-label <needs-re-review> --remove-label <other-verdict-labels…>
+```
+
+The remove commands no-op if the label isn't present. If the add fails
+because the verdict label doesn't exist on the repo, create it guarded —
+**without `--force`** so existing metadata is never overwritten — then
+retry the add:
+
+```bash
+gh label create "<verdict-label>" --repo <org>/<repo> --description "<desc>" --color "<color>"
+gh pr edit <number> --repo <org>/<repo> --add-label "<verdict-label>"
+```

@@ -20,12 +20,12 @@ arguments:
 
 # Execute Story
 
-End-to-end story execution workflow. Picks a story from the backlog,
-plans the implementation, builds it, runs tests, and opens a PR.
+End-to-end story execution workflow: pick a story from the backlog,
+plan, build, test, open a PR.
 
 ## Plain-English output
 
-Everything you write for a person to read (the plan, progress notes, the PR description, and the final summary) follows `skills/_shared/wording-standard.md` and avoids `skills/_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
+Everything you write for a person to read (plan, progress notes, PR description, final summary) follows `skills/_shared/wording-standard.md` and avoids `skills/_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
 
 **This workflow is fully autonomous.** Every phase flows into the next
 without pausing for user input. Do not ask the user to choose, confirm,
@@ -40,42 +40,42 @@ are:
 
 ## Preflight
 
-Before doing anything else, check whether preflight already ran and
-passed this session — if `.claude/preflight-passed.txt` exists, skip
-the invocation entirely and proceed directly to the project configuration
-block below. The file is written by `preflight` on a clean or
-WARNING-only run and deleted by **Exit cleanup**, so it is valid for
-exactly this session:
+First check whether preflight already passed this session — if
+`.claude/preflight-passed.txt` exists, skip the invocation and go straight
+to the project configuration block below. The file is written by
+`preflight` on a clean or WARNING-only run and deleted by **Exit
+cleanup**, so it is valid for exactly this session:
 
 ```
 test -f .claude/preflight-passed.txt && echo "PREFLIGHT_ALREADY_PASSED"
 ```
 
-If the file is absent, invoke `/github-workflow:preflight` to verify
-project configuration. If it finds issues and the user chooses
-"Configure now", wait for setup to complete, then ask the user to
-re-run this command (the configuration loaded below will be stale).
-If the user chooses "Continue anyway" or "Don't remind me", proceed.
+If the file is absent and the block below did **not** print
+"ClaudeProject.md NOT FOUND", invoke `/github-workflow:preflight` to
+verify project configuration. (On NOT FOUND, skip preflight — the
+handling below the block already produces the one actionable message.)
+If preflight finds issues and the user chooses "Configure now", wait for
+setup, then ask the user to re-run this command (the configuration loaded
+below will be stale). On "Continue anyway" / "Don't remind me", proceed.
 
 ## Project configuration (auto-loaded)
 
 This emits a **projection** of `ClaudeProject.md`: the hot-path config
 the pick/plan/build window needs (Identity, Branch Convention, Label Map,
-Ready Gate, Agent Gating, Quality Gate, Package Manager, Refinement) and
-drops the heavy sections that are only needed later, and only sometimes
-(Issue Types & Fields, Project Board, Story Template, Session Budget,
-Reference Docs, Bundled Skills). When a later phase resolves the **board**
-(Phase 2, Phase 7) or **org issue fields**, read the omitted `## Project
-Board` / `## Issue Types & Fields` section straight from `ClaudeProject.md`
-at that point — the board/field templates already say they read it.
+Ready Gate, Agent Gating, Quality Gate, Package Manager, Refinement),
+dropping the heavy sections needed only later and only sometimes (Issue
+Types & Fields, Project Board, Story Template, Session Budget, Reference
+Docs, Bundled Skills). When a later phase resolves the **board** (Phase 2,
+Phase 7) or **org issue fields**, read the omitted `## Project Board` /
+`## Issue Types & Fields` section straight from `ClaudeProject.md` then —
+the board/field templates already say they read it.
 
 ```!
 if [ -f .claude/projected-config.md ] && [ .claude/projected-config.md -nt ClaudeProject.md ] 2>/dev/null; then
   cat .claude/projected-config.md
 elif [ -f ClaudeProject.md ]; then
-  # Project ClaudeProject.md → drop the heavy sections only needed later.
-  # Pure POSIX shell (no awk/tee) so it works wherever bash runs, including
-  # a Windows bash whose PATH lacks the Unix coreutils that ship awk/tee.
+  # Drop the heavy sections only needed later. Pure POSIX shell (no
+  # awk/tee) so it runs on a Windows bash whose PATH lacks Unix coreutils.
   mkdir -p .claude 2>/dev/null
   drop=0
   while IFS= read -r line || [ -n "$line" ]; do
@@ -93,17 +93,22 @@ else
 fi
 ```
 
-If the above shows "NOT FOUND" and preflight did not already handle
-this, stop and tell the user to run `/github-workflow:setup` first.
-Do not attempt to proceed without it — every subsequent step depends
-on the values defined there.
+If the above shows "NOT FOUND", stop with exactly one message —
+"ClaudeProject.md not found — run /github-workflow:setup." — and do not
+chain into preflight for the same root cause. Do not proceed: every
+subsequent step depends on the values defined there.
+
+Otherwise validate the projection before proceeding: it must contain both
+an `## Identity` and a `## Quality Gate` section. If either is missing,
+stop with "ClaudeProject.md is missing required section: <name> — run
+/github-workflow:setup."
 
 Read `CLAUDE.md` for project rules and build principles.
 
 ## Session prewarm
 
-Immediately after preflight passes and the projected config is loaded, read
-the current API quota — this is the only eager warm-up:
+Once preflight passes and the projected config is loaded, read the
+current API quota — the only eager warm-up:
 
 ```
 gh api rate_limit --jq '.rate.remaining'
@@ -111,31 +116,20 @@ gh api rate_limit --jq '.rate.remaining'
 
 Keep the result in context only. If the count is already below 100 here,
 treat this as the rate-limit pause described in **API rate limiting** below
-and exit after cleanup.
+and exit after cleanup. (Skip the check in `audit` mode if you prefer —
+the audit flow makes few writes.)
 
-**Candidate and label fetches are deliberately *not* prewarmed.** The Phase 1
-fast path (`wf pick`) selects, claims, board-moves, and checks out the story
-in one call, so on the happy path there is nothing to warm up — eagerly
-fetching a candidate list or a full label inventory here would pay latency and
-rate-limit budget up front for data the happy path never reads. Each is
-fetched lazily, only on the path that needs it:
-
-- **Candidate list** — fetched by the inline fallback itself
-  (`templates/story-selection.md` Step 1, ready-gate-aware) only when `wf pick`
-  does not return `ok`. There is no `.claude/candidates.json` cache.
-- **Label inventory** — fetched at the **finish phase** (Phase 7) only if
-  reached; `references/finish-and-self-review.md` falls back to `gh label list`
-  when `.claude/label-cache.json` is absent.
-
-When you do enter the inline fallback, read
-`references/inline-fallback-prewarm.md` for the details. (Skip the rate check
-too in `audit` mode if you prefer — the audit flow makes few writes.)
+**Candidate and label fetches are deliberately *not* prewarmed** — the
+happy path (`wf pick` → `ok`) never reads them: the inline fallback
+fetches its own candidate list (`templates/story-selection.md` Step 1)
+and Phase 7 fetches the label inventory on first use. On entering the
+inline fallback, read `references/inline-fallback-prewarm.md`.
 
 ## Session budget
 
 Stay under ~100k tokens: **one story per session**, scoped to a shippable
-artifact (branch + PR). (Why: `references/execute-rationale.md`, not read
-at runtime.)
+artifact (branch + PR). (design rationale: `references/execute-rationale.md`
+— not read at runtime.)
 
 - **Commit early, push periodically.** Atomic commits per logical unit;
   push after each major phase (plan done, core done, tests passing) so an
@@ -146,6 +140,10 @@ at runtime.)
   abandoned session.
 - **Too large for one session** → implement the highest-priority slice,
   open a PR for it, and file follow-ups with `/github-workflow:report-issue`.
+- **Retries respect the budget.** If the Phase 5 gate still fails after 2
+  retries near the token budget or the 45-minute mark, stop retrying —
+  take Phase 5's gate-failed exit (commit what you have) or block the
+  story rather than burning the remaining budget on more runs.
 
 **45-minute timeout.** Record the start time (`date +%s`); before each
 phase, check elapsed. Past 45 minutes:
@@ -156,7 +154,7 @@ phase, check elapsed. Past 45 minutes:
    `status-needs-attention` (remove `status-in-progress`) with a comment
    listing what remains; do **not** open a PR.
 3. File follow-up issues for unfinished work.
-4. Run **Exit cleanup** (release the claim ref, delete the scratch file).
+4. Run **Exit cleanup** (`references/exit-cleanup.md`).
 5. Exit — do not start a phase you may not finish.
 
 ## API rate limiting
@@ -171,8 +169,8 @@ If it is below **100**, pause: commit and push current work, move the
 issue to `status-needs-attention` (remove `status-in-progress`) with a
 comment noting the pause, run **Exit cleanup**, then exit — the next
 session resumes from the pushed branch. Do **not** retry rate-limited
-requests in a loop. (Why: `references/execute-rationale.md`, not read at
-runtime.)
+requests in a loop. (design rationale: `references/execute-rationale.md`
+— not read at runtime.)
 
 ## Mode selection
 
@@ -180,10 +178,10 @@ Default mode is `story`. Override with `$ARGUMENTS.mode`:
 
 - **story** — Pick and implement the next highest-priority issue regardless of type
 - **feature** — Pick only feature stories (type-story label)
-- **maintenance** — Pick and fix the next bug, security, architecture, or tech debt issue (alias: bug)
+- **maintenance** — Pick and fix the next bug, security, architecture, or
+  tech debt issue ("bug" is accepted as an alias and treated as
+  maintenance, for backward compatibility)
 - **audit** — Audit the codebase, create issues for findings, no code changes
-
-If mode is "bug", treat it as "maintenance" (backward compatibility).
 
 If mode is `audit`, do not run the phases below — read
 `references/audit-mode.md` and follow it (a no-code-change codebase audit
@@ -193,34 +191,12 @@ that files issues for findings).
 
 ## Exit cleanup
 
-Every exit path must leave three things clean: the **atomic claim ref**,
-the **per-session scratch files**, and the **working tree**. All three are
-idempotent — run them on *every* exit, in this order, as the **final** step
-before the session ends and **after** any commit/push (so the pushed branch
-is the source of truth). Why each one matters, and the full list of exits
-this covers: `references/exit-cleanup-rationale.md`.
-
-### 1. Release the claim ref
-
-```
-git push origin :refs/claims/issue-{number}
-rm -f .claude/claim-issue-{number}.sha
-```
-
-### 2. Delete the scratch files
-
-```
-rm -f .claude/plan.md .claude/preflight-passed.txt \
-      .claude/label-cache.json .claude/issue-fields-cache.json
-```
-
-### 3. Reconcile the working tree to clean
-
-Run the **End clean** procedure in `templates/worktree-hygiene.md`:
-`git status --porcelain` must end empty. Commit a forgotten story file,
-commit incidental formatting as a **separate `chore:` commit** (do not fold
-it into the feature diff), or discard disposable generated noise. **Never
-`git stash`** — the stash is shared across every worktree on the clone.
+Every exit path — successful finish, block, failure, timeout, rate-limit
+pause — ends by running the canonical procedure in
+`references/exit-cleanup.md` (release the claim ref, delete the scratch
+files, reconcile the working tree to clean) as the **final** step,
+**after** any commit/push. That file is the only place the procedure is
+specified — read it rather than improvising the steps.
 
 ---
 
@@ -228,11 +204,11 @@ it into the feature diff), or discard disposable generated noise. **Never
 
 ### Fast path — pick + start in one call (no explicit number)
 
-When you were **not** given a `$ARGUMENTS.story_number` and the mode is
-`story`, `feature`, or `maintenance` (not `audit`), the bundled `wf` picker
-collapses the whole select → claim → board-move → branch loop — Phase 1's
-selection *and* Phase 2's claim/board/branch — into a single deterministic
-call. **Prefer it.** Run it from the repo root:
+With no `$ARGUMENTS.story_number` and mode `story`, `feature`, or
+`maintenance` (not `audit`), the bundled `wf` picker collapses the whole
+select → claim → board-move → branch loop — Phase 1's selection *and*
+Phase 2's claim/board/branch — into one deterministic call. **Prefer
+it.** From the repo root:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout --mode {mode}
@@ -254,27 +230,25 @@ Interpret the result by its `status` field (the exit code mirrors it):
 - **`no-candidates`** / **`all-blocked`** — nothing was pickable. `wf`
   already ran the auto-ready dependency scan and retried once internally;
   stop with "No stories available for pickup".
-- **`unsupported`** — `wf` deferred this case (not expected under normal
-  conditions; reserved for future unrecognised configurations). Use the
-  inline selection below.
+- **`unsupported`** — `wf` deferred this case (not expected; reserved for
+  future unrecognised configurations). Use the inline selection below.
 - **`error`**, or the launcher reports Python is missing — `wf` cannot run
   here. Use the inline selection below.
 
-When you fall through to the inline selection (any case other than `ok`),
-first read `references/inline-fallback-prewarm.md` — it covers how candidate
-fetching and label caching are handled lazily on this degraded path. Skip the
-fast path entirely for an explicit number (it auto-selects) and for `audit`
+On any fall-through to the inline selection (any case other than `ok`),
+first read `references/inline-fallback-prewarm.md` — it covers lazy
+candidate fetching and label caching on this degraded path. Skip the fast
+path entirely for an explicit number (it auto-selects) and for `audit`
 mode.
 
 ### Explicit number / inline fallback
 
 If `$ARGUMENTS.story_number` is provided, use that issue directly — but
-first run the **already-in-flight guard**. The auto-pick pool below
-already excludes issues that are assigned or in any non-ready lifecycle
-state, so this guard only matters for an explicit number: it stops a
-second PR being built for a story that is already in review or already has
-an open PR (the claim ref was released the moment that first PR opened, so
-a fresh claim would otherwise succeed and duplicate the work).
+first run the **already-in-flight guard** (needed only for an explicit
+number; the auto-pick pool below already excludes assigned or non-ready
+issues). It stops a second PR being built for a story already in review
+or with an open PR — the claim ref was released the moment that PR
+opened, so a fresh claim would otherwise succeed and duplicate the work.
 
 ```
 gh issue view {number} --repo {org}/{repo} --json state,labels,assignees
@@ -292,44 +266,39 @@ authoritative lookup in `templates/sibling-pr-lookup.md` with this
 - If the issue carries `status-in-review` but no open PR is found, the PR
   may have been closed without the label being reset — surface this to the
   user and stop rather than guessing.
-- Otherwise **delegate the claim to the same engine the auto-pick fast path
-  uses** — it targets this one issue, validates it, and (the point of this
-  change) **auto-closes it without a prompt if a merged PR already resolved
-  it**:
+- Otherwise **delegate the claim to the same engine the auto-pick fast
+  path uses** — it targets this one issue, validates it, and **auto-closes
+  it without a prompt if a merged PR already resolved it**:
   ```bash
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout
   ```
-  Interpret the result exactly as the fast path above: `ok` → on the branch,
-  do only the body-validation check, then Phase 2 is a no-op. A
-  `closed-already-resolved` side effect followed by `status: all-blocked`
-  means the story was already finished — it has been closed and moved to Done;
-  report that and pick the **next** story instead of stopping. Fall back to
-  the inline claim/validate below only on `error` or a missing interpreter; in
-  that fallback, run the **already-resolved check** from
-  `templates/story-selection.md` Step 3 (authoritative `closingIssuesReferences`
-  over merged PRs) and auto-close + move to Done + advance the same way — never
-  rebuild a story a merged PR already closed.
+  Interpret the result exactly as the fast path above: `ok` → on the
+  branch, do only the body-validation check; Phase 2 is a no-op. A
+  `closed-already-resolved` side effect then `status: all-blocked` means
+  the story was already finished (closed and moved to Done) — report that
+  and pick the **next** story instead of stopping. Fall back to the inline
+  claim/validate below only on `error` or a missing interpreter; there,
+  run the **already-resolved check** from `templates/story-selection.md`
+  Step 3 (authoritative `closingIssuesReferences` over merged PRs) and
+  auto-close + move to Done + advance the same way — never rebuild a story
+  a merged PR already closed.
 
 If no number is provided, **select a story** with the canonical procedure
 in `templates/story-selection.md`, passing `$ARGUMENTS.mode` (default
-`story`). That procedure:
-
-1. detects backlog mode (sprint vs flat),
-2. assembles the unassigned candidate list per `ready-gate`
-   (`label` / `board-column` / `both` / `none`), applies the agent-gating
-   and mode filters, and sorts by priority then issue number,
-3. **claims the top candidate first, then validates only that one**
-   (dependencies + already-merged) — releasing and trying the next only on
-   failure, marking a genuinely-blocked issue `status-blocked` or closing
-   an already-resolved one, and
-4. runs the dependency auto-ready scan **only if the pool comes up empty**.
-
-It returns either a single **claimed** story (the atomic claim is held and
+`story`). It detects backlog mode (sprint vs flat); assembles the
+unassigned candidate list per `ready-gate` (`label` / `board-column` /
+`both` / `none`), applies the agent-gating and mode filters, and sorts by
+priority then issue number; **claims the top candidate first, then
+validates only that one** (dependencies + already-merged) — releasing and
+trying the next only on failure, marking a genuinely-blocked issue
+`status-blocked` or closing an already-resolved one; and runs the
+dependency auto-ready scan **only if the pool comes up empty**. It returns
+either a single **claimed** story (the atomic claim is held and
 `status-in-progress` + `@me` are applied) or "No stories available" — in
 which case stop. `agent-gating: disabled` (the default) means the
-`claude-ready` human-approval label is **ignored entirely**; no extra label
-is required. The atomic claim is acquired *before* any side effect, so two
-agents never validate or build the same issue.
+`claude-ready` human-approval label is **ignored entirely**. The atomic
+claim is acquired *before* any side effect, so two agents never validate
+or build the same issue.
 
 **Then, on the claimed story**, read the full issue body and confirm it has
 **Context** and **Requirements**:
@@ -340,9 +309,9 @@ agents never validate or build the same issue.
   refinement before it can be implemented. Would you like to refine it
   now?" Use `AskUserQuestion`:
   - "Refine now (Recommended)" — run the refinement skill from
-    `refinement-skill` (default `feature-discovery`; alternative
-    `feature-discovery`). After refinement, remove `needs-refinement`, apply
-    `status-ready`, and continue with Phase 2.
+    `refinement-skill` (default `feature-discovery`). After refinement,
+    remove `needs-refinement`, apply `status-ready`, and continue with
+    Phase 2.
   - "Skip and pick next" — release the claim
     (`templates/claim-procedure.md` **Release**) and re-run the selection.
 - Truly empty with no guidance anywhere → run
@@ -357,19 +326,17 @@ agents never validate or build the same issue.
    re-entry check makes a still-held claim a no-op. Do **not** issue a bare
    `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
 
-2. Update project board to In Progress (if board configured in ClaudeProject.md).
-   The auto-loaded projection dropped `## Project Board`, so read that
-   section from `ClaudeProject.md` now for `project-node-id`,
-   `project-title`, `status-field-id`, and the Status option ids.
-   Resolve the board, the issue's `{item_id}`, and the target column's
-   `{column_option_id}` following `templates/board-resolution.md`, then run
-   its **Step 5** mutation to set Status — it decides whether a board is
-   configured (skipping silently when not), verifies the stored
-   `project-node-id` resolves to a board whose title matches `project-title`
-   (aborting loudly on a mismatch), adds the issue to the board if missing,
-   and resolves the target column by purpose key. The target column for
-   `status-in-progress` is **In Progress** (`col-in-progress`) per the label
-   ⇄ column pairing in `templates/default-labels.md`.
+2. Update the project board to In Progress. The auto-loaded projection
+   dropped `## Project Board`, so read that section from
+   `ClaudeProject.md` now for `project-node-id`, `project-title`,
+   `status-field-id`, and the Status option ids. Resolve the board, the
+   issue's `{item_id}`, and the target column's `{column_option_id}` per
+   `templates/board-resolution.md`, then run its **Step 5** mutation to
+   set Status — it decides whether a board is configured (silent skip when
+   not), verifies board identity (loud abort on mismatch), adds the issue
+   to the board if missing, and resolves the target column by purpose key.
+   The target column for `status-in-progress` is **In Progress**
+   (`col-in-progress`) per the pairing in `templates/default-labels.md`.
 
 3. Set start date on board (if configured) — the Step 5 date-field form in
    `templates/board-resolution.md`. Also set the org-level
@@ -378,11 +345,11 @@ agents never validate or build the same issue.
    skipped silently if the org does not define the field.
 
 4. **Start clean.** Before branching, run the **Start clean** check in
-   `templates/worktree-hygiene.md`. If the worktree was provisioned dirty
-   (a reused or leaked worktree, or a checkout-time formatter), that is
-   inherited junk — reset it to a pristine baseline and report it, so it
-   is never mistaken for this session's work or left to block worktree
-   cleanup. The session must begin from a clean tree.
+   `templates/worktree-hygiene.md`. A worktree provisioned dirty (a reused
+   or leaked worktree, or a checkout-time formatter) is inherited junk —
+   reset it to a pristine baseline and report it, so it is never mistaken
+   for this session's work or left to block worktree cleanup. The session
+   must begin from a clean tree.
 
 5. Fetch and branch:
    ```
@@ -390,9 +357,14 @@ agents never validate or build the same issue.
    git checkout -b {branch} origin/{default-branch}
    ```
 
-When **no** board is configured, skip the board update silently. When a
-board **is** configured, board failures are loud: report the failure to
-the user (e.g., "Board update failed: {error}. Continuing.") and proceed.
+When **no** board is configured, skip the board update silently. When one
+**is**, board failures are loud: report them (e.g., "Board update failed:
+{error}. Continuing.") and proceed. **Claim–board consistency:** the
+claim acquired in Phase 1 must never outlive the session's intent to
+build. If the board move fails and the run is abandoned rather than
+continued, release the claim (`templates/claim-procedure.md` **Release**)
+and restore the prior lifecycle state — remove `status-in-progress` and
+the `@me` assignment, re-apply `status-ready` — so the claim does not leak.
 
 ## Phase 3 — Plan
 
@@ -413,9 +385,9 @@ Use `/github-workflow:code-architect` to plan the implementation:
   - [ ] tests/auth.test.ts — auth service tests
   ```
 - During Phase 4 (Build), mark each file `[x]` as you complete it.
-  If the session compacts mid-build, re-read `.claude/plan.md` to see
-  which files are done and which remain. Also check `git status` and
-  `git diff --name-only` to confirm what has actually been modified.
+  If the session compacts mid-build, re-read `.claude/plan.md` for what
+  is done and what remains, and check `git status` / `git diff
+  --name-only` to confirm what was actually modified.
 - Consume the plan output and proceed to Build.
 - Do not pause for confirmation.
 - If requirements have gaps, make reasonable assumptions and note
@@ -423,31 +395,30 @@ Use `/github-workflow:code-architect` to plan the implementation:
   any implementation would be a guess.
 
 **Ecosystem tools.** Before reading files blind to plan, check whether
-`.claude/ecosystem.md` exists. If it does, the project has opted into the
-codebase-intelligence tools it lists — use them here as the first move, not
-an afterthought:
+`.claude/ecosystem.md` exists. If it does, the project opted into the
+codebase-intelligence tools it lists — use them as the first move, not an
+afterthought:
 
-- **Graphify** listed → run `graphify . --update` first (fast, 0 tokens from
-  the committed cache), then prefer `graphify query "..."` / `graphify
-  explain X` over blind file search for any "how does X connect to Y"
-  structure question. It is a planning accelerant, not a mandate — reach for
-  it when a graph view beats opening files, skip it when the answer is
-  obvious.
-- **Fallow** listed (TS/JS) → query it for existing exports and duplication
-  so the plan reuses what is there rather than rebuilding it.
+- **Graphify** listed → run `graphify . --update` first (fast, 0 tokens
+  from the committed cache), then prefer `graphify query "..."` /
+  `graphify explain X` over blind file search for "how does X connect to
+  Y" structure questions. An accelerant, not a mandate — skip it when the
+  answer is obvious.
+- **Fallow** listed (TS/JS) → query it for existing exports and
+  duplication so the plan reuses what is there rather than rebuilding it.
 
-If `.claude/ecosystem.md` does **not** exist, the project opted out — skip
-this whole step silently, plan as normal, and never nag about it. If the
-file lists a tool but the command is not on `PATH`, note that in one line
-and carry on with normal planning — a missing tool never blocks the run.
+If the file does **not** exist, the project opted out — skip this whole
+step silently, plan as normal, and never nag about it. If a listed tool is
+not on `PATH`, note that in one line and carry on with normal planning — a
+missing tool never blocks the run.
 
 ## Phase 4 — Build
 
 Use `/github-workflow:structured-coding` to implement:
 
 - Pass the architecture plan from Phase 3 and the issue requirements.
-- Do not pause for user confirmation. The issue requirements and
-  architecture plan from Phase 3 serve as the approved specification.
+- Do not pause for user confirmation — the issue requirements and Phase 3
+  plan are the approved specification.
 - Write code and tests together. Do not defer tests to a later phase.
 - Follow build principles from `CLAUDE.md`:
   - One responsibility per file
@@ -465,7 +436,9 @@ Run the quality gate command from `ClaudeProject.md`:
    a. Read the error output carefully.
    b. Fix the specific failing check.
    c. Re-run the quality gate.
-   d. Repeat up to 3 times (4 total runs maximum).
+   d. Repeat up to 3 times (4 total runs maximum). Near the token budget
+      or the 45-minute mark, stop after 2 retries (3 runs) and treat it as
+      still-failing (step 3) — do not burn the remaining budget on runs.
 3. If still failing after 4 total runs, the code is complete but the gate
    is red. Commit what you have and proceed to Phase 7, but set the
    **gate-failed flag**: Phase 7 will open a **real** PR (never a draft)
@@ -486,15 +459,10 @@ Run the quality gate command from `ClaudeProject.md`:
 ## Phase 7 — Finish & Phase 8 — Self-Review
 
 When the quality gate has passed and the work is committed, **read
-`references/finish-and-self-review.md`** and follow it. It covers Phase 7
-(push, duplicate-PR detection, create the PR, apply review-state labels,
-move the issue to `status-in-review`, release the claim, report) and
-Phase 8 (the advisory self-review pass over the diff against the
+`references/finish-and-self-review.md`** and follow it end-to-end: Phase
+7 (push, duplicate-PR detection, PR create, labels, board move, claim
+release, report) and Phase 8 (the advisory self-review against the
 acceptance criteria).
-
-These steps live in a reference file, read only when you reach this point,
-so the PR-creation machinery does not weigh on the pick/plan/build window
-earlier in the session.
 
 ---
 

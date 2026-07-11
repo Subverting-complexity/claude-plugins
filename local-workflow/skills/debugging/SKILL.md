@@ -69,6 +69,11 @@ Narrow down to the exact line or condition that causes the failure.
    sentence: "The bug is in {file}:{line} — {what happens} because
    {why}."
 
+When code reading and logging aren't enough, trace at the OS level —
+Linux: `strace`/`ltrace` (syscalls, library calls), `perf` (CPU);
+macOS: `dtruss`, Instruments, `log stream`; Windows: Process Monitor,
+ETW traces, Event Viewer. Use the platform the bug reproduces on.
+
 ## Phase 4 — Fix
 
 Make the minimal change that addresses the root cause.

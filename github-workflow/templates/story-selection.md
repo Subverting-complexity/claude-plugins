@@ -20,9 +20,9 @@ config is a projection that omits `## Project Board`; when `ready-gate` is
 `project-node-id` the Step 1 "Ready" column query needs. Plus the caller's
 `mode` (`story` / `feature` / `maintenance`)
 and any explicit issue number. Resolve every label by **purpose key** from
-the in-context `ClaudeProject.md` label map — never filter on a bare
-literal, and do not open `templates/default-labels.md` unless a purpose key
-is missing from that map.
+the in-context label map — never filter on a bare literal; open
+`templates/default-labels.md` only if a purpose key is missing from that
+map.
 
 ---
 
@@ -44,20 +44,19 @@ determined depends on `ready-gate`:
   Keep items where Status is "Ready", state is OPEN, assignees is empty.
 - **`both`** — the `label` query, then drop any candidate not also in the
   "Ready" board column.
-- **`none`** (also written `off` / `disabled`, which normalise to `none`) —
-  no readiness gate at all. Any open unassigned issue is
-  eligible. Use this for fully autonomous pickup where no human readiness
-  signal (label or column) is required:
+- **`none`** (also written `off` / `disabled`, normalised to `none`) — no
+  readiness gate: any open unassigned issue is eligible. For fully
+  autonomous pickup where no human readiness signal (label or column) is
+  required:
   ```
   gh issue list --repo {org}/{repo} --state open --assignee "" --json number,title,labels,body,milestone --jq '.[] | {number, title, labels: [.labels[].name], body, milestone: .milestone.title}'
   ```
-  Then **drop any candidate carrying `status-blocked`** — those are
-  unassigned but still blocked. The other non-pickable states
-  (`status-parked` / `status-in-progress` / `status-in-review`) stay
-  assigned, so the unassigned filter already excludes them, and
-  `needs-refinement` is dropped by the refinement filter below. (Why only
-  `status-blocked` needs the explicit drop:
-  `templates/story-selection-rationale.md`, not read at runtime.)
+  Then **drop any candidate carrying `status-blocked`** — unassigned but
+  still blocked. The other non-pickable states (`status-parked` /
+  `status-in-progress` / `status-in-review`) stay assigned, so the
+  unassigned filter already excludes them; `needs-refinement` is dropped
+  by the refinement filter below. (Why only `status-blocked` needs the
+  drop: `templates/story-selection-rationale.md`, not read at runtime.)
 
 ## 2. Detect backlog mode (from the candidates just fetched)
 
@@ -70,8 +69,11 @@ extra API call in the common case:
   active sprint. *Only now* spend one call to order milestones by due date
   and take the earliest open one as `{sprint_title}`:
   ```
-  gh api repos/{org}/{repo}/milestones --jq 'sort_by(.due_on) | map(select(.open_issues > 0)) | .[0].title'
+  gh api repos/{org}/{repo}/milestones --jq 'map(select(.due_on != null)) | sort_by(.due_on) | map(select(.open_issues > 0)) | .[0].title'
   ```
+  (No-due-date milestones are excluded — `sort_by` misorders nulls. If
+  nothing survives because none has a due date, say so and treat the
+  backlog as flat.)
   Then **locally** drop any candidate whose `milestone` ≠ `{sprint_title}`.
 
 Then narrow the list with **local** filters (no API calls):
@@ -126,12 +128,16 @@ Walk the sorted list from the top. For each candidate:
 2. **Validate the claimed issue** (only this one — never the whole list):
    - **Dependencies.** Parse the body for `Depends on #N`, `Blocked by #N`,
      `After #N`, `Requires #N`, and `#N` references in a `## Dependencies`
-     section. For each (at most 5; if more than 5, treat as a meta-issue →
-     unresolved), check state:
+     section, keeping only purely numeric `N` — discard anything else
+     (e.g. `#TBD`); never pass it to `gh`. For each (at most 5; more than
+     5 → treat as a meta-issue → unresolved), check state:
      ```
      gh issue view {N} --repo {org}/{repo} --json state --jq '.state'
      ```
-     If **any** is `OPEN`, the dependencies are unresolved.
+     **Any** `OPEN` → unresolved. A non-zero exit (deleted, transferred,
+     or no access) → report "dependency #N not found or inaccessible —
+     treating story as blocked" (never the raw `gh` error) and count it
+     as unresolved.
    - **Already resolved.** Check whether a **merged** PR already closes it,
      using GitHub's own `closingIssuesReferences` parse — the authoritative
      signal (same as `templates/sibling-pr-lookup.md`), not a free-text body
@@ -162,11 +168,10 @@ Walk the sorted list from the top. For each candidate:
      git push origin :refs/claims/issue-{number}
      rm -f .claude/claim-issue-{number}.sha
      ```
-   - **Already resolved by a merged PR** → close it, **move its board item to
-     Done** (`col-done`, best-effort — skip silently if no board is
-     configured, per `templates/board-resolution.md`), **release the claim**,
-     and continue. No prompt — an already-finished story is closed and the
-     walk moves to the next candidate:
+   - **Already resolved by a merged PR** → close it, **move its board item
+     to Done** (`col-done`, best-effort — skip silently if no board is
+     configured, per `templates/board-resolution.md`), **release the
+     claim**, and continue to the next candidate — no prompt:
      ```
      gh issue close {number} --repo {org}/{repo} --comment "Closing — already resolved by #{pr_number}."
      # then move {number} to col-done per templates/board-resolution.md Step 5
@@ -183,5 +188,5 @@ If the walk exhausts every candidate without a valid claim, go to Step 4.
 ## 4. Lazy auto-ready (only when the pool is empty)
 
 Read `templates/story-selection-auto-ready.md` now and follow Step 4
-there. That file is kept separate so its contents are not in context on
-the common pick path — load it only when you reach this point.
+there. It is kept separate so it is not in context on the common pick
+path — load it only when you reach this point.

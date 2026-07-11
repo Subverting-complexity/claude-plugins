@@ -15,6 +15,11 @@ claude --plugin-dir ./plugins/local-workflow
 /plugin install local-workflow
 ```
 
+## Prerequisites
+
+`git` is the only tool required. There are no GitHub, platform, or
+Python dependencies.
+
 ## Usage
 
 | Command                                   | What it does                                  |

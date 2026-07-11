@@ -1,5 +1,8 @@
 # Project Configuration
 
+<!-- ClaudeProject schema: v1 -->
+<!-- Format spec: docs/claudeproject-spec.md in the claude-plugins repo -->
+
 Settings for the `github-workflow` plugin. All commands and the execute
 skill read this file. Keep it lean — it is auto-loaded into context on
 every workflow command, so prefer values over prose and remove sections

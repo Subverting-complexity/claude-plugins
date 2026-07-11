@@ -158,6 +158,13 @@ anywhere, run `/github-workflow:block-story`.
 
 ### 6. Create branch
 
+Guard the git state before any branch operation. Run each check; on a
+non-zero exit, stop and report the quoted message:
+
+- `git rev-parse --git-dir` → "not in a git repository"
+- `git remote get-url origin` → "no origin remote configured"
+- `git symbolic-ref -q HEAD` → "HEAD is detached — check out a branch first"
+
 ```
 git fetch origin {default-branch}
 ```

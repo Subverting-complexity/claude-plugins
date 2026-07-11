@@ -71,7 +71,10 @@ function Process-MdContent {
     # the skill silently fails to register. So when the file opens with
     # frontmatter, insert the banner on its own line immediately AFTER the
     # closing '---'. Files without frontmatter get the banner prepended.
-    $lines = $result -split "`n", -1
+    # NOTE: no Max-substrings argument here -- in PowerShell 7 a negative
+    # count means "split from the right, at most N pieces", so `-split, -1`
+    # returns the whole file as one element and frontmatter detection fails.
+    $lines = $result -split "`n"
     if ($lines.Count -gt 1 -and $lines[0] -eq '---') {
         for ($i = 1; $i -lt $lines.Count; $i++) {
             if ($lines[$i] -eq '---') {

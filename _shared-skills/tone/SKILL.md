@@ -2,7 +2,6 @@
 name: tone
 description: "Format and polish correspondence — emails, messages, updates, status reports — in the user's own writing tone. Use whenever the user wants to write, rewrite, or clean up any message, or to strip AI tells (em dashes, generic phrasing) from drafted or pasted text. Handles both light polishing of dictated drafts and full rewrites of non-user input."
 ---
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Correspondence Tone Skill
 

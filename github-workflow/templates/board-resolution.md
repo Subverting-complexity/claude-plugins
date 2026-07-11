@@ -6,9 +6,8 @@ the `execute` skill's Phase 2). It resolves the board by **stable
 identity** and produces a verified `{item_id}` for the issue so board
 mutations target the right board and the right item.
 
-Run this **once** before any `updateProjectV2ItemFieldValue` mutation.
-It replaces the previously unresolved `{item_id}` placeholder — never
-feed a board mutation an `{item_id}` you have not resolved here.
+Run this **once** before any `updateProjectV2ItemFieldValue` mutation —
+never feed a board mutation an `{item_id}` you have not resolved here.
 
 Inputs:
 
@@ -23,9 +22,9 @@ A board is **configured** when `ClaudeProject.md` has a `## Project
 Board` section AND `project-node-id` is a real id (not absent, not
 `n/a`, not a `{placeholder}`).
 
-- **Not configured** → skip all board operations **silently**. Board
-  updates are best-effort only in this case. Do not emit an error. Stop
-  here; the command proceeds without a board write.
+- **Not configured** → skip all board operations **silently** (they are
+  best-effort only in this case; no error). Stop here; the command
+  proceeds without a board write.
 - **Configured** → continue to Step 2. From here on, board failures are
   **loud**, not silent (see Step 4).
 
@@ -35,11 +34,17 @@ Resolve the stored `project-node-id` and confirm it still points at the
 intended board by comparing its live title to `project-title`:
 
 ```
-gh api graphql -f query='query($id:ID!){ node(id:$id){ ... on ProjectV2 { title } } }' -F id='<project-node-id>' --jq '.data.node.title'
+gh api graphql -f query='query($id:ID!){ node(id:$id){ ... on ProjectV2 { title } } }' -F id='<project-node-id>' --jq 'if .data.node == null then "BOARD_NOT_FOUND" else .data.node.title end'
 ```
 
+- Output `BOARD_NOT_FOUND` (`.data.node` is null) → check this **before**
+  any title comparison — a deleted board must not be reported as a title
+  mismatch against "null". **ABORT all board writes** with: "Board not
+  found — it may have been deleted. Re-run /github-workflow:setup or fix
+  the board number in ClaudeProject.md." The rest of the workflow
+  continues without a board update.
 - Title **matches** `project-title` → identity confirmed, continue.
-- Node does **not** resolve to a ProjectV2, or the resolved title
+- Node resolves but **not** to a ProjectV2, or the resolved title
   **differs** from `project-title` → **ABORT all board writes** with a
   clear error. Do **not** guess or fall back to another board:
 
@@ -101,17 +106,15 @@ The calling command names the destination by **column purpose key**
 (`col-in-progress`, `col-in-review`, `col-blocked`, `col-ready`,
 `col-backlog`, `col-done`) — never by a hardcoded column name. The
 snapshotted Option IDs in `ClaudeProject.md` are a setup-time convenience,
-**not** the source of truth: a user who renames or reorders columns in the
-GitHub UI leaves them stale, and trusting a stale id moves the issue to the
-**wrong column** with no error. So resolve the option id **live by column
-name** at write time, and use the snapshot only to detect drift.
+**not** the source of truth: renaming or reordering columns in the GitHub
+UI leaves them stale, and a stale id moves the issue to the **wrong
+column** with no error. So resolve the option id **live by column name**
+at write time; use the snapshot only to detect drift.
 
 1. **Resolve the expected column name.** Map the purpose key to its column
-   **name** through `templates/default-labels.md` → Board Columns
-   (`col-in-progress`→`In Progress`, `col-in-review`→`In Review`,
-   `col-blocked`→`Blocked`, `col-ready`→`Ready`, `col-backlog`→`Backlog`,
-   `col-done`→`Done`), preferring any per-project override name in
-   `ClaudeProject.md` → `### Status Options`.
+   **name** through the `templates/default-labels.md` → Board Columns
+   table (e.g. `col-in-progress`→`In Progress`), preferring any
+   per-project override name in `ClaudeProject.md` → `### Status Options`.
 
 2. **Fetch the live Status field and its options** (one call — this also
    yields the live field id, so a renamed/stale `status-field-id` cannot
@@ -183,11 +186,10 @@ gh api graphql -f query='mutation {
 date runs this form in addition to the Status write.
 
 Because a board is configured, a failure of the identity check (Step 2),
-the item_id resolution (Step 3), the column resolution (Step 4), or the
-mutation itself is **reported loudly** to the user — never swallowed (e.g.
-"Board update failed: {error}. Continuing without board update."). The
-workflow still continues past the board step; only the board write is
-skipped.
+item_id resolution (Step 3), column resolution (Step 4), or the mutation
+itself is **reported loudly** to the user — never swallowed (e.g. "Board
+update failed: {error}. Continuing without board update."). The workflow
+continues past the board step; only the board write is skipped.
 
 > Caveat (Windows / auto-run blocks): these queries contain code fences
 > and must be run by hand, not inside a `!`-prefixed auto-run block — an

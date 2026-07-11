@@ -204,49 +204,32 @@ not "review all of them" or "let me choose".
 
 ### Step 2 — Claim the PR
 
-Multiple agents may be running code-review concurrently — possibly under
-the same GitHub identity, where a shared `reviewing` label cannot exclude
-a rival (it reads present for both). Acquire the PR with the atomic claim
-procedure in `templates/claim-procedure.md` (**Acquire**), using the
-target `pr-<number>`. It pushes a unique object to `refs/claims/pr-<number>`
-— a genuine server-side compare-and-swap — and applies the `reviewing`
-state label as the human-visible marker on success.
+Multiple review agents may run concurrently — possibly under the same
+GitHub identity, where a shared label cannot exclude a rival. Acquire the
+PR with the atomic claim procedure in `templates/claim-procedure.md`
+(**Acquire**, target `pr-<number>`). The `refs/claims/pr-<number>` ref is
+the actual lock (a server-side compare-and-swap); the `reviewing` state
+label Acquire applies on success is the human-visible marker, and no
+label read-back is needed. **This claim is the first mutating action of
+any review** — it must precede checkout, gathering context, reading, or
+evaluating, or a second agent may start the same review.
 
-If Acquire reports the claim is lost, another agent owns this PR:
-**move to the next candidate** in the priority-ordered list from Step 1
-and attempt Acquire on that one. Do not remove any labels or make
-changes to the lost PR. Repeat until a claim succeeds or the pool is
-exhausted. If every candidate was lost, report that all PRs are being
-handled by other agents and exit cleanly — do not retry or fall back.
-The `reviewing` label remains a display signal that other skills filter
-on; the `refs/claims/pr-<number>` ref is the actual lock. No label
-read-back is needed — the atomic push already proved exclusivity.
-
-**The `reviewing` label is the first mutating action of any review — it
-must be applied (via this Acquire) before checkout, gathering context,
-reading, or evaluating.** Never read or fix a PR first and label it later:
-that leaves a window where a second agent starts the same review. The only
-thing that precedes it is winning the atomic claim, which is what makes the
-label safe to apply under a shared identity.
+If Acquire reports the claim lost, another agent owns this PR: leave it
+untouched and attempt Acquire on the next candidate in Step 1's priority
+order. If every candidate is lost, report that all PRs are being handled
+by other agents and exit cleanly — do not retry or fall back. Label
+semantics and concurrency rules live in `references/review-workflow.md`
+(load only if needed).
 
 ### Step 2b — Reconcile duplicate PRs for the same issue
 
-Before spending a full review on the claimed PR, check whether **another
-open PR resolves the same issue** and, if so, keep exactly one. Duplicates
-should be rare (the atomic issue claim prevents most), so this whole
-procedure lives in `references/duplicate-reconciliation.md` to keep the
-common single-PR path light.
-
-- **Trigger:** read and follow `references/duplicate-reconciliation.md`
-  whenever the claimed PR closes at least one issue. If it closes no issue,
-  skip straight to Step 3.
-
-That reference resolves the duplicate set, picks the winner
-(mergeable/gate-green → acceptance-criteria → test coverage → lowest PR
-number), closes the losers it can safely claim, and tells you whether to
-continue reviewing or exit. Closing a duplicate is the **only** circumstance
-this skill closes a PR (see Rules); read-only mode closes nothing and only
-notes the duplicate set in the review comment.
+If the claimed PR closes at least one issue, load
+`references/duplicate-reconciliation.md` and follow it — it checks whether
+another open PR resolves the same issue, picks the winner, closes the
+losers it can safely claim (the **only** circumstance this skill closes a
+PR — see Rules; read-only mode closes nothing), and tells you whether to
+continue reviewing or exit. If the PR closes no issue, skip straight to
+Step 3.
 
 ### Step 3 — Check out the PR branch
 
@@ -321,18 +304,12 @@ Run all of the following. If any command fails, treat as a review failure
 
 ### Step 4b — Assess re-review significance (re-reviews only)
 
-This step applies **only** when reviewing a PR that was previously reviewed
-(a prior review comment with a footer exists). It can fast-track or skip the
-full pass when the changes since the last review are trivial, so it lives in
-`references/re-review.md` rather than weighing on the first-review path.
-
-- **Trigger:** read and follow `references/re-review.md` whenever a prior
-  review footer exists. Skip it entirely for first-time reviews and proceed
-  to Step 5.
-
-That reference classifies the diff since the last review as trivial or
-substantial, may post an abbreviated approval (routing to **Step 11** then
-exiting), and otherwise sends you to Step 5 for a full re-review.
+If a prior review comment with a footer exists, load
+`references/re-review.md` and follow it — it classifies the diff since the
+last review as trivial or substantial, may post an abbreviated approval
+(routing to **Step 11**, then exiting), and otherwise sends you to Step 5
+for a full re-review. First-time reviews skip it entirely and proceed to
+Step 5.
 
 ---
 
@@ -611,26 +588,11 @@ the updated SHA from Step 7 if fixes were pushed).
    (`review.config.md` overrides, `review-` defaults otherwise) and creates a
    missing verdict label guarded — never with `--force`.
 
-   **Thin fallback** — only when `wf` errors or Python is absent. Apply the
-   verdict label and remove the other state labels with plain `gh`, resolving
-   each name by purpose key through `templates/default-labels.md`
-   (review-state purposes via `review.config.md` when present):
-
-   ```bash
-   gh pr edit <number> --repo <org>/<repo> --add-label <verdict-label> \
-     --remove-label <reviewing> --remove-label <needs-review> \
-     --remove-label <needs-re-review> --remove-label <other-verdict-labels…>
-   ```
-
-   The remove commands no-op if the label isn't present. If the add fails
-   because the verdict label doesn't exist on the repo, create it guarded —
-   **without `--force`** so existing metadata is never overwritten — then
-   retry the add:
-
-   ```bash
-   gh label create "<verdict-label>" --repo <org>/<repo> --description "<desc>" --color "<color>"
-   gh pr edit <number> --repo <org>/<repo> --add-label "<verdict-label>"
-   ```
+   **Thin fallback** — only when `wf` errors or Python is absent: load
+   `references/review-workflow.md` and follow its **Label reconciliation
+   fallback (Step 10)** section — it applies the verdict label and strips
+   the stale state labels with plain `gh`, creating a missing verdict
+   label guarded (never `--force`).
 
 3. If `review.config.md` defines custom labels, evaluate each one's
    "When to apply" criteria against the PR. Apply matching labels and
@@ -651,35 +613,17 @@ Otherwise the review is complete — exit here.
 
 ### Step 11 — Auto-merge on approval (if enabled)
 
-This is the heaviest, most conditional path in the review, and auto-merge
-is off by default — so the full procedure lives in
-`references/auto-merge.md` rather than in this file.
-
-- **Trigger:** when (and only when) the verdict is **Approved**, read and
-  follow `references/auto-merge.md`. For any non-Approved verdict, Step 11
-  does not run — the review is already complete at Step 10.
-
-That reference re-states the three enabling conditions (verdict Approved,
-`review.config.md` Auto-Merge on Approval `enabled`, not read-only), reads
-`require-ci-before-merge`, then drives the PR to merged — resolving
-conflicts, fixing or filing failing checks, and squash-merging or enqueuing
-`--auto`. Merging a PR is otherwise forbidden (see Rules); this is the one
-sanctioned merge. On success it reports using the **Final report format**
-below (shared with Step 10).
-
-If `$ARGUMENTS.bypass-ci` is set, pass that through — `auto-merge.md` treats
-the CI gate as satisfied even when remote checks are red or absent. This is
-an explicit operator override for when CI cannot run for reasons outside the
-PR (e.g. GitHub Actions billing); it never fixes or files a check, it skips
-the gate. It does **not** override a merge **conflict** — a conflicting PR is
-still resolved or filed as usual.
-
-`auto-merge.md` also honours `review.config.md`'s
-`bypass-ci-on-billing-failure` (default `false`): the persistent, per-project,
-**billing-scoped** form of `--bypass-ci`. When `true`, an approved PR merges
-even though CI is red **if** the only thing blocking it is a GitHub Actions
-billing/account failure (out of minutes, spending limit hit, payment failed).
-A genuine red check is never bypassed by it. See step 3a in `auto-merge.md`.
+Runs when (and only when) the verdict is **Approved** — for any other
+verdict the review is already complete at Step 10. Load
+`references/auto-merge.md` and follow it. It re-states the enabling
+conditions (verdict Approved, `review.config.md` Auto-Merge on Approval
+`enabled`, not read-only), handles `require-ci-before-merge`, the
+`--bypass-ci` override (pass `$ARGUMENTS.bypass-ci` through when set) and
+`review.config.md`'s `bypass-ci-on-billing-failure`, and drives the PR to
+merged — resolving conflicts, fixing or filing failing checks, and
+squash-merging or enqueuing `--auto`. Merging a PR is otherwise forbidden
+(see Rules); this is the one sanctioned merge. On success it reports
+using the **Final report format** below (shared with Step 10).
 
 #### Final report format
 
@@ -740,10 +684,14 @@ single-PR review path light:
 - `references/duplicate-reconciliation.md` — Step 2b, when the claimed PR
   shares an issue with another open PR.
 - `references/re-review.md` — Step 4b, when a prior review footer exists.
-- `references/auto-merge.md` — Step 11, when the verdict is Approved.
-- `references/review-workflow.md` — Label reference table and concurrency
-  rules. Read only when you need to look up a specific label's purpose key or
-  verify the claim-release procedure (Steps 2, 10). Do not load it upfront.
+- `references/auto-merge.md` — Step 11, when the verdict is Approved. It
+  loads `references/conflict-resolution.md` (a reusable merge-conflict
+  procedure) only when the PR is actually conflicting.
+- `references/review-workflow.md` — Label reference table, concurrency
+  rules, and the Step 10 label-reconciliation fallback. Read only to look
+  up a label's purpose key, verify the claim-release procedure (Steps 2,
+  10), or run the fallback when `wf` is unavailable. Do not load it
+  upfront.
 - `references/review-config-guide.md` — Interactive config generation only
   (no `review.config.md` found in an interactive session).
 

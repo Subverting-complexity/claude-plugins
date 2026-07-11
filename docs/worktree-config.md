@@ -145,22 +145,13 @@ out, and stale worktrees accumulate until cleanup fails on locks and long
 paths. There is no cross-session resume, so leaving work "for a later
 session" strands it rather than preserving it.
 
-The github-workflow plugin enforces a two-ended discipline, defined once in
+The github-workflow plugin enforces a two-ended discipline — **Start
+clean** before branching, **End clean** on every exit — whose canonical
+procedure is defined once in
 [`github-workflow/templates/worktree-hygiene.md`](../github-workflow/templates/worktree-hygiene.md)
-and referenced from every entry/exit path (`execute` Phases 2 and Exit
-cleanup, `finish-story`, `update-pr`, `block-story`):
-
-- **Start clean.** Before branching, assert `git status --porcelain` is
-  empty. If a worktree was provisioned dirty (reused/leaked, or a
-  checkout-time formatter), that inherited junk is recorded, discarded to
-  a pristine baseline, and reported — so it is never blamed on the new
-  session or left to block cleanup.
-- **End clean.** On every exit, after committing and pushing the real
-  work, reconcile the tree to empty: commit a forgotten file, commit
-  incidental formatting on unrelated files as a **separate `chore:`
-  commit** (kept out of the feature diff), or discard disposable generated
-  noise. **Never `git stash`** — the stash is shared across every worktree
-  on the clone, so it leaks between agents.
+and referenced from every entry/exit path (`execute` Phase 2 and its
+exit-cleanup reference, `finish-story`, `update-pr`, `block-story`). This
+section deliberately does not restate the steps; read that file.
 
 The model is: *start clean → everything dirty at the end is therefore this
 session's → commit it or discard it → end clean → the harness reaps the

@@ -17,6 +17,8 @@ edit plugin copies directly** — edit here, then run `sync-skills.ps1`.
 | `repo-scaffolding` | github-workflow, local-workflow | Uses `references/story-template.md`, no spec docs |
 | `security-audit` | github-workflow, local-workflow | Dependency scanning, secrets detection, OWASP Top 10, input validation |
 | `structured-coding` | github-workflow, local-workflow | Autonomous workflow escape hatch |
+| `support-request` | github-workflow, local-workflow | Support request / incident documentation in a fixed two-block format |
+| `tone` | github-workflow, local-workflow | User-voice correspondence polishing. Includes `references/` with voice examples and glossary |
 | `user-story` | github-workflow, local-workflow | Single user story from rough notes or requirements |
 | `verify-feature` | github-workflow, local-workflow | Pre-merge containment, completeness, and side-effect analysis |
 
@@ -26,6 +28,19 @@ edit plugin copies directly** — edit here, then run `sync-skills.ps1`.
 |-----------|-------------|-------|
 | `_shared/` | `{plugin}/skills/_shared/` | Banned patterns and wording standards, shared across all skills |
 | `references/` | `{plugin}/references/` | Story template, shared across plugins |
+
+## Not shared (and why)
+
+These exist in one or both plugins but are deliberately not canonicalized
+here. Do not "deduplicate" them into `_shared-skills/`.
+
+| Skill | Why not shared |
+|-------|----------------|
+| `code-review` | github: full PR-lifecycle manager; local: lightweight diff reviewer. Divergence intentional — different products sharing a trigger |
+| `execute` | github: board/claim/PR orchestrator; local: simple local loop |
+| `preflight` | github: board/label/auth validator; local: lightweight git/config checks |
+| `mobile-audit` | local-only by product decision |
+| `agents` | Never shared — least-privilege tool scoping is plugin-specific |
 
 ## Template variables
 
