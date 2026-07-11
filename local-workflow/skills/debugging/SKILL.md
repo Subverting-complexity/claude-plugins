@@ -1,8 +1,8 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: debugging
 description: "Systematic debugging methodology: reproduce, hypothesize, isolate, fix, verify. Use when a test is failing, something is broken, an error is occurring, or the user says 'debug this' or 'why is this failing'. Also trigger on stack traces, error messages, or 'it works locally but not in CI'. Do NOT use for code review (use code-review), general implementation (use execute), or architecture audits (use code-architect --mode audit)."
 ---
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Debugging
 

@@ -48,10 +48,9 @@ flow records its winning object in `.claude/claim-{target}.sha`;
 re-acquiring must be a no-op, not a self-collision.
 
 **First claim of the session — skip this step (no network probe).** When
-`.claude/claim-{target}.sha` does **not** exist, there is no prior claim to
-reconcile, so skip Step 1 entirely — do not run `git ls-remote` — and go
-straight to Step 2. This is the common case (the first time you claim this
-target), and it costs **zero** round trips. Only when the marker file
+`.claude/claim-{target}.sha` does **not** exist, there is no prior claim
+to reconcile: skip Step 1 entirely — no `git ls-remote` — and go straight
+to Step 2 (the common case, zero round trips). Only when the marker file
 *exists* is the re-entry probe worth a network call:
 
 ```
@@ -94,12 +93,12 @@ by purpose key from the in-context `ClaudeProject.md` label map — fall back
 to `templates/default-labels.md` only for a purpose key the map omits):
 
 - **Issue** — assign **and** move to `status-in-progress` so exactly one
-  lifecycle state remains. Do not assume one prior label: take the
-  issue's current labels (reuse labels already fetched for it this
-  session — e.g. the picker's candidate list — else `gh issue view
-  {number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'`)
-  and remove **every** lifecycle label present (zero is fine; more than
-  one is drift this edit repairs), adding one `--remove-label` per match:
+  lifecycle state remains. Do not assume one prior label: from the issue's
+  current labels (reuse any fetched this session — e.g. the picker's
+  candidate list — else `gh issue view {number} --repo {org}/{repo}
+  --json labels --jq '[.labels[].name]'`), remove **every** lifecycle
+  label present (zero is fine; more than one is drift this edit repairs),
+  one `--remove-label` per match:
   ```
   gh issue edit {number} --repo {org}/{repo} --add-assignee @me \
     --remove-label "{each_lifecycle_label_present}" --add-label "{status_in_progress_label}"
@@ -111,18 +110,17 @@ to `templates/default-labels.md` only for a purpose key the map omits):
   ```
 
 No read-back is needed for *exclusivity* (the atomic push already proved
-it). No read-back is needed for the **label** either: `gh ... edit
---add-label X` fails loudly (non-zero exit, "could not add label") when `X`
-does not exist — it never silently drops the label — so the edit's own exit
-status is the presence signal. This is the canonical **label read-back
-policy**; every command that applies labels follows it and cites it here
-rather than restating it:
+it) or for the **label**: `gh ... edit --add-label X` fails loudly
+(non-zero exit, "could not add label") when `X` does not exist — never a
+silent drop — so the edit's own exit status is the presence signal. This
+is the canonical **label read-back policy**; every command that applies
+labels follows it and cites it here rather than restating it:
 
 - **Exit 0** → the label is set; done, no read-back.
 - **Non-zero citing an unknown/missing label** → the label was never
-  created at setup. Create it with the guarded create-if-missing pattern in
-  `default-labels.md` (no `--force`), then retry the edit once and read the
-  labels back to confirm. That retried failure is the **only** case that
+  created at setup. Create it with the guarded create-if-missing pattern
+  in `default-labels.md` (no `--force`), then retry the edit once and read
+  the labels back to confirm. That retried case is the **only** one that
   reads — never read back after a clean apply.
 
 ---
@@ -151,7 +149,7 @@ this and orphan a ref; freeing that is manual (see the rationale file).
 
 ## Lost-claim path
 
-Whenever Acquire returns non-zero, the only correct action is to stop
-touching the item. You made no changes, so there is nothing to undo. Never
-fall back to `--add-assignee` or the `reviewing` label as a "soft" claim —
-that reintroduces the race this procedure exists to remove.
+Whenever Acquire returns non-zero, stop touching the item — you made no
+changes, so there is nothing to undo. Never fall back to `--add-assignee`
+or the `reviewing` label as a "soft" claim — that reintroduces the race
+this procedure exists to remove.

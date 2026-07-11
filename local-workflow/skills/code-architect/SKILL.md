@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: code-architect
 description: >-
@@ -21,6 +20,7 @@ allowed-tools:
   - Bash(head *)
   - Bash(tail *)
 ---
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Code Architect Skill
 

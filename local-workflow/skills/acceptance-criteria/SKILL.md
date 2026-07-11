@@ -1,8 +1,8 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: acceptance-criteria
 description: "Write user-facing acceptance criteria — test/QA steps — for a PR or feature branch, aimed at testers and stakeholders using the UI. Use when the user wants AC, test steps, or 'what should I test' for a feature or PR. Do NOT use for writing user stories (use user-story) or reviewing code quality (use code-review)."
 ---
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Acceptance Criteria Skill
 

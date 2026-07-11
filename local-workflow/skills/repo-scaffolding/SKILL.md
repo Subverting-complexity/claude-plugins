@@ -1,10 +1,10 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: repo-scaffolding
 description: "Scaffold a brand-new project from scratch: discovery, architecture, and decomposition into epics and user stories with acceptance criteria. Use to plan a greenfield project, set up a new repo, or turn a product idea into buildable work. Do NOT use for adding features to an existing codebase (use feature-discovery) or implementing code (use execute)."
 depends-on:
   - code-architect
 ---
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Repo Scaffolding
 

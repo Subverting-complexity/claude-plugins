@@ -14,20 +14,20 @@ project-configurable.
 ## The single resolution path
 
 > **You usually do not need to open this file.** Every workflow command
-> auto-loads the full `ClaudeProject.md` (label map included) into context
-> before it runs. When that map is already in context — the normal case —
-> resolve purpose keys directly from it and do **not** read this file. Open
-> it only as a fallback: a purpose key is missing from the project map, or
-> you need the default inventory / colours / native-type and board-column
-> tables below.
+> auto-loads the full `ClaudeProject.md` (label map included) before it
+> runs. When that map is in context — the normal case — resolve purpose
+> keys directly from it and do **not** read this file. Open it only as a
+> fallback: a purpose key is missing from the project map, or you need
+> the default inventory / colours / native-type / board-column tables
+> below.
 
 When any skill needs the concrete name for a purpose key:
 
 1. **Workflow purposes** (typing, priority, status, claude markers) —
    look up the purpose in the `ClaudeProject.md` label map.
-   **Review-state purposes** (the PR review mutex) — look up the purpose
-   in `review.config.md`'s Labels table, matched **by purpose** (the
-   Purpose column), not by guessing a prefix.
+   **Review-state purposes** (the PR review mutex) — the
+   `review.config.md` Labels table, matched **by purpose** (the Purpose
+   column), never by guessing a prefix.
 2. If the project config defines a name for that purpose, use it.
 3. If not configured, use the default name from the inventory below.
 
@@ -44,13 +44,12 @@ The complete inventory below is created once at setup
 (`/github-workflow:setup`, step 5b). Skills must **not**
 `--force`-overwrite labels at runtime — that causes colour/description
 churn. A skill may only **create a missing label as a guarded fallback**:
-check whether it exists, create it without `--force` if absent, warn that
-setup should have created it, then proceed.
+check existence, create without `--force` if absent, warn that setup
+should have created it, then proceed.
 
-Guarded create-if-missing pattern. Do **not** suppress the create's
-errors with `|| true` — that swallows permission failures. Capture
-stderr; only "already exists" (a benign race with another agent) may be
-ignored:
+Guarded create-if-missing pattern. Never suppress the create's errors
+with `|| true` (it swallows permission failures); capture stderr and
+ignore only "already exists" (a benign race with another agent):
 
 ```
 # resolve <name> from the purpose key via the path above, then:
@@ -66,15 +65,14 @@ case "$existing" in
 esac
 ```
 
-Any other failure — especially a permission denial — must be surfaced
-with the real stderr, never swallowed: a caller whose step is explicitly
-best-effort warns and continues; every other caller stops.
+Surface any other failure — especially a permission denial — with the
+real stderr, never swallowed: an explicitly best-effort caller warns and
+continues; every other caller stops.
 
 After a create-and-retry, confirm the label took by reading back
-(`gh issue view {number} --json labels --jq '[.labels[].name]'`, or
-`gh pr view` for a PR). On a clean apply, trust the edit's exit code
-instead — see the label read-back policy in
-`templates/claim-procedure.md` (Acquire, Step 4).
+(`gh issue view {number} --json labels --jq '[.labels[].name]'`; `gh pr
+view` for a PR). On a clean apply, trust the edit's exit code — per the
+label read-back policy in `templates/claim-procedure.md` (Acquire, Step 4).
 
 ## Workflow Labels
 
@@ -100,9 +98,8 @@ When the target org has **native GitHub issue types** and **org issue
 fields** configured, the workflow uses them as the first-class
 classification and metadata — see `templates/issue-fields-resolution.md`
 for the runtime resolution + mutation procedure. This section is the
-**single source of truth** for the purpose→value mappings those steps
-follow; a project may override any of it in `ClaudeProject.md` →
-`## Issue Types & Fields`.
+**single source of truth** for the purpose→value mappings; a project may
+override any of it in `ClaudeProject.md` → `## Issue Types & Fields`.
 
 ### Native issue type map ("by nature")
 
@@ -204,10 +201,10 @@ coexists with any lifecycle state.
 The board-side mirror of the issue lifecycle. Columns are resolved by
 **purpose key** through the same path as labels: read from
 `ClaudeProject.md` → `## Project Board` → `### Status Options`; fall
-back to the default name below. Board moves are best-effort (no board
-configured → no-op; board configured and move fails → loud error — see
-`templates/board-resolution.md`). The labels remain authoritative; the
-board mirrors them. For design rationale, see `default-labels-rationale.md`.
+back to the default name below. Board moves are best-effort (no board →
+no-op; configured board + failed move → loud error — see
+`templates/board-resolution.md`). Labels remain authoritative; the board
+mirrors them. Design rationale: `default-labels-rationale.md`.
 
 | Purpose key      | Default Name  | Option color | Mirrors lifecycle label(s) |
 |------------------|---------------|--------------|----------------------------|
@@ -236,10 +233,9 @@ board mirrors them. For design rationale, see `default-labels-rationale.md`.
 | issue **closed** (resolved / merged)     | Done (`col-done`)            | `wf pick` (already-resolved), `wf post-merge` (after merge), code-review auto-merge |
 
 The Done move has no lifecycle *label* (a closed issue carries none — the
-GitHub closed state is authoritative); the board is mirrored to `col-done` by
-the commands above so a finished story leaves the In Review column instead of
-lingering there. Best-effort, like every board move: a no-op when no board is
-configured.
+GitHub closed state is authoritative); the commands above mirror the board
+to `col-done` so a finished story leaves the In Review column. Best-effort,
+like every board move: a no-op when no board is configured.
 
 When a board is configured, the three active columns — In Progress,
 In Review, Blocked — must exist (preflight emits

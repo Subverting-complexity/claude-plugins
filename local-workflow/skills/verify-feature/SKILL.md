@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: verify-feature
 description: >-
@@ -24,6 +23,7 @@ allowed-tools:
   - Bash(grep *)
   - Bash(rg *)
 ---
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Feature Verification
 

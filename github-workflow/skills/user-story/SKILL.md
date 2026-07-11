@@ -1,8 +1,8 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: user-story
 description: "Write or format a single user story for a development work item, with acceptance criteria. Use when the user wants to spec out a feature, write up a ticket, or turn rough notes into a structured story. Do NOT use for breaking a feature into multiple stories (use feature-discovery) or scaffolding a new project (use repo-scaffolding)."
 ---
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # User Story Documentation
 

@@ -1,8 +1,8 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: ecosystem-setup
 description: "Detect, install, and configure Claude Code companion tools (Graphify, RTK, Headroom, ccusage, ecc-agentshield, Fallow) and write the `.claude/ecosystem.md` cheat-sheet the execute and code-review skills read so the tools get used automatically. Trigger on set up/configure ecosystem or any of those tools, or 'regenerate ecosystem.md'. Not for general project onboarding."
 ---
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # Ecosystem Setup
 

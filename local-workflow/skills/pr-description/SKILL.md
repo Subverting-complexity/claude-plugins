@@ -1,8 +1,8 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 ---
 name: pr-description
 description: "Write, format, or structure a Pull Request description from committed changes or rough notes. Works with any platform (GitHub, GitLab, Azure DevOps, Bitbucket). Use when the user wants to document a PR, summarize a branch, or turn change notes into a structured PR. Do NOT use for reviewing code quality (use code-review) or writing user stories (use user-story)."
 ---
+<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # PR Description Skill
 

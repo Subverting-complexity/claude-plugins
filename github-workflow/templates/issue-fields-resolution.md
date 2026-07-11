@@ -31,9 +31,9 @@ Inputs:
 ## Session cache
 
 Steps 1 and 2 each make a GraphQL round-trip to discover org capabilities.
-In multi-issue sessions — audit mode, `feature-discovery` breakdowns — those
-calls would otherwise repeat per issue, and the "skipped field 'X'" messages
-would fire once per issue rather than once for the session.
+In multi-issue sessions (audit mode, `feature-discovery` breakdowns) those
+calls — and the "skipped field 'X'" messages — would otherwise repeat per
+issue rather than once per session.
 
 Cache both results in `.claude/issue-fields-cache.json`. Each step checks for
 its own key before querying, then merges its results into the file on a cache
@@ -52,22 +52,19 @@ Cache keys:
 To check for a key: parse `.claude/issue-fields-cache.json` and test whether
 the key is present. To write (merge, not overwrite): read the file if it
 exists, update the dict, write it back. Use `python3`, `py -3`, or `python`
-(whichever is available) for the JSON read-merge-write. If none of them
-runs (no Python on this machine), **skip the cache write** and proceed
-with the freshly-resolved values, noting once "field cache skipped: no
-Python available" — the cache is an optimisation; never fail the workflow
-over it.
+(whichever is available) for the JSON read-merge-write. If none runs (no
+Python on this machine), **skip the cache write** and proceed with the
+freshly-resolved values, noting once "field cache skipped: no Python
+available" — the cache is an optimisation; never fail the workflow over it.
 
 ## Step 1 — Discover native issue types (capability gate)
 
 List the org's enabled issue types and map each **name** to its node id:
 
-**Session cache check.** Before running this query, check whether
-`.claude/issue-fields-cache.json` contains `type_capable`. On a cache hit,
-read `type_capable` and `type_map` directly from the file and skip the query
-below. On a cache miss, run the query then merge `type_capable` and `type_map`
-into the cache file (preserving any existing keys, such as `field_map` written
-by a prior Step 2).
+**Session cache check.** If `.claude/issue-fields-cache.json` contains
+`type_capable`, read `type_capable` and `type_map` from it and skip the
+query below. On a miss, run the query then merge both keys into the cache
+file (preserving any existing keys, such as a prior Step 2's `field_map`).
 
 ```
 gh api graphql -f query='query($login:String!){
@@ -88,8 +85,8 @@ gh api graphql -f query='query($login:String!){
   the org is **not type-capable**. Fall back to today's behaviour
   unchanged: classify with the `type-*` labels from
   `templates/default-labels.md` and filter on those labels. Skip every
-  native-type step below. This is the backward-compatible path; never
-  treat the absence of native types as an error.
+  native-type step below; never treat the absence of native types as an
+  error.
 
 Resolve the workflow's kind → native type through the **native-type map**
 in `templates/default-labels.md` (the "by nature" default). When a mapped
@@ -99,13 +96,12 @@ for that one issue and note it.
 ## Step 2 — Discover org issue fields (per-field capability gate)
 
 List the org's issue fields with their options. **Use the GraphQL query
-below, not the REST endpoint** — the REST endpoint (`/orgs/{org}/issue-fields`)
-returns `null` for all option IDs, making single-select fields unusable:
+below, not the REST endpoint** — REST (`/orgs/{org}/issue-fields`) returns
+`null` for all option IDs, making single-select fields unusable:
 
-**Session cache check.** Before running this query, check whether
-`.claude/issue-fields-cache.json` contains `field_map`. On a cache hit, read
-`field_map` directly and skip the query. On a cache miss, run the query then
-merge `field_map` into the cache file (preserving any existing keys).
+**Session cache check.** If the cache contains `field_map`, read it and
+skip the query. On a miss, run the query then merge `field_map` into the
+cache file (preserving any existing keys).
 
 ```
 gh api graphql -f query='query($org:String!){
@@ -132,16 +128,16 @@ gh api graphql -f query='query($org:String!){
 Build a name→`{id, options}` map (for single-select fields, `options` is a
 list of `{name, id}` pairs with real node IDs). Each field is gated
 **independently**: populate only the fields the org actually defines, and
-skip any that are absent. A target org that defines none of these fields
-creates issues exactly as it does today (labels only) — that is a valid
-configuration, not a failure.
+skip any that are absent. An org defining none of these fields creates
+issues exactly as today (labels only) — a valid configuration, not a
+failure.
 
 **Surface each skip, don't swallow it.** When a field the command *intends*
-to set (per the table below) is not in the discovered map — the org never
-defined it, or it was renamed away from the configured name — the skip is
-still correct, but do it **visibly**: emit one concise line per missing
-field so an org that *expects* those fields populated gets a signal instead
-of silent blanks. Report them together after discovery (Step 5):
+to set (per the table below) is not in the discovered map — never defined,
+or renamed away from the configured name — the skip is still correct, but
+do it **visibly**: emit one concise line per missing field so an org that
+*expects* those fields populated gets a signal instead of silent blanks,
+reported together after discovery (Step 5):
 
 ```
 skipped field 'Effort' (not found in org issue fields)
@@ -246,13 +242,12 @@ define or the command has no value for. For a field the command *intended*
 to set but the org does not define, emit the `skipped field 'X' (not found
 in org issue fields)` line from Step 2 — distinguish "nothing to set here"
 from "this org is missing a field you expected." **Once-per-session
-reporting:** before emitting any skip lines, check whether
-`.claude/issue-fields-cache.json` has `skips_reported: true`. If it does,
-suppress the skip messages — they were already emitted earlier this session.
-If not, emit the lines as normal then merge `skips_reported: true` into the
-cache file so subsequent commands in the session suppress them. A
-`setIssueFieldValue` failure is best-effort: report it and continue; the
-issue still exists and still carries its labels.
+reporting:** if `.claude/issue-fields-cache.json` has `skips_reported:
+true`, suppress the skip lines (already emitted this session); otherwise
+emit them, then merge `skips_reported: true` into the cache so later
+commands suppress them. A `setIssueFieldValue` failure is best-effort:
+report it and continue; the issue still exists and still carries its
+labels.
 
 **Priority is dual-tracked.** Populate the `Priority` field **and** keep
 applying the `priority-*` label. The label keeps the selector's existing
