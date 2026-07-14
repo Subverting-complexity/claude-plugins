@@ -55,14 +55,14 @@ for wf in "${workflows[@]:-}"; do
             )
             ;;
         *)
-            echo "Unknown workflow: $wf. Known: execute, pick, finish" >&2
+            echo "Unknown workflow: $wf. Known: execute, pick" >&2
             exit 1
             ;;
     esac
 done
 
 if [ ${#files[@]} -eq 0 ]; then
-    echo "Usage: $0 <file1> [file2 ...] [--workflow execute|pick|finish]" >&2
+    echo "Usage: $0 <file1> [file2 ...] [--workflow execute|pick]" >&2
     exit 1
 fi
 

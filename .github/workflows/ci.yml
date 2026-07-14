@@ -99,8 +99,6 @@ jobs:
           echo "--- pick workflow ---"
           bash count-roundtrips.sh --workflow pick
           echo ""
-          echo "--- finish workflow ---"
-          bash count-roundtrips.sh --workflow finish
 
   validate-plugin-json:
     name: Validate plugin manifests
