@@ -288,27 +288,30 @@ Classify:
 
 ```!
 if [ -f ClaudeProject.md ]; then
-  # Extract the ## Label Map section body (subsections use ###, which
-  # does not match the ^## top-level header that ends the range). Pure POSIX
-  # shell (no awk) so preflight runs even where awk is absent from PATH.
   labelmap=$(f=0; while IFS= read -r line || [ -n "$line" ]; do
       if [ "$f" -eq 1 ]; then case "$line" in '## '*) break ;; esac; printf '%s\n' "$line"; fi
       [ "$line" = "## Label Map" ] && f=1
     done < ClaudeProject.md)
-  missing=0
-  for purpose in priority-critical priority-high priority-medium priority-low \
-                 type-story type-bug type-security type-arch type-debt \
-                 status-ready needs-refinement status-in-progress status-parked \
-                 status-blocked status-in-review status-needs-attention \
-                 claude-authored; do
-    if printf '%s\n' "$labelmap" | grep -q "$purpose"; then
-      :
-    else
-      echo "WARNING label-map: no label mapped for purpose '$purpose'"
-      missing=1
+  if printf '%s\n' "$labelmap" | grep -q 'default-labels\.md'; then
+    echo "OK label-map: all purposes covered (defaults declared via default-labels.md)"
+  else
+    missing=0
+    for purpose in priority-critical priority-high priority-medium priority-low \
+                   type-story type-bug type-security type-arch type-debt \
+                   status-ready needs-refinement status-in-progress status-parked \
+                   status-blocked status-in-review status-needs-attention \
+                   claude-authored; do
+      if printf '%s\n' "$labelmap" | grep -q "$purpose"; then
+        :
+      else
+        echo "WARNING label-map: no label mapped for purpose '$purpose'"
+        missing=1
+      fi
+    done
+    if [ "$missing" -eq 0 ]; then
+      echo "OK label-map: all expected purposes mapped"
     fi
-  done
-  [ "$missing" -eq 0 ] && echo "OK label-map: all expected purposes mapped"
+  fi
 fi
 ```
 
