@@ -66,7 +66,7 @@ If this fails, stop and tell the user to run `gh auth login` first.
 
 ### 1b. Set up the `wf` picker runtime (recommended)
 
-`pick-story` / `start-story` (and the `execute` skill) have a **fast
+`execute` has a **fast
 path**: a bundled `wf` CLI that runs the whole select → claim → validate
 loop in one call instead of a dozen sequential `gh` round-trips. It needs a
 Python 3 interpreter. This step pins a **dedicated virtualenv** for it —

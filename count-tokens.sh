@@ -7,7 +7,7 @@
 #
 # Usage:
 #   bash count-tokens.sh github-workflow/skills/execute/SKILL.md
-#   bash count-tokens.sh github-workflow/commands/pick-story.md --budget 15000
+#   bash count-tokens.sh github-workflow/commands/block-story.md --budget 15000
 #   bash count-tokens.sh github-workflow/skills/execute/SKILL.md --include-rationale
 #
 # Exit codes:

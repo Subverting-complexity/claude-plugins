@@ -2,9 +2,9 @@
 
 The cold tables split out of `templates/default-labels.md` so the
 claim/selection/board path doesn't load them. **Read this only on the
-issue-creation path** (`report-issue`, `finish-story`'s retroactive issue,
-`feature-discovery`) or the **review path** (`code-review`, `update-pr`,
-`finish-story` PR labelling). The resolution rules, workflow/status/type
+issue-creation path** (`report-issue`, `execute`'s retroactive issue,
+`feature-discovery`) or the **review path** (`code-review`,
+`execute` PR labelling). The resolution rules, workflow/status/type
 labels, native-type map, priority map, and board columns all stay in
 `default-labels.md` — resolve through the single path described there; the
 tables below are the value maps for the dimensions used off the claim path.
@@ -29,7 +29,7 @@ The creating command/session → `Origin` field option:
 | `feature-discovery` validation session             | Feature Discovery   |
 | `security-audit` / `execute` audit (security)    | Security Audit      |
 | `code-review`                                    | Code Review         |
-| `report-issue` (found during dev), `finish-story`| Development         |
+| `report-issue` (found during dev), `execute`     | Development         |
 | human / stakeholder request                      | Stakeholder Request |
 
 ## Review State Labels

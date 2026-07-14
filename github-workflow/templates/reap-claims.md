@@ -61,7 +61,7 @@ is `issue-{N}` or `pr-{N}`):
 
    To check for an open PR, use a simplified lookup — check whether
    the issue has a `status-in-review` lifecycle label (set by
-   `finish-story` when the PR is opened) **or** run a quick PR search:
+   `execute` when the PR is opened) **or** run a quick PR search:
 
    ```bash
    gh pr list --repo {org}/{repo} --state open \

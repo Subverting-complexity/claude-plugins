@@ -12,8 +12,8 @@ can be unblocked, because there is nothing else to pick. (Why this scan is
 off the hot path: `templates/story-selection-rationale.md`, not read at
 runtime.)
 
-Scan two groups, regardless of assignee, for issues whose dependencies may
-now be resolved:
+Scan three groups, regardless of assignee, for issues that can be
+recovered:
 
 - **Blocked issues** — carry the `status-blocked` label (found by label;
   `block-story` and Step 3 unassign them):
@@ -22,6 +22,11 @@ now be resolved:
   ```
 - **Your non-ready issues** — assigned to `@me` and not in the ready state
   (missing `status-ready`, or not in the "Ready" column, per `ready-gate`).
+- **Stranded in-review issues** — carry `status-in-review` with no open
+  PR closing them. Fetch with `--label "{status_in_review_label}"`, run
+  the sibling-PR lookup for each. If none has an open PR, reset it:
+  remove `status-in-review`, apply `status-ready`, unassign, move board
+  to Backlog, comment. Count each as a restored issue.
 
 For each, parse the body for the same dependency markers (Step 3). If
 **all** referenced issues are now `CLOSED`, restore it to ready:

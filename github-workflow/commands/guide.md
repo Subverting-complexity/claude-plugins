@@ -66,8 +66,8 @@ gh auth status 2>&1 | head -3
 > - `/github-workflow:code-review` → Review the next open PR end-to-end
 >   (finds it, claims it, reviews in full codebase context, auto-fixes
 >   concrete issues, posts structured comment, applies state labels).
-> - `/github-workflow:update-pr` → Address review feedback on a PR
->   with changes requested, push fixes, flag for re-review.
+>   Also picks up PRs with changes requested and addresses the feedback
+>   before re-reviewing.
 > - `/github-workflow:execute --mode audit` → Audit the codebase and
 >   create issues for anything found.
 >
@@ -76,13 +76,6 @@ gh auth status 2>&1 | head -3
 > - `/github-workflow:report-issue` → File a bug, security, arch, or
 >   debt issue.
 > - `/github-workflow:block-story` → Mark the current story as blocked.
->
-> **Individual steps** (the execute skill runs these automatically, but
-> you can also run them one at a time):
->
-> - `/github-workflow:pick-story` → Just pick the next story.
-> - `/github-workflow:start-story` → Assign, branch, board update.
-> - `/github-workflow:finish-story` → Push, PR, board update.
 >
 > **Faster, better-grounded runs (optional):**
 >

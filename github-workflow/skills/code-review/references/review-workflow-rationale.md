@@ -24,23 +24,22 @@ are cheap to fix and should not generate a "Changes Requested" round-trip.
 When issues remain that the reviewer could not auto-fix, the PR is left
 with the `changes-requested` label. To address that feedback:
 
-- A human or **builder** agent runs `/github-workflow:update-pr` to
-  read the review comment, fix each item in Issues Remaining, push
-  changes, and update labels. (The reviewer agent is read-only and
-  cannot run this command — it requires file editing and git push
-  access.)
+- The next `/github-workflow:code-review` invocation picks up the
+  `changes-requested` PR, addresses the feedback (rework cascade in
+  Step 1b), pushes fixes, and then re-reviews the PR — all in one
+  session. (The reviewer agent in read-only mode cannot do rework —
+  it requires file editing and git push access.)
 - Alternatively, anyone (human or agent) can push commits to the PR
   branch directly. The next code-review run will detect the SHA change
-  (Step 1) and re-review the PR automatically — no explicit
-  `/update-pr` invocation required.
+  (Step 1) and re-review the PR automatically.
 - The next code-review run will pick up PRs with `needs-re-review`
   (they are prioritised in Step 1) and perform a re-review.
 
 ### Change significance on update
 
-When changes are pushed to a reviewed PR (by `update-pr`, ad-hoc push,
-or any other process), the change significance determines what happens
-next.
+When changes are pushed to a reviewed PR (by `code-review` rework, ad-hoc
+push, or any other process), the change significance determines what
+happens next.
 
 **Trivial changes — auto-approve if all issues addressed:**
 - Whitespace, formatting, or import-order fixes
@@ -48,10 +47,10 @@ next.
 - Removing dead code flagged in the review
 - Variable renames with no behaviour change
 
-If the pusher is `update-pr` and all Issues Remaining were addressed:
+If the pusher is `code-review` rework and all Issues Remaining were addressed:
 remove the current state label and apply `approved`. No re-review needed.
 
-If changes are trivial but pushed ad-hoc (no explicit update-pr run):
+If changes are trivial but pushed ad-hoc (no explicit code-review rework):
 leave the existing state label in place. The next code-review run will
 detect the SHA change, fast-track the re-review (Step 4b), and apply
 the appropriate verdict.
@@ -81,10 +80,10 @@ The atomic issue claim (`refs/claims/issue-N`) prevents two agents from
 selecting the same story concurrently, so duplicate PRs should be rare.
 They can still appear at the edges the claim ref does not cover:
 
-- A story started by **explicit number** (`/execute 42`, `/start-story 42`)
+- A story started by **explicit number** (`/execute 42`)
   after a PR already exists — the claim ref was released when the first PR
-  opened, so a fresh claim succeeds. The pre-start guards in `execute`
-  Phase 1 and `start-story` stop most of these before any work happens.
+  opened, so a fresh claim succeeds. The pre-start guard in `execute`
+  Phase 1 stops most of these before any work happens.
 - `block-story` run on an issue that **already has an open PR** — without
   the guard in its release step, it would unassign the issue and return it
   to the pool, inviting a second PR.
@@ -95,7 +94,7 @@ They can still appear at the edges the claim ref does not cover:
 
 When two open PRs close the same issue, **code-review Step 2b** reconciles
 them using the procedure in `references/duplicate-reconciliation.md`.
-`execute` Phase 7 and `finish-story` add a lighter, detection-only guard
+`execute` Phase 7 adds a lighter, detection-only guard
 at PR-creation time: if a sibling open PR already closes the issue, the
 new PR is flagged as a possible duplicate so this reconciliation reliably
 fires on the next review.

@@ -5,8 +5,7 @@ This repo contains multiple Claude Code plugins that share skills.
 > **Dogfooding note:** This repo is itself configured as a
 > `github-workflow` target. Project settings (org/repo, labels, quality
 > gate, board) live in [`ClaudeProject.md`](ClaudeProject.md); workflow
-> commands (`/github-workflow:pick-story`, `:execute`, `:code-review`,
-> etc.) read it. The open backlog of plugin-hardening work is tracked on
+> commands (`/github-workflow:execute`, `:code-review`, etc.) read it. The open backlog of plugin-hardening work is tracked on
 > the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8).
 
 ## CRITICAL RULES

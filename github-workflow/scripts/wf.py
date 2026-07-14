@@ -761,7 +761,7 @@ def checkout_branch(cfg, issue):
     return branch, True, 'created from origin/%s' % default
 
 
-# ── PR pickers (update-pr / code-review pools) ───────────────────────────────
+# ── PR pickers (code-review pools) ────────────────────────────────────────────
 
 def _norm_pr(raw):
     return {
@@ -1102,7 +1102,7 @@ def cmd_update_next(args):
              reason='no PRs assigned to you have feedback to address')
 
     # Marker: add `updating`, but keep the actionable state label so the
-    # update-pr skill can make its final relabel decision (Step 8).
+    # code-review skill can make its final relabel decision.
     outcome, selected, side_effects = claim_first_pr(
         pool, lambda pr: apply_pr_labels(cfg, pr['number'], add=names['updating']))
     if outcome == 'error':

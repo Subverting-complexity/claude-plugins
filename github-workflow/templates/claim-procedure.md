@@ -3,9 +3,8 @@
 Single, canonical way to claim a work item for exclusive work and to
 release it. The item is usually an **issue** (story work); the same
 procedure claims a **pull request** for review. Referenced by every
-command that takes or relinquishes ownership: `pick-story`, `start-story`,
-`block-story`, `finish-story`, the `execute` skill's Phase 1 / Phase 2,
-and the `code-review` skill's PR claim. **Do not inline a different claim
+command that takes or relinquishes ownership: `execute`,
+`block-story`, and the `code-review` skill's PR claim. **Do not inline a different claim
 mechanism anywhere** — call this procedure so all call sites behave
 identically.
 
@@ -27,7 +26,7 @@ PRs). `{org}`/`{repo}` come from `ClaudeProject.md` `## Identity`.
    label), not the ref — the picker only selects *unassigned* issues.
 3. **Hold an issue claim across PR creation.** Release only *after*
    `gh pr create` succeeds (closes the create-time duplicate race in
-   `execute` Phase 7 / `finish-story`; the `sibling-pr-lookup.md` guard then
+   `execute` Phase 7; the `sibling-pr-lookup.md` guard then
    sees the live PR).
 4. **No auto-expiry — always Release on every exit.** A skipped Release
    leaks the ref until a human reaps it.
@@ -127,7 +126,7 @@ labels follows it and cites it here rather than restating it:
 
 ## Release
 
-Run when you relinquish the item: PR open (`finish-story`), story blocked
+Run when you relinquish the item: PR open (`execute`), story blocked
 back to the backlog (`block-story`), or a PR review reaching its verdict or
 failing (`code-review`).
 

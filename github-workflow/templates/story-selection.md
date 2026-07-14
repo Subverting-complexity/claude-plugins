@@ -1,9 +1,9 @@
 # Story selection (claim-first, validate-lazily)
 
 The single, canonical way to go from "I want a story" to "I hold a claim on
-a usable story." Referenced by `pick-story` and the `execute` skill's
-Phase 1 — **do not restate this loop inline anywhere**; call this procedure
-so both behave identically.
+a usable story." Referenced by `execute` Phase 1 — **do not restate this
+loop inline anywhere**; call this procedure so all callers behave
+identically.
 
 ## Claim-first, validate-lazily
 
@@ -80,7 +80,7 @@ Then narrow the list with **local** filters (no API calls):
 
 - **Refinement:** exclude issues with the `needs-refinement` label. (The
   caller may instead choose to surface a top-priority `needs-refinement`
-  issue to the user — see `execute` Phase 1. `pick-story` always excludes.)
+  issue to the user — see `execute` Phase 1.)
 - **Agent gating:** if `agent-gating` is `enabled`, exclude issues that do
   **not** carry the `claude-ready` label — only human-approved stories are
   eligible. If `disabled` (default), this filter is **ignored entirely**.

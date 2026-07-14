@@ -28,9 +28,9 @@ plan, build, test, open a PR.
 Everything you write for a person to read (plan, progress notes, PR description, final summary) follows `skills/_shared/wording-standard.md` and avoids `skills/_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
 
 **This workflow is fully autonomous.** Every phase flows into the next
-without pausing for user input. Do not ask the user to choose, confirm,
-or approve at any step. Do not call feature-discovery. The only reasons to stop
-are:
+without pausing for user input — except the **interactive discovery
+gate** before Phase 3 (user-present sessions only). The only reasons to
+stop are:
 
 - The issue is so underspecified that any implementation would be a
   guess — block the story and pick the next one.
@@ -261,11 +261,15 @@ authoritative lookup in `templates/sibling-pr-lookup.md` with this
 - If the issue is **closed**, report it and stop.
 - If an **open PR already closes this issue**, do not start fresh work.
   Report the existing PR by number and title and tell the user to use
-  `/github-workflow:update-pr` (to address feedback) or let code review
-  reconcile it — then stop. Do not claim, branch, or build.
-- If the issue carries `status-in-review` but no open PR is found, the PR
-  may have been closed without the label being reset — surface this to the
-  user and stop rather than guessing.
+  `/github-workflow:code-review` (which handles both review and rework)
+  — then stop. Do not claim, branch, or build.
+- If the issue carries `status-in-review` but no open PR is found, check
+  for a **closed (not merged)** PR (`closingIssuesReferences`, `states:
+  CLOSED`). If found, the PR was abandoned — reset automatically: remove
+  `status-in-review`, apply `status-ready`, unassign, move board to
+  Backlog, comment `"Resetting — PR #{N} closed without merge."` The
+  issue re-enters the pick pool.
+  If no closed PR either — surface the inconsistency and stop.
 - Otherwise **delegate the claim to the same engine the auto-pick fast
   path uses** — it targets this one issue, validates it, and **auto-closes
   it without a prompt if a merged PR already resolved it**:
@@ -366,6 +370,16 @@ continued, release the claim (`templates/claim-procedure.md` **Release**)
 and restore the prior lifecycle state — remove `status-in-progress` and
 the `@me` assignment, re-apply `status-ready` — so the claim does not leak.
 
+## Interactive discovery gate (before planning)
+
+When **interactive** (user present, not an agent/cron run) and mode is
+`story` or `feature`: run `/github-workflow:feature-discovery --mode
+validation` to stress-test requirements before planning.
+
+**Skip** when: autonomous/agent session, `maintenance`/`audit` mode, or
+the issue body already has discovery output (`## Stories` /
+`## Architecture` from a prior session).
+
 ## Phase 3 — Plan
 
 Use `/github-workflow:code-architect` to plan the implementation:
@@ -373,8 +387,7 @@ Use `/github-workflow:code-architect` to plan the implementation:
 - Pass the issue requirements, relevant codebase context, and any
   reference docs listed in ClaudeProject.md.
 - Code-architect should scan the existing codebase and plan changes
-  based on the issue requirements. Do not run an interactive design
-  interview or call feature-discovery.
+  based on the issue requirements.
 - Write the architecture plan to `.claude/plan.md` so it survives
   context compaction. Include a checklist of files to create or modify,
   each with a `[ ]` checkbox. Example:

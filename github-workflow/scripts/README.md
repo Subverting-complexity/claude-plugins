@@ -33,7 +33,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue 42 --checkout
 # After merging a PR: close any still-open linked issue and move it to Done
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr 123
 
-# Claim the next PR of mine that needs review feedback addressed (update-pr)
+# Claim the next PR of mine that needs review feedback addressed (code-review)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" update-next --checkout
 
 # Claim the next PR that needs reviewing (code-review)
@@ -104,8 +104,8 @@ this after a successful immediate merge.
 
 | Subcommand     | Pool                                              | Claims          | Marker applied        | Used by      |
 | -------------- | ------------------------------------------------- | --------------- | --------------------- | ------------ |
-| `pick`         | Ready, unassigned issues                          | `issue-{n}` ref | `status-in-progress`  | pick-story, start-story |
-| `update-next`  | My open PRs with actionable review feedback       | `pr-{n}` ref    | `updating` (keeps the feedback label) | update-pr |
+| `pick`         | Ready, unassigned issues                          | `issue-{n}` ref | `status-in-progress`  | execute |
+| `update-next`  | My open PRs with actionable review feedback       | `pr-{n}` ref    | `updating` (keeps the feedback label) | code-review |
 | `review-next`  | Open PRs labelled `needs-review` / `needs-re-review` | `pr-{n}` ref | `reviewing` (removes prior) | code-review |
 
 All share the same atomic claim/checkout core and JSON contract. `--checkout`
