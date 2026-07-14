@@ -26,7 +26,7 @@ the backlog) and is kept out of the pick pool by the absence of
 **How it becomes unblocked:**
 
 - **Automatically** — when the blocker is another issue recorded as
-  `Blocked by #N`, `pick-story`'s dependency-resolution step detects that
+  `Blocked by #N`, `execute`'s dependency-resolution step detects that
   all `#N` are closed, removes `status-blocked`, restores `status-ready`,
   and comments. The issue re-enters the pick pool.
 - **Manually** — for non-issue blockers (a decision, access granted), a
@@ -69,7 +69,7 @@ what failed or is missing, and a suggested resolution if known.
 
 If the blocker is another issue, also record it in the issue body under a
 `## Dependencies` section as `Blocked by #N` (edit the body via
-`--body-file`). This is what lets `pick-story` auto-unblock the issue when
+`--body-file`). This is what lets `execute` auto-unblock the issue when
 `#N` closes. If the `## Dependencies` section already lists it, skip.
 
 **Structured blocker metadata (best-effort, capability-gated).** Following
@@ -181,4 +181,4 @@ story to the backlog; reconciling the tree lets the worktree be reaped.
 Display what was blocked — naming the story by number **and** title
 together (e.g. `#42 Add login button`, never the number alone) — why,
 and that the story has been blocked and returned to the backlog.
-Suggest running `/github-workflow:pick-story` to continue with the next story.
+Suggest running `/github-workflow:execute` to continue with the next story.

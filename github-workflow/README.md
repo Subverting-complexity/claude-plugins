@@ -22,12 +22,9 @@ claude --plugin-dir ./plugins/github-workflow
 | `/github-workflow:execute 47`           | Execute story #47 directly               |
 | `/github-workflow:execute --mode maintenance` | Pick and fix the next bug/security/debt issue |
 | `/github-workflow:execute --mode audit` | Audit codebase, create issues (no code)  |
-| `/github-workflow:pick-story`           | Select the next story from the backlog   |
-| `/github-workflow:start-story`          | Assign, branch, board update             |
-| `/github-workflow:finish-story`         | Push, PR, board update                   |
+| `/github-workflow:code-review`          | Review (or rework + re-review) the next PR |
 | `/github-workflow:block-story`          | Mark current story as blocked            |
 | `/github-workflow:report-issue`         | Create a bug/arch/debt issue             |
-| `/github-workflow:update-pr`            | Address review feedback and re-flag PR   |
 | `/github-workflow:setup`                | Interactive project onboarding wizard    |
 | `/github-workflow:guide`                | How to get started / what can I do?      |
 
@@ -269,4 +266,4 @@ Once installed, your scheduled task prompts become one-liners:
 | Fix bugs           | `Run /github-workflow:execute --mode maintenance` |
 | Audit codebase     | `Run /github-workflow:execute --mode audit`  |
 | Review a PR        | `Run /github-workflow:code-review`           |
-| Fix review feedback| `Run /github-workflow:update-pr`             |
+| Fix review feedback| `Run /github-workflow:code-review`           |

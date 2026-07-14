@@ -150,7 +150,7 @@ clean** before branching, **End clean** on every exit — whose canonical
 procedure is defined once in
 [`github-workflow/templates/worktree-hygiene.md`](../github-workflow/templates/worktree-hygiene.md)
 and referenced from every entry/exit path (`execute` Phase 2 and its
-exit-cleanup reference, `finish-story`, `update-pr`, `block-story`). This
+exit-cleanup reference, `execute`, `code-review`, `block-story`). This
 section deliberately does not restate the steps; read that file.
 
 The model is: *start clean → everything dirty at the end is therefore this

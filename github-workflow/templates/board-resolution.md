@@ -1,8 +1,7 @@
 # Board + item_id resolution
 
 Shared procedure for every command that writes to the GitHub project
-board (`start-story`, `finish-story`, `block-story`, `pick-story`, and
-the `execute` skill's Phase 2). It resolves the board by **stable
+board (`execute`, `block-story`). It resolves the board by **stable
 identity** and produces a verified `{item_id}` for the issue so board
 mutations target the right board and the right item.
 

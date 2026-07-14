@@ -1,7 +1,7 @@
 # Issue type + field resolution
 
 Shared procedure for every command that **creates or classifies an issue**
-(`report-issue`, `finish-story`'s retroactive issue, and the
+(`report-issue`, `execute`'s retroactive issue, and the
 `feature-discovery` skill), and for the selector
 (`templates/story-selection.md`) when it filters by kind or sorts by
 priority. It resolves the org's **native issue types** (Bug, Feature, User
@@ -152,12 +152,12 @@ Resolve a field's purpose to its concrete name through `ClaudeProject.md`
 
 | Purpose key      | Default field name | Type          | Set by |
 |------------------|--------------------|---------------|--------|
-| `field-priority` | `Priority`         | single-select | report-issue, finish-story, feature-discovery |
+| `field-priority` | `Priority`         | single-select | report-issue, execute, feature-discovery |
 | `field-effort`   | `Effort`           | single-select | every issue-creating command |
 | `field-type`     | `Classification`   | single-select | every issue-creating command |
 | `field-origin`   | `Origin`           | single-select | every issue-creating command |
-| `field-start`    | `Start date`       | date          | start-story / execute (on claim) |
-| `field-target`   | `Target date`      | date          | finish-story (on PR creation — records actual completion date) |
+| `field-start`    | `Start date`       | date          | execute (on claim) |
+| `field-target`   | `Target date`      | date          | execute (on PR creation — records actual completion date) |
 | `field-parent`   | `Parent`           | text          | feature-discovery (epic-child link) |
 | `field-status-reason` | `Status reason` | text         | block-story (blocker description) |
 

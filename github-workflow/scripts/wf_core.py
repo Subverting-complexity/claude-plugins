@@ -15,7 +15,7 @@ stay verifiable without a network.
 Reference templates (the prose these functions encode):
   - github-workflow/templates/story-selection.md
   - github-workflow/templates/default-labels.md
-  - github-workflow/commands/start-story.md  (branch convention)
+  - github-workflow/skills/execute/SKILL.md  (branch convention)
 """
 
 import re
@@ -228,7 +228,7 @@ def current_lifecycle_label(labels, project_map):
 
 
 # ── PR review-state labels + selection ───────────────────────────────────────
-# Mirrors github-workflow/commands/update-pr.md (Step 2) and the code-review
+# Mirrors the code-review
 # skill (Step 1). Review-state names default to the `review-` prefix
 # (templates/label-reference.md) and are overridden by review.config.md.
 
@@ -263,7 +263,7 @@ def review_names(review_map=None):
 
 
 def select_update_pool(prs, names):
-    """Order PRs that need *my* review feedback addressed (update-pr pool).
+    """Order PRs that need *my* review feedback addressed (code-review rework pool).
 
     Keep PRs carrying an actionable state — changes-requested >
     needs-discussion > needs-re-review (priority order) — and drop any
@@ -318,7 +318,7 @@ def actionable_update_label(labels, names):
     """The highest-priority actionable state label present on an update PR.
 
     Returned so the caller can record which feedback state it claimed (the
-    update-pr skill needs it for its final relabel decision).
+    code-review skill needs it for its final relabel decision).
     """
     for purpose in ('changes-requested', 'needs-discussion', 'needs-re-review'):
         if names[purpose] in labels:
@@ -469,13 +469,13 @@ def closing_issue_numbers(refs):
 
 
 # ── Branch naming ────────────────────────────────────────────────────────────
-# start-story.md Step 6 — deterministic slug from the issue title.
+# execute SKILL.md — deterministic slug from the issue title.
 
 def branch_slug(title, max_len=40):
     """Slugify an issue title for a branch name.
 
     lowercase → non-alphanumeric runs become single hyphens → truncate to
-    max_len → strip leading/trailing hyphens. Matches the start-story example
+    max_len → strip leading/trailing hyphens. Matches the execute example
     "Fix: User login broken!!!" → "fix-user-login-broken".
     """
     slug = re.sub(r'[^a-z0-9]+', '-', (title or '').lower())

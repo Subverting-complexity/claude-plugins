@@ -165,7 +165,7 @@ priority is dual-tracked — see `default-labels-rationale.md`):
 
 The `Effort` (size estimate) and `Origin` (creating command/session) field
 option maps live in `templates/label-reference.md` — they are used only on
-the **issue-creation** path (`report-issue`, `finish-story`,
+the **issue-creation** path (`report-issue`, `execute`,
 `feature-discovery`), not the claim/selection path. Resolve them there.
 
 ## Issue Lifecycle State Labels
@@ -176,12 +176,12 @@ the label map in `ClaudeProject.md`; defaults below.
 
 | Purpose key | Default Name | Color | Description | Applied by |
 |-------------|-------------|-------|-------------|------------|
-| `status-ready` | `status-ready` | `0E8A16` | Eligible for pickup, no unresolved dependencies | setup / pick-story (unblock) |
+| `status-ready` | `status-ready` | `0E8A16` | Eligible for pickup, no unresolved dependencies | setup / execute (unblock) |
 | `needs-refinement` | `needs-refinement` | `D4C5F9` | Needs a refinement session before pickup | feature-discovery / report-issue |
-| `status-in-progress` | `status-in-progress` | `1D76DB` | An agent is actively working this issue now | start-story / execute |
+| `status-in-progress` | `status-in-progress` | `1D76DB` | An agent is actively working this issue now | execute |
 | `status-parked` | `status-parked` | `C5DEF5` | Deliberately set aside by a human, will resume | human / update via park |
 | `status-blocked` | `status-blocked` | `B60205` | Cannot proceed — external or dependency blocker | block-story |
-| `status-in-review` | `status-in-review` | `FBCA04` | PR is open, awaiting review / merge | finish-story / execute |
+| `status-in-review` | `status-in-review` | `FBCA04` | PR is open, awaiting review / merge | execute |
 | `status-needs-attention` | `status-needs-attention` | `D93F0B` | A run failed or errored — needs human intervention | execute (error/timeout) |
 
 For the lifecycle transition diagram and dual-tracking rationale, see
@@ -225,10 +225,10 @@ mirrors them. Design rationale: `default-labels-rationale.md`.
 
 | Lifecycle transition (label set)         | Board column moved to        | Command(s) |
 |------------------------------------------|------------------------------|------------|
-| `status-in-progress`                     | In Progress (`col-in-progress`) | start-story, execute Phase 2 |
-| `status-in-review`                       | In Review (`col-in-review`)  | finish-story, execute Phase 6 |
+| `status-in-progress`                     | In Progress (`col-in-progress`) | execute |
+| `status-in-review`                       | In Review (`col-in-review`)  | execute |
 | `status-blocked`                         | Blocked (`col-blocked`)      | block-story |
-| `status-ready` (unblock)                 | Ready (`col-ready`)          | pick-story |
+| `status-ready` (unblock)                 | Ready (`col-ready`)          | execute |
 | `needs-refinement` / `status-ready` (new issue) | Backlog / Ready             | report-issue (best-effort placement) |
 | issue **closed** (resolved / merged)     | Done (`col-done`)            | `wf pick` (already-resolved), `wf post-merge` (after merge), code-review auto-merge |
 
@@ -249,7 +249,7 @@ The PR review-state label table (the review mutex: `needs-review`,
 `reviewing`, `approved`, `changes-requested`, `needs-discussion`,
 `needs-re-review`, `failed`, `updating`, `fixes-applied`) lives in
 `templates/label-reference.md`. It is used only on the **review** path
-(`code-review`, `update-pr`, `finish-story` PR labelling), not the
+(`code-review`, `execute` PR labelling), not the
 claim/selection path. Resolve review-state purposes via the Labels table in
 `review.config.md` (matched by purpose key), falling back to the defaults
 in `label-reference.md`.

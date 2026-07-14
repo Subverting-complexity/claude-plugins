@@ -7,9 +7,9 @@
 # and to catch regression before they ship.
 #
 # Usage:
-#   bash count-roundtrips.sh github-workflow/commands/pick-story.md
+#   bash count-roundtrips.sh github-workflow/skills/execute/SKILL.md
 #   bash count-roundtrips.sh --workflow execute
-#   bash count-roundtrips.sh --workflow pick --workflow finish
+#   bash count-roundtrips.sh --workflow pick
 #
 # Exit code: always 0 (informational tool, no gate).
 
@@ -48,18 +48,10 @@ for wf in "${workflows[@]:-}"; do
             ;;
         pick)
             files+=(
-                "github-workflow/commands/pick-story.md"
+                "github-workflow/skills/execute/SKILL.md"
                 "github-workflow/templates/story-selection.md"
                 "github-workflow/templates/claim-procedure.md"
                 "github-workflow/templates/default-labels.md"
-            )
-            ;;
-        finish)
-            files+=(
-                "github-workflow/commands/finish-story.md"
-                "github-workflow/templates/board-resolution.md"
-                "github-workflow/templates/claim-procedure.md"
-                "github-workflow/templates/sibling-pr-lookup.md"
             )
             ;;
         *)

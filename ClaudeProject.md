@@ -65,7 +65,7 @@ labels from their defaults (the `review-` prefix) in
 
 | Purpose          | Label             | Applied by                    |
 | ---------------- | ----------------- | ----------------------------- |
-| claude-authored  | `claude-authored` | finish-story, report-issue    |
+| claude-authored  | `claude-authored` | execute, report-issue         |
 
 Agent gating is disabled, so no `claude-ready` label is configured.
 
@@ -193,8 +193,8 @@ label ⇄ column pairing. (`col-backlog` maps onto the board's default
 | Blocked     | `col-blocked`     | `28e51b4e`           |
 | Done        | `col-done`        | `98236657`           |
 
-All board moves now resolve to a real column: `start-story` → In Progress,
-`finish-story` → In Review, `block-story` → Blocked, and `report-issue`
+All board moves now resolve to a real column: `execute` → In Progress /
+In Review, `block-story` → Blocked, and `report-issue`
 places new issues in Todo/Backlog. The **issue lifecycle labels** (Status
 section above) remain the authoritative state; the board mirrors them.
 "Ready" stays optional because this repo's ready-gate is `label`, not

@@ -2,8 +2,8 @@
 
 Single, canonical way to answer "which **open** pull requests will close
 issue `#{number}` on merge?" Referenced by every site that detects or
-reconciles duplicate PRs: `pick-story`/`execute` Phase 1 and `start-story`
-(already-in-flight guard), `execute` Phase 7 and `finish-story`
+reconciles duplicate PRs: `execute` Phase 1
+(already-in-flight guard), `execute` Phase 7
 (create-time duplicate flag), `block-story` (open-PR guard), and the
 `code-review` skill's duplicate reconciliation (Step 2b). **Do not inline a
 different lookup anywhere** — call this procedure so every site identifies

@@ -88,7 +88,7 @@ a story for autonomous pickup. (PR review-state labels are separate — see
 
 | Purpose          | Label    | Applied by                     |
 | ---------------- | -------- | ------------------------------ |
-| claude-authored  | `{name}` | finish-story (PRs), report-issue / finish-story (issues) |
+| claude-authored  | `{name}` | execute (PRs), report-issue / execute (issues) |
 | claude-ready     | `{name}` | human triage                   |
 
 ### Custom (optional)

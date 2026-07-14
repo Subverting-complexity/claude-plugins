@@ -63,7 +63,18 @@ else
       fi
     done
   else
-    echo "CRITICAL file-ClaudeProject: ClaudeProject.md not found — run /github-workflow:setup"; crit=1
+    # Check for common alternative config filenames before reporting missing
+    alt=""
+    for candidate in project.config.md ProjectConfig.md claude-project.md .claude/project.md; do
+      if [ -f "$candidate" ]; then alt="$candidate"; break; fi
+    done
+    if [ -n "$alt" ]; then
+      echo "CRITICAL file-ClaudeProject: ClaudeProject.md not found but '$alt' exists — rename it to ClaudeProject.md"
+      echo "CONFIG_RENAME_CANDIDATE: $alt"
+    else
+      echo "CRITICAL file-ClaudeProject: ClaudeProject.md not found — run /github-workflow:setup"
+    fi
+    crit=1
   fi
 
   # CLAUDE.md (WARNING-level)
@@ -118,6 +129,15 @@ of three lead tokens — branch on it without re-reading files:
   `board-column`/`both` (a required board can be CRITICAL) or
   `PREFLIGHT_CHEAP_VERDICT` is `CRITICAL`.
 
+**`CONFIG_RENAME_CANDIDATE` — alternative config file found.** If the
+block printed a `CONFIG_RENAME_CANDIDATE: {path}` line, a file with the
+right content but the wrong name exists. Use `AskUserQuestion` to offer:
+- **"Rename to ClaudeProject.md (Recommended)"** — rename the file
+  (`git mv {path} ClaudeProject.md`), re-run the startup checks, and
+  continue.
+- **"Run setup instead"** — invoke `/github-workflow:setup`, which will
+  create a fresh `ClaudeProject.md`.
+
 **`ECOSYSTEM_TIP` is informational, not a finding.** If the block printed an
 `ECOSYSTEM_TIP` line, the project is configured but has not opted into *or*
 out of the companion tools. It is **never** CRITICAL or WARNING and never
@@ -146,8 +166,8 @@ print one informational line and never block.
 
 Collect the output from the block above and the by-hand checks below.
 
-**Reuse, don't re-read.** Several calling commands (`pick-story`,
-`execute`, `finish-story`) auto-load the full `ClaudeProject.md` into
+**Reuse, don't re-read.** Several calling commands (`execute`,
+`code-review`, `block-story`) auto-load the full `ClaudeProject.md` into
 context before invoking preflight. When that copy is already present,
 evaluate the by-hand checks (quality gate, ready-gate/board) against it —
 do **not** open `ClaudeProject.md` again. Only read the file if it is not

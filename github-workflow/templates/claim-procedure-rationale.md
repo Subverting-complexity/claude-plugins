@@ -34,7 +34,7 @@ markers**:
 - **PR:** the open PR itself **plus** its review-state label
   (`reviewing` / `updating` / …).
 
-Because `pick-story` / `execute` only ever select *unassigned* issues, an
+Because `execute` only ever selects *unassigned* issues, an
 assigned + labelled issue stays out of the pick pool **indefinitely** —
 for days if a human parks it. This is the intended way to pause work and
 resume later without a second agent producing a duplicate branch or PR:
@@ -53,8 +53,8 @@ is what closes the create-time race. While session A holds
 A releases — and A releases only after its PR is live, at which point B's
 pre-start guard (`templates/sibling-pr-lookup.md`) sees that PR and stops.
 Reorder this — release before `gh pr create` — and two sessions could both
-create a PR for the same issue. So `execute` Phase 7 and `finish-story`
-create the PR first and release the claim afterward, never the reverse.
+create a PR for the same issue. So `execute` Phase 7
+creates the PR first and releases the claim afterward, never the reverse.
 
 GitHub offers no atomic "create a PR only if none already closes this
 issue" operation (a compare-and-swap cannot span issue state *and* PR

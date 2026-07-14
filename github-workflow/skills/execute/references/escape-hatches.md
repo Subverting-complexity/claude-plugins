@@ -83,9 +83,10 @@ then pick the first sub-story.
 
 ## Review feedback
 
-After the PR is created, the code-review skill may flag issues. Run
-`/github-workflow:update-pr` to address the feedback, push fixes, and flag
-the PR for re-review.
+After the PR is created, the code-review skill may flag issues. The next
+`/github-workflow:code-review` invocation picks up the
+`changes-requested` PR automatically, addresses the feedback, and
+re-reviews — no separate command needed.
 
 ## Story too large
 

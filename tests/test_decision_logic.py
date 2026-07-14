@@ -394,7 +394,7 @@ class TestDependencyParsing(unittest.TestCase):
 
 
 class TestBranchNaming(unittest.TestCase):
-    """Deterministic slug + convention rendering from start-story.md Step 6."""
+    """Deterministic slug + convention rendering from execute SKILL.md."""
 
     def test_slug_example_from_template(self):
         self.assertEqual(branch_slug('Fix: User login broken!!!'), 'fix-user-login-broken')
@@ -477,7 +477,7 @@ class TestReviewLabelResolution(unittest.TestCase):
 
 
 class TestUpdatePool(unittest.TestCase):
-    """update-pr pool: my PRs with actionable feedback, prioritised."""
+    """code-review rework pool: my PRs with actionable feedback, prioritised."""
 
     def test_changes_requested_beats_needs_re_review(self):
         prs = [

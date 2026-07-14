@@ -151,9 +151,9 @@ gh issue create --repo {org}/{repo} \
 **Leave the assignee blank.** Do not pass `--assignee`/`--add-assignee`
 here, and do not follow up with a `gh issue edit --add-assignee`.
 Creating an issue is never an act of claiming it: new issues must enter
-the unassigned pool so `pick-story` / `execute` (which query
+the unassigned pool so `execute` (which queries
 `--assignee ""`) can select them. Assignment happens only at claim time
-(`start-story` / `execute` Acquire), never at creation.
+(`execute` Acquire), never at creation.
 
 Where `{prefix}` is `[BUG]`, `[SECURITY]`, `[ARCH]`, or `[DEBT]` from the Issue Prefixes
 table in `ClaudeProject.md`.

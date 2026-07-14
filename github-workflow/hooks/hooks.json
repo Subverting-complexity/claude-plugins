@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'WARNING: Off-workflow issue creation. Prefer /github-workflow:report-issue, which validates the body (--body-file), creates and verifies labels, attaches the current milestone, and handles Windows shell-escaping. If you are already inside the report-issue or finish-story skill, proceed.'"
+            "command": "echo 'WARNING: Off-workflow issue creation. Prefer /github-workflow:report-issue, which validates the body (--body-file), creates and verifies labels, attaches the current milestone, and handles Windows shell-escaping. If you are already inside the report-issue or execute skill, proceed.'"
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'WARNING: Off-workflow PR creation. Prefer /github-workflow:finish-story, which validates the body (--body-file), applies and verifies the claude-authored label, releases the atomic claim, and moves the board to In Review. If you are already inside the finish-story or execute skill, proceed.'"
+            "command": "echo 'WARNING: Off-workflow PR creation. Prefer /github-workflow:execute, which validates the body (--body-file), applies and verifies the claude-authored label, releases the atomic claim, and moves the board to In Review. If you are already inside the execute skill, proceed.'"
           }
         ]
       }

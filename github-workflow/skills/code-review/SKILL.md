@@ -123,9 +123,10 @@ Once you have a valid `review.config.md`, proceed with the review.
 #### Fast path — the bundled `wf` picker
 
 Try the `wf` CLI first. It selects **and claims** the next PR carrying a
-`needs-review` or `needs-re-review` label (re-review first, then lowest
-number) and, with `--checkout`, checks out its branch — Steps 1–2 plus the
-Step 3 checkout in one call:
+`needs-review`, `needs-re-review`, or `changes-requested` label
+(re-review first, then changes-requested, then needs-review; lowest
+number within each tier) and, with `--checkout`, checks out its branch —
+Steps 1–2 plus the Step 3 checkout in one call:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-next --checkout
@@ -141,13 +142,18 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-next --checkout --no-claim
 ```
 
 - **`ok`** — a PR is selected: the JSON gives `number`, `title`, `url`,
-  `branch`, `labels`, and `claimed`. In full mode `claimed` is `true` — the
+  `branch`, `labels`, `claimed`, and **`prior_state`** (the label it was
+  picked from — `needs-review`, `needs-re-review`, or
+  `changes-requested`). In full mode `claimed` is `true` — the
   `reviewing` marker is applied (the prior review-state label removed), the
   claim ref is held (`claim_ref`), and you proceed owning the PR. In
   read-only mode `claimed` is `false` — nothing was locked or relabelled and
   there is no claim ref to release later. Either way, **stop selecting — the
-  picker already chose; do not re-derive it.** Proceed to **Step 2b**
-  (duplicate reconciliation), then Step 3. Surface any `side_effects`.
+  picker already chose; do not re-derive it.**
+  If `prior_state` is `changes-requested`, the PR needs **rework before
+  review** — jump to **Step 1b (Rework cascade)** below. Otherwise proceed
+  to **Step 2b** (duplicate reconciliation), then Step 3. Surface any
+  `side_effects`.
 - **`no-candidates`** — no open PR carries an explicit review-needed label.
   This is **not** conclusive: a PR whose head SHA changed since its last
   review needs review *without* a label, and `wf` does not detect that. Fall
@@ -175,7 +181,7 @@ Skip any PR that has:
 - The `approved` state label **unless** it also has `needs-re-review`
   (approved PRs that received new commits still need re-review).
 
-For each remaining PR, determine whether it needs review:
+For each remaining PR, determine whether it needs attention:
 
 1. Get Claude's most recent review comment:
    ```bash
@@ -188,19 +194,29 @@ For each remaining PR, determine whether it needs review:
    normal first-review case.
 4. If a comment exists, extract the `Reviewed at <SHA>` line. If that SHA
    differs from the current `headRefOid`, it needs review. Otherwise skip.
+5. A PR carrying `changes-requested` always needs attention — it needs
+   rework followed by re-review.
 
-**Prioritisation:** PRs with the `needs-re-review` state label are
-reviewed first. Among those, pick the lowest-numbered one. If none have
-that label, pick the lowest-numbered PR that needs review (a
-`needs-review` PR or one whose SHA changed).
+**Prioritisation:** Three tiers, highest first:
+1. `needs-re-review` — pick the lowest-numbered one.
+2. `changes-requested` — pick the lowest-numbered one (enters rework
+   cascade, Step 1b).
+3. `needs-review` or SHA-changed — pick the lowest-numbered one.
 
-If no PRs need review, report that and exit. Do not loop through multiple
-PRs.
+If no PRs need review or rework, report that and exit. Do not loop
+through multiple PRs.
 
 **Never ask the user which PR to review.** Always auto-select using the
 prioritisation rules above. If the user says "review PRs" or "review
 pull requests" (plural), that means "find the next one and review it",
 not "review all of them" or "let me choose".
+
+### Step 1b — Rework cascade (changes-requested PRs only)
+
+When the selected PR was picked from the `changes-requested` tier, load
+`references/rework-cascade.md` and follow **Step 1b** there — it reads
+the prior review, addresses each issue, pushes fixes, relabels, then
+returns you to **Step 2b** to review the updated PR.
 
 ### Step 2 — Claim the PR
 
@@ -608,8 +624,20 @@ the updated SHA from Step 7 if fixes were pushed).
    report format** below, then exit. If the verdict is Approved,
    Step 11 runs first and produces the merged/queued lead line instead.
 
-If the verdict is **Approved**, proceed to Step 11 before exiting.
-Otherwise the review is complete — exit here.
+**Next step by verdict:**
+- **Approved** → proceed to Step 11 (auto-merge).
+- **Changes Requested** → proceed to Step 10b (rework cascade) if the
+  remaining issues are concrete and addressable (not "needs human
+  judgment"). Otherwise exit.
+- **Needs Discussion** → exit here.
+
+### Step 10b — Post-verdict rework cascade (Changes Requested only)
+
+When the Issues Remaining are all concrete, fixable problems (not human-
+judgment items), load `references/rework-cascade.md` and follow **Step
+10b** — it re-reads the review, fixes the issues, pushes, relabels, and
+returns you to **Step 4b** to re-review. If any item needs human
+judgment, skip this step and exit — `changes-requested` stays.
 
 ### Step 11 — Auto-merge on approval (if enabled)
 
@@ -684,6 +712,9 @@ single-PR review path light:
 - `references/duplicate-reconciliation.md` — Step 2b, when the claimed PR
   shares an issue with another open PR.
 - `references/re-review.md` — Step 4b, when a prior review footer exists.
+- `references/rework-cascade.md` — Steps 1b and 10b, when a
+  `changes-requested` PR is picked up or the post-review verdict triggers
+  rework.
 - `references/auto-merge.md` — Step 11, when the verdict is Approved. It
   loads `references/conflict-resolution.md` (a reusable merge-conflict
   procedure) only when the PR is actually conflicting.
@@ -722,4 +753,5 @@ Rationale files (maintainers only — not read at runtime):
   dropped.
 - Report merged PRs as `Approved and merged PR #<number>: <title>`
   followed by the **Changed** and **Added to the board** outline.
-- Review one PR per invocation, then exit.
+- Handle one PR per invocation (rework + re-review counts as one), then
+  exit.

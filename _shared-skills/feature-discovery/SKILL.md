@@ -407,7 +407,7 @@ issues. If they accept:
 **Leave the assignee blank.** Do not assign created stories to anyone —
 not the creator, not an agent. Pass no `--assignee`/`--add-assignee` on
 creation and do not edit issues to assign them afterward. Backlog
-stories must enter the unassigned pool so `pick-story` / `execute` can
+stories must enter the unassigned pool so `execute` can
 select them; assignment happens only at claim time, never at creation.
 
 ---
