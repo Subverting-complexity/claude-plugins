@@ -45,9 +45,12 @@ skips any PR carrying it, so leaving it would strand the PR outside every
 tier. That is why the procedure reconciles it to a real verdict before
 releasing the lock, rather than leaving it in place.
 
-Note also that Phase 7 is no longer a terminal exit. The run continues through
-review, rework, and the merge, so a successful finish now exits from Phase 11
-and the exit paths listed above all sit after the PR exists.
+Note also that Phase 7 is no longer a terminal exit: the run continues through
+review, rework, and the merge, so a successful finish now exits from Phase 11.
+That says nothing about the other exit paths. A block, an unrecoverable
+failure, a rate-limit pause, or the timeout's not-shippable branch can all fire
+before a PR exists, which is exactly why the PR-claim release is gated on
+`.claude/claim-pr-{number}.sha` rather than on having reached a phase number.
 
 ## Why delete the scratch files
 

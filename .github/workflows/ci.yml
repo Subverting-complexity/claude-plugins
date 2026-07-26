@@ -79,7 +79,7 @@ jobs:
       # path — by excluding the two references that only load once a PR
       # exists. The loose one keeps the whole run bounded. Raising the loose
       # budget alone would have let the build window regrow ~9k tokens
-      # unnoticed. Measured 33868 and 43812; budgets are ~2.7% above each.
+      # unnoticed. Measured 34077 and 44113; budgets are ~2.0% above each.
       - name: Check execute build-window footprint (budget 34800 tokens)
         shell: bash
         run: |
