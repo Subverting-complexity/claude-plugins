@@ -18,10 +18,11 @@ claude --plugin-dir ./plugins/github-workflow
 
 | Command                                 | What it does                             |
 | --------------------------------------- | ---------------------------------------- |
-| `/github-workflow:execute`              | Pick next story, execute end-to-end      |
+| `/github-workflow:execute`              | Pick next story, execute end-to-end through review and merge |
 | `/github-workflow:execute 47`           | Execute story #47 directly               |
 | `/github-workflow:execute --mode maintenance` | Pick and fix the next bug/security/debt issue |
 | `/github-workflow:execute --mode audit` | Audit codebase, create issues (no code)  |
+| `/github-workflow:execute --no-merge`   | Execute and review, but leave the PR open |
 | `/github-workflow:code-review`          | Review (or rework + re-review) the next PR |
 | `/github-workflow:block-story`          | Mark current story as blocked            |
 | `/github-workflow:report-issue`         | Create a bug/arch/debt issue             |
@@ -39,7 +40,7 @@ github-workflow/
 ├── .claude-plugin/
 │   └── plugin.json            # Plugin manifest
 ├── skills/                    # Skills catalogue — see "Skills" below
-│   ├── execute/               # Orchestrator: full pick-to-PR workflow
+│   ├── execute/               # Orchestrator: full pick-to-merge workflow
 │   ├── code-architect/        # Architecture design and audit (SOLID + Clean)
 │   ├── structured-coding/     # Structured coding methodology
 │   ├── code-review/           # Deep PR review, labels, optional auto-merge
@@ -213,7 +214,7 @@ A project with no board configured skips all of this silently.
 | Agent         | Role                          | Constraint             |
 | ------------- | ----------------------------- | ---------------------- |
 | **Builder**   | Implements stories end-to-end | Full tool access       |
-| **Reviewer**  | Validates PRs against issues  | Read-only, cannot edit |
+| **Reviewer**  | Validates PRs against issues  | Fixes and merges in full mode; read-only when `execute` spawns it for an independent review |
 | **DocWriter** | Updates documentation         | Restricted to `docs/`  |
 
 Each agent follows least privilege — only the tools it needs.
@@ -233,7 +234,7 @@ directly.
 
 | Skill                 | What it does                                       |
 | --------------------- | ------------------------------------------------- |
-| `execute`             | Orchestrator: pick → plan → build → test → PR     |
+| `execute`             | Orchestrator: pick → build → PR → review → merge  |
 | `code-architect`      | Architecture design and audit (SOLID + Clean)     |
 | `structured-coding`   | Structured coding methodology                     |
 | `code-review`         | Deep PR review, labels, optional auto-merge       |

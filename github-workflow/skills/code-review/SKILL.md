@@ -4,6 +4,8 @@ description: Review open pull requests — find the next PR needing review, chec
 arguments:
   - name: mode
     description: 'Review mode: full (default) — evaluate and fix; read-only — evaluate only, no edits or pushes'
+  - name: pr
+    description: 'Optional PR number. When given, that PR is reviewed and the picker is skipped — used by the execute skill Phase 9 and by any caller that already knows which PR it wants reviewed.'
   - name: bypass-ci
     description: 'When set, the CI gate in auto-merge (Step 11) is treated as satisfied even if remote checks are red or absent. Explicit, never default — use only when CI cannot run for reasons outside the PR (e.g. GitHub Actions billing).'
 allowed-tools:
@@ -107,8 +109,10 @@ user through creating one.
 
 When invoked with `--read-only` (`$ARGUMENTS.mode` is `read-only`), read and
 follow `references/read-only-mode.md` — it overrides specific steps (no
-claim, skip the Step 7 fixes, skip the Step 11 auto-merge, close nothing in
-Step 2b) so the review evaluates without writing to the PR. Full-mode
+claim, detached checkout, skip the Step 7 fixes, skip the Step 10b rework
+cascade, skip the Step 11 auto-merge, close nothing in Step 2b, and hand the
+comment and labels to a caller that owns the verdict) so the review evaluates
+without writing to the PR. Full-mode
 reviews skip the reference entirely. The per-step read-only notes inline
 below restate the key overrides at their point of use.
 
@@ -119,6 +123,22 @@ below restate the key overrides at their point of use.
 Once you have a valid `review.config.md`, proceed with the review.
 
 ### Step 1 — Find a PR that needs review
+
+#### Pinned PR — an explicit number was given
+
+When the invocation names a PR (`$ARGUMENTS.pr`, or a number the user or a
+calling skill passed), that PR is the subject and there is nothing to select.
+Do **not** run the picker — it would review a different PR by priority.
+
+- **Full mode:** claim it (`templates/claim-procedure.md` **Acquire**, target
+  `pr-<number>`) and check out its branch, then continue at Step 2b — or at
+  **Step 1b** first if it carries `changes-requested`, exactly as the picker
+  routes that tier. If the claim is lost, another agent owns this PR: report
+  that and exit rather than moving to a different one.
+- **Read-only mode:** no claim, and check out **detached** (`gh pr checkout
+  <number> --detach`) because another worktree on this clone may already hold
+  the branch and git refuses to check out a branch twice. Continue at Step 2b;
+  read-only never enters Step 1b, which pushes.
 
 #### Fast path — the bundled `wf` picker
 
@@ -253,11 +273,17 @@ Step 3.
 gh pr checkout <number>
 ```
 
+In **read-only mode** add `--detach` — another worktree on this clone may
+already hold the branch, and git refuses to check out a branch twice. If the
+pinned-PR path already checked out that SHA detached, this step is a no-op.
+
 If checkout fails: release the claim (`templates/claim-procedure.md`
 **Release** for target `pr-<number>`: `git push origin :refs/claims/pr-<number>`),
 remove the `reviewing` label, apply the `failed` review-state label
 (purpose key `failed`, default name `review-failed`), post a brief
-failure comment with the footer, and exit.
+failure comment with the footer, and exit. In read-only mode there is no
+claim and no marker to remove: report the failure to the caller and exit
+without labelling the PR `failed`, which no picker tier selects.
 
 Record the current commit SHA:
 
@@ -738,6 +764,9 @@ Rationale files (maintainers only — not read at runtime):
   only under the conditions and CI-gate/`--bypass-ci`/
   `bypass-ci-on-billing-failure` rules stated once in
   `references/auto-merge.md` (off by default). Never merge in read-only mode.
+  That reference has one other sanctioned caller, named in it: the `execute`
+  skill's Phase 11, which merges the PR its own run built and had reviewed.
+  This rule governs this skill; it does not forbid that one.
 - **Do not close a PR** except to reconcile duplicates in Step 2b, per
   `references/duplicate-reconciliation.md` — the one sanctioned close. Never
   close a PR for any other reason, and never in read-only mode.

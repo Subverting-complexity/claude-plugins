@@ -40,8 +40,10 @@ the rest to references loaded on their triggers: `read-only-mode.md`,
 loads `conflict-resolution.md`), `review-workflow.md` (label lookup and
 the Step 10 fallback), and `review-config-guide.md`. Its "Reference
 Material" section lists each file with its trigger. `execute` follows
-the same shape (`finish-and-self-review.md`, `escape-hatches.md`,
-`audit-mode.md`, …).
+the same shape (`finish-and-self-review.md`, `review-and-merge.md`,
+`escape-hatches.md`, `audit-mode.md`, …), and `review-and-merge.md` in turn
+loads code-review's `auto-merge.md` rather than restating the merge
+mechanics — a reference may be shared across skills.
 
 ## When to extract a new reference
 

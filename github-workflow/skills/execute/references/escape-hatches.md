@@ -24,6 +24,14 @@ Then move the issue to the `status-needs-attention` lifecycle label
 by purpose key) so the failure is visible in the issues list. Do **not**
 open a PR for failed/incomplete work.
 
+**Once the PR is open (Phase 9 onward), do not move the issue backwards.**
+Phase 7 already set `status-in-review` and moved the board to In Review, and
+the open, labelled PR is the visible record of the work. Comment the failure
+on the **PR** instead, leave the issue at `status-in-review`, and let the
+next `/github-workflow:code-review` run take it from there. Moving it to
+`status-needs-attention` would desynchronise the lifecycle label, the board,
+and the PR's review state.
+
 This ensures the next session (or human) can pick up exactly where
 this one failed without guessing what happened. After the comment is
 posted, run **Exit cleanup** (`references/exit-cleanup.md` — it releases
@@ -83,10 +91,13 @@ then pick the first sub-story.
 
 ## Review feedback
 
-After the PR is created, the code-review skill may flag issues. The next
-`/github-workflow:code-review` invocation picks up the
-`changes-requested` PR automatically, addresses the feedback, and
-re-reviews — no separate command needed.
+Review feedback is no longer an escape hatch: Phases 9 and 10 review the
+PR in a fresh context and answer the findings inside this same run
+(`references/review-and-merge.md`). Feedback that arrives **after** the run
+ends — a human reviewer's comment, or a rework round the session budget cut
+short — is picked up by the next `/github-workflow:code-review` invocation,
+which selects the `changes-requested` PR automatically, addresses the
+feedback, and re-reviews. No separate command is needed for it.
 
 ## Story too large
 

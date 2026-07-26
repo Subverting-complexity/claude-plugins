@@ -6,7 +6,7 @@ complementary plugins that share a common library of skills:
 
 | Plugin | What it's for |
 |--------|----------------|
-| **`github-workflow`** | End-to-end GitHub development: pick a story from your backlog, plan the architecture, build it, test it, and open a PR — with board/label automation and PR review. |
+| **`github-workflow`** | End-to-end GitHub development: pick a story from your backlog, plan the architecture, build it, test it, open a PR, have that PR reviewed independently, and merge it — with board/label automation throughout. |
 | **`local-workflow`** | The same structured engineering methodology, but project-agnostic and with **no GitHub or platform dependencies**. Plan, build, verify, and commit locally. |
 
 Both plugins share a single canonical set of skills (architecture design,
@@ -79,7 +79,7 @@ triggers automatically. A few starting points:
 **`github-workflow`**
 - *"What's next?"* / *"pick a story"* — surface the next backlog item
 - *"Start story 42"* — assign it, update the board, create a branch
-- *"Execute"* / *"start the next story"* — full pick → plan → build → test → PR
+- *"Execute"* / *"start the next story"* — full pick → plan → build → test → PR → independent review → merge
 - *"Finish"* / *"open a PR"* — push, open the PR, update the board
 - *"Review PRs"* — review the next open PR in full codebase context
 - *"Report a bug"* — file a structured issue

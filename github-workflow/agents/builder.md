@@ -8,6 +8,7 @@ tools:
   - Write
   - Glob
   - Grep
+  - Task
   - Bash(pnpm *)
   - Bash(npm *)
   - Bash(npx *)
@@ -64,8 +65,10 @@ normally and never block on it.
 ## Your workflow
 
 Run `/github-workflow:execute` to pick the next story and execute it
-end-to-end. The skill orchestrates the full workflow: pick, start,
-plan, build, verify, commit, finish (push, PR, board update).
+end-to-end. The skill orchestrates the full workflow: pick, start, plan,
+build, verify, commit, finish (push, PR, board update), then the review and
+merge phases — it spawns read-only review agents in fresh contexts, applies
+what they find, and merges the PR once the verdict is approved.
 
 When given a specific issue number, run `/github-workflow:execute <number>`.
 
@@ -127,6 +130,15 @@ project shell scripts by name (e.g., `bash sync-skills.sh --verify`,
 `bash lint-skills.sh`). Intentionally restricted to `.sh` filenames —
 this blocks `bash -c "arbitrary code"` and process substitution
 (`bash <(curl ...)`) while allowing any named script.
+
+**Task** — the subagent-spawning tool, under the name the current CLI uses;
+if a future version renames it, this entry has to follow. It exists here to
+spawn the read-only review agents the `execute` skill's Phase 9 and Phase 10
+depend on. Without it the independent review cannot happen in a
+separate context and the workflow falls back to reviewing its own work in
+this one, which is the thing those phases exist to avoid. The spawned agents
+carry their own least-privilege allowlists, so this does not widen what the
+builder itself can do.
 
 **Bash(cat \*), Bash(ls \*), Bash(find \*), etc.** — read-only and
 utility filesystem operations for inspecting the working tree when the

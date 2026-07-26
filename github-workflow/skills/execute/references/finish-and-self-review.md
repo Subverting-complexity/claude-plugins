@@ -51,8 +51,9 @@ light.
      line as `Closes #42`. A story PR must never omit this.
    - Include a test plan section
    - Summary of what was built and acceptance criteria addressed
-   - If the **gate-failed flag** is set (Phase 5), prepend a "Quality
-     Gate Failed" section with the last error output.
+   - If the **gate-failed flag** is set (`test -f .claude/gate-failed.flag`,
+     written in Phase 5), prepend a "Quality Gate Failed" section with the
+     last error output.
 
 2b. Validate the PR body — read it back and apply the corruption test and
    retry in `templates/body-file-write.md` (**Validate** + **Retry**). For
@@ -130,8 +131,8 @@ light.
 
    1. `gh pr edit {pr_number} --repo {org}/{repo} --add-label
       claude-authored --add-label {review-state-label}`
-      (`review-needs-review`, or `review-changes-requested` when the
-      gate-failed flag is set).
+      (`review-needs-review`, or `review-changes-requested` when
+      `.claude/gate-failed.flag` exists).
    2. `gh issue edit {number} --repo {org}/{repo} --remove-label
       status-in-progress --add-label status-in-review`.
    3. Board move — `templates/board-resolution.md` Step 5, targeting
@@ -195,3 +196,7 @@ gaps before a human reviewer sees the PR.
 This phase never blocks the PR or changes the verdict — it surfaces gaps
 early and queues any it cannot close for automatic pickup, so the
 reviewer can focus on deeper concerns.
+
+Then continue to **Phase 9** by reading `references/review-and-merge.md`.
+The run is not finished here: the PR still has to be reviewed
+independently in a fresh context, answered, and merged.

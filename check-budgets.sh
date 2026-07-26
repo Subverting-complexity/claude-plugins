@@ -49,8 +49,14 @@ BODY_BUDGET_LINES=500
 # the footprint-check convention — tight enough to catch regression, loose
 # enough not to block normal edits. Key = repo-relative path.
 declare -A BODY_OVERRIDE=(
-    # PR-review orchestrator; body is 715 lines, 740 is ~3.5% headroom.
-    ["github-workflow/skills/code-review/SKILL.md"]=740
+    # PR-review orchestrator; body is 745 lines after the pinned-PR path, the
+    # read-only carve-outs, and the sanctioned-caller note. 771 is ~3.5%.
+    ["github-workflow/skills/code-review/SKILL.md"]=771
+    # Story orchestrator, the other legitimately large one: it now covers 11
+    # phases (pick through merge) rather than stopping at the PR, and the
+    # post-PR detail already lives in references/. Body is 533 lines, 555 is
+    # ~4.1% headroom, matching the calibration above.
+    ["github-workflow/skills/execute/SKILL.md"]=555
 )
 
 # --- Helpers ----------------------------------------------------------------

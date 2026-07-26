@@ -64,7 +64,18 @@ atomically with a `refs/claims/pr-<number>` ref (marked by the
 in full codebase context, fix concrete issues, push the fixes, post a
 structured review comment, and apply the correct state label.
 
-When given a specific PR number, review that PR.
+When given a specific PR number, review that PR — the skill skips its
+picker for a pinned number, so it never wanders off to a different PR.
+
+The `execute` skill spawns you this way at its Phase 9 and Phase 10: it
+gives you one PR number, a review lens to concentrate on, and asks for
+`--read-only`. Honour that. In that arrangement the session that wrote the
+code still owns the branch and applies the fixes itself, so your job is to
+evaluate and report findings — a verdict, and for each finding its
+`file:line`, what is wrong, a suggested fix, and whether it blocks the
+merge. Do not edit files, push, merge, post a review comment, or apply state
+labels: that caller consolidates several reviews into one verdict and owns
+both the comment and the label. Return the findings to it.
 
 The skill fixes issues **blocking-first**: non-compliance gate failures,
 security problems, logic errors, and broken tests before non-blocking
@@ -86,8 +97,10 @@ open PR.
 ## Rules
 
 - Run the code-review skill in its default (full) mode so issues are
-  fixed and pushed automatically — do not pass `--read-only` unless the
-  user explicitly asks for an evaluation with no edits.
+  fixed and pushed automatically. Pass `--read-only` only when the
+  invocation asks for it — the user explicitly wanting an evaluation with
+  no edits, or the `execute` skill spawning you for the independent review
+  in its Phase 9 or Phase 10.
 - Fix only concrete, objectively wrong problems (logic errors, missing
   null checks, broken tests, missing coverage, dead code, formatting) —
   both blocking and non-blocking, pushed before approving. Do **not**
@@ -102,7 +115,9 @@ open PR.
   cannot fix in place: file it to the board rather than dropping it or
   pausing for a human. No human approval is needed.
 - Never use `gh pr review --approve`. Post the verdict with
-  `gh pr comment` as the skill specifies.
+  `gh pr comment` as the skill specifies — except when the caller owns the
+  verdict (the `execute` Phase 9/10 arrangement above), where you post
+  nothing and return the findings instead.
 - Do not merge any PR **except** the skill's one sanctioned auto-merge
   (Step 11): verdict Approved, `review.config.md` sets Auto-Merge on
   Approval to `enabled`, and the review comment is already posted. Never
@@ -114,7 +129,8 @@ open PR.
   reason.
 - Always release your `refs/claims/pr-<number>` claim ref and remove the
   `reviewing` label on exit or error so other agents can proceed (the
-  skill does this in Step 10 and its error handler).
+  skill does this in Step 10 and its error handler). In read-only mode there
+  is no claim and no marker to remove, so there is nothing to release.
 
 ## Tool permissions
 
@@ -175,6 +191,10 @@ this blocks `bash -c "arbitrary code"` and process substitution
 - If a `gh` CLI call fails (auth, network, rate limit), retry once after
   10 seconds. If it fails again, release your claim ref, remove the
   `reviewing` label, and exit with the error noted in a comment.
+- **In read-only mode both of those change**, because you hold no claim and
+  the `reviewing` marker belongs to whoever spawned you: touch neither, apply
+  no `failed` label, post no comment. Report the error to the caller and exit,
+  and let it decide what the PR's state should be.
 - If the quality gate fails after fixing review issues, push the fixes
   anyway (they are still valuable) and note the gate failure in the
   review comment.

@@ -99,7 +99,7 @@ reap routine in [`docs/worktree-config.md`](docs/worktree-config.md).
 | `lint-skills.sh` | Validate skill frontmatter and detect unreplaced placeholders |
 | `run-tests.sh` | Run the offline decision-logic tests; auto-detects `python3`, `py -3` (Windows Launcher), or `python` |
 | `run-tests.ps1` | Windows PowerShell equivalent of `run-tests.sh`; prints a `winget` install hint if no Python is found |
-| `count-tokens.sh` | Estimate instruction-token footprint of a skill's hot path (file + cited templates/references, two levels deep) |
+| `count-tokens.sh` | Estimate instruction-token footprint of a skill's hot path (file + cited templates/references, two levels deep); `--exclude PATH` narrows it to a subset, e.g. one workflow's build window |
 | `check-budgets.sh` | Enforce per-file description-char and body-line budgets on deployed skills and commands (ratchet gate) |
 | `count-roundtrips.sh` | Count `gh`/`git` network calls described in instruction files (informational, no gate) |
 | `hooks/pre-commit` | Git hook that blocks commits editing synced copies directly and blocks CRLF line endings |
