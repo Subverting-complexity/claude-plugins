@@ -125,16 +125,18 @@ Once you have a valid `review.config.md`, proceed with the review.
 #### Pinned PR — an explicit number was given
 
 When the invocation names a PR (`$ARGUMENTS.pr`, or a number the user or a
-calling skill passed, e.g. `/github-workflow:code-review 123`), that PR is
-the subject and there is nothing to select. Do **not** run the picker — it
-would choose a different PR by priority and review the wrong thing.
+calling skill passed), that PR is the subject and there is nothing to select.
+Do **not** run the picker — it would review a different PR by priority.
 
-In **full mode**, claim it with `templates/claim-procedure.md` (**Acquire**,
-target `pr-<number>`) and check out its branch, then continue at Step 2b. If
-the claim is lost, another agent already owns this PR: report that and exit
-rather than moving to a different one. In **read-only mode** there is no
-claim — check the branch out with `gh pr checkout <number>` and continue at
-Step 2b.
+- **Full mode:** claim it (`templates/claim-procedure.md` **Acquire**, target
+  `pr-<number>`) and check out its branch, then continue at Step 2b — or at
+  **Step 1b** first if it carries `changes-requested`, exactly as the picker
+  routes that tier. If the claim is lost, another agent owns this PR: report
+  that and exit rather than moving to a different one.
+- **Read-only mode:** no claim, and check out **detached** (`gh pr checkout
+  <number> --detach`) because another worktree on this clone may already hold
+  the branch and git refuses to check out a branch twice. Continue at Step 2b;
+  read-only never enters Step 1b, which pushes.
 
 #### Fast path — the bundled `wf` picker
 
@@ -754,6 +756,9 @@ Rationale files (maintainers only — not read at runtime):
   only under the conditions and CI-gate/`--bypass-ci`/
   `bypass-ci-on-billing-failure` rules stated once in
   `references/auto-merge.md` (off by default). Never merge in read-only mode.
+  That reference has one other sanctioned caller, named in it: the `execute`
+  skill's Phase 11, which merges the PR its own run built and had reviewed.
+  This rule governs this skill; it does not forbid that one.
 - **Do not close a PR** except to reconcile duplicates in Step 2b, per
   `references/duplicate-reconciliation.md` — the one sanctioned close. Never
   close a PR for any other reason, and never in read-only mode.

@@ -12,7 +12,7 @@ depends-on:
   - structured-coding
   - feature-discovery
   - code-review
-argument-hint: '[issue#] [--mode feature|maintenance|audit] [--no-merge]'
+argument-hint: '[issue#] [--mode feature|maintenance|audit] [--no-merge] [--bypass-ci]'
 arguments:
   - name: story_number
     description: 'Optional issue number. If omitted, picks the next story from the backlog.'
@@ -20,6 +20,8 @@ arguments:
     description: 'Execution mode: story (default — picks highest priority issue regardless of type), feature (feature stories only), maintenance (bug/security/architecture/debt; "bug" is accepted as alias), audit (codebase audit, no code changes)'
   - name: no-merge
     description: 'When set, stop after the independent review and rework instead of merging. The PR is left open carrying the reviewer verdict.'
+  - name: bypass-ci
+    description: 'Passed through to the Phase 11 merge gate: treats CI as satisfied when remote checks are red or absent. Explicit, never default — use only when CI cannot run for reasons outside the PR (e.g. GitHub Actions billing).'
 ---
 
 # Execute Story
@@ -43,6 +45,19 @@ stop are:
 - The story needs to be broken into sub-stories before implementation
   can begin — run `/github-workflow:feature-discovery` to plan the
   breakdown with the user, then pick the first sub-story.
+
+## Invocation flags
+
+`--no-merge` and `--bypass-ci` are read by Phase 11, long after they are
+parsed, so record whichever was passed on disk now — a compaction in between
+would otherwise lose them (the same reason preflight writes a marker file).
+**Exit cleanup** deletes them, so each is valid for this run only.
+
+```
+mkdir -p .claude
+touch .claude/no-merge.flag    # only when --no-merge was passed
+touch .claude/bypass-ci.flag   # only when --bypass-ci was passed
+```
 
 ## Preflight
 
@@ -150,20 +165,22 @@ artifact — a merged PR, or an open one whose review state is recorded.
   retries near the token budget or the 45-minute mark, stop retrying —
   take Phase 5's gate-failed exit (commit what you have) or block the
   story rather than burning the remaining budget on more runs.
-- **The review phases spend mostly their own budget.** Phases 9 and 10
-  hand the reviewing to separate agent contexts, so reading the diff and
-  evaluating it does not come out of this session's window; what you pay
-  for here is the findings they return and the fixes you apply. The rework
-  loop still stops once this session's budget is nearly spent.
+- **The review phases spend some of their budget elsewhere.** Phases 9 and
+  10 hand the reading and evaluating of the diff to separate agent
+  contexts. What they cost *here* is `references/review-and-merge.md`, the
+  merge mechanics Phase 11 loads, the findings the agents return, and the
+  fixes you apply — and, if no subagent can be spawned, the whole
+  code-review hot path inline. The rework loop stops once this session's
+  budget is nearly spent.
 
 **45-minute timeout.** Record the start time (`date +%s`); before each
 phase, check elapsed. Past 45 minutes:
 
 1. Commit and push everything now.
-2. **Shippable** → run Phase 7 for a **real** PR (never a draft), then
-   carry on into Phases 9 to 11: the reviewing happens in other agents'
-   contexts, and a merged PR is the point of the run. Start a rework round
-   only if you can finish it.
+2. **Shippable** → run Phase 7 for a **real** PR (never a draft), then carry
+   on into Phases 9 to 11: a merged PR is the point of the run, and the
+   reviewing happens in other agents' contexts. Start a rework round only if
+   you can finish it.
    **Not shippable** → leave the branch pushed, move the issue to
    `status-needs-attention` (remove `status-in-progress`) with a comment
    listing what remains; do **not** open a PR.
@@ -468,7 +485,10 @@ Run the quality gate command from `ClaudeProject.md`:
       still-failing (step 3) — do not burn the remaining budget on runs.
 3. If still failing after 4 total runs, the code is complete but the gate
    is red. Commit what you have and proceed to Phase 7, but set the
-   **gate-failed flag**: Phase 7 will open a **real** PR (never a draft)
+   **gate-failed flag** — `mkdir -p .claude && touch .claude/gate-failed.flag`,
+   because Phase 11 reads it long after this decision and a compaction in
+   between would otherwise lose it and merge a red-gate PR. Phase 7 will
+   open a **real** PR (never a draft)
    carrying the `changes-requested` review-state label and a "Quality
    Gate Failed" section in the body, so a human sees it and the blocking
    label prevents merge until the gate is green. Do not continue
@@ -493,20 +513,22 @@ acceptance criteria).
 
 ## Phase 9 — Independent review, Phase 10 — Rework, Phase 11 — Merge
 
-Once the PR exists, **read `references/review-and-merge.md`** and follow
-it to the end of the run. Phase 9 spawns two review agents in parallel,
-each in a fresh context, to review the PR in read-only mode — your session
-built this code and cannot judge it independently. Phase 10 fixes what
-they found, pushes, and re-reviews with a fresh agent, looping until the
-verdict is approved as far as the session budget allows. Phase 11 merges
-the PR and settles the linked issues on the board.
+Once the PR exists, **read `references/review-and-merge.md`** and follow it
+to the end of the run. Phase 9 claims the PR, then spawns two review agents
+in parallel, each in a fresh context, to review it read-only — your session
+built this code and cannot judge it independently — and posts one
+consolidated verdict. Phase 10 fixes what they found, pushes, and re-reviews
+with a fresh agent, looping until the verdict is approved as far as the
+session budget allows. Phase 11 merges the PR and settles the linked issues.
 
-Merging here is sanctioned and expected: it is this workflow's contract,
-so it does not wait for the `Auto-Merge on Approval` setting that governs
-the standalone `/github-workflow:code-review` command. The reference names
-the four cases that stop the merge anyway — `--no-merge`, a red quality
-gate, a flagged duplicate PR, or a verdict that never reached approved —
-and in each case the PR is left open with the reviewer's verdict on it.
+Merging here is sanctioned and expected: it is this workflow's contract, so
+it does not wait for the `Auto-Merge on Approval` setting that governs the
+standalone `/github-workflow:code-review` command, and the reference that
+specifies the merge mechanics names this phase as a sanctioned caller.
+Several conditions stop the merge before it is attempted, and the mechanics
+themselves can stop short on absent or red CI or a conflict needing
+judgment. The reference lists all of them. In every one the PR is left open
+with its verdict on it and the report says what remains.
 
 ---
 

@@ -66,6 +66,21 @@ an explicit `enabled` setting. The review comment from Step 9 must
 already be posted before you merge — never merge before the verdict is
 on the PR.
 
+**Second sanctioned caller.** The `execute` skill's Phase 11 drives this
+file directly, and for that caller the `Auto-Merge on Approval` precondition
+is replaced by that workflow's own contract: merging the PR it just built and
+had reviewed is what the run is for. That phase carries its own
+substitutions, and nothing here needs to read them, so the dependency runs
+one way only.
+
+Nothing else changes. Every other condition below still applies, and because
+that caller supplies its own `enabled`, it also supplies the CI gate: when no
+`review.config.md` sets `require-ci-before-merge`, Phase 11 treats it as
+`if-present` rather than `false`, so an approved PR never merges over a red
+pipeline merely because the project has no config file. Where this file says
+"the review comment from Step 9", that caller's equivalent is the
+consolidated review comment its Phase 9 posted.
+
 When all conditions hold, drive the PR to a merged state. Conflicts and
 red CI are **blockers to clear, not reasons to give up** — fix them on the
 branch (the same auto-fix discipline as Step 7: fix concrete, objectively

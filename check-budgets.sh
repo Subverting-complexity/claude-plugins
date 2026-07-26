@@ -51,6 +51,11 @@ BODY_BUDGET_LINES=500
 declare -A BODY_OVERRIDE=(
     # PR-review orchestrator; body is 715 lines, 740 is ~3.5% headroom.
     ["github-workflow/skills/code-review/SKILL.md"]=740
+    # Story orchestrator, the other legitimately large one: it now covers 11
+    # phases (pick through merge) rather than stopping at the PR, and the
+    # post-PR detail already lives in references/. Body is 513 lines, 530 is
+    # ~3.3% headroom, matching the calibration above.
+    ["github-workflow/skills/execute/SKILL.md"]=530
 )
 
 # --- Helpers ----------------------------------------------------------------
