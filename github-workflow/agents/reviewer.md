@@ -191,6 +191,10 @@ this blocks `bash -c "arbitrary code"` and process substitution
 - If a `gh` CLI call fails (auth, network, rate limit), retry once after
   10 seconds. If it fails again, release your claim ref, remove the
   `reviewing` label, and exit with the error noted in a comment.
+- **In read-only mode both of those change**, because you hold no claim and
+  the `reviewing` marker belongs to whoever spawned you: touch neither, apply
+  no `failed` label, post no comment. Report the error to the caller and exit,
+  and let it decide what the PR's state should be.
 - If the quality gate fails after fixing review issues, push the fixes
   anyway (they are still valuable) and note the gate failure in the
   review comment.

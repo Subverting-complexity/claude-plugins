@@ -79,18 +79,18 @@ jobs:
       # path — by excluding the two references that only load once a PR
       # exists. The loose one keeps the whole run bounded. Raising the loose
       # budget alone would have let the build window regrow ~9k tokens
-      # unnoticed. Measured 33560 and 43335; budgets are ~2.7% above each.
-      - name: Check execute build-window footprint (budget 34500 tokens)
+      # unnoticed. Measured 33868 and 43812; budgets are ~2.7% above each.
+      - name: Check execute build-window footprint (budget 34800 tokens)
         shell: bash
         run: |
           bash count-tokens.sh github-workflow/skills/execute/SKILL.md \
             --exclude github-workflow/skills/execute/references/review-and-merge.md \
             --exclude github-workflow/skills/code-review/references/auto-merge.md \
-            --budget 34500
+            --budget 34800
 
-      - name: Check execute whole-run footprint (budget 44500 tokens)
+      - name: Check execute whole-run footprint (budget 45000 tokens)
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 44500
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 45000
 
       # Recalibrated from 37000: the pinned-PR path, the read-only overrides,
       # and the sanctioned-caller carve-out in auto-merge.md are new. Measured

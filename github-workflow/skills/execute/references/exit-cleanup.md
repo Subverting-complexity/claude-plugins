@@ -16,27 +16,43 @@ rm -f .claude/claim-issue-{number}.sha
 Ignore an already-gone-ref error (Phase 7 step 4 or `block-story` may
 have released it).
 
-If the run reached Phase 9, it also holds a review claim on its own PR.
-Release that too, with the same idempotence:
+If the run **won** a review claim on its own PR in Phase 9, release that
+too. The test is the file Acquire writes only on a win:
+
+```
+test -f .claude/claim-pr-{pr_number}.sha || echo "NO PR CLAIM — skip this whole step"
+```
+
+When that file is absent, do **nothing** here. A run that never reached
+Phase 9 has no claim, and on the claim-lost path another agent owns the
+review — deleting a claim ref or stripping a label needs only push access,
+not ownership, so acting would unlock a PR that agent is actively reviewing.
+
+When it is present, reconcile the marker **before** deleting the ref, so no
+window exists in which a rival claims the PR and then has its own marker
+stripped. Acquiring the claim applied the human-visible `reviewing` marker,
+Release frees only the lock, and the review picker skips a PR carrying that
+marker — so an exit before a verdict was recorded would otherwise orphan the
+PR. Read the PR once to decide:
+
+```
+gh pr view {pr_number} --repo {org}/{repo} --json state,labels
+```
+
+- Still `OPEN` **and** carrying `reviewing` → no verdict was recorded. Run
+  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict changes-requested`.
+  That is the honest state for a review that did not finish, and it is a tier
+  the picker selects, so the next `/github-workflow:code-review` run takes
+  the PR from here.
+- Merged, or already carrying a verdict label → Phase 9 or Phase 10 already
+  reconciled it. Change nothing.
+
+Then release the lock:
 
 ```
 git push origin :refs/claims/pr-{pr_number}
 rm -f .claude/claim-pr-{pr_number}.sha
 ```
-
-Release frees the lock only. Acquiring a PR claim also applied the
-human-visible `reviewing` marker, and the review picker skips a PR carrying
-it — so if this run is exiting **before** Phase 9 recorded a verdict, the
-marker would orphan the PR from every picker. Reconcile it now:
-
-```
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict changes-requested
-```
-
-`changes-requested` is the honest state for a review that did not finish, and
-it is a tier the picker selects, so the next `/github-workflow:code-review`
-run takes the PR from here. Skip this when a verdict was already recorded —
-`review-finish` has then already replaced the marker.
 
 ## 2. Delete the scratch files
 

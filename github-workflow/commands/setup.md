@@ -375,20 +375,30 @@ log a warning and continue.
 
 ### 5c. Ignore plugin scratch files
 
-The execute skill writes a session-local scratch file under `.claude/`
-that must never be committed: `.claude/plan.md` (the per-story
-architecture plan). If it lands in a commit, a stale plan can follow the
-branch around and confuse a later session.
+The workflow writes session-local scratch files under `.claude/` that must
+never be committed: the per-story architecture plan, the projected config,
+the marker and cache files, and the claim and flag files the phases use to
+carry state across a compaction. A committed plan can follow the branch
+around and confuse a later session, and any stray untracked scratch file can
+send an exit-time or pre-merge tree check looking for something to commit.
 
-Ensure the project's `.gitignore` excludes it:
+Ensure the project's `.gitignore` excludes them:
 
-- If no `.gitignore` exists, create one with this entry.
-- If one exists, check whether it already covers `.claude/`. If not,
-  append the line below. Do not remove or reorder existing entries.
+- If no `.gitignore` exists, create one with these entries.
+- If one exists, check whether it already covers `.claude/`. If not, append
+  the lines below. Do not remove or reorder existing entries.
 
 ```
-# github-workflow plugin scratch files
+# github-workflow plugin scratch files (per-session, never commit)
 .claude/plan.md
+.claude/projected-config.md
+.claude/preflight-passed.txt
+.claude/label-cache.json
+.claude/issue-fields-cache.json
+.claude/candidates.json
+.claude/claim-*.sha
+.claude/wf-config.json
+.claude/*.flag
 ```
 
 If the project already ignores `.claude/` wholesale, leave it alone.

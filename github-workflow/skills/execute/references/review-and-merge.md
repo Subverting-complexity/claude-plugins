@@ -77,11 +77,13 @@ build.
    as a self-review: it is the same context that wrote the code, so it is not
    the independent evidence this phase exists to produce. Phase 11 does
    **not** merge on a self-review. Say plainly in the PR comment and your
-   final report that the review could not be run independently, apply the
-   `needs-re-review` label so the picker will select the PR, and leave it for
-   the standalone `/github-workflow:code-review` command to finish. Note also
-   that an inline review pulls that skill's whole hot path into this session,
-   so budget for it.
+   final report that the review could not be run independently, and leave the
+   PR for the standalone `/github-workflow:code-review` command to finish —
+   Phase 11's approved-and-unmerged rule applies the `needs-re-review` label
+   at exit, which is what makes the picker select it. Do not apply that label
+   here: step 5's `review-finish` strips every state label but the verdict, so
+   it would not survive. Note also that an inline review pulls that skill's
+   whole hot path into this session, so budget for it.
 
 4. **Merge the two reports into one findings list.** Where both agents
    raise the same problem, keep one entry and note that both found it.
@@ -125,13 +127,19 @@ Otherwise work through the findings on the branch you are already on:
 3. Re-run the quality gate from `ClaudeProject.md`, then commit and push.
    The same Phase 5 rule applies: if the gate is still red after a
    reasonable number of attempts, stop fixing, leave the PR unmerged, and
-   report it.
+   report it. If the gate now **passes** and `.claude/gate-failed.flag`
+   exists, delete it (`rm -f .claude/gate-failed.flag`) — the rework fixed
+   what Phase 5 could not, and leaving the flag would block Phase 11 from
+   ever merging this run.
 4. **Re-review.** Record the new head SHA, then spawn one fresh reviewer
    the same way as Phase 9 — read-only, detached, findings returned to you,
    no relabelling — asked to confirm whether the previous findings are
    resolved and whether the fixes introduced anything new. One agent is
    enough for a re-review; the two lenses already ran against the original
-   diff. Post the consolidated comment and reconcile the label again.
+   diff. Post the consolidated comment and reconcile the label again — with
+   the same gate-failed override as Phase 9 step 5: while
+   `.claude/gate-failed.flag` exists, record `changes-requested` whatever the
+   reviewer concluded.
 5. Repeat this loop — fix, push, re-review — until the verdict is
    Approved, **as far as the session budget allows**. Before starting
    another round, check the elapsed time and how much of the token budget

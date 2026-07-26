@@ -55,7 +55,8 @@ would otherwise lose them (the same reason preflight writes a marker file).
 
 ```
 mkdir -p .claude
-rm -f .claude/no-merge.flag .claude/bypass-ci.flag .claude/gate-failed.flag
+rm -f .claude/no-merge.flag .claude/bypass-ci.flag \
+      .claude/gate-failed.flag .claude/self-review.flag
 touch .claude/no-merge.flag    # only when --no-merge was passed
 touch .claude/bypass-ci.flag   # only when --bypass-ci was passed
 ```
@@ -63,6 +64,12 @@ touch .claude/bypass-ci.flag   # only when --bypass-ci was passed
 The unconditional `rm -f` comes first because a previous run that was hard
 killed before **Exit cleanup** would otherwise leave its flags behind, and an
 inherited `bypass-ci.flag` would quietly disarm the Phase 11 CI gate.
+
+**Run this block exactly once, here, at the start.** It is now destructive:
+re-running it later — after a compaction, say — would wipe the
+`gate-failed.flag` Phase 5 wrote and the `self-review.flag` Phase 9 wrote,
+and would drop `no-merge.flag` if the invocation arguments are no longer in
+context. Later phases only read these files.
 
 ## Preflight
 
