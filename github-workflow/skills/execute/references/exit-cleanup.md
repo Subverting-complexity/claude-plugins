@@ -46,6 +46,10 @@ gh pr view {pr_number} --repo {org}/{repo} --json state,labels
   the PR from here.
 - Merged, or already carrying a verdict label → Phase 9 or Phase 10 already
   reconciled it. Change nothing.
+- Any other state on an open PR (no `reviewing`, no verdict — label drift) →
+  treat it as "no verdict recorded" and run the same reconcile. An open PR
+  carrying neither marker matches no picker tier, so leaving it would strand
+  it.
 
 Then release the lock:
 

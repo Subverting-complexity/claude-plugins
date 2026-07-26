@@ -193,11 +193,15 @@ fix, absent CI, repo-level auto-merge disabled, or checks still pending when
 the watch window closes. Each of those leaves the PR approved and unmerged
 with a comment saying why, which is a correct outcome, not a failure to hide.
 
-Whenever you leave a PR **approved and unmerged**, also apply the
-`needs-re-review` label (resolve the name through
-`templates/default-labels.md`). The review picker skips a plain `approved`
-PR, so without that label nothing selects it again and the work is orphaned
-until a person notices.
+Whenever you leave a PR **approved and unmerged with nothing queued**, also
+apply the `needs-re-review` label (resolve the name through
+`templates/default-labels.md`). The review picker skips a plain `approved` PR,
+so without that label nothing selects it again and the work is orphaned until
+a person notices. The exception is the successful **enqueue** outcome —
+`autoMergeRequest` non-null at auto-merge step 5 — where GitHub merges the PR
+on its own once its requirements clear. Leave that one alone: labelling it
+would put a PR that is about to land at the top of the review queue for
+pointless rework.
 
 Otherwise drive the PR to merged by following **steps 1 to 6** of
 `skills/code-review/references/auto-merge.md`, which is the single

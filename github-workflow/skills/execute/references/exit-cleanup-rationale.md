@@ -28,6 +28,27 @@ is intentionally left in place on a failed or timed-out exit as a "this was
 attempted" signal next to the failure comment; only `block-story` and a
 successful finish also clear ownership.
 
+## Why the PR claim is guarded differently
+
+A run that reaches Phase 9 also holds `refs/claims/pr-{number}` over its own
+PR, and that one is **not** released unconditionally. Phase 9 has a path where
+it acquires nothing because a rival agent already owns the review, and a ref
+delete or a label edit needs push access rather than ownership — so an
+unconditional release there would unlock a PR another agent was actively
+reviewing. The guard is the file Acquire writes only on a win
+(`.claude/claim-pr-{number}.sha`), which is why this claim is released inside a
+conditional while the issue claim is not.
+
+The PR claim's marker is also handled differently from the assignment above.
+The `reviewing` label is not a "this was attempted" signal: the review picker
+skips any PR carrying it, so leaving it would strand the PR outside every
+tier. That is why the procedure reconciles it to a real verdict before
+releasing the lock, rather than leaving it in place.
+
+Note also that Phase 7 is no longer a terminal exit. The run continues through
+review, rework, and the merge, so a successful finish now exits from Phase 11
+and the exit paths listed above all sit after the PR exists.
+
 ## Why delete the scratch files
 
 This skill writes several per-session scratch files that must be removed so no

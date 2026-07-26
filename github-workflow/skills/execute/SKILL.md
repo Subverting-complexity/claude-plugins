@@ -56,7 +56,8 @@ would otherwise lose them (the same reason preflight writes a marker file).
 ```
 mkdir -p .claude
 rm -f .claude/no-merge.flag .claude/bypass-ci.flag \
-      .claude/gate-failed.flag .claude/self-review.flag
+      .claude/gate-failed.flag .claude/self-review.flag \
+      .claude/claim-*.sha
 touch .claude/no-merge.flag    # only when --no-merge was passed
 touch .claude/bypass-ci.flag   # only when --bypass-ci was passed
 ```
@@ -64,6 +65,10 @@ touch .claude/bypass-ci.flag   # only when --bypass-ci was passed
 The unconditional `rm -f` comes first because a previous run that was hard
 killed before **Exit cleanup** would otherwise leave its flags behind, and an
 inherited `bypass-ci.flag` would quietly disarm the Phase 11 CI gate.
+
+Sweeping `claim-*.sha` is safe here and nowhere else: this run holds no
+claim yet, so any such file is a leftover from a killed run, and leaving one
+could make a later phase's won-claim guard read a lock this run does not hold.
 
 **Run this block exactly once, here, at the start.** It is now destructive:
 re-running it later — after a compaction, say — would wipe the
@@ -211,7 +216,10 @@ gh api rate_limit --jq '.rate.remaining'
 If it is below **100**, pause: commit and push current work, move the
 issue to `status-needs-attention` (remove `status-in-progress`) with a
 comment noting the pause, run **Exit cleanup**, then exit — the next
-session resumes from the pushed branch. Do **not** retry rate-limited
+session resumes from the pushed branch. **Once the PR is open (Phase 9
+onward)** the same carve-out as the failure hatch applies: leave the issue at
+`status-in-review` and note the pause on the PR instead, so the label, the
+board, and the PR's review state stay in agreement. Do **not** retry rate-limited
 requests in a loop. (design rationale: `references/execute-rationale.md`
 — not read at runtime.)
 
