@@ -109,8 +109,10 @@ user through creating one.
 
 When invoked with `--read-only` (`$ARGUMENTS.mode` is `read-only`), read and
 follow `references/read-only-mode.md` — it overrides specific steps (no
-claim, skip the Step 7 fixes, skip the Step 11 auto-merge, close nothing in
-Step 2b) so the review evaluates without writing to the PR. Full-mode
+claim, detached checkout, skip the Step 7 fixes, skip the Step 10b rework
+cascade, skip the Step 11 auto-merge, close nothing in Step 2b, and hand the
+comment and labels to a caller that owns the verdict) so the review evaluates
+without writing to the PR. Full-mode
 reviews skip the reference entirely. The per-step read-only notes inline
 below restate the key overrides at their point of use.
 
@@ -271,11 +273,17 @@ Step 3.
 gh pr checkout <number>
 ```
 
+In **read-only mode** add `--detach` — another worktree on this clone may
+already hold the branch, and git refuses to check out a branch twice. If the
+pinned-PR path already checked out that SHA detached, this step is a no-op.
+
 If checkout fails: release the claim (`templates/claim-procedure.md`
 **Release** for target `pr-<number>`: `git push origin :refs/claims/pr-<number>`),
 remove the `reviewing` label, apply the `failed` review-state label
 (purpose key `failed`, default name `review-failed`), post a brief
-failure comment with the footer, and exit.
+failure comment with the footer, and exit. In read-only mode there is no
+claim and no marker to remove: report the failure to the caller and exit
+without labelling the PR `failed`, which no picker tier selects.
 
 Record the current commit SHA:
 

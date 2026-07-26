@@ -71,14 +71,17 @@ build.
    agent-spawning tool, or nested spawning is unavailable because execute
    is itself running as a subagent — do not skip the review. Run
    `/github-workflow:code-review {pr_number} --read-only` inline in this
-   session instead, and treat the result as a self-review: it is the same
-   context that wrote the code, so it is not the independent evidence this
-   phase exists to produce. Phase 11 does **not** merge on a self-review;
-   say plainly in the PR comment and your final report that the review
-   could not be run independently, and expect the standalone
-   `/github-workflow:code-review` command to finish the job. Note also that
-   an inline review pulls that skill's whole hot path into this session, so
-   budget for it.
+   session instead, and record that this happened —
+   `mkdir -p .claude && touch .claude/self-review.flag` — so the Phase 11
+   check survives a compaction the way the other flags do. Treat the result
+   as a self-review: it is the same context that wrote the code, so it is not
+   the independent evidence this phase exists to produce. Phase 11 does
+   **not** merge on a self-review. Say plainly in the PR comment and your
+   final report that the review could not be run independently, apply the
+   `needs-re-review` label so the picker will select the PR, and leave it for
+   the standalone `/github-workflow:code-review` command to finish. Note also
+   that an inline review pulls that skill's whole hot path into this session,
+   so budget for it.
 
 4. **Merge the two reports into one findings list.** Where both agents
    raise the same problem, keep one entry and note that both found it.
@@ -95,6 +98,13 @@ build.
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict <approved|changes-requested|needs-discussion>
    ```
+
+   **One override.** If `.claude/gate-failed.flag` exists, record
+   `changes-requested` whatever the reviewers concluded. Phase 7 applied that
+   label deliberately to block the merge while the quality gate is red, and
+   this call strips every other state label, so an approving verdict would
+   quietly remove the guard. Say in the comment that the reviewers approved
+   the code but the gate is still red.
 
 ## Phase 10 — Apply the fixes and re-review
 
@@ -158,20 +168,28 @@ exit through **Exit cleanup**:
 
 - The run was invoked with `--no-merge` (`test -f .claude/no-merge.flag`).
 - The Phase 5 quality gate failed (`test -f .claude/gate-failed.flag`).
-- Phase 7 flagged a possible duplicate PR closing the same issue.
-  Reconciling duplicates belongs to code review, which keeps the
-  better-implemented PR and closes the other.
+- Phase 7 flagged a possible duplicate PR closing the same issue. Its flag
+  line is the first line of the PR body (`⚠ Possible duplicate of #N`), so
+  read the body if the flag is no longer in context. Reconciling duplicates
+  belongs to code review, which keeps the better-implemented PR and closes
+  the other.
 - The combined verdict is not Approved.
-- Phase 9 had to review inline because no subagent could be spawned. A
-  self-review is not the independent review this merge is predicated on.
+- Phase 9 had to review inline because no subagent could be spawned
+  (`test -f .claude/self-review.flag`). A self-review is not the independent
+  review this merge is predicated on.
 
 Those are the conditions checked **before** the attempt. The merge
 mechanics themselves can also stop short — a head SHA that moved since the
 review, a conflict needing human judgment, a red check that is not yours to
 fix, absent CI, repo-level auto-merge disabled, or checks still pending when
 the watch window closes. Each of those leaves the PR approved and unmerged
-with a comment saying why, which is a correct outcome, not a failure to
-hide.
+with a comment saying why, which is a correct outcome, not a failure to hide.
+
+Whenever you leave a PR **approved and unmerged**, also apply the
+`needs-re-review` label (resolve the name through
+`templates/default-labels.md`). The review picker skips a plain `approved`
+PR, so without that label nothing selects it again and the work is orphaned
+until a person notices.
 
 Otherwise drive the PR to merged by following **steps 1 to 6** of
 `skills/code-review/references/auto-merge.md`, which is the single
@@ -220,9 +238,12 @@ git fetch origin {default-branch}
 git checkout --detach origin/{default-branch}
 ```
 
-If `git status --porcelain` is not empty, run **End clean** in
-`templates/worktree-hygiene.md` first — the detach will not move with
-tracked modifications in the way.
+If `git status --porcelain --untracked-files=no` is not empty, run **End
+clean** in `templates/worktree-hygiene.md` first — the detach will not move
+with tracked modifications in the way. Ignore untracked files here: this
+workflow's own `.claude/` scratch files are untracked by design, and routing
+a mid-merge run into End clean over them would risk committing scratch to the
+PR.
 
 Its step 6 runs `wf post-merge --pr {pr_number}`, which closes every issue
 the PR closes, clears the stale lifecycle label, and moves each one to the

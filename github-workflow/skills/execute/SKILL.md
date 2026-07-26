@@ -55,9 +55,14 @@ would otherwise lose them (the same reason preflight writes a marker file).
 
 ```
 mkdir -p .claude
+rm -f .claude/no-merge.flag .claude/bypass-ci.flag .claude/gate-failed.flag
 touch .claude/no-merge.flag    # only when --no-merge was passed
 touch .claude/bypass-ci.flag   # only when --bypass-ci was passed
 ```
+
+The unconditional `rm -f` comes first because a previous run that was hard
+killed before **Exit cleanup** would otherwise leave its flags behind, and an
+inherited `bypass-ci.flag` would quietly disarm the Phase 11 CI gate.
 
 ## Preflight
 

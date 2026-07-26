@@ -13,6 +13,8 @@
 **/.claude/candidates.json
 **/.claude/claim-*.sha
 **/.claude/wf-config.json
+**/.claude/issue-fields-cache.json
+**/.claude/*.flag
 
 # graphify — generated graph artifacts (large, derived, or machine-local)
 # Agents rebuild graph.json locally from cache: `graphify . --update` (0 tokens, ~10s)

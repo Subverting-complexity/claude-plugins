@@ -12,7 +12,10 @@ skip it and exit normally:
   approvals in Step 4b, which route here before exiting.
 - `review.config.md`'s **Auto-Merge on Approval** setting is `enabled`.
   If there is no `review.config.md`, or the section is absent, the
-  setting is `disabled` — **never merge**.
+  setting is `disabled` — **never merge**. (One exception, spelled out under
+  **Second sanctioned caller** below: the `execute` skill's Phase 11 supplies
+  this precondition itself. If that is who sent you here, read that paragraph
+  before treating this bullet as false.)
 - The session is **not** in read-only mode.
 
 Also read **`require-ci-before-merge`** from the same Auto-Merge on

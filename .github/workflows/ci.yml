@@ -79,24 +79,25 @@ jobs:
       # path — by excluding the two references that only load once a PR
       # exists. The loose one keeps the whole run bounded. Raising the loose
       # budget alone would have let the build window regrow ~9k tokens
-      # unnoticed. Measured 33256 and 42582; budgets are ~2.8% above each.
-      - name: Check execute build-window footprint (budget 34200 tokens)
+      # unnoticed. Measured 33560 and 43335; budgets are ~2.7% above each.
+      - name: Check execute build-window footprint (budget 34500 tokens)
         shell: bash
         run: |
           bash count-tokens.sh github-workflow/skills/execute/SKILL.md \
             --exclude github-workflow/skills/execute/references/review-and-merge.md \
             --exclude github-workflow/skills/code-review/references/auto-merge.md \
-            --budget 34200
+            --budget 34500
 
-      - name: Check execute whole-run footprint (budget 43800 tokens)
+      - name: Check execute whole-run footprint (budget 44500 tokens)
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 43800
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 44500
 
-      # Recalibrated from 37000: the pinned-PR path and the sanctioned-caller
-      # carve-out in auto-merge.md are new. Measured 37421; 38500 is ~2.9%.
-      - name: Check code-review skill footprint (budget 38500 tokens)
+      # Recalibrated from 37000: the pinned-PR path, the read-only overrides,
+      # and the sanctioned-caller carve-out in auto-merge.md are new. Measured
+      # 37699; 38800 is ~2.9%.
+      - name: Check code-review skill footprint (budget 38800 tokens)
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 38500
+        run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 38800
 
       - name: Check description and body budgets (ratchet)
         shell: bash

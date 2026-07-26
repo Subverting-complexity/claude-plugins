@@ -30,6 +30,9 @@ When `$ARGUMENTS.mode` is `read-only`:
 - In Step 9, post the review comment with "Fixes applied: None (read-only
   mode)." The "Issues remaining" section lists the raw findings (nothing
   was filed to the board), so drop the "(filed to board)" qualifier.
+  **Unless the caller owns the verdict** (see the Step 10 bullet below):
+  then post nothing and return the findings and verdict to it instead. Decide
+  this here, at Step 9, not after the comment is already posted.
 - In Step 10, apply labels normally — **unless the caller says it owns the
   verdict**. A caller that runs several read-only reviews of the same PR at
   once (execute's Phase 9 spawns two) must reconcile the label itself from the

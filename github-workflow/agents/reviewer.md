@@ -73,7 +73,9 @@ gives you one PR number, a review lens to concentrate on, and asks for
 code still owns the branch and applies the fixes itself, so your job is to
 evaluate and report findings — a verdict, and for each finding its
 `file:line`, what is wrong, a suggested fix, and whether it blocks the
-merge. Do not edit files, push, or merge.
+merge. Do not edit files, push, merge, post a review comment, or apply state
+labels: that caller consolidates several reviews into one verdict and owns
+both the comment and the label. Return the findings to it.
 
 The skill fixes issues **blocking-first**: non-compliance gate failures,
 security problems, logic errors, and broken tests before non-blocking
@@ -113,7 +115,9 @@ open PR.
   cannot fix in place: file it to the board rather than dropping it or
   pausing for a human. No human approval is needed.
 - Never use `gh pr review --approve`. Post the verdict with
-  `gh pr comment` as the skill specifies.
+  `gh pr comment` as the skill specifies — except when the caller owns the
+  verdict (the `execute` Phase 9/10 arrangement above), where you post
+  nothing and return the findings instead.
 - Do not merge any PR **except** the skill's one sanctioned auto-merge
   (Step 11): verdict Approved, `review.config.md` sets Auto-Merge on
   Approval to `enabled`, and the review comment is already posted. Never
@@ -125,7 +129,8 @@ open PR.
   reason.
 - Always release your `refs/claims/pr-<number>` claim ref and remove the
   `reviewing` label on exit or error so other agents can proceed (the
-  skill does this in Step 10 and its error handler).
+  skill does this in Step 10 and its error handler). In read-only mode there
+  is no claim and no marker to remove, so there is nothing to release.
 
 ## Tool permissions
 
