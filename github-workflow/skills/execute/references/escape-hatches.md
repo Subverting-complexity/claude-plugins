@@ -83,10 +83,13 @@ then pick the first sub-story.
 
 ## Review feedback
 
-After the PR is created, the code-review skill may flag issues. The next
-`/github-workflow:code-review` invocation picks up the
-`changes-requested` PR automatically, addresses the feedback, and
-re-reviews — no separate command needed.
+Review feedback is no longer an escape hatch: Phases 9 and 10 review the
+PR in a fresh context and answer the findings inside this same run
+(`references/review-and-merge.md`). Feedback that arrives **after** the run
+ends — a human reviewer's comment, or a rework round the session budget cut
+short — is picked up by the next `/github-workflow:code-review` invocation,
+which selects the `changes-requested` PR automatically, addresses the
+feedback, and re-reviews. No separate command is needed for it.
 
 ## Story too large
 

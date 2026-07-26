@@ -54,7 +54,11 @@ gh auth status 2>&1 | head -3
 > **Daily workflow:**
 >
 > - "Start the next story" → I'll pick the highest priority issue from
->   your backlog, plan it, build it, test it, and open a PR. Hands-free.
+>   your backlog, plan it, build it, test it, open a PR, have that PR
+>   reviewed by separate agents in a fresh context, apply what the review
+>   asks for, and merge it. Hands-free, start to finish.
+> - `/github-workflow:execute --no-merge` → The same run, but it stops
+>   after the review instead of merging.
 > - `/github-workflow:execute 42` → Work on a specific issue.
 > - `/github-workflow:execute --mode feature` → Pick only feature stories.
 > - `/github-workflow:execute --mode maintenance` → Pick and fix the

@@ -74,9 +74,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check execute skill footprint (budget 32000 tokens)
+      # Recalibrated from 32000 when execute gained its post-PR phases
+      # (independent review, rework, merge). Those phases cite code-review's
+      # auto-merge.md rather than restating the merge mechanics, so the
+      # two-level footprint sum now includes it (~5400 tokens). It loads only
+      # in Phase 11, long after the pick/plan/build window this gate protects.
+      # Measured 40252; 41500 is ~3% headroom.
+      - name: Check execute skill footprint (budget 41500 tokens)
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 32000
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 41500
 
       - name: Check code-review skill footprint (budget 37000 tokens)
         shell: bash

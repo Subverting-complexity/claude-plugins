@@ -195,3 +195,7 @@ gaps before a human reviewer sees the PR.
 This phase never blocks the PR or changes the verdict — it surfaces gaps
 early and queues any it cannot close for automatic pickup, so the
 reviewer can focus on deeper concerns.
+
+Then continue to **Phase 9** by reading `references/review-and-merge.md`.
+The run is not finished here: the PR still has to be reviewed
+independently in a fresh context, answered, and merged.

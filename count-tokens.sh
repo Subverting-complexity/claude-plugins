@@ -95,14 +95,27 @@ add_file() {
 
 # Scan a file for templates/ and references/ citations.
 # Outputs one resolved absolute path per line.
+#
+# A citation that names another skill's references directory
+# (skills/<skill>/references/<file>.md — how a shared reference such as
+# code-review's auto-merge.md is cited from outside its own skill) is resolved
+# against that skill, not the citing one. Without this the path would fall
+# through to the plugin-level references/ directory and report "(missing)",
+# hiding a real dependency from the budget.
 scan_deps() {
     local f="$1"
     [ -f "$f" ] || return 0
-    grep -oE '(templates|references)/[a-zA-Z0-9_-]+\.md' "$f" 2>/dev/null \
+    grep -oE '(skills/[a-zA-Z0-9_-]+/)?(templates|references)/[a-zA-Z0-9_-]+\.md' "$f" 2>/dev/null \
         | sort -u \
         | while IFS= read -r ref; do
-            local dir="${ref%%/*}"
             local name="${ref##*/}"
+            if [[ "$ref" == skills/*/references/* ]]; then
+                local skill="${ref#skills/}"
+                skill="${skill%%/*}"
+                echo "$REPO_ROOT/$plugin_dir/skills/$skill/references/$name"
+                continue
+            fi
+            local dir="${ref%%/*}"
             if [ "$dir" = "templates" ]; then
                 echo "$template_base/$name"
             else

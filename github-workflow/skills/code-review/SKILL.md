@@ -4,6 +4,8 @@ description: Review open pull requests — find the next PR needing review, chec
 arguments:
   - name: mode
     description: 'Review mode: full (default) — evaluate and fix; read-only — evaluate only, no edits or pushes'
+  - name: pr
+    description: 'Optional PR number. When given, that PR is reviewed and the picker is skipped — used by the execute skill Phase 9 and by any caller that already knows which PR it wants reviewed.'
   - name: bypass-ci
     description: 'When set, the CI gate in auto-merge (Step 11) is treated as satisfied even if remote checks are red or absent. Explicit, never default — use only when CI cannot run for reasons outside the PR (e.g. GitHub Actions billing).'
 allowed-tools:
@@ -119,6 +121,20 @@ below restate the key overrides at their point of use.
 Once you have a valid `review.config.md`, proceed with the review.
 
 ### Step 1 — Find a PR that needs review
+
+#### Pinned PR — an explicit number was given
+
+When the invocation names a PR (`$ARGUMENTS.pr`, or a number the user or a
+calling skill passed, e.g. `/github-workflow:code-review 123`), that PR is
+the subject and there is nothing to select. Do **not** run the picker — it
+would choose a different PR by priority and review the wrong thing.
+
+In **full mode**, claim it with `templates/claim-procedure.md` (**Acquire**,
+target `pr-<number>`) and check out its branch, then continue at Step 2b. If
+the claim is lost, another agent already owns this PR: report that and exit
+rather than moving to a different one. In **read-only mode** there is no
+claim — check the branch out with `gh pr checkout <number>` and continue at
+Step 2b.
 
 #### Fast path — the bundled `wf` picker
 

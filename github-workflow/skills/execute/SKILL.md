@@ -1,27 +1,33 @@
 ---
 name: execute
 description: >-
-  End-to-end GitHub story execution: pick → plan → build → test → PR. Trigger
-  when the user wants development work done — "next story", "work on story N",
-  a bare issue number, "build this", "implement", "run the workflow", or a pasted
-  GitHub issue URL. Use mode=feature for features, mode=maintenance for
-  bugs/security/debt, mode=audit for a no-code-change codebase audit.
+  End-to-end GitHub story execution: pick → plan → build → test → PR →
+  independent review → merge. Trigger when the user wants development work
+  done — "next story", "work on story N", a bare issue number, "build this",
+  "implement", "run the workflow", or a pasted GitHub issue URL. Use
+  mode=feature for features, mode=maintenance for bugs/security/debt,
+  mode=audit for a no-code-change codebase audit.
 depends-on:
   - code-architect
   - structured-coding
   - feature-discovery
-argument-hint: '[issue#] [--mode feature|maintenance|audit]'
+  - code-review
+argument-hint: '[issue#] [--mode feature|maintenance|audit] [--no-merge]'
 arguments:
   - name: story_number
     description: 'Optional issue number. If omitted, picks the next story from the backlog.'
   - name: mode
     description: 'Execution mode: story (default — picks highest priority issue regardless of type), feature (feature stories only), maintenance (bug/security/architecture/debt; "bug" is accepted as alias), audit (codebase audit, no code changes)'
+  - name: no-merge
+    description: 'When set, stop after the independent review and rework instead of merging. The PR is left open carrying the reviewer verdict.'
 ---
 
 # Execute Story
 
-End-to-end story execution workflow: pick a story from the backlog,
-plan, build, test, open a PR.
+End-to-end story execution workflow: pick a story from the backlog, plan,
+build, test, open a PR, have that PR reviewed independently in a fresh
+context, apply the fixes the review asks for, and merge. A story is
+finished when its PR is merged, not when the PR opens.
 
 ## Plain-English output
 
@@ -128,8 +134,8 @@ inline fallback, read `references/inline-fallback-prewarm.md`.
 ## Session budget
 
 Stay under ~100k tokens: **one story per session**, scoped to a shippable
-artifact (branch + PR). (design rationale: `references/execute-rationale.md`
-— not read at runtime.)
+artifact — a merged PR, or an open one whose review state is recorded.
+(design rationale: `references/execute-rationale.md` — not read at runtime.)
 
 - **Commit early, push periodically.** Atomic commits per logical unit;
   push after each major phase (plan done, core done, tests passing) so an
@@ -144,12 +150,20 @@ artifact (branch + PR). (design rationale: `references/execute-rationale.md`
   retries near the token budget or the 45-minute mark, stop retrying —
   take Phase 5's gate-failed exit (commit what you have) or block the
   story rather than burning the remaining budget on more runs.
+- **The review phases spend mostly their own budget.** Phases 9 and 10
+  hand the reviewing to separate agent contexts, so reading the diff and
+  evaluating it does not come out of this session's window; what you pay
+  for here is the findings they return and the fixes you apply. The rework
+  loop still stops once this session's budget is nearly spent.
 
 **45-minute timeout.** Record the start time (`date +%s`); before each
 phase, check elapsed. Past 45 minutes:
 
 1. Commit and push everything now.
-2. **Shippable** → run Phase 7 for a **real** PR (never a draft).
+2. **Shippable** → run Phase 7 for a **real** PR (never a draft), then
+   carry on into Phases 9 to 11: the reviewing happens in other agents'
+   contexts, and a merged PR is the point of the run. Start a rework round
+   only if you can finish it.
    **Not shippable** → leave the branch pushed, move the issue to
    `status-needs-attention` (remove `status-in-progress`) with a comment
    listing what remains; do **not** open a PR.
@@ -476,6 +490,23 @@ When the quality gate has passed and the work is committed, **read
 7 (push, duplicate-PR detection, PR create, labels, board move, claim
 release, report) and Phase 8 (the advisory self-review against the
 acceptance criteria).
+
+## Phase 9 — Independent review, Phase 10 — Rework, Phase 11 — Merge
+
+Once the PR exists, **read `references/review-and-merge.md`** and follow
+it to the end of the run. Phase 9 spawns two review agents in parallel,
+each in a fresh context, to review the PR in read-only mode — your session
+built this code and cannot judge it independently. Phase 10 fixes what
+they found, pushes, and re-reviews with a fresh agent, looping until the
+verdict is approved as far as the session budget allows. Phase 11 merges
+the PR and settles the linked issues on the board.
+
+Merging here is sanctioned and expected: it is this workflow's contract,
+so it does not wait for the `Auto-Merge on Approval` setting that governs
+the standalone `/github-workflow:code-review` command. The reference names
+the four cases that stop the merge anyway — `--no-merge`, a red quality
+gate, a flagged duplicate PR, or a verdict that never reached approved —
+and in each case the PR is left open with the reviewer's verdict on it.
 
 ---
 

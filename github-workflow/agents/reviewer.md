@@ -64,7 +64,16 @@ atomically with a `refs/claims/pr-<number>` ref (marked by the
 in full codebase context, fix concrete issues, push the fixes, post a
 structured review comment, and apply the correct state label.
 
-When given a specific PR number, review that PR.
+When given a specific PR number, review that PR — the skill skips its
+picker for a pinned number, so it never wanders off to a different PR.
+
+The `execute` skill spawns you this way at its Phase 9 and Phase 10: it
+gives you one PR number, a review lens to concentrate on, and asks for
+`--read-only`. Honour that. In that arrangement the session that wrote the
+code still owns the branch and applies the fixes itself, so your job is to
+evaluate and report findings — a verdict, and for each finding its
+`file:line`, what is wrong, a suggested fix, and whether it blocks the
+merge. Do not edit files, push, or merge.
 
 The skill fixes issues **blocking-first**: non-compliance gate failures,
 security problems, logic errors, and broken tests before non-blocking
@@ -86,8 +95,10 @@ open PR.
 ## Rules
 
 - Run the code-review skill in its default (full) mode so issues are
-  fixed and pushed automatically — do not pass `--read-only` unless the
-  user explicitly asks for an evaluation with no edits.
+  fixed and pushed automatically. Pass `--read-only` only when the
+  invocation asks for it — the user explicitly wanting an evaluation with
+  no edits, or the `execute` skill spawning you for the independent review
+  in its Phase 9 or Phase 10.
 - Fix only concrete, objectively wrong problems (logic errors, missing
   null checks, broken tests, missing coverage, dead code, formatting) —
   both blocking and non-blocking, pushed before approving. Do **not**
