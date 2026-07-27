@@ -142,6 +142,50 @@ latest" against the cached version — not the actual latest on main.
 > shipping with `claude plugin validate ./<plugin>` — it catches schema
 > errors (e.g. unrecognized keys) that plain JSON validation misses.
 
+## Declaring a plugin in a consuming project
+
+A project can commit its plugin dependency to
+`.claude/settings.json`, so that sessions opened in that repository
+enable the plugin without anyone installing it by hand:
+
+```bash
+claude plugin install github-workflow@subverting-complexity --scope project
+```
+
+Be aware of how that install splits itself across two files, because the
+split is easy to misread. The command writes `enabledPlugins` into the
+**project** settings, which is the part that gets committed, but it
+records the marketplace under `extraKnownMarketplaces` in the
+**user** settings, which stays on the machine that ran it.
+
+The consequence is that a committed `enabledPlugins` entry names a
+marketplace the repository never declares. Adding
+`extraKnownMarketplaces` to the project settings alongside it looks like
+the fix, and it is harmless, but it does **not** work: a config that has
+never registered the marketplace does not fetch it on the strength of a
+project-level declaration. Verified against v2.1.220, in a repository
+whose committed settings declared both keys:
+
+| User config | Project settings | Result |
+| ----------- | ---------------- | ------ |
+| Marketplace never added | Both keys | `No plugins installed` — nothing fetched |
+| Marketplace added | `enabledPlugins` only | Resolves, `Scope: project` |
+| Marketplace added | Both keys | Resolves, `Scope: project` |
+
+So the marketplace registration is a per-machine step that cannot be
+committed. Each developer runs this once, ever, and it covers every
+repository they subsequently clone:
+
+```bash
+claude plugin marketplace add Subverting-complexity/claude-plugins
+```
+
+After that one command, a repository's committed `enabledPlugins` is
+enough on its own — no `plugin install` per project. That is the real
+benefit of committing the declaration, and it is worth saying plainly in
+a consuming project's own README, because the failure mode when the
+marketplace is missing is silence rather than an error.
+
 ## Supplementary Files
 
 These files provide context for specific workflows. You don't need to
