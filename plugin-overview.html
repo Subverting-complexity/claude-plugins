@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude Code Plugins</title>
+<style>
+:root{--bg:#0B1120;--sf:#161E31;--tx:#F1F5F9;--tx2:#94A3B8;--tx3:#64748B;--brd:rgba(255,255,255,.07);--violet:#A78BFA;--amber:#FBBF24;--blue:#60A5FA;--emerald:#34D399;--red:#F87171;--mono:'Cascadia Code','Fira Code',Consolas,monospace;--serif:Georgia,'Times New Roman',serif;--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--tx);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden;height:100vh}
+
+.deck{position:relative;width:100%;height:100vh}
+.pg{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;opacity:0;pointer-events:none;transition:transform .5s cubic-bezier(.4,0,.2,1),opacity .45s ease;transform:translateX(50px)}
+.pg.on{opacity:1;pointer-events:auto;transform:translateX(0)}
+.pg-i{max-width:900px;margin:0 auto;padding:56px 32px 80px;position:relative;z-index:2}
+.fin{opacity:0;transform:translateY(20px);transition:opacity .5s ease,transform .5s ease}.pg.on .fin{opacity:1;transform:translateY(0)}
+
+.orb{position:absolute;border-radius:50%;pointer-events:none;filter:blur(80px);z-index:0}
+
+/* Nav */
+.pnav{position:fixed;bottom:0;left:0;right:0;height:52px;background:rgba(11,17,32,.85);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--brd);display:flex;align-items:center;justify-content:center;gap:10px;z-index:100}
+.pnav button{background:none;border:none;cursor:pointer;color:var(--tx2);transition:all .2s;font-family:var(--sans)}
+.pb{width:34px;height:34px;border:1px solid var(--brd);border-radius:8px;font-size:15px;display:flex;align-items:center;justify-content:center}
+.pb:hover:not(:disabled){border-color:rgba(255,255,255,.15);color:var(--tx)}.pb:disabled{opacity:.2;cursor:default}
+.pd{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.12);padding:0;transition:all .3s}.pd.on{background:var(--violet);transform:scale(1.5)}
+.pn-num{font-family:var(--mono);font-size:11px;color:var(--tx3);min-width:44px;text-align:center}
+
+/* Notes (inline callouts) */
+.note{padding:20px 22px;border-radius:12px;background:#151D2E;border:1px solid rgba(96,165,250,.18);margin-top:20px;position:relative;overflow:hidden}
+.note::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--blue),rgba(96,165,250,.2))}
+.note-q{font-family:var(--mono);font-size:12px;color:var(--blue);font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em}
+.note-a{font-size:14px;color:#CBD5E1;line-height:1.65}
+
+/* ===== TITLE (p0) ===== */
+#p0{display:flex;align-items:center;justify-content:center;text-align:center}
+#p0 .orb-1{width:600px;height:600px;background:radial-gradient(circle,rgba(167,139,250,.12),transparent 70%);top:-100px;right:-150px}
+#p0 .orb-2{width:400px;height:400px;background:radial-gradient(circle,rgba(96,165,250,.08),transparent 70%);bottom:-100px;left:-100px}
+#p0 h1{font-family:var(--serif);font-size:56px;font-weight:400;letter-spacing:-.03em;line-height:1.1;margin-bottom:16px}
+#p0 h1 em{font-style:normal;background:linear-gradient(135deg,var(--violet),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+#p0 .tag{font-size:18px;color:var(--tx2);margin-bottom:48px;display:block}
+.hero-cards{display:flex;gap:20px;justify-content:center;margin-bottom:48px;flex-wrap:wrap}
+.hc{padding:28px 24px;border-radius:16px;text-align:left;flex:1;max-width:320px;min-width:240px;background:rgba(255,255,255,.03);border:1px solid var(--brd);position:relative;overflow:hidden}
+.hc::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.hc:first-child::before{background:linear-gradient(90deg,var(--violet),var(--blue))}
+.hc:last-child::before{background:linear-gradient(90deg,var(--amber),var(--emerald))}
+.hc-e{font-size:36px;margin-bottom:10px;display:block}
+.hc-n{font-family:var(--mono);font-size:16px;font-weight:600}
+.hc-v{font-family:var(--mono);font-size:12px;color:var(--tx3);display:block;margin-bottom:8px}
+.hc-d{font-size:14px;color:var(--tx2);line-height:1.5}
+.hero-stats{display:flex;gap:40px;justify-content:center;flex-wrap:wrap}
+.hs b{font-family:var(--serif);font-size:36px;font-weight:400;display:block;background:linear-gradient(135deg,var(--violet),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hs span{font-family:var(--mono);font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em}
+.hero-keys{margin-top:48px;font-size:13px;color:var(--tx3)}
+.hero-keys kbd{background:rgba(255,255,255,.05);border:1px solid var(--brd);border-radius:4px;padding:2px 7px;font-family:var(--mono);font-size:11px}
+
+/* ===== OVERVIEW (p1) ===== */
+#p1 .orb-1{width:500px;height:500px;background:radial-gradient(circle,rgba(96,165,250,.1),transparent 70%);top:-50px;left:-200px}
+.ov-flow{display:flex;align-items:center;justify-content:center;gap:0;margin:40px 0 48px;flex-wrap:wrap}
+.ov-box{padding:24px 28px;border-radius:16px;background:rgba(255,255,255,.03);border:1px solid var(--brd);min-width:200px;text-align:center}
+.ov-box-label{font-family:var(--mono);font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;display:block}
+.ov-box-cmd{font-size:18px;font-weight:600}
+.ov-stream{display:flex;align-items:center;gap:6px;padding:16px 20px}
+.ov-dot{width:52px;height:52px;border-radius:50%;border:2.5px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:22px;background:var(--bg);transition:all .6s}
+.ov-dot.lit{border-color:var(--c);box-shadow:0 0 20px color-mix(in srgb,var(--c),transparent 50%),0 0 50px color-mix(in srgb,var(--c),transparent 75%);transform:scale(1.1)}
+.ov-arr{color:var(--tx3);font-size:18px;opacity:.3}
+.ov-vs{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.ov-col{padding:0;border-radius:16px;background:rgba(255,255,255,.025);border:1px solid var(--brd);position:relative;overflow:hidden;transition:border-color .2s}
+.ov-col:hover{border-color:rgba(255,255,255,.12)}
+.ov-col-head{display:flex;align-items:center;gap:14px;padding:24px 24px 0}
+.ov-col-icon{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0}
+.ov-col:first-child .ov-col-icon{background:linear-gradient(135deg,rgba(167,139,250,.15),rgba(96,165,250,.15));border:1px solid rgba(167,139,250,.2)}
+.ov-col:last-child .ov-col-icon{background:linear-gradient(135deg,rgba(251,191,36,.12),rgba(52,211,153,.12));border:1px solid rgba(52,211,153,.2)}
+.ov-col-title{font-family:var(--mono);font-size:16px;font-weight:600}
+.ov-col-ver{font-family:var(--mono);font-size:11px;color:var(--tx3);display:block;margin-top:2px}
+.ov-col-body{padding:16px 24px 24px}
+.ov-desc{font-size:14px;color:var(--tx2);line-height:1.6;margin-bottom:16px}
+.ov-stats{display:flex;flex-wrap:wrap;gap:8px}
+.ov-stat{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:12px;padding:7px 14px;border-radius:8px;color:var(--tx2)}
+.ov-col:first-child .ov-stat{background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.18)}
+.ov-col:last-child .ov-stat{background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.18)}
+.ov-stat b{color:var(--tx);font-weight:700}
+.ov-col-bar{height:3px;width:100%}
+.ov-col:first-child .ov-col-bar{background:linear-gradient(90deg,var(--violet),var(--blue))}
+.ov-col:last-child .ov-col-bar{background:linear-gradient(90deg,var(--amber),var(--emerald))}
+
+/* ===== OVERVIEW MINI BOARD ===== */
+.ov-board{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:0 0 24px}
+.ov-bcol{border-radius:8px;background:rgba(255,255,255,.015);border:1px solid var(--brd);min-height:72px;overflow:hidden}
+.ov-bcol-h{padding:6px 10px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;border-bottom:2px solid var(--obc);color:var(--tx3)}
+.ov-bcol-b{padding:6px;min-height:40px}
+.ov-bcard{background:var(--sf);border:1px solid var(--brd);border-radius:5px;padding:5px 8px;font-size:11px;display:flex;align-items:center;gap:4px;margin-bottom:4px;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.ov-bcard .ov-label{font-family:var(--mono);font-size:8px;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:auto;white-space:nowrap}
+
+/* ===== PIPELINE (p2) ===== */
+#p2 .orb-1{width:700px;height:700px;background:radial-gradient(circle,rgba(167,139,250,.06),transparent 60%);top:50%;left:50%;transform:translate(-50%,-50%)}
+.pipe-wrap{overflow-x:auto;padding:8px 0 16px}
+.pipe{display:flex;align-items:flex-start;justify-content:center;gap:0;min-width:680px;padding:0 16px}
+.pn{display:flex;flex-direction:column;align-items:center;gap:8px;position:relative}
+.pc{width:72px;height:72px;border-radius:50%;border:2.5px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:28px;background:var(--bg);transition:all .6s}
+.pn.on .pc{border-color:var(--c);box-shadow:0 0 24px color-mix(in srgb,var(--c),transparent 45%),0 0 64px color-mix(in srgb,var(--c),transparent 75%);transform:scale(1.08)}
+.pn-name{font-family:var(--mono);font-size:12px;color:var(--tx3);white-space:nowrap;transition:color .3s}
+.pn.on .pn-name{color:var(--tx)}
+.pn-phase{position:absolute;top:-22px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.pl{width:32px;height:3px;background:rgba(255,255,255,.04);margin-top:34px;position:relative;flex-shrink:0;overflow:hidden;border-radius:2px}
+.pl::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,var(--c1),var(--c2));transform:scaleX(0);transform-origin:left;transition:transform .45s ease;border-radius:2px}
+.pl.on::after{transform:scaleX(1)}
+.pipe-phases{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:32px}
+.pipe-ph{padding:18px 20px;border-radius:12px;background:rgba(255,255,255,.02);border:1px solid var(--brd);border-top:3px solid var(--phc)}
+.pipe-ph h4{font-family:var(--mono);font-size:13px;color:var(--phc);margin-bottom:8px}
+.pipe-ph p{font-size:14px;color:var(--tx2);line-height:1.5}
+
+/* ===== CONCURRENCY (p3) ===== */
+#p3c .orb-1{width:500px;height:500px;background:radial-gradient(circle,rgba(251,191,36,.07),transparent 70%);top:-100px;left:-100px}
+.claim-scene{margin:32px 0;display:flex;flex-direction:column;align-items:center;gap:24px}
+.claim-race{display:flex;align-items:center;justify-content:center;gap:0;width:100%}
+.claim-agent{text-align:center;padding:16px 20px;border-radius:16px;background:rgba(255,255,255,.02);border:2px solid var(--brd);min-width:140px;transition:all .6s}
+.claim-agent .ca-icon{font-size:44px;margin-bottom:6px;display:block}
+.claim-agent .ca-name{font-family:var(--mono);font-size:15px;font-weight:600}
+.claim-agent .ca-sub{font-size:13px;color:var(--tx3);margin-top:4px}
+.claim-agent.won{border-color:var(--emerald);background:rgba(52,211,153,.05);box-shadow:0 0 24px rgba(52,211,153,.12)}
+.claim-agent.lost{border-color:var(--red);background:rgba(248,113,113,.04);box-shadow:0 0 24px rgba(248,113,113,.08)}
+.claim-arr{display:flex;align-items:center;gap:6px;padding:0 10px}
+.claim-arr-line{width:56px;height:3px;background:rgba(255,255,255,.05);border-radius:2px;position:relative;overflow:hidden}
+.claim-arr-line::after{content:'';position:absolute;inset:0;border-radius:2px;transform:scaleX(0);transition:transform .5s ease}
+.claim-arr-line.go-r::after{background:var(--emerald);transform:scaleX(1);transform-origin:left}
+.claim-arr-line.go-l::after{background:var(--red);transform:scaleX(1);transform-origin:right}
+.claim-arr-label{font-family:var(--mono);font-size:11px;color:var(--tx3);white-space:nowrap;opacity:0;transition:opacity .4s}.claim-arr-label.show{opacity:1}
+.claim-lock{text-align:center;padding:20px 28px;border-radius:16px;background:rgba(255,255,255,.02);border:2px solid var(--brd);transition:all .6s;flex-shrink:0}
+.claim-lock.active{border-color:var(--amber);box-shadow:0 0 32px rgba(251,191,36,.15)}
+.claim-lock .cl-icon{font-size:40px;display:block;margin-bottom:4px}
+.claim-lock .cl-ref{font-family:var(--mono);font-size:11px;color:var(--tx3)}
+.claim-results{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.claim-res{padding:12px 22px;border-radius:10px;font-size:15px;font-weight:500;opacity:0;transform:translateY(10px);transition:all .5s}
+.claim-res.show{opacity:1;transform:translateY(0)}
+.claim-res.win{background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.2);color:var(--emerald)}
+.claim-res.lose{background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2);color:var(--red)}
+.claim-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:8px}
+.claim-step{padding:16px;border-radius:12px;background:rgba(255,255,255,.02);border:1px solid var(--brd);text-align:center}
+.claim-step-n{font-family:var(--mono);font-size:22px;font-weight:600;color:var(--amber);margin-bottom:6px}
+.claim-step-t{font-size:14px;font-weight:600;margin-bottom:4px}
+.claim-step-d{font-size:13px;color:var(--tx2);line-height:1.4}
+
+/* ===== WORKFLOWS (p4, p5) ===== */
+.tl{position:relative;padding-left:60px;margin:8px 0 16px}
+.tl::before{content:'';position:absolute;left:24px;top:8px;bottom:8px;width:2.5px;background:rgba(255,255,255,.04);border-radius:2px}
+.ph{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin:12px 0 8px}
+.st{position:relative;margin-bottom:12px}
+.dt{position:absolute;left:-60px;top:6px;width:48px;height:48px;border-radius:50%;background:var(--bg);border:2.5px solid var(--pc);display:flex;align-items:center;justify-content:center;font-size:20px;z-index:2;transition:all .3s}
+.st.open .dt{transform:scale(1.15);box-shadow:0 0 20px color-mix(in srgb,var(--pc),transparent 50%),0 0 48px color-mix(in srgb,var(--pc),transparent 75%)}
+.cd{background:rgba(255,255,255,.02);border:1px solid var(--brd);border-radius:12px;overflow:hidden;cursor:pointer;transition:all .2s}
+.cd:hover{border-color:rgba(255,255,255,.08);background:rgba(255,255,255,.03)}
+.st.open .cd{border-color:color-mix(in srgb,var(--pc),transparent 40%);border-left:3px solid var(--pc);background:rgba(255,255,255,.04);box-shadow:0 4px 24px rgba(0,0,0,.25)}
+.hd{display:flex;align-items:center;justify-content:space-between;padding:14px 18px}
+.tt{font-size:16px;font-weight:600}
+.ch{font-size:12px;color:var(--tx3);transition:transform .3s}
+.st.open .ch{transform:rotate(180deg)}
+.bd{max-height:0;overflow:hidden;transition:max-height .4s cubic-bezier(.4,0,.2,1),padding .3s}
+.st.open .bd{max-height:260px;padding:0 18px 16px}
+.ds{font-size:14px;color:var(--tx2);line-height:1.5;margin-bottom:10px}
+.sf{display:flex;align-items:flex-start;background:rgba(255,255,255,.03);border-radius:8px;padding:10px 8px;margin-bottom:8px}
+.ss{display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;min-width:0}
+.sn{width:24px;height:24px;border-radius:50%;background:var(--pc);color:var(--bg);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(.5);transition:opacity .25s,transform .3s cubic-bezier(.34,1.56,.64,1)}
+.st.open .sn{opacity:1;transform:scale(1)}
+.sl{font-size:11px;color:var(--tx3);text-align:center;opacity:0;transition:opacity .3s}.st.open .sl{opacity:1}
+.sc{flex:0 0 14px;height:2px;background:var(--pc);opacity:.15;margin-top:11px}
+.tg{display:flex;flex-wrap:wrap;gap:3px}
+.tg span{font-family:var(--mono);font-size:10px;background:rgba(255,255,255,.04);color:var(--tx3);padding:2px 6px;border-radius:4px;border:1px solid var(--brd)}
+.wf-mini{margin-top:16px;padding:12px 16px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid var(--brd);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.wf-mini b{font-family:var(--mono);font-size:13px;color:var(--tx2)}
+.wf-mini span.md{font-size:13px;color:var(--tx3)}
+.wf-play{background:none;border:1px solid var(--brd);border-radius:6px;padding:6px 16px;font-size:13px;color:var(--tx2);cursor:pointer;font-family:var(--mono);transition:all .2s;float:right}
+.wf-play:hover{border-color:rgba(255,255,255,.15);color:var(--tx)}
+.wf-play.running{color:var(--amber);border-color:var(--amber)}
+
+/* ===== FEEDBACK LOOP (p6) ===== */
+#p6f .orb-1{width:400px;height:400px;background:radial-gradient(circle,rgba(52,211,153,.06),transparent 70%);top:-50px;right:-100px}
+.loop-wrap{position:relative;margin:36px 0 20px;padding-bottom:36px}
+.loop-row{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap}
+.loop-nd{padding:18px 20px;border-radius:14px;background:rgba(255,255,255,.02);border:2px solid var(--brd);text-align:center;min-width:120px;transition:all .5s}
+.loop-nd .ln-icon{font-size:28px;display:block;margin-bottom:4px}
+.loop-nd .ln-name{font-size:14px;font-weight:600}
+.loop-nd.on{border-color:var(--c);box-shadow:0 0 20px color-mix(in srgb,var(--c),transparent 50%)}
+.loop-ar{padding:0 8px;font-size:22px;color:var(--tx3);opacity:.3;transition:opacity .3s,color .3s}
+.loop-ar.on{opacity:1;color:var(--tx)}
+.loop-back{position:absolute;bottom:0;left:10%;right:10%;height:28px;border:2px solid rgba(255,255,255,.04);border-top:none;border-radius:0 0 14px 14px;pointer-events:none}
+.loop-back-label{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:12px;color:var(--tx3);white-space:nowrap;background:var(--bg);padding:0 10px}
+.loop-exit{display:flex;align-items:center;justify-content:center;gap:0;margin-top:20px}
+.loop-exit .loop-nd{border-color:rgba(52,211,153,.2);background:rgba(52,211,153,.04)}
+.loop-exit .loop-nd.on{border-color:var(--emerald);box-shadow:0 0 20px rgba(52,211,153,.2)}
+.loop-detail{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px}
+.loop-detail-card{padding:18px;border-radius:12px;background:rgba(255,255,255,.02);border:1px solid var(--brd)}
+.loop-detail-card h4{font-family:var(--mono);font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.loop-detail-card p{font-size:14px;color:var(--tx2);line-height:1.5}
+
+/* ===== TOOLKIT (p7) ===== */
+#p7t .orb-1{width:500px;height:500px;background:radial-gradient(circle,rgba(167,139,250,.06),transparent 70%);bottom:-100px;right:-150px}
+.tk-cat{margin-bottom:20px}
+.tk-cat-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.tk-cat-icon{font-size:22px}
+.tk-cat-name{font-family:var(--mono);font-size:13px;color:var(--tx2);text-transform:uppercase;letter-spacing:.06em}
+.tk-pills{display:flex;flex-wrap:wrap;gap:6px}
+.tk-pill{font-family:var(--mono);font-size:13px;padding:6px 14px;border-radius:20px;background:rgba(255,255,255,.03);border:1px solid var(--brd);color:var(--tx2);transition:all .2s;cursor:default}
+.tk-pill:hover{border-color:var(--violet);color:var(--tx);background:rgba(167,139,250,.06);transform:translateY(-1px)}
+.tk-agents{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:24px 0}
+.tk-ag{padding:22px;border-radius:14px;background:rgba(255,255,255,.02);border:1px solid var(--brd);text-align:center;transition:border-color .2s}
+.tk-ag:hover{border-color:rgba(255,255,255,.1)}
+.tk-ag-e{font-size:40px;margin-bottom:10px;display:block}
+.tk-ag-n{font-family:var(--mono);font-size:15px;font-weight:600;margin-bottom:6px}
+.tk-ag-d{font-size:14px;color:var(--tx2);line-height:1.4;margin-bottom:14px}
+.tk-bar{height:10px;border-radius:5px;background:rgba(255,255,255,.04);overflow:hidden;margin-bottom:6px}
+.tk-bar-f{height:100%;border-radius:5px;width:0;transition:width 1.2s cubic-bezier(.4,0,.2,1)}
+.tk-bar-l{font-family:var(--mono);font-size:11px;color:var(--tx3)}
+.tk-cmds{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.tk-cmd{font-family:var(--mono);font-size:13px;padding:7px 14px;border-radius:8px;background:rgba(251,191,36,.05);border:1px solid rgba(251,191,36,.15);color:var(--amber);transition:all .2s;cursor:default}
+.tk-cmd:hover{background:rgba(251,191,36,.1);transform:translateY(-1px)}
+
+/* ===== SETUP (p8) ===== */
+#p8s .orb-1{width:400px;height:400px;background:radial-gradient(circle,rgba(52,211,153,.06),transparent 70%);bottom:-50px;left:-100px}
+.setup-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:24px 0}
+.setup-card{padding:18px;border-radius:12px;background:rgba(255,255,255,.02);border:1px solid var(--brd);text-align:center;transition:all .4s;position:relative}
+.setup-card.done{border-color:var(--emerald);background:rgba(52,211,153,.04)}
+.setup-card-e{font-size:30px;margin-bottom:8px;display:block;transition:transform .4s}
+.setup-card.done .setup-card-e{transform:scale(1.15)}
+.setup-card-n{font-size:14px;font-weight:600;margin-bottom:4px}
+.setup-card-d{font-size:13px;color:var(--tx3);line-height:1.3}
+.setup-card .chk{position:absolute;top:8px;right:8px;width:20px;height:20px;border-radius:50%;background:var(--emerald);color:var(--bg);font-size:11px;display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(0);transition:all .3s}
+.setup-card.done .chk{opacity:1;transform:scale(1)}
+.rg-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.rg{padding:18px;border-radius:12px;background:rgba(255,255,255,.02);border:1px solid var(--brd);transition:border-color .2s}
+.rg:hover{border-color:rgba(255,255,255,.1)}
+.rg-name{font-family:var(--mono);font-size:14px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.rg-def{font-size:9px;background:var(--emerald);color:var(--bg);padding:2px 6px;border-radius:3px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.rg-d{font-size:14px;color:var(--tx2);line-height:1.4;margin-bottom:6px}
+.qg{display:flex;align-items:center;gap:0;justify-content:center;margin:20px 0;flex-wrap:wrap}
+.qg-node{width:76px;height:76px;border-radius:50%;border:2.5px solid rgba(255,255,255,.08);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:22px;background:var(--bg);transition:all .5s}
+.qg-node span{font-size:11px;color:var(--tx3);font-family:var(--mono);margin-top:2px}
+.qg-node.on{border-color:var(--c);box-shadow:0 0 16px color-mix(in srgb,var(--c),transparent 55%)}
+.qg-line{width:28px;height:2.5px;background:rgba(255,255,255,.05);flex-shrink:0}
+.qg-loop{text-align:center;margin-top:10px;font-size:14px;color:var(--tx3);font-family:var(--mono)}
+.qg-loop em{color:var(--red);font-style:normal}
+
+/* ===== ECOSYSTEM (p9) ===== */
+#p9e .orb-1{width:500px;height:500px;background:radial-gradient(circle,rgba(251,191,36,.05),transparent 70%);top:-100px;right:-200px}
+.board{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:20px 0 28px}
+.bcol{border-radius:10px;overflow:hidden;background:rgba(255,255,255,.015);border:1px solid var(--brd);min-height:100px}
+.bcol-h{padding:10px 12px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;border-bottom:2.5px solid var(--bcc);color:var(--tx2)}
+.bcol-b{padding:8px;min-height:56px}
+.bcard{background:var(--sf);border:1px solid var(--brd);border-radius:6px;padding:8px 12px;font-size:12px;display:flex;align-items:center;gap:5px;transition:all .3s;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.states{margin:16px 0}
+.st-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px}
+.st-row-l{font-family:var(--mono);font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;width:52px;flex-shrink:0}
+.st-pill{padding:6px 12px;border-radius:20px;font-family:var(--mono);font-size:11px;font-weight:600;border:1px solid transparent;transition:all .5s;opacity:.25;transform:scale(.95)}
+.st-pill.on{opacity:1;transform:scale(1.08);box-shadow:0 0 14px color-mix(in srgb,var(--sc),transparent 55%)}
+.st-arr{color:var(--tx3);font-size:11px;opacity:.25}
+.dep-flow{display:flex;align-items:center;justify-content:center;gap:0;margin:20px 0;flex-wrap:wrap}
+.dep-nd{padding:14px 18px;border-radius:12px;background:rgba(255,255,255,.02);border:1px solid var(--brd);text-align:center;min-width:100px}
+.dep-nd .dep-icon{font-size:24px;display:block;margin-bottom:4px}
+.dep-nd .dep-label{font-size:13px;font-weight:600}
+.dep-ar{padding:0 6px;font-size:18px;color:var(--tx3);opacity:.3}
+.eco-hub{display:flex;justify-content:center;align-items:center;gap:0;margin:20px 0;flex-wrap:wrap}
+.eco-spoke{display:flex;flex-direction:column;align-items:center;gap:4px;width:110px;text-align:center;padding:14px 8px;border-radius:10px;transition:background .2s;cursor:default}
+.eco-spoke:hover{background:rgba(255,255,255,.03)}
+.eco-spoke-e{font-size:30px;margin-bottom:2px}
+.eco-spoke-n{font-size:12px;font-weight:600}
+.eco-spoke-d{font-size:11px;color:var(--tx3)}
+.eco-center{width:84px;height:84px;border-radius:50%;background:linear-gradient(135deg,rgba(167,139,250,.15),rgba(96,165,250,.15));border:2px solid var(--brd);display:flex;align-items:center;justify-content:center;font-size:13px;font-family:var(--mono);font-weight:600;color:var(--tx2);text-align:center;line-height:1.2;flex-shrink:0;margin:0 12px}
+.eco-line{width:28px;height:2px;background:rgba(255,255,255,.06);flex-shrink:0}
+
+/* ===== PRE-WORK (p2p) ===== */
+#p2p .orb-1{width:500px;height:500px;background:radial-gradient(circle,rgba(167,139,250,.08),transparent 70%);top:-80px;left:-150px}
+.pw-flow{display:flex;align-items:center;justify-content:center;gap:0;margin:32px 0 28px;flex-wrap:wrap}
+.pw-node{padding:14px 20px;border-radius:14px;background:rgba(255,255,255,.02);border:2px solid var(--brd);text-align:center;min-width:120px;transition:all .5s}
+.pw-node .pw-icon{font-size:28px;display:block;margin-bottom:4px}
+.pw-node .pw-name{font-size:14px;font-weight:600}
+.pw-node .pw-sub{font-size:12px;color:var(--tx3);margin-top:2px}
+.pw-node.on{border-color:var(--c);box-shadow:0 0 20px color-mix(in srgb,var(--c),transparent 50%)}
+.pw-arr{padding:0 8px;font-size:20px;color:var(--tx3);opacity:.3;transition:opacity .3s}.pw-arr.on{opacity:1}
+.pw-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:20px 0}
+.pw-card{padding:20px;border-radius:14px;background:rgba(255,255,255,.02);border:1px solid var(--brd);border-top:3px solid var(--pwc);transition:border-color .2s}
+.pw-card:hover{border-color:rgba(255,255,255,.1)}
+.pw-card h4{font-family:var(--mono);font-size:14px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.pw-card p{font-size:13px;color:var(--tx2);line-height:1.5}
+.pw-card .pw-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.pw-card .pw-tag{font-family:var(--mono);font-size:10px;background:rgba(255,255,255,.04);color:var(--tx3);padding:2px 8px;border-radius:4px;border:1px solid var(--brd)}
+.aq-mock{max-width:380px;margin:0 auto 20px;border-radius:14px;background:var(--sf);border:1px solid rgba(167,139,250,.2);padding:22px 24px;box-shadow:0 8px 40px rgba(0,0,0,.5),0 0 30px rgba(167,139,250,.08)}
+.aq-mock-q{font-size:15px;font-weight:600;margin-bottom:14px;line-height:1.4}
+.aq-mock-opts{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.aq-opt{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid var(--brd);font-size:14px;transition:all .3s;cursor:default}
+.aq-opt.selected{border-color:var(--violet);background:rgba(167,139,250,.08)}
+.aq-opt-dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--tx3);flex-shrink:0;position:relative;transition:border-color .3s}
+.aq-opt.selected .aq-opt-dot{border-color:var(--violet)}
+.aq-opt.selected .aq-opt-dot::after{content:'';position:absolute;top:3px;left:3px;width:6px;height:6px;border-radius:50%;background:var(--violet)}
+.aq-opt-rec{font-family:var(--mono);font-size:10px;color:var(--violet);margin-left:auto}
+.aq-mock-btn{display:block;margin:0 auto;padding:8px 28px;border-radius:8px;background:var(--violet);color:var(--bg);border:none;font-size:13px;font-weight:600;font-family:var(--sans);cursor:default;opacity:.5;transition:opacity .3s}
+.aq-mock-btn.active{opacity:1}
+
+/* ===== COMPANION TOOLS (p11c) ===== */
+#p11c .orb-1{width:500px;height:500px;background:radial-gradient(circle,rgba(52,211,153,.06),transparent 70%);top:-80px;right:-150px}
+.ct-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:24px 0}
+.ct-card{padding:22px;border-radius:14px;background:rgba(255,255,255,.02);border:1px solid var(--brd);transition:all .3s;position:relative;overflow:hidden}
+.ct-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--ctc);opacity:.6}
+.ct-card:hover{border-color:rgba(255,255,255,.1);background:rgba(255,255,255,.03)}
+.ct-card-e{font-size:36px;margin-bottom:10px;display:block}
+.ct-card-n{font-family:var(--mono);font-size:15px;font-weight:600;margin-bottom:4px}
+.ct-card-d{font-size:13px;color:var(--tx2);line-height:1.5;margin-bottom:10px}
+.ct-card-when{font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:6px;background:rgba(255,255,255,.03);border:1px solid var(--brd);color:var(--tx3);display:inline-block}
+
+/* ===== FAST-PATH (p12f) ===== */
+#p12f .orb-1{width:500px;height:500px;background:radial-gradient(circle,rgba(251,191,36,.06),transparent 70%);bottom:-80px;left:-150px}
+.fp-decision{display:flex;align-items:center;justify-content:center;gap:0;margin:32px 0 28px;flex-wrap:wrap}
+.fp-box{padding:16px 20px;border-radius:14px;background:rgba(255,255,255,.02);border:2px solid var(--brd);text-align:center;min-width:110px;transition:all .5s}
+.fp-box .fp-e{font-size:24px;display:block;margin-bottom:4px}
+.fp-box .fp-n{font-size:14px;font-weight:600}
+.fp-box .fp-d{font-size:12px;color:var(--tx3);margin-top:2px}
+.fp-box.on{border-color:var(--c);box-shadow:0 0 16px color-mix(in srgb,var(--c),transparent 55%)}
+.fp-arr{padding:0 6px;font-size:18px;color:var(--tx3);opacity:.3}
+.fp-branch{display:flex;gap:20px;justify-content:center;margin:0 0 24px}
+.fp-path{flex:1;max-width:380px;padding:20px;border-radius:14px;background:rgba(255,255,255,.02);border:1px solid var(--brd);border-top:3px solid var(--fpc)}
+.fp-path h4{font-family:var(--mono);font-size:14px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.fp-path p{font-size:13px;color:var(--tx2);line-height:1.5;margin-bottom:8px}
+.fp-path .fp-perf{font-family:var(--mono);font-size:12px;padding:6px 12px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid var(--brd);display:inline-block}
+.fp-pickers{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:20px 0}
+.fp-picker{padding:18px;border-radius:12px;background:rgba(255,255,255,.02);border:1px solid var(--brd);text-align:center;transition:border-color .2s}
+.fp-picker:hover{border-color:rgba(255,255,255,.1)}
+.fp-picker-e{font-size:30px;margin-bottom:8px;display:block}
+.fp-picker-n{font-family:var(--mono);font-size:14px;font-weight:600;margin-bottom:4px}
+.fp-picker-d{font-size:13px;color:var(--tx2);line-height:1.4}
+
+.sec-label{font-family:var(--mono);font-size:12px;color:var(--tx3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:20px}
+section h2{font-family:var(--serif);font-size:38px;font-weight:400;letter-spacing:-.01em;margin-bottom:8px}
+h2{font-family:var(--serif);font-size:38px;font-weight:400;letter-spacing:-.01em;margin-bottom:8px}
+.sub-h{font-size:16px;color:var(--tx2);margin-bottom:24px;max-width:55ch;line-height:1.5}
+.sub-head{font-family:var(--mono);font-size:13px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;margin:28px 0 12px}
+
+@media(max-width:700px){
+  .pg-i{padding:36px 16px 72px}
+  #p0 h1{font-size:36px}
+  .hero-cards{flex-direction:column;align-items:center}
+  .ov-flow{flex-direction:column;gap:12px}
+  .ov-stream{padding:8px 0;flex-wrap:wrap;justify-content:center}
+  .ov-vs{grid-template-columns:1fr}
+  .pipe{min-width:0;flex-direction:column;align-items:center}
+  .pl{width:2.5px!important;height:20px!important;margin:0!important}.pl::after{transform-origin:top!important;transform:scaleY(0)!important}.pl.on::after{transform:scaleY(1)!important}
+  .tl{padding-left:52px}.dt{left:-52px;width:40px;height:40px;font-size:17px}
+  .sf{flex-wrap:wrap;gap:4px}.sc{display:none}.ss{flex-direction:row;flex:auto;gap:6px}
+  .pipe-phases,.setup-grid{grid-template-columns:1fr}
+  .tk-agents{grid-template-columns:1fr}
+  .rg-grid,.loop-detail{grid-template-columns:1fr}
+  .ov-board{grid-template-columns:repeat(3,1fr)}
+  .board{grid-template-columns:repeat(3,1fr)}
+  .eco-hub{gap:8px}.eco-line{display:none}.eco-center{margin:8px 0}
+  .pw-flow{flex-direction:column;gap:8px}.pw-arr{transform:rotate(90deg)}.pw-cards{grid-template-columns:1fr}
+  #p2p [style*="grid-template-columns: 1fr 1fr"]{grid-template-columns:1fr!important}
+  .ct-grid{grid-template-columns:1fr}
+  .fp-decision{flex-direction:column;gap:8px}.fp-branch{flex-direction:column}.fp-pickers{grid-template-columns:1fr}
+  .claim-race{flex-direction:column;gap:12px}
+  .claim-arr{transform:rotate(90deg);padding:8px 0}
+  .claim-steps{grid-template-columns:1fr 1fr}
+  .loop-row{gap:8px}.loop-back{display:none}
+}
+@media(prefers-reduced-motion:reduce){*{transition-duration:0s!important;animation-duration:0s!important}}
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck"></div>
+<nav class="pnav"><button class="pb" id="prev" onclick="go(cur-1)">←</button><div id="dots"></div><button class="pb" id="next" onclick="go(cur+1)">→</button><span class="pn-num" id="pnum"></span></nav>
+
+<script>
+const PG=[
+
+/* ===== 0: TITLE ===== */
+{id:'p0',html:`
+<div class="orb orb-1"></div><div class="orb orb-2"></div>
+<div class="pg-i" style="text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:calc(100vh - 100px)">
+  <h1 class="fin" style="transition-delay:.1s">Workflow <em>Plugins</em></h1>
+  <span class="tag fin" style="transition-delay:.2s">Autonomous development — backlog to merge, hands-free</span>
+  <div class="hero-cards fin" style="transition-delay:.3s">
+    <div class="hc"><span class="hc-e">\u{1F3D7}️</span><span class="hc-n">github-workflow</span><span class="hc-v">v3.0.1</span><p class="hc-d">Runs the full GitHub lifecycle autonomously — picks stories, plans, builds, tests, ships PRs, reviews, and merges.</p></div>
+    <div class="hc"><span class="hc-e">\u{1F3E0}</span><span class="hc-n">local-workflow</span><span class="hc-v">v1.20.0</span><p class="hc-d">Same autonomous core without platform dependencies. Architecture, coding, discovery, and documentation.</p></div>
+  </div>
+  <div class="hero-stats fin" style="transition-delay:.4s">
+    <div class="hs"><b>17</b><span>Skills</span></div>
+    <div class="hs"><b>4</b><span>Commands</span></div>
+    <div class="hs"><b>3</b><span>Agents</span></div>
+    <div class="hs"><b>27</b><span>Labels</span></div>
+  </div>
+  <p class="hero-keys fin" style="transition-delay:.5s"><kbd>←</kbd> <kbd>→</kbd> or <kbd>Space</kbd> to navigate</p>
+</div>`},
+
+/* ===== 1: OVERVIEW ===== */
+{id:'p1',html:`
+<div class="orb orb-1"></div>
+<div class="pg-i">
+  <div class="sec-label fin" style="transition-delay:.05s">01 / Overview</div>
+  <h2 class="fin" style="transition-delay:.1s">One Command Does Everything</h2>
+  <p class="sub-h fin" style="transition-delay:.15s">You give a single instruction. The plugin picks a story, plans the work, writes the code, runs tests, opens a PR, and updates your board.</p>
+  <div class="ov-flow fin" style="transition-delay:.25s">
+    <div class="ov-box"><span class="ov-box-label">You say</span><div class="ov-box-cmd">“Start the next story”</div></div>
+    <div class="ov-stream" id="ov-stream">
+      <div class="ov-dot" style="--c:var(--violet)">\u{1F4CB}</div><span class="ov-arr">→</span>
+      <div class="ov-dot" style="--c:var(--amber)">\u{1F4DD}</div><span class="ov-arr">→</span>
+      <div class="ov-dot" style="--c:var(--amber)">\u{1F528}</div><span class="ov-arr">→</span>
+      <div class="ov-dot" style="--c:var(--amber)">✅</div><span class="ov-arr">→</span>
+      <div class="ov-dot" style="--c:var(--blue)">\u{1F680}</div><span class="ov-arr">→</span>
+      <div class="ov-dot" style="--c:var(--blue)">\u{1F4CA}</div>
+    </div>
+    <div class="ov-box"><span class="ov-box-label">Result</span><div class="ov-box-cmd">PR opened, board updated</div></div>
+  </div>
+  <table class=”fin” style=”transition-delay:.35s;width:100%;border-collapse:separate;border-spacing:24px 0”><tr>
+    <td style=”width:50%;vertical-align:top;border-radius:12px;background:#1A2538;border-left:4px solid #A78BFA;padding:24px 24px 20px”>
+      <div style=”font-family:var(--mono);font-size:20px;font-weight:700;color:#F1F5F9;margin-bottom:4px”>github-workflow <span style=”font-size:11px;font-weight:400;color:#A78BFA;background:rgba(167,139,250,.15);padding:2px 8px;border-radius:4px;margin-left:8px”>v3.0.1</span></div>
+      <div style=”font-size:15px;color:#CBD5E1;line-height:1.5;margin-bottom:18px”>Full GitHub lifecycle — story to merged PR, hands-free.</div>
+      <table style=”width:100%;text-align:center”><tr>
+        <td style=”padding:0 4px”><span style=”font-family:var(--serif);font-size:26px;color:#A78BFA”>17</span><br><span style=”font-family:var(--mono);font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.08em”>skills</span></td>
+        <td style=”padding:0 4px”><span style=”font-family:var(--serif);font-size:26px;color:#A78BFA”>4</span><br><span style=”font-family:var(--mono);font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.08em”>cmds</span></td>
+        <td style=”padding:0 4px”><span style=”font-family:var(--serif);font-size:26px;color:#A78BFA”>3</span><br><span style=”font-family:var(--mono);font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.08em”>agents</span></td>
+        <td style=”padding:0 4px”><span style=”font-family:var(--serif);font-size:26px;color:#A78BFA”>27</span><br><span style=”font-family:var(--mono);font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.08em”>labels</span></td>
+      </tr></table>
+    </td>
+    <td style=”width:50%;vertical-align:top;border-radius:12px;background:#1A2538;border-left:4px solid #34D399;padding:24px 24px 20px”>
+      <div style=”font-family:var(--mono);font-size:20px;font-weight:700;color:#F1F5F9;margin-bottom:4px”>local-workflow <span style=”font-size:11px;font-weight:400;color:#34D399;background:rgba(52,211,153,.15);padding:2px 8px;border-radius:4px;margin-left:8px”>v1.20.0</span></div>
+      <div style=”font-size:15px;color:#CBD5E1;line-height:1.5;margin-bottom:18px”>Same capabilities, no platform dependencies. All local-first.</div>
+      <table style=”width:100%;text-align:center”><tr>
+        <td style=”padding:0 4px”><span style=”font-family:var(--serif);font-size:26px;color:#34D399”>18</span><br><span style=”font-family:var(--mono);font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.08em”>skills</span></td>
+        <td style=”padding:0 4px”><span style=”font-family:var(--serif);font-size:26px;color:#34D399”>14</span><br><span style=”font-family:var(--mono);font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.08em”>shared</span></td>
+        <td style=”padding:0 8px”><span style=”font-family:var(--mono);font-size:11px;color:#34D399;background:rgba(52,211,153,.12);padding:3px 10px;border-radius:4px;border:1px solid rgba(52,211,153,.2);white-space:nowrap”>no GitHub</span></td>
+      </tr></table>
+    </td>
+  </tr></table>
+</div>`,enter(){animateOV()}},
+
+/* ===== 2: DEFINE THE WORK ===== */
+{id:'p2p',html:`
+<div class="orb orb-1"></div>
+<div class="pg-i">
+  <div class="sec-label fin" style="transition-delay:.05s">02 / Define the Work</div>
+  <h2 class="fin" style="transition-delay:.1s">Your Part: Design Before Code</h2>
+  <p class="sub-h fin" style="transition-delay:.15s">Before the agent writes a single line, you define what to build. The plugin grills you with relentless questioning, turns your answers into structured stories, and resolves every ambiguity upfront.</p>
+  <div class="pw-flow fin" style="transition-delay:.25s" id="pw-flow">
+    <div class="pw-node" style="--c:var(--violet)"><span class="pw-icon">\u{1F50D}</span><span class="pw-name">Discover</span><span class="pw-sub">interview</span></div>
+    <div class="pw-arr">→</div>
+    <div class="pw-node" style="--c:var(--amber)"><span class="pw-icon">\u{1F4CB}</span><span class="pw-name">Define</span><span class="pw-sub">user story</span></div>
+    <div class="pw-arr">→</div>
+    <div class="pw-node" style="--c:var(--amber)"><span class="pw-icon">\u{1F3D7}️</span><span class="pw-name">Architect</span><span class="pw-sub">code plan</span></div>
+    <div class="pw-arr">→</div>
+    <div class="pw-node" style="--c:var(--emerald)"><span class="pw-icon">\u{1F528}</span><span class="pw-name">Build</span><span class="pw-sub">implement</span></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:0 0 20px" class="fin" style="transition-delay:.3s">
+    <div class="aq-mock" style="max-width:none;margin:0" id="aq-mock">
+      <div class="aq-mock-q">Which authentication method should we use for the API?</div>
+      <div class="aq-mock-opts" id="aq-opts">
+        <div class="aq-opt selected"><span class="aq-opt-dot"></span>JWT tokens<span class="aq-opt-rec">Recommended</span></div>
+        <div class="aq-opt"><span class="aq-opt-dot"></span>OAuth 2.0</div>
+        <div class="aq-opt"><span class="aq-opt-dot"></span>API keys</div>
+      </div>
+      <button class="aq-mock-btn active">Submit</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;justify-content:center">
+      <div style="padding:10px 14px;border-radius:10px;background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.15);font-size:13px;color:var(--tx2);line-height:1.5"><span style="color:var(--red);font-weight:600">Pushback:</span> "You said 'probably real-time.' Does the dashboard need live WebSocket updates, or is polling every 30 seconds acceptable?"</div>
+      <div style="padding:10px 14px;border-radius:10px;background:rgba(167,139,250,.06);border:1px solid rgba(167,139,250,.15);font-size:13px;color:var(--tx2);line-height:1.5"><span style="color:var(--violet);font-weight:600">Probing:</span> "What happens when the auth token expires mid-session? Does the user get logged out, or do you silently refresh?"</div>
+    </div>
+  </div>
+  <div class="pw-cards fin" style="transition-delay:.35s">
+    <div class="pw-card" style="--pwc:var(--violet)"><h4>\u{1F50D} Feature Discovery</h4><p>Relentless interview with bounded-choice questions. Three scope tiers (small: 3–5 questions, medium: 8–15, large: full). Probes vague answers — "probably" is not an answer.</p><div class="pw-tags"><span class="pw-tag">discovery mode</span><span class="pw-tag">validation mode</span></div></div>
+    <div class="pw-card" style="--pwc:var(--amber)"><h4>\u{1F4DD} Structured Coding</h4><p>Five-step sequence: understand landscape, understand target, define goal, plan path, write code. User story checkpoint requires Overview + Technical + Acceptance Criteria.</p><div class="pw-tags"><span class="pw-tag">file checklists</span><span class="pw-tag">.claude/plan.md</span></div></div>
+    <div class="pw-card" style="--pwc:var(--emerald)"><h4>\u{1F3D7}️ Repo Scaffolding</h4><p>Greenfield projects only. Five-phase decomposition: Research, Interview, Architecture, Decomposition, Review. Produces epics and stories with full 12-section template.</p><div class="pw-tags"><span class="pw-tag">greenfield</span><span class="pw-tag">new repos</span></div></div>
+  </div>
+  <div class="fin" style="transition-delay:.4s;background:#151D2E;border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:20px 22px;margin-top:20px;border-top:2px solid #60A5FA"><div style="font-family:var(--mono);font-size:12px;color:#60A5FA;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Bounded-choice questions</div><div style="font-size:14px;color:#CBD5E1;line-height:1.65">The workflow uses Claude Code's AskUserQuestion tool to present 2–4 options with the recommended choice first. Used during feature discovery and repo scaffolding to resolve ambiguity. You answer, the agent adapts and moves on.</div></div>
+</div>`,enter(){animatePreWork()}},
+
+/* ===== 3: PIPELINE ===== */
+{id:'p2',html:`
+<div class="orb orb-1"></div>
+<div class="pg-i">
+  <div class="sec-label fin" style="transition-delay:.05s">03 / The Agent Takes Over</div>
+  <h2 class="fin" style="transition-delay:.1s">The Full Pipeline</h2>
+  <p class="sub-h fin" style="transition-delay:.15s">Once stories are defined, the agent runs end-to-end. Eight automated steps from story selection to board update — no human input needed.</p>
+  <div class="pipe-wrap fin" style="transition-delay:.2s"><div class="pipe" id="pipe"></div></div>
+  <div class="pipe-phases fin" style="transition-delay:.3s">
+    <div class="pipe-ph" style="--phc:var(--violet)"><h4>Board</h4><p>Picks an unblocked story, assigns it, creates a feature branch, and moves the card to In Progress.</p></div>
+    <div class="pipe-ph" style="--phc:var(--amber)"><h4>Development</h4><p>Plans by reading the codebase first, builds step by step, then runs the quality gate with automatic retry on failure.</p></div>
+    <div class="pipe-ph" style="--phc:var(--blue)"><h4>Delivery</h4><p>Reviews its own diff for bugs, opens a PR with a structured description, and moves the board card to In Review.</p></div>
+  </div>
+  <div class="fin" style="transition-delay:.35s;background:#151D2E;border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:20px 22px;margin-top:20px;border-top:2px solid #60A5FA"><div style="font-family:var(--mono);font-size:12px;color:#60A5FA;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Quality gate</div><div style="font-size:14px;color:#CBD5E1;line-height:1.65">A configurable set of automated checks — tests, linting, type checking — that code must pass before shipping. Auto-detected from your project setup or defined during guided setup. On failure, the agent reads the errors, fixes the code, and retries up to 4 times.</div></div>
+</div>`,enter(){renderPipe();setTimeout(animatePipe,400)}},
+
+/* ===== 4: CONCURRENCY ===== */
+{id:'p3c',html:`
+<div class="orb orb-1"></div>
+<div class="pg-i">
+  <div class="sec-label fin" style="transition-delay:.05s">04 / Concurrency</div>
+  <h2 class="fin" style="transition-delay:.1s">Safe Multi-Agent Work</h2>
+  <p class="sub-h fin" style="transition-delay:.15s">Multiple agents can work simultaneously without stepping on each other. An atomic claim mechanism — built on git’s own infrastructure — ensures exactly one agent wins each story.</p>
+  <div class="claim-scene fin" style="transition-delay:.25s">
+    <div class="claim-race" id="claim-race">
+      <div class="claim-agent" id="ca-a"><span class="ca-icon">\u{1F3D7}️</span><div class="ca-name">Agent A</div><div class="ca-sub">picks story #42</div></div>
+      <div class="claim-arr"><span class="claim-arr-label" id="cal-a">push →</span><div class="claim-arr-line" id="cln-a"></div></div>
+      <div class="claim-lock" id="c-lock"><span class="cl-icon">\u{1F512}</span><span class="cl-ref">refs/claims/issue-42</span></div>
+      <div class="claim-arr"><div class="claim-arr-line" id="cln-b"></div><span class="claim-arr-label" id="cal-b">← push</span></div>
+      <div class="claim-agent" id="ca-b"><span class="ca-icon">\u{1F3D7}️</span><div class="ca-name">Agent B</div><div class="ca-sub">picks story #42</div></div>
+    </div>
+    <div class="claim-results" id="claim-res">
+      <div class="claim-res win" id="cr-win">✅ Agent A wins — assigns issue, creates branch, starts building</div>
+      <div class="claim-res lose" id="cr-lose">❌ Agent B rejected — moves to the next available story</div>
+    </div>
+  </div>
+  <div class="claim-steps fin" style="transition-delay:.35s">
+    <div class="claim-step"><div class="claim-step-n">1</div><div class="claim-step-t">Create</div><p class="claim-step-d">Make a unique commit object as your claim token</p></div>
+    <div class="claim-step"><div class="claim-step-n">2</div><div class="claim-step-t">Push</div><p class="claim-step-d">Push it to a shared ref on GitHub — first push wins atomically</p></div>
+    <div class="claim-step"><div class="claim-step-n">3</div><div class="claim-step-t">Own</div><p class="claim-step-d">Winner assigns, labels, branches. Loser skips with zero side effects</p></div>
+    <div class="claim-step"><div class="claim-step-n">4</div><div class="claim-step-t">Release</div><p class="claim-step-d">Delete the ref when done — on every exit path, always</p></div>
+  </div>
+  <div class=”fin” style=”transition-delay:.4s;background:#151D2E;border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:20px 22px;margin-top:20px;border-top:2px solid #60A5FA”><div style=”font-family:var(--mono);font-size:12px;color:#60A5FA;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em”>Why not just use issue assignment?</div><div style=”font-size:14px;color:#CBD5E1;line-height:1.65”>Assignment and labels are not atomic — two agents can both check “unassigned” and both assign simultaneously. Git ref pushes have a server-side guarantee: only one push to a non-existent ref succeeds. The claim ref is a distributed mutex that needs nothing beyond GitHub itself.</div></div>
+</div>`,enter(){setTimeout(animateClaim,500)}},
+
+/* ===== 4: IMPLEMENT ===== */
+{id:'p4',html:`
+<div class="orb orb-1" style="width:400px;height:400px;background:radial-gradient(circle,rgba(251,191,36,.06),transparent 70%);top:-50px;right:-100px"></div>
+<div class="pg-i">
+  <div class="sec-label fin" style="transition-delay:.05s">05 / Implement</div>
+  <h2 class="fin" style="transition-delay:.1s">Implementation Flow</h2>
+  <p class="sub-h fin" style="transition-delay:.12s">Click any step to see what happens inside it <button class="wf-play" onclick="walkThrough('impl')">▶ Walk through</button></p>
+  <div class="tl fin" style="transition-delay:.2s" id="tl-impl"></div>
+  <div class="wf-mini fin" style="transition-delay:.3s" id="mini-impl"></div>
+  <div class="fin" style="transition-delay:.35s;background:#151D2E;border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:20px 22px;margin-top:20px;border-top:2px solid #60A5FA"><div style="font-family:var(--mono);font-size:12px;color:#60A5FA;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Automatic retry</div><div style="font-size:14px;color:#CBD5E1;line-height:1.65">When the quality gate fails, the agent reads the error output, identifies the root cause, edits the fix, and runs the gate again — up to 4 times. Most test failures, lint errors, and type issues are caught and fixed without human intervention.</div></div>
+</div>`,enter(){renderTl('impl')}},
+
+/* ===== 5: REVIEW ===== */
+{id:'p5',html:`
+<div class="orb orb-1" style="width:400px;height:400px;background:radial-gradient(circle,rgba(52,211,153,.06),transparent 70%);top:-50px;right:-100px"></div>
+<div class="pg-i">
+  <div class="sec-label fin" style="transition-delay:.05s">06 / Review</div>
+  <h2 class="fin" style="transition-delay:.1s">Review Flow</h2>
+  <p class="sub-h fin" style="transition-delay:.12s">The Reviewer agent works independently — finds, reviews, fixes, and merges <button class="wf-play" onclick="walkThrough('review')">▶ Walk through</button></p>
+  <div class="tl fin" style="transition-delay:.2s" id="tl-review"></div>
+  <div class="wf-mini fin" style="transition-delay:.3s" id="mini-review"></div>
+  <div class=”fin” style=”transition-delay:.35s;background:#151D2E;border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:20px 22px;margin-top:20px;border-top:2px solid #60A5FA”><div style=”font-family:var(--mono);font-size:12px;color:#60A5FA;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em”>Fully autonomous review</div><div style=”font-size:14px;color:#CBD5E1;line-height:1.65”>The Reviewer agent finds open PRs, claims one, reads the full diff, analyzes across four dimensions (correctness, security, performance, style), fixes concrete issues directly in the code, and merges when CI passes. Issues it cannot fix are filed to the board for pickup.</div></div>
+</div>`,enter(){renderTl('review')}},
+
+/* ===== 6: FEEDBACK LOOP ===== */
+{id:'p6f',html:`
+<div class="orb orb-1"></div>
+<div class="pg-i">
+  <div class="sec-label fin" style="transition-delay:.05s">07 / Feedback Loop</div>
+  <h2 class="fin" style="transition-delay:.1s">Review ↔ Fix Cycle</h2>
+  <p class="sub-h fin" style="transition-delay:.15s">When a review finds problems, the Builder automatically fixes them and resubmits. The cycle repeats until the PR is approved or escalated to a human.</p>
+  <div class="loop-wrap fin" style="transition-delay:.25s">
+    <div class="loop-row" id="loop-row">
+      <div class="loop-nd" style="--c:var(--emerald)"><span class="ln-icon">\u{1F50D}</span><span class="ln-name">Review PR</span></div>
+      <div class="loop-ar">→</div>
+      <div class="loop-nd" style="--c:var(--red)"><span class="ln-icon">⚠️</span><span class="ln-name">Changes Requested</span></div>
+      <div class="loop-ar">→</div>
+      <div class="loop-nd" style="--c:var(--amber)"><span class="ln-icon">\u{1F528}</span><span class="ln-name">Builder Fixes</span></div>
+      <div class="loop-ar">→</div>
+      <div class="loop-nd" style="--c:var(--blue)"><span class="ln-icon">\u{1F504}</span><span class="ln-name">Re-Review</span></div>
+    </div>
+    <div class="loop-back"><span class="loop-back-label">↩ loops until approved</span></div>
+  </div>
+  <div class="loop-exit fin" style="transition-delay:.3s" id="loop-exit">
+    <div class="loop-nd" style="--c:var(--emerald)"><span class="ln-icon">✅</span><span class="ln-name">Approved</span></div>
+    <div class="loop-ar" style="opacity:1">→</div>
+    <div class="loop-nd" style="--c:var(--emerald)"><span class="ln-icon">\u{1F500}</span><span class="ln-name">Auto-Merge</span></div>
+  </div>
+  <div class="loop-detail fin" style="transition-delay:.35s">
+    <div class="loop-detail-card"><h4 style="color:var(--amber)">\u{1F528} Builder Response</h4><p>Reads every finding from the review comment. Fixes blocking issues directly, runs the quality gate, commits and pushes. Classifies its own changes: trivial fixes skip re-review, substantial changes trigger a full re-review.</p></div>
+    <div class="loop-detail-card"><h4 style="color:var(--emerald)">\u{1F50D} Re-Review Scope</h4><p>Only diffs the changes since the last reviewed commit, not the full PR. Classifies the delta as trivial or substantial. Trivial changes (formatting, typos) get fast-tracked approval. Substantial changes get a fresh full analysis.</p></div>
+  </div>
+  <div class=”fin” style=”transition-delay:.4s;background:#151D2E;border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:20px 22px;margin-top:20px;border-top:2px solid #60A5FA”><div style=”font-family:var(--mono);font-size:12px;color:#60A5FA;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em”>Mutual exclusion</div><div style=”font-size:14px;color:#CBD5E1;line-height:1.65”>Labels act as a mutex. When the Builder is fixing a PR, it applies “review-updating” — the Reviewer skips any PR carrying that label. When the Reviewer is analyzing, it applies “review-reviewing” — the Builder skips it. They never touch the same PR simultaneously.</div></div>
+</div>`,enter(){setTimeout(animateLoop,500)}},
+
+/* ===== 7: TOOLKIT ===== */
+{id:'p7t',html:`
+<div class="orb orb-1"></div>
+<div class="pg-i">
+  <div class="sec-label fin" style="transition-delay:.05s">08 / Toolkit</div>
+  <h2 class="fin" style="transition-delay:.1s">Skills, Commands &amp; Agents</h2>
+  <p class="sub-h fin" style="transition-delay:.12s">Layered capabilities with tiered access control</p>
+  <div id="tk-content"></div>
+</div>`,enter(){renderToolkit()}},
+
+/* ===== 8: SETUP ===== */
+{id:'p8s',html:`
+<div class="orb orb-1"></div>
+<div class="pg-i">
+  <div class="sec-label fin" style="transition-delay:.05s">09 / Setup</div>
+  <h2 class="fin" style="transition-delay:.1s">Guided Configuration</h2>
+  <p class="sub-h fin" style="transition-delay:.12s">One command auto-detects your project and configures everything</p>
+  <div class="setup-grid fin" style="transition-delay:.2s" id="setup-grid"></div>
+  <div class="sub-head fin" style="transition-delay:.3s">Ready Gates</div>
+  <div class="rg-grid fin" style="transition-delay:.32s" id="rg-grid"></div>
+  <div class="fin" style="transition-delay:.35s;background:#151D2E;border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:20px 22px;margin-top:20px;border-top:2px solid #60A5FA"><div style="font-family:var(--mono);font-size:12px;color:#60A5FA;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Ready gate</div><div style="font-size:14px;color:#CBD5E1;line-height:1.65">Controls which stories the agent is allowed to pick up, preventing it from starting work on unspecified stories. You choose the mode during setup: require a label, a board column position, both, or neither.</div></div>
+  <div class="sub-head fin" style="transition-delay:.38s">Quality Gate</div>
+  <div class="qg fin" style="transition-delay:.4s" id="qg"></div>
+  <div class="qg-loop fin" style="transition-delay:.42s">On <em>fail</em>: read errors → fix code → retry (up to 4×)</div>
+</div>`,enter(){renderSetup();setTimeout(animateSetup,500);setTimeout(animateQG,800)}},
+
+/* ===== 9: ECOSYSTEM ===== */
+{id:'p9e',html:`
+<div class="orb orb-1"></div>
+<div class="pg-i">
+  <div class="sec-label fin" style="transition-delay:.05s">10 / Ecosystem</div>
+  <h2 class="fin" style="transition-delay:.1s">Board, Labels &amp; Dependencies</h2>
+  <p class="sub-h fin" style="transition-delay:.12s">Every workflow action automatically updates your GitHub project board, labels, and dependency tracking</p>
+  <div class="board fin" style="transition-delay:.2s" id="board"></div>
+  <div class="sub-head fin" style="transition-delay:.25s">Dependencies</div>
+  <p class="sub-h fin" style="transition-delay:.27s" style="margin-bottom:12px">Stories can declare dependencies on other issues. Blocked stories are automatically unblocked when their dependencies close.</p>
+  <div class="dep-flow fin" style="transition-delay:.28s">
+    <div class="dep-nd"><span class="dep-icon">\u{1F4DD}</span><span class="dep-label">Story #42</span></div>
+    <div class="dep-ar">blocked by</div>
+    <div class="dep-nd"><span class="dep-icon">\u{1F6A7}</span><span class="dep-label">Issue #38</span></div>
+    <div class="dep-ar">#38 closes →</div>
+    <div class="dep-nd" style="border-color:rgba(52,211,153,.2)"><span class="dep-icon">✅</span><span class="dep-label">#42 unblocked</span></div>
+  </div>
+  <div class=”fin” style=”transition-delay:.3s;background:#151D2E;border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:20px 22px;margin-top:20px;border-top:2px solid #60A5FA”><div style=”font-family:var(--mono);font-size:12px;color:#60A5FA;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em”>Dependency syntax</div><div style=”font-size:14px;color:#CBD5E1;line-height:1.65”>In the issue body under “## Dependencies”, using markers like “Blocked by #38”, “Depends on #38”, “After #38”, or “Requires #38”. The agent checks every referenced issue on pickup. If any are open, the story moves to status-blocked. When all close, the next run restores it to status-ready.</div></div>
+  <div class=”sub-head fin” style=”transition-delay:.32s”>Lifecycle Labels</div>
+  <p class=”sub-h fin” style=”transition-delay:.33s”>Mutually exclusive labels that track where a story or PR is in its journey. Applied and removed automatically — the source of truth for what state everything is in.</p>
+  <div class=”states fin” style=”transition-delay:.34s” id=”states”></div>
+  <div class="sub-head fin" style="transition-delay:.38s">Integrations</div>
+  <div class="eco-hub fin" style="transition-delay:.4s" id="eco-hub"></div>
+</div>`,enter(){renderEco();setTimeout(()=>{animateBoard();animateStates()},500)}},
+
+/* ===== 11: COMPANION TOOLS ===== */
+{id:'p11c',html:`
+<div class="orb orb-1"></div>
+<div class="pg-i">
+  <div class="sec-label fin" style="transition-delay:.05s">11 / Companion Tools</div>
+  <h2 class="fin" style="transition-delay:.1s">Ecosystem Companions</h2>
+  <p class="sub-h fin" style="transition-delay:.15s">Specialized tools that extend the workflow — each solves one problem well and integrates transparently</p>
+  <div class="ct-grid fin" style="transition-delay:.25s">
+    <div class="ct-card" style="--ctc:var(--violet)"><span class="ct-card-e">\u{1F578}️</span><div class="ct-card-n">Graphify</div><p class="ct-card-d">Builds a knowledge graph of your codebase. Query relationships instead of blind file search — faster and more accurate.</p><span class="ct-card-when">Plan phase — codebase exploration</span></div>
+    <div class="ct-card" style="--ctc:var(--amber)"><span class="ct-card-e">⚡</span><div class="ct-card-n">RTK</div><p class="ct-card-d">Token-optimized CLI proxy. Rewrites terminal commands to strip noise, saving 60–90% of output tokens. Ambient via hook — zero config.</p><span class="ct-card-when">Always on — PreToolUse hook</span></div>
+    <div class="ct-card" style="--ctc:var(--blue)"><span class="ct-card-e">\u{1F4E6}</span><div class="ct-card-n">Headroom</div><p class="ct-card-d">Context window compression. Stores and retrieves conversation context with 60–95% savings. MCP server with compress / retrieve / stats.</p><span class="ct-card-when">Long sessions — context pressure</span></div>
+    <div class="ct-card" style="--ctc:var(--emerald)"><span class="ct-card-e">\u{1F4B0}</span><div class="ct-card-n">ccusage</div><p class="ct-card-d">Claude Code cost history from JSONL logs. Shows spend by project, model, and date. Diagnostic only — no side effects.</p><span class="ct-card-when">Cost tracking — after sessions</span></div>
+    <div class="ct-card" style="--ctc:var(--red)"><span class="ct-card-e">\u{1F6E1}️</span><div class="ct-card-n">ecc-agentshield</div><p class="ct-card-d">102-rule security scanner for config files. Grades A–F. Catches leaked secrets, overpermissive hooks, and unsafe settings.</p><span class="ct-card-when">Config changes — security audit</span></div>
+    <div class="ct-card" style="--ctc:var(--tx3)"><span class="ct-card-e">\u{1F33E}</span><div class="ct-card-n">Fallow</div><p class="ct-card-d">Dead code, duplication, and complexity analysis for TS/JS. MCP server available. Finds what can be safely removed.</p><span class="ct-card-when">Refactoring — cleanup passes</span></div>
+  </div>
+  <div class="fin" style="transition-delay:.35s;background:#151D2E;border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:20px 22px;margin-top:20px;border-top:2px solid #60A5FA"><div style="font-family:var(--mono);font-size:12px;color:#60A5FA;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Integration model</div><div style="font-size:14px;color:#CBD5E1;line-height:1.65">Each tool runs independently but the workflow knows when to invoke them. Graphify replaces blind grep during planning. RTK intercepts every terminal command via a hook. Headroom activates under context pressure. ecc-agentshield runs on config changes. They compose, not compete.</div></div>
+</div>`},
+
+/* ===== 12: FAST-PATH PICKERS ===== */
+{id:'p12f',html:`
+<div class="orb orb-1"></div>
+<div class="pg-i">
+  <div class="sec-label fin" style="transition-delay:.05s">12 / Smart Pickers</div>
+  <h2 class="fin" style="transition-delay:.1s">Fast-Path Pickers</h2>
+  <p class="sub-h fin" style="transition-delay:.15s">One Python call returns a JSON result. If Python is unavailable, the same logic runs inline via sequential gh CLI commands — same result, more round-trips.</p>
+  <div class="fp-decision fin" style="transition-delay:.25s" id="fp-decision">
+    <div class="fp-box" style="--c:var(--amber)"><span class="fp-e">\u{1F680}</span><span class="fp-n">wf.sh</span><span class="fp-d">entry point</span></div>
+    <div class="fp-arr">→</div>
+    <div class="fp-box" style="--c:var(--blue)"><span class="fp-e">\u{1F40D}</span><span class="fp-n">Python?</span><span class="fp-d">check</span></div>
+    <div class="fp-arr">→</div>
+    <div class="fp-box" style="--c:var(--emerald)"><span class="fp-e">✅</span><span class="fp-n">wf.py</span><span class="fp-d">fast path</span></div>
+  </div>
+  <div class="fp-branch fin" style="transition-delay:.3s">
+    <div class="fp-path" style="--fpc:var(--emerald)"><h4>⚡ Fast Path (Python)</h4><p>Single process call. Returns structured JSON with status, number, title, URL, labels, and claim ref. Pure logic in wf_core.py — offline testable, race-safe.</p><div class="fp-perf">1 call • ~200ms • exit 0/10/11</div></div>
+    <div class="fp-path" style="--fpc:var(--amber)"><h4>\u{1F504} Fallback (gh CLI)</h4><p>Sequential API calls when Python is unavailable (exit 20) or unsupported. Identical logic, same results. Inline procedures defined in the skill markdown.</p><div class="fp-perf">3–5 calls • ~2s • same result</div></div>
+  </div>
+  <div class="fp-pickers fin" style="transition-delay:.35s">
+    <div class="fp-picker"><span class="fp-picker-e">\u{1F4CB}</span><div class="fp-picker-n">pick</div><p class="fp-picker-d">Finds the next unblocked, unassigned story respecting priority and ready gates</p></div>
+    <div class="fp-picker"><span class="fp-picker-e">\u{1F504}</span><div class="fp-picker-n">update-next</div><p class="fp-picker-d">Finds a PR with changes-requested or review feedback awaiting builder response</p></div>
+    <div class="fp-picker"><span class="fp-picker-e">\u{1F50D}</span><div class="fp-picker-n">review-next</div><p class="fp-picker-d">Finds a PR needing review, prioritizing re-reviews over new PRs</p></div>
+  </div>
+  <div class="fin" style="transition-delay:.4s;background:#151D2E;border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:20px 22px;margin-top:20px;border-top:2px solid #60A5FA"><div style="font-family:var(--mono);font-size:12px;color:#60A5FA;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Why Python?</div><div style="font-size:14px;color:#CBD5E1;line-height:1.65">One process call returns a structured JSON result, avoiding sequential API round-trips that are slow and hard to unit-test. The core logic (wf_core.py) is pure and offline-testable with zero side effects. Interpreter resolution: virtualenv, python3, py -3, python. If none found, exit 20 triggers the inline gh CLI fallback automatically.</div></div>
+</div>`,enter(){animateFP()}},
+];
+
+/* ===== DATA ===== */
+const PIPE=[
+  {e:'\u{1F4CB}',n:'Pick Story',c:'var(--violet)',p:'Board'},
+  {e:'\u{1F3F7}️',n:'Claim',c:'var(--violet)'},
+  {e:'\u{1F4DD}',n:'Plan',c:'var(--amber)',p:'Development'},
+  {e:'\u{1F528}',n:'Build',c:'var(--amber)'},
+  {e:'✅',n:'Verify',c:'var(--amber)'},
+  {e:'\u{1F440}',n:'Self-Review',c:'var(--blue)',p:'Delivery'},
+  {e:'\u{1F680}',n:'Ship PR',c:'var(--blue)'},
+  {e:'\u{1F4CA}',n:'Update Board',c:'var(--blue)'},
+];
+const WF={
+impl:{phases:[
+  {name:'Board',color:'--violet',steps:[
+    {e:'\u{1F4CB}',n:'Pick Story',d:'Queries your GitHub project board for unblocked stories, respecting priority labels, milestones, and the ready gate.',subs:['Query board','Filter priority','Check deps','Select'],tools:['gh api','wf.py','GraphQL']},
+    {e:'\u{1F3F7}️',n:'Claim & Branch',d:'Acquires an atomic claim ref, assigns the issue, applies status-in-progress, moves the board card, and creates a feature branch.',subs:['Claim ref','Assign issue','Apply label','Branch'],tools:['git push','gh issue edit','git checkout']},
+  ]},
+  {name:'Development',color:'--amber',steps:[
+    {e:'\u{1F4DD}',n:'Plan',d:'Reads acceptance criteria, explores the codebase, writes a step-by-step implementation plan.',subs:['Read criteria','Explore code','Write plan','Self-check'],tools:['read','grep','glob']},
+    {e:'\u{1F528}',n:'Build',d:'Implements the plan step by step, matching existing patterns and conventions.',subs:['Follow plan','Write code','Match patterns','Iterate'],tools:['edit','write']},
+    {e:'✅',n:'Verify',d:'Runs the quality gate. Reads errors, fixes code, retries up to 4 times.',subs:['Run gate','Read errors','Fix code','Retry'],tools:['quality gate']},
+  ]},
+  {name:'Delivery',color:'--blue',steps:[
+    {e:'\u{1F440}',n:'Self-Review',d:'Reviews its own diff for bugs, style, and missed requirements.',subs:['Read diff','Check bugs','Check style','Check reqs'],tools:['git diff','read']},
+    {e:'\u{1F680}',n:'Ship PR',d:'Commits, pushes, opens a PR with a structured description.',subs:['Stage','Commit','Push','Create PR'],tools:['git commit','git push','gh pr create']},
+    {e:'\u{1F4CA}',n:'Update Board',d:'Moves the card to In Review, applies status-in-review label, cross-references.',subs:['Move card','Labels','Link PRs','Notify'],tools:['GraphQL','gh issue edit']},
+  ]},
+],mini:{d:'Same dev core, no board or PR lifecycle.',s:[{e:'\u{1F4DD}',c:'--amber'},{e:'\u{1F528}',c:'--amber'},{e:'✅',c:'--amber'},{e:'\u{1F4BE}',c:'--blue'}]}},
+review:{phases:[
+  {name:'Acquire',color:'--violet',steps:[
+    {e:'\u{1F50D}',n:'Find PR',d:'Queries open PRs awaiting review, checking review-needs-review labels.',subs:['Query PRs','Filter','Prioritize','Select'],tools:['gh pr list','GraphQL']},
+    {e:'✋',n:'Claim PR',d:'Acquires an atomic claim ref for the PR, applies review-reviewing to prevent duplicate work.',subs:['Claim ref','Apply label','Lock'],tools:['git push','gh pr edit']},
+  ]},
+  {name:'Review',color:'--emerald',steps:[
+    {e:'\u{1F4D6}',n:'Read Diff',d:'Downloads the full diff, reads context for every changed file.',subs:['Download diff','Read context','Focus areas'],tools:['gh pr diff','read']},
+    {e:'\u{1F52C}',n:'Analyze',d:'Reviews across four dimensions: correctness, security, performance, style.',subs:['Correctness','Security','Performance','Style'],tools:['read','grep']},
+  ]},
+  {name:'Action',color:'--red',steps:[
+    {e:'\u{1F527}',n:'Fix In-Place',d:'Fixes concrete issues directly on the branch. Commits and pushes. Files unfixable issues to the board.',subs:['Identify','Edit code','Commit','Push'],tools:['edit','git commit','git push']},
+  ]},
+  {name:'Close',color:'--violet',steps:[
+    {e:'\u{1F3F7}️',n:'Labels',d:'Calculates correct lifecycle state, strips stale labels, applies the verdict label.',subs:['Read current','Calculate','Apply'],tools:['gh pr edit','wf.sh']},
+    {e:'✨',n:'Merge',d:'If approved, merges when CI is green. Resolves conflicts by rebasing if needed.',subs:['Check CI','Conflicts','Merge','Clean up'],tools:['gh pr merge','git rebase']},
+  ]},
+],mini:{d:'Same analysis, no PR lifecycle or merge.',s:[{e:'\u{1F4D6}',c:'--emerald'},{e:'\u{1F52C}',c:'--emerald'},{e:'\u{1F4CB}',c:'--blue'}]}},
+};
+const SKILL_CATS=[
+  {icon:'⚡',name:'Entry Points',items:['execute','code-review']},
+  {icon:'\u{1F3D7}️',name:'Architecture',items:['code-architect','repo-scaffolding']},
+  {icon:'\u{1F50D}',name:'Analysis',items:['debugging','security-audit','verify-feature','preflight','mobile-audit']},
+  {icon:'\u{1F4DD}',name:'Planning',items:['structured-coding','acceptance-criteria','feature-discovery']},
+  {icon:'\u{1F4C4}',name:'Documentation',items:['doc-writer','pr-description','user-story','support-request']},
+  {icon:'\u{1F3A8}',name:'Communication',items:['tone','ecosystem-setup']},
+];
+const CMDS=['setup','guide','report-issue','block-story'];
+const AGENTS=[{n:'Builder',e:'\u{1F3D7}️',d:'Full tool access. End-to-end story implementation.',w:100,c:'var(--emerald)',l:'Full'},{n:'Reviewer',e:'\u{1F50D}',d:'Read, test, push. Autonomous PR review.',w:65,c:'var(--amber)',l:'Restricted'},{n:'Doc Writer',e:'\u{1F4C4}',d:'docs/ directory only. Least privilege.',w:28,c:'var(--blue)',l:'Minimal'}];
+const SETUP=[
+  {e:'\u{1F50D}',n:'Prerequisites',d:'bash, gh, python'},
+  {e:'\u{1F4E6}',n:'Auto-Detect',d:'repo, packages, gate'},
+  {e:'\u{1F4DD}',n:'Project Config',d:'ClaudeProject.md'},
+  {e:'\u{1F3F7}️',n:'Labels',d:'27 managed labels'},
+  {e:'\u{1F4CB}',n:'Board',d:'Projects v2 link'},
+  {e:'\u{1F527}',n:'Quality Gate',d:'test, lint, types'},
+  {e:'\u{1F500}',n:'Branching',d:'naming convention'},
+  {e:'\u{1F30D}',n:'Ecosystem',d:'companion tools'},
+  {e:'✅',n:'Verify',d:'validate all settings'},
+];
+const RG=[
+  {m:'label',def:true,d:'Requires status-ready label on the issue.',ic:'\u{1F3F7}️'},
+  {m:'board-column',def:false,d:'Issue must be in the Ready column.',ic:'\u{1F4CB}'},
+  {m:'both',def:false,d:'Both label and column position required.',ic:'\u{1F512}'},
+  {m:'none',def:false,d:'Any open, unassigned issue is eligible.',ic:'\u{1F513}'},
+];
+const BCOLS=[{n:'Backlog',c:'#64748B'},{n:'Ready',c:'#34D399'},{n:'In Progress',c:'#60A5FA'},{n:'In Review',c:'#FBBF24'},{n:'Blocked',c:'#F87171'},{n:'Done',c:'#64748B'}];
+const IST=[{n:'ready',c:'#0E8A16'},{n:'in-progress',c:'#1D76DB'},{n:'in-review',c:'#FBCA04'},{n:'blocked',c:'#B60205'},{n:'needs-attention',c:'#D93F0B'},{n:'parked',c:'#C5DEF5'},{n:'refinement',c:'#D4C5F9'}];
+const PST=[{n:'needs-review',c:'#FBCA04'},{n:'reviewing',c:'#1D76DB'},{n:'approved',c:'#0E8A16'},{n:'changes-requested',c:'#D93F0B'},{n:'needs-discussion',c:'#D93F0B'},{n:'fixes-applied',c:'#C5DEF5'},{n:'needs-re-review',c:'#FBCA04'},{n:'updating',c:'#1D76DB'},{n:'failed',c:'#B60205'}];
+const INTEG=[{e:'\u{1F4CB}',n:'Issues',d:'Story tracking'},{e:'\u{1F4CA}',n:'Projects v2',d:'Board via GraphQL'},{e:'\u{1F500}',n:'Pull Requests',d:'Create, review, merge'},{e:'\u{1F3F7}️',n:'Labels',d:'27 managed'},{e:'\u{1F4BB}',n:'Git CLI',d:'Branch, push'},{e:'\u{1F9EA}',n:'Quality Gate',d:'Pluggable checks'}];
+
+/* ===== RENDER ===== */
+function renderOVBoard(){const el=document.getElementById('ov-board');if(!el)return;
+const cols=[{n:'Ready',c:'#34D399'},{n:'In Progress',c:'#60A5FA'},{n:'In Review',c:'#FBBF24'},{n:'Blocked',c:'#F87171'},{n:'Done',c:'#64748B'}];
+const cards={
+'Ready':[{t:'Add user auth',l:'type-story',lc:'#1D76DB'},{t:'Fix login bug',l:'type-bug',lc:'#D93F0B'}],
+'In Progress':[{t:'API rate limits',l:'status-in-progress',lc:'#1D76DB'}],
+'In Review':[{t:'Dashboard v2',l:'review-needs-review',lc:'#FBCA04'}],
+'Blocked':[],
+'Done':[{t:'Search indexing',l:'',lc:''}]
+};
+el.innerHTML=cols.map(c=>`<div class="ov-bcol"><div class="ov-bcol-h" style="--obc:${c.c}">${c.n}</div><div class="ov-bcol-b">${(cards[c.n]||[]).map(cd=>`<div class="ov-bcard"><span style="font-size:10px">\u{1F4CB}</span> ${cd.t}${cd.l?`<span class="ov-label" style="background:color-mix(in srgb,${cd.lc},transparent 80%);color:${cd.lc}">${cd.l}</span>`:''}</div>`).join('')}</div></div>`).join('')}
+
+function buildDeck(){const d=document.getElementById('deck');PG.forEach((p,i)=>{const el=document.createElement('div');el.className='pg'+(i===0?' on':'');el.id=p.id;el.innerHTML=p.html;d.appendChild(el)})}
+
+function renderPipe(){const el=document.getElementById('pipe');if(!el)return;let h='';PIPE.forEach((s,i)=>{if(i>0){const c1=PIPE[i-1].c,c2=s.c;h+=`<div class="pl pipe-el" style="--c1:${c1};--c2:${c2}"></div>`}h+=`<div class="pn pipe-el" style="--c:${s.c}">${s.p?`<div class="pn-phase" style="color:${s.c}">${s.p}</div>`:''}<div class="pc">${s.e}</div><div class="pn-name">${s.n}</div></div>`});el.innerHTML=h}
+
+function renderTl(key){const d=WF[key],tl=document.getElementById('tl-'+key);if(!tl)return;let h='';d.phases.forEach(ph=>{h+=`<div class="ph" style="color:var(${ph.color})">${ph.name}</div>`;ph.steps.forEach(s=>{const subs=s.subs.map((sb,i)=>`<div class="ss"><div class="sn" style="background:var(${ph.color});transition-delay:${i*.08}s">${i+1}</div><div class="sl" style="transition-delay:${i*.08+.1}s">${sb}</div></div>${i<s.subs.length-1?`<div class="sc" style="background:var(${ph.color})"></div>`:''}`).join('');h+=`<div class="st" style="--pc:var(${ph.color})"><div class="dt">${s.e}</div><div class="cd" onclick="toggleStep(this)"><div class="hd"><span class="tt">${s.n}</span><span class="ch">▾</span></div><div class="bd"><p class="ds">${s.d}</p><div class="sf">${subs}</div><div class="tg">${s.tools.map(t=>`<span>${t}</span>`).join('')}</div></div></div></div>`})});tl.innerHTML=h;const m=d.mini,mi=document.getElementById('mini-'+key);if(mi)mi.innerHTML=`<b>local-workflow</b> <span class="md">${m.d}</span><span style="margin-left:auto;display:flex;gap:3px;align-items:center">${m.s.map((s,i)=>`<span style="font-size:15px;width:30px;height:30px;border-radius:50%;border:2px solid var(${s.c});display:inline-flex;align-items:center;justify-content:center;background:var(--bg)">${s.e}</span>${i<m.s.length-1?'<span style="color:var(--tx3);font-size:10px">→</span>':''}`).join('')}</span>`}
+
+function renderToolkit(){const el=document.getElementById('tk-content');if(!el)return;let h='';SKILL_CATS.forEach((cat,i)=>{h+=`<div class="tk-cat fin" style="transition-delay:${.2+i*.05}s"><div class="tk-cat-hd"><span class="tk-cat-icon">${cat.icon}</span><span class="tk-cat-name">${cat.name}</span></div><div class="tk-pills">${cat.items.map(s=>`<span class="tk-pill">${s}</span>`).join('')}</div></div>`});
+h+=`<div class="tk-agents fin" style="transition-delay:.45s">${AGENTS.map(a=>`<div class="tk-ag"><span class="tk-ag-e">${a.e}</span><div class="tk-ag-n">${a.n}</div><p class="tk-ag-d">${a.d}</p><div class="tk-bar"><div class="tk-bar-f" data-w="${a.w}" style="background:${a.c}"></div></div><div class="tk-bar-l">${a.l} access</div></div>`).join('')}</div>`;
+h+=`<div class="sub-head fin" style="transition-delay:.5s">Commands <span style="font-size:10px;color:var(--tx3);text-transform:none;letter-spacing:0;font-weight:400">(github-workflow only)</span></div><div class="tk-cmds fin" style="transition-delay:.52s">${CMDS.map(c=>`<span class="tk-cmd">/${c}</span>`).join('')}</div>`;
+h+=`<div class="fin" style="transition-delay:.55s;background:#151D2E;border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:20px 22px;margin-top:20px;border-top:2px solid #60A5FA"><div style="font-family:var(--mono);font-size:12px;color:#60A5FA;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Least-privilege agents</div><div style="font-size:14px;color:#CBD5E1;line-height:1.65">Each agent has a strict tool allowlist. The Builder has full access. The Reviewer can read code and push fixes but cannot modify configuration. The Doc Writer can only touch files in the docs/ directory.</div></div>`;
+el.innerHTML=h;setTimeout(()=>{document.querySelectorAll('.tk-bar-f').forEach(b=>{b.style.width=b.dataset.w+'%'})},600)}
+
+function renderSetup(){
+  document.getElementById('setup-grid').innerHTML=SETUP.map(s=>`<div class="setup-card"><div class="chk">✓</div><span class="setup-card-e">${s.e}</span><div class="setup-card-n">${s.n}</div><div class="setup-card-d">${s.d}</div></div>`).join('');
+  document.getElementById('rg-grid').innerHTML=RG.map(r=>`<div class="rg"><div class="rg-name">${r.ic} ${r.m}${r.def?' <span class="rg-def">Default</span>':''}</div><p class="rg-d">${r.d}</p></div>`).join('');
+  document.getElementById('qg').innerHTML=['Tests','Lint','Types','Pass'].map((s,i)=>`${i>0?'<div class="qg-line"></div>':''}<div class="qg-node" style="--c:${i<3?'var(--amber)':'var(--emerald)'}">${i<3?['\u{1F9EA}','\u{1F4CF}','\u{1F4D0}'][i]:'✅'}<span>${s}</span></div>`).join('');
+}
+
+function renderEco(){
+  document.getElementById('board').innerHTML=BCOLS.map(c=>`<div class="bcol"><div class="bcol-h" style="--bcc:${c.c}">${c.n}</div><div class="bcol-b" data-col="${c.n}"></div></div>`).join('');
+  document.getElementById('states').innerHTML='<div class="st-row"><span class="st-row-l">Issues</span>'+IST.map((s,i)=>`${i>0?'<span class="st-arr">→</span>':''}<span class="st-pill" style="--sc:${s.c};background:color-mix(in srgb,${s.c},transparent 85%);color:${s.c};border-color:color-mix(in srgb,${s.c},transparent 65%)">status-${s.n}</span>`).join('')+'</div><div class="st-row"><span class="st-row-l">PRs</span>'+PST.map((s,i)=>`${i>0?'<span class="st-arr">→</span>':''}<span class="st-pill" style="--sc:${s.c};background:color-mix(in srgb,${s.c},transparent 85%);color:${s.c};border-color:color-mix(in srgb,${s.c},transparent 65%)">review-${s.n}</span>`).join('')+'</div>';
+  document.getElementById('eco-hub').innerHTML=INTEG.slice(0,3).map(ig=>`<div class="eco-spoke"><span class="eco-spoke-e">${ig.e}</span><div class="eco-spoke-n">${ig.n}</div><div class="eco-spoke-d">${ig.d}</div></div>`).join('<div class="eco-line"></div>')+'<div class="eco-line"></div><div class="eco-center">Claude<br>Code</div><div class="eco-line"></div>'+INTEG.slice(3).map(ig=>`<div class="eco-spoke"><span class="eco-spoke-e">${ig.e}</span><div class="eco-spoke-n">${ig.n}</div><div class="eco-spoke-d">${ig.d}</div></div>`).join('<div class="eco-line"></div>');
+}
+
+/* ===== ANIMATIONS ===== */
+let pipeT,pipeI=0;
+function animatePipe(){clearTimeout(pipeT);const els=[...document.querySelectorAll('.pipe-el')];els.forEach(e=>e.classList.remove('on'));pipeI=0;(function s(){if(pipeI<els.length){els[pipeI].classList.add('on');pipeI++;pipeT=setTimeout(s,350)}else pipeT=setTimeout(()=>{els.forEach(e=>e.classList.remove('on'));pipeI=0;pipeT=setTimeout(s,500)},2800)})()}
+
+let ovT;function animateOV(){clearInterval(ovT);const dots=[...document.querySelectorAll('.ov-dot')];let i=0;dots.forEach(d=>d.classList.remove('lit'));ovT=setInterval(()=>{if(i>0&&i<=dots.length)dots[i-1].classList.add('lit');if(i>dots.length){dots.forEach(d=>d.classList.remove('lit'));i=-1}i++},320)}
+
+let claimT;function animateClaim(){clearTimeout(claimT);const a=document.getElementById('ca-a'),b=document.getElementById('ca-b'),lk=document.getElementById('c-lock'),la=document.getElementById('cln-a'),lb=document.getElementById('cln-b'),lla=document.getElementById('cal-a'),llb=document.getElementById('cal-b'),rw=document.getElementById('cr-win'),rl=document.getElementById('cr-lose');
+[a,b].forEach(x=>{x.classList.remove('won','lost')});[la,lb].forEach(x=>{x.classList.remove('go-r','go-l')});lk.classList.remove('active');[lla,llb].forEach(x=>{x.classList.remove('show')});[rw,rl].forEach(x=>{x.classList.remove('show')});
+function run(){
+claimT=setTimeout(()=>{lla.classList.add('show');llb.classList.add('show');
+claimT=setTimeout(()=>{la.classList.add('go-r');lb.classList.add('go-l');
+claimT=setTimeout(()=>{lk.classList.add('active');
+claimT=setTimeout(()=>{a.classList.add('won');rw.classList.add('show');
+claimT=setTimeout(()=>{b.classList.add('lost');rl.classList.add('show');
+claimT=setTimeout(()=>{[a,b].forEach(x=>{x.classList.remove('won','lost')});[la,lb].forEach(x=>{x.classList.remove('go-r','go-l')});lk.classList.remove('active');[lla,llb].forEach(x=>{x.classList.remove('show')});[rw,rl].forEach(x=>{x.classList.remove('show')});claimT=setTimeout(run,800)},2400)},500)},500)},500)},500)},300)}
+run()}
+
+let loopT,loopI=0;function animateLoop(){clearTimeout(loopT);const nds=[...document.querySelectorAll('#loop-row .loop-nd')];const ars=[...document.querySelectorAll('#loop-row .loop-ar')];nds.forEach(n=>n.classList.remove('on'));ars.forEach(a=>a.classList.remove('on'));loopI=0;
+(function s(){if(loopI<nds.length){if(loopI>0)ars[loopI-1].classList.add('on');nds[loopI].classList.add('on');loopI++;loopT=setTimeout(s,700)}else{loopT=setTimeout(()=>{nds.forEach(n=>n.classList.remove('on'));ars.forEach(a=>a.classList.remove('on'));loopI=0;loopT=setTimeout(s,600)},2200)}})()}
+
+function toggleStep(cd){const st=cd.closest('.st'),w=st.classList.contains('open');document.querySelectorAll('.st.open').forEach(s=>s.classList.remove('open'));if(!w)st.classList.add('open')}
+let playT,playK;
+function walkThrough(k){const btn=document.querySelector('#tl-'+k)?.closest('.pg-i')?.querySelector('.wf-play');if(playK===k){stopPlay(btn);return}if(playK)stopPlay(document.querySelector('#tl-'+playK)?.closest('.pg-i')?.querySelector('.wf-play'));playK=k;if(btn){btn.classList.add('running');btn.innerHTML='⏸ Pause'}const steps=[...document.querySelectorAll('#tl-'+k+' .st')];let i=0;steps.forEach(s=>s.classList.remove('open'));(function n(){if(!playK||i>=steps.length){stopPlay(btn);return}if(i>0)steps[i-1].classList.remove('open');steps[i].classList.add('open');steps[i].scrollIntoView({behavior:'smooth',block:'center'});i++;playT=setTimeout(n,1800)})()}
+function stopPlay(b){playK=null;clearTimeout(playT);if(b){b.classList.remove('running');b.innerHTML='▶ Walk through'}}
+
+let setupT;function animateSetup(){clearTimeout(setupT);const cards=[...document.querySelectorAll('.setup-card')];let i=0;cards.forEach(c=>c.classList.remove('done'));(function s(){if(i>=cards.length){setupT=setTimeout(()=>{cards.forEach(c=>c.classList.remove('done'));i=0;setupT=setTimeout(s,500)},2200);return}cards[i].classList.add('done');i++;setupT=setTimeout(s,400)})()}
+
+let qgT,qgI=0;function animateQG(){clearInterval(qgT);const nodes=[...document.querySelectorAll('.qg-node')];qgI=0;nodes.forEach(n=>n.classList.remove('on'));qgT=setInterval(()=>{nodes.forEach(n=>n.classList.remove('on'));if(qgI<nodes.length)nodes[qgI].classList.add('on');qgI=(qgI+1)%(nodes.length+1)},700)}
+
+let boardT;function animateBoard(){clearTimeout(boardT);const cols=[...document.querySelectorAll('.bcol-b')];const order=[0,1,2,3,5];let i=0;(function s(){const prev=document.querySelector('.bcard');if(prev){prev.style.opacity='0';prev.style.transform='translateY(-6px)';setTimeout(()=>prev.remove(),250)}setTimeout(()=>{const c=document.createElement('div');c.className='bcard';c.innerHTML='<span style="font-size:13px">\u{1F4CB}</span> Story #42';c.style.opacity='0';c.style.transform='translateY(6px)';cols[order[i]].appendChild(c);requestAnimationFrame(()=>{c.style.transition='all .3s';c.style.opacity='1';c.style.transform='translateY(0)'});i=(i+1)%order.length;boardT=setTimeout(s,1400)},280)})()}
+
+let stT,stI=0;function animateStates(){clearInterval(stT);const pills=[...document.querySelectorAll('.st-pill')];stI=0;stT=setInterval(()=>{pills.forEach(p=>p.classList.remove('on'));if(stI<pills.length)pills[stI].classList.add('on');stI=(stI+1)%(pills.length+1)},1000)}
+
+/* ===== PRE-WORK ANIMATION ===== */
+let pwT,pwI=0;function animatePreWork(){clearTimeout(pwT);const nds=[...document.querySelectorAll('#pw-flow .pw-node')];const ars=[...document.querySelectorAll('#pw-flow .pw-arr')];nds.forEach(n=>n.classList.remove('on'));ars.forEach(a=>a.classList.remove('on'));pwI=0;(function s(){if(pwI<nds.length){if(pwI>0)ars[pwI-1].classList.add('on');nds[pwI].classList.add('on');pwI++;pwT=setTimeout(s,700)}else{pwT=setTimeout(()=>{nds.forEach(n=>n.classList.remove('on'));ars.forEach(a=>a.classList.remove('on'));pwI=0;pwT=setTimeout(s,600)},2200)}})();animateAQ()}
+let aqT,aqI=0;function animateAQ(){clearInterval(aqT);const opts=[...document.querySelectorAll('#aq-opts .aq-opt')];aqI=0;aqT=setInterval(()=>{opts.forEach(o=>o.classList.remove('selected'));opts[aqI].classList.add('selected');aqI=(aqI+1)%opts.length},1200)}
+
+/* ===== FAST-PATH ANIMATION ===== */
+let fpT,fpI=0;function animateFP(){clearTimeout(fpT);const nds=[...document.querySelectorAll('#fp-decision .fp-box')];nds.forEach(n=>n.classList.remove('on'));fpI=0;(function s(){if(fpI<nds.length){nds[fpI].classList.add('on');fpI++;fpT=setTimeout(s,700)}else{fpT=setTimeout(()=>{nds.forEach(n=>n.classList.remove('on'));fpI=0;fpT=setTimeout(s,600)},2200)}})()}
+
+/* ===== NAVIGATION ===== */
+let cur=0;const N=PG.length;
+function buildNav(){document.getElementById('dots').innerHTML=PG.map((_,i)=>`<button class="pd${i?'':' on'}" onclick="go(${i})"></button>`).join('');upNav()}
+function upNav(){document.querySelectorAll('.pd').forEach((d,i)=>d.classList.toggle('on',i===cur));document.getElementById('prev').disabled=cur===0;document.getElementById('next').disabled=cur===N-1;document.getElementById('pnum').textContent=`${cur+1}/${N}`}
+
+function go(n){if(n===cur||n<0||n>=N)return;const fwd=n>cur,o=document.getElementById(PG[cur].id),nw=document.getElementById(PG[n].id);nw.style.transition='none';nw.style.transform=fwd?'translateX(50px)':'translateX(-50px)';nw.style.opacity='0';nw.offsetHeight;nw.style.transition='';nw.classList.add('on');nw.style.transform='translateX(0)';nw.style.opacity='1';o.style.transform=fwd?'translateX(-50px)':'translateX(50px)';o.style.opacity='0';setTimeout(()=>{o.classList.remove('on');o.style.transform='';o.style.opacity=''},550);cur=n;upNav();if(PG[n].enter)PG[n].enter()}
+
+document.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='ArrowDown'||e.key===' '){e.preventDefault();go(cur+1)}else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){e.preventDefault();go(cur-1)}});
+
+buildDeck();buildNav();
+</script>
+</body>
+</html>
