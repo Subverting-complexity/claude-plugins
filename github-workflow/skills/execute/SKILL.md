@@ -49,11 +49,10 @@ stop are:
   can begin — run `/github-workflow:feature-discovery` to plan the
   breakdown with the user, then pick the first sub-story.
 
-Opening the pull request is **not** one of them, and this is the most common
-way the workflow fails: a run reaches Phase 7, writes a tidy summary of the
-PR it opened, and offers to review and merge it if the user says the word.
-That is a half-finished run reported as a finished one. Phases 8 to 10 need
-no permission, no confirmation, and no green CI — keep going in the same turn.
+Opening the pull request is **not** one of them. Phases 8 to 10 need no
+permission, no confirmation and no green CI: the moment the PR exists, keep
+going in the same turn. A run that reports its new PR and offers to review
+and merge it if asked has stopped half way, however finished it sounds.
 
 ## Invocation flags
 
@@ -551,8 +550,7 @@ Phase 8 matters for a second reason too — see the claim window there.
 
 The moment the PR exists, **read `references/review-and-merge.md`** and
 follow it to the end of the run — same turn as Phase 7, no asking, no waiting
-on CI. Unlike merging, the review is **unconditional**: nothing switches it
-off, and a run that ends at an unreviewed PR has not finished. Phase 8 claims the PR, then spawns two review agents
+on CI. Unlike merging, the review is **unconditional**. Phase 8 claims the PR, then spawns two review agents
 in parallel, each in a fresh context, to review it read-only — your session
 built this code and cannot judge it independently — and posts one
 consolidated verdict. Phase 9 fixes what they found, pushes, and re-reviews

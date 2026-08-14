@@ -157,40 +157,28 @@ light.
 5. Note what now exists, in a line or two: the PR by number **and** title
    together (e.g. `#123 Add login button`, never the number alone) plus its
    URL, the linked issues (each by number **and** title), and the labels
-   applied. This is a **progress note, not the run's final report** — write
-   it as one. Do not summarise the work as though it were done, do not
-   describe the review as something that happens later or to someone else,
-   and do not end your turn on it.
+   applied. A **progress note, not the run's final report** — do not
+   summarise the work as though it were done, and do not end your turn on it.
 
 6. **Go to Phase 8 now**: read `references/review-and-merge.md` and follow
-   it. In the same turn as step 5. Without asking the user, without waiting
-   for CI to start or finish, and without checking whether merging is
-   switched on — that setting is read in Phase 10 and decides nothing here.
+   it, in the same turn as step 5. Without asking the user, without waiting
+   for CI, and without checking whether merging is switched on — that setting
+   is read in Phase 10 and decides nothing here.
 
-## Why this step is the one that gets skipped
+## Why step 6 is the one that gets skipped
 
-Steps 3 and 4 read like the end of a run. The claim is released, the scratch
-files are deleted, the board says In Review, and the PR carries
-`review-needs-review` — four separate signals that the work has been handed
-somewhere. It has not. Every one of those is housekeeping the review phase
-does not need, done early for reasons of its own, and the label in particular
-marks a PR **this run is about to review**, not one queued for someone else.
+Steps 3 and 4 read like the end of a run: claim released, scratch files
+deleted, board on In Review, PR labelled `review-needs-review`. All four are
+housekeeping done early, and that label marks a PR **this run is about to
+review**, not one queued for someone else. The failure has happened — a run
+posts its Phase 7 summary, says the PR is waiting on code review and on CI,
+and offers to review and merge it if the user says the word. Nothing here
+asks for that. An open, unreviewed PR is an unfinished story: the run ends at
+Phase 10 or at an exit Phases 8 to 10 name, nowhere else.
 
-The failure this guards against is specific and it has happened: a run posts
-its Phase 7 summary, says the PR is waiting on code review and on CI, and
-offers to run the review and merge if the user says the word. Nothing in this
-workflow asks the user for that. An open, unreviewed PR is an unfinished
-story. The run ends at Phase 10, or at one of the exits Phases 8 to 10 name
-explicitly, and nowhere else.
-
-**Do not review your own diff on the way there.** It is tempting to re-read
-the change against the acceptance criteria here and comment on what you find,
-and an earlier version of this workflow did exactly that. It was removed.
-This session wrote the code, so it shares every assumption the code was built
-on and cannot judge it — that is the whole reason Phase 8 puts the reading of
-the diff in fresh contexts. A pass here spends build-window budget on the
-weakest possible review, and anything it files to the board duplicates what
-those agents file minutes later. Note the limit of that rule: the diff goes
-to the reviewers **you** spawn, and their findings come back to **you**. It
-is your judgement of the code that is set aside, never your ownership of the
-run.
+**Do not review your own diff on the way there.** An earlier version did, and
+it was removed: this session wrote the code, so it shares every assumption
+the code was built on and cannot judge it, and anything it files duplicates
+what the Phase 8 agents file minutes later. Note the limit. The diff goes
+to reviewers **you** spawn and their findings come back to **you**. Your
+judgement of the code is set aside, never your ownership of the run.

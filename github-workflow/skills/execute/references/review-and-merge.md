@@ -12,15 +12,12 @@ story, so these three phases are as much part of the run as the build was.
 Every exit path still ends with **Exit cleanup**
 (`references/exit-cleanup.md`).
 
-**Start immediately, and never on a condition.** Two things in particular do
-not gate Phase 8. **CI** is not one of its inputs: a reviewer reads the diff,
-not the pipeline, and CI is consulted once, in Phase 10, where the merge
-mechanics wait on it. Reviewing a PR whose checks are still queued is the
-normal case, and it is how the two run in parallel rather than end to end.
-**The user** is not one either: this run is autonomous, so do not report the
-PR and offer to review it on request. If you find yourself writing a sentence
-that offers to carry on, you are already off the workflow — delete it and
-carry on instead.
+**Start immediately, and never on a condition.** **CI** does not gate this
+phase: a reviewer reads the diff, not the pipeline, and Phase 10 is where the
+merge waits on checks. Reviewing a PR whose checks are still queued is normal
+and lets the two run in parallel. **The user** does not gate it either — a
+sentence offering to carry on when asked means you are already off the
+workflow.
 
 ## Phase 8 — Independent review in a fresh context
 
