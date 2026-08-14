@@ -195,4 +195,5 @@ relevant to what you're working on.
 | File | When to consult |
 | ---- | --------------- |
 | `ClaudeProject.md` | Project identity, labels, quality gate, branch convention, board config. Read at the start of any workflow command. |
+| `docs/review.config.md` | Review-state labels, the non-compliance gates a PR must clear, tech-stack review rules, and the auto-merge settings. Read when reviewing a PR or when asking why a run did or did not merge. Auto-merge is enabled here, so a finished `execute` run merges its own PR once the review approves. |
 | `.claude/ecosystem.md` | Installed Claude Code companion tool cheat-sheet (Graphify, RTK, ccusage, ecc-agentshield). Read before searching the codebase or running an audit/review: prefer `graphify query` over blind file search; run `ecc-agentshield scan` when touching config files; use `npx ccusage` to check token spend. |
