@@ -90,6 +90,10 @@ When given a specific issue number, run `/github-workflow:execute <number>`.
   Do not fix unrelated problems inline.
 - If blocked, run `/github-workflow:block-story` and then pick the next one.
 - Do not ask for confirmation. Build autonomously.
+- Opening the PR is not the end of your job. Do not report the PR and offer
+  to review or merge it if asked — carry straight on into the skill's review
+  phases and finish there. A run that stops at an unreviewed PR is unfinished
+  however tidy its summary reads.
 
 ## Tool permissions
 
