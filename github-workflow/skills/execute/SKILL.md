@@ -49,6 +49,11 @@ stop are:
   can begin — run `/github-workflow:feature-discovery` to plan the
   breakdown with the user, then pick the first sub-story.
 
+Opening the pull request is **not** one of them. Phases 8 to 10 need no
+permission, no confirmation and no green CI: the moment the PR exists, keep
+going in the same turn. A run that reports its new PR and offers to review
+and merge it if asked has stopped half way, however finished it sounds.
+
 ## Invocation flags
 
 `--no-merge` and `--bypass-ci` are read by Phase 10, long after they are
@@ -532,18 +537,20 @@ When the quality gate has passed and the work is committed, **read
 `references/finish.md`** and follow it end-to-end: push, duplicate-PR
 detection, PR create, labels, board move, claim release, report.
 
-**Do not review your own diff anywhere in this run.** An earlier version of
-this workflow had the build session re-read its change against the
-acceptance criteria once the PR was open, and it was removed: the session
-that wrote the code shares every assumption the code was built on, so its
-verdict is worth little, and Phase 8 exists to get a real one from contexts
-that never saw the build. Going straight from PR creation to Phase 8 also
-matters for a second reason — see the claim window there.
+**Do not review your own diff anywhere in this run.** The session that wrote
+the code shares every assumption it was built on, so its verdict is worth
+little; Phase 8 gets a real one from contexts that never saw the build. That
+governs **whose judgement decides this PR, not whether the run continues** —
+you still spawn the reviewers and own what they return, and Phase 7 hands the
+PR to nobody: not the user, not a later session, not the standalone
+`/github-workflow:code-review` command. Going straight from PR creation to
+Phase 8 matters for a second reason too — see the claim window there.
 
 ## Phase 8 — Independent review, Phase 9 — Rework, Phase 10 — Merge
 
-Once the PR exists, **read `references/review-and-merge.md`** and follow it
-to the end of the run. Phase 8 claims the PR, then spawns two review agents
+The moment the PR exists, **read `references/review-and-merge.md`** and
+follow it to the end of the run — same turn as Phase 7, no asking, no waiting
+on CI. Unlike merging, the review is **unconditional**. Phase 8 claims the PR, then spawns two review agents
 in parallel, each in a fresh context, to review it read-only — your session
 built this code and cannot judge it independently — and posts one
 consolidated verdict. Phase 9 fixes what they found, pushes, and re-reviews
@@ -560,7 +567,8 @@ run, not a failure. Several further conditions stop the merge before it is
 attempted, and the mechanics themselves can stop short on absent or red CI
 or a conflict needing judgment. The reference lists all of them. In every
 one the PR is left open with its verdict on it and the report says what
-remains.
+remains. None of them is a reason to stop **before** Phase 8: they decide
+only whether an already-reviewed PR merges.
 
 ---
 

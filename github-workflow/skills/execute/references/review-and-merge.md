@@ -12,6 +12,13 @@ story, so these three phases are as much part of the run as the build was.
 Every exit path still ends with **Exit cleanup**
 (`references/exit-cleanup.md`).
 
+**Start immediately, and never on a condition.** **CI** does not gate this
+phase: a reviewer reads the diff, not the pipeline, and Phase 10 is where the
+merge waits on checks. Reviewing a PR whose checks are still queued is normal
+and lets the two run in parallel. **The user** does not gate it either — a
+sentence offering to carry on when asked means you are already off the
+workflow.
+
 ## Phase 8 — Independent review in a fresh context
 
 Your session planned this change and wrote it, so it cannot review it

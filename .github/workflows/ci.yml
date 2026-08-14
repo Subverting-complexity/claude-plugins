@@ -88,9 +88,15 @@ jobs:
             --exclude github-workflow/skills/code-review/references/auto-merge.md \
             --budget 34800
 
-      - name: Check execute whole-run footprint (budget 45000 tokens)
+      # Recalibrated from 45000: Phase 7 now ends on an explicit numbered step
+      # into Phase 8 rather than a trailing sentence, and the review phase says
+      # plainly that neither CI nor the user gates it — the guardrail against a
+      # run that stops at an unreviewed PR. All of it lands after the PR
+      # exists, so the build-window budget above is untouched and still has
+      # room. Measured 45004; 45900 is ~2.0%, matching the calibration above.
+      - name: Check execute whole-run footprint (budget 45900 tokens)
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 45000
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 45900
 
       # Recalibrated from 37000: the pinned-PR path, the read-only overrides,
       # and the sanctioned-caller carve-out in auto-merge.md are new. Measured
