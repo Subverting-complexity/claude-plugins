@@ -393,7 +393,7 @@ const PG=[
 <div class="pg-i">
   <div class="sec-label fin" style="transition-delay:.05s">01 / Overview</div>
   <h2 class="fin" style="transition-delay:.1s">One Command Does Everything</h2>
-  <p class="sub-h fin" style="transition-delay:.15s">You give a single instruction. The plugin picks a story, plans the work, writes the code, runs tests, opens a PR, and updates your board.</p>
+  <p class="sub-h fin" style="transition-delay:.15s">You give a single instruction. The plugin picks a story, plans the work, writes the code, runs tests, opens a PR, updates your board, and has that PR reviewed by separate agents in a fresh context.</p>
   <div class="ov-flow fin" style="transition-delay:.25s">
     <div class="ov-box"><span class="ov-box-label">You say</span><div class="ov-box-cmd">“Start the next story”</div></div>
     <div class="ov-stream" id="ov-stream">
@@ -479,7 +479,8 @@ const PG=[
   <div class="pipe-phases fin" style="transition-delay:.3s">
     <div class="pipe-ph" style="--phc:var(--violet)"><h4>Board</h4><p>Picks an unblocked story, assigns it, creates a feature branch, and moves the card to In Progress.</p></div>
     <div class="pipe-ph" style="--phc:var(--amber)"><h4>Development</h4><p>Plans by reading the codebase first, builds step by step, then runs the quality gate with automatic retry on failure.</p></div>
-    <div class="pipe-ph" style="--phc:var(--blue)"><h4>Delivery</h4><p>Reviews its own diff for bugs, opens a PR with a structured description, and moves the board card to In Review.</p></div>
+    <div class="pipe-ph" style="--phc:var(--blue)"><h4>Delivery</h4><p>Opens a PR with a structured description and moves the board card to In Review.</p></div>
+    <div class="pipe-ph" style="--phc:var(--emerald)"><h4>Review &amp; Merge</h4><p>Hands the PR to two reviewers in fresh contexts that never saw the build, applies what they find, and merges once approved on projects that enable it.</p></div>
   </div>
   <div class="fin" style="transition-delay:.35s;background:#151D2E;border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:20px 22px;margin-top:20px;border-top:2px solid #60A5FA"><div style="font-family:var(--mono);font-size:12px;color:#60A5FA;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Quality gate</div><div style="font-size:14px;color:#CBD5E1;line-height:1.65">A configurable set of automated checks — tests, linting, type checking — that code must pass before shipping. Auto-detected from your project setup or defined during guided setup. On failure, the agent reads the errors, fixes the code, and retries up to 4 times.</div></div>
 </div>`,enter(){renderPipe();setTimeout(animatePipe,400)}},
@@ -671,9 +672,11 @@ const PIPE=[
   {e:'\u{1F4DD}',n:'Plan',c:'var(--amber)',p:'Development'},
   {e:'\u{1F528}',n:'Build',c:'var(--amber)'},
   {e:'✅',n:'Verify',c:'var(--amber)'},
-  {e:'\u{1F440}',n:'Self-Review',c:'var(--blue)',p:'Delivery'},
-  {e:'\u{1F680}',n:'Ship PR',c:'var(--blue)'},
+  {e:'\u{1F680}',n:'Ship PR',c:'var(--blue)',p:'Delivery'},
   {e:'\u{1F4CA}',n:'Update Board',c:'var(--blue)'},
+  {e:'\u{1F440}',n:'Independent Review',c:'var(--emerald)',p:'Review & Merge'},
+  {e:'\u{1F527}',n:'Rework',c:'var(--emerald)'},
+  {e:'✨',n:'Merge',c:'var(--emerald)'},
 ];
 const WF={
 impl:{phases:[
@@ -687,9 +690,13 @@ impl:{phases:[
     {e:'✅',n:'Verify',d:'Runs the quality gate. Reads errors, fixes code, retries up to 4 times.',subs:['Run gate','Read errors','Fix code','Retry'],tools:['quality gate']},
   ]},
   {name:'Delivery',color:'--blue',steps:[
-    {e:'\u{1F440}',n:'Self-Review',d:'Reviews its own diff for bugs, style, and missed requirements.',subs:['Read diff','Check bugs','Check style','Check reqs'],tools:['git diff','read']},
-    {e:'\u{1F680}',n:'Ship PR',d:'Commits, pushes, opens a PR with a structured description.',subs:['Stage','Commit','Push','Create PR'],tools:['git commit','git push','gh pr create']},
+    {e:'\u{1F680}',n:'Ship PR',d:'Commits, pushes, opens a PR with a structured description. It never reviews its own diff on the way — that job belongs to the fresh contexts in the next phase.',subs:['Stage','Commit','Push','Create PR'],tools:['git commit','git push','gh pr create']},
     {e:'\u{1F4CA}',n:'Update Board',d:'Moves the card to In Review, applies status-in-review label, cross-references.',subs:['Move card','Labels','Link PRs','Notify'],tools:['GraphQL','gh issue edit']},
+  ]},
+  {name:'Review & Merge',color:'--emerald',steps:[
+    {e:'\u{1F440}',n:'Independent Review',d:'Claims the PR, then spawns two read-only reviewers in parallel, each in a fresh context that never saw the build — one on correctness and story alignment, one on security, tests, and regressions. Their findings are merged into a single verdict on the PR.',subs:['Claim PR','Spawn 2 agents','Merge findings','Post verdict'],tools:['Task','code-review --read-only','wf.sh']},
+    {e:'\u{1F527}',n:'Rework',d:'Fixes what the reviewers found, files anything needing human judgment to the board, pushes, and re-reviews with a fresh agent until the verdict is approved.',subs:['Fix findings','File the rest','Push','Re-review'],tools:['edit','git push','Task']},
+    {e:'✨',n:'Merge',d:'Squash-merges the approved PR, closes its issues, and moves the board to Done. Opt-in only: it runs where review.config.md sets Auto-Merge on Approval to enabled, the same switch that governs the code-review command. Off by default, the run ends at an approved PR.',subs:['Check setting','Gate on CI','Merge','Settle issues'],tools:['gh pr merge','wf.sh post-merge']},
   ]},
 ],mini:{d:'Same dev core, no board or PR lifecycle.',s:[{e:'\u{1F4DD}',c:'--amber'},{e:'\u{1F528}',c:'--amber'},{e:'✅',c:'--amber'},{e:'\u{1F4BE}',c:'--blue'}]}},
 review:{phases:[

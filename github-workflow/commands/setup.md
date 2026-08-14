@@ -514,11 +514,16 @@ PR reviews. If yes:
    - Ask whether to **auto-merge approved PRs** (squash-merge once Claude
      approves and posts its comment). This defaults to **off**; enable it
      only for repos that should merge approved reviews unattended. Stored
-     as `auto-merge-on-approval` in `docs/review.config.md`. **If the user
-     enables it, run Step 7b** (Harden auto-merge enforcement) before
-     finishing — that step turns on repo-level auto-merge, attempts
-     branch protection with required checks, and sets the
-     `require-ci-before-merge` fallback when GitHub can't enforce them.
+     as `auto-merge-on-approval` in `docs/review.config.md`. Say plainly
+     what it covers, because it is the **only** switch that decides this:
+     it governs `/github-workflow:code-review` **and** the merge phase at
+     the end of a `/github-workflow:execute` run. Left off, an execute run
+     ends at an approved pull request waiting for a person, which is a
+     complete run. **If the user enables it, run Step 7b** (Harden
+     auto-merge enforcement) before finishing — that step turns on
+     repo-level auto-merge, attempts branch protection with required
+     checks, and sets the `require-ci-before-merge` fallback when GitHub
+     can't enforce them.
    - Ask, **only if auto-merge was enabled**, what to do when CI can't run
      because of a GitHub Actions **billing or account** problem (out of
      minutes, spending limit hit, a failed payment): should an approved PR

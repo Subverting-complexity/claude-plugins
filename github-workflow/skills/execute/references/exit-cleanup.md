@@ -16,7 +16,7 @@ rm -f .claude/claim-issue-{number}.sha
 Ignore an already-gone-ref error (Phase 7 step 4 or `block-story` may
 have released it).
 
-If the run **won** a review claim on its own PR in Phase 9, release that
+If the run **won** a review claim on its own PR in Phase 8, release that
 too. The test is the file Acquire writes only on a win:
 
 ```
@@ -24,7 +24,7 @@ test -f .claude/claim-pr-{pr_number}.sha || echo "NO PR CLAIM — skip this whol
 ```
 
 When that file is absent, do **nothing** here. A run that never reached
-Phase 9 has no claim, and on the claim-lost path another agent owns the
+Phase 8 has no claim, and on the claim-lost path another agent owns the
 review — deleting a claim ref or stripping a label needs only push access,
 not ownership, so acting would unlock a PR that agent is actively reviewing.
 
@@ -44,7 +44,7 @@ gh pr view {pr_number} --repo {org}/{repo} --json state,labels
   That is the honest state for a review that did not finish, and it is a tier
   the picker selects, so the next `/github-workflow:code-review` run takes
   the PR from here.
-- Merged, or already carrying a verdict label → Phase 9 or Phase 10 already
+- Merged, or already carrying a verdict label → Phase 8 or Phase 9 already
   reconciled it. Change nothing.
 - Any other state on an open PR (no `reviewing`, no verdict — label drift) →
   treat it as "no verdict recorded" and run the same reconcile. An open PR

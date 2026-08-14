@@ -12,10 +12,8 @@ skip it and exit normally:
   approvals in Step 4b, which route here before exiting.
 - `review.config.md`'s **Auto-Merge on Approval** setting is `enabled`.
   If there is no `review.config.md`, or the section is absent, the
-  setting is `disabled` — **never merge**. (One exception, spelled out under
-  **Second sanctioned caller** below: the `execute` skill's Phase 11 supplies
-  this precondition itself. If that is who sent you here, read that paragraph
-  before treating this bullet as false.)
+  setting is `disabled` — **never merge**. This holds for every caller,
+  with no exceptions; see **Second sanctioned caller** below.
 - The session is **not** in read-only mode.
 
 Also read **`require-ci-before-merge`** from the same Auto-Merge on
@@ -69,20 +67,21 @@ an explicit `enabled` setting. The review comment from Step 9 must
 already be posted before you merge — never merge before the verdict is
 on the PR.
 
-**Second sanctioned caller.** The `execute` skill's Phase 11 drives this
-file directly, and for that caller the `Auto-Merge on Approval` precondition
-is replaced by that workflow's own contract: merging the PR it just built and
-had reviewed is what the run is for. That phase carries its own
-substitutions, and nothing here needs to read them, so the dependency runs
-one way only.
+**Second sanctioned caller.** The `execute` skill's Phase 10 drives this
+file directly, to merge the PR its own run built and had reviewed. It is
+subject to the **identical** conditions — the same `Auto-Merge on Approval`
+setting read from the same file, the same `require-ci-before-merge`
+handling, the same everything below. That is the point: one switch decides
+whether a repository gets unattended merges, wherever the merge is driven
+from, so an operator never has to work out which command is about to merge
+in order to know what the setting means.
 
-Nothing else changes. Every other condition below still applies, and because
-that caller supplies its own `enabled`, it also supplies the CI gate: when no
-`review.config.md` sets `require-ci-before-merge`, Phase 11 treats it as
-`if-present` rather than `false`, so an approved PR never merges over a red
-pipeline merely because the project has no config file. Where this file says
-"the review comment from Step 9", that caller's equivalent is the
-consolidated review comment its Phase 9 posted.
+What differs is only naming. That caller records its own head SHA and posts
+its own consolidated review comment, so where this file says "the SHA you
+reviewed" or "the review comment from Step 9", its equivalents are the ones
+its own Phase 8 or Phase 9 produced. It carries that list of substitutions
+itself, and nothing here needs to read them, so the dependency runs one way
+only.
 
 When all conditions hold, drive the PR to a merged state. Conflicts and
 red CI are **blockers to clear, not reasons to give up** — fix them on the

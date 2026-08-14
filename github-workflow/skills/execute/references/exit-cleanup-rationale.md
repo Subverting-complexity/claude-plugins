@@ -30,8 +30,8 @@ successful finish also clear ownership.
 
 ## Why the PR claim is guarded differently
 
-A run that reaches Phase 9 also holds `refs/claims/pr-{number}` over its own
-PR, and that one is **not** released unconditionally. Phase 9 has a path where
+A run that reaches Phase 8 also holds `refs/claims/pr-{number}` over its own
+PR, and that one is **not** released unconditionally. Phase 8 has a path where
 it acquires nothing because a rival agent already owns the review, and a ref
 delete or a label edit needs push access rather than ownership — so an
 unconditional release there would unlock a PR another agent was actively
@@ -46,7 +46,7 @@ tier. That is why the procedure reconciles it to a real verdict before
 releasing the lock, rather than leaving it in place.
 
 Note also that Phase 7 is no longer a terminal exit: the run continues through
-review, rework, and the merge, so a successful finish now exits from Phase 11.
+review, rework, and the merge, so a successful finish now exits from Phase 10.
 That says nothing about the other exit paths. A block, an unrecoverable
 failure, a rate-limit pause, or the timeout's not-shippable branch can all fire
 before a PR exists, which is exactly why the PR-claim release is gated on

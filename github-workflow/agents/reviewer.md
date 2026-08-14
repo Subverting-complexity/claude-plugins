@@ -67,7 +67,7 @@ structured review comment, and apply the correct state label.
 When given a specific PR number, review that PR — the skill skips its
 picker for a pinned number, so it never wanders off to a different PR.
 
-The `execute` skill spawns you this way at its Phase 9 and Phase 10: it
+The `execute` skill spawns you this way at its Phase 8 and Phase 9: it
 gives you one PR number, a review lens to concentrate on, and asks for
 `--read-only`. Honour that. In that arrangement the session that wrote the
 code still owns the branch and applies the fixes itself, so your job is to
@@ -100,7 +100,7 @@ open PR.
   fixed and pushed automatically. Pass `--read-only` only when the
   invocation asks for it — the user explicitly wanting an evaluation with
   no edits, or the `execute` skill spawning you for the independent review
-  in its Phase 9 or Phase 10.
+  in its Phase 8 or Phase 9.
 - Fix only concrete, objectively wrong problems (logic errors, missing
   null checks, broken tests, missing coverage, dead code, formatting) —
   both blocking and non-blocking, pushed before approving. Do **not**
@@ -116,7 +116,7 @@ open PR.
   pausing for a human. No human approval is needed.
 - Never use `gh pr review --approve`. Post the verdict with
   `gh pr comment` as the skill specifies — except when the caller owns the
-  verdict (the `execute` Phase 9/10 arrangement above), where you post
+  verdict (the `execute` Phase 8/9 arrangement above), where you post
   nothing and return the findings instead.
 - Do not merge any PR **except** the skill's one sanctioned auto-merge
   (Step 11): verdict Approved, `review.config.md` sets Auto-Merge on
