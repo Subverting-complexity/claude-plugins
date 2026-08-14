@@ -58,10 +58,10 @@ the lifecycle state machine.
 
 `claude-authored` is a provenance marker (not a lifecycle state) applied
 by workflow commands to Claude-authored PRs and Claude-created issues. It
-is **not** part of the PR review-state machine. This repo has no
-`docs/review.config.md`, so the code-review skill resolves review-state
-labels from their defaults (the `review-` prefix) in
-`github-workflow/templates/default-labels.md`.
+is **not** part of the PR review-state machine. Review-state labels are
+defined in [`docs/review.config.md`](docs/review.config.md), which keeps
+the plugin's own `review-` prefix, so they resolve to the same names the
+defaults in `github-workflow/templates/default-labels.md` produce.
 
 | Purpose          | Label             | Applied by                    |
 | ---------------- | ----------------- | ----------------------------- |
@@ -202,6 +202,12 @@ section above) remain the authoritative state; the board mirrors them.
 
 ## Reference Docs
 
+- `docs/review.config.md` — review-state labels, non-compliance gates,
+  tech-stack review rules, and the auto-merge settings. Auto-merge is
+  **enabled** here, so an `execute` run ends at a merged PR and
+  `code-review` merges what it approves; the CI gate is enforced
+  plugin-side (`require-ci-before-merge: true`) because branch protection
+  is not currently applied.
 - `docs/worktree-config.md` — recommended harness configuration for
   parallel/background agents, and the manual reap routine for stale
   worktrees and claim refs.
