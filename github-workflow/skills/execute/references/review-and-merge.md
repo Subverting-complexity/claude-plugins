@@ -1,33 +1,39 @@
-# Execute — Phase 9 (Independent review), Phase 10 (Rework), Phase 11 (Merge)
+# Execute — Phase 8 (Independent review), Phase 9 (Rework), Phase 10 (Merge)
 
-Read this after Phase 8 has finished and the pull request is open. It
+Read this after Phase 7 has finished and the pull request is open. It
 covers the rest of the story's life: a review carried out independently in
 a fresh context, the rework loop that answers that review, and the merge
 that settles the issue. It is kept out of `SKILL.md` because no run reaches
 it until a PR exists.
 
-The deliverable of this workflow is a **merged** pull request. An open PR
-is an unfinished story, so these three phases are as much part of the run
-as the build was. Every exit path still ends with **Exit cleanup**
+The deliverable of this workflow is a reviewed pull request, merged where
+the project has opted into that. An open, unreviewed PR is an unfinished
+story, so these three phases are as much part of the run as the build was.
+Every exit path still ends with **Exit cleanup**
 (`references/exit-cleanup.md`).
 
-## Phase 9 — Independent review in a fresh context
+## Phase 8 — Independent review in a fresh context
 
 Your session planned this change and wrote it, so it cannot review it
 independently: it shares every assumption the code was built on and it
-already believes the work is correct. That is why the Phase 8 self-review
-is only advisory. The review that decides whether this PR merges has to
-start from the pull request itself, in a context that never saw the
+already believes the work is correct. That is why nothing earlier in the
+run reviews the diff — the review that decides whether this PR merges has
+to start from the pull request itself, in a context that never saw the
 build.
 
-1. **Claim the PR before spawning anything.** Phase 7 released the issue
-   claim when the PR opened, so nothing currently stops a scheduled
-   `/github-workflow:code-review` run from selecting this PR in full mode
-   and pushing to the branch you are still holding. Acquire the review
-   claim with `templates/claim-procedure.md` (**Acquire**, target
-   `pr-{pr_number}`). If the claim is lost, another agent owns the review:
-   report that, leave the PR to it, run **Exit cleanup**, and exit without
-   merging. Record the head SHA you are about to have reviewed:
+1. **Claim the PR before spawning anything, and make it the first thing
+   this phase does.** Phase 7 released the issue claim when the PR opened,
+   so between that release and this acquire the work is held by no lock at
+   all — nothing stops a scheduled `/github-workflow:code-review` run from
+   selecting this PR in full mode and pushing to the branch you are still
+   holding. That window is the reason nothing may be inserted between
+   Phase 7 and here: read the PR, re-read the diff, post nothing, do
+   nothing. Acquire the review claim with `templates/claim-procedure.md`
+   (**Acquire**, target `pr-{pr_number}`). If the claim is lost, another
+   agent owns the review: report that, leave the PR to it, run **Exit
+   cleanup**, and exit without merging — do not strip its `reviewing`
+   marker or delete a claim ref you do not hold. Record the head SHA you
+   are about to have reviewed:
 
    ```bash
    git rev-parse HEAD
@@ -51,7 +57,7 @@ build.
      verdict to you and must **not** post a review comment or reconcile the
      PR's labels. Two concurrent reviewers relabelling would overwrite each
      other last-writer-wins, and two contradictory review comments at the
-     same SHA would confuse the re-review in Phase 10. `read-only-mode.md`
+     same SHA would confuse the re-review in Phase 9. `read-only-mode.md`
      sanctions this override for a caller that owns the verdict; say so
      explicitly in the prompt, because its default is to relabel.
    - What to return: the verdict, and every finding with its `file:line`,
@@ -72,14 +78,14 @@ build.
    is itself running as a subagent — do not skip the review. Run
    `/github-workflow:code-review {pr_number} --read-only` inline in this
    session instead, and record that this happened —
-   `mkdir -p .claude && touch .claude/self-review.flag` — so the Phase 11
+   `mkdir -p .claude && touch .claude/self-review.flag` — so the Phase 10
    check survives a compaction the way the other flags do. Treat the result
    as a self-review: it is the same context that wrote the code, so it is not
-   the independent evidence this phase exists to produce. Phase 11 does
+   the independent evidence this phase exists to produce. Phase 10 does
    **not** merge on a self-review. Say plainly in the PR comment and your
    final report that the review could not be run independently, and leave the
    PR for the standalone `/github-workflow:code-review` command to finish —
-   Phase 11's approved-and-unmerged rule applies the `needs-re-review` label
+   Phase 10's approved-and-unmerged rule applies the `needs-re-review` label
    at exit, which is what makes the picker select it. Do not apply that label
    here: step 5's `review-finish` strips every state label but the verdict, so
    it would not survive. Note also that an inline review pulls that skill's
@@ -108,10 +114,15 @@ build.
    quietly remove the guard. Say in the comment that the reviewers approved
    the code but the gate is still red.
 
-## Phase 10 — Apply the fixes and re-review
+## Phase 9 — Apply the fixes and re-review
 
 If the combined verdict is **Approved** with no blocking findings, go
-straight to Phase 11.
+straight to Phase 10 — **unless `.claude/gate-failed.flag` exists**. A red
+quality gate is outstanding work even when the reviewers liked the code, and
+it is the one thing that will stop Phase 10 merging, so enter this phase to
+repair it: skip to step 3, fix the gate, and re-review from step 4 once it is
+green. Without this the flag can never be cleared on the path where clearing
+it matters most, and the run ends with an approved PR it refuses to merge.
 
 Otherwise work through the findings on the branch you are already on:
 
@@ -129,17 +140,19 @@ Otherwise work through the findings on the branch you are already on:
    reasonable number of attempts, stop fixing, leave the PR unmerged, and
    report it. If the gate now **passes** and `.claude/gate-failed.flag`
    exists, delete it (`rm -f .claude/gate-failed.flag`) — the rework fixed
-   what Phase 5 could not, and leaving the flag would block Phase 11 from
+   what Phase 5 could not, and leaving the flag would block Phase 10 from
    ever merging this run.
 4. **Re-review.** Record the new head SHA, then spawn one fresh reviewer
-   the same way as Phase 9 — read-only, detached, findings returned to you,
+   the same way as Phase 8 — read-only, detached, findings returned to you,
    no relabelling — asked to confirm whether the previous findings are
    resolved and whether the fixes introduced anything new. One agent is
    enough for a re-review; the two lenses already ran against the original
    diff. Post the consolidated comment and reconcile the label again — with
-   the same gate-failed override as Phase 9 step 5: while
+   the same gate-failed override as Phase 8 step 5: while
    `.claude/gate-failed.flag` exists, record `changes-requested` whatever the
-   reviewer concluded.
+   reviewer concluded. When this round was entered only to repair a red
+   quality gate and the reviewers had already approved, the re-review is
+   still worth its cost: the gate fix is new code that nobody has read.
 5. Repeat this loop — fix, push, re-review — until the verdict is
    Approved, **as far as the session budget allows**. Before starting
    another round, check the elapsed time and how much of the token budget
@@ -155,25 +168,29 @@ say in your final report what has to be decided, run **Exit cleanup**, and
 exit without merging.
 
 **When the budget runs out before approval**, stop cleanly. Step 5 of Phase
-9 left the PR carrying the combined verdict, so a `changes-requested` PR is
+8 left the PR carrying the combined verdict, so a `changes-requested` PR is
 picked up automatically by the next `/github-workflow:code-review` run,
 which reworks and re-reviews it. Post one comment naming what is still
 outstanding, report it, run **Exit cleanup**, and exit without merging. Do
 not merge a PR whose review never reached an approved verdict.
 
-## Phase 11 — Merge and settle
+## Phase 10 — Merge and settle
 
-Merging is part of this workflow's contract, so an approved PR merges here
-without needing the `Auto-Merge on Approval` setting that governs the
-standalone `/github-workflow:code-review` command. `auto-merge.md` names
-this phase as its second sanctioned caller, so the passage there about
-merging being forbidden without that setting is not a contradiction to
-resolve or a reason to stop.
+Merging is **opt-in**, and the switch is the same one that governs the
+standalone `/github-workflow:code-review` command: `Auto-Merge on Approval`
+in `review.config.md`. One setting, one meaning, wherever a PR gets merged
+— a project that has not asked for unattended merges does not get them
+because it happened to reach the PR through `execute` rather than through a
+review run. Read it the way `auto-merge.md` specifies (`docs/review.config.md`
+then `./review.config.md`; absent file or absent section ⇒ `disabled`).
 
 **Do not even attempt the merge** when any of these holds. In each case
 leave the PR open with its verdict on it, say why in your final report, and
 exit through **Exit cleanup**:
 
+- `Auto-Merge on Approval` is not `enabled` — including the common case
+  where the project has no `review.config.md` at all. This is the default,
+  so the ordinary end of a run is an approved PR waiting for a person.
 - The run was invoked with `--no-merge` (`test -f .claude/no-merge.flag`).
 - The Phase 5 quality gate failed (`test -f .claude/gate-failed.flag`).
 - Phase 7 flagged a possible duplicate PR closing the same issue. Its flag
@@ -182,7 +199,7 @@ exit through **Exit cleanup**:
   belongs to code review, which keeps the better-implemented PR and closes
   the other.
 - The combined verdict is not Approved.
-- Phase 9 had to review inline because no subagent could be spawned
+- Phase 8 had to review inline because no subagent could be spawned
   (`test -f .claude/self-review.flag`). A self-review is not the independent
   review this merge is predicated on.
 
@@ -193,15 +210,22 @@ fix, absent CI, repo-level auto-merge disabled, or checks still pending when
 the watch window closes. Each of those leaves the PR approved and unmerged
 with a comment saying why, which is a correct outcome, not a failure to hide.
 
-Whenever you leave a PR **approved and unmerged with nothing queued**, also
-apply the `needs-re-review` label (resolve the name through
-`templates/default-labels.md`). The review picker skips a plain `approved` PR,
-so without that label nothing selects it again and the work is orphaned until
-a person notices. The exception is the successful **enqueue** outcome —
-`autoMergeRequest` non-null at auto-merge step 5 — where GitHub merges the PR
-on its own once its requirements clear. Leave that one alone: labelling it
-would put a PR that is about to land at the top of the review queue for
-pointless rework.
+When you leave a PR **approved and unmerged because the merge was attempted
+and stopped short**, also apply the `needs-re-review` label (resolve the name
+through `templates/default-labels.md`). The review picker skips a plain
+`approved` PR, so without that label nothing selects it again and the work is
+orphaned until a person notices. Two cases are excluded:
+
+- The successful **enqueue** outcome — `autoMergeRequest` non-null at
+  auto-merge step 5 — where GitHub merges the PR on its own once its
+  requirements clear. Labelling a PR that is about to land would put it at the
+  top of the review queue for pointless rework.
+- The merge was never attempted because it is **switched off** — auto-merge
+  is not `enabled`, or `--no-merge` was passed. Nothing is outstanding: the PR
+  is reviewed, approved, and deliberately waiting for a person. Sending it back
+  through the review picker would just re-review an approved PR that no run is
+  allowed to merge anyway. Leave it `approved` and say in your report that it
+  is ready to merge.
 
 Otherwise drive the PR to merged by following **steps 1 to 6** of
 `skills/code-review/references/auto-merge.md`, which is the single
@@ -210,14 +234,10 @@ reviewed, resolving conflicts, gating on CI, squash-merging or enqueuing
 `--auto`, verifying the outcome, and settling the linked issues with `wf
 post-merge`. Read it with these substitutions:
 
-- Its precondition that `Auto-Merge on Approval` is `enabled` is satisfied
-  by this phase's own contract, as that file now states. Because this phase
-  supplies the `enabled`, it also supplies the CI gate: when no
-  `review.config.md` sets `require-ci-before-merge`, treat it as
-  `if-present`, **not** the `false` that file defaults to. That default was
-  safe only while merging required a deliberate opt-in, and `false` would
-  merge an approved PR over a failing pipeline. Where a `review.config.md`
-  does set it, honour what it says.
+- Its enabling conditions are read exactly as written — you already
+  confirmed `Auto-Merge on Approval` is `enabled` above, and
+  `require-ci-before-merge` comes from that same section of the same file.
+  Nothing about the CI gate changes for this caller.
 - `--bypass-ci` is set for this run only if the invocation passed it
   (`test -f .claude/bypass-ci.flag`); otherwise treat it as absent. When a
   PR reports **no checks at all**, CI status is unknown, and this run is
@@ -227,11 +247,11 @@ post-merge`. Read it with these substitutions:
   somewhere GitHub cannot see re-runs with `--bypass-ci`.
 - Where it refers to the SHA recorded when the branch was checked out (its
   step 1 calls this "the SHA you reviewed", recorded at code-review's Step
-  3), use the head SHA you recorded in Phase 9 or Phase 10. Where it refers
+  3), use the head SHA you recorded in Phase 8 or Phase 9. Where it refers
   to the review comment from code-review's Step 9, use the consolidated
   comment you posted.
 - Where it says to fix a failing check the way code-review's Step 7 does,
-  apply Phase 10's fix discipline instead: fix what is objectively wrong,
+  apply Phase 9's fix discipline instead: fix what is objectively wrong,
   file what needs judgment.
 - Where its step 5 refers to the final report format in code-review's
   `SKILL.md`, use the report described at the end of this file instead —

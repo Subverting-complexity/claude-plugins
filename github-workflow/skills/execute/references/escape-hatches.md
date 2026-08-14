@@ -24,7 +24,7 @@ Then move the issue to the `status-needs-attention` lifecycle label
 by purpose key) so the failure is visible in the issues list. Do **not**
 open a PR for failed/incomplete work.
 
-**Once the PR is open (Phase 9 onward), do not move the issue backwards.**
+**Once the PR is open (Phase 8 onward), do not move the issue backwards.**
 Phase 7 already set `status-in-review` and moved the board to In Review, and
 the open, labelled PR is the visible record of the work. Comment the failure
 on the **PR** instead, leave the issue at `status-in-review`, and let the
@@ -91,7 +91,7 @@ then pick the first sub-story.
 
 ## Review feedback
 
-Review feedback is no longer an escape hatch: Phases 9 and 10 review the
+Review feedback is no longer an escape hatch: Phases 8 and 9 review the
 PR in a fresh context and answer the findings inside this same run
 (`references/review-and-merge.md`). Feedback that arrives **after** the run
 ends — a human reviewer's comment, or a rework round the session budget cut

@@ -37,7 +37,7 @@ for wf in "${workflows[@]:-}"; do
         execute)
             files+=(
                 "github-workflow/skills/execute/SKILL.md"
-                "github-workflow/skills/execute/references/finish-and-self-review.md"
+                "github-workflow/skills/execute/references/finish.md"
                 "github-workflow/skills/execute/references/review-and-merge.md"
                 "github-workflow/skills/code-review/references/auto-merge.md"
                 "github-workflow/templates/board-resolution.md"

@@ -67,8 +67,15 @@ normally and never block on it.
 Run `/github-workflow:execute` to pick the next story and execute it
 end-to-end. The skill orchestrates the full workflow: pick, start, plan,
 build, verify, commit, finish (push, PR, board update), then the review and
-merge phases — it spawns read-only review agents in fresh contexts, applies
-what they find, and merges the PR once the verdict is approved.
+merge phases — it spawns read-only review agents in fresh contexts and
+applies what they find. It merges the PR once the verdict is approved only
+where the project has turned that on (`Auto-Merge on Approval: enabled` in
+`review.config.md`); otherwise the run ends at an approved PR, which is a
+complete run.
+
+Never review the diff yourself before handing it to those agents. You wrote
+the code, so your reading of it is the least useful one available, and the
+skill removed the step that used to do it.
 
 When given a specific issue number, run `/github-workflow:execute <number>`.
 
@@ -133,7 +140,7 @@ this blocks `bash -c "arbitrary code"` and process substitution
 
 **Task** — the subagent-spawning tool, under the name the current CLI uses;
 if a future version renames it, this entry has to follow. It exists here to
-spawn the read-only review agents the `execute` skill's Phase 9 and Phase 10
+spawn the read-only review agents the `execute` skill's Phase 8 and Phase 9
 depend on. Without it the independent review cannot happen in a
 separate context and the workflow falls back to reviewing its own work in
 this one, which is the thing those phases exist to avoid. The spawned agents

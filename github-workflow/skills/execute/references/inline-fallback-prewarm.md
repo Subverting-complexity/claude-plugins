@@ -40,7 +40,7 @@ read it instead of re-querying; nothing ever did, so that cache was removed.)
 
 There is **no eager label-inventory prewarm** either. `.claude/label-cache.json`
 (label name → node ID) is consumed only at the **finish phase** (Phase 7), where
-`references/finish-and-self-review.md` builds a single GraphQL mutation to apply
+`references/finish.md` builds a single GraphQL mutation to apply
 the review-state labels and move the issue to `status-in-review`. That phase
 already falls back to `gh label list` when the cache is absent, so it now fetches
 labels lazily, at the point of need, and only if the session actually reaches

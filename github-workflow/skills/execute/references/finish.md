@@ -1,4 +1,4 @@
-# Execute — Phase 7 (Finish) & Phase 8 (Self-Review)
+# Execute — Phase 7 (Finish)
 
 Read this at Phase 7 of the `execute` workflow (quality gate passed, work
 committed); kept out of `SKILL.md` to keep the pick/plan/build window
@@ -158,45 +158,15 @@ light.
    `#123 Add login button`, never the number alone) plus its URL, the
    linked issues (each by number **and** title), and labels applied.
 
-## Phase 8 — Self-Review
-
-After the PR is created, perform a brief self-check to catch obvious
-gaps before a human reviewer sees the PR.
-
-1. Re-read the full PR diff:
-   ```
-   git diff origin/{default-branch}...HEAD
-   ```
-
-2. Re-read the original issue body and acceptance criteria.
-
-3. For each acceptance criterion, verify it is addressed in the diff:
-   - If addressed: note it as covered.
-   - If missing or only partially addressed: flag it.
-
-4. Check for common oversights:
-   - New public functions without tests
-   - TODO/FIXME comments left in committed code
-   - Hardcoded values that should be configurable
-   - Missing error handling on new external calls
-
-5. If any gaps are found, post a comment — write it following
-   `templates/body-file-write.md` (temp file + `--body-file`):
-   ```
-   gh pr comment {pr_number} --repo {org}/{repo} --body-file {tempfile}
-   ```
-   Then file each **material** gap you are not fixing before exiting (a
-   missing acceptance criterion, an untested public function, missing
-   error handling) to the board with `/github-workflow:report-issue`
-   (autonomous, `status-ready`, correct type, referencing this PR) so it
-   is picked up and fixed automatically — no human approval needed.
-
-6. If no gaps are found, skip the comment — a clean PR needs no noise.
-
-This phase never blocks the PR or changes the verdict — it surfaces gaps
-early and queues any it cannot close for automatic pickup, so the
-reviewer can focus on deeper concerns.
-
-Then continue to **Phase 9** by reading `references/review-and-merge.md`.
+Then continue to **Phase 8** by reading `references/review-and-merge.md`.
 The run is not finished here: the PR still has to be reviewed
 independently in a fresh context, answered, and merged.
+
+**Do not review your own diff before handing over.** It is tempting to
+re-read the change against the acceptance criteria here and comment on
+what you find, and an earlier version of this workflow did exactly that.
+It was removed. This session wrote the code, so it shares every
+assumption the code was built on and cannot judge it — that is the whole
+reason Phase 8 hands the review to agents in fresh contexts. A pass here
+spends build-window budget on the weakest possible review, and anything
+it files to the board duplicates what those agents file minutes later.

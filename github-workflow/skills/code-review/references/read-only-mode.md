@@ -35,7 +35,7 @@ When `$ARGUMENTS.mode` is `read-only`:
   this here, at Step 9, not after the comment is already posted.
 - In Step 10, apply labels normally — **unless the caller says it owns the
   verdict**. A caller that runs several read-only reviews of the same PR at
-  once (execute's Phase 9 spawns two) must reconcile the label itself from the
+  once (execute's Phase 8 spawns two) must reconcile the label itself from the
   combined verdict, because `wf review-finish` leaves exactly one verdict label
   and concurrent reviewers would otherwise overwrite each other last-writer-
   wins. When the caller has said so, skip the relabel and the Step 9 comment,

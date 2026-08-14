@@ -55,10 +55,16 @@ gh auth status 2>&1 | head -3
 >
 > - "Start the next story" → I'll pick the highest priority issue from
 >   your backlog, plan it, build it, test it, open a PR, have that PR
->   reviewed by separate agents in a fresh context, apply what the review
->   asks for, and merge it. Hands-free, start to finish.
-> - `/github-workflow:execute --no-merge` → The same run, but it stops
->   after the review instead of merging.
+>   reviewed by separate agents in a fresh context, and apply what the
+>   review asks for. Hands-free, start to finish.
+> - **Merging is off until you ask for it.** By default a run ends at an
+>   approved pull request and waits for you. Turn on `Auto-Merge on
+>   Approval` in `docs/review.config.md` — via `/github-workflow:setup` —
+>   and the same run merges it for you once the review approves. That one
+>   setting also governs `/github-workflow:code-review`, so there is only
+>   ever one answer to "will this merge on its own".
+> - `/github-workflow:execute --no-merge` → Skip the merge for a single
+>   run on a project that has it switched on.
 > - `/github-workflow:execute 42` → Work on a specific issue.
 > - `/github-workflow:execute --mode feature` → Pick only feature stories.
 > - `/github-workflow:execute --mode maintenance` → Pick and fix the

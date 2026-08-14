@@ -5,7 +5,7 @@ arguments:
   - name: mode
     description: 'Review mode: full (default) — evaluate and fix; read-only — evaluate only, no edits or pushes'
   - name: pr
-    description: 'Optional PR number. When given, that PR is reviewed and the picker is skipped — used by the execute skill Phase 9 and by any caller that already knows which PR it wants reviewed.'
+    description: 'Optional PR number. When given, that PR is reviewed and the picker is skipped — used by the execute skill Phase 8 and by any caller that already knows which PR it wants reviewed.'
   - name: bypass-ci
     description: 'When set, the CI gate in auto-merge (Step 11) is treated as satisfied even if remote checks are red or absent. Explicit, never default — use only when CI cannot run for reasons outside the PR (e.g. GitHub Actions billing).'
 allowed-tools:
@@ -765,8 +765,9 @@ Rationale files (maintainers only — not read at runtime):
   `bypass-ci-on-billing-failure` rules stated once in
   `references/auto-merge.md` (off by default). Never merge in read-only mode.
   That reference has one other sanctioned caller, named in it: the `execute`
-  skill's Phase 11, which merges the PR its own run built and had reviewed.
-  This rule governs this skill; it does not forbid that one.
+  skill's Phase 10, which merges the PR its own run built and had reviewed,
+  under the same setting and the same conditions. This rule governs this
+  skill; it does not forbid that one.
 - **Do not close a PR** except to reconcile duplicates in Step 2b, per
   `references/duplicate-reconciliation.md` — the one sanctioned close. Never
   close a PR for any other reason, and never in read-only mode.

@@ -1,8 +1,11 @@
 # github-workflow
 
 A Claude Code plugin that provides an end-to-end GitHub development
-workflow. Install it on any project and say "start the next story" —
-the plugin handles picking, planning, building, testing, and opening a PR.
+workflow. Install it on any project and say "start the next story" — the
+plugin handles picking, planning, building, testing, opening a PR, and
+having that PR reviewed by separate agents in a fresh context, then applies
+what the review asks for. It merges too, on projects that switch merging on
+(see [Auto-merge](#auto-merge)); by default a run ends at an approved PR.
 
 ## Install
 
@@ -18,11 +21,11 @@ claude --plugin-dir ./plugins/github-workflow
 
 | Command                                 | What it does                             |
 | --------------------------------------- | ---------------------------------------- |
-| `/github-workflow:execute`              | Pick next story, execute end-to-end through review and merge |
+| `/github-workflow:execute`              | Pick next story, execute end-to-end through independent review (and merge, where enabled) |
 | `/github-workflow:execute 47`           | Execute story #47 directly               |
 | `/github-workflow:execute --mode maintenance` | Pick and fix the next bug/security/debt issue |
 | `/github-workflow:execute --mode audit` | Audit codebase, create issues (no code)  |
-| `/github-workflow:execute --no-merge`   | Execute and review, but leave the PR open |
+| `/github-workflow:execute --no-merge`   | Skip the merge for one run on a project that has merging enabled |
 | `/github-workflow:code-review`          | Review (or rework + re-review) the next PR |
 | `/github-workflow:block-story`          | Mark current story as blocked            |
 | `/github-workflow:report-issue`         | Create a bug/arch/debt issue             |
@@ -40,7 +43,7 @@ github-workflow/
 ├── .claude-plugin/
 │   └── plugin.json            # Plugin manifest
 ├── skills/                    # Skills catalogue — see "Skills" below
-│   ├── execute/               # Orchestrator: full pick-to-merge workflow
+│   ├── execute/               # Orchestrator: pick → build → PR → review → merge
 │   ├── code-architect/        # Architecture design and audit (SOLID + Clean)
 │   ├── structured-coding/     # Structured coding methodology
 │   ├── code-review/           # Deep PR review, labels, optional auto-merge
@@ -209,6 +212,32 @@ setup wizard creates any that are missing (via `updateProjectV2Field`),
 and preflight raises a `board-columns-incomplete` error if one is absent.
 A project with no board configured skips all of this silently.
 
+## Auto-merge
+
+Both entry points can merge a pull request, and **one setting decides
+whether either of them does**: `Auto-Merge on Approval` in
+`docs/review.config.md`. It is `disabled` unless you turn it on, including
+when the file does not exist at all.
+
+| Setting | `/github-workflow:execute` ends at | `/github-workflow:code-review` ends at |
+| ------- | ---------------------------------- | -------------------------------------- |
+| `disabled` (default) | An approved PR, reviewed and waiting for you | An approved PR |
+| `enabled` | A merged PR, with its issues closed and the board moved to Done | A merged PR |
+
+Keeping it to one switch is deliberate. The alternative — merging by default
+from `execute` and only on request from `code-review` — means the answer to
+"is this repository going to merge something without me" depends on which
+command happened to reach the PR, which is not a property anyone can hold in
+their head. Turn it on in `/github-workflow:setup`, which also runs the
+hardening step that makes "merge only after CI passes" actually enforceable.
+
+Two ways to suppress a merge on a project that has it on: pass `--no-merge`
+for a single `execute` run, or leave the PR at a non-approved verdict. And
+several conditions stop a merge on their own — a red quality gate, a
+possible duplicate PR, a review that could not run independently, a moved
+head SHA, absent or red CI. Each of those leaves the PR open with a comment
+saying why.
+
 ## Agents
 
 | Agent         | Role                          | Constraint             |
@@ -234,7 +263,7 @@ directly.
 
 | Skill                 | What it does                                       |
 | --------------------- | ------------------------------------------------- |
-| `execute`             | Orchestrator: pick → build → PR → review → merge  |
+| `execute`             | Orchestrator: pick → build → PR → review → merge   |
 | `code-architect`      | Architecture design and audit (SOLID + Clean)     |
 | `structured-coding`   | Structured coding methodology                     |
 | `code-review`         | Deep PR review, labels, optional auto-merge       |
