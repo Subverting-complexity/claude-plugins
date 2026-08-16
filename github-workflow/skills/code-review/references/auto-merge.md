@@ -26,7 +26,9 @@ Approval section. Absent ⇒ `false`. It takes three values:
 - **`true`** — the skill must see a **green CI gate** before it merges: a
   PR with no checks at all, or with a failing check it cannot fix, is
   **paused**, not merged. An absolute gate, even on a repo with no
-  pipeline.
+  pipeline — the one thing that can satisfy it without green checks is
+  `bypass-ci-on-billing-failure` below, and only against the evidence
+  step 3a demands.
 - **`if-present`** — gate on CI **only when CI exists**: a PR whose head
   SHA has checks must see them green (a red check it cannot fix pauses).
   A PR with **no checks at all** is handled by the no-checks guard in
@@ -53,13 +55,15 @@ override note at the top of step 3.
 
 Also read **`bypass-ci-on-billing-failure`** from the same Auto-Merge on
 Approval section. Absent ⇒ `false`. When `true`, it is a **persistent,
-billing-scoped** form of `--bypass-ci`: if the only thing blocking the merge
-is a GitHub Actions **billing or account failure** (out of minutes, spending
-limit hit, payment failed — a pipeline that cannot run for a reason outside
-the PR), the skill treats the CI gate as satisfied and merges anyway. Unlike
-`--bypass-ci`, it is narrow: it bypasses **only** billing-induced failures, so
-a genuine red check (a real test/build/lint failure) is still fixed or filed.
-It is handled in **step 3a** below.
+billing-scoped** form of `--bypass-ci`: when the only thing blocking the merge
+is that GitHub Actions **cannot run for a billing or account reason** (out of
+minutes, spending limit hit, payment failed), the CI gate is treated as
+satisfied. It covers both symptoms — a pipeline that ran and failed, and the
+commoner one where no run is created at all and the rollup is simply empty.
+Unlike `--bypass-ci` it stays narrow: a genuine red check is still fixed or
+filed, and an empty rollup is bypassed only against evidence. Handled in
+**step 3a**, which overrides the no-checks guard for every
+`require-ci-before-merge` value.
 
 This is opt-in and **off by default**. Merging a PR is otherwise
 forbidden (see Rules); this is the one sanctioned merge, and only under
@@ -136,14 +140,21 @@ leave `approved` and exit. The fallbacks below say where.
    billing); it does **not** bypass the step-2 conflict resolution, only the
    CI gate. Skip the rest of this step.
 
-   **3a — Billing-induced CI failure (config bypass).** If `--bypass-ci` was
-   **not** passed but `review.config.md`'s `bypass-ci-on-billing-failure` is
-   `true`, check whether the failing CI is a GitHub Actions **billing or
-   account** problem before trying to fix anything. Read the full rollup and
-   inspect each non-green check's run:
+   **3a — CI that cannot run for billing reasons (config bypass).** If
+   `--bypass-ci` was **not** passed but `review.config.md`'s
+   `bypass-ci-on-billing-failure` is `true`, work out whether GitHub Actions
+   is *unable to run* before treating anything here as a real failure. Read
+   the full rollup first — which of the two branches below applies depends on
+   whether it is empty:
 
    ```bash
    gh pr checks <number> --repo <org>/<repo>
+   ```
+
+   **3a-i — checks exist and some are failing.** Inspect each non-green
+   check's run:
+
+   ```bash
    # for each failing / never-started check, find its run id, then:
    gh run view <run-id> --repo <org>/<repo> --json conclusion --jq .conclusion
    gh run view <run-id> --repo <org>/<repo> 2>&1 \
@@ -173,7 +184,46 @@ leave `approved` and exit. The fallbacks below say where.
      bypass. Fall through to the normal rollup handling below; the genuine
      failure is fixed or filed, and the PR does not merge over it. (The billing
      check among them is "not yours to fix" and is handled as such there.)
-   - No checks are failing → fall through to the normal rollup handling below.
+
+   **3a-ii — the rollup is empty.** This is the ordinary symptom of exhausted
+   Actions billing: no runs are created, so there is no failing check to
+   inspect and the PR looks identical to one in a repo with no CI. That
+   ambiguity is why an empty rollup is never bypassed on assumption — only
+   when all three of these hold:
+
+   1. **Workflows exist that should have run.** At least one is active:
+      ```bash
+      gh api "repos/<org>/<repo>/actions/workflows" \
+        --jq '[.workflows[] | select(.state == "active")] | length'
+      ```
+      Zero → the project has no GitHub-hosted CI and nothing is being
+      bypassed. Fall through to the no-checks guard.
+   2. **No run was created for this head SHA, and it is not merely slow.**
+      Give a slow start time to appear before concluding it never will:
+      ```bash
+      sleep 60
+      gh api "repos/<org>/<repo>/actions/runs?head_sha=<sha>" --jq '.total_count'
+      ```
+      Non-zero → runs do exist after all. Re-read the rollup and handle them
+      through the normal path below.
+   3. **The change was verified locally.** Remote evidence is what is missing,
+      so local evidence stands in its place — merging with neither is how a
+      broken change lands unseen. Confirm the quality gate from
+      `ClaudeProject.md` passed on this head SHA: for the `execute` caller an
+      absent `.claude/gate-failed.flag` is that proof, and a review session
+      that has not run the gate runs it now and sees it green. A red gate, or
+      one that cannot run here → do **not** bypass; pause per the no-checks
+      guard.
+
+   All three → treat the CI gate as satisfied and go to **step 4's immediate
+   path**, again preferring `--squash --delete-branch` over `--auto`, which
+   would wait forever for checks that are never coming. Append to the review
+   comment: "Merged despite absent CI: no GitHub Actions run was created for
+   this SHA though active workflows are configured; bypassed per
+   `bypass-ci-on-billing-failure`, with the local quality gate green."
+
+   Anything else (no checks failing, or the three conditions not met) → fall
+   through to the normal rollup handling below.
 
    Otherwise, read the required-check rollup:
    ```bash
@@ -221,8 +271,13 @@ leave `approved` and exit. The fallbacks below say where.
        **UNKNOWN**, not passing — this gate sees only checks reported to
        GitHub, and the project may run its CI elsewhere (Buildkite,
        CircleCI, Jenkins, …) where the gate cannot see it. Never treat
-       an empty rollup as green:
-       - **`true`** → **pause** (strictest, unchanged): post a one-line
+       an empty rollup as green.
+
+       **Step 3a-ii ran before this guard, for every value below.** If
+       `bypass-ci-on-billing-failure` is `true` and its conditions held, the
+       merge already happened and you never reach here; what follows is the
+       path for an empty rollup a billing failure does not explain:
+       - **`true`** → **pause** (strictest): post a one-line
          comment "auto-merge paused: require-ci-before-merge is set but
          no CI checks are configured", leave `approved`, and exit. Never
          merge.

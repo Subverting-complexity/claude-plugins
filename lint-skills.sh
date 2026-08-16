@@ -63,6 +63,10 @@ for file in "${skill_files[@]}"; do
         echo "FAIL: $rel — contains unreplaced {{PLUGIN_VERSION}} placeholder"
         status=1
     fi
+    if grep -qF '{{EXECUTE_SKILL}}' "$file"; then
+        echo "FAIL: $rel — contains unreplaced {{EXECUTE_SKILL}} placeholder"
+        status=1
+    fi
 
     # Report missing frontmatter fields
     if [ "$has_frontmatter" = false ]; then

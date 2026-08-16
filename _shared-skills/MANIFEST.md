@@ -37,7 +37,7 @@ here. Do not "deduplicate" them into `_shared-skills/`.
 | Skill | Why not shared |
 |-------|----------------|
 | `code-review` | github: full PR-lifecycle manager; local: lightweight diff reviewer. Divergence intentional — different products sharing a trigger |
-| `execute` | github: board/claim/PR orchestrator; local: simple local loop |
+| `execute` (github) / `build` (local) | Different jobs, and now different names. github's `execute` runs the whole GitHub loop — claim a story, build it, open a PR, have it reviewed independently, merge it. local's `build` stops at a commit. They shared the name `execute` until the duplicate descriptions made the two indistinguishable to the picker; shared skills cite whichever applies via `{{EXECUTE_SKILL}}` |
 | `preflight` | github: board/label/auth validator; local: lightweight git/config checks |
 | `mobile-audit` | local-only by product decision |
 | `agents` | Never shared — least-privilege tool scoping is plugin-specific |
@@ -50,6 +50,16 @@ The sync script replaces these placeholders with plugin-specific values:
 |----------|-------------|
 | `{{PLUGIN_NAME}}` | Plugin directory name (e.g., `github-workflow`, `local-workflow`) |
 | `{{PLUGIN_VERSION}}` | Plugin version from `plugin.json` (e.g., `1.7.0`) |
+| `{{EXECUTE_SKILL}}` | Name of that plugin's end-to-end orchestrator: `execute` in github-workflow, `build` in local-workflow |
+
+`{{EXECUTE_SKILL}}` exists because the two orchestrators do different jobs
+and used to share the name `execute`. With both plugins installed, nothing
+in context distinguished them, so the picker chose between identical
+descriptions arbitrarily. A shared skill that wants to point at "this
+plugin's end-to-end command" writes `/{{PLUGIN_NAME}}:{{EXECUTE_SKILL}}`
+and resolves to the right one. The mapping lives in `get_execute_skill`
+(`sync-skills.sh`) and `Get-ExecuteSkill` (`sync-skills.ps1`) — add a case
+to both when a plugin joins.
 
 ## Sync commands
 

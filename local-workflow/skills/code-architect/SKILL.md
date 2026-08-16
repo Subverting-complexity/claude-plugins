@@ -50,7 +50,7 @@ When user asks to design, architect, or build a new system/codebase:
 
 1. **Establish shared understanding** - Call `feature-discovery` in
    validation mode to clarify (skip this step when called from an
-   autonomous workflow like `/local-workflow:execute` that explicitly
+   autonomous workflow like `/local-workflow:build` that explicitly
    says not to pause or call feature-discovery):
    - What problem does this solve?
    - Who are the users/actors?

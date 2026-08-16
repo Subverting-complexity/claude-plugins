@@ -62,14 +62,31 @@ get_plugin_version() {
     fi
 }
 
+# Each plugin's end-to-end orchestrator is named differently, because the two
+# do different jobs and a shared name made them indistinguishable when both
+# plugins were installed. A shared skill that wants to cite "this plugin's
+# orchestrator" writes /{{PLUGIN_NAME}}:{{EXECUTE_SKILL}} and gets the right
+# one. Add a case here when a new plugin joins; the fallback is the github
+# name, which is what a new GitHub-shaped plugin would want.
+get_execute_skill() {
+    case "$1" in
+        local-workflow) echo "build" ;;
+        *)              echo "execute" ;;
+    esac
+}
+
 process_md_content() {
     local content="$1"
     local plugin_name="$2"
-    local version
+    local version execute_skill
     version=$(get_plugin_version "$plugin_name")
+    execute_skill=$(get_execute_skill "$plugin_name")
 
     local result
-    result=$(echo "$content" | sed "s/{{PLUGIN_NAME}}/$plugin_name/g" | sed "s/{{PLUGIN_VERSION}}/$version/g")
+    result=$(echo "$content" \
+        | sed "s/{{PLUGIN_NAME}}/$plugin_name/g" \
+        | sed "s/{{PLUGIN_VERSION}}/$version/g" \
+        | sed "s/{{EXECUTE_SKILL}}/$execute_skill/g")
 
     # Already carries the banner -- leave it untouched (idempotent re-sync).
     if echo "$result" | grep -qF "$SYNC_COMMENT"; then

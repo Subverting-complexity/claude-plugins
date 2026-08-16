@@ -43,3 +43,31 @@ a finished, reviewable slice — even a partial slice is complete and
 self-contained, with follow-up issues filed for the remainder. Incomplete
 work that is *not* shippable does not get a PR at all; it stays on the
 pushed branch with the issue marked `status-needs-attention`.
+
+## Why a disclosed self-review is allowed to merge
+
+Phase 8 exists because the session that wrote the code cannot judge it: it
+shares every assumption the code was built on. Where a separate agent context
+can be spawned, nothing changes — two fresh reviewers decide the verdict.
+
+The question is what to do when no separate context is available at all,
+which happens when `execute` is itself running as a subagent and the harness
+does not allow nesting. Refusing to merge there sounded safe, but it made the
+run structurally unable to finish its own work: an autonomous or scheduled run
+in a nested context would build, self-review, and then always stop at an open
+PR, waiting for a person the setup assumes is not there.
+
+Weighed against that, the value of the block was small. It did not add
+evidence about the code; it withheld an action. Everything that actually
+carries evidence — the quality gate, the verdict, the CI gate, the conflict
+check — is unaffected by how the reviewer was spawned, and all of it still
+applies. What the block bought was a hedge against a review being weaker than
+it looks, and a disclosure buys that more honestly: the PR comment and the
+final report both say the review was not independent, so a reader can discount
+it. The label travels with the work, which a silently unmerged PR does not.
+
+The order matters too. The fallback tries a general-purpose subagent before
+giving up, because the common cause is the `Reviewer` plugin agent type being
+unavailable rather than spawning being impossible, and a general-purpose agent
+in a fresh context is fully independent. The inline self-review is the last
+resort, not the first fallback.

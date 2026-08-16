@@ -152,5 +152,5 @@ For each finding, include:
 - Recommended fix
 
 Do not make code changes during a security audit. Report findings only.
-Use `/local-workflow:execute` or `/local-workflow:report-issue` to
+Use `/local-workflow:build` or `/local-workflow:report-issue` to
 address individual findings.

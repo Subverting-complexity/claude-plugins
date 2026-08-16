@@ -54,11 +54,27 @@ function Get-PluginVersion {
     return '0.0.0'
 }
 
+# Each plugin's end-to-end orchestrator is named differently, because the two
+# do different jobs and a shared name made them indistinguishable when both
+# plugins were installed. A shared skill that wants to cite "this plugin's
+# orchestrator" writes /{{PLUGIN_NAME}}:{{EXECUTE_SKILL}} and gets the right
+# one. Add a case here when a new plugin joins; the fallback is the github
+# name, which is what a new GitHub-shaped plugin would want.
+function Get-ExecuteSkill {
+    param([string]$PluginName)
+    switch ($PluginName) {
+        'local-workflow' { return 'build' }
+        default          { return 'execute' }
+    }
+}
+
 function Process-MdContent {
     param([string]$Content, [string]$PluginName)
     $result = $Content -replace '\{\{PLUGIN_NAME\}\}', $PluginName
     $version = Get-PluginVersion -PluginName $PluginName
     $result = $result -replace '\{\{PLUGIN_VERSION\}\}', $version
+    $executeSkill = Get-ExecuteSkill -PluginName $PluginName
+    $result = $result -replace '\{\{EXECUTE_SKILL\}\}', $executeSkill
     $result = $result -replace "`r`n", "`n"
 
     # Already carries the banner -- leave it untouched (idempotent re-sync).

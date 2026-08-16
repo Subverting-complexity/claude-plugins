@@ -24,7 +24,7 @@ Python dependencies.
 
 | Command                                   | What it does                                  |
 | ----------------------------------------- | --------------------------------------------- |
-| `/local-workflow:execute`                 | Plan and implement a task end-to-end          |
+| `/local-workflow:build`                   | Plan and implement a task end-to-end, locally |
 | `/local-workflow:code-architect`          | Architecture design, audit, or documentation  |
 | `/local-workflow:structured-coding`       | 5-step structured coding methodology          |
 | `/local-workflow:code-review`             | Deep code review and analysis                 |
@@ -46,8 +46,8 @@ local-workflow/
 ├── .claude-plugin/
 │   └── plugin.json            # Plugin manifest
 ├── skills/
-│   ├── execute/
-│   │   └── SKILL.md           # Orchestrator: plan → build → verify
+│   ├── build/
+│   │   └── SKILL.md           # Orchestrator: plan → build → verify → commit
 │   ├── code-architect/
 │   │   ├── SKILL.md           # Architecture planning (SOLID + Clean)
 │   │   └── references/        # Book summaries and patterns
@@ -95,7 +95,7 @@ local-workflow/
 
 | Skill                | What it does                                      |
 | -------------------- | ------------------------------------------------- |
-| `execute`            | End-to-end task implementation                    |
+| `build`              | End-to-end local task implementation              |
 | `structured-coding`  | 5-step methodology: understand → plan → code      |
 | `code-review`        | Deep review with correctness and style analysis   |
 | `verify-feature`     | Verify containment, completeness, and blast radius |
@@ -120,7 +120,7 @@ local-workflow/
 
 | Skill             | What it does                                                  |
 | ----------------- | ------------------------------------------------------------ |
-| `ecosystem-setup` | Detect, install, and configure Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and write the `.claude/ecosystem.md` cheat-sheet that `execute` and `code-review` read to use those tools automatically |
+| `ecosystem-setup` | Detect, install, and configure Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and write the `.claude/ecosystem.md` cheat-sheet that `build` and `code-review` read to use those tools automatically |
 
 ## Differences from github-workflow
 
@@ -140,7 +140,7 @@ Both plugins share a set of core skills (the full list is in
 and `ecosystem-setup`. In `github-workflow`, `ecosystem-setup` also backs
 the `setup` wizard's ecosystem step; here it is invoked on its own.
 
-Because local-workflow has no setup wizard or preflight check, `execute`
+Because local-workflow has no setup wizard or preflight check, `build`
 serves as the onboarding entry point for companion tools: the first time
 you build in a project that has not opted into *or* out of the tools, it
 surfaces a single optional, non-blocking tip pointing at
