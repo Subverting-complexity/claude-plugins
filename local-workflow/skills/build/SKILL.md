@@ -1,14 +1,15 @@
 ---
-name: execute
-description: 'End-to-end local task execution: plan, build, verify, commit. No issue tracker or PR integration.'
+name: build
+description: 'Build a task locally, end to end: plan, write the code, run the quality gate, commit. Stays on your machine — no issue tracker, no pull request, no merge.'
 when_to_use: >-
   Trigger when the user wants development work done locally — "build this",
   "implement this", "fix this", "code this up", or a user story / task
   description to build. This is the primary local orchestrator; prefer it over
   calling structured-coding or code-architect directly for end-to-end work. Do
-  NOT use for reviewing code (use code-review), scoping features without
-  building (use feature-discovery), or pre-merge verification (use
-  verify-feature).
+  NOT use for GitHub story work that should end in a reviewed and merged pull
+  request (that is github-workflow's execute), reviewing code (use
+  code-review), scoping features without building (use feature-discovery), or
+  pre-merge verification (use verify-feature).
 depends-on:
   - code-architect
   - structured-coding
@@ -18,10 +19,16 @@ arguments:
     description: 'Execution mode: build (default), audit (codebase audit, no code changes)'
 ---
 
-# Execute Task
+# Build Task
 
 End-to-end local task execution workflow. Takes a task description, plans the
 implementation, builds it, runs tests, and commits.
+
+Everything here happens on your machine. There is no issue to claim, no pull
+request to open, and nothing to merge — the run finishes at a commit on your
+branch. Story work that should end in a reviewed and merged pull request is
+`/github-workflow:execute` instead, which is a different command doing a
+different job.
 
 ## Plain-English output
 

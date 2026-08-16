@@ -528,10 +528,12 @@ PR reviews. If yes:
      because of a GitHub Actions **billing or account** problem (out of
      minutes, spending limit hit, a failed payment): should an approved PR
      merge anyway? Default **no**. Stored as `bypass-ci-on-billing-failure`
-     in `docs/review.config.md` — `true` merges an approved PR over red CI
-     only when a billing/account failure is the sole blocker (a real
-     test/build/lint failure is never bypassed). It is the persistent,
-     per-project form of the one-off `--bypass-ci` flag.
+     in `docs/review.config.md` — `true` merges an approved PR only when a
+     billing/account failure is the sole blocker (a real test/build/lint
+     failure is never bypassed). It covers billing stopping the pipeline from
+     being created at all, not only one that runs and fails; in that case the
+     merge also requires the project's quality gate to have passed locally. It
+     is the persistent, per-project form of the one-off `--bypass-ci` flag.
    - Create the labels on the GitHub repo
    - Write `docs/review.config.md`
 3. If the user declines, note that the code-review skill will prompt

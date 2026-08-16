@@ -151,5 +151,5 @@ For each finding, include:
 - Recommended fix
 
 Do not make code changes during a security audit. Report findings only.
-Use `/{{PLUGIN_NAME}}:execute` or `/{{PLUGIN_NAME}}:report-issue` to
+Use `/{{PLUGIN_NAME}}:{{EXECUTE_SKILL}}` or `/{{PLUGIN_NAME}}:report-issue` to
 address individual findings.

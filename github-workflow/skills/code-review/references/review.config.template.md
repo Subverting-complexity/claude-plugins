@@ -99,11 +99,23 @@ never starts) for a reason that has nothing to do with the change.
   other red check: the skill tries to fix it, cannot (it is not a code
   problem), and so pauses or files it. The PR does not merge.
 - **`true`** — when the **only** thing blocking the merge is a billing or
-  account failure (every failing check is attributable to it, and no
-  genuine code/test/lint check is red), the skill treats the CI gate as
-  satisfied and merges the approved PR anyway. A normal red check — a real
-  test or build failure — is **never** bypassed by this setting; it is
-  still fixed or filed as usual.
+  account failure, the skill treats the CI gate as satisfied and merges the
+  approved PR anyway. A normal red check — a real test or build failure — is
+  **never** bypassed by this setting; it is still fixed or filed as usual.
+
+Billing shows up in two shapes, and the setting covers both:
+
+- **The pipeline ran and failed.** Every failing check is attributable to
+  billing and no genuine code/test/lint check is red.
+- **The pipeline never started.** No run is created, so the PR carries an
+  empty check rollup — indistinguishable, on its face, from a repo with no
+  CI. This is the commoner shape and the one worth turning the setting on
+  for. Because an empty rollup is ambiguous, it is bypassed only on
+  evidence: the repo must have active workflows that should have run, no run
+  may exist for the head SHA after a wait, and the project's own quality gate
+  must have passed **locally** on that SHA. Absent that local green, the PR
+  pauses exactly as it would with the setting off — the merge is never made
+  on no evidence at all.
 
 This is the persistent, per-project, billing-scoped form of the
 per-invocation `--bypass-ci` flag (which bypasses the CI gate for *any*

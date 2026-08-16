@@ -129,10 +129,13 @@ because of a GitHub Actions billing or account problem (out of minutes,
 spending limit hit, a failed payment), should an approved PR merge anyway?"**
 **Default to no** — record `bypass-ci-on-billing-failure: false`. If they say
 yes, set it to `true` and explain the guardrail: it merges an approved PR
-over red CI **only** when the sole blocker is a billing/account failure that
-keeps the pipeline from running; a real test, build, or lint failure is never
-bypassed (it is still fixed or filed), and a merge conflict is still
-resolved. This is the persistent, per-project form of the one-off
+**only** when the sole blocker is a billing/account failure that keeps the
+pipeline from running; a real test, build, or lint failure is never bypassed
+(it is still fixed or filed), and a merge conflict is still resolved. Say
+that it covers the case where billing stops the pipeline being *created* at
+all, not just the case where it runs and fails — that is the usual symptom,
+and there the merge additionally requires the project's quality gate to have
+passed locally, so an approved PR never lands with no test evidence at all. This is the persistent, per-project form of the one-off
 `--bypass-ci` flag, scoped to billing. It is worth turning on for repos on a
 plan where Actions billing can lapse and you would rather an approved review
 land than sit blocked behind a pipeline that cannot run. See the Auto-Merge

@@ -82,21 +82,29 @@ build.
 
 3. **If no subagent can be spawned at all** — the harness offers no
    agent-spawning tool, or nested spawning is unavailable because execute
-   is itself running as a subagent — do not skip the review. Run
-   `/github-workflow:code-review {pr_number} --read-only` inline in this
-   session instead, and record that this happened —
-   `mkdir -p .claude && touch .claude/self-review.flag` — so the Phase 10
-   check survives a compaction the way the other flags do. Treat the result
-   as a self-review: it is the same context that wrote the code, so it is not
-   the independent evidence this phase exists to produce. Phase 10 does
-   **not** merge on a self-review. Say plainly in the PR comment and your
-   final report that the review could not be run independently, and leave the
-   PR for the standalone `/github-workflow:code-review` command to finish —
-   Phase 10's approved-and-unmerged rule applies the `needs-re-review` label
-   at exit, which is what makes the picker select it. Do not apply that label
-   here: step 5's `review-finish` strips every state label but the verdict, so
-   it would not survive. Note also that an inline review pulls that skill's
-   whole hot path into this session, so budget for it.
+   is itself running as a subagent — do not skip the review. **Try the
+   general-purpose subagent first**: the usual cause is that the `Reviewer`
+   plugin agent type is unavailable, not that spawning is impossible, and a
+   general-purpose agent in a fresh context is still genuinely independent.
+   Only when that also fails, run `/github-workflow:code-review {pr_number}
+   --read-only` inline in this session, and record that this happened —
+   `mkdir -p .claude && touch .claude/self-review.flag` — so the disclosure
+   below survives a compaction the way the other flags do.
+
+   An inline review is a **self-review**: the same context that wrote the code
+   judges it, so it is weaker evidence than this phase is designed to produce,
+   and it pulls that skill's whole hot path into this session. It does **not**
+   stop the merge. What it obliges you to do is say so in both places a person
+   will look — the PR comment and your final report:
+
+   > ⚠ This review was **not independent**. No separate agent context could be
+   > spawned, so the session that wrote this code also reviewed it. Its
+   > findings are worth less than a fresh reviewer's.
+
+   Merging on a disclosed self-review is deliberate (why:
+   `references/execute-rationale.md`). The gates that do stop the merge — a
+   failing quality gate, an unapproved verdict, red or absent CI — all still
+   apply, and they are the ones carrying real evidence about the code.
 
 4. **Merge the two reports into one findings list.** Where both agents
    raise the same problem, keep one entry and note that both found it.
@@ -206,9 +214,11 @@ exit through **Exit cleanup**:
   belongs to code review, which keeps the better-implemented PR and closes
   the other.
 - The combined verdict is not Approved.
-- Phase 8 had to review inline because no subagent could be spawned
-  (`test -f .claude/self-review.flag`). A self-review is not the independent
-  review this merge is predicated on.
+
+A self-review (`test -f .claude/self-review.flag`) is **not** on that list.
+It merges, provided Phase 8 step 3's disclosure is on the PR comment and
+repeated in your final report. Check the flag here for exactly that reason:
+to confirm the disclosure was made, and to repeat it in the report.
 
 Those are the conditions checked **before** the attempt. The merge
 mechanics themselves can also stop short — a head SHA that moved since the
@@ -247,11 +257,15 @@ post-merge`. Read it with these substitutions:
   Nothing about the CI gate changes for this caller.
 - `--bypass-ci` is set for this run only if the invocation passed it
   (`test -f .claude/bypass-ci.flag`); otherwise treat it as absent. When a
-  PR reports **no checks at all**, CI status is unknown, and this run is
-  autonomous: do not ask the user, and do not merge. Post the one-line
-  comment that guard specifies, leave the PR approved, and report it as
-  approved but unmerged. An operator who knows the project's CI runs
-  somewhere GitHub cannot see re-runs with `--bypass-ci`.
+  PR reports **no checks at all**, its step 3a-ii decides first: where the
+  project set `bypass-ci-on-billing-failure: true` and Actions provably could
+  not run, the merge proceeds on the local quality gate. Satisfy that step's
+  third condition from Phase 5 — an absent `.claude/gate-failed.flag` **is**
+  the green local gate, so read the flag rather than re-run the suite. Failing
+  that, CI status is unknown and this run is autonomous: do not ask the user,
+  and do not merge. Post the one-line comment that guard specifies, leave the
+  PR approved, and report it as approved but unmerged. An operator who knows
+  the project's CI runs where GitHub cannot see it re-runs with `--bypass-ci`.
 - Where it refers to the SHA recorded when the branch was checked out (its
   step 1 calls this "the SHA you reviewed", recorded at code-review's Step
   3), use the head SHA you recorded in Phase 8 or Phase 9. Where it refers

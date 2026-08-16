@@ -92,7 +92,7 @@ This structure is **always** surfaced to the user — for every task, no matter 
 
 Present this to the user and get confirmation before writing code —
 unless you are executing inside an autonomous workflow (e.g.,
-`/local-workflow:execute`) that explicitly says not to pause. In
+`/local-workflow:build`) that explicitly says not to pause. In
 that case, the issue requirements and architecture plan serve as the
 approved specification — proceed directly to Step 4.
 

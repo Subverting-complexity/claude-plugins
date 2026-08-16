@@ -7,7 +7,7 @@ description: "Detect, install, and configure Claude Code companion tools (Graphi
 
 Set up commonly used Claude Code companion tools and record what was
 enabled in `.claude/ecosystem.md`. That cheat-sheet is what the
-`/{{PLUGIN_NAME}}:execute` and `/{{PLUGIN_NAME}}:code-review` skills read
+`/{{PLUGIN_NAME}}:{{EXECUTE_SKILL}}` and `/{{PLUGIN_NAME}}:code-review` skills read
 to decide which tools to run automatically — without it, those skills
 have no idea the tools are installed.
 

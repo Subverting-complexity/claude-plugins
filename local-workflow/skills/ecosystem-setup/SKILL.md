@@ -8,7 +8,7 @@ description: "Detect, install, and configure Claude Code companion tools (Graphi
 
 Set up commonly used Claude Code companion tools and record what was
 enabled in `.claude/ecosystem.md`. That cheat-sheet is what the
-`/local-workflow:execute` and `/local-workflow:code-review` skills read
+`/local-workflow:build` and `/local-workflow:code-review` skills read
 to decide which tools to run automatically — without it, those skills
 have no idea the tools are installed.
 
