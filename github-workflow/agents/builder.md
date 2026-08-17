@@ -8,7 +8,7 @@ tools:
   - Write
   - Glob
   - Grep
-  - Task
+  - Agent
   - Bash(pnpm *)
   - Bash(npm *)
   - Bash(npx *)
@@ -142,14 +142,13 @@ project shell scripts by name (e.g., `bash sync-skills.sh --verify`,
 this blocks `bash -c "arbitrary code"` and process substitution
 (`bash <(curl ...)`) while allowing any named script.
 
-**Task** — the subagent-spawning tool, under the name the current CLI uses;
-if a future version renames it, this entry has to follow. It exists here to
-spawn the read-only review agents the `execute` skill's Phase 8 and Phase 9
-depend on. Without it the independent review cannot happen in a
-separate context and the workflow falls back to reviewing its own work in
-this one, which is the thing those phases exist to avoid. The spawned agents
-carry their own least-privilege allowlists, so this does not widen what the
-builder itself can do.
+**Agent** — the subagent-spawning tool, under the name the current CLI
+uses. It exists here to spawn the read-only review agents the `execute`
+skill's Phase 8 and Phase 9 depend on. Without it the independent review
+cannot happen in a separate context and the workflow falls back to
+reviewing its own work in this one, which is the thing those phases exist
+to avoid. The spawned agents carry their own least-privilege allowlists,
+so this does not widen what the builder itself can do.
 
 **Bash(cat \*), Bash(ls \*), Bash(find \*), etc.** — read-only and
 utility filesystem operations for inspecting the working tree when the

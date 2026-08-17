@@ -77,9 +77,7 @@ Once installed, drive the plugins in natural language — the relevant skill
 triggers automatically. A few starting points:
 
 **`github-workflow`**
-- *"What's next?"* / *"pick a story"* — surface the next backlog item
-- *"Start story 42"* — assign it, update the board, create a branch
-- *"Execute"* / *"start the next story"* — full pick → plan → build → test → PR → independent review, then merge on projects that enable it
+- *"Execute"* / *"start the next story"* / *"what's next?"* / *"pick a story"* / *"start story 42"* — full pick → plan → build → test → PR → independent review, then merge on projects that enable it
 - *"Review PRs"* — review the next open PR in full codebase context
 - *"Report a bug"* — file a structured issue
 
