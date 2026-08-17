@@ -2,11 +2,12 @@
 name: execute
 description: >-
   End-to-end GitHub story execution: pick → plan → build → test → PR →
-  independent review → merge (where enabled). Trigger when the user wants development work
-  done — "next story", "work on story N", a bare issue number, "build this",
-  "implement", "run the workflow", or a pasted GitHub issue URL. Use
-  mode=feature for features, mode=maintenance for bugs/security/debt,
-  mode=audit for a no-code-change codebase audit.
+  independent review → merge (where enabled). Trigger when the user wants
+  development work done — "next story", "work on story N", "start story N",
+  "pick a story", "pick story N", "what's next", a bare issue number,
+  "build this", "implement", "run the workflow", or a pasted GitHub issue
+  URL. Use mode=feature for features, mode=maintenance for
+  bugs/security/debt, mode=audit for a no-code-change codebase audit.
 depends-on:
   - code-architect
   - structured-coding

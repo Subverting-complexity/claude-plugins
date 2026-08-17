@@ -47,9 +47,9 @@ build.
    ```
 
 2. **Spawn two review agents in parallel**, both in the same tool-call
-   batch so they run concurrently. Use the `Reviewer` agent type when the
-   harness offers plugin agents (it is defined in `agents/reviewer.md`);
-   otherwise use a general-purpose subagent. Give each one:
+   batch so they run concurrently. Use agent type `github-workflow:Reviewer`
+   (defined in `agents/reviewer.md`); if the harness does not offer plugin
+   agents, use a general-purpose subagent. Give each one:
 
    - The PR number **and** title, its URL, the head SHA from step 1, and
      the issue number and title it closes.
@@ -83,8 +83,9 @@ build.
 3. **If no subagent can be spawned at all** — the harness offers no
    agent-spawning tool, or nested spawning is unavailable because execute
    is itself running as a subagent — do not skip the review. **Try the
-   general-purpose subagent first**: the usual cause is that the `Reviewer`
-   plugin agent type is unavailable, not that spawning is impossible, and a
+   general-purpose subagent first**: the usual cause is that the
+   `github-workflow:Reviewer` agent type is unavailable, not that spawning
+   is impossible, and a
    general-purpose agent in a fresh context is still genuinely independent.
    Only when that also fails, run `/github-workflow:code-review {pr_number}
    --read-only` inline in this session, and record that this happened —
