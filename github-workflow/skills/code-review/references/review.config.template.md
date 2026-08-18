@@ -53,6 +53,7 @@ Remove this section if you don't use custom labels.
 | auto-merge-on-approval       | `disabled` |
 | require-ci-before-merge      | `false`    |
 | bypass-ci-on-billing-failure | `false`    |
+| bypass-ci-when-no-pipeline   | `false`    |
 
 When `enabled`, the code-review skill squash-merges a PR (deleting its
 branch) as soon as the review verdict is **Approved** and the review
@@ -70,7 +71,9 @@ takes three values:
 - **`true`** — the skill refuses to merge a PR that has **no green CI
   gate**: if the head SHA has no checks at all, or a check it cannot fix
   is red, it pauses and leaves the `approved` verdict. An absolute gate —
-  it pauses even on a repo that runs no pipeline.
+  it pauses even on a repo that runs no pipeline. (If your repo genuinely
+  has no GitHub-visible pipeline and you want approved PRs to land anyway,
+  that is what `bypass-ci-when-no-pipeline` below is for.)
 - **`if-present`** — gate on CI **only when CI exists**: if the head SHA
   has checks they must be green (a red check it cannot fix pauses), but a
   PR with **no checks at all merges**. Use this for "require CI to pass if
@@ -122,6 +125,45 @@ per-invocation `--bypass-ci` flag (which bypasses the CI gate for *any*
 reason, for one run only). Turn it on for repos on a plan where Actions
 billing can lapse and you would rather an approved review land than sit
 blocked behind a pipeline that cannot run. Like `--bypass-ci`, it never
+bypasses a merge **conflict**, and it only takes effect when
+`auto-merge-on-approval` is `enabled`.
+
+`bypass-ci-when-no-pipeline` (default `false`) covers the other reason a
+check rollup is permanently empty: the project has **no CI that GitHub can
+see**. Either it runs no pipeline at all, or it runs one somewhere that
+never reports back — Buildkite, Jenkins, CircleCI, GitLab CI, an internal
+runner. The gate reads only what GitHub reports, so all of those look
+identical to "no CI", and the skill correctly refuses to call an empty
+rollup green.
+
+The problem is that for these projects the emptiness is not a transient
+unknown — it is the permanent, expected state of every PR they will ever
+open. Without this setting an autonomous run pauses at the no-checks guard
+every time, so an approved PR can only be landed by a human, or by an
+operator remembering to pass `--bypass-ci` on each invocation. That flag
+also does far more than needed: it drops the CI gate wholesale for that run,
+including over genuinely red checks.
+
+- **`false`** (default) — an empty rollup means CI status **unknown**. An
+  interactive session asks before merging; an autonomous one pauses and
+  leaves the `approved` verdict.
+- **`true`** — you are asserting that this project has no GitHub-visible
+  pipeline, so an empty rollup carries no information and is not treated as
+  an unknown. The skill verifies the assertion rather than trusting it, and
+  merges only when all three hold: the rollup is **completely empty**, the
+  repo has **zero active GitHub Actions workflows**, and the project's own
+  quality gate passed **locally** on that head SHA. Any check present at all
+  — red, green, or pending — puts the PR back on the normal gate.
+
+That third condition is the important one: with no remote evidence available
+to this project at all, local evidence is the only thing standing between an
+approval and a merge, so the setting never lets a PR land without it.
+
+`bypass-ci-when-no-pipeline` and `bypass-ci-on-billing-failure` cannot both
+apply to the same repo. The billing bypass requires **at least one** active
+workflow (a pipeline exists and should have produced a run); this one
+requires **zero** (there is no pipeline to run). Set whichever describes
+your project, and leave the other `false`. Like `--bypass-ci`, this never
 bypasses a merge **conflict**, and it only takes effect when
 `auto-merge-on-approval` is `enabled`.
 

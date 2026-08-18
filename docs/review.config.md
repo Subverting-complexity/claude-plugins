@@ -45,6 +45,7 @@ takes no part in this state machine.
 | auto-merge-on-approval       | `enabled`    |
 | require-ci-before-merge      | `true`       |
 | bypass-ci-on-billing-failure | `false`      |
+| bypass-ci-when-no-pipeline   | `false`      |
 
 **Why enabled.** This is the switch that lets a review land its own work,
 and it governs both entry points: `/github-workflow:code-review` and the
@@ -71,6 +72,15 @@ enforcing anything on this repo, the absolute form is the right one.
 GitHub Actions minutes are free and a billing-induced pipeline failure is
 not a situation that arises. Leaving the escape hatch shut means a red
 pipeline always means something real.
+
+**Why `bypass-ci-when-no-pipeline: false`.** This one is not a judgement
+call — it cannot apply here. It only ever engages on a repo with **zero**
+active GitHub Actions workflows, and this repo has two (`CI` and
+`Copilot`), so an empty check rollup on a PR here would mean something has
+gone wrong rather than that there is nothing to report. The setting exists
+for projects whose CI is permanently invisible to GitHub — no pipeline, or
+one running on Buildkite/Jenkins/CircleCI that never posts a status back —
+where without it every approved PR pauses at the no-checks guard forever.
 
 ### Enforcement status
 
