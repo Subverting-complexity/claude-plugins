@@ -142,6 +142,32 @@ land than sit blocked behind a pipeline that cannot run. See the Auto-Merge
 on Approval section in `references/review.config.template.md` for the exact
 semantics.
 
+Then handle the **no-pipeline** case, but only ask when it applies — you can
+determine that rather than guess:
+
+```bash
+gh api "repos/{ORG}/{REPO}/actions/workflows" \
+  --jq '[.workflows[] | select(.state == "active")] | length'
+```
+
+Non-zero → the repo has a GitHub-hosted pipeline, the question is irrelevant
+to it, and you record `bypass-ci-when-no-pipeline: false` without asking.
+Only when the count is **zero** ask: **"This repo has no GitHub Actions
+workflows, so its PRs will never report a check. Should an approved PR merge
+anyway, on the strength of the local quality gate?"**
+
+**Default to no** — record `false`, and say what it costs: with auto-merge
+on, every approved PR pauses at the no-checks guard and needs a human or
+`--bypass-ci` each time. If they say yes, set `true` and explain the
+guardrail: it applies only to a rollup with no checks in it whatsoever, and
+only after confirming zero active workflows and a locally green quality gate
+on that head SHA. Any check at all is gated normally, and a conflict is
+still resolved. It is the right answer for a project whose CI runs where
+GitHub cannot see it (Buildkite, Jenkins, CircleCI) as much as for one with
+no CI — the gate reads only what GitHub reports, so both look identical to
+it. It is mutually exclusive with `bypass-ci-on-billing-failure`, which
+needs workflows to exist, so at most one should be `true`.
+
 The repo-level auto-merge toggle the skill's `gh pr merge --auto` needs
 is handled by the same hardening step:
 

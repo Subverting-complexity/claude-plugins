@@ -20,7 +20,7 @@ so two repo-side settings must hold or a queued merge silently never fires:
 2. **something enforces "CI green before merge"** — either GitHub required
    status checks, or the plugin-side `require-ci-before-merge` flag.
 
-Run this block (it makes at most two `gh` calls, enabled case only):
+Run this block (it makes at most four `gh` calls, enabled case only):
 
 ```!
 path=$(grep -oE '[A-Za-z0-9._/-]*review\.config\.md' ClaudeProject.md 2>/dev/null | head -1)
@@ -49,6 +49,17 @@ if [ "$automerge" = "enabled" ]; then
       else
         echo "WARNING review-auto-merge-ci: auto-merge-on-approval is enabled but NEITHER GitHub required status checks NOR require-ci-before-merge is configured — an approved PR can merge with no CI guarantee. Run /github-workflow:setup harden to wire up the gate."
       fi
+    fi
+    nopipe=$(grep -E 'bypass-ci-when-no-pipeline' "$path" 2>/dev/null | grep -oiE 'true|false' | head -1)
+    wfcount=$(gh api "repos/$slug/actions/workflows" --jq '[.workflows[] | select(.state == "active")] | length' 2>/dev/null)
+    if [ "$wfcount" = "0" ]; then
+      if [ "$nopipe" = "true" ]; then
+        echo "OK review-auto-merge-nopipeline: no active GitHub Actions workflows, and bypass-ci-when-no-pipeline=true — approved PRs merge on the local quality gate"
+      else
+        echo "WARNING review-auto-merge-nopipeline: this repo has no active GitHub Actions workflows, so its PRs never report a check, and bypass-ci-when-no-pipeline is not true — every approved PR will pause at the no-checks guard and need a human or --bypass-ci. Set it true in $path if this project's CI is not visible to GitHub."
+      fi
+    elif [ -n "$wfcount" ] && [ "$nopipe" = "true" ]; then
+      echo "WARNING review-auto-merge-nopipeline: bypass-ci-when-no-pipeline=true but this repo has $wfcount active workflow(s), and the setting requires zero — it can never apply and is ignored. Did you mean bypass-ci-on-billing-failure?"
     fi
   fi
 elif [ -n "$automerge" ]; then

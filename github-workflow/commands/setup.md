@@ -534,6 +534,19 @@ PR reviews. If yes:
      being created at all, not only one that runs and fails; in that case the
      merge also requires the project's quality gate to have passed locally. It
      is the persistent, per-project form of the one-off `--bypass-ci` flag.
+   - Ask, **only if auto-merge was enabled and the repo has zero active
+     GitHub Actions workflows** (count them first — the question is
+     meaningless otherwise): its PRs will never report a check, so should an
+     approved PR merge anyway, on the strength of the local quality gate?
+     Default **no**. Stored as `bypass-ci-when-no-pipeline` in
+     `docs/review.config.md` — `true` merges an approved PR only when the
+     rollup is completely empty, the repo really has no active workflows, and
+     the project's quality gate passed locally on that SHA. Any check at all,
+     in any state, is gated normally. This is the setting for a project whose
+     CI lives where GitHub cannot see it (Buildkite, Jenkins, CircleCI) as
+     much as for one with no CI; left `false`, every approved PR on such a
+     repo pauses at the no-checks guard. It is mutually exclusive with
+     `bypass-ci-on-billing-failure`, which needs workflows to exist.
    - Create the labels on the GitHub repo
    - Write `docs/review.config.md`
 3. If the user declines, note that the code-review skill will prompt

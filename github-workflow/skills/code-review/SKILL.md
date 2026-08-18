@@ -673,7 +673,8 @@ verdict the review is already complete at Step 10. Load
 conditions (verdict Approved, `review.config.md` Auto-Merge on Approval
 `enabled`, not read-only), handles `require-ci-before-merge`, the
 `--bypass-ci` override (pass `$ARGUMENTS.bypass-ci` through when set) and
-`review.config.md`'s `bypass-ci-on-billing-failure`, and drives the PR to
+`review.config.md`'s `bypass-ci-on-billing-failure` and
+`bypass-ci-when-no-pipeline`, and drives the PR to
 merged — resolving conflicts, fixing or filing failing checks, and
 squash-merging or enqueuing `--auto`. Merging a PR is otherwise forbidden
 (see Rules); this is the one sanctioned merge. On success it reports
@@ -761,9 +762,9 @@ Rationale files (maintainers only — not read at runtime):
 
 - Never use `gh pr review --approve`. Always use `gh pr comment`.
 - **Do not merge a PR** except the one sanctioned auto-merge in Step 11, and
-  only under the conditions and CI-gate/`--bypass-ci`/
-  `bypass-ci-on-billing-failure` rules stated once in
-  `references/auto-merge.md` (off by default). Never merge in read-only mode.
+  only under the conditions and the CI-gate rules — `--bypass-ci`,
+  `bypass-ci-on-billing-failure`, `bypass-ci-when-no-pipeline` — stated
+  once in `references/auto-merge.md` (off by default). Never merge in read-only mode.
   That reference has one other sanctioned caller, named in it: the `execute`
   skill's Phase 10, which merges the PR its own run built and had reviewed,
   under the same setting and the same conditions. This rule governs this

@@ -26,9 +26,9 @@ Approval section. Absent ⇒ `false`. It takes three values:
 - **`true`** — the skill must see a **green CI gate** before it merges: a
   PR with no checks at all, or with a failing check it cannot fix, is
   **paused**, not merged. An absolute gate, even on a repo with no
-  pipeline — the one thing that can satisfy it without green checks is
-  `bypass-ci-on-billing-failure` below, and only against the evidence
-  step 3a demands.
+  pipeline — the only things that can satisfy it without green checks are
+  `bypass-ci-on-billing-failure` and `bypass-ci-when-no-pipeline` below,
+  and only against the evidence steps 3a and 3b demand.
 - **`if-present`** — gate on CI **only when CI exists**: a PR whose head
   SHA has checks must see them green (a red check it cannot fix pauses).
   A PR with **no checks at all** is handled by the no-checks guard in
@@ -64,6 +64,21 @@ Unlike `--bypass-ci` it stays narrow: a genuine red check is still fixed or
 filed, and an empty rollup is bypassed only against evidence. Handled in
 **step 3a**, which overrides the no-checks guard for every
 `require-ci-before-merge` value.
+
+Also read **`bypass-ci-when-no-pipeline`** from the same Auto-Merge on
+Approval section. Absent ⇒ `false`. When `true`, it is a **persistent,
+absent-pipeline-scoped** form of `--bypass-ci`, for a project whose CI is
+permanently invisible to GitHub — no pipeline at all, or one on a system
+that never posts a status back (Buildkite, Jenkins, CircleCI). There an
+empty rollup is not a transient unknown to wait out but the steady state of
+every PR, so without this setting each autonomous run stops at the no-checks
+guard and only a human, or `--bypass-ci` re-passed every time, can land the
+work. It is **narrower** than `--bypass-ci`, not broader: it applies only to
+a rollup with **no checks in it at all**, and only against evidence. Handled
+in **step 3b**, which like 3a overrides the no-checks guard for every
+`require-ci-before-merge` value. The two config bypasses are mutually
+exclusive by construction: 3a-ii requires at least one active workflow, 3b
+requires zero.
 
 This is opt-in and **off by default**. Merging a PR is otherwise
 forbidden (see Rules); this is the one sanctioned merge, and only under
@@ -225,6 +240,40 @@ leave `approved` and exit. The fallbacks below say where.
    Anything else (no checks failing, or the three conditions not met) → fall
    through to the normal rollup handling below.
 
+   **3b — a project with no GitHub-visible pipeline (config bypass).** If
+   neither path above merged and `review.config.md`'s
+   `bypass-ci-when-no-pipeline` is `true`, an empty rollup may be this
+   project's permanent condition rather than an unknown. Bypass it only when
+   **all three** hold:
+
+   1. **The rollup is genuinely empty** — no checks at all on the head SHA
+      (`gh pr checks <number> --repo <org>/<repo>`, if step 3a did not read
+      it). Any check present, in any state → the setting does not apply;
+      fall through. A red check is still red.
+   2. **The repo has no active workflows** — step 3a-ii's call, read for the
+      opposite outcome:
+      ```bash
+      gh api "repos/<org>/<repo>/actions/workflows" \
+        --jq '[.workflows[] | select(.state == "active")] | length'
+      ```
+      Zero → no GitHub-hosted pipeline exists, so no run was ever coming.
+      Non-zero → workflows exist and should have produced a run; that is
+      3a-ii's territory or a real problem. Fall through.
+   3. **The change was verified locally** — 3a-ii's third condition, for a
+      stronger reason: no remote proof exists for this project at all, so
+      local proof is the only thing between an approval and a merge. An
+      absent `.claude/gate-failed.flag` is that proof for the `execute`
+      caller; a review session runs the `ClaudeProject.md` gate now and sees
+      it green. Red, or unrunnable here → do **not** bypass; pause per the
+      no-checks guard.
+
+   All three → treat the CI gate as satisfied and go to **step 4's immediate
+   path** (`--squash --delete-branch`, never `--auto`, which would wait for
+   checks that are never coming). Append to the review comment: "Merged with
+   no CI checks: this project has no GitHub-visible pipeline; bypassed per
+   `bypass-ci-when-no-pipeline`, with the local quality gate green." Never
+   bypasses a merge **conflict** — step 2 already ran.
+
    Otherwise, read the required-check rollup:
    ```bash
    gh pr checks <number> --repo <org>/<repo> --required
@@ -273,10 +322,11 @@ leave `approved` and exit. The fallbacks below say where.
        CircleCI, Jenkins, …) where the gate cannot see it. Never treat
        an empty rollup as green.
 
-       **Step 3a-ii ran before this guard, for every value below.** If
-       `bypass-ci-on-billing-failure` is `true` and its conditions held, the
-       merge already happened and you never reach here; what follows is the
-       path for an empty rollup a billing failure does not explain:
+       **Steps 3a-ii and 3b ran before this guard, for every value below.**
+       If `bypass-ci-on-billing-failure` or `bypass-ci-when-no-pipeline` is
+       `true` and its conditions held, the merge already happened and you
+       never reach here; what follows is the path for an empty rollup that
+       neither setting explains:
        - **`true`** → **pause** (strictest): post a one-line
          comment "auto-merge paused: require-ci-before-merge is set but
          no CI checks are configured", leave `approved`, and exit. Never
@@ -288,10 +338,12 @@ leave `approved` and exit. The fallbacks below say where.
          anyway?" Merge (step 4, immediate path) only on an explicit yes.
          In an autonomous session (no user to ask), do **not** merge:
          post a one-line comment ("auto-merge paused: no CI checks
-         reported — CI status unknown; merge manually or re-run with
-         `--bypass-ci`"), leave `approved`, and exit. Only the explicit
-         `--bypass-ci` override (top of this step) treats absent checks
-         as satisfied.
+         reported — CI status unknown; merge manually, re-run with
+         `--bypass-ci`, or set `bypass-ci-when-no-pipeline` if this
+         project has no GitHub-visible pipeline"), leave `approved`, and
+         exit. Absent checks are treated as satisfied only by the explicit
+         `--bypass-ci` override (top of this step), or by a config bypass
+         whose evidence held (steps 3a-ii and 3b).
      - Checks exist and `require-ci-before-merge` is **`false`**
        (default) → no green-CI requirement: if you pushed nothing in
        steps 2–3, merge now (step 4, immediate path) regardless of the

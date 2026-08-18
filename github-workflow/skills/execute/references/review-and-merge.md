@@ -258,15 +258,20 @@ post-merge`. Read it with these substitutions:
   Nothing about the CI gate changes for this caller.
 - `--bypass-ci` is set for this run only if the invocation passed it
   (`test -f .claude/bypass-ci.flag`); otherwise treat it as absent. When a
-  PR reports **no checks at all**, its step 3a-ii decides first: where the
-  project set `bypass-ci-on-billing-failure: true` and Actions provably could
-  not run, the merge proceeds on the local quality gate. Satisfy that step's
-  third condition from Phase 5 — an absent `.claude/gate-failed.flag` **is**
-  the green local gate, so read the flag rather than re-run the suite. Failing
-  that, CI status is unknown and this run is autonomous: do not ask the user,
-  and do not merge. Post the one-line comment that guard specifies, leave the
-  PR approved, and report it as approved but unmerged. An operator who knows
-  the project's CI runs where GitHub cannot see it re-runs with `--bypass-ci`.
+  PR reports **no checks at all**, its steps 3a-ii and 3b decide first, and
+  which of them can apply is settled by whether the repo has active
+  workflows: 3a-ii covers a project whose pipeline exists but was stopped by
+  Actions billing (`bypass-ci-on-billing-failure: true`), and 3b covers a
+  project that has no GitHub-visible pipeline at all
+  (`bypass-ci-when-no-pipeline: true`). Either way the merge proceeds on the
+  local quality gate, and either way Phase 5 already produced it: an absent
+  `.claude/gate-failed.flag` **is** the green local gate, so read the flag
+  rather than re-run the suite. Failing both, CI status is unknown and this
+  run is autonomous: do not ask the user, and do not merge. Post the one-line
+  comment that guard specifies, leave the PR approved, and report it as
+  approved but unmerged. An operator whose project has no GitHub-visible
+  pipeline sets `bypass-ci-when-no-pipeline` once instead of re-running with
+  `--bypass-ci` every time.
 - Where it refers to the SHA recorded when the branch was checked out (its
   step 1 calls this "the SHA you reviewed", recorded at code-review's Step
   3), use the head SHA you recorded in Phase 8 or Phase 9. Where it refers
