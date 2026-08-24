@@ -224,46 +224,104 @@ For any deleted function, class, type, or export:
 
 ## Step 6 — Report
 
-Present findings in a structured report.
+Present the findings as a review a colleague would write on the pull
+request, not as an audit log.
 
-### Feature Summary
+### How to write a finding
 
-One paragraph: what the feature does, which modules it touches, and the
-overall verdict (clean / issues found).
+Every finding is a short comment addressed to the person who wrote the
+code. Keep it to a few sentences, in this shape:
 
-### Containment
+1. **Say what the code does**, in one plain sentence, naming the exact
+   method, field, or file involved and what it does. Describe the
+   mechanics you can see, not a judgement about them.
+2. **Say what follows from that**, in the next sentence. If you cannot
+   confirm the consequence from the code, phrase it conditionally
+   ("if there is anything downstream that ...") rather than asserting it.
+3. **End with a question or a concrete list.** Where the right answer
+   depends on intent you cannot read from the code, ask the author
+   directly. Where the gap is plainly a gap, list the specific cases you
+   think are missing.
 
-| Finding | Severity | File | Detail |
-|---------|----------|------|--------|
-| ... | Critical/Warning/Info | path:line | ... |
+Rules for the voice:
 
-### Implementation Quality
+- Ask real questions and leave them open. "Is this intentional, or
+  should it go through the full pipeline?" is a question. "This should
+  go through the full pipeline" is an instruction, and you usually do
+  not have enough context to give one.
+- Keep the uncertainty that is actually there. "I think we would
+  probably want tests for ..." is honest when you are proposing, not
+  confirming. Do not upgrade it to "this must have tests".
+- Name things exactly as they appear in the code, in backticks, and say
+  what each one does the first time it appears. The reader may not know
+  this codebase.
+- Be specific about what is missing. A list of named cases is useful.
+  "Test coverage is insufficient" is not.
+- No severity language in the prose, no restating the finding at the end
+  of it, and no closing line that adds nothing. Stop once the point and
+  the question are clear.
+- Follow `_shared/wording-standard.md` and avoid everything in
+  `_shared/banned-patterns.md`.
 
-| Finding | Severity | File | Detail |
-|---------|----------|------|--------|
-| ... | Critical/Warning/Info | path:line | ... |
+**Example of a finding that raises a possible side effect:**
 
-### Downstream Side Effects
+> The sync sets `StatusId` directly on the entity and calls
+> `SaveChangesAsync` on the database context, so the change is written
+> straight to storage. If anything downstream reacts to a support
+> request being resolved (notifications, monitoring updates, any domain
+> events), none of that fires through this path.
+>
+> Is this intentional, or should it go through the full pipeline?
 
-| Finding | Severity | Affected Consumer | Detail |
-|---------|----------|-------------------|--------|
-| ... | Critical/Warning/Info | path:line | ... |
+**Example of a finding that reports a gap:**
 
-### Acceptance Criteria Check
+> There are no tests covering `SyncSupportRequestsAsync`, which pulls
+> open requests and updates them, or `MapDevOpsStateToStatus`, which
+> translates the external state name into a local status value.
+>
+> I think we would probably want tests for:
+>
+> - No open requests, so the method exits early.
+> - Completed work maps across correctly.
+> - A `closed` state maps to `ManuallyResolved`.
+> - An unknown state leaves the status unchanged.
+> - A missing work item is skipped rather than throwing.
+> - The decimal conversion from the external field value.
 
-For each criterion from the story (or inferred scope):
-- [ ] Criterion — Met / Not met / Partially met (detail)
+### Report structure
 
-### Fix Plan
+**Feature summary.** One paragraph: what the feature does, which parts
+of the system it touches, and whether it looks clean or has issues worth
+resolving before merge.
 
-For every Critical and Warning finding, provide:
+**Findings**, grouped under `Containment`, `Implementation Quality`, and
+`Downstream Side Effects`. Write each one as described above, under a
+heading that carries the location and how much it matters:
 
-1. **What to fix**: the specific file, line, and issue
-2. **How to fix it**: the concrete change needed
-3. **Why**: what breaks or degrades if left unfixed
-4. **Effort**: estimated complexity (trivial / small / medium)
+```
+#### `src/sync/SupportRequestSync.cs:42` (Blocking)
+```
 
-Order the fix plan by severity, then by dependency (fixes that unblock
-other fixes come first).
+Use `Blocking` for something that is wrong or will break a consumer,
+`Worth resolving` for something that should probably change before
+merge, and `Note` for an observation the author may reasonably decide to
+leave. Severity belongs in the heading, not in the sentences.
 
-If no issues are found, say so clearly in one sentence.
+Skip a group entirely when it has no findings. Do not write a heading
+followed by "no issues found".
+
+**Acceptance criteria.** For each criterion from the story, or from the
+scope you inferred, say whether it is met, not met, or partly met, and
+what is missing in the last two cases.
+
+**What to do next.** For every Blocking and Worth-resolving finding, in
+severity order and with fixes that unblock other fixes first:
+
+1. The file and line, and what needs to change.
+2. What breaks or degrades if it stays as it is.
+3. Rough effort: trivial, small, or medium.
+
+Where a finding ended in a question rather than a proposed fix, say that
+the next step is an answer from the author, and repeat the question.
+
+If nothing needs resolving, say so in one sentence and stop.
