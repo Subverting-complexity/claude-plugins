@@ -268,3 +268,83 @@ Order the fix plan by severity, then by dependency (fixes that unblock
 other fixes come first).
 
 If no issues are found, say so clearly in one sentence.
+
+---
+
+## Step 7 — Flag for the PR / Feature Creator
+
+Produce a second, shorter deliverable alongside the report: the findings
+worth putting directly in front of the person who wrote the code, in the
+form they'd actually receive as a PR comment.
+
+### What qualifies
+
+Pull only from Critical and Warning findings, and only where a specific
+person acting on it would change the outcome — a real bug, a data-loss
+or data-integrity risk, a missing error/failure path, an inconsistency
+that will confuse the next reader, or a completeness gap against the
+acceptance criteria. Leave out anything that's a matter of taste,
+already covered elsewhere, or too minor to justify interrupting someone
+with it. When in doubt, ask whether a reviewer would actually leave this
+comment on the PR — if not, it doesn't belong here.
+
+If nothing clears that bar, say so in one sentence and skip the rest of
+this step.
+
+### Format
+
+One entry per finding, in this exact shape:
+
+```
+<File name>
+<full file path>
+<line number>
+<comment addressed directly to the PR creator>
+```
+
+Do not include the code snippet itself — the PR creator can already see
+their own diff. The comment is the whole value-add.
+
+### Voice
+
+Write each comment the way a colleague leaves it directly on the line in
+a PR review: state what's wrong or what's missing, then explain the
+concrete consequence if it's left as is. Address the PR creator directly
+and specifically — name the exact behavior, not a vague category of
+problem.
+
+- Lead with the issue in one direct sentence, not a hedge or a question
+  framed as a suggestion.
+- Explain the consequence: what breaks, what silently degrades, or what
+  a user or the next developer will hit.
+- If there's an existing pattern elsewhere in the same file or feature
+  that already handles this correctly, point to it by name so the fix
+  is obvious.
+- End with a direct question only when you genuinely want the PR
+  creator to make a call (e.g. "Should this have an else branch that
+  notifies the user?") — don't manufacture a question when the fix is
+  already clear.
+- Keep it to two or three sentences. This is a review comment, not the
+  fix plan entry.
+
+For example, in the same voice as a real review comment (genericized,
+not tied to any specific codebase):
+
+> Inconsistent null handling here. A few lines up this same check goes
+> through the `.HasValue` / `.Value` pair, but this comparison uses the
+> nullable value directly. Both work today because of the guard above
+> it, but if that guard ever moves, this line evaluates true when the
+> value is actually null.
+
+> No early return when the two values already match. As written, this
+> still persists the record and stamps a new modified date/user even
+> though nothing changed. Worth adding a guard at the top so an
+> unrelated write doesn't get logged as a real change.
+
+> Should this have an else branch here? Right now, if the save fails,
+> the UI just goes quiet. The user has no way to tell whether it worked.
+
+Before presenting this section, invoke the `/local-workflow:tone` skill
+on the drafted comments so they read in the user's own voice rather than
+generated review-bot phrasing. Do this for every comment, even a single
+one — don't skip it because the batch is small.
