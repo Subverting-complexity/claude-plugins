@@ -71,3 +71,36 @@ giving up, because the common cause is the `Reviewer` plugin agent type being
 unavailable rather than spawning being impossible, and a general-purpose agent
 in a fresh context is fully independent. The inline self-review is the last
 resort, not the first fallback.
+
+## Why in-scope findings are fixed rather than filed
+
+Filing was once the answer to everything a review round turned up. Phase 9
+split findings into "objectively correct answer" and "needs human judgment"
+and said nothing about where the problem lived, so a non-blocking defect in
+the run's own diff was as easy to file as to fix. That reads as diligent —
+nothing is dropped, everything is tracked — and it is the wrong trade in
+three ways.
+
+It merges the defect. An issue on the board is not a fix; the pull request
+still lands with the problem in it, and the board carries a promise that
+somebody will come back. Multiply that by every run and the backlog fills
+with a workflow's own leftovers, each one costing another pick, branch,
+review and merge to settle what one edit on an already-checked-out branch
+would have settled.
+
+It is also the cheapest possible moment to fix. The branch is checked out,
+the context that wrote the code is live, the reviewers have just read it,
+and the pull request has not merged. Every one of those advantages is gone
+by the time a filed issue is picked up.
+
+The two exceptions are narrow for the same reason. A question only a person
+can answer cannot be fixed by anyone in this run whatever the scope, so it
+is filed and the pull request is held open on that verdict rather than
+merged over it. Scope deliberately left out of a too-large story was never
+a defect: it is the remainder of the work, and filing it is how the next run
+finds it.
+
+Out-of-scope problems keep going to the board because fixing them here would
+be the opposite mistake. A pre-existing bug repaired mid-review widens a diff
+the reviewers have already read, and the wider the diff the less the review
+means.

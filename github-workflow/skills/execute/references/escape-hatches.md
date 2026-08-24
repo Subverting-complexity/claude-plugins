@@ -44,19 +44,25 @@ with details (it releases the claim for you), then run **Exit cleanup**
 (`references/exit-cleanup.md`; the claim release is a no-op at this
 point). Then pick the next story.
 
-## Problem found
+## Problem found (unrelated to this story)
 
-If you detect any problem during development that you are not fixing in
-this story — an unrelated bug, a security flaw, a layering/architecture
-violation, or tech debt — file it to the board so it is fixed
-automatically. Run `/github-workflow:report-issue` (autonomous — do not
-pause for confirmation). **No human approval is needed**: it classifies
-the problem, applies the **actual issue type** (bug, security,
-architecture, or tech debt) and priority, sets `status-ready`, and places
-it on the board so the normal pickup flow fixes it. Do not fix it inline
-unless it is trivial and within the same scope. When you report what you
-did this session, name each filed item by its actual type and number (e.g.
-"Filed bug #45", "Filed tech-debt #46").
+This hatch is for problems **outside** the change this run is making, and
+`SKILL.md`'s **Fix in scope, file out of scope** rule decides which those
+are before this hatch does: a problem in this story's own diff is fixed here
+on the branch, whether it surfaced during the build or in a review round,
+and never filed.
+
+What reaches this hatch is the rest: a pre-existing bug in code you did not
+touch, a security flaw, a layering or architecture violation, or tech debt
+belonging to other work. File it to the board so it is fixed automatically.
+Run `/github-workflow:report-issue` (autonomous — do not pause for
+confirmation). **No human approval is needed**: it classifies the problem,
+applies the **actual issue type** (bug, security, architecture, or tech
+debt) and priority, sets `status-ready`, and places it on the board so the
+normal pickup flow fixes it. Do not fix it inline unless it is trivial and
+within the same scope — an unrelated fix widens the diff the reviewers have
+to judge. When you report what you did this session, name each filed item by
+its actual type and number (e.g. "Filed bug #45", "Filed tech-debt #46").
 
 ## Dependency
 

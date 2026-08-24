@@ -80,13 +80,21 @@ jobs:
       # exists. The loose one keeps the whole run bounded. Raising the loose
       # budget alone would have let the build window regrow ~9k tokens
       # unnoticed. Measured 34077 and 44113; budgets are ~2.0% above each.
-      - name: Check execute build-window footprint (budget 34800 tokens)
+      #
+      # Build window recalibrated from 34800: SKILL.md gained the cross-phase
+      # "Fix in scope, file out of scope" rule, which decides what happens to
+      # every problem the run finds and so has to sit in this window rather
+      # than behind a reference that only loads once a PR exists. Its
+      # reasoning went to execute-rationale.md, which this gate skips, so the
+      # window carries the rule alone. Measured 34904; 35600 is ~2.0%,
+      # matching the convention above.
+      - name: Check execute build-window footprint (budget 35600 tokens)
         shell: bash
         run: |
           bash count-tokens.sh github-workflow/skills/execute/SKILL.md \
             --exclude github-workflow/skills/execute/references/review-and-merge.md \
             --exclude github-workflow/skills/code-review/references/auto-merge.md \
-            --budget 34800
+            --budget 35600
 
       # Recalibrated from 45900: auto-merge.md's step 3a gained the branch for
       # an empty check rollup (the usual symptom of exhausted Actions billing,
@@ -104,9 +112,17 @@ jobs:
       # only explains the setting went to review.config.template.md, which no
       # skill cites, so this window carries the decision procedure alone.
       # Measured 47058; 48000 is ~2.0%, matching the convention above.
-      - name: Check execute whole-run footprint (budget 48000 tokens)
+      #
+      # Recalibrated again from 48000: Phase 9 rewrote its fix/file steps
+      # around the "Fix in scope, file out of scope" rule, Phase 8 now asks
+      # each reviewer which side of the diff a finding sits on, and Phase 10
+      # says why the auto-merge fallbacks that file are not exceptions to it.
+      # That is routing every review finding, not restatement, and the
+      # reasoning went to execute-rationale.md rather than into this window.
+      # Measured 48376; 49400 is ~2.1%, matching the convention above.
+      - name: Check execute whole-run footprint (budget 49400 tokens)
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 48000
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 49400
 
       # Recalibrated from 37000: the pinned-PR path, the read-only overrides,
       # and the sanctioned-caller carve-out in auto-merge.md are new. Measured

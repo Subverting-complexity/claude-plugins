@@ -54,9 +54,11 @@ declare -A BODY_OVERRIDE=(
     ["github-workflow/skills/code-review/SKILL.md"]=771
     # Story orchestrator, the other legitimately large one: it now covers 11
     # phases (pick through merge) rather than stopping at the PR, and the
-    # post-PR detail already lives in references/. Body is 533 lines, 555 is
-    # ~4.1% headroom, matching the calibration above.
-    ["github-workflow/skills/execute/SKILL.md"]=555
+    # post-PR detail already lives in references/. Body is 576 lines after the
+    # cross-phase "Fix in scope, file out of scope" rule, which has to sit in
+    # the hot path because it governs the build and every review round; 600 is
+    # ~4.2% headroom, matching the calibration above.
+    ["github-workflow/skills/execute/SKILL.md"]=600
 )
 
 # --- Helpers ----------------------------------------------------------------

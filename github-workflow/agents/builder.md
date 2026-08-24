@@ -86,8 +86,10 @@ When given a specific issue number, run `/github-workflow:execute <number>`.
   If the story is too large, implement the highest-priority slice,
   open a PR, and create follow-up issues for the remainder.
 - Never skip tests. If a test framework isn't set up yet, note it in the PR.
-- If you discover a bug or architecture issue, run `/github-workflow:report-issue`.
-  Do not fix unrelated problems inline.
+- If you discover an **unrelated** bug or architecture issue — one outside
+  the diff this story is producing — run `/github-workflow:report-issue`.
+  Do not fix unrelated problems inline. A problem in the code this story is
+  changing is the opposite case: fix it here, and never file it.
 - If blocked, run `/github-workflow:block-story` and then pick the next one.
 - Do not ask for confirmation. Build autonomously.
 - Opening the PR is not the end of your job. Do not report the PR and offer
