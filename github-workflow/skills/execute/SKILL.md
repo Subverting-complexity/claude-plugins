@@ -254,21 +254,20 @@ that files issues for findings).
 One rule governs every problem this run finds, from the first line of the
 build to the last review round:
 
-- **In this pull request's own diff, or in the story it closes** — fix it
-  here, on this branch, before the PR merges. Never file it. A defect in the
-  feature this run is building is this run's work to finish; filing it hands
-  the session's own mistake to a future one and grows the board for nothing.
-- **Anywhere else** — a pre-existing bug in code this PR does not touch, a
-  security or architecture problem noticed in passing, tech debt belonging
-  to other work — file it with `/github-workflow:report-issue` and carry on.
-  Do not fix it inline; that widens the diff the reviewers have to judge.
+- **In this PR's own diff, or in the story it closes** — fix it here, on
+  this branch, before the PR merges. Never file it: a defect in the feature
+  this run is building is this run's work to finish.
+- **Anywhere else** — a pre-existing bug in untouched code, a security or
+  architecture problem noticed in passing, tech debt belonging to other work
+  — file it with `/github-workflow:report-issue` and carry on. Do not fix it
+  inline; that widens the diff the reviewers have to judge.
 
-Two things stay filed. A finding that genuinely needs a person (an ambiguous
-requirement, an architectural choice with several defensible answers) is
-filed as the **question**, with the PR left open carrying the verdict that
-says so — never guessed at, never quietly dropped. And scope deliberately
-deferred from a story too large for one session is remaining work rather
-than a review finding, so it is filed as a follow-up.
+Two exceptions stay filed: a finding only a person can settle (an ambiguous
+requirement, an architectural choice with several defensible answers), filed
+as the **question** with the PR left open on that verdict; and scope
+deliberately deferred from a too-large story, which is remaining work rather
+than a review finding. (why: `references/execute-rationale.md` — not read at
+runtime.)
 
 ---
 

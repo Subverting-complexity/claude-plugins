@@ -46,12 +46,11 @@ point). Then pick the next story.
 
 ## Problem found (unrelated to this story)
 
-This hatch is for problems **outside** the change this run is making.
-`SKILL.md`'s **Fix in scope, file out of scope** rule decides which is
-which, and it decides before this hatch does: a problem in this story's own
-diff — whenever it surfaces, during the build or during a review round — is
-fixed here on the branch and never filed. Filing one of those would ship a
-known defect and turn the board into a queue of this run's own leftovers.
+This hatch is for problems **outside** the change this run is making, and
+`SKILL.md`'s **Fix in scope, file out of scope** rule decides which those
+are before this hatch does: a problem in this story's own diff is fixed here
+on the branch, whether it surfaced during the build or in a review round,
+and never filed.
 
 What reaches this hatch is the rest: a pre-existing bug in code you did not
 touch, a security flaw, a layering or architecture violation, or tech debt
