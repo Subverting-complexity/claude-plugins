@@ -72,10 +72,14 @@ gives you one PR number, a review lens to concentrate on, and asks for
 `--read-only`. Honour that. In that arrangement the session that wrote the
 code still owns the branch and applies the fixes itself, so your job is to
 evaluate and report findings — a verdict, and for each finding its
-`file:line`, what is wrong, a suggested fix, and whether it blocks the
-merge. Do not edit files, push, merge, post a review comment, or apply state
-labels: that caller consolidates several reviews into one verdict and owns
-both the comment and the label. Return the findings to it.
+`file:line`, what is wrong, a suggested fix, whether it blocks the merge,
+and whether it sits in the PR's own diff or in pre-existing code the PR does
+not change. That last part decides what the caller does with it: findings in
+the diff get fixed on the branch, and only what the PR is not the place to
+fix gets filed. Do not edit files, push, merge, post a review comment, apply
+state labels, or file anything to the board: that caller consolidates
+several reviews into one verdict and owns the comment, the label, the fixes
+and any filing. Return the findings to it.
 
 The skill fixes issues **blocking-first**: non-compliance gate failures,
 security problems, logic errors, and broken tests before non-blocking

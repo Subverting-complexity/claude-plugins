@@ -249,6 +249,29 @@ that files issues for findings).
 
 ---
 
+## Fix in scope, file out of scope
+
+One rule governs every problem this run finds, from the first line of the
+build to the last review round:
+
+- **In this pull request's own diff, or in the story it closes** — fix it
+  here, on this branch, before the PR merges. Never file it. A defect in the
+  feature this run is building is this run's work to finish; filing it hands
+  the session's own mistake to a future one and grows the board for nothing.
+- **Anywhere else** — a pre-existing bug in code this PR does not touch, a
+  security or architecture problem noticed in passing, tech debt belonging
+  to other work — file it with `/github-workflow:report-issue` and carry on.
+  Do not fix it inline; that widens the diff the reviewers have to judge.
+
+Two things stay filed. A finding that genuinely needs a person (an ambiguous
+requirement, an architectural choice with several defensible answers) is
+filed as the **question**, with the PR left open carrying the verdict that
+says so — never guessed at, never quietly dropped. And scope deliberately
+deferred from a story too large for one session is remaining work rather
+than a review finding, so it is filed as a follow-up.
+
+---
+
 ## Exit cleanup
 
 Every exit path — successful finish, block, failure, timeout, rate-limit
@@ -554,9 +577,10 @@ follow it to the end of the run — same turn as Phase 7, no asking, no waiting
 on CI. Unlike merging, the review is **unconditional**. Phase 8 claims the PR, then spawns two review agents
 in parallel, each in a fresh context, to review it read-only — your session
 built this code and cannot judge it independently — and posts one
-consolidated verdict. Phase 9 fixes what they found, pushes, and re-reviews
-with a fresh agent, looping until the verdict is approved as far as the
-session budget allows. Phase 10 merges the PR and settles the linked issues.
+consolidated verdict. Phase 9 fixes what they found on this branch — a
+finding against this feature is repaired here, not filed as an issue for
+somebody else — then pushes and re-reviews with a fresh agent, looping until
+the verdict is approved as far as the session budget allows. Phase 10 merges the PR and settles the linked issues.
 
 **Merging is opt-in and off by default.** It runs only where
 `review.config.md` sets `Auto-Merge on Approval` to `enabled` — the same

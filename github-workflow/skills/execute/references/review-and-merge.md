@@ -12,6 +12,12 @@ story, so these three phases are as much part of the run as the build was.
 Every exit path still ends with **Exit cleanup**
 (`references/exit-cleanup.md`).
 
+`SKILL.md`'s **Fix in scope, file out of scope** rule governs all three
+phases, and it is what stops a review round turning into a pile of new board
+issues: a finding against this pull request's own diff is fixed here, and
+only a problem this PR is not the place to fix is filed. Each phase below
+says how that lands in its own steps.
+
 **Start immediately, and never on a condition.** **CI** does not gate this
 phase: a reviewer reads the diff, not the pipeline, and Phase 10 is where the
 merge waits on checks. Reviewing a PR whose checks are still queued is normal
@@ -68,8 +74,14 @@ build.
      sanctions this override for a caller that owns the verdict; say so
      explicitly in the prompt, because its default is to relabel.
    - What to return: the verdict, and every finding with its `file:line`,
-     a sentence on what is wrong, a suggested fix, and whether it blocks
-     the merge.
+     a sentence on what is wrong, a suggested fix, whether it blocks the
+     merge, and **whether it sits in this PR's diff or in pre-existing code
+     the PR does not change**. You need that last part to apply the
+     fix-in-scope rule in Phase 9 — the first kind you fix on this branch,
+     the second kind you file. Ask for the classification explicitly;
+     without it you have to re-derive it from the diff yourself. Neither
+     agent files anything either way: read-only mode never writes to the
+     board.
 
    **Read-only is not optional here.** You still own the branch, and a
    reviewer pushing to it while you hold it would collide with your own
@@ -142,15 +154,36 @@ it matters most, and the run ends with an approved PR it refuses to merge.
 
 Otherwise work through the findings on the branch you are already on:
 
-1. Fix every finding that has an objectively correct answer — a logic
-   error, a missing null check, a missing or wrong test, unhandled
-   failure on a new external call, dead code, a formatting violation.
-   Fix the blocking findings first, then the non-blocking ones.
-2. File anything that genuinely needs human judgment — an architectural
-   decision, an ambiguous requirement, a fix whose right shape is a
-   product question — to the board with `/github-workflow:report-issue`
-   (autonomous, `status-ready`, correct type, referencing this PR). Do not
-   guess at it, and do not drop it.
+1. **Fix, do not file, every finding against this PR's own diff or against
+   the story it closes, where the answer is objectively correct** — a logic
+   error, a missing null check, a missing or wrong test, unhandled failure on
+   a new external call, dead code, a formatting violation, an acceptance
+   criterion the change does not yet meet. The story's own requirements are
+   in scope whether or not the current diff touches them: a gap the reviewers
+   found there is work this run has not finished, not new work for the board.
+   Fix the blocking findings first, then the
+   non-blocking ones. A reviewer's finding against the feature this run just
+   built is the run's own unfinished work, and an issue filed in place of a
+   fix is that defect merged and rebadged as somebody else's backlog item.
+   Non-blocking is not a reason to file either: a small cleanup in a diff
+   you are already holding, on a branch you are already on, is cheaper to do
+   now than to schedule, review and merge separately later.
+2. **File only what this PR is not the place to fix.** Two kinds qualify,
+   and nothing else does:
+   - A finding in **pre-existing code that neither the diff touches nor the
+     story covers**. Fixing it here would widen a diff the reviewers have
+     already read, so file it
+     with `/github-workflow:report-issue` (autonomous, `status-ready`,
+     correct type, referencing this PR and the `file:line`) and leave the
+     branch alone.
+   - A finding that genuinely needs **human judgment** — an architectural
+     decision, an ambiguous requirement, a fix whose right shape is a
+     product question. File the question the same way. Do not guess at it,
+     and do not drop it. Unlike the first kind, this one also holds the PR:
+     see the Needs Discussion rule below.
+
+   If a finding is in the diff and you can fix it, fixing it is the outcome
+   this phase exists for. "It can be filed" is not a reason to file it.
 3. Re-run the quality gate from `ClaudeProject.md`, then commit and push.
    The same Phase 5 rule applies: if the gate is still red after a
    reasonable number of attempts, stop fixing, leave the PR unmerged, and
@@ -177,7 +210,9 @@ Otherwise work through the findings on the branch you are already on:
    rounds.
 
 A **Needs Discussion** verdict is the one case more rework cannot settle,
-because it means a reviewer found a question only a person can answer. Do
+because it means a reviewer found a question only a person can answer. It is
+the human-judgment exception in step 2, not a general licence to file:
+everything else the reviewers found in this diff was fixed in step 1. Do
 not loop on it: file the question to the board with
 `/github-workflow:report-issue`, leave the PR open carrying that verdict,
 say in your final report what has to be decided, run **Exit cleanup**, and
@@ -280,6 +315,14 @@ post-merge`. Read it with these substitutions:
 - Where it says to fix a failing check the way code-review's Step 7 does,
   apply Phase 9's fix discipline instead: fix what is objectively wrong,
   file what needs judgment.
+- Its fallbacks that **file** a conflict or a failing check stand as
+  written, and they do not contradict **Fix in scope, file out of scope**.
+  Each covers an in-scope problem this run genuinely cannot resolve — a
+  rebase whose resolution needs human judgment, or an infrastructure or
+  flaky failure originating outside the diff — and each leaves the PR open
+  and unmerged rather than filing the problem away and merging over it. A
+  check that fails **because of this PR's own diff** is not one of them: fix
+  it on the branch.
 - Where its step 5 refers to the final report format in code-review's
   `SKILL.md`, use the report described at the end of this file instead —
   execute never loads that file.
@@ -311,5 +354,8 @@ board's **Done** column. Report each settled issue by number and title.
 Then run **Exit cleanup** (`references/exit-cleanup.md`) as the final step,
 which releases the `pr-{pr_number}` claim, and report the run in full: the
 story implemented, the PR merged, what the reviewers found and what you
-changed in response, anything filed to the board, and the issues now
-closed.
+changed in response, anything filed to the board, and the issues now closed.
+Keep those last two apart in the report and say why each filed item was
+filed — unrelated to this PR, or an open question for a person. A run that
+fixed its review findings here and filed nothing is the ordinary outcome,
+not a gap in the report.
