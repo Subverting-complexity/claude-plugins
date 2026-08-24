@@ -570,23 +570,32 @@ def apply_in_progress(cfg, issue):
 
 # ── dependency validation ────────────────────────────────────────────────────
 
-def validate_issue(cfg, issue):
+def validate_issue(cfg, issue, siblings=()):
     """Validate a claimed issue. Returns (verdict, detail).
 
     verdict ∈ {'valid', 'blocked', 'resolved'}:
       blocked  → open dependencies (detail = list of open #s, or 'meta' on overflow)
       resolved → already closed by a merged PR (detail = pr number)
       valid    → ready to work
+
+    `siblings` are the other issues in a bulk set — stories being built in the
+    same commit series on the same branch. A dependency on one of those does
+    not block, because it is not unmerged work you cannot see; it is work this
+    same run is about to write. Everything else is unchanged, so a single-story
+    pick (no siblings) behaves exactly as before.
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     deps, overflow = wf_core.parse_dependencies(issue['body'])
     if overflow:
         return 'blocked', 'meta-issue (> %d dependencies)' % wf_core.DEP_LIMIT
-    open_deps = []
+    open_numbers = []
     for dep in deps:
+        if int(dep) in {int(s) for s in (siblings or ())}:
+            continue  # built alongside — no need to spend a call on its state
         ok, data, _ = gh_json(['issue', 'view', str(dep), '--repo', repo, '--json', 'state'])
         if ok and data and data.get('state', '').upper() == 'OPEN':
-            open_deps.append(dep)
+            open_numbers.append(dep)
+    open_deps = wf_core.blocking_dependencies(deps, open_numbers, siblings)
     if open_deps:
         return 'blocked', ', '.join('#%d' % d for d in open_deps)
     pr_number = merged_pr_closing(cfg, issue['number'])
@@ -916,7 +925,7 @@ def auto_ready_scan(cfg):
     return restored
 
 
-def claim_validate_walk(cfg, pool, backlog_mode):
+def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
     """Walk the ordered pool: claim the top, validate only that one, act.
 
     The single claim-first/validate-lazily loop shared by auto-pick and the
@@ -925,6 +934,10 @@ def claim_validate_walk(cfg, pool, backlog_mode):
     is returned to `status-blocked`, an already-resolved one is closed **and
     moved to Done**, and the claim is released in both cases before walking on.
     The first valid claim is returned as the selection.
+
+    `siblings` is passed straight to `validate_issue` — the other stories of a
+    bulk set, whose still-open state does not block a candidate that is being
+    built alongside them.
 
     Returns (selected_or_None, side_effects). Emits + exits on a hard claim
     error (no push access / remote failure), never on a lost claim.
@@ -942,7 +955,7 @@ def claim_validate_walk(cfg, pool, backlog_mode):
             side_effects.append({'issue': cand['number'], 'action': 'claim-lost'})
             continue
         apply_in_progress(cfg, cand)
-        verdict, detail = validate_issue(cfg, cand)
+        verdict, detail = validate_issue(cfg, cand, siblings)
         if verdict == 'blocked':
             mark_blocked(cfg, cand, detail)
             release_claim(target)
@@ -989,12 +1002,17 @@ def cmd_pick(args):
     if not cfg.get('org') or not cfg.get('repo'):
         emit('error', EXIT_ENV, reason='org/repo missing from config')
 
+    # Stories being built alongside this one on a shared branch (bulk-execute).
+    # A dependency on one of them is satisfied by this same run, so it does not
+    # block; every other open dependency still does.
+    siblings = [int(n) for n in (getattr(args, 'sibling', None) or [])]
+
     # Explicit target: skip selection/sort entirely and run the same claim +
     # validate machinery against the one named issue, so the explicit-number
     # path auto-closes an already-resolved story exactly like auto-pick does.
     if getattr(args, 'issue', None):
         cand = fetch_issue_candidate(cfg, args.issue)
-        selected, side_effects = claim_validate_walk(cfg, [cand], None)
+        selected, side_effects = claim_validate_walk(cfg, [cand], None, siblings)
         if not selected:
             emit('all-blocked', EXIT_ALL_BLOCKED,
                  reason='issue #%d is not workable (claimed away, blocked, or '
@@ -1030,7 +1048,7 @@ def cmd_pick(args):
 
     selected, side_effects = None, []
     if pool:
-        selected, side_effects = claim_validate_walk(cfg, pool, backlog_mode)
+        selected, side_effects = claim_validate_walk(cfg, pool, backlog_mode, siblings)
 
     if not selected:
         restored = auto_ready_scan(cfg)
@@ -1044,7 +1062,8 @@ def cmd_pick(args):
                                            project_map=cfg.get('labels', {}),
                                            type_map=type_map)
                 if pool:
-                    selected, more_effects = claim_validate_walk(cfg, pool, backlog_mode)
+                    selected, more_effects = claim_validate_walk(cfg, pool, backlog_mode,
+                                                                 siblings)
                     side_effects.extend(more_effects)
 
     if not selected and not pool:
@@ -1073,6 +1092,9 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode):
         'side_effects': side_effects,
         'checked_out': False,
     }
+    siblings = [int(n) for n in (getattr(args, 'sibling', None) or [])]
+    if siblings:
+        result['siblings'] = siblings
 
     if args.checkout:
         moved, board_msg = board_move_in_progress(cfg, selected['number'])
@@ -1080,14 +1102,100 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode):
         result['board_message'] = board_msg
         if not moved and board_msg != 'no board configured':
             eprint('wf: board move skipped — %s' % board_msg)
-        branch, checked_out, branch_msg = checkout_branch(cfg, selected)
-        result['branch'] = branch
-        result['checked_out'] = checked_out
-        result['branch_message'] = branch_msg
-        if not checked_out:
-            eprint('wf: %s' % branch_msg)
+        if getattr(args, 'no_branch', False):
+            # Bulk runs: every story in the set gets the claim, the marker and
+            # the board move, but they all share one branch the caller creates
+            # once. Branching per story here would give each its own.
+            result['branch'] = None
+            result['branch_message'] = 'branch skipped (--no-branch) — caller owns the branch'
+        else:
+            branch, checked_out, branch_msg = checkout_branch(cfg, selected)
+            result['branch'] = branch
+            result['checked_out'] = checked_out
+            result['branch_message'] = branch_msg
+            if not checked_out:
+                eprint('wf: %s' % branch_msg)
 
     emit('ok', EXIT_OK, **result)
+
+
+def cmd_candidates(args):
+    """List the ready pool in priority order, claiming nothing.
+
+    `pick` collapses select-claim-branch into one call, which is exactly right
+    when the caller wants *a* story. `bulk-execute` needs the opposite: it has
+    to see the pool before it can decide which two to five stories belong in
+    one pull request, and that decision is a judgement about relatedness that
+    no sort order can make. This command gives it the same filtered, sorted
+    pool `pick` would walk — ready gate, sprint narrowing, refinement and
+    agent-gating filters, mode filter, priority sort — and then stops. Nothing
+    is claimed, nothing is labelled, no board moves. The caller picks its set
+    and claims each member with `pick --issue`.
+
+    Bodies are truncated to `--body-chars` (0 for the whole body). The relevant
+    part for judging relatedness is the opening Context/Requirements, and a
+    full pool of untruncated bodies is a large read for a decision that does
+    not need it.
+    """
+    env_err = check_environment()
+    if env_err:
+        emit('error', EXIT_ENV, reason=env_err)
+
+    ok, cfg, err = load_config()
+    if not ok:
+        emit('error', EXIT_ENV, reason=err)
+    if not cfg.get('org') or not cfg.get('repo'):
+        emit('error', EXIT_ENV, reason='org/repo missing from config')
+
+    type_map = None
+    if args.mode != 'story' and cfg.get('type_capable'):
+        ok_t, type_map, t_err = fetch_native_types(cfg)
+        if not ok_t:
+            eprint('wf: native type query failed (%s); falling back to label filtering' % t_err)
+            type_map = None
+
+    gate = cfg.get('ready_gate', 'label')
+    if gate not in ('label', 'none', 'board-column', 'both'):
+        emit('unsupported', EXIT_UNSUPPORTED, reason="ready-gate %r not recognised" % gate)
+
+    ok, issues, err = assemble_candidates(cfg)
+    if not ok:
+        emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
+
+    backlog_mode, issues = narrow_to_sprint(cfg, issues)
+    pool = wf_core.select_pool(issues, mode=args.mode,
+                               agent_gating=cfg.get('agent_gating', 'disabled'),
+                               project_map=cfg.get('labels', {}),
+                               type_map=type_map)
+    if not pool:
+        emit('no-candidates', EXIT_NO_CANDIDATES,
+             reason='no ready, unassigned issues match', backlog_mode=backlog_mode)
+
+    total = len(pool)
+    if args.limit and args.limit > 0:
+        pool = pool[:args.limit]
+
+    listed = []
+    for cand in pool:
+        body = cand.get('body') or ''
+        truncated = False
+        if args.body_chars and args.body_chars > 0 and len(body) > args.body_chars:
+            body, truncated = body[:args.body_chars], True
+        deps, dep_overflow = wf_core.parse_dependencies(cand.get('body'))
+        listed.append({
+            'number': cand['number'],
+            'title': cand['title'],
+            'url': cand.get('url', ''),
+            'labels': cand.get('labels', []),
+            'milestone': cand.get('milestone'),
+            'body': body,
+            'body_truncated': truncated,
+            'dependencies': deps,
+            'dependency_overflow': dep_overflow,
+        })
+
+    emit('ok', EXIT_OK, mode=args.mode, backlog_mode=backlog_mode,
+         total=total, listed=len(listed), candidates=listed)
 
 
 def cmd_update_next(args):
@@ -1312,7 +1420,28 @@ def build_parser():
                            'already resolved it)')
     pick.add_argument('--checkout', action='store_true',
                       help='also move the board to In Progress and create/check out the branch')
+    pick.add_argument('--no-branch', action='store_true',
+                      help='with --checkout, move the board but do not create or check out '
+                           'a branch — for bulk runs where several stories share one branch '
+                           'the caller creates')
+    pick.add_argument('--sibling', type=int, action='append', default=None,
+                      help='an issue being built alongside this one on the same branch '
+                           '(repeatable); a dependency on one of them does not block the '
+                           'pick, because this run writes it too')
     pick.set_defaults(func=cmd_pick)
+
+    cand = sub.add_parser('candidates',
+                          help='list the ready pool in priority order without claiming '
+                               'anything (bulk-execute chooses its set from this)')
+    cand.add_argument('--mode', default='story', choices=['story', 'feature', 'maintenance'],
+                      help='selection mode, applied exactly as `pick` applies it')
+    cand.add_argument('--limit', type=int, default=25,
+                      help='maximum candidates to list, highest priority first (default 25; '
+                           '0 for all). `total` always reports the unclipped pool size')
+    cand.add_argument('--body-chars', type=int, default=600,
+                      help='truncate each body to this many characters (default 600; '
+                           '0 for the whole body)')
+    cand.set_defaults(func=cmd_candidates)
 
     pm = sub.add_parser('post-merge',
                         help='settle a merged PR: close any still-open linked issue and '

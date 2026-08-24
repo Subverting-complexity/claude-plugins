@@ -510,3 +510,84 @@ def branch_name(convention, number, title):
     for token in _SLUG_PLACEHOLDERS:
         out = out.replace(token, slug)
     return out
+
+
+# ── Bulk set planning (bulk-execute) ─────────────────────────────────────────
+# `bulk-execute` builds two to five related stories on one branch behind one
+# pull request. Two of its decisions are pure enough to live here rather than
+# in prose: which dependencies still block a story that is being built
+# alongside its own dependency, and what order the set has to be built in.
+
+BULK_MIN = 2
+BULK_MAX = 5
+
+
+def blocking_dependencies(deps, open_numbers, siblings=()):
+    """Return the dependencies that genuinely block a story.
+
+    A dependency blocks when it is still **open** and is **not** being built
+    alongside this story. That sibling carve-out is the whole reason a bulk
+    run can take a dependency chain: `execute`'s rule is "do not build on
+    unmerged work you cannot see", and a story landing in the same commit
+    series on the same branch is work you can see. Anything open and outside
+    the set still blocks, exactly as it does for a single-story run.
+
+    `deps` are the numbers parsed out of the issue body, `open_numbers` those
+    of them the caller found still open, and `siblings` the rest of the bulk
+    set. Returns the blocking numbers in the order they appear in `deps`.
+    """
+    open_set = {int(n) for n in (open_numbers or ())}
+    sib = {int(n) for n in (siblings or ())}
+    return [d for d in deps if int(d) in open_set and int(d) not in sib]
+
+
+def plan_bulk_order(stories, max_size=BULK_MAX):
+    """Trim a proposed bulk set to size and put it in build order.
+
+    `stories` is the proposed set in preference order, **lead first** — dicts
+    carrying `number` and `body`. Two passes:
+
+      1. **Trim** to `max_size`, keeping input order, so the lead and the
+         highest-preference siblings are the ones that survive.
+      2. **Order** so each story is built after every story in the set it
+         depends on. Stories that are ready at the same time keep their input
+         order, so a set with no internal dependencies comes back unchanged.
+
+    A dependency cycle inside the set cannot be ordered. Once no story is
+    ready, the ones still unplaced are appended in input order and reported,
+    so the caller can say so rather than silently choosing an order.
+
+    Returns (ordered, notes). `ordered` is the story dicts in build order.
+    `notes` is a list of {'number', 'reason'} with reason `'trimmed'` (cut by
+    `max_size`) or `'dependency-cycle'`. Enforcing `BULK_MIN` is the caller's
+    job: a set that shrinks to one story is a single-story run, not an error.
+    """
+    stories = list(stories or [])
+    notes = []
+    if max_size is not None and max_size > 0 and len(stories) > max_size:
+        for extra in stories[max_size:]:
+            notes.append({'number': extra['number'], 'reason': 'trimmed'})
+        stories = stories[:max_size]
+    if not stories:
+        return [], notes
+
+    present = {s['number'] for s in stories}
+    deps_in_set = {}
+    for story in stories:
+        parsed, _overflow = parse_dependencies(story.get('body'))
+        deps_in_set[story['number']] = {d for d in parsed
+                                        if d in present and d != story['number']}
+
+    ordered, placed, remaining = [], set(), list(stories)
+    while remaining:
+        ready = [s for s in remaining if deps_in_set[s['number']] <= placed]
+        if not ready:
+            for stuck in remaining:
+                notes.append({'number': stuck['number'], 'reason': 'dependency-cycle'})
+            ordered.extend(remaining)
+            break
+        for story in ready:
+            ordered.append(story)
+            placed.add(story['number'])
+        remaining = [s for s in remaining if s['number'] not in placed]
+    return ordered, notes

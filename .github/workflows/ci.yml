@@ -133,6 +133,22 @@ jobs:
       # Note the prior budget had already tightened to ~220 tokens of headroom
       # before this change, so the raise covers that drift as well as step 3b.
       # Measured 39910; 40700 is ~2.0%.
+      # bulk-execute is the third orchestrator. It gets the same two-window
+      # treatment as execute: a tight budget on the choose/plan/build window
+      # (its own SKILL.md plus set-selection.md and bulk-finish.md, minus the
+      # two references that only load once a PR exists) and a loose one on the
+      # whole run. It reuses execute's review-and-merge.md rather than
+      # restating it, which is why the loose budget lands close to execute's.
+      # Measured 32550 and 46022; budgets are ~2.0% above each.
+      - name: Check bulk-execute build-window footprint (budget 33200 tokens)
+        shell: bash
+        run: |
+          bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md             --exclude github-workflow/skills/execute/references/review-and-merge.md             --exclude github-workflow/skills/code-review/references/auto-merge.md             --budget 33200
+
+      - name: Check bulk-execute whole-run footprint (budget 46950 tokens)
+        shell: bash
+        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 46950
+
       - name: Check code-review skill footprint (budget 40700 tokens)
         shell: bash
         run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 40700
@@ -150,6 +166,9 @@ jobs:
         run: |
           echo "--- execute workflow ---"
           bash count-roundtrips.sh --workflow execute
+          echo ""
+          echo "--- bulk-execute workflow ---"
+          bash count-roundtrips.sh --workflow bulk-execute
           echo ""
           echo "--- pick workflow ---"
           bash count-roundtrips.sh --workflow pick

@@ -38,6 +38,7 @@ here. Do not "deduplicate" them into `_shared-skills/`.
 |-------|----------------|
 | `code-review` | github: full PR-lifecycle manager; local: lightweight diff reviewer. Divergence intentional — different products sharing a trigger |
 | `execute` (github) / `build` (local) | Different jobs, and now different names. github's `execute` runs the whole GitHub loop — claim a story, build it, open a PR, have it reviewed independently, merge it. local's `build` stops at a commit. They shared the name `execute` until the duplicate descriptions made the two indistinguishable to the picker; shared skills cite whichever applies via `{{EXECUTE_SKILL}}` |
+| `bulk-execute` (github) | github-only, and deliberately not a flag on `execute`. It needs GitHub issues, claims, a board and one PR closing several issues, none of which local-workflow has. It reuses `execute`'s review, merge and cleanup references rather than copying them |
 | `preflight` | github: board/label/auth validator; local: lightweight git/config checks |
 | `mobile-audit` | local-only by product decision |
 | `agents` | Never shared — least-privilege tool scoping is plugin-specific |
