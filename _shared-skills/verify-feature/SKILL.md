@@ -307,41 +307,53 @@ their own diff. The comment is the whole value-add.
 ### Voice
 
 Write each comment the way a colleague leaves it directly on the line in
-a PR review: state what's wrong or what's missing, then explain the
-concrete consequence if it's left as is. Address the PR creator directly
-and specifically — name the exact behavior, not a vague category of
-problem.
+a PR review, not the way an audit report describes a finding. Follow a
+three-part template, and keep every part short:
 
-- Lead with the issue in one direct sentence, not a hedge or a question
-  framed as a suggestion.
-- Explain the consequence: what breaks, what silently degrades, or what
-  a user or the next developer will hit.
-- If there's an existing pattern elsewhere in the same file or feature
-  that already handles this correctly, point to it by name so the fix
-  is obvious.
-- End with a direct question only when you genuinely want the PR
-  creator to make a call (e.g. "Should this have an else branch that
-  notifies the user?") — don't manufacture a question when the fix is
-  already clear.
-- Keep it to two or three sentences. This is a review comment, not the
-  fix plan entry.
+1. **Problem.** One plain sentence naming what's wrong. Point at the
+   specific thing (a method, a field, a missing branch) without
+   re-explaining how the surrounding system works.
+2. **Fix.** One plain sentence naming the change, if there's an obvious
+   one. Phrase it as a direct instruction or as a question, whichever
+   reads more naturally for that finding — don't force every comment
+   into the question form.
+3. **Why** — only when the consequence isn't already obvious from the
+   problem statement. One short clause, not a walkthrough.
 
-For example, in the same voice as a real review comment (genericized,
-not tied to any specific codebase):
+Most real comments are one or two sentences. A comment that needs three
+is the exception, not the default. If explaining the problem requires
+tracing through several files or several steps of logic to justify it,
+that trace is your own reasoning, not something to put in the comment —
+compress it down to the one sentence that actually matters to the PR
+creator. Skip technical detail the PR creator doesn't need to act:
+internal call chains, every intermediate variable, or restating code
+that's already visible in the diff.
 
-> Inconsistent null handling here. A few lines up this same check goes
-> through the `.HasValue` / `.Value` pair, but this comparison uses the
-> nullable value directly. Both work today because of the guard above
-> it, but if that guard ever moves, this line evaluates true when the
-> value is actually null.
+Do not hedge with "it looks like" or soften it with "just a thought" —
+say what the problem is plainly, the way you would if you were confident
+in the read. Don't manufacture a question when the fix is already clear,
+and don't add a "why" when the problem already makes it obvious.
 
-> No early return when the two values already match. As written, this
-> still persists the record and stamps a new modified date/user even
-> though nothing changed. Worth adding a guard at the top so an
-> unrelated write doesn't get logged as a real change.
+Examples in this voice (genericized, not tied to any specific codebase):
 
-> Should this have an else branch here? Right now, if the save fails,
-> the UI just goes quiet. The user has no way to tell whether it worked.
+> Inconsistent null handling here — a few lines up this same check uses
+> `.HasValue`/`.Value`, this one compares the nullable value directly.
+> Worth making it consistent so it doesn't break if the guard above ever
+> moves.
+
+> No early return when the two values already match. Add a guard at the
+> top so we're not logging a write when nothing actually changed.
+
+> Should this have an else branch? Right now if the save fails, the UI
+> just goes quiet and the user can't tell it didn't work.
+
+> This still trusts the saved selection without checking it's in the
+> current list. If the user's dimensions changed, the stale ID slips
+> past the guard below it. Worth validating it against the current list
+> before using it.
+
+> None of the tests cover the null case, only the valid-ID path. If the
+> null guard ever gets removed, the tests wouldn't catch it.
 
 Before presenting this section, invoke the `/{{PLUGIN_NAME}}:tone` skill
 on the drafted comments so they read in the user's own voice rather than
