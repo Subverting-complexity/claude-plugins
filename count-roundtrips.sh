@@ -9,6 +9,7 @@
 # Usage:
 #   bash count-roundtrips.sh github-workflow/skills/execute/SKILL.md
 #   bash count-roundtrips.sh --workflow execute
+#   bash count-roundtrips.sh --workflow bulk-execute
 #   bash count-roundtrips.sh --workflow pick
 #
 # Exit code: always 0 (informational tool, no gate).
@@ -48,6 +49,20 @@ for wf in "${workflows[@]:-}"; do
                 "github-workflow/templates/worktree-hygiene.md"
             )
             ;;
+        bulk-execute)
+            files+=(
+                "github-workflow/skills/bulk-execute/SKILL.md"
+                "github-workflow/skills/bulk-execute/references/set-selection.md"
+                "github-workflow/skills/bulk-execute/references/bulk-finish.md"
+                "github-workflow/skills/execute/references/review-and-merge.md"
+                "github-workflow/skills/code-review/references/auto-merge.md"
+                "github-workflow/templates/board-resolution.md"
+                "github-workflow/templates/claim-procedure.md"
+                "github-workflow/templates/story-selection.md"
+                "github-workflow/templates/sibling-pr-lookup.md"
+                "github-workflow/templates/worktree-hygiene.md"
+            )
+            ;;
         pick)
             files+=(
                 "github-workflow/skills/execute/SKILL.md"
@@ -57,14 +72,14 @@ for wf in "${workflows[@]:-}"; do
             )
             ;;
         *)
-            echo "Unknown workflow: $wf. Known: execute, pick" >&2
+            echo "Unknown workflow: $wf. Known: execute, bulk-execute, pick" >&2
             exit 1
             ;;
     esac
 done
 
 if [ ${#files[@]} -eq 0 ]; then
-    echo "Usage: $0 <file1> [file2 ...] [--workflow execute|pick]" >&2
+    echo "Usage: $0 <file1> [file2 ...] [--workflow execute|bulk-execute|pick]" >&2
     exit 1
 fi
 

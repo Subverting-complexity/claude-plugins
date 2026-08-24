@@ -27,8 +27,10 @@ sys.path.insert(
     os.path.join(os.path.dirname(__file__), '..', 'github-workflow', 'scripts'),
 )
 from wf_core import (  # noqa: E402
+    BULK_MAX,
     _filter_by_mode,
     actionable_update_label,
+    blocking_dependencies,
     branch_name,
     branch_slug,
     closing_issue_numbers,
@@ -37,6 +39,7 @@ from wf_core import (  # noqa: E402
     filter_by_native_type,
     get_sprint_candidates,
     parse_dependencies,
+    plan_bulk_order,
     reconcile_review_labels,
     resolve_label,
     resolve_review_label,
@@ -892,6 +895,114 @@ class TestGraphqlArgTyping(unittest.TestCase):
         args = _graphql_args('query { x }', {})
         self.assertEqual(args[:4], ['gh', 'api', 'graphql', '-f'])
         self.assertEqual(args[4], 'query=query { x }')
+
+
+class TestBulkDependencyCarveOut(unittest.TestCase):
+    """`blocking_dependencies` — a sibling in the same bulk set does not block.
+
+    `execute`'s rule is "do not build on unmerged work you cannot see". A
+    story in the same set is work the same run writes on the same branch, so
+    it is exempt; anything else open still blocks, exactly as before.
+    """
+
+    def test_open_dependency_outside_the_set_still_blocks(self):
+        self.assertEqual(blocking_dependencies([7], open_numbers=[7]), [7])
+
+    def test_closed_dependency_never_blocks(self):
+        self.assertEqual(blocking_dependencies([7], open_numbers=[]), [])
+
+    def test_open_dependency_on_a_sibling_does_not_block(self):
+        self.assertEqual(
+            blocking_dependencies([7], open_numbers=[7], siblings=[7]), [])
+
+    def test_sibling_carve_out_is_per_dependency(self):
+        """One sibling dep and one external dep → only the external one blocks."""
+        self.assertEqual(
+            blocking_dependencies([7, 9], open_numbers=[7, 9], siblings=[7]), [9])
+
+    def test_blocking_order_follows_the_dependency_list(self):
+        self.assertEqual(
+            blocking_dependencies([9, 7], open_numbers=[7, 9]), [9, 7])
+
+    def test_no_siblings_matches_the_single_story_behaviour(self):
+        """The default (no siblings) must be the pre-bulk behaviour verbatim."""
+        self.assertEqual(blocking_dependencies([1, 2, 3], open_numbers=[2, 3]), [2, 3])
+
+    def test_string_numbers_are_compared_numerically(self):
+        self.assertEqual(
+            blocking_dependencies([7], open_numbers=['7'], siblings=['7']), [])
+
+
+class TestBulkSetOrdering(unittest.TestCase):
+    """`plan_bulk_order` — trim to size, then build dependencies first."""
+
+    @staticmethod
+    def _story(number, body=''):
+        return {'number': number, 'body': body}
+
+    def _numbers(self, ordered):
+        return [s['number'] for s in ordered]
+
+    def test_independent_set_keeps_input_order(self):
+        stories = [self._story(1), self._story(2), self._story(3)]
+        ordered, notes = plan_bulk_order(stories)
+        self.assertEqual(self._numbers(ordered), [1, 2, 3])
+        self.assertEqual(notes, [])
+
+    def test_dependency_inside_the_set_is_built_first(self):
+        stories = [self._story(1), self._story(2, 'Blocked by #3'), self._story(3)]
+        ordered, _ = plan_bulk_order(stories)
+        self.assertEqual(self._numbers(ordered), [1, 3, 2])
+
+    def test_chain_is_ordered_end_to_end(self):
+        stories = [self._story(1, 'Depends on #2'),
+                   self._story(2, 'Depends on #3'),
+                   self._story(3)]
+        self.assertEqual(self._numbers(plan_bulk_order(stories)[0]), [3, 2, 1])
+
+    def test_dependency_outside_the_set_does_not_reorder(self):
+        """A dep on an issue not in the set is the claim step's problem, not ours."""
+        stories = [self._story(1, 'Depends on #99'), self._story(2)]
+        ordered, notes = plan_bulk_order(stories)
+        self.assertEqual(self._numbers(ordered), [1, 2])
+        self.assertEqual(notes, [])
+
+    def test_oversized_set_is_trimmed_and_the_cut_reported(self):
+        stories = [self._story(n) for n in range(1, 8)]
+        ordered, notes = plan_bulk_order(stories)
+        self.assertEqual(len(ordered), BULK_MAX)
+        self.assertEqual(self._numbers(ordered), [1, 2, 3, 4, 5])
+        self.assertEqual([(n['number'], n['reason']) for n in notes],
+                         [(6, 'trimmed'), (7, 'trimmed')])
+
+    def test_explicit_max_size_overrides_the_default(self):
+        stories = [self._story(n) for n in range(1, 5)]
+        ordered, notes = plan_bulk_order(stories, max_size=2)
+        self.assertEqual(self._numbers(ordered), [1, 2])
+        self.assertEqual(len(notes), 2)
+
+    def test_trimming_happens_before_ordering(self):
+        """A dep cut by the trim must not drag its dependent out of order."""
+        stories = [self._story(1, 'Depends on #4'), self._story(2), self._story(3),
+                   self._story(4)]
+        ordered, notes = plan_bulk_order(stories, max_size=3)
+        self.assertEqual(self._numbers(ordered), [1, 2, 3])
+        self.assertEqual([n['number'] for n in notes], [4])
+
+    def test_cycle_is_reported_and_still_returns_every_story(self):
+        stories = [self._story(1, 'Depends on #2'), self._story(2, 'Depends on #1')]
+        ordered, notes = plan_bulk_order(stories)
+        self.assertEqual(sorted(self._numbers(ordered)), [1, 2])
+        self.assertEqual({n['reason'] for n in notes}, {'dependency-cycle'})
+
+    def test_self_reference_is_not_a_cycle(self):
+        stories = [self._story(1, 'Depends on #1'), self._story(2)]
+        ordered, notes = plan_bulk_order(stories)
+        self.assertEqual(self._numbers(ordered), [1, 2])
+        self.assertEqual(notes, [])
+
+    def test_empty_set_is_handled(self):
+        self.assertEqual(plan_bulk_order([]), ([], []))
 
 
 if __name__ == '__main__':

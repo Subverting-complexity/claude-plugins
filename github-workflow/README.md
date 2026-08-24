@@ -26,6 +26,8 @@ claude --plugin-dir ./plugins/github-workflow
 | `/github-workflow:execute --mode maintenance` | Pick and fix the next bug/security/debt issue |
 | `/github-workflow:execute --mode audit` | Audit codebase, create issues (no code)  |
 | `/github-workflow:execute --no-merge`   | Skip the merge for one run on a project that has merging enabled |
+| `/github-workflow:bulk-execute`         | Choose 2-5 related stories and build them as one branch, one PR, one review |
+| `/github-workflow:bulk-execute 41 43 47` | Build exactly these stories together     |
 | `/github-workflow:code-review`          | Review (or rework + re-review) the next PR |
 | `/github-workflow:block-story`          | Mark current story as blocked            |
 | `/github-workflow:report-issue`         | Create a bug/arch/debt issue             |
@@ -44,6 +46,7 @@ github-workflow/
 │   └── plugin.json            # Plugin manifest
 ├── skills/                    # Skills catalogue — see "Skills" below
 │   ├── execute/               # Orchestrator: pick → build → PR → review → merge
+│   ├── bulk-execute/          # Same loop for 2-5 related stories on one branch
 │   ├── code-architect/        # Architecture design and audit (SOLID + Clean)
 │   ├── structured-coding/     # Structured coding methodology
 │   ├── code-review/           # Deep PR review, labels, optional auto-merge
@@ -258,12 +261,13 @@ plugin with a different surface.
 ## Skills
 
 The plugin bundles the following skills. The orchestrators (`execute`,
-`code-review`) drive the workflow; the rest are invoked by them or
-directly.
+`bulk-execute`, `code-review`) drive the workflow; the rest are invoked by
+them or directly.
 
 | Skill                 | What it does                                       |
 | --------------------- | ------------------------------------------------- |
 | `execute`             | Orchestrator: pick → build → PR → review → merge   |
+| `bulk-execute`        | The same loop for 2-5 related stories at once     |
 | `code-architect`      | Architecture design and audit (SOLID + Clean)     |
 | `structured-coding`   | Structured coding methodology                     |
 | `code-review`         | Deep PR review, labels, optional auto-merge       |
@@ -293,6 +297,7 @@ Once installed, your scheduled task prompts become one-liners:
 | Routine            | Prompt                                       |
 | ------------------ | -------------------------------------------- |
 | Work on next story | `Run /github-workflow:execute`               |
+| Work through a related group | `Run /github-workflow:bulk-execute`  |
 | Fix bugs           | `Run /github-workflow:execute --mode maintenance` |
 | Audit codebase     | `Run /github-workflow:execute --mode audit`  |
 | Review a PR        | `Run /github-workflow:code-review`           |

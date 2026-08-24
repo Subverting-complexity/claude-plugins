@@ -70,6 +70,14 @@ gh auth status 2>&1 | head -3
 > - `/github-workflow:execute --mode maintenance` → Pick and fix the
 >   next bug, security issue, architecture problem, or tech debt item.
 >   (Shorthand: `--mode bug` also works.)
+> - `/github-workflow:bulk-execute` → Build two to five **related**
+>   stories as one change: one branch, one pull request, one review. It
+>   reads the ready backlog, groups the stories that genuinely belong
+>   together, and builds that group. Worth it when the stories touch the
+>   same code, or when one is waiting on another; not worth it when they
+>   are unrelated, because the pull request then gets hard to review.
+> - `/github-workflow:bulk-execute 41 43 47` → Build exactly those
+>   stories together, when you already know they belong in one change.
 >
 > **Review and audit:**
 >

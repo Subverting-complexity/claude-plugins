@@ -75,6 +75,11 @@ def _pick_args(*argv):
     return wf.build_parser().parse_args(['pick', *argv])
 
 
+def _candidates_args(*argv):
+    """Build a parsed `candidates` Namespace with real argparse defaults."""
+    return wf.build_parser().parse_args(['candidates', *argv])
+
+
 _BASE_CFG = {
     'org': 'acme', 'repo': 'widgets', 'default_branch': 'main',
     'branch_convention': 'feature/{number}/{short-desc}',
@@ -212,6 +217,193 @@ class TestPickStatusContract(unittest.TestCase):
             code, payload = _capture(wf.cmd_pick, _pick_args('--issue', '9'))
         self.assertEqual(code, wf.EXIT_ALL_BLOCKED)
         self.assertEqual(payload['status'], 'all-blocked')
+
+
+# -- bulk-execute: shared branch, sibling dependencies, unclaimed pool read ---
+
+class TestBulkPickPaths(unittest.TestCase):
+    """`pick`'s two bulk affordances: `--no-branch` and `--sibling`.
+
+    Both exist for `bulk-execute`, which claims several stories onto one
+    branch. Neither may change single-story behaviour, so each test below has
+    a counterpart asserting the default path is untouched.
+    """
+
+    def setUp(self):
+        env = mock.patch.object(wf, 'check_environment', return_value=None)
+        env.start()
+        self.addCleanup(env.stop)
+
+    def _use_cfg(self, cfg):
+        p = mock.patch.object(wf, 'load_config', return_value=(True, cfg, ''))
+        p.start()
+        self.addCleanup(p.stop)
+
+    @contextlib.contextmanager
+    def _claimable(self, candidate, open_issues=()):
+        """Stub the claim path so one candidate can be claimed without network.
+
+        `open_issues` are the issue numbers `gh issue view --json state` should
+        report as OPEN -- the dependency probe `validate_issue` runs.
+        """
+        open_set = {int(n) for n in open_issues}
+
+        def fake_gh_json(argv, *a, **kw):
+            if argv[:2] == ['issue', 'view']:
+                number = int(argv[2])
+                return True, {'state': 'OPEN' if number in open_set else 'CLOSED'}, ''
+            return True, [], ''
+
+        with mock.patch.object(wf, 'assemble_candidates',
+                               return_value=(True, [candidate], '')), \
+                mock.patch.object(wf, 'acquire_claim', return_value='won'), \
+                mock.patch.object(wf, 'apply_in_progress'), \
+                mock.patch.object(wf, 'mark_blocked'), \
+                mock.patch.object(wf, 'release_claim'), \
+                mock.patch.object(wf, 'merged_pr_closing', return_value=None), \
+                mock.patch.object(wf, 'gh_json', side_effect=fake_gh_json), \
+                mock.patch.object(wf, 'board_move_in_progress',
+                                  return_value=(True, 'moved')) as board, \
+                mock.patch.object(wf, 'checkout_branch',
+                                  return_value=('feature/1/x', True, 'created')) as branch:
+            yield board, branch
+
+    def test_no_branch_moves_the_board_but_creates_no_branch(self):
+        """Bulk runs share one branch the caller creates, so `pick` must not."""
+        self._use_cfg(_cfg())
+        with self._claimable(_candidate(1)) as (board, branch):
+            code, payload = _capture(wf.cmd_pick,
+                                     _pick_args('--checkout', '--no-branch'))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['status'], 'ok')
+        board.assert_called_once()          # the board move still happens
+        branch.assert_not_called()          # the branch does not
+        self.assertIsNone(payload['branch'])
+        self.assertFalse(payload['checked_out'])
+
+    def test_checkout_without_no_branch_still_branches(self):
+        """The single-story path is unchanged by the new flag existing."""
+        self._use_cfg(_cfg())
+        with self._claimable(_candidate(1)) as (board, branch):
+            code, payload = _capture(wf.cmd_pick, _pick_args('--checkout'))
+        self.assertEqual(code, wf.EXIT_OK)
+        board.assert_called_once()
+        branch.assert_called_once()
+        self.assertEqual(payload['branch'], 'feature/1/x')
+        self.assertTrue(payload['checked_out'])
+
+    def test_open_dependency_blocks_when_it_is_not_a_sibling(self):
+        """Baseline: execute's dependency rule is intact with no siblings."""
+        self._use_cfg(_cfg())
+        cand = _candidate(1)
+        cand['body'] = 'Blocked by #7'
+        with self._claimable(cand, open_issues=[7]):
+            code, payload = _capture(wf.cmd_pick, _pick_args())
+        self.assertEqual(code, wf.EXIT_ALL_BLOCKED)
+        self.assertEqual(payload['side_effects'][0]['action'], 'marked-blocked')
+        self.assertIn('#7', payload['side_effects'][0]['detail'])
+
+    def test_open_dependency_on_a_sibling_does_not_block(self):
+        """Same issue, same open dependency -- but #7 is in this bulk set."""
+        self._use_cfg(_cfg())
+        cand = _candidate(1)
+        cand['body'] = 'Blocked by #7'
+        with self._claimable(cand, open_issues=[7]):
+            code, payload = _capture(wf.cmd_pick, _pick_args('--sibling', '7'))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['status'], 'ok')
+        self.assertEqual(payload['number'], 1)
+        self.assertEqual(payload['siblings'], [7])
+
+    def test_sibling_carve_out_does_not_cover_other_dependencies(self):
+        """#7 is a sibling, #8 is not -- #8 still blocks the pick."""
+        self._use_cfg(_cfg())
+        cand = _candidate(1)
+        cand['body'] = 'Depends on #7\nDepends on #8'
+        with self._claimable(cand, open_issues=[7, 8]):
+            code, payload = _capture(wf.cmd_pick, _pick_args('--sibling', '7'))
+        self.assertEqual(code, wf.EXIT_ALL_BLOCKED)
+        self.assertIn('#8', payload['side_effects'][0]['detail'])
+        self.assertNotIn('#7', payload['side_effects'][0]['detail'])
+
+
+class TestCandidatesCommand(unittest.TestCase):
+    """`wf candidates` reads the pool and claims nothing.
+
+    `bulk-execute` has to see the pool before it can decide which stories
+    belong in one pull request, so this command must apply exactly `pick`'s
+    filters and sort while performing no writes at all.
+    """
+
+    def setUp(self):
+        env = mock.patch.object(wf, 'check_environment', return_value=None)
+        env.start()
+        self.addCleanup(env.stop)
+        cfg = mock.patch.object(wf, 'load_config', return_value=(True, _cfg(), ''))
+        cfg.start()
+        self.addCleanup(cfg.stop)
+
+    def test_pool_is_returned_in_priority_order(self):
+        pool = [_candidate(4, labels=('status-ready', 'priority-low')),
+                _candidate(2, labels=('status-ready', 'priority-critical'))]
+        with mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')):
+            code, payload = _capture(wf.cmd_candidates, _candidates_args())
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['status'], 'ok')
+        self.assertEqual([c['number'] for c in payload['candidates']], [2, 4])
+        self.assertEqual(payload['total'], 2)
+
+    def test_nothing_is_claimed_or_labelled(self):
+        """The whole point of the command: a read with no side effects."""
+        with mock.patch.object(wf, 'assemble_candidates',
+                               return_value=(True, [_candidate(1)], '')), \
+                mock.patch.object(wf, 'acquire_claim') as claim, \
+                mock.patch.object(wf, 'apply_in_progress') as marker, \
+                mock.patch.object(wf, 'board_move_in_progress') as board:
+            code, _ = _capture(wf.cmd_candidates, _candidates_args())
+        self.assertEqual(code, wf.EXIT_OK)
+        claim.assert_not_called()
+        marker.assert_not_called()
+        board.assert_not_called()
+
+    def test_dependencies_are_parsed_for_the_caller(self):
+        """The set chooser groups on declared linkage, so it needs the deps."""
+        cand = _candidate(1)
+        cand['body'] = 'Part of the epic.\n\nBlocked by #7'
+        with mock.patch.object(wf, 'assemble_candidates', return_value=(True, [cand], '')):
+            _, payload = _capture(wf.cmd_candidates, _candidates_args())
+        self.assertEqual(payload['candidates'][0]['dependencies'], [7])
+
+    def test_bodies_are_truncated_and_flagged(self):
+        cand = _candidate(1)
+        cand['body'] = 'x' * 900
+        with mock.patch.object(wf, 'assemble_candidates', return_value=(True, [cand], '')):
+            _, payload = _capture(wf.cmd_candidates,
+                                  _candidates_args('--body-chars', '10'))
+        self.assertEqual(payload['candidates'][0]['body'], 'x' * 10)
+        self.assertTrue(payload['candidates'][0]['body_truncated'])
+
+    def test_zero_body_chars_keeps_the_whole_body(self):
+        cand = _candidate(1)
+        cand['body'] = 'x' * 900
+        with mock.patch.object(wf, 'assemble_candidates', return_value=(True, [cand], '')):
+            _, payload = _capture(wf.cmd_candidates,
+                                  _candidates_args('--body-chars', '0'))
+        self.assertEqual(len(payload['candidates'][0]['body']), 900)
+        self.assertFalse(payload['candidates'][0]['body_truncated'])
+
+    def test_limit_clips_the_listing_but_total_reports_the_pool(self):
+        pool = [_candidate(n) for n in range(1, 6)]
+        with mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')):
+            _, payload = _capture(wf.cmd_candidates, _candidates_args('--limit', '2'))
+        self.assertEqual(payload['listed'], 2)
+        self.assertEqual(payload['total'], 5)
+
+    def test_empty_pool_emits_no_candidates(self):
+        with mock.patch.object(wf, 'assemble_candidates', return_value=(True, [], '')):
+            code, payload = _capture(wf.cmd_candidates, _candidates_args())
+        self.assertEqual(code, wf.EXIT_NO_CANDIDATES)
+        self.assertEqual(payload['status'], 'no-candidates')
 
 
 # ── atomic claim compare-and-swap (real local git, no network) ───────────────
