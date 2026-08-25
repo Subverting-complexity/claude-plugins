@@ -176,6 +176,13 @@ other decision below: `references/bulk-rationale.md` — not read at runtime.)
   the backlog and open the PR for what was built. Never write `Closes #N`
   for a story this run did not finish.
 - **One set, one session.** Do not pick a second set after finishing.
+- **Leave room for the review phases, and size the set so they fit.** Phases
+  8 and 9 hand the reading of the diff to separate contexts, so here they
+  cost the review reference, the merge mechanics, the findings returned, and
+  the fixes you apply — plus, when no agent can be spawned, the whole
+  code-review hot path inline on top of a session that has already built
+  several stories. That is a further reason a set of three beats a set of
+  five: running out before the review strands every story at once.
 - **60-minute timeout.** Record the start time (`date +%s`); before each
   story and each phase, check the elapsed time. Past 60 minutes: commit and
   push, release the claims of the unbuilt stories, then run Phase 7 for a
@@ -433,7 +440,9 @@ wrote the code shares every assumption it was built on, so its verdict is
 worth little; Phase 8 gets a real one from contexts that never saw the
 build. That governs whose judgement decides this pull request, not whether
 the run continues — you still spawn the reviewers and own what they return,
-and Phase 7 hands the PR to nobody.
+and Phase 7 hands the PR to nobody. The single exception is Phase 8's
+last-resort fallback below, used only when no separate context can be
+spawned at all, and it is disclosed rather than silent.
 
 ## Phase 8 — Independent review, Phase 9 — Rework, Phase 10 — Merge
 
@@ -463,6 +472,30 @@ these substitutions, and nothing else changes:
 - Its Phase 10 settle step runs `wf post-merge --pr {pr_number}`, which
   already closes and moves **every** issue the pull request closes. Report
   each settled story by number and title.
+
+### When no separate context can be spawned
+
+Its Phase 8 step 3 — try a general-purpose subagent, then fall back to
+running `/github-workflow:code-review {pr_number} --read-only` inline and
+recording it with `touch .claude/self-review.flag` — applies here unchanged
+in mechanism, and a bulk run is likelier to need it: this is exactly the
+long, heavily-loaded session in which spawning fails. Four things follow:
+
+- **Carry every lens yourself, one pass each**, not one undifferentiated
+  read: correctness and story alignment against **each** story's acceptance
+  criteria; then security, error handling, test coverage and regressions;
+  then the bulk question, whether anything in this diff answers **none** of
+  the listed stories.
+- **The disclosure names the set.** Post step 3's warning on the pull
+  request and repeat it in your final report, saying which stories it closes
+  by number and title, so a reader can judge the blast radius of a verdict
+  nobody else checked.
+- **It does not stop the merge**, exactly as in `execute`. The gates that do
+  — red quality gate, unapproved verdict, red or absent CI, a duplicate
+  flagged against any story in the set — all still apply.
+- **The rework loop is unchanged.** Findings against this diff, or against
+  any story the PR closes, are fixed here. Being your own reviewer is not a
+  reason to file what you found in your own work.
 
 Merging is opt-in and off by default: it runs only where `review.config.md`
 sets `Auto-Merge on Approval` to `enabled`. On a project that has not opted

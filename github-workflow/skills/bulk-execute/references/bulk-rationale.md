@@ -151,3 +151,28 @@ each is genuinely small and they overlap heavily. The set being re-checked
 against the plan in Phase 3 exists because that judgement is much better
 informed after planning than before it, and dropping a story then costs one
 release rather than a failed run.
+
+## Why the disclosed self-review carries over unchanged
+
+`execute` merges on a self-review when no separate agent context can be
+spawned, provided the run says so on the pull request and in its report. The
+reasoning is in `skills/execute/references/execute-rationale.md`: a workflow
+that can only finish when the harness happens to offer subagents is a
+workflow that stops half way in every nested run, leaving an unreviewed pull
+request that nothing is scheduled to pick up.
+
+A set makes that outcome worse rather than better, which is the argument for
+keeping the same answer here. A stranded single-story pull request holds up
+one story; a stranded bulk one holds up three to five, and every one of them
+has already been claimed, built and labelled `status-in-review`, so nothing
+else will touch them either. Refusing to merge without an independent
+reviewer would trade weaker evidence for a larger backlog of work that is
+finished but cannot land.
+
+What does change is the standard the fallback is held to. Both review lenses
+plus the scope-creep question are carried explicitly, one pass each, because
+the failure mode of an inline review of a large diff is a single skim that
+reports nothing; and the disclosure lists the stories the pull request
+closes, because how much a weak verdict matters depends on how much it
+covers. The real merge gates are untouched: they carry evidence about the
+code rather than about who read it.
