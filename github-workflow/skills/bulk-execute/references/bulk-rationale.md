@@ -145,12 +145,16 @@ the shared costs — the plan, the review, the merge, the configuration read —
 are paid once. The saving is in the shared work, not in the per-story work,
 so the number does not scale with the set.
 
-That is also why the default size is 3 rather than 5, and why the guidance
-says the smaller set is usually the better one. Five stories fit only when
-each is genuinely small and they overlap heavily. The set being re-checked
-against the plan in Phase 3 exists because that judgement is much better
-informed after planning than before it, and dropping a story then costs one
-release rather than a failed run.
+The `--size` default is that same 5, so the flag only ever lowers the
+ceiling. That puts the size judgement in the relatedness rules and in the
+Phase 3 re-check rather than in a conservative default, which is where it
+belongs: five small stories against one module fit comfortably, while three
+large ones spread across three subsystems do not, and a fixed lower default
+cannot tell those apart. A set that reaches the cap is still worth a second
+look before any code is written. The set being re-checked against the plan
+in Phase 3 exists because that judgement is much better informed after
+planning than before it, and dropping a story then costs one release rather
+than a failed run.
 
 ## Why the disclosed self-review carries over unchanged
 
