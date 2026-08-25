@@ -59,6 +59,12 @@ declare -A BODY_OVERRIDE=(
     # the hot path because it governs the build and every review round; 600 is
     # ~4.2% headroom, matching the calibration above.
     ["github-workflow/skills/execute/SKILL.md"]=600
+    # The multi-story orchestrator. Same 11 phases as execute, plus set
+    # selection and the substitutions that let it reuse execute's review,
+    # merge and cleanup references rather than copy them. Body is 499 lines
+    # after the self-review fallback section; 520 is ~4.2% headroom, matching
+    # the calibration above.
+    ["github-workflow/skills/bulk-execute/SKILL.md"]=520
 )
 
 # --- Helpers ----------------------------------------------------------------
