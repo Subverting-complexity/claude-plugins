@@ -18,7 +18,7 @@ arguments:
   - name: mode
     description: 'Selection mode for the lead story: story (default), feature (feature stories only), maintenance (bug/security/architecture/debt). A set never mixes modes.'
   - name: size
-    description: 'Maximum stories in the set, 2 to 5 (default 3). A smaller set is usually the better one.'
+    description: 'Maximum stories in the set, 2 to 5 (default 5). The cap is a ceiling, not a target: only genuinely related stories belong in one set.'
   - name: no-merge
     description: 'Stop after the independent review and rework instead of merging. The PR is left open carrying the reviewer verdict.'
   - name: bypass-ci
@@ -86,8 +86,10 @@ re-running it later would wipe the `gate-failed.flag` Phase 5 wrote, the
 `self-review.flag` Phase 8 wrote, and the set Phase 1 recorded. Later
 phases only read these files.
 
-`--size` caps the set at 2 to 5 stories, default 3. A value outside that
-range is clamped, and the clamp is reported.
+`--size` caps the set at 2 to 5 stories, default 5. A value outside that
+range is clamped, and the clamp is reported. Five is a ceiling rather than
+a target: a set only reaches it when five stories are genuinely one change
+and each is small enough to leave room for the review phases.
 
 ## Preflight
 
@@ -181,8 +183,9 @@ other decision below: `references/bulk-rationale.md` — not read at runtime.)
   cost the review reference, the merge mechanics, the findings returned, and
   the fixes you apply — plus, when no agent can be spawned, the whole
   code-review hot path inline on top of a session that has already built
-  several stories. That is a further reason a set of three beats a set of
-  five: running out before the review strands every story at once.
+  several stories. That is the reason to stop short of the cap when the
+  stories are not small: running out of budget before the review strands
+  every story in the set at once, not just the last one.
 - **60-minute timeout.** Record the start time (`date +%s`); before each
   story and each phase, check the elapsed time. Past 60 minutes: commit and
   push, release the claims of the unbuilt stories, then run Phase 7 for a
@@ -257,9 +260,9 @@ including the review-claim reconciliation and the working-tree reconcile.
 The set is **chosen**, never taken off the top of the backlog. Priority
 order decides which story is worth doing next; it says nothing about which
 stories belong in one pull request, and a set assembled by taking the top
-three is the failure this command is most likely to produce. Whichever path
-below applies, the choice is deliberate and the reason for each story being
-in the set is recorded.
+few off the backlog is the failure this command is most likely to produce.
+Whichever path below applies, the choice is deliberate and the reason for
+each story being in the set is recorded.
 
 **Read `references/set-selection.md` and follow it.** It covers both paths:
 

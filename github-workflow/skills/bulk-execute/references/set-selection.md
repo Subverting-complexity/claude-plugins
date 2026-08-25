@@ -8,7 +8,7 @@ Two things hold throughout:
 
 1. **The set is chosen, not sampled.** Priority order says which story is
    worth doing next. It says nothing about which stories belong in one pull
-   request. A set assembled by taking the top three off the backlog is the
+   request. A set assembled by taking the top few off the backlog is the
    most likely way for this command to produce a diff nobody can review.
 2. **Every story in the set holds its own atomic claim** before any code is
    written. The claim ref is the only thing that stops a second agent
@@ -51,10 +51,11 @@ move the board to Backlog, comment `"Resetting — PR #{N} closed without
 merge."` — and keep it in the set. If there is no closed PR either, surface
 the inconsistency and drop it.
 
-**2. Cap the size.** More than `--size` stories (default 3, maximum 5) were
-named. Keep the first `--size` in the order the user gave them, and say
-which were left out and that they stay ready in the backlog. Do not silently
-build more than the cap: the cap is what keeps the pull request reviewable.
+**2. Cap the size.** More than `--size` stories (default 5, which is also
+the maximum) were named. Keep the first `--size` in the order the user gave
+them, and say which were left out and that they stay ready in the backlog.
+Do not silently build more than the cap: the cap is what keeps the pull
+request reviewable.
 
 **3. Warn, but obey, on a set that looks unrelated.** If the named stories
 share nothing by the rules in Path B, say so in one sentence in your report
@@ -142,14 +143,15 @@ Then choose **one** group, by this order:
 3. Break a tie on the highest-priority member, then the lowest issue number,
    so two agents reading the same pool make the same choice.
 
-**3. Cap it, then order it.** Trim to `--size` (default 3, maximum 5),
-keeping the highest-priority members, then put the survivors in **build
-order**: every story comes after the stories in the set it depends on, and
-stories with no dependency between them keep priority order. Trimming
-happens first, so a story cut by the cap cannot drag its dependent out of
-order. That whole rule is `plan_bulk_order` in `scripts/wf_core.py`, which
-is its executable statement. A dependency cycle inside a set cannot be
-ordered: if you find one, say so and drop the lowest-priority story in it.
+**3. Cap it, then order it.** Trim to `--size` (default 5, which is also
+the maximum), keeping the highest-priority members, then put the survivors
+in **build order**: every story comes after the stories in the set it
+depends on, and stories with no dependency between them keep priority
+order. Trimming happens first, so a story cut by the cap cannot drag its
+dependent out of order. That whole rule is `plan_bulk_order` in
+`scripts/wf_core.py`, which is its executable statement. A dependency cycle
+inside a set cannot be ordered: if you find one, say so and drop the
+lowest-priority story in it.
 
 The first story in build order is the **lead**. It names the branch and it
 is the one story that is never dropped while any code exists.
