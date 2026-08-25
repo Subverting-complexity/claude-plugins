@@ -139,15 +139,20 @@ jobs:
       # two references that only load once a PR exists) and a loose one on the
       # whole run. It reuses execute's review-and-merge.md rather than
       # restating it, which is why the loose budget lands close to execute's.
-      # Measured 32550 and 46022; budgets are ~2.0% above each.
-      - name: Check bulk-execute build-window footprint (budget 33200 tokens)
+      # Recalibrated from 33200 and 46950 when the Phase 8 substitutions gained
+      # the self-review fallback section: the path a bulk run takes when the
+      # harness cannot spawn a separate reviewer context. That text sits in
+      # SKILL.md rather than a post-PR reference because it belongs beside the
+      # other Phase 8 substitutions, so it lands in both windows.
+      # Measured 33282 and 46754; budgets are ~2.0% above each.
+      - name: Check bulk-execute build-window footprint (budget 33950 tokens)
         shell: bash
         run: |
-          bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md             --exclude github-workflow/skills/execute/references/review-and-merge.md             --exclude github-workflow/skills/code-review/references/auto-merge.md             --budget 33200
+          bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md             --exclude github-workflow/skills/execute/references/review-and-merge.md             --exclude github-workflow/skills/code-review/references/auto-merge.md             --budget 33950
 
-      - name: Check bulk-execute whole-run footprint (budget 46950 tokens)
+      - name: Check bulk-execute whole-run footprint (budget 47700 tokens)
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 46950
+        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 47700
 
       - name: Check code-review skill footprint (budget 40700 tokens)
         shell: bash
