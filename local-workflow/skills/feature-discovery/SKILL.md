@@ -379,6 +379,13 @@ issues. If they accept:
    material than a story needs, so this is where most of it gets left
    behind: no discovery history, no restating the Summary under another
    heading, and no section that would be empty.
+
+   Check once, before the first issue, whether the repository publishes
+   an issue template, either its own or one inherited from the
+   organisation's `.github` repository. Where one applies, every story
+   uses its headings and order. github-workflow resolves this through
+   `templates/issue-template-resolution.md`; the result is cached, so
+   check once rather than per story.
 1. Create issues in **dependency order** — dependencies first so that
    later stories can reference them by issue number.
 2. Include a `## Dependencies` section in each issue body listing

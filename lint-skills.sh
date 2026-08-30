@@ -159,6 +159,29 @@ else
     done
 fi
 
+# A repository can publish an issue template that GitHub pre-fills in the web
+# UI but that --body-file silently bypasses. The paths that CREATE an issue
+# have to resolve it, or every issue the plugin files ignores the project's own
+# template. The standard and the creating commands must all cite the procedure.
+TEMPLATE_PROC="github-workflow/templates/issue-template-resolution.md"
+declare -a issue_creating_files=(
+    "$ISSUE_STANDARD"
+    "github-workflow/commands/report-issue.md"
+    "github-workflow/skills/feature-discovery/SKILL.md"
+)
+
+if [ ! -f "$TEMPLATE_PROC" ]; then
+    echo "FAIL: $TEMPLATE_PROC is missing — the issue-template resolution procedure"
+    status=1
+else
+    for f in "${issue_creating_files[@]}"; do
+        if ! grep -qF 'issue-template-resolution.md' "$f"; then
+            echo "FAIL: $f creates GitHub issues but does not cite issue-template-resolution.md"
+            status=1
+        fi
+    done
+fi
+
 echo ""
 if [ $status -eq 0 ]; then
     echo "All checks passed."
