@@ -94,6 +94,10 @@ gh auth status 2>&1 | head -3
 > - `/github-workflow:report-issue` → File a bug, security, arch, or
 >   debt issue.
 > - `/github-workflow:block-story` → Mark the current story as blocked.
+> - `/github-workflow:writing-github-issues` → Rewrite an existing issue
+>   so it is short and easy to scan. Every command above already writes
+>   issues to this standard, so you only need it by hand for issues that
+>   came from somewhere else.
 >
 > **Faster, better-grounded runs (optional):**
 >

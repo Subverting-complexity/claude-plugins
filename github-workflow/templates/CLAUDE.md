@@ -61,6 +61,14 @@ development:
   a GitHub issue. Never silently skip problems.
 - **Blocks current story**: Fix it first on its own branch.
 
+Every issue this project files, by hand or through a command, is written
+to the `writing-github-issues` standard the plugin ships: open with the
+actual problem, use `## Summary` plus only the sections that carry
+information, leave out the investigation that found it, and keep any
+uncertainty the source had. `/github-workflow:report-issue` applies it
+for you. Ask for `writing-github-issues` directly when you want an
+existing issue rewritten or shortened.
+
 ## Session Hygiene
 
 - Start a **new session** for each story.

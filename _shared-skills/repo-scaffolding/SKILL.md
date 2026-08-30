@@ -171,7 +171,12 @@ For small-scope work, there may be only one epic or even just stories with no ep
 
 ### Story structure
 
-Use the story template from `references/story-template.md`.
+Use the story template from `references/story-template.md`. It is short
+on purpose: a Summary, the changes, and acceptance criteria, plus only
+the sections that carry information the implementer would otherwise have
+to guess. Where the plugin provides a `writing-github-issues` skill
+(github-workflow does), read it before writing stories that become
+GitHub issues, and follow it for the title as well as the body.
 
 ### Story sizing
 

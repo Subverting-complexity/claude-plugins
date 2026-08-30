@@ -1,6 +1,6 @@
 {
   "name": "github-workflow",
-  "version": "5.7.0",
+  "version": "5.8.0",
   "description": "Community plugin for GitHub-based development workflows. Say 'start the next story' and the plugin picks an issue from your backlog, plans the architecture, builds it, runs tests, opens a PR, has that PR reviewed independently by agents in a fresh context, and applies the fixes the review asks for. It merges the PR too on projects that turn on auto-merge, which is one setting governing every command that can merge. Supports sprint-based and flat backlogs with configurable label mappings. Bundles skills, commands, and agents with least-privilege tool access, plus an interactive setup wizard that auto-detects your project configuration.",
   "author": {
     "name": "Subverting Complexity"
