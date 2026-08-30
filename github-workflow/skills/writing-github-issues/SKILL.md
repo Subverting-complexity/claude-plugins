@@ -168,6 +168,31 @@ Over:
 If the Summary already explains the problem, do not explain it again
 under Cause or Changes. Each section should add new information.
 
+## The repository's own template comes first
+
+Before writing a body, check whether the target repository publishes an
+issue template, following `templates/issue-template-resolution.md`. A
+template can come from the repository itself or from the organisation's
+`.github` repository, which supplies a default to every repo in the org
+that has none of its own.
+
+Creating an issue through the API or `gh issue create --body-file`
+applies no template: the body is used exactly as supplied. So a project
+that has defined a template gets ignored unless you fetch it and fill it
+in yourself.
+
+**Where a template exists, its structure wins.** Keep its headings, their
+wording and their order, even where they differ from the sections below.
+Everything else in this skill still applies inside them: open with the
+actual point, write only what someone needs to do the work, cut the
+investigation history, and keep any uncertainty the source had. A
+template tells you which sections to write. It does not license a longer
+issue, and an empty section it left for you is not an instruction to
+invent content.
+
+Where no template exists, which is the common case, use the structure
+below. That is a normal outcome, not a gap worth reporting.
+
 ## Structure
 
 `## Summary` is the only section that should normally be required.
@@ -373,7 +398,9 @@ When simplifying an existing issue:
    verification.
 
 Do not treat the original structure as something that needs to be
-preserved.
+preserved, with one exception: where the issue was opened from the
+repository's template, its headings are the project's convention rather
+than one author's choice. Keep them and cut within them.
 
 Carry the machine-read markers across unchanged (see above). When an
 issue has comments, prefer the latest correction in the thread over the
@@ -418,6 +445,8 @@ Before returning an issue, ask:
 - Is anything explained twice?
 - Can any section be removed entirely?
 - Has uncertainty been preserved?
+- If the repository has a template, does the body use its headings, with
+  no leftover guidance comments or unfilled placeholders?
 - Are the machine-read markers intact?
 - Is the issue shorter than the source without losing information that
   affects the work?

@@ -131,6 +131,22 @@ This step is best-effort. If label creation fails (permissions, etc.),
 log a warning and proceed — `gh issue create` will still apply labels
 that already exist.
 
+### 4c. Resolve the repository's issue template
+
+Follow `templates/issue-template-resolution.md` to find out whether the
+target repository publishes an issue template, either its own or one
+inherited from the organisation's `.github` repository. It is one cached
+GraphQL call.
+
+If a template applies, the body you write in Step 5 uses **its** headings
+and order. If none does, which is the common case, use the standard's own
+sections. Either way this is best-effort: a lookup failure falls back to
+the standard sections and never blocks the issue.
+
+If the template carries frontmatter labels, add them to the label list
+assembled in Step 3. Ignore any assignees it names, for the same reason
+Step 5 leaves the assignee blank.
+
 ### 5. Create the issue
 
 Assemble the label list from the type, priority, lifecycle-state, and
@@ -166,8 +182,13 @@ the unassigned pool so `execute` (which queries
 Where `{prefix}` is `[BUG]`, `[SECURITY]`, `[ARCH]`, or `[DEBT]` from the Issue Prefixes
 table in `ClaudeProject.md`.
 
-**Body shape.** Follow `../skills/writing-github-issues/SKILL.md`. For a
-reported problem that usually lands as:
+**Body shape.** Follow `../skills/writing-github-issues/SKILL.md`.
+
+Where Step 4c found a template, use its headings and order instead of the
+list below, filling them per `templates/issue-template-resolution.md`
+(Step 4 or 5). The rules on what to write and what to cut are unchanged.
+
+With no template, a reported problem usually lands as:
 
 - `## Summary` — what is wrong, and what should happen instead when that
   is not already obvious. Name where it is (file paths, and line numbers
