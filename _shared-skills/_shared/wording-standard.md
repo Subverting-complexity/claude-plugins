@@ -77,6 +77,19 @@ much as to free-text prose. The option text is often all an autonomous
 reader sees, so it must carry the problem and the proposed solution on
 its own.
 
+## Exception: GitHub issue titles and bodies
+
+A plugin that files GitHub issues carries a `writing-github-issues`
+skill (github-workflow does). Where it exists, it governs the title and
+body of an issue: which sections there are, how long the body runs, and
+what gets cut. An issue is read by someone about to do the work, so it
+is shorter than this standard would otherwise produce, and it leaves out
+the investigation that found the problem.
+
+Everything else you write still follows this standard, including the
+comment you post on an issue. `_shared/banned-patterns.md` applies to
+both.
+
 ## Before you send anything
 
 Reread your output once with the reader in mind. Remove the patterns in

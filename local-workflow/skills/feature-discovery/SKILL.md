@@ -273,7 +273,16 @@ For small and medium scope, skip epics. Just produce stories.
 
 ### Story structure
 
-Use the story template from `references/story-template.md`.
+Use the story template from `references/story-template.md`. It is short
+on purpose: a Summary, the changes, and acceptance criteria, plus only
+the sections that carry information the implementer would otherwise have
+to guess. Where the plugin provides a `writing-github-issues` skill
+(github-workflow does), read it before writing stories that become
+GitHub issues, and follow it for the title as well as the body.
+
+A story the interview left genuinely open keeps that uncertainty in the
+words the interview used. Do not resolve an open question by writing a
+decision into the story.
 
 ### Story sizing
 
@@ -285,7 +294,7 @@ Use the story template from `references/story-template.md`.
 - Dependencies must be explicit and acyclic.
 - Assign a size estimate to each story: `small` (< 50k tokens),
   `medium` (50–100k), `large` (needs splitting). Include this in the
-  story's Overview section as `**Size estimate:** {size}`.
+  story's Summary section as `**Size estimate:** {size}`.
 - When a story is flagged as too large, automatically split it and
   explain the split to the user before proceeding.
 
@@ -364,6 +373,12 @@ complete. Do **not** write any files.
 When the user approves the plan, offer to create the stories as GitHub
 issues. If they accept:
 
+0. Write each title and body to the plugin's `writing-github-issues`
+   standard (github-workflow provides it as a skill; its story shape is
+   `references/story-template.md`). The interview produces far more
+   material than a story needs, so this is where most of it gets left
+   behind: no discovery history, no restating the Summary under another
+   heading, and no section that would be empty.
 1. Create issues in **dependency order** — dependencies first so that
    later stories can reference them by issue number.
 2. Include a `## Dependencies` section in each issue body listing

@@ -6,7 +6,14 @@ description: 'Create a bug, security, architecture, or tech debt issue. Trigger:
 
 Create a bug, security, architecture, or tech debt issue discovered during development.
 
-**Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
+**Issue wording.** The title and body you create here follow
+`../skills/writing-github-issues/SKILL.md`. Read it before writing the
+body. It is the standard for every issue this plugin files, and it is
+short: open with the actual problem, use `## Summary` plus only the
+sections that carry information, cut the investigation history, and keep
+any uncertainty the source had.
+
+**Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`. Inside the issue body, `writing-github-issues` governs the structure and length; banned-patterns still applies there in full.
 
 ## Preflight
 
@@ -130,8 +137,9 @@ Assemble the label list from the type, priority, lifecycle-state, and
 `claude-authored` labels selected in Step 3, comma-separated, omitting
 any that are not configured.
 
-Write the issue body following `templates/body-file-write.md` (temp file +
-`--body-file`):
+Write the issue body to the standard in
+`../skills/writing-github-issues/SKILL.md`, then apply it following
+`templates/body-file-write.md` (temp file + `--body-file`):
 
 ```
 # Sprint mode (a current milestone was found):
@@ -158,13 +166,28 @@ the unassigned pool so `execute` (which queries
 Where `{prefix}` is `[BUG]`, `[SECURITY]`, `[ARCH]`, or `[DEBT]` from the Issue Prefixes
 table in `ClaudeProject.md`.
 
-Include in the body:
+**Body shape.** Follow `../skills/writing-github-issues/SKILL.md`. For a
+reported problem that usually lands as:
 
-- What was found
-- Where in the codebase (file paths, line numbers)
-- Impact assessment
-- Suggested fix (if known)
-- Whether it blocks the current story
+- `## Summary` — what is wrong, and what should happen instead when that
+  is not already obvious. Name where it is (file paths, and line numbers
+  when they help someone find it). Say what the impact is only when the
+  problem does not already make it clear.
+- `## Cause` — only when you know it and it tells the implementer where
+  the fix belongs. One or two sentences, not the investigation that
+  found it.
+- `## Changes` — the suggested fix, when you have one. Leave it out
+  rather than guessing, and keep any uncertainty you have ("this will
+  likely need...").
+- `## Acceptance criteria` — 2 to 5 testable statements.
+
+Do not narrate how you found the problem, and do not add a section that
+would be empty. Most filings are a Summary and acceptance criteria.
+
+**Does not go in the body:** whether it blocks the current story. That
+is a routing decision for the caller (Step 3) and belongs in what you
+report back, not in the issue. A genuine ordering constraint between two
+issues goes in `## Dependencies` as `Blocked by #N`.
 
 ### 5b. Verify labels (exit-code contract)
 

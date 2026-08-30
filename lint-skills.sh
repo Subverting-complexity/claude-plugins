@@ -127,6 +127,38 @@ for file in "${shared_md[@]}"; do
     fi
 done
 
+# Issue-writing wiring: github-workflow's writing-github-issues skill is the
+# standard for every GitHub issue title and body the plugin produces. That only
+# holds if the paths that author or edit an issue body actually point at it, so
+# each one is asserted here. Add a file to this list whenever a new path starts
+# writing issue bodies; do not delete an entry to make the gate pass.
+ISSUE_STANDARD="github-workflow/skills/writing-github-issues/SKILL.md"
+declare -a issue_authoring_files=(
+    "github-workflow/commands/report-issue.md"        # every autonomous filing funnels here
+    "github-workflow/commands/block-story.md"         # edits the body to add the Dependencies marker
+    "github-workflow/skills/feature-discovery/SKILL.md"
+    "github-workflow/skills/repo-scaffolding/SKILL.md"
+    "github-workflow/skills/user-story/SKILL.md"
+    "github-workflow/references/story-template.md"
+    "github-workflow/templates/CLAUDE.md"             # the rules written into a target project
+    "github-workflow/skills/_shared/wording-standard.md"  # states the precedence
+)
+
+if [ ! -f "$ISSUE_STANDARD" ]; then
+    echo "FAIL: $ISSUE_STANDARD is missing — the issue-writing standard every issue path cites"
+    status=1
+else
+    for f in "${issue_authoring_files[@]}"; do
+        if [ ! -f "$f" ]; then
+            echo "FAIL: $f is listed as an issue-authoring path but does not exist"
+            status=1
+        elif ! grep -qF 'writing-github-issues' "$f"; then
+            echo "FAIL: $f writes or edits GitHub issue bodies but does not cite writing-github-issues"
+            status=1
+        fi
+    done
+fi
+
 echo ""
 if [ $status -eq 0 ]; then
     echo "All checks passed."

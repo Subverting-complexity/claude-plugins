@@ -72,6 +72,11 @@ If the blocker is another issue, also record it in the issue body under a
 `--body-file`). This is what lets `execute` auto-unblock the issue when
 `#N` closes. If the `## Dependencies` section already lists it, skip.
 
+Add the marker and nothing else. The blocker narrative stays in the
+comment, so do not restate it in the body, and leave the rest of the
+body as it is. If you are editing the body for any other reason, the
+result has to satisfy `../skills/writing-github-issues/SKILL.md`.
+
 **Structured blocker metadata (best-effort, capability-gated).** Following
 `templates/issue-fields-resolution.md`, also:
 

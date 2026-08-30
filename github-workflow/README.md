@@ -57,6 +57,7 @@ github-workflow/
 │   ├── debugging/             # Systematic root-cause debugging
 │   ├── repo-scaffolding/      # Repository structure and setup
 │   ├── user-story/            # Author user stories
+│   ├── writing-github-issues/ # Issue-body standard (short, scannable)
 │   ├── acceptance-criteria/   # Author acceptance criteria
 │   ├── pr-description/        # Author PR descriptions
 │   ├── doc-writer/            # Write and update documentation
@@ -278,6 +279,7 @@ them or directly.
 | `debugging`           | Systematic root-cause debugging methodology       |
 | `repo-scaffolding`    | Repository structure and scaffolding              |
 | `user-story`          | Authors user stories                              |
+| `writing-github-issues` | Standard for every issue title and body         |
 | `acceptance-criteria` | Authors acceptance criteria                       |
 | `pr-description`      | Authors PR descriptions                           |
 | `doc-writer`          | Writes and updates documentation                  |
