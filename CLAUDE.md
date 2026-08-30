@@ -51,8 +51,18 @@ plugins. The full list is in `_shared-skills/MANIFEST.md`:
 - `feature-discovery`
 - `repo-scaffolding`
 - `structured-coding`
+- `user-facing-communication`
 - `_shared/` (banned-patterns)
 - `references/` (story-template)
+
+`user-facing-communication` is the standard for every reply either plugin
+writes to a person: what was done and the current state first, then
+anything outstanding, blocked or assumed. It reaches a session three
+ways, so it holds whether or not a workflow command is running: each
+plugin's `SessionStart` hook injects it, `_shared/wording-standard.md`
+cites it (and every skill cites that), and every skill, command and agent
+that writes to the user names it directly. `lint-skills.sh` asserts that
+last part, so the wiring cannot be dropped one file at a time.
 
 ### How to edit
 

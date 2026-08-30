@@ -1,5 +1,15 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'RESPONSE STANDARD (github-workflow): every reply you write to the user follows the user-facing-communication skill, whether or not a workflow command is running. Open with what was done and the current state, and be exact about that state: implemented, committed, pushed, pull request opened, reviewed, merged and deployed are different things. Put anything outstanding, blocked or assumed where it cannot be missed. Name every issue and pull request by number AND title, never a bare number. Leave out investigation history, file lists and test names. Full standard: skills/user-facing-communication/SKILL.md.'"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash(gh issue create*)",

@@ -8,6 +8,13 @@ Help the user understand the plugin and figure out where to start.
 
 **Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
 
+The **shape** of what you report follows
+`../skills/user-facing-communication/SKILL.md`: lead with the outcome and
+the current state, put anything outstanding, blocked or assumed where it
+cannot be missed, name every work item as well as numbering it, and leave
+out the investigation history. It applies to every reply you write, not
+only the last one.
+
 Trigger: when the user asks "how do I use this", "how do I get started",
 "what can you do", "help", or similar orientation questions.
 
@@ -98,6 +105,14 @@ gh auth status 2>&1 | head -3
 >   so it is short and easy to scan. Every command above already writes
 >   issues to this standard, so you only need it by hand for issues that
 >   came from somewhere else.
+>
+> **How replies are written:**
+>
+> - `/github-workflow:user-facing-communication` → The standard for
+>   everything the plugin says back to you: what was done and the current
+>   state first, then anything outstanding, blocked or assumed. It is on
+>   in every session automatically, so you only need to ask for it by
+>   name when you want an answer rewritten shorter or clearer.
 >
 > **Faster, better-grounded runs (optional):**
 >

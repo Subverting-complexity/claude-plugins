@@ -160,6 +160,13 @@ Clear and easy to read:
 See `_shared/wording-standard.md` for the full standard and a second
 example.
 
+The **shape** of what you report follows
+`skills/user-facing-communication/SKILL.md`: lead with the outcome and
+the current state, put anything outstanding, blocked or assumed where it
+cannot be missed, name every work item as well as numbering it, and leave
+out the investigation history. It applies to every reply you write, not
+only the last one.
+
 ### Interview mechanics
 
 - **Lead with recommendations.** For every question, state what you'd recommend and why before asking. Don't just interrogate. Give your best answer based on codebase research, then ask if the user agrees or wants to change it.

@@ -19,6 +19,13 @@ When you report results to the user, follow
 about it in plain language a reader who is not involved in this codebase
 can act on.
 
+The **shape** of what you report follows
+`skills/user-facing-communication/SKILL.md`: lead with the outcome and
+the current state, put anything outstanding, blocked or assumed where it
+cannot be missed, name every work item as well as numbering it, and leave
+out the investigation history. It applies to every reply you write, not
+only the last one.
+
 ## 1. Startup checks (one shell round-trip)
 
 Run suppression, GitHub-CLI auth, `ClaudeProject.md`, and `CLAUDE.md` in a

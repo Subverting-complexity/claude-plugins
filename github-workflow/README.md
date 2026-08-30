@@ -58,6 +58,7 @@ github-workflow/
 │   ├── repo-scaffolding/      # Repository structure and setup
 │   ├── user-story/            # Author user stories
 │   ├── writing-github-issues/ # Issue-body standard (short, scannable)
+│   ├── user-facing-communication/ # Reply standard (outcome + state first)
 │   ├── acceptance-criteria/   # Author acceptance criteria
 │   ├── pr-description/        # Author PR descriptions
 │   ├── doc-writer/            # Write and update documentation
@@ -280,6 +281,7 @@ them or directly.
 | `repo-scaffolding`    | Repository structure and scaffolding              |
 | `user-story`          | Authors user stories                              |
 | `writing-github-issues` | Standard for every issue title and body         |
+| `user-facing-communication` | Standard for every reply the user reads    |
 | `acceptance-criteria` | Authors acceptance criteria                       |
 | `pr-description`      | Authors PR descriptions                           |
 | `doc-writer`          | Writes and updates documentation                  |

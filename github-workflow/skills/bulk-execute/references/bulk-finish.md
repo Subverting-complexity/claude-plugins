@@ -170,6 +170,11 @@ by number **and** title, any story that was dropped and why, and the labels
 applied. Do not summarise the work as though it were done, and do not end
 your turn here.
 
+`skills/user-facing-communication/SKILL.md` governs how this reads. Be
+exact about state: the pull request is **open and not yet reviewed**. A
+dropped story is outstanding work, so say what it was and what would let
+it be picked up, rather than listing it as a detail among the labels.
+
 ## 6. Go to Phase 8 now
 
 Read `skills/execute/references/review-and-merge.md` and follow it, in the

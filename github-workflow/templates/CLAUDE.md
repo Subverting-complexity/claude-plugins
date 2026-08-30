@@ -23,6 +23,27 @@ The **GitHub issue** is the source of truth for every story. Read the
 issue body first. Only consult reference docs for cross-cutting
 concerns not covered in the issue.
 
+## How Claude Reports Back
+
+Every reply is written to the `user-facing-communication` standard the
+plugin ships, and it applies whether or not a workflow command is
+running. Assume the reader did not follow the session:
+
+- Open with what was done and the current state. Be exact about which
+  state it is. Implemented, committed, pushed, opened as a pull request,
+  reviewed, merged and deployed are different things, and a run can stop
+  at any of them.
+- Put anything outstanding, blocked, or waiting on a person near the
+  top, with the reason in plain English.
+- Show any meaningful assumption or anything that could not be verified.
+- Name every issue and pull request by number **and** title. A bare
+  number is not enough.
+- Leave out the investigation history, the file list, the test names and
+  anything else whose only job is to show the work was thorough.
+
+Ask for `user-facing-communication` directly when a reply is too long,
+too technical, or unclear about what is actually finished.
+
 ## Autonomous Execution
 
 Execute the full story workflow end-to-end without pausing for

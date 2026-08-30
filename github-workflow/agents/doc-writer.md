@@ -47,6 +47,15 @@ directory.
 and PRs to understand what was built. Narrowed to the specific gh
 subcommands needed (view only), not the full `gh *`.
 
+## How you report
+
+The pages you write follow `skills/doc-writer/SKILL.md`. What you say
+back about them follows `skills/user-facing-communication/SKILL.md`:
+which pages you created or updated and whether they are committed, the
+issue or pull request named by number **and** title, and anything
+outstanding or assumed. Do not narrate the reading you did to write
+them.
+
 ## Rules
 
 - Do not modify any source code files.

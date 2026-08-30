@@ -13,9 +13,26 @@ technically capable reader who is **not involved in this particular
 project** — they follow conceptual and architectural points fine, but
 they do not know this codebase's specific names, files, components, or
 conventions. The agent may be running autonomously (for example through
-`execute` or a scheduled routine), so the person reading has not seen the
-diff, the codebase, or the conversation. Write so they can follow the
-change without already knowing its internals.
+`build` or a scheduled routine), so the person reading has
+not seen the diff, the codebase, or the conversation. Write so they can
+follow the change without already knowing its internals.
+
+## This standard governs the prose; another governs the shape
+
+`skills/user-facing-communication/SKILL.md` decides **what goes in a
+reply and in what order**: lead with the outcome and the current state,
+say plainly what is finished and what is not, surface anything
+outstanding, blocked or assumed, and cut the investigation history and
+proof of work. It applies to every response, without being asked.
+
+This file decides **how that text reads**: plain English, explain a
+project-specific name before relying on it, keep the reasoning and the
+uncertainty, keep identifiers exact. Where the two meet, the shape
+standard decides the length and the content, and this one decides the
+wording. `_shared/banned-patterns.md` applies to both, always.
+
+Read the shape standard before you write a report, a progress note, a
+question, or the summary that ends a run.
 
 ## The standard
 
@@ -88,8 +105,9 @@ is shorter than this standard would otherwise produce, and it leaves out
 the investigation that found the problem.
 
 Everything else you write still follows this standard, including the
-comment you post on an issue. `_shared/banned-patterns.md` applies to
-both.
+comment you post on an issue, and what you tell the person about the
+issue you filed. `_shared/banned-patterns.md` applies to all of it, and
+`skills/user-facing-communication/SKILL.md` still shapes the reply.
 
 ## Before you send anything
 
@@ -100,6 +118,12 @@ changed and why. If a line names a project-specific component or
 identifier without saying what it is, explain it. If a line is just a
 string of identifiers or a clipped fragment, rewrite it as a plain
 statement.
+
+Then run the shape check in
+`skills/user-facing-communication/SKILL.md`: the outcome and the current
+state are in the first sentence, anything outstanding or assumed is
+visible, work items are named as well as numbered, and nothing is there
+only to show the work was done thoroughly.
 
 ## Example
 

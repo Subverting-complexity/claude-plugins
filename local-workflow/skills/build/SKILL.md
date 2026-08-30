@@ -34,6 +34,13 @@ different job.
 
 Everything you write for a person to read (the plan, progress notes, and the final summary) follows `skills/_shared/wording-standard.md` and avoids `skills/_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
 
+The **shape** of what you report follows
+`skills/user-facing-communication/SKILL.md`: lead with the outcome and
+the current state, put anything outstanding, blocked or assumed where it
+cannot be missed, name every work item as well as numbering it, and leave
+out the investigation history. It applies to every reply you write, not
+only the last one.
+
 ## Project context (auto-loaded)
 
 **Branch:** !`git branch --show-current 2>/dev/null || echo "(not a git repo or detached HEAD)"`
@@ -198,11 +205,23 @@ After committing, run the **Exit cleanup** below so the tree ends clean.
 
 ## Phase 6 -- Report
 
-Summarize what was done:
-- What was built
-- Which files were changed
-- What tests were added or modified
-- Any remaining work or known limitations
+Write this to `skills/user-facing-communication/SKILL.md`. Open with what
+was built and the current state, and be exact about that state: this run
+ends at a **commit on your branch**. Nothing is pushed, no pull request
+exists, and nothing is merged unless you say otherwise. Say so plainly,
+because a report that only says "done" reads as shipped.
+
+Then include only the parts that carry information:
+
+- What was built, in plain language.
+- Anything outstanding: work left undone, a known limitation, or
+  something the user has to do next.
+- Any meaningful assumption you had to make, or anything you could not
+  verify.
+
+Name the files you changed only when the user needs them. Leave out the
+test names, the commands you ran, and the problems you hit and then
+fixed.
 
 ## Exit cleanup -- reconcile the working tree to clean
 

@@ -160,6 +160,12 @@ light.
    applied. A **progress note, not the run's final report** — do not
    summarise the work as though it were done, and do not end your turn on it.
 
+   `skills/user-facing-communication/SKILL.md` governs how this reads, and
+   the part that matters most here is being exact about state. The pull
+   request is **open and not yet reviewed**. Say that. A note that reads
+   like a finished run invites the user to treat it as one, which is the
+   failure the next section describes.
+
 6. **Go to Phase 8 now**: read `references/review-and-merge.md` and follow
    it, in the same turn as step 5. Without asking the user, without waiting
    for CI, and without checking whether merging is switched on — that setting

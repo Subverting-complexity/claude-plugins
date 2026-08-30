@@ -560,6 +560,12 @@ keep `file:line` references and identifiers precise in backticks. The
 section headings below give structure — the text under them is prose, not
 a stripped list of identifiers.
 
+The **shape** of the review comment, and of what you report back when the
+review is done, follows `skills/user-facing-communication/SKILL.md`: the
+verdict and the current state first, anything outstanding or assumed
+where it cannot be missed, every issue and pull request named as well as
+numbered, and no investigation history.
+
 Post a single comment using `gh pr comment <number> --repo <org>/<repo>`:
 
 ```
@@ -700,6 +706,14 @@ architecture, tech debt, feature, user story, or epic), never just
 "issue". If the verdict was not Approved (Step 11 did not run), use the
 Step 10 line `Reviewed PR #<number> <title> — <verdict>` followed by the
 same **Changed** / **Added to the board** outline.
+
+This shape is the one `skills/user-facing-communication/SKILL.md` asks
+for: outcome and state in the first line, then only what changed and
+what is now outstanding. Keep it that way. Do not append the reasoning
+behind each fix, a file list, or a note that the review was thorough. If
+something is still blocked, or you had to assume something to reach the
+verdict, add an **Outstanding** or **Assumptions** section under the
+outline rather than burying it in the lines above.
 
 ---
 

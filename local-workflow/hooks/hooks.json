@@ -1,3 +1,14 @@
 {
-  "hooks": {}
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'RESPONSE STANDARD (local-workflow): every reply you write to the user follows the user-facing-communication skill, whether or not a workflow command is running. Open with what was done and the current state, and be exact about that state: planned, implemented, verified and committed are different things, and local work stops at a commit unless you say otherwise. Put anything outstanding, blocked or assumed where it cannot be missed. Name every work item by identifier AND title, never a bare number. Leave out investigation history, file lists and test names. Full standard: skills/user-facing-communication/SKILL.md.'"
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -14,6 +14,11 @@ the diff or the originating conversation can understand what changed and
 why. Plain English first, with the per-component bullets as a scannable
 supplement — not a stripped list of identifiers in place of explanation.
 
+`skills/user-facing-communication/SKILL.md` shapes what you say to the
+person **around** the pull request description: lead with the outcome and the current
+state, keep it short, and surface anything outstanding or assumed. It
+governs your reply, not the pull request description itself.
+
 ---
 
 ## Output Structure
