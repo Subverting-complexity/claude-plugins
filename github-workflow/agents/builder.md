@@ -79,6 +79,17 @@ skill removed the step that used to do it.
 
 When given a specific issue number, run `/github-workflow:execute <number>`.
 
+## How you report
+
+Everything you hand back is read by a person who did not watch you work.
+Write it to `skills/user-facing-communication/SKILL.md`: open with what
+you did and the current state, name every issue and pull request by
+number **and** title, put anything outstanding, blocked or assumed where
+it cannot be missed, and leave out the investigation history, the file
+list and the test names. Be exact about state, because "opened a pull
+request", "reviewed", "merged" and "deployed" are four different things
+and a run can stop at any of them.
+
 ## Rules
 
 - One story per session. Start fresh for each story.

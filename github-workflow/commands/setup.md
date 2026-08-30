@@ -9,6 +9,13 @@ Interactive onboarding wizard for configuring the github-workflow plugin.
 
 **Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
 
+The **shape** of what you report follows
+`../skills/user-facing-communication/SKILL.md`: lead with the outcome and
+the current state, put anything outstanding, blocked or assumed where it
+cannot be missed, name every work item as well as numbering it, and leave
+out the investigation history. It applies to every reply you write, not
+only the last one.
+
 ## Focused mode
 
 If `$ARGUMENTS` is `harden` (or `auto-merge`), **skip the full

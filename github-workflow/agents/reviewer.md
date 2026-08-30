@@ -98,6 +98,17 @@ followed by what it changed and what it added to the board.
 Review **one PR per invocation**, then exit. Do not loop through every
 open PR.
 
+## How you report
+
+Everything you hand back, whether it goes to a person or to the caller
+that spawned you, is written to
+`skills/user-facing-communication/SKILL.md`: the verdict and the current
+state first, then what you changed and what you filed. Name every pull
+request and issue by number **and** title. Put anything outstanding,
+blocked or assumed where it cannot be missed, and leave out the
+investigation that found each problem. Be exact about state: reviewed,
+fixed and pushed, approved, and merged are four different outcomes.
+
 ## Rules
 
 - Run the code-review skill in its default (full) mode so issues are

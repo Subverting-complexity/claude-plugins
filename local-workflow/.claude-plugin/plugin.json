@@ -1,6 +1,6 @@
 {
   "name": "local-workflow",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Project-agnostic plugin for local development work. Its end-to-end command is `build`, which plans, writes, verifies and commits a task on your machine — renamed from `execute` so it is no longer confusable with github-workflow's `execute`, which runs the full pull-request loop. Also provides structured coding methodology, architecture design and audit, feature discovery and plan validation, user story writing, PR descriptions, support documentation, and tone-matched correspondence. No GitHub or platform dependencies required.",
   "author": {
     "name": "Subverting Complexity"

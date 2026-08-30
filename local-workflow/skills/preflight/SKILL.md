@@ -97,3 +97,8 @@ briefly, then one line per `WARN` with exactly one actionable next step:
 
 Warnings never block — report them and stop. Do not fix anything, even
 if the fix looks trivial; the user decides what happens next.
+
+The **shape** of that report follows
+`skills/user-facing-communication/SKILL.md`: the overall verdict first,
+then the warnings. Say plainly that nothing was changed, because a
+read-only check is easy to mistake for a fix.

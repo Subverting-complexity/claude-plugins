@@ -7,9 +7,14 @@ description: "Write or format a single user story for a development work item, w
 
 Read `_shared/wording-standard.md` and `_shared/banned-patterns.md` before writing. Both apply to user stories. Assume a technically capable reader who is not involved in this codebase: explain what a component or pattern is before relying on its name, and never let a string of identifiers replace a plain explanation.
 
-**If the story is going into a GitHub issue, that standard wins.** The
-format below is built for pasting into a project management tool. When
-the destination is a GitHub issue, write it to the plugin's
+`skills/user-facing-communication/SKILL.md` shapes what you say to the
+person **around** the story: lead with the outcome and the current
+state, keep it short, and surface anything outstanding or assumed. It
+governs your reply, not the story itself.
+
+**If the story is going into a GitHub issue, the issue standard wins.**
+The format below is built for pasting into a project management tool.
+When the destination is a GitHub issue, write it to the plugin's
 `writing-github-issues` standard instead (github-workflow provides it as
 a skill, with the story shape in `references/story-template.md`): a
 `## Summary` that stands on its own, then only the sections that carry

@@ -34,6 +34,7 @@ Python dependencies.
 | `/local-workflow:acceptance-criteria`     | Generate testable acceptance criteria         |
 | `/local-workflow:pr-description`         | Format a PR body from changes                 |
 | `/local-workflow:tone`                   | Polish correspondence in your voice           |
+| `/local-workflow:user-facing-communication` | Rewrite a reply that is too long or unclear about what is finished |
 | `/local-workflow:support-request`        | Document a support ticket or investigation    |
 | `/local-workflow:verify-feature`         | Verify feature completeness and safety        |
 | `/local-workflow:mobile-audit`           | React Native / Expo specific audit            |
@@ -67,6 +68,9 @@ local-workflow/
 │   │   └── SKILL.md           # PR body formatting
 │   ├── tone/
 │   │   └── SKILL.md           # Correspondence polishing
+│   ├── user-facing-communication/
+│   │   ├── SKILL.md           # Reply standard (outcome + state first)
+│   │   └── references/        # Worked examples
 │   ├── support-request/
 │   │   └── SKILL.md           # Support documentation
 │   ├── verify-feature/
@@ -109,6 +113,7 @@ local-workflow/
 | `pr-description`       | Format PR bodies from diffs and context            |
 | `tone`                 | Polish correspondence while preserving your voice  |
 | `support-request`      | Document support tickets and investigations        |
+| `user-facing-communication` | Shapes every reply you get: outcome and state first, then anything outstanding or assumed. Applies to every session through the plugin's `SessionStart` hook, not only when a command is running |
 
 ### Platform-specific
 

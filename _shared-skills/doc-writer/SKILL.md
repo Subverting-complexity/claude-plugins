@@ -28,6 +28,11 @@ in this codebase: explain what a component or pattern is before relying
 on its name, stay high-level and concise, and never let a string of
 identifiers replace a plain explanation.
 
+`skills/user-facing-communication/SKILL.md` shapes what you say to the
+person **around** the documentation: lead with the outcome and the current
+state, keep it short, and surface anything outstanding or assumed. It
+governs your reply, not the documentation itself.
+
 ## Inputs
 
 Determine the documentation type from the user's request:

@@ -190,6 +190,11 @@ reader without the full context can follow. Avoid telegraphic fragments
 and stacked clauses, define or avoid jargon, and keep `file:line`
 references and identifiers precise in backticks.
 
+The **shape** of the review, and of what you report back when it is done,
+follows `skills/user-facing-communication/SKILL.md`: the verdict and the
+current state first, anything outstanding or assumed where it cannot be
+missed, and no investigation history.
+
 Present findings organized by severity:
 
 ### Critical

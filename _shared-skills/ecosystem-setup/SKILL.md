@@ -17,6 +17,13 @@ what a thing is rather than only naming it, keep it concise, and avoid
 the patterns in `_shared/banned-patterns.md`. Full standard:
 `_shared/wording-standard.md`.
 
+The **shape** of what you report follows
+`skills/user-facing-communication/SKILL.md`: lead with the outcome and
+the current state, put anything outstanding, blocked or assumed where it
+cannot be missed, name every work item as well as numbering it, and leave
+out the investigation history. It applies to every reply you write, not
+only the last one.
+
 This whole skill is **optional and additive** — skip any tool the user
 declines or that is not relevant. Ask once at the start, with a one-line
 sense of what is on offer: "Want to set up any Claude Code companion

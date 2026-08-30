@@ -182,6 +182,81 @@ else
     done
 fi
 
+# Reply-writing wiring: user-facing-communication is the standard for every
+# reply either plugin writes to a person. It reaches a session three ways —
+# each plugin's SessionStart hook, the shared wording standard every skill
+# cites, and a direct citation in each file that writes to the user. Only the
+# third can rot silently, so each of those files is asserted here. Add a file
+# whenever a new path starts writing to the user; do not delete an entry to
+# make the gate pass.
+declare -a reply_writing_files=(
+    # Both plugins carry the deployed copy of the standard itself.
+    "github-workflow/skills/user-facing-communication/SKILL.md"
+    "local-workflow/skills/user-facing-communication/SKILL.md"
+    # The shared standard that every other skill inherits it through.
+    "github-workflow/skills/_shared/wording-standard.md"
+    "local-workflow/skills/_shared/wording-standard.md"
+    # github-workflow: orchestrators, commands, and the agents that report back.
+    "github-workflow/skills/execute/SKILL.md"
+    "github-workflow/skills/execute/references/finish.md"
+    "github-workflow/skills/bulk-execute/SKILL.md"
+    "github-workflow/skills/bulk-execute/references/bulk-finish.md"
+    "github-workflow/skills/code-review/SKILL.md"
+    "github-workflow/skills/preflight/SKILL.md"
+    "github-workflow/skills/writing-github-issues/SKILL.md"  # states the precedence
+    "github-workflow/commands/block-story.md"
+    "github-workflow/commands/guide.md"
+    "github-workflow/commands/report-issue.md"
+    "github-workflow/commands/setup.md"
+    "github-workflow/agents/builder.md"
+    "github-workflow/agents/reviewer.md"
+    "github-workflow/agents/doc-writer.md"
+    "github-workflow/templates/CLAUDE.md"                    # the rules written into a target project
+    # local-workflow: the same surfaces, minus the GitHub-specific ones.
+    "local-workflow/skills/build/SKILL.md"
+    "local-workflow/skills/code-review/SKILL.md"
+    "local-workflow/skills/mobile-audit/SKILL.md"
+    "local-workflow/skills/preflight/SKILL.md"
+)
+
+for f in "${reply_writing_files[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is listed as a reply-writing path but does not exist"
+        status=1
+    elif ! grep -qF 'user-facing-communication' "$f"; then
+        echo "FAIL: $f writes replies the user reads but does not cite user-facing-communication"
+        status=1
+    fi
+done
+
+# Every shared skill writes something a person reads, so each canonical source
+# cites the standard. Checking the canonical files (rather than the deployed
+# copies) means a new shared skill is caught the moment it is added, before it
+# is ever synced.
+for f in _shared-skills/*/SKILL.md; do
+    [ -f "$f" ] || continue
+    if ! grep -qF 'user-facing-communication' "$f"; then
+        echo "FAIL: $f is a shared skill but does not cite user-facing-communication"
+        status=1
+    fi
+done
+
+# The SessionStart hook is what makes the standard apply outside a workflow
+# command. Without it, a plain question in a fresh session gets none of this.
+for plugin in github-workflow local-workflow; do
+    hooks_file="$plugin/hooks/hooks.json"
+    if [ ! -f "$hooks_file" ]; then
+        echo "FAIL: $hooks_file is missing — it carries the SessionStart response standard"
+        status=1
+    elif ! grep -q 'SessionStart' "$hooks_file"; then
+        echo "FAIL: $hooks_file has no SessionStart hook — the response standard would only apply inside a command"
+        status=1
+    elif ! grep -q 'user-facing-communication' "$hooks_file"; then
+        echo "FAIL: $hooks_file has a SessionStart hook that does not carry the response standard"
+        status=1
+    fi
+done
+
 echo ""
 if [ $status -eq 0 ]; then
     echo "All checks passed."

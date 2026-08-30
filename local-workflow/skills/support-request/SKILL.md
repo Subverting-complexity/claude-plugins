@@ -10,6 +10,11 @@ Read `_shared/banned-patterns.md` before writing. All banned patterns apply to s
 
 Write support documentation that is clear, structured, and consistent. Every support request follows the same bones so readers know exactly where to look.
 
+`skills/user-facing-communication/SKILL.md` shapes what you say to the
+person **around** the support document: lead with the outcome and the current
+state, keep it short, and surface anything outstanding or assumed. It
+governs your reply, not the support document itself.
+
 ## Output Format
 
 Always return the support request in **two separate code blocks** for easy copying:

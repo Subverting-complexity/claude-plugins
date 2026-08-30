@@ -43,15 +43,19 @@ Apply it without being asked. There is no separate "concise mode".
 - `skills/_shared/banned-patterns.md` still applies in full. Its banned
   vocabulary, phrases and closing patterns are never acceptable in an
   issue.
-- `skills/_shared/wording-standard.md` governs everything else a person
-  reads: the plan you print, progress notes, pull request descriptions,
-  review comments, questions and chat replies. Where it asks for more
-  explanation than an issue needs, this skill wins **inside the issue
-  body only**.
+- `skills/_shared/wording-standard.md` governs how everything else a
+  person reads is worded: the plan you print, progress notes, pull
+  request descriptions, review comments, questions and chat replies.
+  Where it asks for more explanation than an issue needs, this skill
+  wins **inside the issue body only**.
+- `skills/user-facing-communication/SKILL.md` governs the shape of what
+  you say **about** the issue: what you filed, its current state, the
+  issue named as well as numbered, and anything still outstanding. That
+  is your reply, not the issue body, and it never reaches into the body.
 
-The two standards agree on the important part: explain the point in
-plain words. They differ on length. An issue is read by someone about to
-do the work, so it stays short.
+The standards agree on the important part: explain the point in plain
+words. They differ on length. An issue is read by someone about to do
+the work, so it stays short.
 
 ## Title and body are separate fields
 
