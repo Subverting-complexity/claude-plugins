@@ -30,6 +30,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -47,6 +48,7 @@ sys.path.insert(
     os.path.join(os.path.dirname(__file__), '..', 'github-workflow', 'scripts'),
 )
 import wf  # noqa: E402
+import wf_core  # noqa: E402  (the batch-size cap)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -900,25 +902,35 @@ _APPLY_CAPS = {
 
 
 class _FakeHub(object):
-    """An in-memory GitHub for the mutations `issue-apply` sends."""
+    """An in-memory GitHub for the requests `issue-apply` sends.
 
-    def __init__(self, issues=(), swallow_fields=False, fail_create=False):
+    It applies each mutation to a store and serves every read from the same
+    store, so a test can assert both what was sent *and* that reading it back
+    agrees — which is the property the command's verification exists to
+    enforce. It also counts requests, because the round-trip budget for an epic
+    tree is itself a requirement.
+    """
+
+    def __init__(self, issues=(), labels=None, swallow_fields=False,
+                 fail_create=(), fail_link=False):
         self.issues = {i['number']: i for i in issues}
         self.next_number = max(self.issues, default=100) + 1
-        self.sent = []
-        # `swallow_fields` models the failure the verification step is for: a
-        # mutation GitHub accepts that changes nothing.
+        self.labels = dict(labels if labels is not None
+                           else {'priority-high': 'L_hi', 'priority-medium': 'L_med'})
+        self.queries = []      # read round trips
+        self.mutations = []    # write round trips
+        self.sent = []         # (mutation name, variables) per alias, in order
+        # `swallow_fields` models the failure verification is for: a mutation
+        # GitHub accepts that changes nothing.
         self.swallow_fields = swallow_fields
-        self.fail_create = fail_create
+        self.fail_create = set(fail_create)
+        self.fail_link = fail_link
         self.type_names = {v: k for k, v in _APPLY_CAPS['type_map'].items()}
         self.field_names = {m['id']: (n, m) for n, m
                             in _APPLY_CAPS['field_map'].items()}
 
     # -- reads --
-    def read_issue(self, cfg, number, repo=None):
-        issue = self.issues.get(int(number))
-        if not issue:
-            return False, None, 'issue #%s not found' % number
+    def _readback(self, issue):
         nodes = []
         for name, value in issue['fields'].items():
             if isinstance(value, list):
@@ -926,7 +938,7 @@ class _FakeHub(object):
                               'options': [{'name': v} for v in value]})
             else:
                 nodes.append({'field': {'name': name}, 'name': value})
-        return True, {
+        return {
             'id': issue['id'], 'number': issue['number'],
             'title': issue['title'], 'body': issue['body'],
             'issueType': {'name': issue['type']} if issue['type'] else None,
@@ -934,8 +946,34 @@ class _FakeHub(object):
             'blockedBy': {'nodes': [{'number': n} for n in issue['blocked_by']]},
             'labels': {'nodes': [{'name': n} for n in issue['labels']]},
             'issueFieldValues': {'nodes': nodes},
-        }, ''
+        }
 
+    def gh_graphql(self, query, **fields):
+        self.queries.append(query)
+        if 'labels(first:100)' in query:
+            repository = {'id': 'R_1',
+                          'labels': {'nodes': [{'id': i, 'name': n}
+                                               for n, i in self.labels.items()]}}
+            for alias, number in re.findall(r'(n\d+): issue\(number:(\d+)\)', query):
+                issue = self.issues.get(int(number))
+                repository[alias] = ({'id': issue['id'], 'number': issue['number']}
+                                     if issue else None)
+            return True, {'repository': repository}, ''
+        if 'issue(number:$number)' in query:
+            issue = self.issues.get(int(fields['number']))
+            return True, {'repository': {'issue': self._readback(issue)
+                                         if issue else None}}, ''
+        raise AssertionError('unexpected query: %s' % query)
+
+    def read_issue(self, cfg, number, repo=None):
+        ok, data, err = self.gh_graphql(wf.ISSUE_READBACK_QUERY, owner='o',
+                                        repo='r', number=number)
+        issue = ((data or {}).get('repository') or {}).get('issue')
+        if not issue:
+            return False, None, 'issue #%s not found' % number
+        return True, issue, ''
+
+    # -- writes --
     def _by_id(self, node_id):
         for issue in self.issues.values():
             if issue['id'] == node_id:
@@ -947,69 +985,98 @@ class _FakeHub(object):
             return
         for spec in inputs:
             name, meta = self.field_names[spec['fieldId']]
+            back = {v: k for k, v in (meta.get('options') or {}).items()}
             if 'multiSelectOptionIds' in spec:
-                back = {v: k for k, v in meta['options'].items()}
                 issue['fields'][name] = sorted(back[o] for o
                                                in spec['multiSelectOptionIds'])
             elif 'singleSelectOptionId' in spec:
-                back = {v: k for k, v in meta['options'].items()}
                 issue['fields'][name] = back[spec['singleSelectOptionId']]
             else:
                 issue['fields'][name] = list(spec.values())[1]
 
-    # -- writes --
+    def _create(self, arg):
+        number = self.next_number
+        self.next_number += 1
+        issue = {'id': 'I_%d' % number, 'number': number,
+                 'title': arg.get('title'), 'body': arg.get('body') or '',
+                 'type': self.type_names.get(arg.get('issueTypeId')),
+                 'fields': {}, 'parent': None, 'blocked_by': [],
+                 'labels': sorted(n for n, i in self.labels.items()
+                                  if i in (arg.get('labelIds') or []))}
+        self.issues[number] = issue
+        self._apply_fields(issue, arg.get('issueFields') or [])
+        if arg.get('parentIssueId'):
+            parent = self._by_id(arg['parentIssueId'])
+            issue['parent'] = parent['number'] if parent else None
+        return issue
+
     def graphql_json(self, query, variables):
+        self.mutations.append(query)
+        data, errors = {}, []
+
+        if 'createIssue' in query:
+            for alias in sorted(variables, key=lambda a: int(a[1:])):
+                arg = variables[alias]
+                self.sent.append(('createIssue', arg))
+                if arg.get('title') in self.fail_create:
+                    data[alias] = None
+                    errors.append({'path': [alias], 'message': 'nope'})
+                    continue
+                data[alias] = {'issue': self._readback(self._create(arg))}
+            return 0, json.dumps({'data': data, 'errors': errors}), ''
+
+        aliased = re.findall(r'(b\d+): (addBlockedBy|updateIssue)', query)
+        if aliased:
+            for alias, kind in aliased:
+                if self.fail_link:
+                    data[alias] = None
+                    errors.append({'path': [alias], 'message': 'nope'})
+                    continue
+                issue = self._by_id(variables['%s_i' % alias])
+                if kind == 'addBlockedBy':
+                    blocker = self._by_id(variables['%s_b' % alias])
+                    self.sent.append(('addBlockedBy', blocker['number']))
+                    issue['blocked_by'].append(blocker['number'])
+                    data[alias] = {'issue': {
+                        'id': issue['id'],
+                        'blockedBy': {'nodes': [{'number': n}
+                                                for n in issue['blocked_by']]}}}
+                else:
+                    self.sent.append(('updateIssue', issue['number']))
+                    issue['body'] = variables['%s_t' % alias]
+                    data[alias] = {'issue': {'id': issue['id'],
+                                             'body': issue['body']}}
+            return 0, json.dumps({'data': data, 'errors': errors}), ''
+
+        # Single-issue update mutations, which stay unbatched.
         def ok(payload):
             return 0, json.dumps({'data': payload}), ''
 
-        if 'createIssue' in query:
-            self.sent.append(('createIssue', variables))
-            if self.fail_create:
-                return 1, json.dumps({'errors': [{'message': 'nope'}]}), ''
-            arg = variables['input']
-            number = self.next_number
-            self.next_number += 1
-            issue = {'id': 'I_%d' % number, 'number': number,
-                     'title': arg.get('title'), 'body': arg.get('body') or '',
-                     'type': self.type_names.get(arg.get('issueTypeId')),
-                     'fields': {}, 'parent': None, 'blocked_by': [],
-                     'labels': list(arg.get('labelIds') or [])}
-            self.issues[number] = issue
-            self._apply_fields(issue, arg.get('issueFields') or [])
-            if arg.get('parentIssueId'):
-                parent = self._by_id(arg['parentIssueId'])
-                issue['parent'] = parent['number'] if parent else None
-            return ok({'createIssue': {'issue': {'id': issue['id'],
-                                                 'number': number}}})
-
         if 'updateIssueIssueType' in query:
-            self.sent.append(('updateIssueIssueType', variables))
             issue = self._by_id(variables['i'])
+            self.sent.append(('updateIssueIssueType', variables))
             issue['type'] = self.type_names.get(variables['t'])
             return ok({'updateIssueIssueType': {'issue': {'id': issue['id']}}})
 
         if 'setIssueFieldValue' in query:
-            self.sent.append(('setIssueFieldValue', variables))
             issue = self._by_id(variables['i'])
+            self.sent.append(('setIssueFieldValue', variables))
             self._apply_fields(issue, variables['f'])
             return ok({'setIssueFieldValue': {'issue': {'id': issue['id']}}})
 
         if 'addSubIssue' in query:
-            self.sent.append(('addSubIssue', variables))
             parent, child = self._by_id(variables['p']), self._by_id(variables['c'])
+            self.sent.append(('addSubIssue', variables))
             child['parent'] = parent['number']
             return ok({'addSubIssue': {'issue': {'id': parent['id']}}})
-
-        if 'addBlockedBy' in query:
-            self.sent.append(('addBlockedBy', variables))
-            issue, blocker = self._by_id(variables['i']), self._by_id(variables['b'])
-            issue['blocked_by'].append(blocker['number'])
-            return ok({'addBlockedBy': {'issue': {'id': issue['id']}}})
 
         raise AssertionError('unexpected mutation: %s' % query)
 
     def names_sent(self):
         return [name for name, _ in self.sent]
+
+    def round_trips(self):
+        return len(self.queries) + len(self.mutations)
 
 
 def _existing(number, **over):
@@ -1020,8 +1087,8 @@ def _existing(number, **over):
     return issue
 
 
-class TestIssueApply(unittest.TestCase):
-    """One command, everything on the issue, and every write read back."""
+class _ApplyCase(unittest.TestCase):
+    """Shared plumbing: a spec file on disk and a run against the fake hub."""
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -1041,12 +1108,7 @@ class TestIssueApply(unittest.TestCase):
                 mock.patch.object(wf, 'resolve_org_capabilities',
                                   lambda cfg, refresh=False, root=None:
                                   (True, _APPLY_CAPS, '')), \
-                mock.patch.object(wf, 'resolve_repo_id',
-                                  lambda cfg, repo=None: (True, 'R_1', '')), \
-                mock.patch.object(wf, 'resolve_label_ids',
-                                  lambda cfg, names, repo=None:
-                                  (True, {n: 'L_%s' % n for n in names}, [], '')), \
-                mock.patch.object(wf, 'read_issue', hub.read_issue), \
+                mock.patch.object(wf, 'gh_graphql', hub.gh_graphql), \
                 mock.patch.object(wf, '_graphql_json', hub.graphql_json), \
                 mock.patch.object(wf, 'run',
                                   lambda a, input_text=None: (0, '', '')), \
@@ -1062,13 +1124,17 @@ class TestIssueApply(unittest.TestCase):
         entry.update(over)
         return entry
 
+
+class TestIssueApply(_ApplyCase):
+    """One command, everything on the issue, and every write read back."""
+
     def test_a_create_is_one_mutation_carrying_everything(self):
         """The point of the command: no create-then-patch sequence to half-fail."""
         hub = _FakeHub()
-        code, payload, _, written = self._run([self._full()], hub)
+        code, payload, _, _ = self._run([self._full()], hub)
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(hub.names_sent(), ['createIssue'])
-        sent = hub.sent[0][1]['input']
+        sent = hub.sent[0][1]
         self.assertEqual(sent['issueTypeId'], 'IT_story')
         self.assertEqual(len(sent['issueFields']), 3)
         self.assertEqual(payload['applied'][0]['action'], 'create')
@@ -1088,7 +1154,7 @@ class TestIssueApply(unittest.TestCase):
                                           'Classification': ['New Feature']})])
         code, payload, _, _ = self._run([self._full(number=42)], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(hub.names_sent(), [])
+        self.assertEqual(hub.mutations, [])
         self.assertEqual(payload['applied'][0]['changed'], [])
 
     def test_an_update_sets_only_what_differs(self):
@@ -1102,12 +1168,12 @@ class TestIssueApply(unittest.TestCase):
 
     def test_a_missing_mandatory_field_refuses_before_any_write(self):
         hub = _FakeHub()
-        entry = self._full(fields={'field-effort': 'Medium'})
-        code, payload, _, _ = self._run([entry], hub)
+        code, payload, _, _ = self._run([self._full(fields={'field-effort': 'Medium'})],
+                                        hub)
         self.assertEqual(code, wf.EXIT_SPEC)
         self.assertEqual(payload['status'], 'spec-invalid')
         self.assertIn('Priority', payload['errors'][0])
-        self.assertEqual(hub.sent, [])
+        self.assertEqual(hub.mutations, [])
 
     def test_a_cycle_refuses_before_any_write(self):
         hub = _FakeHub()
@@ -1115,20 +1181,25 @@ class TestIssueApply(unittest.TestCase):
                    self._full(key='b', blocked_by=['a'])]
         code, payload, _, _ = self._run(entries, hub)
         self.assertEqual(code, wf.EXIT_SPEC)
-        self.assertEqual(hub.sent, [])
+        self.assertEqual(hub.mutations, [])
         self.assertTrue(payload['cycles'])
+
+    def test_a_parent_cycle_refuses_before_any_write(self):
+        """A different fault from a blocked-by cycle, and just as unresolvable."""
+        hub = _FakeHub()
+        entries = [self._full(key='a', parent='b'), self._full(key='b', parent='a')]
+        code, payload, _, _ = self._run(entries, hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertIn('parent cycle', payload['reason'])
+        self.assertEqual(hub.mutations, [])
 
     def test_an_undefined_field_is_reported_once_for_the_run(self):
         """Once per issue would bury the errors that actually matter."""
         hub = _FakeHub()
-        entries = [self._full(key='a',
-                              fields={'field-priority': 'High',
-                                      'field-effort': 'Medium',
-                                      'field-origin': 'Development'}),
-                   self._full(key='b',
-                              fields={'field-priority': 'High',
-                                      'field-effort': 'Medium',
-                                      'field-origin': 'Development'})]
+        fields = {'field-priority': 'High', 'field-effort': 'Medium',
+                  'field-origin': 'Development'}
+        entries = [self._full(key='a', fields=fields),
+                   self._full(key='b', fields=fields)]
         code, payload, stderr, _ = self._run(entries, hub)
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(payload['skipped_fields'], ['Origin'])
@@ -1163,7 +1234,7 @@ class TestIssueApply(unittest.TestCase):
         self.assertEqual(child['blocked_by'], [epic_number])
 
     def test_a_failed_entry_reports_partial_and_keeps_what_landed(self):
-        hub = _FakeHub(fail_create=True)
+        hub = _FakeHub(fail_create={'A story'})
         code, payload, _, _ = self._run([self._full()], hub)
         self.assertEqual(code, wf.EXIT_PARTIAL)
         self.assertEqual(payload['status'], 'partial')
@@ -1174,8 +1245,15 @@ class TestIssueApply(unittest.TestCase):
         code, payload, _, written = self._run([self._full()], hub, ['--dry-run'])
         self.assertEqual(code, wf.EXIT_OK)
         self.assertTrue(payload['dry_run'])
-        self.assertEqual(hub.sent, [])
+        self.assertEqual(hub.mutations, [])
         self.assertNotIn('number', written['issues'][0])
+
+    def test_a_label_the_repo_does_not_have_refuses_before_writing(self):
+        hub = _FakeHub(labels={})
+        code, payload, _, _ = self._run([self._full(labels=['priority-high'])], hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertEqual(payload['labels'], ['priority-high'])
+        self.assertEqual(hub.mutations, [])
 
     def test_a_denied_capability_refuses_rather_than_writing_blanks(self):
         path = self._spec_file([self._full()])
@@ -1188,6 +1266,99 @@ class TestIssueApply(unittest.TestCase):
             code, payload = _capture(wf.cmd_issue_apply, args)
         self.assertEqual(code, wf.EXIT_CAPABILITY)
         self.assertEqual(payload['status'], 'no-capabilities')
+
+
+class TestEpicTreeBatching(_ApplyCase):
+    """A whole tree in one invocation, batched by hierarchy level."""
+
+    def _tree(self):
+        """One epic, three features, nine stories — the shape from the story."""
+        entries = [{'key': 'epic', 'title': 'Epic', 'kind': 'epic',
+                    'fields': {'field-priority': 'High', 'field-effort': 'Medium'}}]
+        for f in range(3):
+            entries.append({'key': 'f%d' % f, 'title': 'Feature %d' % f,
+                            'kind': 'story', 'parent': 'epic',
+                            'fields': {'field-priority': 'High',
+                                       'field-effort': 'Medium'}})
+            for st in range(3):
+                entries.append({'key': 's%d_%d' % (f, st),
+                                'title': 'Story %d.%d' % (f, st), 'kind': 'story',
+                                'parent': 'f%d' % f,
+                                'fields': {'field-priority': 'High',
+                                           'field-effort': 'Medium'}})
+        return entries
+
+    def test_thirteen_issues_take_four_round_trips(self):
+        """Three levels plus the link phase. Anything more is per-issue chatter."""
+        hub = _FakeHub()
+        entries = self._tree()
+        # One edge, so the link phase runs and is counted.
+        entries[1]['blocked_by'] = ['epic']
+        code, payload, _, _ = self._run(entries, hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(len(payload['applied']), 13)
+        self.assertEqual(len(hub.mutations), 4)
+        # Plus the single prerequisite lookup: repo id and label ids together.
+        self.assertEqual(len(hub.queries), 1)
+
+    def test_children_are_created_after_their_parents(self):
+        hub = _FakeHub()
+        code, payload, _, _ = self._run(self._tree(), hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        by_key = {r['key']: r['number'] for r in payload['applied']}
+        for f in range(3):
+            feature = hub.issues[by_key['f%d' % f]]
+            self.assertEqual(feature['parent'], by_key['epic'])
+            for st in range(3):
+                story = hub.issues[by_key['s%d_%d' % (f, st)]]
+                self.assertEqual(story['parent'], by_key['f%d' % f])
+
+    def test_a_level_larger_than_the_cap_is_split_across_requests(self):
+        """The node limit is real, so a big level becomes several requests."""
+        hub = _FakeHub()
+        entries = [self._full(key='s%d' % n, title='Story %d' % n)
+                   for n in range(wf_core.BATCH_MAX_NODES + 3)]
+        code, payload, _, _ = self._run(entries, hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(len(payload['applied']), wf_core.BATCH_MAX_NODES + 3)
+        self.assertEqual(len(hub.mutations), 2)
+
+    def test_an_edge_may_point_at_any_level_because_links_come_last(self):
+        hub = _FakeHub()
+        entries = self._tree()
+        entries[0]['blocked_by'] = ['s2_2']   # the epic waits on the last story
+        code, payload, _, _ = self._run(entries, hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        by_key = {r['key']: r['number'] for r in payload['applied']}
+        epic = hub.issues[by_key['epic']]
+        self.assertEqual(epic['blocked_by'], [by_key['s2_2']])
+        self.assertIn('Blocked by #%d' % by_key['s2_2'], epic['body'])
+
+    def test_one_failed_entry_does_not_stop_the_others_in_its_batch(self):
+        hub = _FakeHub(fail_create={'Story 1'})
+        entries = [self._full(key='s%d' % n, title='Story %d' % n) for n in range(3)]
+        code, payload, _, written = self._run(entries, hub)
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+        self.assertEqual([r['entry'] for r in payload['failed']], ['s1'])
+        landed = [r['number'] for r in payload['applied'] if r['number']]
+        self.assertEqual(len(landed), 2)
+        # The two that landed are numbered in the spec, so a re-run updates them.
+        self.assertEqual([e.get('number') for e in written['issues']],
+                         [landed[0], None, landed[1]])
+
+    def test_re_running_after_a_partial_failure_completes_the_remainder(self):
+        hub = _FakeHub(fail_create={'Story 1'})
+        entries = [self._full(key='s%d' % n, title='Story %d' % n) for n in range(3)]
+        code, first, _, written = self._run(entries, hub)
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+
+        hub.fail_create = set()
+        code, second, _, _ = self._run(written['issues'], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        # Three issues in total, not six: the two that landed were updated.
+        self.assertEqual(len(hub.issues), 3)
+        self.assertEqual([r['action'] for r in second['applied']],
+                         ['create', 'update', 'update'])
 
 
 class TestDependencySection(unittest.TestCase):
