@@ -13,6 +13,7 @@ First cut implements the story picker:
     wf pick [--mode story] [--checkout]   # claim the next story, optionally branch
     wf config                             # emit .claude/wf-config.json from ClaudeProject.md
     wf org-capabilities [--refresh]       # resolve the org's issue types + issue fields
+    wf issue-apply <spec.json>            # create/update fully classified issues
 
 Contract:
   - A single JSON object is written to **stdout**; all human diagnostics go to
@@ -25,6 +26,9 @@ Contract:
       21 status=no-capabilities an org that resolves but reports neither issue
                               types nor issue fields — a broken or under-scoped
                               token looks like this, an unconfigured org does not
+      22 status=spec-invalid  the spec was refused before anything was written
+      23 status=verify-failed a write was accepted but the read-back disagrees
+      24 status=partial       some entries landed and some did not
       30 status=unsupported   this path isn't in the CLI yet — caller should
                               fall back to the inline skill procedure
   - Mutations to the *winning* issue (claim, assign, status-in-progress) are
@@ -57,6 +61,9 @@ EXIT_NO_CANDIDATES = 10
 EXIT_ALL_BLOCKED = 11
 EXIT_ENV = 20
 EXIT_CAPABILITY = 21
+EXIT_SPEC = 22
+EXIT_VERIFY = 23
+EXIT_PARTIAL = 24
 EXIT_UNSUPPORTED = 30
 EXIT_USAGE = 2
 
@@ -662,6 +669,545 @@ def cmd_org_capabilities(args):
          field_map=caps['field_map'], cached=caps.get('cached', False),
          resolved_fields=resolved, missing_fields=missing,
          cache=os.path.relpath(capability_cache_path(), repo_root()))
+
+
+# ── issue-apply ──────────────────────────────────────────────────────────────
+# One command that creates or updates an issue with everything on it: native
+# type, every org field value, parent, labels, and its blocked-by edges.
+#
+# It replaces roughly ten hand-run round trips per issue, each of which the
+# markdown it came from described as optional. The measured result of "optional"
+# across one consuming repo was 7 typed issues out of 82 and no field values at
+# all, with no error anywhere. So this command is deliberately strict: it
+# refuses a spec that omits metadata the org defines, and it reads every write
+# back rather than trusting that an accepted mutation did something.
+
+ISSUE_READBACK_QUERY = (
+    'query($owner:String!,$repo:String!,$number:Int!){'
+    ' repository(owner:$owner,name:$repo){ issue(number:$number){'
+    '  id number title body'
+    '  issueType { name }'
+    '  parent { number }'
+    '  blockedBy(first:50){ nodes { number } }'
+    '  labels(first:50){ nodes { name } }'
+    '  issueFieldValues(first:50){ nodes {'
+    '   __typename'
+    '   ... on IssueFieldSingleSelectValue { field { ... on IssueFieldSingleSelect { name } } name }'
+    '   ... on IssueFieldMultiSelectValue { field { ... on IssueFieldMultiSelect { name } } options { name } }'
+    '   ... on IssueFieldTextValue { field { ... on IssueFieldText { name } } value }'
+    '   ... on IssueFieldDateValue { field { ... on IssueFieldDate { name } } value }'
+    '   ... on IssueFieldNumberValue { field { ... on IssueFieldNumber { name } } value }'
+    '  } }'
+    ' } } }'
+)
+
+
+def read_issue(cfg, number, repo=None):
+    """Read an issue's current type, fields, parent and blockers. (ok, issue, err)."""
+    owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
+    ok, data, err = gh_graphql(ISSUE_READBACK_QUERY, owner=owner, repo=name,
+                               number=int(number))
+    if not ok:
+        return False, None, err
+    issue = ((data or {}).get('repository') or {}).get('issue')
+    if not issue:
+        return False, None, 'issue #%s not found in %s/%s' % (number, owner, name)
+    return True, issue, ''
+
+
+def issue_field_values(issue):
+    """Flatten a read-back into {field name: value}, comparable to a spec.
+
+    Single-select and text come back as one value, multi-select as a sorted
+    list, so a spec's `["New Feature"]` and the API's option list compare
+    directly without the caller re-deriving the shape per field type.
+    """
+    out = {}
+    for node in ((issue.get('issueFieldValues') or {}).get('nodes')) or []:
+        field = (node.get('field') or {}).get('name')
+        if not field:
+            continue
+        if 'options' in node:
+            out[field] = sorted(o['name'] for o in node.get('options') or [])
+        elif 'name' in node:
+            out[field] = node.get('name')
+        else:
+            out[field] = node.get('value')
+    return out
+
+
+def _values_match(wanted, actual):
+    """Whether a spec value and a read-back value are the same, shape-insensitively."""
+    if isinstance(wanted, (list, tuple)) or isinstance(actual, (list, tuple)):
+        as_list = lambda v: sorted(v) if isinstance(v, (list, tuple)) else (
+            [] if v is None else [v])
+        return as_list(wanted) == as_list(actual)
+    return str(wanted) == str(actual)
+
+
+def resolve_repo_id(cfg, repo=None):
+    owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
+    ok, data, err = gh_graphql(
+        'query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ id } }',
+        owner=owner, repo=name)
+    if not ok:
+        return False, None, err
+    rid = ((data or {}).get('repository') or {}).get('id')
+    return (True, rid, '') if rid else (False, None, 'repository %s/%s not found'
+                                        % (owner, name))
+
+
+def resolve_label_ids(cfg, names, repo=None):
+    """Label name → node id for the names given. (ok, {name: id}, missing, err)."""
+    if not names:
+        return True, {}, [], ''
+    owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
+    ok, data, err = gh_graphql(
+        'query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){'
+        ' labels(first:100){ nodes { id name } } } }',
+        owner=owner, repo=name)
+    if not ok:
+        return False, {}, [], err
+    have = {n['name']: n['id']
+            for n in (((data or {}).get('repository') or {}).get('labels') or {}).get('nodes') or []}
+    resolved = {n: have[n] for n in names if n in have}
+    return True, resolved, [n for n in names if n not in have], ''
+
+
+def _mutation_result(code, out, err, path):
+    """Unwrap a `gh api graphql` mutation response. Returns (ok, node, err)."""
+    try:
+        parsed = json.loads(out) if (out or '').strip() else None
+    except json.JSONDecodeError as exc:
+        return False, None, 'could not parse GraphQL JSON: %s' % exc
+    if parsed and parsed.get('errors'):
+        return False, None, json.dumps(parsed['errors'])
+    if code != 0:
+        return False, None, (err or '').strip() or 'mutation failed'
+    node = (parsed or {}).get('data') or {}
+    for step in path:
+        node = (node or {}).get(step)
+    return (True, node, '') if node else (False, None, 'mutation returned no %s'
+                                          % path[-1])
+
+
+def _graphql_json(query, variables):
+    """Send a mutation whose variables include lists or objects.
+
+    `_graphql_args` types each variable as a GraphQL scalar, which is right for
+    the query path but cannot express a list of input objects — and stringifying
+    one into the mutation body is what defeated the earlier `-f fields='[...]'`
+    attempts. Sending a JSON request body keeps the types intact.
+    """
+    code, out, err = run(['gh', 'api', 'graphql', '--input', '-'],
+                         input_text=json.dumps({'query': query,
+                                                'variables': variables}))
+    return code, out, err
+
+
+def create_issue(cfg, repo_id, entry, plan, caps, parent_id=None, label_ids=()):
+    """One `createIssue` carrying everything. Returns (ok, {number, id}, err).
+
+    Everything in one mutation because `CreateIssueInput` accepts it: title,
+    body, labels, native type, parent and every field value. The alternative is
+    a create followed by a mutation per property, which is where the metadata
+    used to get lost.
+    """
+    fields = [f['input'] for f in plan['fields'].values()]
+    args = {'repositoryId': repo_id, 'title': entry.get('title') or ''}
+    body = entry.get('body')
+    if body:
+        args['body'] = body
+    if plan['type']:
+        args['issueTypeId'] = caps['type_map'][plan['type']]
+    if parent_id:
+        args['parentIssueId'] = parent_id
+
+    # `labelIds` and `issueFields` are lists, which `_graphql_args` cannot type
+    # as scalars, so the whole input rides as a JSON variable instead.
+    if label_ids:
+        args['labelIds'] = list(label_ids)
+    if fields:
+        args['issueFields'] = fields
+
+    code, out, err = _graphql_json(
+        'mutation($input:CreateIssueInput!){'
+        ' createIssue(input:$input){ issue { id number } } }',
+        {'input': args})
+    return _mutation_result(code, out, err, ['createIssue', 'issue'])
+
+
+def set_issue_type(issue_id, type_id):
+    code, out, err = _graphql_json(
+        'mutation($i:ID!,$t:ID!){ updateIssueIssueType(input:{issueId:$i,issueTypeId:$t})'
+        '{ issue { id } } }', {'i': issue_id, 't': type_id})
+    return _mutation_result(code, out, err, ['updateIssueIssueType', 'issue'])
+
+
+def set_issue_fields(issue_id, field_inputs):
+    code, out, err = _graphql_json(
+        'mutation($i:ID!,$f:[IssueFieldCreateOrUpdateInput!]){'
+        ' setIssueFieldValue(input:{issueId:$i,issueFields:$f}){ issue { id } } }',
+        {'i': issue_id, 'f': list(field_inputs)})
+    return _mutation_result(code, out, err, ['setIssueFieldValue', 'issue'])
+
+
+def add_sub_issue(parent_id, child_id):
+    code, out, err = _graphql_json(
+        'mutation($p:ID!,$c:ID!){ addSubIssue(input:{issueId:$p,subIssueId:$c,'
+        'replaceParent:true}){ issue { id } } }', {'p': parent_id, 'c': child_id})
+    return _mutation_result(code, out, err, ['addSubIssue', 'issue'])
+
+
+def add_blocked_by(issue_id, blocking_id):
+    code, out, err = _graphql_json(
+        'mutation($i:ID!,$b:ID!){ addBlockedBy(input:{issueId:$i,blockingIssueId:$b})'
+        '{ issue { id } } }', {'i': issue_id, 'b': blocking_id})
+    return _mutation_result(code, out, err, ['addBlockedBy', 'issue'])
+
+
+def verify_issue(cfg, number, plan, expect_type=None, expect_parent=None,
+                 expect_blocked_by=(), repo=None):
+    """Read the issue back and compare it to what the spec asked for.
+
+    A mutation that GitHub accepts is not the same as a mutation that changed
+    anything — an unpinned field, a silently-ignored id, a permission that
+    stops short of writing. Every mismatch is named, because "the write
+    succeeded and the value is not there" is precisely the failure that went
+    unnoticed for months.
+    """
+    ok, issue, err = read_issue(cfg, number, repo)
+    if not ok:
+        return False, ['#%s: could not read back: %s' % (number, err)]
+
+    mismatches = []
+    if expect_type:
+        got = (issue.get('issueType') or {}).get('name')
+        if got != expect_type:
+            mismatches.append("#%s: native type is %s, expected '%s'"
+                              % (number, "'%s'" % got if got else 'unset', expect_type))
+
+    actual = issue_field_values(issue)
+    for field, spec in (plan.get('fields') or {}).items():
+        if not _values_match(spec['value'], actual.get(field)):
+            mismatches.append("#%s: field '%s' is %r, expected %r"
+                              % (number, field, actual.get(field), spec['value']))
+
+    if expect_parent:
+        got = (issue.get('parent') or {}).get('number')
+        if got != expect_parent:
+            mismatches.append('#%s: parent is %s, expected #%s'
+                              % (number, '#%s' % got if got else 'unset', expect_parent))
+
+    if expect_blocked_by:
+        have = {n['number'] for n in (issue.get('blockedBy') or {}).get('nodes') or []}
+        for want in expect_blocked_by:
+            if want not in have:
+                mismatches.append('#%s: missing blocked-by edge to #%s' % (number, want))
+
+    return not mismatches, mismatches
+
+
+DEPENDENCY_HEADING = '## Dependencies'
+
+
+def ensure_dependency_section(body, blocked_by):
+    """Keep the body `## Dependencies` markers in step with the native edges.
+
+    Both are written, deliberately. The native edge is what the portal and the
+    audit read; the body prose is what `wf_core.parse_dependencies()` reads to
+    decide when an issue unblocks. Dropping the prose would silently break
+    auto-unblocking, so this is duplication with a reason.
+    """
+    if not blocked_by:
+        return body or ''
+    lines = ['Blocked by #%s' % n for n in blocked_by]
+    section = '%s\n\n%s\n' % (DEPENDENCY_HEADING, '\n'.join(lines))
+    body = body or ''
+    if DEPENDENCY_HEADING not in body:
+        return (body.rstrip() + '\n\n' + section) if body.strip() else section
+    head, _, rest = body.partition(DEPENDENCY_HEADING)
+    tail = ''
+    nxt = re.search(r'^##\s', rest, re.MULTILINE)
+    if nxt:
+        tail = rest[nxt.start():]
+    return head.rstrip() + '\n\n' + section + ('\n' + tail if tail else '')
+
+
+def load_spec(path):
+    """Read a spec file. Returns (ok, entries, raw, err)."""
+    if not os.path.isfile(path):
+        return False, None, None, 'no spec file at %s' % path
+    try:
+        with open(path, encoding='utf-8') as fh:
+            raw = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, None, None, 'could not read spec: %s' % exc
+    entries = raw.get('issues') if isinstance(raw, dict) else raw
+    if not isinstance(entries, list):
+        return False, None, None, "spec must be a list, or an object with an 'issues' list"
+    return True, entries, raw, ''
+
+
+def write_back_numbers(path, raw, entries):
+    """Write created issue numbers back into the spec file.
+
+    So a re-run after a partial failure completes the remainder instead of
+    creating everything a second time: an entry that now carries a number is an
+    update, and an update whose values are already right is a no-op.
+    """
+    try:
+        with open(path, 'w', encoding='utf-8') as fh:
+            json.dump(raw if isinstance(raw, dict) else entries, fh, indent=2)
+            fh.write('\n')
+        return True, ''
+    except OSError as exc:
+        return False, str(exc)
+
+
+def _resolve_reference(ref, resolved):
+    """A spec reference — an issue number, or another entry's `key` — to a number."""
+    if isinstance(ref, int):
+        return ref
+    if isinstance(ref, str) and ref.isdigit():
+        return int(ref)
+    return resolved.get(ref)
+
+
+def apply_entry(cfg, caps, entry, plan, repo_id, resolved, repo=None):
+    """Create or update one issue, then read it back. Returns a result dict.
+
+    A create is a single `createIssue` carrying everything the spec asked for.
+    An update sets only what actually differs, so re-running a spec is a no-op
+    rather than a rewrite — which is what makes recovering from a partial
+    failure safe.
+    """
+    name = wf_core.entry_label(entry)
+    result = {'entry': name, 'key': entry.get('key'), 'action': None,
+              'number': entry.get('number'), 'changed': [], 'errors': []}
+
+    parent_number = _resolve_reference(entry.get('parent'), resolved) \
+        if entry.get('parent') is not None else None
+    parent_id = None
+    if parent_number:
+        ok, parent, err = read_issue(cfg, parent_number, repo)
+        if not ok:
+            result['errors'].append("parent #%s: %s" % (parent_number, err))
+            return result
+        parent_id = parent['id']
+
+    label_names = [label(cfg, l) for l in (entry.get('labels') or [])]
+    ok, label_ids, missing, err = resolve_label_ids(cfg, label_names, repo)
+    if not ok:
+        result['errors'].append('label lookup failed: %s' % err)
+        return result
+    if missing:
+        result['errors'].append('labels do not exist in this repo: %s'
+                                % ', '.join(missing))
+        return result
+
+    blocked_numbers = [_resolve_reference(b, resolved)
+                       for b in (entry.get('blocked_by') or [])]
+    if any(b is None for b in blocked_numbers):
+        unresolved = [b for b, n in zip(entry.get('blocked_by') or [], blocked_numbers)
+                      if n is None]
+        result['errors'].append('blocked-by references nothing in this spec or repo: %s'
+                                % ', '.join(str(u) for u in unresolved))
+        return result
+
+    body = ensure_dependency_section(entry.get('body'), blocked_numbers)
+    entry = dict(entry, body=body)
+
+    if not entry.get('number'):
+        result['action'] = 'create'
+        ok, issue, err = create_issue(cfg, repo_id, entry, plan, caps,
+                                      parent_id=parent_id,
+                                      label_ids=sorted(label_ids.values()))
+        if not ok:
+            result['errors'].append('create failed: %s' % err)
+            return result
+        result['number'] = issue['number']
+        result['issue_id'] = issue['id']
+        result['changed'] = ['created']
+        if entry.get('key'):
+            resolved[entry['key']] = issue['number']
+    else:
+        result['action'] = 'update'
+        ok, current, err = read_issue(cfg, entry['number'], repo)
+        if not ok:
+            result['errors'].append(err)
+            return result
+        result['issue_id'] = current['id']
+
+        if plan['type'] and (current.get('issueType') or {}).get('name') != plan['type']:
+            ok, _, err = set_issue_type(current['id'], caps['type_map'][plan['type']])
+            if not ok:
+                result['errors'].append('set type failed: %s' % err)
+                return result
+            result['changed'].append('type')
+
+        have = issue_field_values(current)
+        stale = [f['input'] for name_, f in plan['fields'].items()
+                 if not _values_match(f['value'], have.get(name_))]
+        if stale:
+            ok, _, err = set_issue_fields(current['id'], stale)
+            if not ok:
+                result['errors'].append('set fields failed: %s' % err)
+                return result
+            result['changed'].append('fields')
+
+        if parent_id and (current.get('parent') or {}).get('number') != parent_number:
+            ok, _, err = add_sub_issue(parent_id, current['id'])
+            if not ok:
+                result['errors'].append('set parent failed: %s' % err)
+                return result
+            result['changed'].append('parent')
+
+        if body and body != (current.get('body') or body):
+            code, _, berr = run(['gh', 'issue', 'edit', str(entry['number']),
+                                 '--repo', repo or '%s/%s' % (cfg['org'], cfg['repo']),
+                                 '--body', body])
+            if code != 0:
+                result['errors'].append('body update failed: %s' % berr.strip())
+                return result
+            result['changed'].append('body')
+
+        wanted_labels = set(label_ids)
+        current_labels = {n['name'] for n in (current.get('labels') or {}).get('nodes') or []}
+        add = sorted(wanted_labels - current_labels)
+        if add:
+            code, _, lerr = run(['gh', 'issue', 'edit', str(entry['number']),
+                                 '--repo', repo or '%s/%s' % (cfg['org'], cfg['repo'])]
+                                + sum((['--add-label', n] for n in add), []))
+            if code != 0:
+                result['errors'].append('label update failed: %s' % lerr.strip())
+                return result
+            result['changed'].append('labels')
+
+    # Native blocked-by edges, alongside the body prose written above. Both are
+    # deliberate: the edge is what the portal and the audit read, the prose is
+    # what `wf_core.parse_dependencies()` reads to decide when to unblock.
+    if blocked_numbers:
+        ok, current, err = read_issue(cfg, result['number'], repo)
+        if not ok:
+            result['errors'].append(err)
+            return result
+        have = {n['number'] for n in (current.get('blockedBy') or {}).get('nodes') or []}
+        for blocker in blocked_numbers:
+            if blocker in have:
+                continue
+            ok, blocking, err = read_issue(cfg, blocker, repo)
+            if not ok:
+                result['errors'].append('blocker #%s: %s' % (blocker, err))
+                return result
+            ok, _, err = add_blocked_by(current['id'], blocking['id'])
+            if not ok:
+                result['errors'].append('blocked-by #%s failed: %s' % (blocker, err))
+                return result
+            result['changed'].append('blocked-by #%s' % blocker)
+
+    passed, mismatches = verify_issue(
+        cfg, result['number'], plan, expect_type=plan['type'],
+        expect_parent=parent_number, expect_blocked_by=blocked_numbers, repo=repo)
+    if not passed:
+        result['verify_failed'] = mismatches
+    return result
+
+
+def cmd_issue_apply(args):
+    ok, cfg, err = load_config()
+    if not ok:
+        emit('error', EXIT_ENV, reason=err)
+
+    ok, entries, raw, err = load_spec(args.spec)
+    if not ok:
+        emit('spec-invalid', EXIT_SPEC, reason=err, spec=args.spec)
+
+    ok, caps, err = resolve_org_capabilities(cfg, refresh=args.refresh)
+    if not ok:
+        emit('error', EXIT_ENV, reason=err, org=cfg['org'])
+    if caps.get('denied'):
+        emit('no-capabilities', EXIT_CAPABILITY, org=cfg['org'],
+             denied=caps['denied'],
+             reason='the authenticated account may not read %s for this org, so a '
+                    'spec cannot be checked against it'
+                    % ' and '.join(caps['denied']))
+
+    # Everything that can be decided offline is decided before the first write.
+    # A spec that is wrong should cost nothing, and a half-applied tree is much
+    # harder to reason about than a refused one.
+    cycles = wf_core.spec_cycles(entries)
+    if cycles:
+        emit('spec-invalid', EXIT_SPEC, spec=args.spec,
+             reason='dependency cycle in the spec',
+             cycles=[' -> '.join(str(n) for n in c) for c in cycles])
+
+    errors, skipped, plans = wf_core.validate_spec(
+        entries, caps['field_map'], caps['type_map'], cfg.get('fields', {}))
+    if errors:
+        emit('spec-invalid', EXIT_SPEC, spec=args.spec, errors=errors,
+             reason='%d spec %s; nothing was written'
+                    % (len(errors), 'error' if len(errors) == 1 else 'errors'))
+
+    # One line for the run, not one per issue: an org with fewer fields than the
+    # spec names is a normal configuration, and repeating it per issue buries
+    # the errors that matter.
+    if skipped:
+        eprint('wf: skipped %d field(s) this org does not define: %s'
+               % (len(skipped), ', '.join(sorted(skipped))))
+
+    repo = args.repo
+    ok, repo_id, err = resolve_repo_id(cfg, repo)
+    if not ok:
+        emit('error', EXIT_ENV, reason='could not resolve repository: %s' % err)
+
+    if args.dry_run:
+        emit('ok', EXIT_OK, spec=args.spec, dry_run=True,
+             would_apply=[{'entry': wf_core.entry_label(p['entry']),
+                           'action': 'update' if p['entry'].get('number') else 'create',
+                           'type': p['type'],
+                           'fields': sorted(p['fields'])} for p in plans],
+             skipped_fields=sorted(skipped))
+
+    resolved = {e['key']: e['number'] for e in entries
+                if e.get('key') and e.get('number')}
+    results, failed, verify_failed = [], [], []
+    for plan in plans:
+        entry = plan['entry']
+        result = apply_entry(cfg, caps, entry, plan, repo_id, resolved, repo)
+        results.append(result)
+        if result['errors']:
+            failed.append(result)
+        if result.get('verify_failed'):
+            verify_failed.append(result)
+        if result.get('number') and not entry.get('number'):
+            entry['number'] = result['number']
+
+    wrote_back, wb_err = write_back_numbers(args.spec, raw, entries)
+
+    payload = {'spec': args.spec, 'applied': results,
+               'skipped_fields': sorted(skipped),
+               'numbers_written_back': wrote_back}
+    if not wrote_back:
+        payload['write_back_error'] = wb_err
+
+    if verify_failed and not failed:
+        emit('verify-failed', EXIT_VERIFY,
+             reason='%d issue(s) were written but do not read back as specified'
+                    % len(verify_failed),
+             mismatches=sum((r['verify_failed'] for r in verify_failed), []),
+             **payload)
+    if failed:
+        landed = [r for r in results if r.get('number') and not r['errors']]
+        emit('partial', EXIT_PARTIAL,
+             reason='%d of %d entries failed; %d landed. Re-run the spec to '
+                    'complete the rest — the numbers written back turn the ones '
+                    'that landed into no-op updates'
+                    % (len(failed), len(results), len(landed)),
+             failed=[{'entry': r['entry'], 'errors': r['errors']} for r in failed],
+             **payload)
+
+    emit('ok', EXIT_OK, **payload)
 
 
 def fetch_native_types(cfg):
@@ -1744,6 +2290,18 @@ def build_parser():
     caps.add_argument('--refresh', action='store_true',
                       help='re-query the org instead of reading the cache')
     caps.set_defaults(func=cmd_org_capabilities)
+
+    ia = sub.add_parser('issue-apply',
+                        help='create or update fully classified issues from a spec file')
+    ia.add_argument('spec', help='path to the JSON spec file')
+    ia.add_argument('--repo', default=None,
+                    help='apply against this owner/name instead of the configured repo')
+    ia.add_argument('--refresh', action='store_true',
+                    help='re-query org capabilities instead of reading the cache')
+    ia.add_argument('--dry-run', action='store_true',
+                    help='validate the spec and report what would be applied, '
+                         'without writing anything')
+    ia.set_defaults(func=cmd_issue_apply)
 
     return parser
 

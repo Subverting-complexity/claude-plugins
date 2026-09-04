@@ -44,6 +44,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config
 
 # Resolve the org's native issue types + issue fields (cached; --refresh re-queries)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" org-capabilities
+
+# Create or update fully classified issues from a spec file
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply spec.json
+
+# …check the spec against the org and report what would change, writing nothing
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply spec.json --dry-run
 ```
 
 Run from the **target repo root** so the CLI can read `ClaudeProject.md`
@@ -79,7 +85,10 @@ run carries a `status` field and the exit code mirrors it:
 | 10   | `no-candidates` | The ready pool was empty.                                      |
 | 11   | `all-blocked`   | Every candidate was claimed away, blocked, or already resolved.|
 | 20   | `error`         | Environment/auth problem (not a repo, no `gh`, no config).     |
-| 21   | `no-capabilities` | The org resolves but reports no issue types and no fields.  |
+| 21   | `no-capabilities` | The org reports no issue types and no fields, or refused to say. |
+| 22   | `spec-invalid`  | An `issue-apply` spec is wrong. Nothing was written.           |
+| 23   | `verify-failed` | A write was accepted but does not read back. Issues exist.     |
+| 24   | `partial`       | Some entries applied, some failed. Re-run to finish.           |
 | 30   | `unsupported`   | Path not in the CLI yet — caller falls back to the skill.      |
 
 Mutations to the **winning** issue (claim, assign, `status-in-progress`) are
@@ -139,6 +148,96 @@ Field **names** are overridable per project in `ClaudeProject.md` →
 `wf_core.py` (`NATIVE_TYPE_MAP`, `CLASSIFICATION_OPTIONS`,
 `FIELD_NAME_DEFAULTS`, `FIELD_DATA_TYPES`, `PRIORITY_FIELD_OPTIONS`,
 `EFFORT_FIELD_OPTIONS`, `ORIGIN_FIELD_OPTIONS`).
+
+## Classified issues — `issue-apply`
+
+`issue-apply <spec.json>` creates or updates issues carrying everything at
+once: native type, every org field value, labels, parent, and blocked-by
+edges. It exists because doing that by hand was ten-odd round trips per issue,
+each described as optional — and the measured result of "optional" in one
+consuming repo was 7 typed issues out of 82, no field values at all, and no
+error anywhere. So the command is deliberately strict.
+
+### The spec
+
+A JSON object with an `issues` list (a bare list is accepted too). An entry
+with a `number` is an update; one without is a create.
+
+```json
+{
+  "issues": [
+    {
+      "key": "epic",
+      "title": "Ship the classifier",
+      "body": "Why this matters.",
+      "kind": "epic",
+      "labels": ["priority-high"],
+      "fields": {"field-priority": "High", "field-effort": "Medium",
+                 "field-origin": "Development"}
+    },
+    {
+      "key": "first-story",
+      "title": "Resolve org fields in Python",
+      "kind": "story",
+      "parent": "epic",
+      "blocked_by": [187],
+      "fields": {"field-priority": "High", "field-effort": "Medium",
+                 "field-type": ["New Feature"], "field-origin": "Development"}
+    }
+  ]
+}
+```
+
+| Key | Meaning |
+| --- | ------- |
+| `key` | A spec-local name, so entries can reference each other before any of them has a number. Optional, but required to be referenced. |
+| `number` | An existing issue to update. Absent means create. |
+| `title`, `body` | As on GitHub. A create needs a title. |
+| `kind` | One of `wf_core.NATIVE_TYPE_MAP`'s keys (`story`, `bug`, `epic`, `spike`, …). Supplies both the native type and a default `Classification`. |
+| `type` | An explicit native type name, overriding what `kind` implies. |
+| `labels` | Purpose keys or literal names; resolved through the project's label map. |
+| `parent` | An issue number, or another entry's `key`. |
+| `blocked_by` | A list of issue numbers and/or `key`s. |
+| `fields` | Purpose key → value. Names resolve through `ClaudeProject.md`'s `## Issue Types & Fields`, then `wf_core.FIELD_NAME_DEFAULTS`. |
+
+Created numbers are **written back into the spec file**, which is what makes a
+re-run after a partial failure complete the remainder rather than creating
+everything a second time.
+
+### What it refuses, and why
+
+Everything decidable offline is decided before the first mutation, because a
+half-applied epic tree is far harder to reason about than a refused spec:
+
+- **A missing mandatory field** — Priority, Effort, Classification or Origin —
+  exits 22 naming the issue and the field. That is the blank-metadata failure
+  this command exists to stop. The rule is scoped to those four rather than
+  every field the org defines: requiring Start date, Target date, Parent and
+  Status reason on every issue would be wrong. `wf_core.MANDATORY_FIELD_KEYS`
+  is the list.
+- **A placeholder** (`TODO`) counts as missing, so an audit's proposal cannot
+  quietly pass as a value.
+- **A dependency cycle** within the spec exits 22 before anything is written.
+- **A field this org does not define** is skipped, not an error — an org is
+  allowed fewer fields than the default inventory. It is reported once for the
+  run on stderr, not once per issue.
+- **A refused capability read** exits 21 rather than falling back to labels,
+  for the reason `org-capabilities` gives above.
+
+### Dependencies are written twice, on purpose
+
+A `blocked_by` becomes both a native `addBlockedBy` edge and a `## Dependencies`
+section in the issue body. The edge is what GitHub's UI and the audit read; the
+body prose is what `wf_core.parse_dependencies()` reads to decide when an issue
+unblocks, so dropping it would silently break auto-unblocking.
+
+### Every write is read back
+
+An accepted mutation is not a changed value — an unpinned field or a
+permission that stops short of writing both return success. So the command
+re-reads each issue and compares it to the spec, and exits 23 `verify-failed`
+naming each mismatch. The issues still exist; the command is telling you the
+metadata did not land.
 
 ## Settling a merged PR — `post-merge`
 

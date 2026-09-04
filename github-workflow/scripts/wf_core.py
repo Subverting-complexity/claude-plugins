@@ -352,6 +352,219 @@ def field_purpose_for_name(field_name, project_map, defaults=None):
     return None
 
 
+# ── issue spec: validation and value shaping ─────────────────────────────────
+# `wf issue-apply` reads a spec file and applies it. Everything in this section
+# is pure: it decides what the mutations should say, and never sends one.
+#
+# A spec is {"issues": [entry, ...]}. An entry carrying `number` is an update;
+# one without is a create. `key` is a spec-local name so entries can reference
+# each other (`parent`, `blocked_by`) before any of them has a real number.
+
+# What an audit writes where it could not infer a value. It exists so silence
+# cannot pass: the mandatory-field check treats it as missing, which refuses
+# the spec until a human or an agent fills it in.
+SPEC_PLACEHOLDER = 'TODO'
+
+
+def _is_supplied(value):
+    """Whether a spec supplied a real value, as opposed to a blank or a placeholder."""
+    if value is None:
+        return False
+    if isinstance(value, str):
+        stripped = value.strip()
+        return bool(stripped) and stripped != SPEC_PLACEHOLDER
+    if isinstance(value, (list, tuple)):
+        return bool(value) and all(_is_supplied(v) for v in value)
+    return True
+
+
+def entry_label(entry):
+    """How an entry is named in an error message: its number, else its key, else its title."""
+    if entry.get('number'):
+        return '#%s' % entry['number']
+    return entry.get('key') or entry.get('title') or '<unnamed entry>'
+
+
+def resolve_entry_type(entry):
+    """The native issue type an entry asks for, or None. (type_name, err)."""
+    if entry.get('type'):
+        return entry['type'], None
+    kind = entry.get('kind')
+    if not kind:
+        return None, None
+    mapped = NATIVE_TYPE_MAP.get(str(kind).lower())
+    if not mapped:
+        return None, "unknown kind '%s' (expected one of: %s)" % (
+            kind, ', '.join(sorted(NATIVE_TYPE_MAP)))
+    return mapped['type'], None
+
+
+def default_classification(entry):
+    """The Classification a kind implies, when the entry did not name one."""
+    mapped = NATIVE_TYPE_MAP.get(str(entry.get('kind') or '').lower())
+    return [mapped['classification']] if mapped else None
+
+
+def field_value_input(field_meta, value):
+    """Shape one `IssueFieldCreateOrUpdateInput`. Returns (input, err).
+
+    The value key depends on the field's data type, so the type has to be
+    carried alongside the id rather than guessed from the value's shape — a
+    single-select and a text field both take a string.
+    """
+    data_type = field_meta.get('data_type')
+    fid = field_meta.get('id')
+    options = field_meta.get('options') or {}
+
+    if data_type in ('single-select', 'multi-select'):
+        names = value if isinstance(value, (list, tuple)) else [value]
+        ids = []
+        for name in names:
+            if name not in options:
+                return None, "'%s' is not an option (valid: %s)" % (
+                    name, ', '.join(sorted(options)) or 'none')
+            ids.append(options[name])
+        if data_type == 'single-select':
+            if len(ids) != 1:
+                return None, 'single-select takes exactly one value, got %d' % len(ids)
+            return {'fieldId': fid, 'singleSelectOptionId': ids[0]}, None
+        return {'fieldId': fid, 'multiSelectOptionIds': ids}, None
+
+    if data_type == 'date':
+        return {'fieldId': fid, 'dateValue': str(value)}, None
+    if data_type == 'text':
+        return {'fieldId': fid, 'textValue': str(value)}, None
+    if data_type == 'number':
+        try:
+            return {'fieldId': fid, 'numberValue': float(value)}, None
+        except (TypeError, ValueError):
+            return None, "'%s' is not a number" % value
+    return None, "unsupported field data type '%s'" % data_type
+
+
+def validate_spec(entries, field_map, type_map, project_fields=None,
+                  mandatory_keys=None):
+    """Check a spec against the org's real capabilities before anything is written.
+
+    Returns (errors, skipped_fields, plans). `errors` is a list of plain
+    strings, each naming the entry and the problem. `skipped_fields` is the set
+    of field names the spec asked for that this org does not define — reported
+    once for the run, not once per issue. `plans` carries the resolved per-entry
+    work, so the caller does not resolve any of it a second time.
+
+    A field the org does not define is skipped, not an error: an org is allowed
+    to have fewer fields. A field the org *does* define, that the spec leaves
+    empty, is an error — that is the blank-metadata failure this command exists
+    to stop.
+    """
+    project_fields = project_fields or {}
+    mandatory_keys = mandatory_keys or MANDATORY_FIELD_KEYS
+    errors, skipped, plans = [], set(), []
+
+    seen_keys, seen_numbers = set(), set()
+
+    for entry in entries:
+        name = entry_label(entry)
+        plan = {'entry': entry, 'type': None, 'fields': {}, 'errors': []}
+
+        if not entry.get('number') and not entry.get('title'):
+            errors.append('%s: an entry needs a title to create, or a number to update'
+                          % name)
+
+        key = entry.get('key')
+        if key:
+            if key in seen_keys:
+                errors.append("%s: duplicate key '%s' in this spec" % (name, key))
+            seen_keys.add(key)
+        number = entry.get('number')
+        if number:
+            if number in seen_numbers:
+                errors.append('%s: issue appears more than once in this spec' % name)
+            seen_numbers.add(number)
+
+        # Native type.
+        type_name, err = resolve_entry_type(entry)
+        if err:
+            errors.append('%s: %s' % (name, err))
+        elif type_name:
+            if type_map and type_name not in type_map:
+                errors.append("%s: native type '%s' is not enabled on this org "
+                              '(enabled: %s)' % (name, type_name,
+                                                 ', '.join(sorted(type_map)) or 'none'))
+            else:
+                plan['type'] = type_name
+
+        # Field values, including the ones the entry did not name but must.
+        wanted = dict(entry.get('fields') or {})
+        if 'field-type' not in wanted:
+            implied = default_classification(entry)
+            if implied:
+                wanted['field-type'] = implied
+
+        for purpose in mandatory_keys:
+            concrete = resolve_field_name(purpose, project_fields)
+            if concrete not in field_map:
+                continue  # the org does not define it; nothing to require
+            if not _is_supplied(wanted.get(purpose)):
+                errors.append("%s: missing a value for '%s' (%s), which this org "
+                              'defines and every issue must carry'
+                              % (name, concrete, purpose))
+
+        for purpose, value in wanted.items():
+            concrete = resolve_field_name(purpose, project_fields)
+            meta = field_map.get(concrete)
+            if meta is None:
+                skipped.add(concrete)
+                continue
+            if not _is_supplied(value):
+                continue  # already reported above when it was mandatory
+            shaped, err = field_value_input(meta, value)
+            if err:
+                errors.append("%s: %s — %s" % (name, concrete, err))
+            else:
+                plan['fields'][concrete] = {'input': shaped, 'value': value,
+                                            'purpose': purpose}
+
+        plans.append(plan)
+
+    return errors, skipped, plans
+
+
+def spec_cycles(entries):
+    """Dependency cycles within a spec, as lists of entry references.
+
+    Applied before any mutation runs: a cycle cannot be written correctly, and
+    finding it after half the tree exists is much worse than finding it first.
+    """
+    graph, refs = {}, set()
+    for entry in entries:
+        ref = entry.get('key') or entry.get('number')
+        if ref is None:
+            continue
+        refs.add(ref)
+        graph[ref] = [d for d in (entry.get('blocked_by') or [])]
+
+    cycles, state = [], {}
+
+    def walk(node, stack):
+        state[node] = 'open'
+        stack.append(node)
+        for nxt in graph.get(node, []):
+            if nxt not in graph:
+                continue  # points outside the spec; not this command's problem
+            if state.get(nxt) == 'open':
+                cycles.append(stack[stack.index(nxt):] + [nxt])
+            elif state.get(nxt) is None:
+                walk(nxt, stack)
+        stack.pop()
+        state[node] = 'done'
+
+    for ref in graph:
+        if state.get(ref) is None:
+            walk(ref, [])
+    return cycles
+
+
 # ── PR review-state labels + selection ───────────────────────────────────────
 # Mirrors the code-review
 # skill (Step 1). Review-state names default to the `review-` prefix
