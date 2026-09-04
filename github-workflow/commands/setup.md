@@ -442,41 +442,54 @@ never happens.
 This step is best-effort — if any command fails (permissions, no git),
 log a warning and continue.
 
-### 5e. Detect native issue types & fields (best-effort)
+### 5e. Write the Issue Types & Fields section
 
 The workflow prefers the org's **native GitHub issue types** (Bug, Feature,
-User Story, Epic) and **org issue fields** over `type-*` labels when they
-exist; `wf org-capabilities` resolves them at runtime. Detect capability
-here and record it so the generated `ClaudeProject.md` reflects reality.
+User Story, Epic) and **org issue fields** over `type-*` labels where they
+exist. Resolve what this owner actually has, then write the section from
+that — never from a static default, and never leave it out.
 
-1. **Issue types** — list the owner's enabled types:
-   ```
-   gh api graphql -f query='query($login:String!){ organization(login:$login){ issueTypes(first:20){ nodes { name isEnabled } } } }' -F login='{org}' --jq '[.data.organization.issueTypes.nodes[] | select(.isEnabled) | .name]'
-   ```
-   If this fails (non-zero exit, or `.data.organization` is null — the
-   owner is a user account; issue types are org-only), the project is
-   **not** type-capable — leave the
-   `## Issue Types & Fields` section out (the Label Map's `type-*` labels
-   remain the classification) and skip step 2.
-2. **Issue fields** — list configured fields:
-   ```
-   gh api "orgs/{org}/issue-fields" --jq '[.[] | .name]'
-   ```
-3. **Write the section** — if the org is type-capable, fill in the
-   `## Issue Types & Fields` section of `ClaudeProject.md` from the
-   template, mapping each `field-*` purpose to the **actual** field name
-   detected in step 2 (override the default only where the org's name
-   differs). Note which expected fields are **missing** so the user can
-   create them — the workflow simply skips a missing field at runtime.
-4. **Origin field** — if `Origin` is absent, point the user at
-   `/github-workflow:setup`'s field guidance or the GitHub *Issue fields*
-   settings UI to add it (single-select: Security Audit,
-   Feature Discovery, Code Review, Development, Stakeholder Request). It is
-   the one field the workflow populates that GitHub does not create by
-   default.
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" org-capabilities --refresh
+```
 
-This step is best-effort and **non-blocking**: a project with no native
-types/fields is fully supported on the label-only path.
+One call answers both questions and caches the result. Read from it:
+
+- `owner_kind` — `organization` or `user`. Issue types are org-only.
+- `type_map` — the enabled native types. Non-empty means **type-capable**.
+- `resolved_fields` — each purpose key mapped to the field name that exists
+  here, which is what the section's table records.
+- `missing_fields` — the purpose keys that do not resolve, each with the
+  name that was looked for.
+
+Then write `## Issue Types & Fields` into `ClaudeProject.md` following
+`templates/ClaudeProject.md`:
+
+1. **Capability** — `type-capable: yes` when `type_map` is non-empty, `no`
+   otherwise.
+2. **Field names** — one row per entry in `resolved_fields`, using the
+   concrete name this owner uses rather than the default.
+3. **Missing** — one row per entry in `missing_fields`, saying what the
+   workflow does without it.
+
+**Write the section either way.** On exit **21** (`no-capabilities`) the org
+has no types and no fields: write the section saying exactly that
+(`type-capable: no`, every field under *Missing*). An org without them is
+fully supported on the label-only path — but "this org has none" and
+"nobody wrote this section" must not look the same, which is the failure
+this step exists to prevent. `wf config-audit` reports a missing section as
+CRITICAL, so leaving it out breaks preflight in the consumer's repo.
+
+Flag the mandatory four — `field-priority`, `field-effort`, `field-type`,
+`field-origin` — if any is missing, because `wf issue-apply` refuses to
+create an issue without them. `Origin` is the one the workflow populates
+that GitHub does not create by default; point the user at the owner's
+*Issue fields* settings to add it as a single-select (Security Audit,
+Feature Discovery, Code Review, Development, Stakeholder Request).
+
+On exit **20** the capability read failed (auth, network, no `wf`). Say so
+and leave any existing section alone — do not overwrite a good section with
+a guess.
 
 ### 6. Generate or update CLAUDE.md
 

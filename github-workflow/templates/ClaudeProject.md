@@ -101,24 +101,77 @@ Additional labels your project uses. Remove if not needed.
 
 ## Issue Types & Fields
 
-Optional. When the org has **native GitHub issue types** (Bug, Feature,
-User Story, Epic) and **org issue fields**, the workflow uses them as
-first-class classification/metadata instead of labels. Capability is
-auto-detected per dimension at runtime by `wf org-capabilities`; an org
-without them keeps label-only behaviour. The purpose→value mappings
-live in `templates/default-labels.md`. Override a **field name** below only
-if your org named one differently from the default.
+**Required.** Not because every org has native issue types — many do not —
+but because "this org has none" and "nobody wrote this section" look
+identical at runtime, and the second one silently produced a whole backlog
+of unclassified issues. So the section is always present and always says
+which of the two it is. `wf config-audit` reports a missing one as
+**CRITICAL**.
 
-| Purpose key          | Field name      |
-| -------------------- | --------------- |
-| field-priority       | `Priority`      |
-| field-effort         | `Effort`        |
+`/github-workflow:setup` writes this section from `wf org-capabilities`,
+which resolves what the owner actually has. Re-run it after enabling issue
+types or adding a field.
+
+### Capability
+
+| Setting | Value |
+| ------- | ----- |
+| type-capable | `yes` |
+
+`yes` — the owner is an org with **native GitHub issue types** enabled (Bug,
+Feature, User Story, Epic). The native type is then the first-class
+classification and the `type-*` label is dropped from an issue once the type
+is set.
+
+`no` — no native types (a user account, or an org that has not enabled
+them). The Label Map's `type-*` labels stay the classification. Say so here
+rather than deleting the section.
+
+### Field names
+
+Every purpose key the workflow writes, mapped to the field name **this**
+owner uses. Override a name only where the org named a field differently
+from the default; leave a row out only when the org genuinely does not
+define that field, and note it under *Missing* below so it is a recorded
+decision rather than an oversight.
+
+| Purpose key          | Field name       |
+| -------------------- | ---------------- |
+| field-priority       | `Priority`       |
+| field-effort         | `Effort`         |
 | field-type           | `Classification` |
-| field-origin         | `Origin`        |
-| field-start          | `Start date`    |
-| field-target         | `Target date`   |
-| field-parent         | `Parent`        |
-| field-status-reason  | `Status reason` |
+| field-origin         | `Origin`         |
+| field-start          | `Start date`     |
+| field-target         | `Target date`    |
+| field-parent         | `Parent`         |
+| field-status-reason  | `Status reason`  |
+
+Four of these are **mandatory** on every issue the workflow creates —
+`field-priority`, `field-effort`, `field-type` and `field-origin`
+(`wf_core.MANDATORY_FIELD_KEYS`). `wf issue-apply` refuses a spec that
+leaves one blank rather than creating an issue with empty metadata. The
+other four are set where they apply.
+
+### Missing
+
+Fields the owner does not define, and what the workflow does instead:
+
+| Field | Consequence |
+| ----- | ----------- |
+| _(none)_ | — |
+
+A missing field is skipped at runtime, not an error. But if one of the four
+mandatory fields is missing, `wf issue-apply` cannot classify an issue at
+all — create the field in the owner's *Issue fields* settings. `Origin` is
+the one the workflow populates that GitHub does not create by default
+(single-select: Security Audit, Feature Discovery, Code Review,
+Development, Stakeholder Request).
+
+The purpose→value maps — which native type each kind of work becomes, and
+the Priority, Effort and Origin option names — are Python data in
+`github-workflow/scripts/wf_core.py`, not prose here. Run
+`wf org-capabilities` for the live option ids rather than copying them into
+this file, where they would go stale.
 
 ## Ready Gate
 
