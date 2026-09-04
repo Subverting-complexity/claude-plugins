@@ -311,6 +311,16 @@ For any deleted function, class, type, or export:
 Present the findings as a review a colleague would write on the pull
 request, not as an audit log.
 
+### What is worth writing up
+
+Only report what would change the outcome if the author acted on it: a
+real bug, a data-loss or data-integrity risk, a missing failure path, an
+inconsistency that will confuse the next reader, or a gap against the
+acceptance criteria. Leave out matters of taste, anything already
+covered by another finding, and anything too minor to justify
+interrupting someone with. When in doubt, ask whether a reviewer would
+actually leave this comment on the pull request — if not, drop it.
+
 ### How to write a finding
 
 Every finding is a short comment addressed to the person who wrote the
@@ -344,8 +354,15 @@ Rules for the voice:
 - No severity language in the prose, no restating the finding at the end
   of it, and no closing line that adds nothing. Stop once the point and
   the question are clear.
+- Do not paste the code back. The author can already see their own
+  diff; the comment is the whole value-add.
 - Follow `_shared/wording-standard.md` and avoid everything in
   `_shared/banned-patterns.md`.
+
+Before presenting the report, run the findings through the
+`/github-workflow:tone` skill so they read in the user's own voice
+rather than generated review-bot phrasing. Do this even for a single
+finding.
 
 **Example of a finding that raises a possible side effect:**
 
