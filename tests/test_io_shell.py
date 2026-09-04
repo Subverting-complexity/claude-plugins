@@ -1165,6 +1165,53 @@ def _existing(number, **over):
     return issue
 
 
+class TestSetIssueFieldsMutation(unittest.TestCase):
+    """The mutation text itself, which every other apply test stubs out.
+
+    `issue-apply`'s tests mock `_graphql_json`, so they assert what the caller
+    intended to send and never look at the query. That is how a malformed
+    declaration reached users: GitHub rejected every field write with
+    "Nullability mismatch on variable $f", the value being sent was fine, and
+    no test could see the query that was wrong.
+    """
+
+    def _capture(self, *args):
+        sent = {}
+
+        def fake(query, variables):
+            sent['query'] = query
+            sent['variables'] = variables
+            return 0, json.dumps({'data': {'setIssueFieldValue':
+                                           {'issue': {'id': 'I_1'}}}}), ''
+
+        with mock.patch.object(wf, '_graphql_json', fake):
+            ok, node, err = wf.set_issue_fields(*args)
+        self.assertTrue(ok, err)
+        return sent
+
+    def test_the_list_variable_is_declared_non_null(self):
+        """`issueFields` is `[IssueFieldCreateOrUpdateInput!]!` on the input
+        object, and GraphQL refuses a nullable variable in a non-null position
+        however good the value is."""
+        sent = self._capture('I_1', [{'fieldId': 'F_1', 'textValue': 'x'}])
+        self.assertIn('$f:[IssueFieldCreateOrUpdateInput!]!', sent['query'])
+
+    def test_every_declared_list_variable_is_non_null(self):
+        """The same mismatch in any future list argument fails the same way."""
+        sent = self._capture('I_1', [{'fieldId': 'F_1', 'textValue': 'x'}])
+        decls = re.search(r'mutation\((.*?)\)\{', sent['query']).group(1)
+        for decl in decls.split(','):
+            if '[' in decl:
+                self.assertTrue(decl.rstrip().endswith(']!'),
+                                'nullable list variable: %s' % decl)
+
+    def test_the_inputs_are_passed_through_unchanged(self):
+        inputs = [{'fieldId': 'F_1', 'singleSelectOptionId': 'O_1'},
+                  {'fieldId': 'F_2', 'multiSelectOptionIds': ['O_2', 'O_3']}]
+        sent = self._capture('I_9', inputs)
+        self.assertEqual(sent['variables'], {'i': 'I_9', 'f': inputs})
+
+
 class _ApplyCase(unittest.TestCase):
     """Shared plumbing: a spec file on disk and a run against the fake hub."""
 

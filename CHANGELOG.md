@@ -7,6 +7,19 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 6.1.3
+
+- Fixed: `setIssueFieldValue` declared its `issueFields` variable as
+  `[IssueFieldCreateOrUpdateInput!]` where the input object requires
+  `[IssueFieldCreateOrUpdateInput!]!`, so GitHub rejected **every** field write
+  with "Nullability mismatch on variable $f". Nothing about the values being
+  sent was wrong, which is why the failure read as a data problem. All issue
+  field writes went through this one function, so while it was malformed no
+  issue metadata reached GitHub at all: `issue-apply` set native types happily
+  and then failed on all four mandatory fields, and `set_start_date` never
+  stamped a date. Every existing test of that path mocked the layer the defect
+  was in, so the query itself is now asserted directly.
+
 ## github-workflow 6.1.2
 
 - Fixed: a failed org capability lookup was written to

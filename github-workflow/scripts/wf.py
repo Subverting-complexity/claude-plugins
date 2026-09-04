@@ -951,8 +951,15 @@ def set_issue_type(issue_id, type_id):
 
 
 def set_issue_fields(issue_id, field_inputs):
+    # The trailing `!` on the variable's type is load-bearing. `issueFields` is
+    # declared `[IssueFieldCreateOrUpdateInput!]!` on the input object, and
+    # GraphQL refuses a nullable variable in a non-null position even when the
+    # value passed is a perfectly good list -- "Nullability mismatch on variable
+    # $f". Nothing about the value is wrong, so the failure reads as a data
+    # problem and is not one. Every field write went through here, so while it
+    # was missing no issue metadata reached GitHub at all.
     code, out, err = _graphql_json(
-        'mutation($i:ID!,$f:[IssueFieldCreateOrUpdateInput!]){'
+        'mutation($i:ID!,$f:[IssueFieldCreateOrUpdateInput!]!){'
         ' setIssueFieldValue(input:{issueId:$i,issueFields:$f}){ issue { id } } }',
         {'i': issue_id, 'f': list(field_inputs)})
     return _mutation_result(code, out, err, ['setIssueFieldValue', 'issue'])
