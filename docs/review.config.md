@@ -199,9 +199,10 @@ means for a review:
 - **No credentials, tokens, or org-internal identifiers** in committed
   files. Board node IDs and field IDs in `ClaudeProject.md` are fine — they
   are not secrets — but tokens never are.
-- **Claim refs are a lock, not a hint.** A change touching
-  `templates/claim-procedure.md` or any acquire/release site needs care: a
-  weakened claim lets two agents build the same story or review the same PR.
+- **Claim refs are a lock, not a hint.** A change touching `wf`'s claim
+  commands (`claim`, `claim-release`, `claim-reap`) or any call site of
+  them needs care: a weakened claim lets two agents build the same story
+  or review the same PR.
   Check that the claim is still acquired before any side effect, held across
   PR creation, and released on every exit path.
 - **When the diff touches Claude Code configuration** — `CLAUDE.md`,

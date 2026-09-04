@@ -103,7 +103,7 @@ Tools the plugin expects on the host machine:
 | ---- | ---------- | ----- |
 | `gh` (GitHub CLI) | every issue, PR, label, and board operation | Must be authenticated: `gh auth login`. This is a **hard dependency by design** — the plugin has no REST-API fallback. |
 | `git` | branching, claims, worktrees | Any recent version. |
-| Python ≥ 3.8 | the `wf` story-picker (`scripts/wf.py`) | Recommended, not strictly required — every picker path has an inline fallback, but the fallbacks are slower (many sequential `gh` round-trips). |
+| Python ≥ 3.8 | the `wf` CLI (`scripts/wf.py`) | **Required** for `execute`, `bulk-execute` and issue creation. Selection, claiming, board moves, handoff and issue classification are all `wf` commands with no markdown fallback — without Python those commands fail naming the missing prerequisite. `code-review` still has its own PR-selection fallback. |
 
 The plugin also reads two files from the host project:
 

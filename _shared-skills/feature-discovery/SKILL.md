@@ -406,28 +406,43 @@ issues. If they accept:
      is needed.
    - Deferred stories (see "Deferred speccing") →
      `needs-refinement` label.
-4. **Native type + fields** (best-effort, capability-gated) — for each
-   created issue, upgrade it from labels to the org's native issue type
-   and fields per `templates/issue-fields-resolution.md`, using the value
-   maps in `wf_core.py` (`NATIVE_TYPE_MAP`, `EFFORT_FIELD_OPTIONS`,
-   `PRIORITY_FIELD_OPTIONS`, `ORIGIN_FIELD_OPTIONS`):
-   - **Native type**: a story → **User Story**; an epic → **Epic**. Set it
-     with `updateIssueIssueType` and drop the redundant `type-*` label on a
-     type-capable org.
-   - **`Type of issue`** ← New Feature (default for planned story work; use
-     Enhancement when the story improves something that already exists,
-     Spike for a research story).
-   - **`Effort`** ← from the story's size estimate (large→High,
-     medium→Medium, small→Low).
-   - **`Priority`** ← if the plan assigned one (dual-tracked with the
-     `priority-*` label).
-   - **`Parent`** ← when the story belongs to an epic, the epic's `#N`.
-   - **`Origin`** ← **Feature Discovery** for every issue created here.
-   - **Dependencies**: in addition to the body `## Dependencies` markers,
-     optionally record each known upstream as a native `addBlockedBy`
-     relationship (Step 7 of the resolution template).
-   On a non-type-capable org or for any undefined field, skip silently —
-   the label-based result stands.
+4. **Native type + fields** (best-effort, capability-gated) — labels alone
+   leave an issue unclassified in the org's own views, so upgrade each
+   created issue to the native issue type and the org's field values.
+   Under github-workflow this is one call for the whole set, not a loop:
+   write an update entry per issue and apply them together.
+
+   ```bash
+   mkdir -p .claude
+   cat > .claude/discovery-spec.json <<'JSON'
+   {"issues": [{"number": {number}, "kind": "{story|epic}",
+                "parent": {epic number, when the story belongs to one},
+                "blocked_by": [{upstream issue numbers}],
+                "fields": {"field-priority": "{Urgent|High|Medium|Low}",
+                           "field-effort": "{Low|Medium|High}",
+                           "field-origin": "Feature Discovery"}}]}
+   JSON
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/discovery-spec.json
+   ```
+
+   - `kind` supplies the native type **and** the `Classification` value
+     together (a story → User Story / New Feature, an epic → Epic), so
+     neither is chosen by hand. Use `spike` for a research story.
+   - `field-effort` comes from the story's size estimate: large → **High**,
+     medium → **Medium**, small → **Low**.
+   - `field-priority` is set only where the plan assigned one, and stays
+     dual-tracked with the `priority-*` label.
+   - `blocked_by` writes a native edge **and** the body's `## Dependencies`
+     prose, so the markers from step 2 stay authoritative.
+
+   Read the exit code: **0** applied it; **21** (`no-capabilities`) means
+   the org defines no types or fields, so the label-based result from the
+   steps above stands with no error; **22** means the spec is wrong, so fix
+   it and re-run; **23** and **24** mean the issues exist but some metadata
+   did not land, so name what failed and carry on.
+
+   Where the command is unavailable, say so and leave the label-based
+   result — do not hand-write the mutations.
 5. After creation, verify each issue body contains the correct
    dependency references. Use the post-creation validation pattern
    (see report-issue) to catch body corruption.

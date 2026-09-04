@@ -85,7 +85,7 @@ jobs:
       # "Fix in scope, file out of scope" rule, which decides what happens to
       # every problem the run finds and so has to sit in this window rather
       # than behind a reference that only loads once a PR exists. Its
-      # reasoning went to execute-rationale.md, which this gate skips, so the
+      # reasoning went to docs/rationale/execute-rationale.md, which this gate skips, so the
       # window carries the rule alone. Measured 34904; 35600 is ~2.0%,
       # matching the convention above.
       - name: Check execute build-window footprint (budget 35600 tokens)
@@ -102,7 +102,7 @@ jobs:
       # check to inspect), and Phase 8 gained the general-purpose-agent
       # fallback plus the self-review disclosure. Both are new decision paths,
       # not restatement, and the rationale for the latter went to
-      # execute-rationale.md rather than into this window. Still after the PR
+      # docs/rationale/execute-rationale.md rather than into this window. Still after the PR
       # exists, so the build-window budget above is untouched.
       #
       # Recalibrated again from 47000: auto-merge.md gained step 3b, the merge
@@ -118,14 +118,14 @@ jobs:
       # each reviewer which side of the diff a finding sits on, and Phase 10
       # says why the auto-merge fallbacks that file are not exceptions to it.
       # That is routing every review finding, not restatement, and the
-      # reasoning went to execute-rationale.md rather than into this window.
+      # reasoning went to docs/rationale/execute-rationale.md rather than into this window.
       # Measured 48376; 49400 is ~2.1%, matching the convention above.
       #
       # Recalibrated again from 49400: Phase 8 dropped to one reviewer but
       # gained the severity rubric, which decides what a review may raise at
       # all, and Phase 9 gained the test that decides whether a re-review
       # happens. Both are decision procedures the run has to carry, and the
-      # reasoning behind them went to execute-rationale.md, which this gate
+      # reasoning behind them went to docs/rationale/execute-rationale.md, which this gate
       # skips. Measured 49156; 50150 is ~2.0%, matching the convention above.
       - name: Check execute whole-run footprint (budget 50150 tokens)
         shell: bash

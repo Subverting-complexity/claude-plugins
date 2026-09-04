@@ -104,8 +104,8 @@ Additional labels your project uses. Remove if not needed.
 Optional. When the org has **native GitHub issue types** (Bug, Feature,
 User Story, Epic) and **org issue fields**, the workflow uses them as
 first-class classification/metadata instead of labels. Capability is
-auto-detected per dimension at runtime (`templates/issue-fields-resolution.md`);
-an org without them keeps label-only behaviour. The purpose→value mappings
+auto-detected per dimension at runtime by `wf org-capabilities`; an org
+without them keeps label-only behaviour. The purpose→value mappings
 live in `templates/default-labels.md`. Override a **field name** below only
 if your org named one differently from the default.
 

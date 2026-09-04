@@ -96,10 +96,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" setup
   `wf.sh setup --install-python` — that installs system Python via
   winget/brew/apt, and runs **only** with this explicit opt-in.
 
-This step is **optional but recommended**. Without it the fast path still
-works by probing a system Python, and falls back to the inline selection
-procedure when the probe fails (the launcher exits non-zero reporting no
-Python 3) — so the workflow is never blocked on it. To
+This step is **optional but recommended**. Without it the launcher still
+probes a system Python and uses that. But `wf` itself is not optional:
+`execute` and `bulk-execute` have no markdown fallback, so if the probe
+finds no Python 3 those commands fail naming the missing prerequisite. To
 rebuild a broken venv, re-run with `--force`.
 
 ### 2. Check for existing configuration
@@ -169,7 +169,7 @@ number) and ask which to use (or none). Record the chosen board's
 `number` as `project-number`, its `id` as `project-node-id`, and its
 `title` as `project-title` — `project-title` lets later commands confirm
 the stored node id still points at the intended board before they mutate
-it (see `templates/board-resolution.md`). When a board is selected,
+it, which `wf board-move` does on every write. When a board is selected,
 auto-fetch its field IDs and status option IDs:
 
 ```
@@ -446,8 +446,8 @@ log a warning and continue.
 
 The workflow prefers the org's **native GitHub issue types** (Bug, Feature,
 User Story, Epic) and **org issue fields** over `type-*` labels when they
-exist (see `templates/issue-fields-resolution.md`). Detect capability and
-record it so the generated `ClaudeProject.md` reflects reality.
+exist; `wf org-capabilities` resolves them at runtime. Detect capability
+here and record it so the generated `ClaudeProject.md` reflects reality.
 
 1. **Issue types** — list the owner's enabled types:
    ```
@@ -635,11 +635,25 @@ silently blocks future pickup of that item. This step scans active claim
 refs, frees those that no longer back live work, and flags anything that
 needs manual review.
 
-Follow the full procedure in `templates/reap-claims.md`: parse an optional
-`--threshold N` hours (default **4**), resolve `{org}`/`{repo}` from
-`ClaudeProject.md`, then cross-check every claim ref against its issue/PR
-state. It is safe to run any time — it never reaps a ref that still backs
-a running session — and is schedulable via `/schedule` calling
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-reap
+```
+
+Add `--threshold N` to change the age below which a ref is left alone
+(default **4** hours), or `--dry-run` to see the verdicts without freeing
+anything.
+
+It always exits 0 and reports three lists. `reaped` are the refs it freed:
+the issue is closed, no longer marked in progress, or already has a PR
+open; the PR is closed, merged, or open with no review under way.
+`suspect` are the refs it deliberately left, because the evidence does not
+say the work has stopped — an issue still in progress with no PR, a PR
+under active review, or a target it could not read. `skipped` are refs
+younger than the threshold. Report the counts, and name every `suspect`
+ref with its reason so a person can decide.
+
+It is safe to run at any time — it never reaps a ref that still backs a
+running session — and is schedulable via `/schedule` calling
 `/github-workflow:setup reap`.
 
 ## Troubleshooting
@@ -665,4 +679,4 @@ git ls-remote origin 'refs/claims/*'           # list all active claims
 git push origin :refs/claims/issue-{number}    # free a specific claim
 ```
 
-Full background and safety notes: `templates/claim-procedure-rationale.md`.
+Full background and safety notes: `docs/rationale/claim-procedure-rationale.md`.

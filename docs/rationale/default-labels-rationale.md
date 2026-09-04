@@ -83,7 +83,8 @@ be configured).
 `status-parked` and `status-blocked` both remove the issue from the pick
 pool. The durable owner of in-flight work is the **assignment + the
 `status-in-progress`/`status-parked` label**, *not* the atomic claim ref
-(which is a short-lived race-protector — see `claim-procedure.md`). This
+(which is a short-lived race-protector — see
+`claim-procedure-rationale.md`). This
 is what lets a human pause an issue for days and resume it without
 another agent grabbing it: the picker only ever selects *unassigned*
 issues, so an assigned + labelled issue is excluded regardless of whether

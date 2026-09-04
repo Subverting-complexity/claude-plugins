@@ -84,28 +84,43 @@ comment, so do not restate it in the body, and leave the rest of the
 body as it is. If you are editing the body for any other reason, the
 result has to satisfy `../skills/writing-github-issues/SKILL.md`.
 
-**Structured blocker metadata (best-effort, capability-gated).** Following
-`templates/issue-fields-resolution.md`, also:
+**Structured blocker metadata (best-effort, capability-gated).** Record the
+blocker where the org can read it as well as a person: the **`Status
+reason`** field carries a one-line "why" alongside the label, and a native
+blocked-by edge makes the dependency visible in the GitHub UI. The
+`## Dependencies` marker stays the source of truth for auto-unblock; this
+adds to it. Write a one-entry spec and apply it:
 
-- Populate the **`Status reason`** field (Step 5) with a one-line summary
-  of the blocker — the same reason from the comment, condensed — so the
-  blocked state carries a machine-readable "why" alongside the label.
-- When the blocker is another issue, add a native **`addBlockedBy`**
-  relationship (Step 7) in addition to the `## Dependencies` marker (the
-  marker stays the source of truth for auto-unblock; the relationship adds
-  GitHub-UI visibility).
+```bash
+mkdir -p .claude
+cat > .claude/block-spec.json <<'JSON'
+{"issues": [{"number": {number},
+             "fields": {"field-status-reason": "{one-line reason}"},
+             "blocked_by": [{blocking issue numbers}]}]}
+JSON
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/block-spec.json
+```
 
-Skip silently on an org that does not define these — the comment and the
-body marker remain the authoritative record.
+Drop `blocked_by` when the blocker is not another issue. Read the exit code: **0** applied it; **21** (`no-capabilities`) means the
+org defines no issue fields, so skip silently — the comment and the body
+marker remain the authoritative record; **22** (`spec-invalid`) means the
+spec is wrong, so fix it; **24** (`partial`) means some of it landed, so
+report what did not.
 
 ### 3. Release the claim and unassign
 
 **First, the open-PR guard.** Blocking returns the issue to the
 unassigned pool. If the story **already has an open PR**, that would let
 another agent pick it up and open a *second* PR for the same work. A story
-with a live PR is not "blocked from starting" — it is in review. Check for
-an open PR that closes this issue by running the authoritative lookup in
-`templates/sibling-pr-lookup.md` with this `{number}`.
+with a live PR is not "blocked from starting" — it is in review:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
+```
+
+Exit 0 with `found: 0` means no PR closes it. Exit 20 means the lookup
+failed — say so and stop rather than returning the issue to the pool on an
+unverified answer.
 
 If an open PR closes this issue, **do not unassign and do not return the
 issue to the pool**. Tell the user the story has an open PR (#N) and that
@@ -116,12 +131,11 @@ assignment keeps the issue out of the pick pool so no duplicate PR is
 created.
 
 Otherwise (no open PR), release the atomic claim ref so the issue can be
-claimed again, following `templates/claim-procedure.md` (**Release**),
-then remove the assignee so the issue returns to the unassigned pool and
-can be picked up by another agent or re-picked later:
+claimed again, then remove the assignee so the issue returns to the
+unassigned pool and can be picked up by another agent or re-picked later:
 
 ```
-git push origin :refs/claims/issue-{number}
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
 gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 ```
 
@@ -160,13 +174,16 @@ not present.
 
 ### 5. Update project board (if configured)
 
-Resolve the board, the issue's `{item_id}`, and the target column's
-`{column_option_id}` following `templates/board-resolution.md`, then run
-its **Step 5** mutation to set Status. The target column for
-`status-blocked` is **Blocked** (`col-blocked`) per the label ⇄ column
-pairing in `templates/default-labels.md`. The board-configured check (skip
-silently when unconfigured), the identity verification, and the
-loud-on-failure contract all live in that template.
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-blocked
+```
+
+`col-blocked` is the column paired with `status-blocked` per
+`templates/default-labels.md`. The command decides for itself whether a
+board is configured (silent no-op when not), verifies the board's identity
+before writing, and adds the issue if it is missing. It **always exits 0** —
+a board mirrors the labels and is never the source of truth — so read
+`moved` and `reason`, and report a failure rather than stopping for one.
 
 ### 6. Reconcile the working tree to clean
 

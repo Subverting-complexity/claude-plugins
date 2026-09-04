@@ -58,9 +58,12 @@ Putting that read in `wf` rather than in prose keeps one encoding of the
 filters. Ready gate, sprint narrowing, refinement and agent-gating filters,
 mode filter and priority sort are all tested logic in `wf_core`; an inline
 `gh issue list` in the skill would have been a second, untested copy that
-drifts the first time a filter changes. The inline path in
-`templates/story-selection.md` remains as the fallback for a machine with no
-Python, where a drifting second copy is better than no selection at all.
+drifts the first time a filter changes. An inline selection procedure was
+kept for a while as the fallback for a machine with no Python, on the
+argument that a drifting second copy beat no selection at all. That
+argument lost: the copy drifted, nothing tested it, and it has been
+deleted. `wf` is now a hard prerequisite here, and its absence is an error
+naming the missing prerequisite rather than a silent second implementation.
 
 ## Why a sibling dependency does not block
 

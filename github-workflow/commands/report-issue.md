@@ -218,10 +218,9 @@ issues goes in `## Dependencies` as `Blocked by #N`.
 
 ### 5b. Verify labels (exit-code contract)
 
-Follow the label read-back policy in `templates/claim-procedure.md`
-(Acquire, Step 4): `gh issue create`/`gh issue edit` fail loudly on an
-unknown label, so **exit 0 means every label applied — do not read the
-labels back**. Only on a non-zero exit citing an unknown/missing label:
+Follow the label read-back policy in `templates/default-labels.md`:
+`gh issue create`/`gh issue edit` fail loudly on an unknown label, so
+**exit 0 means every label applied — do not read the labels back**. Only on a non-zero exit citing an unknown/missing label:
 create it with the guarded create-if-missing pattern from
 `templates/default-labels.md` (colors there too, no `--force`), retry
 the apply once, then read back to confirm — only after that retried
@@ -235,46 +234,50 @@ gh issue view {number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'
 ### 5c. Native issue type + field values (best-effort)
 
 Upgrade the freshly-created issue from label-only classification to the
-org's **native issue type** and **issue fields**, following
-`templates/issue-fields-resolution.md`. This is capability-gated and
-entirely best-effort: an org without native types or fields keeps the
-label-only result from the steps above with no error.
+org's **native issue type** and **issue field values** in one call. Write a
+one-entry update spec — `number` makes it an update, `kind` supplies both
+the native type and the `Classification` the org expects for it:
 
-1. Run **Step 1** (discover native issue types) and **Step 2** (discover
-   issue fields) of `issue-fields-resolution.md`.
-2. Resolve this issue's node id (**Step 3**).
-3. **Native type (Step 4)** — if the org is type-capable, map the Step 2
-   classification to a native type via `wf_core.NATIVE_TYPE_MAP`:
-   - Bug → **Bug**, Security → **Bug**, Architecture → **Feature**,
-     Tech Debt → **Feature**.
-   - Set it with `updateIssueIssueType`, then **remove the now-redundant
-     `type-*` label** you applied in Step 5 (`gh issue edit {number}
-     --remove-label "{type_label}"`) — native type is not dual-tracked.
-     On a non-type-capable org, skip this and leave the `type-*` label as
-     the classification.
-4. **Field values (Step 5)** — populate, for whichever fields the org
-   defines, in one `setIssueFieldValue` call:
-   - `Classification` ← choose the most accurate option from the full set
-     (never leave blank):
-     - Bug (default broken behaviour) → **Bug Fix**
-     - Bug that is a regression (worked before) → **Regression**
-     - Bug that is a speed/memory degradation → **Performance**
-     - Security → **Security**
-     - Architecture → **Architecture**
-     - Tech Debt → **Tech Debt**
-   - `Effort` ← assess scope and pick one option (always set):
-     - **Low** — a targeted fix, a few files, clear solution
-     - **Medium** — moderate scope, some investigation or refactoring needed
-     - **High** — broad impact, architectural change, or significant
-       unknowns
-   - `Priority` ← the option mapped from the priority you chose in Step 3
-     (Critical→Urgent, High→High, Medium→Medium, Low→Low). **Keep** the
-     `priority-*` label too — priority is dual-tracked.
-   - `Origin` ← **Development** (report-issue files issues found during
-     development; if the report came from a security audit session, use
-     **Security Audit** instead).
-5. Report any failure loudly but continue — the issue already exists and
-   carries its labels.
+```bash
+mkdir -p .claude
+cat > .claude/report-spec.json <<'JSON'
+{"issues": [{"number": {number},
+             "kind": "{bug|security|architecture|tech debt}",
+             "fields": {"field-priority": "{Urgent|High|Medium|Low}",
+                        "field-effort": "{Low|Medium|High}",
+                        "field-origin": "Development"}}]}
+JSON
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/report-spec.json
+```
+
+- `kind` is the Step 2 classification in lower case. It maps to the native
+  type and the `Classification` value together, so neither is chosen here.
+- `field-priority` is the Step 3 priority as the field names it: Critical
+  becomes **Urgent**, the rest keep their names. **Keep** the `priority-*`
+  label as well — priority is dual-tracked, the label orders selection and
+  the field drives the portal's views.
+- `field-effort` is your scope assessment: **Low** for a targeted fix in a
+  few files, **Medium** for moderate scope with some investigation, **High**
+  for broad impact, architectural change or significant unknowns.
+- `field-origin` is **Development**, or **Security Audit** if this report
+  came out of a security audit session.
+
+Read the exit code: **0** applied it; **21** (`no-capabilities`) means the
+org defines no issue types or fields, so the label-only result from the
+steps above stands with no error; **22** (`spec-invalid`) means the spec is
+wrong, so fix it and re-run; **23** and **24** mean the issue exists but
+some metadata did not land — report which, by number and title, and carry
+on. Never fail the report over this.
+
+On an org that accepted the native type (exit 0), remove the now-redundant
+`type-*` label you applied in Step 5 — native type is not dual-tracked:
+
+```
+gh issue edit {number} --repo {org}/{repo} --remove-label "{type_label}"
+```
+
+On exit 21 leave that label alone: it is the only classification the org
+has.
 
 ### 6. Validate issue body
 
@@ -292,12 +295,16 @@ chosen in Step 3 (see `templates/default-labels.md` → Board Columns):
 - `status-ready` → **Ready** (`col-ready`)
 - `needs-refinement` → **Backlog** (`col-backlog`)
 
-Resolve the board, the new issue's `{item_id}`, and the target column's
-`{column_option_id}` following `templates/board-resolution.md`, then run
-its **Step 5** mutation to set Status. The template's Step 3 **adds the
-issue to the board** (a new issue is never on it yet); the
-board-configured check (skip silently when unconfigured), the identity
-verification, and the loud-on-failure contract all live there too.
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column {col-ready|col-backlog}
+```
+
+The command adds the issue to the board (a new issue is never on it yet),
+decides for itself whether a board is configured — a silent no-op when it
+is not — and verifies the board's identity before writing. It **always
+exits 0**, because a board mirrors the labels and is never the source of
+truth, so read `moved` and `reason` and report a failure rather than
+stopping for one.
 
 ### 7. Report
 

@@ -2,7 +2,7 @@
 
 This file is the **single source of truth** for how every skill and
 command resolves a label name, and the default inventory created at
-setup. For design rationale, see `default-labels-rationale.md` (not
+setup. For design rationale, see `docs/rationale/default-labels-rationale.md` (not
 read at runtime).
 
 ## Purpose keys
@@ -69,10 +69,23 @@ Surface any other failure — especially a permission denial — with the
 real stderr, never swallowed: an explicitly best-effort caller warns and
 continues; every other caller stops.
 
-After a create-and-retry, confirm the label took by reading back
-(`gh issue view {number} --json labels --jq '[.labels[].name]'`; `gh pr
-view` for a PR). On a clean apply, trust the edit's exit code — per the
-label read-back policy in `templates/claim-procedure.md` (Acquire, Step 4).
+## Label read-back policy
+
+`gh ... edit --add-label X` fails loudly — non-zero exit, "could not add
+label" — when `X` does not exist. It never drops a label silently. So the
+edit's own exit status *is* the presence signal, and this is the policy
+every command that applies a label follows:
+
+- **Exit 0** → the label is set. Done. **Do not read back.**
+- **Non-zero, citing an unknown or missing label** → the label was never
+  created at setup. Create it with the guarded pattern above (no
+  `--force`), retry the edit once, and *then* read the labels back to
+  confirm (`gh issue view {number} --json labels --jq '[.labels[].name]'`,
+  or `gh pr view` for a PR).
+
+That retried case is the **only** one that reads. A read-back after a
+clean apply is a round trip that can only ever confirm what the exit code
+already said.
 
 ## Workflow Labels
 
@@ -162,7 +175,7 @@ the label map in `ClaudeProject.md`; defaults below.
 | `status-needs-attention` | `status-needs-attention` | `D93F0B` | A run failed or errored — needs human intervention | execute (error/timeout) |
 
 For the lifecycle transition diagram and dual-tracking rationale, see
-`default-labels-rationale.md`.
+`docs/rationale/default-labels-rationale.md`.
 
 ### Provenance marker (not a lifecycle state)
 
@@ -179,9 +192,9 @@ The board-side mirror of the issue lifecycle. Columns are resolved by
 **purpose key** through the same path as labels: read from
 `ClaudeProject.md` → `## Project Board` → `### Status Options`; fall
 back to the default name below. Board moves are best-effort (no board →
-no-op; configured board + failed move → loud error — see
-`templates/board-resolution.md`). Labels remain authoritative; the board
-mirrors them. Design rationale: `default-labels-rationale.md`.
+no-op; configured board + failed move → reported, never fatal — `wf
+board-move` writes them). Labels remain authoritative; the board
+mirrors them. Design rationale: `docs/rationale/default-labels-rationale.md`.
 
 | Purpose key      | Default Name  | Option color | Mirrors lifecycle label(s) |
 |------------------|---------------|--------------|----------------------------|
@@ -222,11 +235,27 @@ them). The Ready column is additionally required only under a
 
 ## Review State Labels
 
-The PR review-state label table (the review mutex: `needs-review`,
-`reviewing`, `approved`, `changes-requested`, `needs-discussion`,
-`needs-re-review`, `failed`, `updating`, `fixes-applied`) lives in
-`templates/label-reference.md`. It is used only on the **review** path
-(`code-review`, `execute` PR labelling), not the
-claim/selection path. Resolve review-state purposes via the Labels table in
-`review.config.md` (matched by purpose key), falling back to the defaults
-in `label-reference.md`.
+These control the PR review workflow and are used only on the **review**
+path (`code-review`, `execute` PR labelling), never the claim/selection
+path. Resolve them through the Labels table in `review.config.md` (matched
+by purpose key), falling back to the defaults below —
+`wf_core.REVIEW_DEFAULT_LABELS` is the same list, so `wf` resolves them the
+same way without a lookup here.
+
+State labels are mutually exclusive — exactly one per PR. A PR enters the
+machine at `needs-review` the moment it is opened, so a new PR is never
+unlabelled, and the reviewer moves it from there.
+
+The colours and descriptions are what setup creates the labels with:
+
+| Purpose key | Default Name | Color | Description |
+|-------------|-------------|-------|-------------|
+| `needs-review` | `review-needs-review` | `C2E0C6` | Open PR awaiting its first review |
+| `reviewing` | `review-reviewing` | `0E8A16` | Review in progress |
+| `approved` | `review-approved` | `1D76DB` | Ready for human merge |
+| `changes-requested` | `review-changes-requested` | `E4E669` | Issues need human action |
+| `needs-discussion` | `review-needs-discussion` | `D93F0B` | Architectural questions |
+| `needs-re-review` | `review-needs-re-review` | `FBCA04` | New commits since last review |
+| `failed` | `review-failed` | `B60205` | Review could not complete |
+| `updating` | `review-updating` | `0E8A16` | Builder addressing feedback |
+| `fixes-applied` | `review-fixes-applied` | `5319E7` | Claude pushed fix commits (sticky) |

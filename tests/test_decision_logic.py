@@ -8,8 +8,7 @@ Covers the three pure-logic areas described in the workflow templates:
   - Backlog-mode detection (sprint vs flat from milestone presence)
 
 No GitHub API calls, no file I/O.  Feed fixture data in, assert outputs.
-Reference: github-workflow/templates/story-selection.md,
-           github-workflow/templates/default-labels.md
+Reference: github-workflow/templates/default-labels.md
 """
 import os
 import sys
@@ -177,8 +176,7 @@ class TestStorySelection(unittest.TestCase):
 
 class TestSelectionHonoursProjectLabelMap(unittest.TestCase):
     """The fast path must resolve every label it filters/sorts on through the
-    project map, exactly like the inline `story-selection.md` path — otherwise a
-    project that renames labels diverges from the inline path and the pool comes
+    project map — otherwise a project that renames labels comes
     up spuriously empty (the `no-candidates` / ready-gate-mismatch symptom)."""
 
     # A project that renames the defaults.
@@ -360,7 +358,7 @@ class TestSelectPool(unittest.TestCase):
 
 
 class TestDependencyParsing(unittest.TestCase):
-    """Fixed dependency markers from story-selection.md Step 3."""
+    """Fixed dependency markers."""
 
     def test_extracts_each_marker_form(self):
         body = "Depends on #1. Blocked by #2. After #3. Requires #4."
@@ -1645,6 +1643,134 @@ class TestPreflightSummary(unittest.TestCase):
         self.assertEqual(wf_core.preflight_summary(findings),
                          {'critical': 1, 'warning': 2,
                           'checks': {'config-section': 1, 'label-drift': 2}})
+
+
+
+# -- duplicate detection ------------------------------------------------------
+
+class TestSelectSiblingPrs(unittest.TestCase):
+    """One definition of "duplicate" for every site that asks."""
+
+    def _pr(self, number, closes, head='feat/x', **kw):
+        node = {'number': number, 'title': 'pr %d' % number,
+                'url': 'u%d' % number, 'headRefName': head, 'isDraft': False,
+                'labels': {'nodes': [{'name': 'review-needs-review'}]},
+                'closingIssuesReferences': {'nodes': [{'number': n} for n in closes]}}
+        node.update(kw)
+        return node
+
+    def test_only_the_prs_that_close_the_issue_are_returned(self):
+        nodes = [self._pr(1, [42]), self._pr(2, [7]), self._pr(3, [9, 42])]
+        found = wf_core.select_sibling_prs(nodes, 42)
+        self.assertEqual([p['number'] for p in found], [1, 3])
+
+    def test_the_order_is_the_query_order_so_the_tie_break_is_deterministic(self):
+        nodes = [self._pr(5, [42]), self._pr(2, [42])]
+        self.assertEqual([p['number'] for p in wf_core.select_sibling_prs(nodes, 42)],
+                         [5, 2])
+
+    def test_your_own_pr_is_not_a_duplicate_of_itself(self):
+        nodes = [self._pr(1, [42], head='feat/42-mine'),
+                 self._pr(2, [42], head='feat/42-theirs')]
+        found = wf_core.select_sibling_prs(nodes, 42, exclude_branch='feat/42-mine')
+        self.assertEqual([p['number'] for p in found], [2])
+
+    def test_each_result_carries_enough_to_compare_without_another_query(self):
+        found = wf_core.select_sibling_prs([self._pr(1, [42], isDraft=True)], 42)
+        self.assertEqual(found[0]['draft'], True)
+        self.assertEqual(found[0]['labels'], ['review-needs-review'])
+        self.assertEqual(found[0]['head_ref'], 'feat/x')
+
+    def test_a_pr_with_no_recognised_closing_reference_is_not_a_duplicate(self):
+        """A body that says "closes #42" but GitHub never linked is a bug in
+        that PR's body, not a duplicate to reconcile."""
+        self.assertEqual(wf_core.select_sibling_prs(
+            [self._pr(1, [])], 42), [])
+        self.assertEqual(wf_core.select_sibling_prs(None, 42), [])
+
+
+
+# -- claim reaping ------------------------------------------------------------
+
+class TestReapVerdict(unittest.TestCase):
+    """Reaping frees a lock. Getting it wrong lets two agents build one story,
+    so the asymmetry between `reap` and `suspect` is the whole point."""
+
+    IN_PROGRESS = 'status-in-progress'
+    REVIEWING = ('review-reviewing', 'review-updating')
+
+    def _issue(self, state='OPEN', labels=(IN_PROGRESS,), age=9, **kw):
+        return wf_core.reap_verdict(
+            'issue', age, state, list(labels),
+            in_progress_label=self.IN_PROGRESS, **kw)
+
+    def _pr(self, state='OPEN', labels=(), age=9, **kw):
+        return wf_core.reap_verdict(
+            'pr', age, state, list(labels), review_labels=self.REVIEWING, **kw)
+
+    def test_a_recent_claim_is_never_touched(self):
+        """A young ref is what a healthy running session looks like."""
+        verdict, reason = self._issue(state='CLOSED', age=1)
+        self.assertEqual(verdict, wf_core.SKIP)
+        self.assertIn('threshold', reason)
+
+    def test_the_threshold_is_configurable(self):
+        self.assertEqual(self._issue(state='CLOSED', age=6, threshold=8)[0],
+                         wf_core.SKIP)
+        self.assertEqual(self._issue(state='CLOSED', age=6, threshold=4)[0],
+                         wf_core.REAP)
+
+    def test_a_closed_issue_frees_its_claim(self):
+        self.assertEqual(self._issue(state='CLOSED')[0], wf_core.REAP)
+
+    def test_an_issue_whose_lifecycle_label_moved_on_frees_its_claim(self):
+        verdict, reason = self._issue(labels=['status-ready'])
+        self.assertEqual(verdict, wf_core.REAP)
+        self.assertIn('in progress', reason)
+
+    def test_an_issue_with_a_pr_already_open_frees_its_claim(self):
+        """The PR is the ownership marker; the post-create release just
+        did not run."""
+        self.assertEqual(self._issue(has_open_pr=True)[0], wf_core.REAP)
+
+    def test_an_in_progress_issue_with_no_pr_is_suspect_not_reaped(self):
+        """Indistinguishable from a slow but healthy session."""
+        verdict, reason = self._issue()
+        self.assertEqual(verdict, wf_core.SUSPECT)
+        self.assertIn('no PR', reason)
+
+    def test_a_merged_or_closed_pr_frees_its_claim(self):
+        self.assertEqual(self._pr(state='MERGED')[0], wf_core.REAP)
+        self.assertEqual(self._pr(state='CLOSED')[0], wf_core.REAP)
+
+    def test_an_open_pr_with_no_review_under_way_frees_its_claim(self):
+        self.assertEqual(self._pr(labels=['review-approved'])[0], wf_core.REAP)
+
+    def test_an_open_pr_under_review_is_suspect(self):
+        self.assertEqual(self._pr(labels=['review-reviewing'])[0], wf_core.SUSPECT)
+        self.assertEqual(self._pr(labels=['review-updating'])[0], wf_core.SUSPECT)
+
+    def test_an_unreadable_target_is_suspect_rather_than_reaped(self):
+        """Not knowing is not evidence the work has moved on."""
+        self.assertEqual(self._issue(state=None)[0], wf_core.SUSPECT)
+        self.assertEqual(self._issue(age=None)[0], wf_core.SUSPECT)
+
+
+class TestReapSummary(unittest.TestCase):
+
+    def test_counts_every_verdict_including_the_absent_ones(self):
+        results = [('issue-1', wf_core.REAP, ''), ('pr-2', wf_core.REAP, ''),
+                   ('issue-3', wf_core.SUSPECT, '')]
+        self.assertEqual(wf_core.reap_summary(results),
+                         {'reaped': 2, 'suspect': 1, 'skipped': 0})
+
+
+class TestBoardColumnNames(unittest.TestCase):
+
+    def test_every_lifecycle_state_has_a_column(self):
+        for key in ('col-backlog', 'col-ready', 'col-in-progress',
+                    'col-in-review', 'col-blocked', 'col-done'):
+            self.assertIn(key, wf_core.BOARD_COLUMN_NAMES)
 
 
 if __name__ == '__main__':

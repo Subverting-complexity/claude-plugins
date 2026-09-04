@@ -40,8 +40,8 @@ under all four ready-gates (`label`, `none`, `board-column`, `both`), on
 both label-typed and type-capable orgs. On a type-capable org,
 feature/maintenance filter by the native `issueType` field via a single
 GraphQL query instead of the `type-*` label; if the query fails, wf
-falls back to label filtering gracefully. See
-github-workflow/templates/story-selection.md.
+falls back to label filtering gracefully. The selection rules themselves
+live in `wf_core.py`.
 """
 
 import argparse
@@ -51,6 +51,7 @@ import random
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -66,6 +67,7 @@ EXIT_VERIFY = 23
 EXIT_PARTIAL = 24
 EXIT_GAPS = 25
 EXIT_DRIFT = 26
+EXIT_LOST = 27
 EXIT_UNSUPPORTED = 30
 EXIT_USAGE = 2
 
@@ -2043,7 +2045,7 @@ def merged_pr_closing(cfg, number):
     """Return the number of a *merged* PR that closes issue `number`, or None.
 
     Uses GitHub's own parse of closing references (`closingIssuesReferences`) —
-    the same authoritative signal `templates/sibling-pr-lookup.md` mandates
+    the same authoritative signal `sibling-pr` uses
     everywhere — rather than a free-text body search. That catches the real
     "merged but the issue is still open" case (a PR merged into a non-default
     base, e.g. a chained story, where GitHub recognises the reference but does
@@ -2183,6 +2185,35 @@ def board_move(cfg, number, column_name):
     return True, 'moved to %s' % column_name
 
 
+def set_start_date(cfg, number):
+    """Stamp the org's `Start date` issue field with today. Returns (set, why).
+
+    Best-effort and capability-gated in both directions: an org that does not
+    define the field is not misconfigured, and neither is one that denies the
+    field API to this token. Independent of the board — the board's own start
+    date is a different field on a different object.
+    """
+    ok, caps, err = resolve_org_capabilities(cfg)
+    if not ok:
+        return False, 'org capabilities unavailable (%s)' % (err or 'no detail')
+    name = field_name(cfg, 'field-start')
+    meta = (caps.get('field_map') or {}).get(name)
+    if not meta:
+        return False, 'the org does not define a %s field' % name
+    value, verr = wf_core.field_value_input(
+        meta, datetime.now(timezone.utc).strftime('%Y-%m-%d'))
+    if verr:
+        return False, verr
+    ok, data, jerr = gh_json(['issue', 'view', str(number), '--repo',
+                              '%s/%s' % (cfg['org'], cfg['repo']), '--json', 'id'])
+    if not ok or not data or not data.get('id'):
+        return False, 'could not read the issue node id (%s)' % jerr.strip()
+    applied, merr = set_issue_fields(data['id'], [value])
+    if not applied:
+        return False, merr
+    return True, 'set %s to %s' % (name, value['dateValue'])
+
+
 def checkout_branch(cfg, issue):
     """Create/check out the working branch. Returns (branch, checked_out, message)."""
     default = cfg['default_branch']
@@ -2231,7 +2262,7 @@ def assemble_prs(cfg, mine):
 
 
 # Color + description for each review-state purpose, mirroring
-# templates/label-reference.md → Review State Labels. Used only by the
+# `templates/default-labels.md` → Review State Labels. Used only by the
 # review-finish readback to recreate a verdict label the repo is missing
 # (guarded create, never `--force`).
 REVIEW_LABEL_META = {
@@ -2322,7 +2353,7 @@ def prepare_cfg():
 def auto_ready_scan(cfg):
     """Scan blocked issues and restore any whose dependencies are all closed.
 
-    Mirrors story-selection-auto-ready.md Step 4: fetch issues with the
+    The auto-ready sweep: fetch issues with the
     status-blocked label, parse their dependency markers, check whether all
     referenced issues are now closed, and if so swap their label to
     status-ready so the next selection round can pick them.
@@ -2537,6 +2568,9 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode):
         result['board_message'] = board_msg
         if not moved and board_msg != 'no board configured':
             eprint('wf: board move skipped — %s' % board_msg)
+        dated, date_msg = set_start_date(cfg, selected['number'])
+        result['start_date_set'] = dated
+        result['start_date_message'] = date_msg
         if getattr(args, 'no_branch', False):
             # Bulk runs: every story in the set gets the claim, the marker and
             # the board move, but they all share one branch the caller creates
@@ -2825,6 +2859,301 @@ def cmd_post_merge(args):
     emit('ok', EXIT_OK, pr=args.pr, base=data.get('baseRefName'), settled=settled)
 
 
+# ── board-move and claim-release ─────────────────────────────────────────────
+# The two pieces a caller still needs to reach on their own: moving an issue
+# to a named column, and letting a claim go. Everything else — identity
+# verification, adding the issue to the board, resolving the option id, the
+# compare-and-swap — is already the body of `board_move()` and
+# `release_claim()` above.
+
+
+def cmd_board_move(args):
+    cfg = prepare_cfg()
+    column = args.column
+    if column.startswith('col-'):
+        # Accept the purpose key as well as the column's own name, because
+        # `ClaudeProject.md` records the purpose and the board holds the name.
+        column = wf_core.BOARD_COLUMN_NAMES.get(column, column)
+
+    moved, message = board_move(cfg, args.number, column)
+    if moved:
+        emit('ok', EXIT_OK, number=args.number, column=column, moved=True,
+             reason='#%d moved to %s' % (args.number, column))
+    # A board is a mirror of the lifecycle labels, never the source of truth, so
+    # a failed move is reported and never fatal: the caller has already applied
+    # the label that actually decides the issue's state.
+    emit('ok', EXIT_OK, number=args.number, column=column, moved=False,
+         reason='board not updated: %s' % message)
+
+
+def apply_claim_marker(cfg, args):
+    """Apply the human-visible ownership marker for a won claim.
+
+    Returns a short description of what was applied, or None. Best-effort:
+    the claim is already held, and failing to advertise it is worth a warning
+    rather than giving the item back.
+    """
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    if args.issue is not None:
+        ok, data, _ = gh_json(['issue', 'view', str(args.issue), '--repo', repo,
+                               '--json', 'labels'])
+        if not ok or data is None:
+            eprint('wf: warning - could not read issue #%d to mark it' % args.issue)
+            return None
+        apply_in_progress(cfg, {'number': args.issue,
+                                'labels': [l['name'] for l in data.get('labels', [])]})
+        return '@me + %s' % label(cfg, 'status-in-progress')
+    names = wf_core.review_names(cfg.get('review_labels'))
+    code, _, err = run(['gh', 'pr', 'edit', str(args.pr), '--repo', repo,
+                        '--remove-label', names['needs-review'],
+                        '--add-label', names['reviewing']])
+    if code != 0:
+        eprint('wf: warning - could not apply the reviewing label (%s)' % err.strip())
+        return None
+    return names['reviewing']
+
+
+def cmd_claim(args):
+    """Take the atomic claim on one issue or PR, without selecting anything.
+
+    `pick` and `review-next` claim what they select. This is for the caller
+    that already knows which item it wants — a named PR under review, a story
+    a person asked for by number — and needs the same compare-and-swap.
+    """
+    err = check_environment()
+    if err:
+        emit('error', EXIT_ENV, reason=err)
+    if (args.issue is None) == (args.pr is None):
+        emit('usage', EXIT_USAGE, reason='name exactly one of --issue N or --pr N')
+    target = ('issue-%d' % args.issue) if args.issue else ('pr-%d' % args.pr)
+
+    outcome = acquire_claim(target)
+    if outcome == 'won':
+        # The ref is the lock, but it is ephemeral. Ownership has to be
+        # visible on GitHub too, or a picker running after this session dies
+        # selects the item again: assignment plus the in-progress label for an
+        # issue, the `reviewing` state label for a PR.
+        marker = apply_claim_marker(prepare_cfg(), args) if args.marker else None
+        emit('ok', EXIT_OK, target=target, claimed=True, marker=marker,
+             reason='claimed %s' % target)
+    if outcome == 'lost':
+        # A rival agent holds it. Normal, and not an error: the caller moves on
+        # to the next item rather than reporting a broken environment.
+        emit('lost', EXIT_LOST, target=target, claimed=False,
+             reason='%s is already claimed by another run' % target)
+    emit('error', EXIT_ENV, target=target, claimed=False,
+         reason='could not push the claim ref for %s; this is an environment '
+                'problem, not a rival — check write access to refs/claims/*'
+                % target)
+
+
+def cmd_claim_release(args):
+    err = check_environment()
+    if err:
+        emit('error', EXIT_ENV, reason=err)
+    released = []
+    for number in args.issue or []:
+        release_claim('issue-%d' % number)
+        released.append('issue-%d' % number)
+    for number in args.pr or []:
+        release_claim('pr-%d' % number)
+        released.append('pr-%d' % number)
+    if not released:
+        emit('usage', EXIT_USAGE,
+             reason='name what to release: --issue N and/or --pr N')
+    emit('ok', EXIT_OK, released=released,
+         reason='released %s' % ', '.join(released))
+
+
+# ── sibling-pr ───────────────────────────────────────────────────────────────
+
+SIBLING_PR_QUERY = (
+    'query($owner:String!,$repo:String!){'
+    ' repository(owner:$owner,name:$repo){'
+    ' pullRequests(states:OPEN, first:100,'
+    ' orderBy:{field:CREATED_AT, direction:ASC}){'
+    ' nodes { number title url headRefName isDraft'
+    ' labels(first:20){ nodes { name } }'
+    ' closingIssuesReferences(first:10){ nodes { number } } } } } }'
+)
+
+
+def cmd_sibling_pr(args):
+    """Report the open PRs that will close an issue on merge.
+
+    One call, one definition of "duplicate", for the three places that ask:
+    the pre-start guard, the create-time duplicate flag, and code review's
+    reconciliation. Finding none is the normal answer, so it is `ok` and exit
+    0 with an empty list — only a failed lookup is an error.
+    """
+    cfg = prepare_cfg()
+    ok, data, err = gh_graphql(SIBLING_PR_QUERY, owner=cfg['org'], repo=cfg['repo'])
+    if not ok or not data:
+        emit('error', EXIT_ENV,
+             reason='could not read open PRs (%s)' % (err.strip() or 'no detail'))
+    try:
+        nodes = data['repository']['pullRequests']['nodes']
+    except (KeyError, TypeError):
+        emit('error', EXIT_ENV, reason='unexpected pullRequests shape')
+    prs = wf_core.select_sibling_prs(nodes, args.number, args.exclude_branch)
+    emit('ok', EXIT_OK, issue=args.number, found=len(prs), prs=prs,
+         reason=('no open PR closes #%d' % args.number) if not prs else
+                'open PR(s) closing #%d: %s'
+                % (args.number, ', '.join('#%d' % p['number'] for p in prs)))
+
+
+# ── claim-reap ───────────────────────────────────────────────────────────────
+
+def list_claim_refs():
+    """Every claim ref on the remote, as [(sha, target)]. Fetches the objects
+    first so their commit timestamps can be read without a call per ref."""
+    run(['git', 'fetch', '--prune', 'origin',
+         '+refs/claims/*:refs/remotes/origin/claims/*'])
+    code, out, err = run(['git', 'ls-remote', 'origin', 'refs/claims/*'])
+    if code != 0:
+        return None, err.strip() or 'git ls-remote failed'
+    refs = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].startswith('refs/claims/'):
+            refs.append((parts[0], parts[1][len('refs/claims/'):]))
+    return refs, ''
+
+
+def claim_age_hours(sha):
+    """Hours since the claim object was written, or None if unreadable."""
+    code, out, _ = run(['git', 'show', '-s', '--format=%ct', sha])
+    if code != 0 or not out.strip():
+        return None
+    try:
+        return int((time.time() - int(out.strip().split()[-1])) // 3600)
+    except ValueError:
+        return None
+
+
+def claim_target_state(cfg, target):
+    """Read the issue or PR a claim ref names. Returns (kind, number, state,
+    labels, has_open_pr). `state` is None when the lookup failed."""
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    kind, _, raw = target.partition('-')
+    try:
+        number = int(raw)
+    except ValueError:
+        return None, None, None, [], False
+    if kind not in ('issue', 'pr'):
+        return None, None, None, [], False
+
+    ok, data, _ = gh_json([kind, 'view', str(number), '--repo', repo,
+                           '--json', 'state,labels'])
+    if not ok or not data:
+        return kind, number, None, [], False
+    labels = [l['name'] for l in data.get('labels', [])]
+    state = data.get('state', '')
+
+    has_open_pr = False
+    if kind == 'issue' and state.upper() == 'OPEN':
+        ok, prs, _ = gh_json(['pr', 'list', '--repo', repo, '--state', 'open',
+                              '--search', 'closes #%d' % number, '--json', 'number'])
+        has_open_pr = bool(ok and prs)
+    return kind, number, state, labels, has_open_pr
+
+
+def cmd_claim_reap(args):
+    """Free claim refs whose work has demonstrably moved on; flag the rest.
+
+    Replaces the hand-run procedure this command was extracted from. The
+    judgement is `wf_core.reap_verdict`; everything here is I/O.
+    """
+    err = check_environment()
+    if err:
+        emit('error', EXIT_ENV, reason=err)
+    cfg = prepare_cfg()
+    refs, ferr = list_claim_refs()
+    if refs is None:
+        emit('error', EXIT_ENV, reason='could not list claim refs (%s)' % ferr)
+    if not refs:
+        emit('ok', EXIT_OK, reaped=[], suspect=[], skipped=[],
+             reason='no active claim refs')
+
+    names = wf_core.review_names(cfg.get('review_labels'))
+    active_review = [names['reviewing'], names['updating']]
+    in_progress = label(cfg, 'status-in-progress')
+
+    results, detail = [], {wf_core.REAP: [], wf_core.SUSPECT: [], wf_core.SKIP: []}
+    for sha, target in refs:
+        kind, number, state, labels, has_open_pr = claim_target_state(cfg, target)
+        age = claim_age_hours(sha)
+        if kind is None:
+            verdict, reason = wf_core.SUSPECT, 'not an issue or PR claim'
+        else:
+            verdict, reason = wf_core.reap_verdict(
+                kind, age, state, labels, threshold=args.threshold,
+                in_progress_label=in_progress, review_labels=active_review,
+                has_open_pr=has_open_pr)
+        results.append((target, verdict, reason))
+        entry = {'ref': 'refs/claims/%s' % target, 'reason': reason}
+        if age is not None:
+            entry['age_hours'] = age
+        if verdict == wf_core.REAP and not args.dry_run:
+            release_claim(target)
+        detail[verdict].append(entry)
+
+    summary = wf_core.reap_summary(results)
+    emit('ok', EXIT_OK, reaped=detail[wf_core.REAP],
+         suspect=detail[wf_core.SUSPECT], skipped=detail[wf_core.SKIP],
+         summary=summary, dry_run=bool(args.dry_run),
+         reason='%d reaped, %d suspect (check by hand), %d too recent'
+                % (summary['reaped'], summary['suspect'], summary['skipped']))
+
+
+# ── handoff ──────────────────────────────────────────────────────────────────
+
+def cmd_handoff(args):
+    """Hand a finished story to review: label the PR, move the issue and its
+    board item to in-review, and release the issue claim.
+
+    One command for what was a combined GraphQL mutation plus a fallback
+    chain. Plain `gh` edits cost fewer round trips than the mutation did once
+    its node-id and label-id lookups are counted, and they need no label
+    cache, so the fallback has nothing left to fall back from.
+    """
+    cfg = prepare_cfg()
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    names = wf_core.review_names(cfg.get('review_labels'))
+    state_label = names['changes-requested' if args.gate_failed else 'needs-review']
+
+    code, _, perr = run(['gh', 'pr', 'edit', str(args.pr), '--repo', repo,
+                         '--add-label', label(cfg, 'claude-authored'),
+                         '--add-label', state_label])
+    pr_labelled = code == 0
+    if not pr_labelled:
+        eprint('wf: warning - could not label PR #%d (%s)' % (args.pr, perr.strip()))
+
+    issues = []
+    for number in args.issue or []:
+        edit = ['gh', 'issue', 'edit', str(number), '--repo', repo,
+                '--add-label', label(cfg, 'status-in-review'),
+                '--remove-label', label(cfg, 'status-in-progress')]
+        code, _, ierr = run(edit)
+        if code != 0:
+            eprint('wf: warning - could not relabel issue #%d (%s)' % (number, ierr.strip()))
+        moved, message = board_move(cfg, number, wf_core.BOARD_COLUMN_NAMES['col-in-review'])
+        release_claim('issue-%d' % number)
+        issues.append({'number': number, 'relabelled': code == 0,
+                       'board_moved': moved, 'board': message})
+
+    for name in ('plan.md', 'preflight-passed.txt', 'label-cache.json'):
+        try:
+            os.remove(os.path.join(repo_root(), '.claude', name))
+        except OSError:
+            pass
+
+    emit('ok', EXIT_OK, pr=args.pr, pr_labelled=pr_labelled,
+         review_label=state_label, issues=issues,
+         reason='PR #%d labelled %s; %d issue(s) handed to review'
+                % (args.pr, state_label, len(issues)))
+
+
 def cmd_config(args):
     root = repo_root()
     cache, source = config_paths(root)
@@ -2969,6 +3298,59 @@ def build_parser():
     ca.add_argument('--refresh', action='store_true',
                     help='re-query org capabilities instead of reading the cache')
     ca.set_defaults(func=cmd_config_audit)
+
+    bm = sub.add_parser('board-move',
+                        help='move an issue to a board column (no-op with no '
+                             'board configured)')
+    bm.add_argument('number', type=int, help='issue number')
+    bm.add_argument('--column', required=True,
+                    help='column name ("In Review") or purpose key (col-in-review)')
+    bm.set_defaults(func=cmd_board_move)
+
+    cl = sub.add_parser('claim',
+                        help='take the atomic claim on a named issue or PR')
+    cl.add_argument('--issue', type=int, default=None, help='issue number')
+    cl.add_argument('--pr', type=int, default=None, help='PR number')
+    cl.add_argument('--no-marker', dest='marker', action='store_false',
+                    default=True,
+                    help='take the lock without advertising it on GitHub '
+                         '(assignment / reviewing label)')
+    cl.set_defaults(func=cmd_claim)
+
+    cr = sub.add_parser('claim-release',
+                        help='release the claim ref an interrupted run left behind')
+    cr.add_argument('--issue', type=int, action='append', default=None,
+                    help='issue number to release (repeatable)')
+    cr.add_argument('--pr', type=int, action='append', default=None,
+                    help='PR number to release (repeatable)')
+    cr.set_defaults(func=cmd_claim_release)
+
+    rp = sub.add_parser('claim-reap',
+                        help='free claim refs a crashed run left behind')
+    rp.add_argument('--threshold', type=int, default=wf_core.REAP_THRESHOLD_HOURS,
+                    help='minimum age in hours before a ref may be reaped '
+                         '(default %d)' % wf_core.REAP_THRESHOLD_HOURS)
+    rp.add_argument('--dry-run', action='store_true',
+                    help='report the verdicts without deleting any ref')
+    rp.set_defaults(func=cmd_claim_reap)
+
+    sp = sub.add_parser('sibling-pr',
+                        help='list the open PRs that will close an issue')
+    sp.add_argument('number', type=int, help='issue number')
+    sp.add_argument('--exclude-branch', default=None,
+                    help='drop the PR on this head branch (your own)')
+    sp.set_defaults(func=cmd_sibling_pr)
+
+    ho = sub.add_parser('handoff',
+                        help='hand a finished story to review: label the PR, '
+                             'move the issue and board, release the claim')
+    ho.add_argument('--pr', type=int, required=True, help='the PR just opened')
+    ho.add_argument('--issue', type=int, action='append', default=None,
+                    help='issue the PR closes (repeatable)')
+    ho.add_argument('--gate-failed', action='store_true',
+                    help='the quality gate failed, so enter review as '
+                         'changes-requested rather than needs-review')
+    ho.set_defaults(func=cmd_handoff)
 
     return parser
 

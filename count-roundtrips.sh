@@ -41,11 +41,6 @@ for wf in "${workflows[@]:-}"; do
                 "github-workflow/skills/execute/references/finish.md"
                 "github-workflow/skills/execute/references/review-and-merge.md"
                 "github-workflow/skills/code-review/references/auto-merge.md"
-                "github-workflow/templates/board-resolution.md"
-                "github-workflow/templates/claim-procedure.md"
-                "github-workflow/templates/story-selection.md"
-                "github-workflow/templates/issue-fields-resolution.md"
-                "github-workflow/templates/sibling-pr-lookup.md"
                 "github-workflow/templates/worktree-hygiene.md"
             )
             ;;
@@ -56,18 +51,12 @@ for wf in "${workflows[@]:-}"; do
                 "github-workflow/skills/bulk-execute/references/bulk-finish.md"
                 "github-workflow/skills/execute/references/review-and-merge.md"
                 "github-workflow/skills/code-review/references/auto-merge.md"
-                "github-workflow/templates/board-resolution.md"
-                "github-workflow/templates/claim-procedure.md"
-                "github-workflow/templates/story-selection.md"
-                "github-workflow/templates/sibling-pr-lookup.md"
                 "github-workflow/templates/worktree-hygiene.md"
             )
             ;;
         pick)
             files+=(
                 "github-workflow/skills/execute/SKILL.md"
-                "github-workflow/templates/story-selection.md"
-                "github-workflow/templates/claim-procedure.md"
                 "github-workflow/templates/default-labels.md"
             )
             ;;

@@ -130,8 +130,8 @@ When the invocation names a PR (`$ARGUMENTS.pr`, or a number the user or a
 calling skill passed), that PR is the subject and there is nothing to select.
 Do **not** run the picker — it would review a different PR by priority.
 
-- **Full mode:** claim it (`templates/claim-procedure.md` **Acquire**, target
-  `pr-<number>`) and check out its branch, then continue at Step 2b — or at
+- **Full mode:** claim it (`wf claim --pr <number>`, see Step 2) and check
+  out its branch, then continue at Step 2b — or at
   **Step 1b** first if it carries `changes-requested`, exactly as the picker
   routes that tier. If the claim is lost, another agent owns this PR: report
   that and exit rather than moving to a different one.
@@ -241,12 +241,22 @@ returns you to **Step 2b** to review the updated PR.
 ### Step 2 — Claim the PR
 
 Multiple review agents may run concurrently — possibly under the same
-GitHub identity, where a shared label cannot exclude a rival. Acquire the
-PR with the atomic claim procedure in `templates/claim-procedure.md`
-(**Acquire**, target `pr-<number>`). The `refs/claims/pr-<number>` ref is
-the actual lock (a server-side compare-and-swap); the `reviewing` state
-label Acquire applies on success is the human-visible marker, and no
-label read-back is needed. **This claim is the first mutating action of
+GitHub identity, where a shared label cannot exclude a rival. Take the
+claim:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim --pr <number>
+```
+
+- **Exit 0** — you hold it. `refs/claims/pr-<number>` is the actual lock (a
+  server-side compare-and-swap), and the command has already applied the
+  `reviewing` state label as the human-visible marker. No label read-back.
+- **Exit 27** (`lost`) — another agent owns this PR. Make **no** changes:
+  in the picker loop move to the next PR; on a named PR, report that and
+  exit rather than reviewing a different one.
+- **Exit 20** — a broken environment, not a rival (usually no write access
+  to `refs/claims/*`). Report it and stop; never fall back to a bare label
+  as a "soft" claim, which reintroduces the race the ref removes. **This claim is the first mutating action of
 any review** — it must precede checkout, gathering context, reading, or
 evaluating, or a second agent may start the same review.
 
@@ -277,8 +287,7 @@ In **read-only mode** add `--detach` — another worktree on this clone may
 already hold the branch, and git refuses to check out a branch twice. If the
 pinned-PR path already checked out that SHA detached, this step is a no-op.
 
-If checkout fails: release the claim (`templates/claim-procedure.md`
-**Release** for target `pr-<number>`: `git push origin :refs/claims/pr-<number>`),
+If checkout fails: release the claim (`wf claim-release --pr <number>`),
 remove the `reviewing` label, apply the `failed` review-state label
 (purpose key `failed`, default name `review-failed`), post a brief
 failure comment with the footer, and exit. In read-only mode there is no
@@ -612,11 +621,12 @@ the updated SHA from Step 7 if fixes were pushed).
 
 ### Step 10 — Reconcile labels and exit
 
-1. Release the atomic claim now that the verdict is being recorded
-   (`templates/claim-procedure.md` **Release** for target `pr-<number>`):
-   `git push origin :refs/claims/pr-<number>` and
-   `rm -f .claude/claim-pr-<number>.sha`. Idempotent — ignore an error if
-   the ref is already gone.
+1. Release the atomic claim now that the verdict is being recorded:
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --pr <number>
+   ```
+   Idempotent and always exit 0 — releasing a ref that is already gone is
+   not a failure.
 
 2. Reconcile the PR's review-state labels to exactly the verdict. This is a
    deterministic dance — strip every stale state label, leave exactly the
@@ -723,9 +733,7 @@ If anything goes wrong (gh commands fail, branch checkout fails, a changed
 file cannot be read, the PR has no diff, or the codebase is too large to
 review thoroughly):
 
-1. Release the atomic claim (`templates/claim-procedure.md` **Release**
-   for target `pr-<number>`): `git push origin :refs/claims/pr-<number>`
-   and `rm -f .claude/claim-pr-<number>.sha`. Idempotent.
+1. Release the atomic claim: `wf claim-release --pr <number>`. Idempotent.
 2. Remove the `reviewing` state label.
 3. Apply the `failed` review-state label (purpose key `failed`, default
    name `review-failed`).
@@ -768,7 +776,7 @@ single-PR review path light:
   (no `review.config.md` found in an interactive session).
 
 Rationale files (maintainers only — not read at runtime):
-`SKILL-rationale.md`, `references/review-workflow-rationale.md`.
+`docs/rationale/code-review-rationale.md`, `docs/rationale/review-workflow-rationale.md`.
 
 ---
 

@@ -16,7 +16,7 @@ gone before the working-tree check runs, or they would show up as dirt.
 ## Why release the claim ref
 
 Phase 1 acquired `refs/claims/issue-{number}` as the exclusive lock
-(`templates/claim-procedure.md`). Because each session is self-contained and
+(`wf claim-release`). Because each session is self-contained and
 **there is no cross-session resume**, a session that exits for *any* reason no
 longer needs the claim. Holding it past exit would block every future agent
 from ever picking the issue — and nothing reaps an abandoned claim ref, so the
@@ -93,6 +93,6 @@ A crash, hard kill, or machine reboot can skip this cleanup entirely and
 orphan a claim ref. That residue cannot be prevented from inside a session —
 run `/github-workflow:setup reap` to scan and free stale refs automatically,
 or see **Reaping orphaned claims** in
-`templates/claim-procedure-rationale.md` for the manual one-liner.
+`docs/rationale/claim-procedure-rationale.md` for the manual one-liner.
 (Within-session context compaction is unaffected — no exit occurs, so the
 files remain on disk for the duration of the run.)

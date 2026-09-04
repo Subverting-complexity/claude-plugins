@@ -41,7 +41,7 @@ build.
    selecting this PR in full mode and pushing to the branch you are still
    holding. That window is the reason nothing may be inserted between
    Phase 7 and here: read the PR, re-read the diff, post nothing, do
-   nothing. Acquire the review claim with `templates/claim-procedure.md`
+   nothing. Acquire the review claim with `wf claim --pr <number>`
    (**Acquire**, target `pr-{pr_number}`). If the claim is lost, another
    agent owns the review: report that, leave the PR to it, run **Exit
    cleanup**, and exit without merging — do not strip its `reviewing`
@@ -120,7 +120,7 @@ build.
    > findings are worth less than a fresh reviewer's.
 
    Merging on a disclosed self-review is deliberate (why:
-   `references/execute-rationale.md`). The gates that do stop the merge — a
+   `docs/rationale/execute-rationale.md`). The gates that do stop the merge — a
    failing quality gate, an unapproved verdict, red or absent CI — all still
    apply, and they are the ones carrying real evidence about the code.
 
