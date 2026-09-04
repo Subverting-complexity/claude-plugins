@@ -50,6 +50,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply spec.json
 
 # …check the spec against the org and report what would change, writing nothing
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply spec.json --dry-run
+
+# Report open issues missing type, fields or dependency edges (writes a backfill spec)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit
+
+# …against another repo in the org, newest 50 only, counts only (for CI)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --repo acme/other --limit 50 --quiet
 ```
 
 Run from the **target repo root** so the CLI can read `ClaudeProject.md`
@@ -89,6 +95,7 @@ run carries a `status` field and the exit code mirrors it:
 | 22   | `spec-invalid`  | An `issue-apply` spec is wrong. Nothing was written.           |
 | 23   | `verify-failed` | A write was accepted but does not read back. Issues exist.     |
 | 24   | `partial`       | Some entries applied, some failed. Re-run to finish.           |
+| 25   | `gaps`          | `issue-audit` found issues missing metadata. Nothing written.  |
 | 30   | `unsupported`   | Path not in the CLI yet — caller falls back to the skill.      |
 
 Mutations to the **winning** issue (claim, assign, `status-in-progress`) are
@@ -283,6 +290,64 @@ neighbours down with it. The command exits 24 `partial`, names the entries that
 failed, and writes the numbers of the ones that landed back into the spec —
 which turns them into no-op updates, so re-running the same spec completes the
 remainder rather than creating anything twice.
+
+## Finding the gaps — `issue-audit`
+
+`issue-audit` reads every open issue in a repo and reports what is missing. It
+exists because nothing did: the classification gap went unnoticed for months
+across 82 issues, of which 7 were typed and none carried a field value, with no
+error anywhere. It also produces the input to the backfill, so the unclassified
+remainder does not have to be handled one at a time.
+
+It **never writes**. Both write transports are stubbed out in its tests to
+prove it.
+
+### What it reports
+
+| Gap | Meaning |
+| --- | ------- |
+| `missing-type` | The org has issue types enabled and this issue has none. |
+| `missing-field` | An org field this issue holds no value for. |
+| `type-contradiction` | The native type disagrees with the `type-*` label or the title prefix. |
+| `classification-contradiction` | The `Classification` value disagrees with them. |
+| `missing-edge` | The body's `## Dependencies` claims a blocker with no native edge. |
+| `dependency-closed` | The body depends on an issue that is not open. |
+| `dependency-overflow` | More than `wf_core.DEP_LIMIT` dependencies — an epic, not a story. |
+
+A `[DEBT]` issue typed `Feature` is deliberately **not** a type contradiction.
+GitHub's five native types cannot express tech debt, which is precisely what
+`Classification` is for, so the contradiction to look for there is in the field.
+
+### The spec it writes
+
+Every issue with a gap becomes an `issue-apply` entry in
+`.claude/issue-audit-spec.json` (override with `--out`). Two rules govern it:
+
+- **Inferred dependency edges are proposed, never written.** Body prose is not
+  reliable enough to build a dependency graph from unattended, so a proposed
+  edge sits in the spec for a person or an agent to review.
+- **What cannot be inferred becomes `TODO`.** `issue-apply`'s mandatory-field
+  check treats a placeholder as missing, so the spec is refused until someone
+  fills it in. Silence must not pass for a value.
+
+Priority is inferred from the issue's own `priority-*` label and Classification
+from its declared kind. Effort and Origin are not guessable from an existing
+issue, so they come out as placeholders. Situational fields — Start date,
+Target date, Parent, Status reason — are *reported* when empty but never
+proposed: a start date nobody set is not a value a backfill should invent.
+
+### Running it as a check
+
+The command exits 25 when gaps exist, so it works as a gate. `--quiet` drops
+the per-issue detail and keeps the exit code and the counts. `--limit` and
+`--since` narrow the scan so a large backlog can be worked through in slices,
+and `--repo owner/name` points it at another repo in the org without
+reconfiguring anything — issue types and fields are org-scoped, so adoption can
+proceed one repo at a time from a single working copy.
+
+> Deleting an org issue field permanently destroys every value set on it, in
+> every repo. Before any such change, run this audit with `--repo` against each
+> repo that matters and read the values first.
 
 ## Settling a merged PR — `post-merge`
 

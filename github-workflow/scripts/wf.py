@@ -64,6 +64,7 @@ EXIT_CAPABILITY = 21
 EXIT_SPEC = 22
 EXIT_VERIFY = 23
 EXIT_PARTIAL = 24
+EXIT_GAPS = 25
 EXIT_UNSUPPORTED = 30
 EXIT_USAGE = 2
 
@@ -1431,6 +1432,132 @@ def cmd_issue_apply(args):
     emit('ok', EXIT_OK, **payload)
 
 
+# ── issue-audit ──────────────────────────────────────────────────────────────
+# Reads. Never writes. It exists because nothing detected that the metadata was
+# never applied, and it produces the spec that `issue-apply` uses to backfill.
+
+AUDIT_PAGE = 100
+AUDIT_SPEC_DEFAULT = 'issue-audit-spec.json'
+
+AUDIT_QUERY = (
+    'query($owner:String!,$repo:String!,$after:String,$since:DateTime){'
+    ' repository(owner:$owner,name:$repo){'
+    '  issues(states:OPEN,first:%d,after:$after,filterBy:{since:$since},'
+    '         orderBy:{field:CREATED_AT,direction:DESC}){'
+    '   pageInfo { hasNextPage endCursor }'
+    '   nodes {' % AUDIT_PAGE
+    + ISSUE_SELECTION +
+    '   }'
+    '  }'
+    ' } }'
+)
+
+
+def scan_open_issues(cfg, repo=None, limit=None, since=None):
+    """Every open issue in the repo, newest first. Returns (ok, issues, err).
+
+    `since` narrows to issues updated after a timestamp and `limit` caps the
+    scan, so a large backlog can be worked through in slices rather than all at
+    once.
+    """
+    owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
+    issues, cursor = [], None
+    while True:
+        fields = {'owner': owner, 'repo': name}
+        if cursor:
+            fields['after'] = cursor
+        if since:
+            fields['since'] = since
+        ok, data, err = gh_graphql(AUDIT_QUERY, **fields)
+        if not ok:
+            return False, None, err
+        page = (((data or {}).get('repository') or {}).get('issues')) or {}
+        issues.extend(page.get('nodes') or [])
+        if limit and len(issues) >= limit:
+            return True, issues[:limit], ''
+        info = page.get('pageInfo') or {}
+        if not info.get('hasNextPage'):
+            return True, issues, ''
+        cursor = info.get('endCursor')
+
+
+def write_audit_spec(path, entries):
+    try:
+        parent = os.path.dirname(path)
+        if parent and not os.path.isdir(parent):
+            os.makedirs(parent)
+        with open(path, 'w', encoding='utf-8') as fh:
+            json.dump({'issues': entries}, fh, indent=2)
+            fh.write('\n')
+        return True, ''
+    except OSError as exc:
+        return False, str(exc)
+
+
+def cmd_issue_audit(args):
+    ok, cfg, err = load_config()
+    if not ok:
+        emit('error', EXIT_ENV, reason=err)
+
+    ok, caps, err = resolve_org_capabilities(cfg, refresh=args.refresh)
+    if not ok:
+        emit('error', EXIT_ENV, reason=err, org=cfg['org'])
+    if caps.get('denied'):
+        emit('no-capabilities', EXIT_CAPABILITY, org=cfg['org'],
+             denied=caps['denied'],
+             reason='the authenticated account may not read %s for this org, so '
+                    'there is nothing to audit issues against'
+                    % ' and '.join(caps['denied']))
+
+    repo = args.repo or '%s/%s' % (cfg['org'], cfg['repo'])
+    ok, issues, err = scan_open_issues(cfg, args.repo, args.limit, args.since)
+    if not ok:
+        emit('error', EXIT_ENV, reason='could not read issues in %s: %s'
+                                       % (repo, err), repo=repo)
+
+    open_numbers = {i['number'] for i in issues}
+    audited = [wf_core.audit_issue(issue, caps['field_map'],
+                                   type_capable=caps['type_capable'],
+                                   project_map=cfg.get('labels') or {},
+                                   project_fields=cfg.get('fields') or {},
+                                   open_numbers=open_numbers)
+               for issue in issues]
+    with_gaps = [a for a in audited if a['gaps']]
+    summary = wf_core.audit_summary(audited)
+
+    spec_path = args.out or os.path.join(repo_root() or '.', '.claude',
+                                         AUDIT_SPEC_DEFAULT)
+    wrote, write_err = (True, '')
+    if with_gaps:
+        wrote, write_err = write_audit_spec(spec_path,
+                                            [a['proposed'] for a in with_gaps])
+
+    payload = {'repo': repo, 'summary': summary,
+               'spec': spec_path if with_gaps else None,
+               'spec_written': wrote}
+    if not wrote:
+        payload['write_error'] = write_err
+    if not args.quiet:
+        payload['issues'] = [{'number': a['number'], 'title': a['title'],
+                              'gaps': a['gaps']} for a in with_gaps]
+
+    if not with_gaps:
+        emit('ok', EXIT_OK, reason='every open issue in %s carries its type, '
+                                   'its field values and its dependency edges'
+                                   % repo, **payload)
+
+    # Non-zero so the audit can run as a check. The spec it just wrote is the
+    # input to the backfill, but it is deliberately not applied here: the
+    # dependency edges in it are inferred from body prose, which is not
+    # reliable enough to write a graph from unattended.
+    emit('gaps', EXIT_GAPS,
+         reason='%d of %d open issues in %s are missing metadata. Review %s, '
+                'fill in every %s, then run: wf.sh issue-apply %s'
+                % (summary['issues_with_gaps'], summary['issues_scanned'], repo,
+                   spec_path, wf_core.SPEC_PLACEHOLDER, spec_path),
+         **payload)
+
+
 def fetch_native_types(cfg):
     """Fetch native issue types for all open issues via GraphQL.
 
@@ -2523,6 +2650,24 @@ def build_parser():
                     help='validate the spec and report what would be applied, '
                          'without writing anything')
     ia.set_defaults(func=cmd_issue_apply)
+
+    au = sub.add_parser('issue-audit',
+                        help='report open issues missing type, fields or '
+                             'dependency edges, and write a backfill spec')
+    au.add_argument('--repo', default=None,
+                    help='audit this owner/name instead of the configured repo')
+    au.add_argument('--limit', type=int, default=None,
+                    help='stop after this many issues, newest first')
+    au.add_argument('--since', default=None,
+                    help='only issues updated since this ISO-8601 timestamp')
+    au.add_argument('--out', default=None,
+                    help='where to write the backfill spec '
+                         '(default .claude/%s)' % AUDIT_SPEC_DEFAULT)
+    au.add_argument('--quiet', action='store_true',
+                    help='report counts only, keeping the exit code, for CI')
+    au.add_argument('--refresh', action='store_true',
+                    help='re-query org capabilities instead of reading the cache')
+    au.set_defaults(func=cmd_issue_audit)
 
     return parser
 

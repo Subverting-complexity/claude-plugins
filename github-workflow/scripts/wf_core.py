@@ -625,6 +625,186 @@ def spec_cycles(entries):
     return cycles
 
 
+# ── issue audit ──────────────────────────────────────────────────────────────
+# Nothing detected that the metadata was never applied, which is why the gap
+# went unnoticed for months: 82 issues in one repo, 7 typed, no field values,
+# no dependency edges, and no error anywhere. Everything here is pure — the
+# audit reads, decides, and proposes; it never writes.
+
+# The kind an issue claims to be in its title. Titles are written by hand, so
+# this is evidence rather than proof — it is used to *contradict* a native type,
+# never to set one unattended.
+TITLE_PREFIX_KINDS = {
+    'STORY': 'story', 'BUG': 'bug', 'SECURITY': 'security',
+    'DEBT': 'tech debt', 'TECH DEBT': 'tech debt', 'TECH-DEBT': 'tech debt',
+    'ARCH': 'architecture', 'ARCHITECTURE': 'architecture',
+    'EPIC': 'epic', 'FEATURE': 'feature', 'SPIKE': 'spike', 'CHORE': 'chore',
+}
+
+TYPE_LABEL_KINDS = {
+    'type-story': 'story', 'type-bug': 'bug', 'type-security': 'security',
+    'type-debt': 'tech debt', 'type-arch': 'architecture',
+}
+
+_TITLE_PREFIX_RE = re.compile(r'^\s*\[([^\]]{1,20})\]')
+
+
+def declared_kind(title, labels, project_map=None):
+    """The kind an issue says it is. Returns (kind, source) or (None, None).
+
+    A `type-*` label is the stronger claim, so it wins over the title prefix.
+    """
+    project_map = project_map or {}
+    present = set(labels or ())
+    for key, kind in TYPE_LABEL_KINDS.items():
+        if resolve_label(key, project_map) in present:
+            return kind, 'label'
+    match = _TITLE_PREFIX_RE.match(title or '')
+    if match:
+        kind = TITLE_PREFIX_KINDS.get(match.group(1).strip().upper())
+        if kind:
+            return kind, 'title'
+    return None, None
+
+
+def infer_priority(labels, project_map=None):
+    """The Priority value the issue's own `priority-*` label implies."""
+    present = set(labels or ())
+    for key, value in PRIORITY_FIELD_OPTIONS.items():
+        if resolve_label(key, project_map or {}) in present:
+            return value
+    return None
+
+
+def audit_issue(issue, field_map, type_capable=True, project_map=None,
+                project_fields=None, open_numbers=None):
+    """Every gap on one issue, plus the spec entry that would close them.
+
+    `issue` is a read-back node. Returns a dict carrying `gaps` (each with a
+    `kind` and a human-readable `detail`) and `proposed`, an `issue-apply` spec
+    entry. Values the audit cannot infer are `SPEC_PLACEHOLDER`, so
+    `validate_spec()` refuses the spec until a person fills them in — silence
+    must not pass for a value.
+
+    Dependency edges are **proposed, never written**. Body prose is not
+    reliable enough to build a dependency graph from unattended, so a missing
+    edge lands in the spec for review rather than in a mutation.
+    """
+    project_map = project_map or {}
+    project_fields = project_fields or {}
+    gaps = []
+
+    number = issue.get('number')
+    title = issue.get('title') or ''
+    labels = [n['name'] for n in (issue.get('labels') or {}).get('nodes') or []]
+    native = (issue.get('issueType') or {}).get('name')
+    kind, source = declared_kind(title, labels, project_map)
+
+    if type_capable and not native:
+        gaps.append({'kind': 'missing-type',
+                     'detail': 'no native issue type'})
+    elif type_capable and kind:
+        expected = NATIVE_TYPE_MAP[kind]['type']
+        if native != expected:
+            gaps.append({'kind': 'type-contradiction',
+                         'detail': "native type is '%s' but the %s says '%s', "
+                                   "which is '%s'" % (native, source, kind, expected)})
+
+    # Field values. Every field the org defines is checked, because a field
+    # nobody fills is indistinguishable from one nobody needed until someone
+    # looks.
+    have = {}
+    for node in (issue.get('issueFieldValues') or {}).get('nodes') or []:
+        name = (node.get('field') or {}).get('name')
+        if not name:
+            continue
+        if 'options' in node:
+            have[name] = sorted(o['name'] for o in node.get('options') or [])
+        elif 'name' in node:
+            have[name] = node.get('name')
+        else:
+            have[name] = node.get('value')
+
+    # A `[DEBT]` issue typed `Feature` is not a native-type contradiction —
+    # GitHub's five types cannot express tech debt, which is exactly why
+    # `Classification` exists. So the contradiction to look for there is in the
+    # field, not the type.
+    if kind:
+        class_name = resolve_field_name('field-type', project_fields)
+        current = have.get(class_name)
+        expected = (default_classification({'kind': kind}) or [None])[0]
+        if _is_supplied(current) and expected:
+            values = current if isinstance(current, list) else [current]
+            if expected not in values:
+                gaps.append({'kind': 'classification-contradiction',
+                             'detail': "%s is %r but the %s says '%s', which is "
+                                       "'%s'" % (class_name, current, source,
+                                                 kind, expected)})
+
+    proposed_fields = {}
+    for purpose in FIELD_NAME_DEFAULTS:
+        concrete = resolve_field_name(purpose, project_fields)
+        if concrete not in field_map:
+            continue
+        if _is_supplied(have.get(concrete)):
+            continue
+        gaps.append({'kind': 'missing-field',
+                     'detail': "no value for '%s'" % concrete})
+        if purpose not in MANDATORY_FIELD_KEYS:
+            # Situational by nature — a start date nobody set is not a gap the
+            # backfill should invent a value for.
+            continue
+        if purpose == 'field-type' and kind:
+            proposed_fields[purpose] = default_classification({'kind': kind})
+        elif purpose == 'field-priority':
+            proposed_fields[purpose] = (infer_priority(labels, project_map)
+                                        or SPEC_PLACEHOLDER)
+        else:
+            proposed_fields[purpose] = SPEC_PLACEHOLDER
+
+    # Dependency edges the body claims and the graph does not have.
+    deps, overflow = parse_dependencies(issue.get('body'))
+    native_edges = {n['number'] for n
+                    in (issue.get('blockedBy') or {}).get('nodes') or []}
+    proposed_edges = []
+    for dep in deps:
+        if dep == number or dep in native_edges:
+            continue
+        if open_numbers is not None and dep not in open_numbers:
+            # Worth saying, not worth proposing: an edge to a closed issue
+            # would be applied and then immediately be inert.
+            gaps.append({'kind': 'dependency-closed',
+                         'detail': 'the body depends on #%s, which is not open' % dep})
+            continue
+        gaps.append({'kind': 'missing-edge',
+                     'detail': 'the body depends on #%s with no native edge' % dep})
+        proposed_edges.append(dep)
+    if overflow:
+        gaps.append({'kind': 'dependency-overflow',
+                     'detail': 'more than %d dependencies in the body; not '
+                               'proposed automatically' % DEP_LIMIT})
+
+    proposed = {'number': number, 'title': title}
+    if kind:
+        proposed['kind'] = kind
+    if proposed_fields:
+        proposed['fields'] = proposed_fields
+    if proposed_edges:
+        proposed['blocked_by'] = sorted(proposed_edges)
+    return {'number': number, 'title': title, 'gaps': gaps, 'proposed': proposed}
+
+
+def audit_summary(audited):
+    """Count the gaps by kind, so a run reports a shape rather than a wall."""
+    counts = {}
+    for entry in audited:
+        for gap in entry['gaps']:
+            counts[gap['kind']] = counts.get(gap['kind'], 0) + 1
+    return {'issues_scanned': len(audited),
+            'issues_with_gaps': sum(1 for e in audited if e['gaps']),
+            'gaps': counts}
+
+
 # ── PR review-state labels + selection ───────────────────────────────────────
 # Mirrors the code-review
 # skill (Step 1). Review-state names default to the `review-` prefix
