@@ -8,7 +8,7 @@ from `SKILL.md`.
 
 For background on the feedback loop (how builders address review
 comments, how change significance is classified) and why duplicate PRs
-arise, see `references/review-workflow-rationale.md` — not read at
+arise, see `docs/rationale/review-workflow-rationale.md` — not read at
 runtime.
 
 ---
@@ -47,7 +47,7 @@ or filtering. Never apply a bare name literally.
 
 The real lock is an atomic claim ref, **not** a label. Both reviewing and
 updating a PR claim the same `refs/claims/pr-<number>` ref via
-`templates/claim-procedure.md`, so a reviewer and an updater are mutually
+`wf claim`, so a reviewer and an updater are mutually
 exclusive on a PR even under a shared GitHub identity (a shared label
 cannot guarantee this — it reads present for every agent). The `reviewing`
 / `updating` labels remain **human-visible display markers** that the
@@ -57,7 +57,7 @@ skip checks below still read.
   cheap first filter — if either is present, skip the PR entirely. The
   atomic claim is the authoritative gate if the labels race.
 - **Before updating**: Same label pre-check, then claim atomically.
-- **Claiming**: Run `templates/claim-procedure.md` **Acquire** for target
+- **Claiming**: Run `wf claim --pr <number>` for target
   `pr-<number>`. On success it applies your display label (`reviewing` or
   `updating`). If the claim is lost, exit without changes — do not fall
   back to a label-only claim.

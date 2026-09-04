@@ -35,9 +35,13 @@ Drop a named story, with a one-line reason in your report, when it is:
 
 - **closed** — nothing to build;
 - **already in flight** — it carries `status-in-review`, or an open pull
-  request already closes it. Run the authoritative lookup in
-  `templates/sibling-pr-lookup.md` for each number. Report the existing PR
-  by number and title and say `/github-workflow:code-review` handles it;
+  request already closes it. Ask once per number:
+  ```bash
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
+  ```
+  Exit 0 with `found: 0` means nothing closes it; exit 20 means the lookup
+  failed, so say so rather than assuming it is free. Report any PR found by
+  number and title and say `/github-workflow:code-review` handles it;
 - **assigned to someone else** — another agent or person owns it;
 - **empty** — no Context and no Requirements anywhere in the body, comments
   or linked docs, so any implementation would be a guess;
@@ -93,10 +97,10 @@ Interpret the result by its `status`:
 - **`ok`** — you have the pool; continue to step 2.
 - **`no-candidates`** — report "No stories available for pickup" and stop.
 - **`unsupported`** / **`error`**, or the launcher reports Python is missing
-  — `wf` cannot run here. Assemble the pool inline with
-  `templates/story-selection.md` Steps 1 and 2 (candidate fetch, backlog
-  mode, then the local refinement, agent-gating and mode filters and the
-  priority sort), then continue to step 2 with that list.
+  — `wf` cannot run here. Stop and name the prerequisite: `wf` needs Python
+  3.8+ on `PATH` and an authenticated `gh`. Do not assemble a pool by hand;
+  a set chosen from a differently-built pool is not the set this run would
+  have claimed.
 
 Ask for a bigger read only if you need it: `--limit 0` for the whole pool,
 `--body-chars 0` for untruncated bodies. The default read is deliberately
@@ -197,11 +201,9 @@ Interpret each result by `status`:
   agent, blocked by an open dependency outside the set, or already resolved
   by a merged PR. Drop it from the set, say which and why, and carry on with
   the rest. It is not a reason to abandon the run.
-- **`error`**, or Python is missing — `wf` cannot run here. Claim inline
-  with `templates/claim-procedure.md` (**Acquire**, target
-  `issue-{number}`), then move the board with `templates/board-resolution.md`
-  Step 5 targeting `col-in-progress`. On a lost claim, drop the story and
-  carry on.
+- **`error`**, or Python is missing — `wf` cannot run here. Stop the run and
+  name the prerequisite; every story already claimed is released by the
+  dropping procedure below.
 
 If dropping a story leaves another story in the set depending on it, drop
 that one too and repeat until the set is stable — a story whose dependency
@@ -246,18 +248,20 @@ If the story was **never claimed**, there is nothing to undo — remove it from
 
 If it **was claimed**, return it to the backlog properly, in this order:
 
-1. Release the lock — `templates/claim-procedure.md` (**Release**):
-   ```
-   git push origin :refs/claims/issue-{number}
-   rm -f .claude/claim-issue-{number}.sha
+1. Release the lock:
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
    ```
 2. Restore the pool state, so the picker can select it again:
    ```
    gh issue edit {number} --repo {org}/{repo} --remove-assignee @me \
      --remove-label status-in-progress --add-label status-ready
    ```
-3. Move the board back to Backlog — `templates/board-resolution.md` Step 5,
-   targeting `col-backlog`. Skip silently when no board is configured.
+3. Move the board back to Backlog:
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-backlog
+   ```
+   It exits 0 whether or not a board is configured; read `moved`.
 4. Comment on the issue saying it was claimed for a bulk run and returned
    unbuilt, and why, so the next run does not have to infer it:
    ```

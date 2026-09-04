@@ -208,7 +208,7 @@ metadata.
 ## Reaping stale claim refs
 
 The github-workflow plugin locks each in-flight issue/PR with a ref under
-`refs/claims/` (see `github-workflow/templates/claim-procedure.md`). The
+`refs/claims/`, taken and freed by `wf claim` / `wf claim-release`. The
 lock is only a race-protector for the brief select-to-claim window;
 **durable ownership is the assignment + the issue's lifecycle label**, not
 the ref.

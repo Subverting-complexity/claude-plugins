@@ -184,8 +184,8 @@ already in context.
 conditional and rare. The board-identity `gh api` query runs **only when a
 board is required** (ready-gate `board-column`/`both`); for the common
 `label` ready-gate, skip it entirely — board writes are best-effort and
-`templates/board-resolution.md` re-verifies identity at write time, so a
-preflight network round-trip every command is wasted tokens and latency.
+`wf board-move` re-verifies identity at write time, so a preflight network
+round-trip every command is wasted tokens and latency.
 The auto-merge repo-setting and CI-gate checks run **only when
 `auto-merge-on-approval` is `enabled`** in `review.config.md` (an opt-in,
 off-by-default feature). None of these calls run in the default
@@ -254,9 +254,9 @@ Classify:
   check only (is an id recorded at all). Whether a recorded id still
   matches the live column — *staleness* — is a different question: it is
   validated by the live network check below on required boards, and on
-  every board write by `templates/board-resolution.md` Step 4 (which now
-  resolves the option id live by column name, so a stale snapshot
-  self-heals at write time rather than misrouting an issue).
+  every `wf board-move`, which resolves the option id live by column name,
+  so a stale snapshot self-heals at write time rather than misrouting an
+  issue.
 - **Board identity + snapshot freshness (required boards only)** — run this
   network check **only when the board is required** (ready-gate
   `board-column`/`both`). One query resolves the title **and** the live
@@ -280,13 +280,13 @@ Classify:
     compare its id to the snapshotted Option ID. Any that differ (or whose
     name no longer exists live) → emit
     `WARNING board-snapshot-stale: column(s) {names} recorded id(s) no longer match the live board; run /github-workflow:setup to refresh the snapshot`.
-    This is a WARNING, not CRITICAL — write-time live resolution
-    (`board-resolution.md` Step 4) keeps moves correct regardless; the
-    warning just prompts a cleanup so the snapshot stays honest.
+    This is a WARNING, not CRITICAL — `wf board-move` resolves the option
+    id live, so moves stay correct regardless; the warning just prompts a
+    cleanup so the snapshot stays honest.
 - **Best-effort board (`label`/`none` ready-gate)** — do **not** make the
-  network call. Board writes are best-effort and `board-resolution.md`
-  both verifies identity and resolves the column id live at write time, so
-  a stale title or stale option id is caught and self-healed there, not on
+  network call. Board writes are best-effort and `wf board-move` both
+  verifies identity and resolves the column id live at write time, so a
+  stale title or stale option id is caught and self-healed there, not on
   every preflight. No finding here.
 - **Board not required and not configured** — no finding. A `label` or
   `none` ready-gate with no board section is valid.
@@ -417,7 +417,7 @@ Read all output from the checks above. Categorize:
   a failure** — every label, the issue lifecycle states, and the
   review-state labels all have defaults, so a missing mapping is never
   critical on its own. (Best-effort board identity is **not** checked
-  here — it is verified at write time by `templates/board-resolution.md`.)
+  here — `wf board-move` verifies it at write time.)
 - **OK** — check passed.
 
 **Defaults-first principle.** Everything that *can* default *does* default

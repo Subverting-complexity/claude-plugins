@@ -1482,6 +1482,121 @@ class TestIssueAudit(_ApplyCase):
         self.assertEqual(payload['status'], 'no-capabilities')
 
 
+class TestHandoffAndClaims(unittest.TestCase):
+    """The commands that replaced the mechanism templates."""
+
+    def _cfg(self):
+        return _cfg(board={'project_node_id': None, 'project_title': None,
+                           'status_field_name': 'Status', 'columns': {}})
+
+    def _run(self, argv, calls, moved=(True, 'moved to In Review'), rc=0):
+        args = wf.build_parser().parse_args(argv)
+
+        def fake_run(cmd, input_text=None):
+            calls.append(list(cmd))
+            return rc, '', ''
+
+        with mock.patch.object(wf, 'prepare_cfg', self._cfg), \
+                mock.patch.object(wf, 'run', fake_run), \
+                mock.patch.object(wf, 'board_move', lambda *a: moved), \
+                mock.patch.object(wf, 'repo_root', lambda: tempfile.mkdtemp()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            return _capture(args.func, args)
+
+    def test_handoff_labels_the_pr_moves_the_issue_and_frees_the_claim(self):
+        calls = []
+        code, payload = self._run(['handoff', '--pr', '7', '--issue', '3'], calls)
+        self.assertEqual(code, wf.EXIT_OK)
+        joined = [' '.join(c) for c in calls]
+        self.assertTrue(any('pr edit 7' in c and 'claude-authored' in c
+                            and 'review-needs-review' in c for c in joined))
+        self.assertTrue(any('issue edit 3' in c and 'status-in-review' in c
+                            and 'status-in-progress' in c for c in joined))
+        self.assertTrue(any('refs/claims/issue-3' in c for c in joined))
+        self.assertEqual(payload['issues'][0]['board_moved'], True)
+
+    def test_a_failed_gate_enters_review_as_changes_requested(self):
+        """The PR is real work but not ready to approve; say so in the label."""
+        calls = []
+        _, payload = self._run(
+            ['handoff', '--pr', '7', '--issue', '3', '--gate-failed'], calls)
+        self.assertEqual(payload['review_label'], 'review-changes-requested')
+
+    def test_handoff_reports_an_unmoved_board_without_failing(self):
+        """A board is a mirror of the labels, never the source of truth."""
+        code, payload = self._run(['handoff', '--pr', '7', '--issue', '3'], [],
+                                  moved=(False, 'no board configured'))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['issues'][0]['board_moved'], False)
+
+    def test_board_move_accepts_a_purpose_key_as_well_as_a_column_name(self):
+        code, payload = self._run(['board-move', '3', '--column', 'col-done'], [],
+                                  moved=(True, 'moved to Done'))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['column'], 'Done')
+
+    def test_claim_release_names_everything_it_freed(self):
+        calls = []
+        with mock.patch.object(wf, 'check_environment', lambda: None):
+            code, payload = self._run(
+                ['claim-release', '--issue', '3', '--pr', '7'], calls)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['released'], ['issue-3', 'pr-7'])
+
+    def test_claim_release_with_nothing_named_is_a_usage_error(self):
+        with mock.patch.object(wf, 'check_environment', lambda: None):
+            code, _ = self._run(['claim-release'], [])
+        self.assertEqual(code, wf.EXIT_USAGE)
+
+
+class TestClaimReap(unittest.TestCase):
+
+    def _reap(self, refs, states, argv=()):
+        args = wf.build_parser().parse_args(['claim-reap', *argv])
+        released = []
+
+        def target_state(cfg, target):
+            return states[target]
+
+        with mock.patch.object(wf, 'check_environment', lambda: None), \
+                mock.patch.object(wf, 'prepare_cfg', lambda: _cfg()), \
+                mock.patch.object(wf, 'list_claim_refs', lambda: (refs, '')), \
+                mock.patch.object(wf, 'claim_age_hours', lambda sha: 9), \
+                mock.patch.object(wf, 'claim_target_state', target_state), \
+                mock.patch.object(wf, 'release_claim', released.append), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code, payload = _capture(wf.cmd_claim_reap, args)
+        return code, payload, released
+
+    def test_an_empty_remote_is_reported_rather_than_walked(self):
+        code, payload, _ = self._reap([], {})
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['reaped'], [])
+
+    def test_a_stale_ref_is_freed_and_a_live_one_is_left_alone(self):
+        refs = [('aaa', 'issue-3'), ('bbb', 'issue-4')]
+        states = {'issue-3': ('issue', 3, 'CLOSED', [], False),
+                  'issue-4': ('issue', 4, 'OPEN', ['status-in-progress'], False)}
+        code, payload, released = self._reap(refs, states)
+        self.assertEqual(released, ['issue-3'])
+        self.assertEqual(payload['summary'], {'reaped': 1, 'suspect': 1, 'skipped': 0})
+        self.assertEqual(payload['suspect'][0]['ref'], 'refs/claims/issue-4')
+
+    def test_dry_run_reports_the_verdicts_without_deleting_anything(self):
+        refs = [('aaa', 'issue-3')]
+        states = {'issue-3': ('issue', 3, 'CLOSED', [], False)}
+        _, payload, released = self._reap(refs, states, ['--dry-run'])
+        self.assertEqual(released, [])
+        self.assertEqual(payload['summary']['reaped'], 1)
+
+    def test_a_ref_that_names_neither_an_issue_nor_a_pr_is_never_deleted(self):
+        refs = [('aaa', 'sprint-lock')]
+        states = {'sprint-lock': (None, None, None, [], False)}
+        _, payload, released = self._reap(refs, states)
+        self.assertEqual(released, [])
+        self.assertEqual(payload['summary']['suspect'], 1)
+
+
 class TestConfigAudit(unittest.TestCase):
     """Preflight's drift checks: what fails, what warns, and what it costs."""
 

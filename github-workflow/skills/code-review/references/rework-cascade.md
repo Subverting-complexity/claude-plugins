@@ -50,7 +50,7 @@ addressed **before** a new review.
    and force-push with `--force-with-lease`.
 
 7. **Assess significance and relabel:**
-   - Release the claim (`templates/claim-procedure.md` **Release**).
+   - Release the claim (`wf claim-release --pr <number>`).
    - If all feedback was trivial AND all Issues Remaining were
      addressed → remove `changes-requested`, apply `needs-re-review`.
    - If changes were substantial → remove `changes-requested`, apply

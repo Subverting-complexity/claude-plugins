@@ -459,5 +459,5 @@ leave `approved` and exit. The fallbacks below say where.
      --jq '.closingIssuesReferences[].number'
    # for each still-open issue:
    gh issue close <N> --repo <org>/<repo> --comment "Closing — resolved by merged PR #<number>."
-   # then move its board item to col-done per templates/board-resolution.md Step 5.
+   # then move its board item with: wf board-move {number} --column col-done
    ```

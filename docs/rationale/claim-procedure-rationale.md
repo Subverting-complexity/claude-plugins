@@ -1,6 +1,7 @@
 # Atomic claim — rationale & orphan recovery
 
-Background and recovery notes for `templates/claim-procedure.md`. This
+Background and recovery notes for `wf`'s claim commands (`claim`,
+`claim-release`, `claim-reap`). This
 file is **maintainer documentation, not part of the runtime path** — the
 procedure file carries the terse invariants it needs to execute. Read
 this only when you need the *why*, or when reaping a stuck claim.
@@ -51,7 +52,7 @@ duplicate-prevention design rests on: **the claim must stay held until
 is what closes the create-time race. While session A holds
 `refs/claims/issue-N`, session B cannot acquire it; B can only proceed once
 A releases — and A releases only after its PR is live, at which point B's
-pre-start guard (`templates/sibling-pr-lookup.md`) sees that PR and stops.
+pre-start guard (`wf sibling-pr`) sees that PR and stops.
 Reorder this — release before `gh pr create` — and two sessions could both
 create a PR for the same issue. So `execute` Phase 7
 creates the PR first and releases the claim afterward, never the reverse.

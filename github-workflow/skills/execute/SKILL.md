@@ -173,17 +173,15 @@ treat this as the rate-limit pause described in **API rate limiting** below
 and exit after cleanup. (Skip the check in `audit` mode if you prefer —
 the audit flow makes few writes.)
 
-**Candidate and label fetches are deliberately *not* prewarmed** — the
-happy path (`wf pick` → `ok`) never reads them: the inline fallback
-fetches its own candidate list (`templates/story-selection.md` Step 1)
-and Phase 7 fetches the label inventory on first use. On entering the
-inline fallback, read `references/inline-fallback-prewarm.md`.
+**Candidate and label fetches are deliberately *not* prewarmed.** `wf`
+fetches what each command needs when it needs it, and nothing in this
+workflow assembles a candidate list or a label inventory by hand.
 
 ## Session budget
 
 Stay under ~100k tokens: **one story per session**, scoped to a shippable
 artifact — a merged PR, or an open one whose review state is recorded.
-(design rationale: `references/execute-rationale.md` — not read at runtime.)
+(design rationale: `docs/rationale/execute-rationale.md` — not read at runtime.)
 
 - **Commit early, push periodically.** Atomic commits per logical unit;
   push after each major phase (plan done, core done, tests passing) so an
@@ -236,7 +234,7 @@ session resumes from the pushed branch. **Once the PR is open (Phase 8
 onward)** the same carve-out as the failure hatch applies: leave the issue at
 `status-in-review` and note the pause on the PR instead, so the label, the
 board, and the PR's review state stay in agreement. Do **not** retry rate-limited
-requests in a loop. (design rationale: `references/execute-rationale.md`
+requests in a loop. (design rationale: `docs/rationale/execute-rationale.md`
 — not read at runtime.)
 
 ## Mode selection
@@ -273,7 +271,7 @@ Two exceptions stay filed: a finding only a person can settle (an ambiguous
 requirement, an architectural choice with several defensible answers), filed
 as the **question** with the PR left open on that verdict; and scope
 deliberately deferred from a too-large story, which is remaining work rather
-than a review finding. (why: `references/execute-rationale.md` — not read at
+than a review finding. (why: `docs/rationale/execute-rationale.md` — not read at
 runtime.)
 
 ---
@@ -291,107 +289,90 @@ specified — read it rather than improvising the steps.
 
 ## Phase 1 — Pick
 
-### Fast path — pick + start in one call (no explicit number)
+`wf pick` collapses the whole select → claim → board-move → branch loop —
+Phase 1's selection *and* Phase 2's claim, board move and branch — into one
+deterministic call. It is the only way to pick a story. There is no inline
+procedure behind it: a `wf` that cannot run is a stop, not a detour.
 
-With no `$ARGUMENTS.story_number` and mode `story`, `feature`, or
-`maintenance` (not `audit`), the bundled `wf` picker collapses the whole
-select → claim → board-move → branch loop — Phase 1's selection *and*
-Phase 2's claim/board/branch — into one deterministic call. **Prefer
-it.** From the repo root:
+From the repo root:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout --mode {mode}
 ```
 
-Interpret the result by its `status` field (the exit code mirrors it):
+`{mode}` is `$ARGUMENTS.mode`, default `story` (`audit` never reaches this
+phase). The command detects backlog mode (sprint or flat), assembles the
+unassigned candidates the project's `ready-gate` allows, applies the
+agent-gating and mode filters, sorts by priority then issue number, **claims
+the top candidate before any side effect** and validates only that one —
+walking down the list on a lost claim, marking a genuinely blocked issue
+`status-blocked`, closing one a merged PR already resolved, and running the
+dependency auto-ready scan if the pool comes up empty. `agent-gating:
+disabled` (the default) means the `claude-ready` human-approval label is
+ignored entirely.
 
-- **`ok`** — a story is claimed and you are on its branch. The JSON carries
-  `number`, `title`, `url`, `labels`, `milestone`, `body`, `claim_ref`,
-  `branch`, `checked_out`, `board_moved`, and `side_effects`; the
-  `status-in-progress` + `@me` markers are applied and the claim ref is held.
-  **Stop selecting — do not run the inline procedure or re-derive anything.**
-  Surface any `side_effects` (issues returned to blocked, or closed as
-  already-resolved). Then do **only** the body-validation check at the end of
-  this phase (Context + Requirements), and go to Phase 2 — its claim/board/
-  branch steps are already done, so treat them as no-ops. If `checked_out` is
-  false, read `branch_message` (e.g. a rebase conflict against the default
-  branch) and run `/github-workflow:block-story` instead of building.
-- **`no-candidates`** / **`all-blocked`** — nothing was pickable. `wf`
-  already ran the auto-ready dependency scan and retried once internally;
-  stop with "No stories available for pickup".
-- **`unsupported`** — `wf` deferred this case (not expected; reserved for
-  future unrecognised configurations). Use the inline selection below.
-- **`error`**, or the launcher reports Python is missing — `wf` cannot run
-  here. Use the inline selection below.
+Read the result by its `status`; the exit code mirrors it:
 
-On any fall-through to the inline selection (any case other than `ok`),
-first read `references/inline-fallback-prewarm.md` — it covers lazy
-candidate fetching and label caching on this degraded path. Skip the fast
-path entirely for an explicit number (it auto-selects) and for `audit`
-mode.
+| `status` | exit | What you do |
+| -------- | ---- | ----------- |
+| `ok` | 0 | A story is claimed and you are on its branch. **Stop selecting — do not re-derive anything.** |
+| `no-candidates` | 10 | Nothing was pickable. Stop with "No stories available for pickup". |
+| `all-blocked` | 11 | Every candidate was blocked or already claimed. Stop the same way. |
+| `unsupported` | 30 | `wf` deferred this configuration (reserved; not expected). Stop and report what it named. |
+| `error` | 20, or the launcher reports Python is missing | `wf` cannot run here. Stop and name the prerequisite: `wf` needs Python 3.8+ on `PATH` and an authenticated `gh`. Do not select a story by hand. |
 
-### Explicit number / inline fallback
+On `ok` the JSON carries `number`, `title`, `url`, `labels`, `milestone`,
+`body`, `claim_ref`, `branch`, `checked_out`, `board_moved`,
+`start_date_set` and `side_effects`. The `status-in-progress` label and the
+`@me` assignment are applied and the claim ref is held. Surface any
+`side_effects` (issues returned to blocked, or closed as already resolved),
+then do **only** the body-validation check at the end of this phase and go
+to Phase 2 — whose claim, board and branch steps are already done. If
+`checked_out` is false, read `branch_message` (e.g. a rebase conflict
+against the default branch) and run `/github-workflow:block-story` instead
+of building.
 
-If `$ARGUMENTS.story_number` is provided, use that issue directly — but
-first run the **already-in-flight guard** (needed only for an explicit
-number; the auto-pick pool below already excludes assigned or non-ready
-issues). It stops a second PR being built for a story already in review
-or with an open PR — the claim ref was released the moment that PR
-opened, so a fresh claim would otherwise succeed and duplicate the work.
+### An explicit story number
 
-```
+With `$ARGUMENTS.story_number`, run the **already-in-flight guard** first.
+The auto-pick pool excludes assigned and non-ready issues, but a named
+number bypasses that, and the claim ref is released the moment a PR opens —
+so a fresh claim on a story already in review would succeed and duplicate
+the work.
+
+```bash
 gh issue view {number} --repo {org}/{repo} --json state,labels,assignees
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
 ```
 
-Then find any open PR that already closes this issue by running the
-authoritative lookup in `templates/sibling-pr-lookup.md` with this
-`{number}`.
+`sibling-pr` answers "which open PRs will close this issue on merge?" from
+GitHub's own parse of closing references — the same parse that auto-closes
+the issue — so every site that asks gets the same answer. Exit 0 with
+`found: 0` is the normal result; exit 20 means the lookup failed, so stop
+rather than assume there is no duplicate.
 
-- If the issue is **closed**, report it and stop.
-- If an **open PR already closes this issue**, do not start fresh work.
-  Report the existing PR by number and title and tell the user to use
-  `/github-workflow:code-review` (which handles both review and rework)
-  — then stop. Do not claim, branch, or build.
-- If the issue carries `status-in-review` but no open PR is found, check
-  for a **closed (not merged)** PR (`closingIssuesReferences`, `states:
-  CLOSED`). If found, the PR was abandoned — reset automatically: remove
-  `status-in-review`, apply `status-ready`, unassign, move board to
-  Backlog, comment `"Resetting — PR #{N} closed without merge."` The
-  issue re-enters the pick pool.
-  If no closed PR either — surface the inconsistency and stop.
-- Otherwise **delegate the claim to the same engine the auto-pick fast
-  path uses** — it targets this one issue, validates it, and **auto-closes
-  it without a prompt if a merged PR already resolved it**:
+- The issue is **closed** → report it and stop.
+- `found` is above zero → do not start fresh work. Report the existing PR by
+  number **and** title and tell the user to run
+  `/github-workflow:code-review`, which handles both review and rework. Stop
+  — do not claim, branch or build.
+- The issue carries `status-in-review` but `found` is `0` → look for a
+  **closed, unmerged** PR:
+  ```
+  gh pr list --repo {org}/{repo} --state closed --search "closes #{number}" --json number,title
+  ```
+  If there is one the PR was abandoned — reset automatically: remove
+  `status-in-review`, apply `status-ready`, unassign, run `wf board-move
+  {number} --column col-backlog`, and comment `"Resetting — PR #{N} closed
+  without merge."` The issue re-enters the pick pool. If there is no closed
+  PR either, surface the inconsistency and stop.
+- Otherwise claim it through the same engine, aimed at one issue:
   ```bash
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout
   ```
-  Interpret the result exactly as the fast path above: `ok` → on the
-  branch, do only the body-validation check; Phase 2 is a no-op. A
-  `closed-already-resolved` side effect then `status: all-blocked` means
-  the story was already finished (closed and moved to Done) — report that
-  and pick the **next** story instead of stopping. Fall back to the inline
-  claim/validate below only on `error` or a missing interpreter; there,
-  run the **already-resolved check** from `templates/story-selection.md`
-  Step 3 (authoritative `closingIssuesReferences` over merged PRs) and
-  auto-close + move to Done + advance the same way — never rebuild a story
-  a merged PR already closed.
-
-If no number is provided, **select a story** with the canonical procedure
-in `templates/story-selection.md`, passing `$ARGUMENTS.mode` (default
-`story`). It detects backlog mode (sprint vs flat); assembles the
-unassigned candidate list per `ready-gate` (`label` / `board-column` /
-`both` / `none`), applies the agent-gating and mode filters, and sorts by
-priority then issue number; **claims the top candidate first, then
-validates only that one** (dependencies + already-merged) — releasing and
-trying the next only on failure, marking a genuinely-blocked issue
-`status-blocked` or closing an already-resolved one; and runs the
-dependency auto-ready scan **only if the pool comes up empty**. It returns
-either a single **claimed** story (the atomic claim is held and
-`status-in-progress` + `@me` are applied) or "No stories available" — in
-which case stop. `agent-gating: disabled` (the default) means the
-`claude-ready` human-approval label is **ignored entirely**. The atomic
-claim is acquired *before* any side effect, so two agents never validate
-or build the same issue.
+  Read the result exactly as above. A `closed-already-resolved` side effect
+  followed by `all-blocked` means the story was already finished — report
+  that and pick the **next** story rather than stopping.
 
 **Then, on the claimed story**, read the full issue body and confirm it has
 **Context** and **Requirements**:
@@ -405,59 +386,60 @@ or build the same issue.
     `refinement-skill` (default `feature-discovery`). After refinement,
     remove `needs-refinement`, apply `status-ready`, and continue with
     Phase 2.
-  - "Skip and pick next" — release the claim
-    (`templates/claim-procedure.md` **Release**) and re-run the selection.
+  - "Skip and pick next" — release the claim (`wf claim-release --issue
+    {number}`) and re-run the selection.
 - Truly empty with no guidance anywhere → run
   `/github-workflow:block-story` (which releases the claim) and re-run the
   selection for the next story.
 
 ## Phase 2 — Start
 
-1. Confirm the claim. The story was already claimed (and assigned) at the
-   end of Phase 1 via `templates/claim-procedure.md` (**Acquire**). Re-run
-   Acquire here only if Phase 1's claim state was lost to compaction — its
-   re-entry check makes a still-held claim a no-op. Do **not** issue a bare
-   `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
+`wf pick --checkout` already did every step here. Read on only when the `ok`
+result says one did not happen — `board_moved` or `checked_out` false, or the
+claim state lost to compaction.
 
-2. Update the project board to In Progress. The auto-loaded projection
-   dropped `## Project Board`, so read that section from
-   `ClaudeProject.md` now for `project-node-id`, `project-title`,
-   `status-field-id`, and the Status option ids. Resolve the board, the
-   issue's `{item_id}`, and the target column's `{column_option_id}` per
-   `templates/board-resolution.md`, then run its **Step 5** mutation to
-   set Status — it decides whether a board is configured (silent skip when
-   not), verifies board identity (loud abort on mismatch), adds the issue
-   to the board if missing, and resolves the target column by purpose key.
-   The target column for `status-in-progress` is **In Progress**
-   (`col-in-progress`) per the pairing in `templates/default-labels.md`.
+1. **The claim.** Held since Phase 1. Never issue a bare `--add-assignee @me`
+   as a claim; the `refs/claims/` ref is the lock. To re-take a claim whose
+   state was lost — a claim you already hold is a no-op:
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim --issue {number}
+   ```
+   Exit 0: you hold it. Exit 27 (`lost`): another agent does — stop and pick a
+   different story. Exit 20: a broken environment, not a rival; report it.
 
-3. Set start date on board (if configured) — the Step 5 date-field form in
-   `templates/board-resolution.md`. Also set the org-level
-   **`Start date`** issue field to today (best-effort, capability-gated)
-   per `templates/issue-fields-resolution.md` — independent of the board,
-   skipped silently if the org does not define the field.
+2. **The board.**
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-in-progress
+   ```
+   It decides for itself whether a board is configured (silent no-op when not),
+   verifies the board's identity before writing, adds the issue if it is
+   missing, and resolves the column by purpose key. It **always exits 0**: a
+   board mirrors the lifecycle labels and is never the source of truth. Read
+   `moved` and `reason`, and when a board *is* configured report a failure
+   loudly ("Board update failed: {reason}. Continuing.") rather than stopping.
+
+3. **Start date.** Set by `wf pick --checkout`; `start_date_set` says whether
+   the org defines the field. Nothing to do here.
 
 4. **Start clean.** Before branching, run the **Start clean** check in
-   `templates/worktree-hygiene.md`. A worktree provisioned dirty (a reused
-   or leaked worktree, or a checkout-time formatter) is inherited junk —
-   reset it to a pristine baseline and report it, so it is never mistaken
-   for this session's work or left to block worktree cleanup. The session
-   must begin from a clean tree.
+   `templates/worktree-hygiene.md`. A worktree provisioned dirty (a reused or
+   leaked worktree, or a checkout-time formatter) is inherited junk — reset it
+   to a pristine baseline and report it, so it is never mistaken for this
+   session's work or left to block worktree cleanup. The session must begin
+   from a clean tree.
 
-5. Fetch and branch:
+5. **Branch.** `wf pick --checkout` created and checked it out. By hand:
    ```
    git fetch origin {default-branch}
    git checkout -b {branch} origin/{default-branch}
    ```
 
-When **no** board is configured, skip the board update silently. When one
-**is**, board failures are loud: report them (e.g., "Board update failed:
-{error}. Continuing.") and proceed. **Claim–board consistency:** the
-claim acquired in Phase 1 must never outlive the session's intent to
-build. If the board move fails and the run is abandoned rather than
-continued, release the claim (`templates/claim-procedure.md` **Release**)
-and restore the prior lifecycle state — remove `status-in-progress` and
-the `@me` assignment, re-apply `status-ready` — so the claim does not leak.
+**Claim–board consistency:** the claim from Phase 1 must never outlive the
+session's intent to build. If the board move fails and the run is abandoned
+rather than continued, release the claim (`wf claim-release --issue
+{number}`) and restore the prior lifecycle state — remove
+`status-in-progress` and the `@me` assignment, re-apply `status-ready` — so
+the claim does not leak.
 
 ## Interactive discovery gate (before planning)
 

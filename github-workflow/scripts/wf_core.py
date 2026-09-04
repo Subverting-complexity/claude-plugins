@@ -13,7 +13,6 @@ to `gh`/`git` lives in `wf.py`; the offline test suite
 stay verifiable without a network.
 
 Reference templates (the prose these functions encode):
-  - github-workflow/templates/story-selection.md
   - github-workflow/templates/default-labels.md
   - github-workflow/skills/execute/SKILL.md  (branch convention)
 """
@@ -21,8 +20,8 @@ Reference templates (the prose these functions encode):
 import re
 
 # ── Story selection ──────────────────────────────────────────────────────────
-# Encodes github-workflow/templates/story-selection.md Steps 2–3 (the local,
-# no-API filter + sort) — the claim/validate loop around it lives in wf.py.
+# The local, no-API filter + sort — the claim/validate loop around it lives
+# in wf.py. This module is the only encoding of these rules.
 
 _PRIORITY_ORDER = ['priority-critical', 'priority-high', 'priority-medium', 'priority-low']
 
@@ -149,8 +148,8 @@ def select_pool(candidates, mode='story', agent_gating='disabled', project_map=N
 
     `project_map` is the ClaudeProject.md label map; every label the filters and
     the priority sort key on is resolved through it (`resolve_label`) so the fast
-    path matches the canonical purpose-key resolution in `story-selection.md`
-    rather than diverging on a project that renames labels. Defaults to `{}` so
+    path resolves purpose keys the same way everywhere rather than diverging
+    on a project that renames labels. Defaults to `{}` so
     a default-labelled project (and the offline tests) need not pass it.
 
     `type_map`, when provided, activates native-type filtering (type-capable
@@ -229,9 +228,8 @@ def current_lifecycle_label(labels, project_map):
 
 # ── Issue types + org field values ───────────────────────────────────────────
 # The canonical purpose→value maps for native issue types and org issue
-# fields. These were markdown tables in `templates/default-labels.md` and
-# `templates/label-reference.md`, which meant nothing could validate them and
-# every consumer re-read prose to apply them. The tables in those files are now
+# fields. These were markdown tables, which meant nothing could validate them
+# and every consumer re-read prose to apply them. The tables in those files are now
 # generated from here; this module is the source of truth.
 #
 # A project overrides any *field name* in `ClaudeProject.md` →
@@ -350,6 +348,115 @@ def field_purpose_for_name(field_name, project_map, defaults=None):
         if resolve_field_name(key, project_map, defaults) == field_name:
             return key
     return None
+
+
+# ── duplicate detection: the PRs that will close an issue ────────────────────
+# One definition of "duplicate", used by every site that detects or reconciles
+# one. It reads GitHub's own parse of closing references — the same parse that
+# auto-closes the issue on merge — rather than matching PR bodies, because a
+# regex misses closing keywords, cross-repo refs and UI-linked issues, and two
+# call sites with two regexes would disagree about what a duplicate is.
+
+def select_sibling_prs(nodes, number, exclude_branch=None):
+    """The open PRs that close issue `number`, oldest first.
+
+    `exclude_branch` drops the caller's own PR, which is otherwise reported as
+    a duplicate of itself the moment it is created.
+    """
+    out = []
+    for node in nodes or ():
+        refs = closing_issue_numbers(node.get('closingIssuesReferences'))
+        if number not in refs:
+            continue
+        if exclude_branch and node.get('headRefName') == exclude_branch:
+            continue
+        out.append({
+            'number': node['number'],
+            'title': node.get('title', ''),
+            'url': node.get('url', ''),
+            'head_ref': node.get('headRefName', ''),
+            'draft': bool(node.get('isDraft')),
+            'labels': [l['name'] for l in
+                       (node.get('labels') or {}).get('nodes', [])],
+        })
+    return out
+
+
+# ── claim reaping: which orphaned claim ref is safe to free ──────────────
+# Every in-flight issue and PR is locked with a git ref under `refs/claims/`.
+# A normal exit releases it; a crash does not, and the orphan then blocks
+# pickup of that item forever with no error anywhere. Reaping is therefore
+# necessary — and dangerous, because freeing a ref that still backs a running
+# session lets two agents build the same story. So the rule is asymmetric:
+# reap only on positive evidence the work has moved on, and when the evidence
+# is merely absent, report the ref as suspect and leave it alone.
+
+REAP_THRESHOLD_HOURS = 4
+
+REAP, SUSPECT, SKIP = 'reap', 'suspect', 'skip'
+
+
+def reap_verdict(kind, age_hours, state, labels, threshold=REAP_THRESHOLD_HOURS,
+                 in_progress_label=None, review_labels=(), has_open_pr=False):
+    """Decide what to do with one claim ref. Returns (verdict, reason).
+
+    `kind` is 'issue' or 'pr'; `state` is GitHub's own state string (OPEN /
+    CLOSED / MERGED) or None when it could not be read.
+
+    An issue claim is reaped when the issue is closed, when its lifecycle
+    label has moved off in-progress, or when a PR is already open for it (the
+    post-create release did not run). It is suspect when the issue is still
+    in-progress with no PR: that is exactly what a slow but healthy session
+    looks like.
+
+    A PR claim is reaped when the PR is closed or merged, or when it is open
+    but carries no active review-state label. It is suspect while a review is
+    genuinely in flight.
+    """
+    if age_hours is None:
+        return SUSPECT, 'the age of the claim ref could not be read'
+    if age_hours < threshold:
+        return SKIP, 'only %dh old (threshold %dh)' % (age_hours, threshold)
+    if state is None:
+        return SUSPECT, 'could not read the %s' % kind
+
+    names = set(labels or ())
+    if kind == 'issue':
+        if state.upper() == 'CLOSED':
+            return REAP, 'the issue is closed'
+        if in_progress_label and in_progress_label not in names:
+            return REAP, 'the issue is no longer marked in progress'
+        if has_open_pr:
+            return REAP, 'a PR is already open for the issue'
+        return SUSPECT, 'the issue is still in progress with no PR open'
+
+    if state.upper() in ('CLOSED', 'MERGED'):
+        return REAP, 'the PR is %s' % state.lower()
+    if names & set(review_labels or ()):
+        return SUSPECT, 'a review is in progress'
+    return REAP, 'the PR is open with no review under way'
+
+
+def reap_summary(results):
+    """Count a reap run by verdict. `results` are (target, verdict, reason)."""
+    counts = {REAP: 0, SUSPECT: 0, SKIP: 0}
+    for _, verdict, _ in results:
+        counts[verdict] = counts.get(verdict, 0) + 1
+    return {'reaped': counts[REAP], 'suspect': counts[SUSPECT],
+            'skipped': counts[SKIP]}
+
+
+# Board column purpose key → the column's name on the board. `ClaudeProject.md`
+# records the purpose key and the option id; the live board is addressed by
+# name, and `wf board-move` accepts either.
+BOARD_COLUMN_NAMES = {
+    'col-backlog':     'Todo',
+    'col-ready':       'Ready',
+    'col-in-progress': 'In Progress',
+    'col-in-review':   'In Review',
+    'col-blocked':     'Blocked',
+    'col-done':        'Done',
+}
 
 
 # ── issue spec: validation and value shaping ─────────────────────────────────
@@ -1117,7 +1224,7 @@ def preflight_summary(findings):
 # ── PR review-state labels + selection ───────────────────────────────────────
 # Mirrors the code-review
 # skill (Step 1). Review-state names default to the `review-` prefix
-# (templates/label-reference.md) and are overridden by review.config.md.
+# (templates/default-labels.md) and are overridden by review.config.md.
 
 REVIEW_DEFAULT_LABELS = {
     'needs-review': 'review-needs-review',
@@ -1271,7 +1378,7 @@ def review_label_missing(labels_after, verdict, names):
 
 
 # ── Backlog-mode detection ───────────────────────────────────────────────────
-# story-selection.md Step 2 — sprint vs flat from milestone presence.
+# Backlog mode — sprint vs flat from milestone presence.
 
 def detect_backlog_mode(candidates):
     """Return 'sprint' if any candidate has a milestone, otherwise 'flat'."""
@@ -1284,7 +1391,7 @@ def get_sprint_candidates(candidates, sprint_title):
 
 
 # ── Dependency parsing ───────────────────────────────────────────────────────
-# story-selection.md Step 3 validation — fixed patterns, no judgment.
+# Story validation — fixed patterns, no judgment.
 
 _DEP_LINE_PATTERNS = [
     re.compile(r'\bdepends on\s+#(\d+)', re.IGNORECASE),

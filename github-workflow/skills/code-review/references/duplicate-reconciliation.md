@@ -17,10 +17,10 @@ exactly one must survive.
 
 1. Determine the claimed PR's linked issue(s). Use GitHub's own closing
    parse, not the PR body: the claimed PR's `closingIssuesReferences`
-   (returned by the lookup in `templates/sibling-pr-lookup.md`) is the
+   (returned by `wf sibling-pr {number}`) is the
    authoritative set `{issues}`. If the PR closes no issue, skip this step.
 2. For each `#N` in `{issues}`, find every open PR that will close it by
-   running the lookup in `templates/sibling-pr-lookup.md` with that `N`.
+   running `wf sibling-pr N` with that issue number.
    That returns the **duplicate set** `S` (oldest-first), each node already
    carrying `number`, `title`, `headRefName`, `isDraft`, and `labels` — the
    claimed PR will be in it.
@@ -52,7 +52,7 @@ exactly one must survive.
    issue body.
 
 5. Close every loser `L` in `S \ {W}` — but only one you can safely take:
-   a. Acquire `refs/claims/pr-L` (`templates/claim-procedure.md`
+   a. Acquire `refs/claims/pr-L` (`wf claim --pr L`
       **Acquire**, target `pr-L`) — skip this for the PR you already hold.
       If Acquire fails, another agent is reviewing or updating `L` right
       now: **skip it this round** and note it. That agent runs this same
@@ -63,14 +63,14 @@ exactly one must survive.
         --comment "Closing as a duplicate of #W, which resolves the same issue (#N) and is the better-implemented of the two (<one-line reason>). Work here is preserved on branch \`<headRefName>\` if anything needs salvaging into #W."
       ```
       Do not delete the branch — leave it so the work is recoverable.
-   c. Release the claim you took on `L` (`templates/claim-procedure.md`
+   c. Release the claim you took on `L` (`wf claim-release --pr L`
       **Release**, target `pr-L`). Do **not** touch the linked issue's
       assignee or lifecycle label — the surviving PR `W` still drives it.
 6. Resolve where the PR you hold sits:
    - **You hold the winner `W`:** continue to Step 3 and review it.
    - **You hold a loser:** you just closed it in 5b. Remove its
      `reviewing` label, release your claim
-     (`templates/claim-procedure.md` **Release**), and **exit** — never
+     (`wf claim-release --pr <number>`), and **exit** — never
      review a closed PR. The winner keeps its current review-state label
      and is reviewed on this or a later run.
 

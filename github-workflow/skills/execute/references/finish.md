@@ -14,8 +14,12 @@ light.
      git push -u origin HEAD
      ```
    - Check for a sibling open PR that already closes this issue on a
-     different branch — run the authoritative lookup in
-     `templates/sibling-pr-lookup.md` with this `{number}`.
+     different branch:
+     ```bash
+     bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number} --exclude-branch {branch}
+     ```
+     Exit 0 with `found: 0` is the expected answer; exit 20 means the
+     lookup failed, so say so rather than reporting no duplicate.
 
    Wait for both before proceeding: the push must finish before Step 2's
    PR create; the sibling result optionally prepends a flag line to the
@@ -23,9 +27,9 @@ light.
 
    Holding the issue claim through PR creation already serializes
    builders, so a sibling should never be found — this is the backstop
-   for a sub-second race. If one is found, ignore any result whose
-   `headRefName` equals `{branch}` (your own PR). Still create your PR in
-   Step 2, but prepend:
+   for a sub-second race. `--exclude-branch` already drops your own PR, so
+   anything returned is someone else's. If one is found, still create your
+   PR in Step 2, but prepend:
 
    ```
    > ⚠ Possible duplicate of #{sibling_number} — both close #{number}. Pending reconciliation by code review, which keeps the better-implemented PR and closes the other.
@@ -61,100 +65,33 @@ light.
    issue; if any is missing, add it via `gh pr edit --body-file` before
    proceeding.
 
-3. **Apply PR labels, move the issue, and update the board in one
-   combined GraphQL mutation** — a single `gh api graphql` call instead
-   of separate `gh pr edit` / `gh issue edit` / board calls.
+3. **Hand the story to review** — labels, board and claim in one call:
 
-   **Prerequisites** — resolve before building the mutation:
-   - PR node ID: `gh pr view {pr_number} --repo {org}/{repo} --json id --jq '.id'`
-   - Label node IDs: look up `claude-authored`, the review-state entry label
-     (`review-needs-review` or `review-changes-requested`),
-     `status-in-progress`, and `status-in-review` by name. No label
-     inventory is prewarmed, so `.claude/label-cache.json` is usually
-     absent here — fetch the IDs now with `gh label list --repo
-     {org}/{repo} --json name,id --limit 1000` (the deferred, first-use
-     fetch); if the cache *does* exist from an earlier fallback this
-     session, read it instead of re-querying. If any label is missing,
-     create it with the guarded create-if-missing pattern from
-     `templates/default-labels.md` (no `--force`), write/append its
-     `{name, id}` entry to `.claude/label-cache.json`, and use that ID.
-   - Issue node ID: from context (stored at Phase 2's board add); if not
-     in context, `gh issue view {number} --repo {org}/{repo} --json id
-     --jq '.id'`.
-   - Board item ID and column option ID: follow
-     `templates/board-resolution.md`; the target column for
-     `status-in-review` is `col-in-review`.
-
-   **Combined mutation:**
-   ```
-   gh api graphql -f query='
-     mutation FinishCombined(
-       $prId:ID!, $issueId:ID!,
-       $prAddLabels:[ID!]!,
-       $issueRemoveLabels:[ID!]!, $issueAddLabels:[ID!]!,
-       $projId:ID!, $itemId:ID!, $fieldId:ID!, $colVal:String!
-     ){
-       addPRLabels:       addLabelsToLabelable(input:{labelableId:$prId, labelIds:$prAddLabels}){ __typename }
-       removeIssueLabel:  removeLabelsFromLabelable(input:{labelableId:$issueId, labelIds:$issueRemoveLabels}){ __typename }
-       addIssueLabel:     addLabelsToLabelable(input:{labelableId:$issueId, labelIds:$issueAddLabels}){ __typename }
-       moveBoard:         updateProjectV2ItemFieldValue(input:{projectId:$projId, itemId:$itemId, fieldId:$fieldId, value:{singleSelectOptionId:$colVal}}){ __typename }
-     }' \
-     -f prId="$PR_NODE_ID" \
-     -f issueId="$ISSUE_NODE_ID" \
-     -f 'prAddLabels[]'="$CLAUDE_AUTHORED_ID" \
-     -f 'prAddLabels[]'="$REVIEW_STATE_LABEL_ID" \
-     -f 'issueRemoveLabels[]'="$STATUS_IN_PROGRESS_ID" \
-     -f 'issueAddLabels[]'="$STATUS_IN_REVIEW_ID" \
-     -f projId="$PROJ_NODE_ID" \
-     -f itemId="$ITEM_ID" \
-     -f fieldId="$STATUS_FIELD_ID" \
-     -f colVal="$IN_REVIEW_OPTION_ID"
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" handoff --pr {pr_number} --issue {number}
    ```
 
-   Build each `[ID!]!` label array by repeating `-f 'name[]'=<id>` once
-   per label — how `gh api graphql` constructs a JSON array variable. Do
-   **not** collapse them into a single `-F name="[...]"`: `-F` never
-   parses `[...]` as JSON, so the array arrives as one literal string and
-   GitHub rejects the `[ID!]!` variable (the "array-label" failure that
-   forces the per-name fallback). Pass every other field with `-f` too —
-   all are `ID!`/`String!`, and `-f` keeps a digit-only option id in
-   `colVal` from being coerced to `Int` (rejected against `String!`).
+   Repeat `--issue N` for every issue the PR closes. Add `--gate-failed`
+   when `.claude/gate-failed.flag` exists, which enters review as
+   changes-requested rather than needs-review — the PR is real work, but it
+   is not ready to approve and the label has to say so.
 
-   **If no board is configured**, omit the `moveBoard` alias and its
-   variables; the PR and issue label changes still go in the same call.
-   **If the org's `Target date` field exists** (per the
-   `templates/issue-fields-resolution.md` capability probe), add a fifth
-   alias to the same mutation to record today's date.
+   The command labels the PR `claude-authored` plus the review-state entry
+   label, moves each issue from `status-in-progress` to `status-in-review`,
+   moves its board item to In Review, releases the issue's claim ref, and
+   deletes the session scratch files (`.claude/plan.md`,
+   `preflight-passed.txt`, `label-cache.json`).
 
-   **Fallback** — if the combined mutation fails (e.g. a stale cached
-   label ID), run three individual calls, in order:
+   It **always exits 0**, because none of these is a reason to stop once the
+   PR exists. Read the payload instead: `pr_labelled`, and per issue
+   `relabelled` and `board_moved` with a `board` reason. Report anything
+   false — a board that did not move is worth a line, not a halt.
 
-   1. `gh pr edit {pr_number} --repo {org}/{repo} --add-label
-      claude-authored --add-label {review-state-label}`
-      (`review-needs-review`, or `review-changes-requested` when
-      `.claude/gate-failed.flag` exists).
-   2. `gh issue edit {number} --repo {org}/{repo} --remove-label
-      status-in-progress --add-label status-in-review`.
-   3. Board move — `templates/board-resolution.md` Step 5, targeting
-      `col-in-review` (skip when no board is configured).
+   Releasing the claim here is deliberate. The open PR plus the assignment
+   are the ownership markers from this point on, so holding the ref longer
+   only risks leaking it. The issue stays assigned to @me through review.
 
-   The atomic-claim and label-presence guarantees still hold: the
-   individual calls verify via exit code and create-if-missing as before.
-
-4. Release the atomic claim now that the PR exists — the open PR plus the
-   assignment are the ownership markers, so the claim ref is no longer
-   needed (`templates/claim-procedure.md` **Release**). Same release
-   **Exit cleanup** runs; doing it here just frees the ref sooner. Then
-   delete the scratch files:
-   ```
-   git push origin :refs/claims/issue-{number}
-   rm -f .claude/claim-issue-{number}.sha .claude/plan.md \
-         .claude/preflight-passed.txt .claude/label-cache.json
-   ```
-   The claim-ref delete is idempotent — ignore an error if it is already
-   gone. The issue stays assigned to @me through review.
-
-5. Note what now exists, in a line or two: the PR by number **and** title
+4. Note what now exists, in a line or two: the PR by number **and** title
    together (e.g. `#123 Add login button`, never the number alone) plus its
    URL, the linked issues (each by number **and** title), and the labels
    applied. A **progress note, not the run's final report** — do not
@@ -166,12 +103,12 @@ light.
    like a finished run invites the user to treat it as one, which is the
    failure the next section describes.
 
-6. **Go to Phase 8 now**: read `references/review-and-merge.md` and follow
-   it, in the same turn as step 5. Without asking the user, without waiting
+5. **Go to Phase 8 now**: read `references/review-and-merge.md` and follow
+   it, in the same turn as step 4. Without asking the user, without waiting
    for CI, and without checking whether merging is switched on — that setting
    is read in Phase 10 and decides nothing here.
 
-## Why step 6 is the one that gets skipped
+## Why step 5 is the one that gets skipped
 
 Steps 3 and 4 read like the end of a run: claim released, scratch files
 deleted, board on In Review, PR labelled `review-needs-review`. All four are

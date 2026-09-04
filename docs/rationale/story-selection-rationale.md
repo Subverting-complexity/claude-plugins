@@ -1,6 +1,7 @@
 # Story selection — rationale (not read at runtime)
 
-The "why" behind `templates/story-selection.md`. Maintainers read this;
+The "why" behind story selection, now encoded in `wf_core.py` and run by
+`wf pick`. Maintainers read this;
 the runtime selection loop does **not** load it. Keep the runtime file
 imperative; keep the reasoning here.
 

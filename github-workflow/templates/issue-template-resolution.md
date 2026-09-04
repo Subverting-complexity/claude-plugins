@@ -37,7 +37,7 @@ issue rather than once per session.
 
 Cache the result in `.claude/issue-fields-cache.json` under the key
 `issue_templates`, merging into whatever that file already holds. This is
-the same file `templates/issue-fields-resolution.md` uses, so `execute`'s
+the same file `wf org-capabilities` caches to, so `execute`'s
 Exit cleanup already deletes it and no new scratch file is introduced.
 
 Cache the **empty** result too. "This repository has no template" is an
@@ -168,8 +168,8 @@ Handle each as follows:
   a starting point for the words after the prefix, and rewrite it to the
   standard's title rules.
 - **`type`** — the org's native issue type. The calling command already
-  resolves this through `templates/issue-fields-resolution.md`; let that
-  stand rather than overriding it from the template.
+  sets this (github-workflow through `wf issue-apply`); let that stand
+  rather than overriding it from the template.
 
 ## Step 7 — No template
 

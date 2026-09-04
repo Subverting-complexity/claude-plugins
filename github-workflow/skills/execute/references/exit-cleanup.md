@@ -77,5 +77,5 @@ tree-reconcile procedure) until `git status --porcelain` ends empty.
 **Never `git stash`** — the stash is shared across every worktree on the
 clone.
 
-(design rationale: `references/exit-cleanup-rationale.md` — not read at
+(design rationale: `docs/rationale/exit-cleanup-rationale.md` — not read at
 runtime.)

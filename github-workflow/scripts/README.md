@@ -62,6 +62,25 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit
 
 # …file-level checks only, no network
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit --offline
+
+# Lock one issue or PR (and advertise it: assignment / reviewing label)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim --issue 42
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim --pr 123 --no-marker
+
+# Let one or more locks go (idempotent)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue 42 --pr 123
+
+# Free every claim ref whose work has demonstrably moved on
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-reap --threshold 4 --dry-run
+
+# Mirror an issue's lifecycle onto the board (best-effort, always exit 0)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move 42 --column col-in-review
+
+# The open PRs that close an issue (duplicate detection)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr 42 --exclude-branch feat/42-thing
+
+# Hand finished stories to review: label the PR, move each issue + board, free claims
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" handoff --pr 123 --issue 42 --issue 43
 ```
 
 Run from the **target repo root** so the CLI can read `ClaudeProject.md`
@@ -103,6 +122,7 @@ run carries a `status` field and the exit code mirrors it:
 | 24   | `partial`       | Some entries applied, some failed. Re-run to finish.           |
 | 25   | `gaps`          | `issue-audit` found issues missing metadata. Nothing written.  |
 | 26   | `drift`         | `config-audit` found a configuration problem that breaks work. |
+| 27   | `lost`          | `claim` — another agent holds this issue or PR. Change nothing.  |
 | 30   | `unsupported`   | Path not in the CLI yet — caller falls back to the skill.      |
 
 Mutations to the **winning** issue (claim, assign, `status-in-progress`) are
@@ -460,6 +480,81 @@ creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
   (no push access): it selects the next PR without writing a claim ref or
   applying the `reviewing` marker, and the JSON reports `claimed: false`.
 
+## Locks, board and handoff
+
+These five commands replaced the markdown procedures the skills used to
+follow step by step. Each is one call with a defined exit code, so a call
+site states the command and what to do about each outcome rather than
+describing the mechanism.
+
+### `claim` / `claim-release` / `claim-reap`
+
+`claim --issue N` or `claim --pr N` takes `refs/claims/{issue,pr}-N` — a
+server-side compare-and-swap, which is what makes it safe between two agents
+running under the same GitHub identity, where a shared label cannot exclude
+a rival.
+
+The ref is the lock but it is ephemeral, so on success the command also
+advertises ownership where a later picker will look: an issue is assigned to
+`@me` and moved to `status-in-progress`; a PR swaps `needs-review` for
+`reviewing`. Pass `--no-marker` to take the lock silently. The marker is
+best-effort — the lock is already held, and failing to advertise it is worth
+a warning, not giving the item back.
+
+| Exit | Meaning |
+| ---- | ------- |
+| 0 | You hold it. |
+| 27 | Another agent holds it. Make **no** changes: move to the next item, or report and stop on a named one. |
+| 20 | A broken environment, not a rival — usually no write access to `refs/claims/*`. Never fall back to a bare label as a "soft" claim; that reintroduces the race the ref removes. |
+
+`claim-release` takes repeatable `--issue` / `--pr` and is idempotent —
+releasing a ref that is already gone is not a failure, so it always exits 0.
+
+`claim-reap` frees the refs a crash left behind. It always exits 0 and
+returns three lists: `reaped` (freed — the issue is closed, no longer in
+progress, or already has a PR; the PR is closed, merged, or open with no
+review under way), `suspect` (deliberately left, because the evidence does
+not say the work stopped) and `skipped` (younger than `--threshold`, default
+4 hours). `--dry-run` reports the verdicts without freeing anything. The
+judgement is `wf_core.reap_verdict`, which is offline-tested; everything in
+`wf.py` around it is I/O.
+
+### `board-move`
+
+`board-move N --column col-in-review` mirrors an issue's lifecycle onto the
+board. It takes a column **purpose key** (`col-backlog`, `col-ready`,
+`col-in-progress`, `col-in-review`, `col-blocked`, `col-done`), resolves the
+option id live by column name so a stale snapshot self-heals, verifies the
+board's identity before writing, and adds the issue if it is not on the
+board yet.
+
+It **always exits 0**, including when no board is configured. A board
+mirrors the labels and is never the source of truth, so a failed move is
+something to report, never something to stop for: read `moved` and `reason`.
+
+### `sibling-pr`
+
+`sibling-pr N` returns the open PRs that close issue N, oldest first, using
+GitHub's own parse of closing references rather than a free-text body
+search. `--exclude-branch` drops your own PR, so anything returned is
+someone else's. Exit 0 with `found: 0` is the expected answer before
+starting work; exit 20 means the lookup failed, which is not the same as
+"no duplicate" and must be reported as such.
+
+### `handoff`
+
+`handoff --pr P --issue N [--issue M …]` ends a build: it labels the PR
+`claude-authored` plus the review-state entry label, then for each issue
+swaps `status-in-progress` for `status-in-review`, moves its board item to
+In Review, and releases its claim ref. Finally it deletes `.claude/plan.md`,
+`preflight-passed.txt` and `label-cache.json`. `--gate-failed` enters review
+as changes-requested rather than needs-review.
+
+It **always exits 0**: once the pull request exists, none of this is a
+reason to stop. Read `pr_labelled` and the per-issue `relabelled`,
+`board_moved` and `board` reason instead. A failure on one issue does not
+affect the others.
+
 ## Claim outcomes vs. environment errors
 
 A claim push that fails is only a **lost claim** (a rival got there first)
@@ -470,6 +565,7 @@ picker emits `status: error` rather than walking the pool and reporting a
 phantom `all-blocked`. So "nothing to pick" always means the backlog is
 genuinely empty, never that claims could not be written.
 
-Every caller tries `wf` first and falls back to the inline procedure on any
-non-`ok` status or a missing interpreter, so behaviour is identical whether
-or not `wf` can run.
+There is no inline fallback. The markdown procedures these commands
+replaced have been deleted, so a call site that cannot run `wf` fails with a
+message naming the missing prerequisite rather than quietly running a second
+implementation that nothing tests.

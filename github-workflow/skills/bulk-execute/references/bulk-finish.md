@@ -19,15 +19,19 @@ between them, and the checks are one per story:
   git push -u origin HEAD
   ```
 - For **each** built story, check for an open pull request that already
-  closes it on a different branch, using the authoritative lookup in
-  `templates/sibling-pr-lookup.md`.
+  closes it on a different branch:
+  ```bash
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number} --exclude-branch {branch}
+  ```
+  Exit 0 with `found: 0` is the expected answer; exit 20 means the lookup
+  failed, so say so rather than reporting no duplicate.
 
 Wait for all of them before continuing: the push must finish before step 2
 creates the PR, and any sibling found changes the PR body.
 
 Holding every story's claim through PR creation already serializes builders,
-so a sibling should never be found. If one is, ignore any result whose
-`headRefName` equals this branch (your own PR). Still create the pull
+so a sibling should never be found. `--exclude-branch` already drops your
+own PR, so anything returned is someone else's. Still create the pull
 request, but prepend one line per affected story:
 
 ```
@@ -96,73 +100,37 @@ must match the built stories exactly** — no missing line, and no extra one.
 If it does not, fix it with `gh pr edit --body-file` before going on. Count
 them; do not eyeball them.
 
-## 3. Label the PR and move each issue
+## 3. Hand every story to review
 
-`execute`'s Phase 7 does this in one combined GraphQL mutation. The same
-call works here, extended with one pair of label aliases and one board alias
-per issue — `removeIssueLabel1` / `addIssueLabel1` / `moveBoard1`,
-`removeIssueLabel2` / … — since GraphQL requires an alias per repeated
-field. Read `skills/execute/references/finish.md` step 3 for the mutation,
-its prerequisites (PR node ID, label node IDs, issue node IDs, board item
-and column IDs), and the `-f 'name[]'=<id>` array-building rule, then repeat
-the issue half of it per story.
+One call, whatever the size of the set — repeat `--issue N` once per **built**
+story (the ones whose `built` is `true` in `.claude/bulk-set.json`):
 
-What each story needs is what a single-story run needs:
-
-- On the **pull request** (once): add `claude-authored` and the review-state
-  entry label — `review-needs-review`, or `review-changes-requested` when
-  `.claude/gate-failed.flag` exists.
-- On **each built issue**: remove `status-in-progress`, add
-  `status-in-review`.
-- On **each built issue's board item**: move to the column paired with
-  `status-in-review`, which is `col-in-review`.
-
-Resolve the board and each issue's item ID per `templates/board-resolution.md`.
-Label node IDs come from one `gh label list --repo {org}/{repo} --json
-name,id --limit 1000` shared across every story — fetch it once, not per
-issue. Create any missing label with the guarded create-if-missing pattern
-in `templates/default-labels.md` (no `--force`).
-
-**Fallback.** If the combined mutation fails — a stale cached label ID, or
-simply too many aliases for comfort — fall back to per-issue calls, which
-are slower but independently verifiable:
-
-1. `gh pr edit {pr_number} --repo {org}/{repo} --add-label claude-authored
-   --add-label {review-state-label}` (once).
-2. For each built story: `gh issue edit {number} --repo {org}/{repo}
-   --remove-label status-in-progress --add-label status-in-review`.
-3. For each built story: the board move,
-   `templates/board-resolution.md` Step 5 targeting `col-in-review`. Skip
-   silently when no board is configured.
-
-A failure on one issue does not abandon the others. Apply what you can,
-report what failed by issue number and title, and carry on — the pull
-request exists and the review matters more than a label.
-
-## 4. Release every claim
-
-The pull request plus the assignments are now the ownership markers, so the
-claim refs are no longer needed. Release **one per story in the set**, not
-just the lead — read `.claude/bulk-set.json` if the set is no longer in
-context:
-
-```
-git push origin :refs/claims/issue-{number}     # once per story in the set
-rm -f .claude/claim-issue-{number}.sha
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" handoff --pr {pr_number} \
+  --issue {number} --issue {number} ...
 ```
 
-Then delete the scratch files that have done their job:
+Add `--gate-failed` when `.claude/gate-failed.flag` exists, which enters
+review as changes-requested rather than needs-review.
 
-```
-rm -f .claude/plan.md .claude/preflight-passed.txt .claude/label-cache.json
-```
+It labels the pull request `claude-authored` plus the review-state entry
+label once, then for **each** issue moves it from `status-in-progress` to
+`status-in-review`, moves its board item to In Review, and releases its claim
+ref — so the per-story release that used to be its own step is done here.
+Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and
+`label-cache.json`.
 
-Each claim-ref delete is idempotent — ignore an error if it is already gone.
+It **always exits 0**: once the pull request exists, none of this is a reason
+to stop. Read the payload instead — `pr_labelled`, and per issue
+`relabelled`, `board_moved` and a `board` reason. A failure on one issue does
+not affect the others; report what failed by issue number **and** title and
+carry on. The review matters more than a label.
+
 Keep `.claude/bulk-set.json`: Phases 8 to 10 still read it for the story
 list, and **Exit cleanup** deletes it at the end of the run. Every issue
 stays assigned to @me through review.
 
-## 5. Note what now exists
+## 4. Note what now exists
 
 A line or two, as a **progress note rather than the run's final report**:
 the pull request by number **and** title plus its URL, every story it closes
@@ -175,10 +143,10 @@ exact about state: the pull request is **open and not yet reviewed**. A
 dropped story is outstanding work, so say what it was and what would let
 it be picked up, rather than listing it as a detail among the labels.
 
-## 6. Go to Phase 8 now
+## 5. Go to Phase 8 now
 
 Read `skills/execute/references/review-and-merge.md` and follow it, in the
-same turn as step 5, with the substitutions listed in `SKILL.md`. Without
+same turn as step 4, with the substitutions listed in `SKILL.md`. Without
 asking the user, without waiting for CI, and without checking whether
 merging is switched on — that setting is read in Phase 10 and decides
 nothing here.

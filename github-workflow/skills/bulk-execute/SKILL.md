@@ -171,7 +171,7 @@ Stay under ~150k tokens for the whole set, and treat that as the constraint
 that decides how many stories the set holds, not the other way round. The
 run produces one shippable artifact: a merged pull request, or an open one
 whose review state is recorded. (Design rationale for this and for every
-other decision below: `references/bulk-rationale.md` — not read at runtime.)
+other decision below: `docs/rationale/bulk-execute-rationale.md` — not read at runtime.)
 
 - **The set is sized to the budget at Phase 1, and re-sized at Phase 3.**
   If the plan shows the set does not fit, drop stories from it before
@@ -299,7 +299,7 @@ Phase 1 ends in one of three states:
 
 1. **Confirm the claims.** Every story in the set was claimed in Phase 1,
    with `status-in-progress` applied, `@me` assigned, and the board moved
-   to In Progress. Re-run Acquire (`templates/claim-procedure.md`) for a
+   to In Progress. Re-run the claim (`wf claim --issue {number}`) for a
    story only if Phase 1's claim state was lost to compaction — its
    re-entry check makes a still-held claim a no-op. Do not issue a bare
    `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
