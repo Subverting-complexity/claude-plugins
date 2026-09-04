@@ -7,6 +7,19 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 6.1.2
+
+- Fixed: a failed org capability lookup was written to
+  `.claude/issue-fields-cache.json` and then trusted forever, so the plugin fell
+  back to labels in silence. `resolve_org_capabilities` only refused to cache a
+  capability GitHub named in a `FORBIDDEN` error, but an under-scoped or expired
+  token can also answer with empty `issueTypes` and `issueFields` and no error at
+  all. An org answering with neither types nor fields is no longer cached, and an
+  all-empty cached record is now re-queried rather than trusted, so a cache that
+  was already poisoned heals itself without anyone knowing to pass `--refresh`. A
+  user-owned repo genuinely has neither, so a new `owner_kind` key marks that
+  empty as deliberate and keeps it a cache hit.
+
 ## github-workflow 6.1.1
 
 - Fixed: on a type-capable org, `execute --mode feature`/`--mode maintenance`

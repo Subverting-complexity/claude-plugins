@@ -709,6 +709,84 @@ class TestCapabilityCache(unittest.TestCase):
         self.assertFalse(caps['cached'])
 
 
+_EMPTY_ORG_RESPONSE = {
+    'organization': {
+        'issueTypes': {'nodes': []},
+        'issueFields': {'nodes': []},
+    },
+}
+
+
+class TestEmptyCapabilityRecord(unittest.TestCase):
+    """An org answering with nothing is a failed lookup, not a configuration.
+
+    The FORBIDDEN guard above only catches the denial GitHub bothers to name.
+    An under-scoped or expired token can also come back with empty nodes and no
+    error at all, and caching that made every later run fall back to labels in
+    silence -- the exact failure the denial guard exists to prevent.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.calls = []
+
+    def _stub(self, response):
+        def fake(query, **fields):
+            self.calls.append(fields)
+            return response, [], ''
+        return fake
+
+    def test_empty_org_answer_is_not_cached(self):
+        with mock.patch.object(wf, 'gh_graphql_partial',
+                               self._stub(_EMPTY_ORG_RESPONSE)):
+            ok, caps, _ = wf.resolve_org_capabilities(_cfg(org='acme'), root=self.root)
+        self.assertTrue(ok)
+        self.assertFalse(caps['type_capable'])
+        self.assertEqual(caps['owner_kind'], 'organization')
+        self.assertFalse(os.path.isfile(wf.capability_cache_path(self.root)),
+                         'an empty org answer was written to the cache')
+
+    def test_poisoned_cache_re_queries_and_heals(self):
+        """Nobody knows to pass `--refresh` for a failure that reports nothing."""
+        wf.merge_capability_cache({'type_capable': False, 'type_map': {},
+                                   'field_map': {}}, root=self.root)
+        with mock.patch.object(wf, 'gh_graphql_partial', self._stub(_ORG_CAPS_RESPONSE)):
+            ok, caps, _ = wf.resolve_org_capabilities(_cfg(org='acme'), root=self.root)
+        self.assertTrue(ok)
+        self.assertFalse(caps['cached'], 'an all-empty record was trusted')
+        self.assertEqual(len(self.calls), 1)
+        self.assertTrue(caps['type_capable'])
+        with open(wf.capability_cache_path(self.root), encoding='utf-8') as fh:
+            on_disk = json.load(fh)
+        self.assertEqual(on_disk['type_map'],
+                         {'Bug': 'IT_bug', 'User Story': 'IT_story'})
+
+    def test_user_owned_empty_is_cached_and_then_trusted(self):
+        """A user-owned repo has no issue types by design, so its empty record
+        is legitimate and must not cost a round trip on every run."""
+        with mock.patch.object(wf, 'gh_graphql_partial', self._stub({'organization': None})):
+            wf.resolve_org_capabilities(_cfg(org='someone'), root=self.root)
+            ok, caps, _ = wf.resolve_org_capabilities(_cfg(org='someone'), root=self.root)
+        self.assertTrue(ok)
+        self.assertTrue(caps['cached'])
+        self.assertEqual(len(self.calls), 1, 'a legitimate empty record was re-queried')
+        with open(wf.capability_cache_path(self.root), encoding='utf-8') as fh:
+            self.assertEqual(json.load(fh)['owner_kind'], 'user')
+
+    def test_populated_legacy_record_is_still_trusted(self):
+        """Records written before `owner_kind` existed carry types or fields,
+        so they stay a cache hit and nobody pays for the new key."""
+        wf.merge_capability_cache({'type_capable': True,
+                                   'type_map': {'Bug': 'IT_bug'},
+                                   'field_map': {}}, root=self.root)
+        with mock.patch.object(wf, 'gh_graphql_partial', self._stub(_ORG_CAPS_RESPONSE)):
+            ok, caps, _ = wf.resolve_org_capabilities(_cfg(org='acme'), root=self.root)
+        self.assertTrue(ok)
+        self.assertTrue(caps['cached'])
+        self.assertEqual(self.calls, [])
+
+
 class TestOrgCapabilitiesCommand(unittest.TestCase):
     """The command's status/exit contract, which is what callers branch on."""
 
