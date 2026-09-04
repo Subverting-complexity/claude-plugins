@@ -45,6 +45,23 @@ A plugin that files GitHub issues also carries a `writing-github-issues` skill. 
 - Remove investigation history, proof of work, commands, file lists, individual tests, and debugging detail unless the user needs them.
 - Do not repeat information.
 - Do not add detail merely to show thoroughness.
+- Do not narrate the workflow you are following.
+
+## Do not narrate the workflow
+
+The workflow you are running, its phases, its skills and its instructions belong to you, not to the user. Do not name them, and do not frame what you did as following or departing from them.
+
+Report in the project's own terms instead. Where what you verified was narrower than it should have been, say what was and was not checked.
+
+Prefer:
+
+> Each story got a type check and its own tests. The full suite ran once, before the pull request opened, rather than after every story.
+
+Over:
+
+> One deviation to flag: the workflow asks for the full quality gate after each story. I ran a type check and the targeted test suites per story instead.
+
+This is not licence to hide anything. A genuine gap in what was verified is what **Noteworthy** is for. Write it as a fact about the work rather than a note about the instructions.
 
 ## Work-item names
 
@@ -167,6 +184,7 @@ Before sending, ask:
 - Is the answer or outcome clear immediately?
 - Could the user understand it without following the session?
 - Is the completion state exact?
+- Have I named the workflow, a phase, or a skill? Remove it.
 - Is incomplete work impossible to miss?
 - Are meaningful assumptions visible?
 - Can I remove anything else without losing useful information?

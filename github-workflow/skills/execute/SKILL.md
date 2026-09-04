@@ -267,7 +267,7 @@ build to the last review round:
 - **Anywhere else** — a pre-existing bug in untouched code, a security or
   architecture problem noticed in passing, tech debt belonging to other work
   — file it with `/github-workflow:report-issue` and carry on. Do not fix it
-  inline; that widens the diff the reviewers have to judge.
+  inline; that widens the diff the reviewer has to judge.
 
 Two exceptions stay filed: a finding only a person can settle (an ambiguous
 requirement, an architectural choice with several defensible answers), filed
@@ -571,7 +571,7 @@ detection, PR create, labels, board move, claim release, report.
 the code shares every assumption it was built on, so its verdict is worth
 little; Phase 8 gets a real one from contexts that never saw the build. That
 governs **whose judgement decides this PR, not whether the run continues** —
-you still spawn the reviewers and own what they return, and Phase 7 hands the
+you still spawn the reviewer and own what it returns, and Phase 7 hands the
 PR to nobody: not the user, not a later session, not the standalone
 `/github-workflow:code-review` command. Going straight from PR creation to
 Phase 8 matters for a second reason too — see the claim window there.
@@ -580,13 +580,15 @@ Phase 8 matters for a second reason too — see the claim window there.
 
 The moment the PR exists, **read `references/review-and-merge.md`** and
 follow it to the end of the run — same turn as Phase 7, no asking, no waiting
-on CI. Unlike merging, the review is **unconditional**. Phase 8 claims the PR, then spawns two review agents
-in parallel, each in a fresh context, to review it read-only — your session
-built this code and cannot judge it independently — and posts one
-consolidated verdict. Phase 9 fixes what they found on this branch — a
-finding against this feature is repaired here, not filed as an issue for
-somebody else — then pushes and re-reviews with a fresh agent, looping until
-the verdict is approved as far as the session budget allows. Phase 10 merges the PR and settles the linked issues.
+on CI. Unlike merging, the review is **unconditional**. Phase 8 claims the PR, then
+spawns **one** review agent in a fresh context to read it read-only — your
+session built this code and cannot judge it independently — carrying a
+severity rubric that says what is worth raising at all, and posts the
+verdict. Phase 9 fixes what it found on this branch — both the blocking
+findings and the quick ones, repaired here rather than filed as issues for
+somebody else — and re-reviews **only when the rework was substantial
+enough to need a second reading**, once at most. Phase 10 merges the PR and
+settles the linked issues.
 
 **Merging is opt-in and off by default.** It runs only where
 `review.config.md` sets `Auto-Merge on Approval` to `enabled` — the same

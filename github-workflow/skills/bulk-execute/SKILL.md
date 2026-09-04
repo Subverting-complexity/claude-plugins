@@ -33,13 +33,12 @@ merge. Everything `execute` does for a single story, done once for a set
 whose members share enough context that building them together costs less
 than building them apart.
 
-The saving is real but narrow. It comes from planning the same subsystem
-once, opening the same files once, and having one reviewer read one
-coherent diff. It disappears the moment the stories are unrelated, at which
-point this command produces a pull request nobody can review and nobody can
-revert cleanly. **Choosing the set is the hard part of this workflow**, and
-most of the discipline below is about choosing it well and shrinking it
-when it turns out to be wrong.
+The saving is real but narrow: the same subsystem planned once, the same
+files opened once, one reviewer reading one coherent diff. It disappears
+the moment the stories are unrelated, at which point this command produces
+a pull request nobody can review and nobody can revert cleanly. **Choosing
+the set is the hard part**, and most of the discipline below is about
+choosing it well and shrinking it when it turns out to be wrong.
 
 **Use `/github-workflow:execute` instead** when there is one story, when the
 stories touch different subsystems, or when any one of them is large enough
@@ -49,12 +48,11 @@ to fill a session on its own.
 
 Everything you write for a person to read (plan, progress notes, PR description, final summary) follows `skills/_shared/wording-standard.md` and avoids `skills/_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
 
-The **shape** of what you report follows
-`skills/user-facing-communication/SKILL.md`: lead with the outcome and
-the current state, put anything outstanding, blocked or assumed where it
-cannot be missed, name every work item as well as numbering it, and leave
-out the investigation history. It applies to every reply you write, not
-only the last one.
+The **shape** of every reply you write, not only the last one, follows
+`skills/user-facing-communication/SKILL.md`: outcome and current state
+first, anything outstanding or blocked where it cannot be missed, every
+work item named as well as numbered, no investigation history, and no
+narration of this workflow or its phases.
 
 **This workflow is fully autonomous.** Every phase flows into the next
 without pausing for user input. Opening the pull request is not a stopping
@@ -186,13 +184,13 @@ other decision below: `references/bulk-rationale.md` — not read at runtime.)
   for a story this run did not finish.
 - **One set, one session.** Do not pick a second set after finishing.
 - **Leave room for the review phases, and size the set so they fit.** Phases
-  8 and 9 hand the reading of the diff to separate contexts, so here they
-  cost the review reference, the merge mechanics, the findings returned, and
-  the fixes you apply — plus, when no agent can be spawned, the whole
-  code-review hot path inline on top of a session that has already built
-  several stories. That is the reason to stop short of the cap when the
-  stories are not small: running out of budget before the review strands
-  every story in the set at once, not just the last one.
+  8 and 9 hand the diff to a separate context, so here they cost the review
+  reference, the merge mechanics, the findings returned and the fixes you
+  apply — plus, when no agent can be spawned, the whole code-review hot path
+  inline. One reviewer rather than two, and a re-review only when the rework
+  earns one, is what keeps that affordable; stop short of the cap anyway
+  when the stories are not small, because running out of budget before the
+  review strands every story in the set at once.
 - **60-minute timeout.** Record the start time (`date +%s`); before each
   story and each phase, check the elapsed time. Past 60 minutes: commit and
   push, release the claims of the unbuilt stories, then run Phase 7 for a
@@ -219,32 +217,30 @@ stories only) or `maintenance` (bug, security, architecture, tech debt).
 
 **A set never mixes modes.** A feature bundled with an unrelated bug fix
 produces a pull request that cannot be reverted without losing one or the
-other. The mode of the lead story fixes the mode of the whole set.
-
-There is no `audit` mode here: an audit changes no code, so there is
-nothing to bundle. Use `/github-workflow:execute --mode audit` for that.
+other, so the lead story's mode fixes the mode of the whole set. There is no
+`audit` mode: an audit changes no code, so there is nothing to bundle — use
+`/github-workflow:execute --mode audit` for that.
 
 ---
 
 ## Fix in scope, file out of scope
 
 One rule governs every problem this run finds, from the first line of the
-build to the last review round. In a bulk run "in scope" is wider than
-usual, and that is deliberate:
+build to the last review round. In a bulk run "in scope" is deliberately
+wider than usual:
 
 - **In this pull request's own diff, or in any of the stories it closes** —
-  fix it here, on this branch, before the PR merges. Never file it: a
-  defect in work this run is building is this run's work to finish.
-- **Anywhere else** — a pre-existing bug in untouched code, a security or
-  architecture problem noticed in passing, a problem belonging to a story
-  that is *not* in this set — file it with `/github-workflow:report-issue`
-  and carry on. Do not fix it inline; that widens a diff the reviewers
-  already have plenty to hold.
+  fix it here, before the PR merges. A defect in work this run is building
+  is this run's work to finish, never a filing.
+- **Anywhere else** — a pre-existing bug in untouched code, a problem
+  noticed in passing, a problem belonging to a story that is *not* in this
+  set — file it with `/github-workflow:report-issue` and carry on. Fixing
+  it inline widens a diff the reviewer already has plenty to hold.
 
 Two exceptions stay filed: a finding only a person can settle (an ambiguous
-requirement, an architectural choice with several defensible answers),
-filed as the question with the PR left open on that verdict; and a story
-dropped from the set, which is backlog work rather than a review finding.
+requirement, an architectural choice with several defensible answers), with
+the PR left open on that verdict; and a story dropped from the set, which is
+backlog work rather than a review finding.
 
 ---
 
@@ -286,19 +282,16 @@ each story being in the set is recorded.
 
 Either way, **every story in the set gets a real atomic claim** before any
 code is written — the `refs/claims/issue-{number}` ref, plus
-`status-in-progress`, the `@me` assignment and the board move. A story
-being built without its own claim is a story another agent can pick up
-underneath you.
+`status-in-progress`, the `@me` assignment and the board move. A story built
+without its own claim is a story another agent can pick up underneath you.
 
 Phase 1 ends in one of three states:
 
-- **Two or more stories claimed** — continue to Phase 2 with the set in
-  build order.
+- **Two or more stories claimed** — continue to Phase 2 in build order.
 - **One story claimed** — nothing in the pool was related enough to justify
-  bundling, or only one named story survived validation. Say so plainly,
-  and run the rest of this workflow for that single story. The result is an
-  ordinary single-story pull request, which is a correct outcome rather
-  than a failed bulk run.
+  bundling, or only one named story survived validation. Say so plainly and
+  run the rest of this workflow for that single story: an ordinary
+  single-story pull request is a correct outcome, not a failed bulk run.
 - **Nothing claimed** — report why (no candidates, or every one claimed
   away) and stop.
 
@@ -398,9 +391,10 @@ For each story in order:
    `CLAUDE.md` — one responsibility per file, no domain-to-infrastructure
    imports, every module unit-testable in isolation, and a search for an
    existing utility before adding a new one.
-2. Run **Phase 5**, the quality gate, for that story.
+2. Run **Phase 5**'s per-story checks for that story.
 3. Run **Phase 6**, the commit, for that story.
-4. Push, then move to the next story.
+4. Push, then move to the next story. After the last one, run Phase 5's
+   full quality gate for the set before going on to Phase 7.
 
 Shared work — the code more than one story needs — is written once, with
 the first story that needs it, and that commit says so.
@@ -408,24 +402,32 @@ the first story that needs it, and that commit says so.
 Do not pause for user confirmation at any point: the issue requirements and
 the Phase 3 plan are the approved specification.
 
-## Phase 5 — Verify (per story)
+## Phase 5 — Verify (after each story, and once for the set)
 
-Run the quality gate command from `ClaudeProject.md` after each story:
+**After each story**, run the checks that cover what that story touched:
+the project's linter and type check, plus the test suites for the changed
+areas. Run the whole quality gate here instead whenever it is cheap, which
+for most projects it is.
 
-1. Execute the gate.
-2. If it fails: read the error output, fix the specific failing check, and
-   re-run. Repeat up to 3 times (4 runs maximum). Near the token budget or
-   the 60-minute mark, stop after 2 retries and treat it as still failing.
-3. If it is still failing after 4 runs, **stop building**. Do not start the
-   next story on a red gate: more code on top of a broken tree makes the
-   failure harder to attribute, not easier. Commit what you have, set the
-   gate-failed flag (`mkdir -p .claude && touch .claude/gate-failed.flag`,
-   because Phase 10 reads it long after this decision and a compaction in
-   between would otherwise lose it), release the claims of the unbuilt
-   stories back to the backlog (`references/set-selection.md`, **Dropping a
-   story**), and go to Phase 7. The pull request will be a real one
-   carrying the `review-changes-requested` label and a "Quality Gate
-   Failed" section, closing only the stories that were built.
+**Once, after the last story and before Phase 7 opens the pull request**,
+run the full quality gate command from `ClaudeProject.md` whatever ran
+during the build. That run is the gate: it is what sets `gate-failed.flag`
+and what Phase 10 reads. It is not optional and it is not replaced by the
+per-story checks.
+
+When either fails, read the error output, fix the failing check and re-run
+— up to 3 times, or 2 near the token budget or the 60-minute mark.
+
+Still failing after that, **stop**: on a per-story check do not start the
+next story, because more code on a red tree makes the failure harder to
+attribute. Either way, commit what you have, set the gate-failed flag
+(`mkdir -p .claude && touch .claude/gate-failed.flag`, because Phase 10
+reads it long after this decision and a compaction in between would
+otherwise lose it), release the claims of the unbuilt stories back to the
+backlog (`references/set-selection.md`, **Dropping a story**), and go to
+Phase 7. The pull request will be a real one carrying the
+`review-changes-requested` label and a "Quality Gate Failed" section,
+closing only the stories that were built.
 
 ## Phase 6 — Commit (per story)
 
@@ -445,14 +447,12 @@ duplicate detection, one pull request closing every built story, PR labels,
 the label change and board move for each issue, claim release, and the
 progress note.
 
-**Do not review your own diff anywhere in this run.** The session that
-wrote the code shares every assumption it was built on, so its verdict is
-worth little; Phase 8 gets a real one from contexts that never saw the
-build. That governs whose judgement decides this pull request, not whether
-the run continues — you still spawn the reviewers and own what they return,
-and Phase 7 hands the PR to nobody. The single exception is Phase 8's
-last-resort fallback below, used only when no separate context can be
-spawned at all, and it is disclosed rather than silent.
+**Do not review your own diff anywhere in this run.** You share every
+assumption the code was built on, so Phase 8 gets the verdict from a
+context that never saw the build. That decides whose judgement counts, not
+whether the run continues: you still spawn the reviewer, own what it
+returns, and hand the PR to nobody. The one exception is Phase 8's
+last-resort fallback, which is disclosed rather than silent.
 
 ## Phase 8 — Independent review, Phase 9 — Rework, Phase 10 — Merge
 
@@ -460,22 +460,28 @@ The moment the pull request exists, **read
 `skills/execute/references/review-and-merge.md`** and follow it to the end
 of the run, in the same turn as Phase 7, with no asking and no waiting on
 CI. That file is the single specification of the review, rework and merge
-mechanics: a review by agents in fresh contexts, a rework loop that answers
-what they found, and the merge that settles the linked issues. Read it with
-these substitutions, and nothing else changes:
+mechanics: one reviewer in a fresh context reading against a severity
+rubric, a rework loop that answers what it found, and the merge that
+settles the linked issues. Read it with these substitutions:
 
-- Where it says "the issue number and title it closes", give each reviewer
+- Where it says "the issue number and title it closes", give the reviewer
   **every** story in the set, by number and title, with its acceptance
   criteria. A reviewer who does not know a story is in scope reads its code
   as unexplained.
-- **Add one question to the first reviewer's lens**, which is the failure
-  mode specific to a bulk pull request: is there anything in this diff that
+- **Add one question to the reviewer's lens**, which is the failure mode
+  specific to a bulk pull request: is there anything in this diff that
   belongs to **none** of the listed stories? Scope creep hides far better
   in a large multi-story diff than in a single-story one. Anything that
   turns up is either removed from the branch or explained in the PR body.
+- Its **severity rubric** is unchanged for a set. A larger diff invites a
+  longer list of observations, and the rubric is what stops that: only
+  blocking findings and genuine quick fixes are raised, and an observation
+  that is neither is left unsaid.
 - Its Phase 9 fix-in-scope rule reads against **all** the stories the PR
-  closes, not one. A gap the reviewers find in any of them is this run's
-  unfinished work, and it is fixed here.
+  closes, not one. A gap the reviewer finds in any of them is this run's
+  unfinished work, and it is fixed here. Its re-review test is unchanged
+  too: quick fixes are pushed without a second reading, and only
+  substantial rework earns one round.
 - Its Phase 10 duplicate-PR merge stopper applies **per story**: a possible
   duplicate flagged against any story in the set stops the merge for the
   whole pull request, because the PR is indivisible.
@@ -483,34 +489,39 @@ these substitutions, and nothing else changes:
   already closes and moves **every** issue the pull request closes. Report
   each settled story by number and title.
 
+**The run ends at Phase 10, not at the pull request.** A bulk run that
+reports its new PR, or its review verdict, and stops has stranded every
+story in the set at once. Where merging is switched on, this run merges its
+own pull request and settles every issue behind it before reporting
+anything; where it is switched off, or a Phase 10 condition stops the merge,
+it goes as far as that condition allows and says in one line which condition
+it was. Neither outcome is reached by asking the user first.
+
 ### When no separate context can be spawned
 
 Its Phase 8 step 3 — try a general-purpose subagent, then fall back to
 running `/github-workflow:code-review {pr_number} --read-only` inline and
-recording it with `touch .claude/self-review.flag` — applies here unchanged
-in mechanism, and a bulk run is likelier to need it: this is exactly the
-long, heavily-loaded session in which spawning fails. Four things follow:
+recording it with `touch .claude/self-review.flag` — applies here unchanged,
+and a bulk run is likelier to need it: this is exactly the long,
+heavily-loaded session in which spawning fails. Three things follow:
 
-- **Carry every lens yourself, one pass each**, not one undifferentiated
-  read: correctness and story alignment against **each** story's acceptance
-  criteria; then security, error handling, test coverage and regressions;
-  then the bulk question, whether anything in this diff answers **none** of
-  the listed stories.
-- **The disclosure names the set.** Post step 3's warning on the pull
-  request and repeat it in your final report, saying which stories it closes
-  by number and title, so a reader can judge the blast radius of a verdict
-  nobody else checked.
-- **It does not stop the merge**, exactly as in `execute`. The gates that do
-  — red quality gate, unapproved verdict, red or absent CI, a duplicate
-  flagged against any story in the set — all still apply.
-- **The rework loop is unchanged.** Findings against this diff, or against
-  any story the PR closes, are fixed here. Being your own reviewer is not a
-  reason to file what you found in your own work.
+- **Carry the whole lens yourself in one deliberate pass**, in the
+  reference's order and under the same rubric, ending with the bulk
+  question. The failure mode of an inline review of a large diff is a skim
+  that reports nothing.
+- **The disclosure names the set**, on the pull request and in your final
+  report, listing the stories it closes by number and title, so a reader can
+  judge the blast radius of a verdict nobody else checked.
+- **It does not stop the merge**, exactly as in `execute`, and the rework
+  loop is unchanged: what you found in your own work is fixed here, not
+  filed. The gates that do stop a merge — red quality gate, unapproved
+  verdict, red or absent CI, a duplicate flagged against any story — all
+  still apply.
 
-Merging is opt-in and off by default: it runs only where `review.config.md`
-sets `Auto-Merge on Approval` to `enabled`. On a project that has not opted
-in, the run ends at an approved pull request waiting for a person, and that
-is a complete run rather than a failure.
+Merging is opt-in: it runs only where `review.config.md` sets `Auto-Merge on
+Approval` to `enabled`. Where it does not, the run ends at an approved pull
+request waiting for a person, which is a complete run rather than a
+failure.
 
 ---
 
