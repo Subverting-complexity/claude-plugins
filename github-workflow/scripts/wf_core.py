@@ -79,7 +79,8 @@ MAINTENANCE_CLASSIFICATIONS = frozenset({
 })
 
 
-def filter_by_native_type(candidates, mode, type_map, classification_map=None):
+def filter_by_native_type(candidates, mode, type_map, classification_map=None,
+                          project_map=None, fallback_count=None):
     """Filter candidates by native issue type (type-capable orgs).
 
     feature mode: keep only User Story.
@@ -88,25 +89,50 @@ def filter_by_native_type(candidates, mode, type_map, classification_map=None):
     When classification_map is unavailable (None), all Feature-typed
     candidates are included as a best-effort fallback.
     story mode: no filter (returns all).
+
+    An issue with no native type is not dropped: it falls back to the type
+    its own `type-*` label or `[PREFIX]` title claims (`declared_kind()`),
+    the same classification the label path (`_filter_by_mode`) would use.
+    Without this, an untyped issue on a type-capable org silently vanishes
+    from `feature`/`maintenance` mode — `story` mode is unaffected, which is
+    why the gap went unnoticed on orgs with zero typed issues. `fallback_count`,
+    when passed a list, records the number of each classified this way so the
+    caller can report it rather than let it pass silently.
     """
     if mode == 'story':
         return list(candidates)
     result = []
     for c in candidates:
         native_type = type_map.get(c['number'])
+        classification = classification_map.get(c['number']) if classification_map else None
+        used_fallback = False
         if not native_type:
-            continue
+            kind, _source = declared_kind(c.get('title'), c.get('labels'), project_map)
+            if not kind:
+                continue  # genuinely unclassifiable: no native type, label, or title prefix
+            mapped = NATIVE_TYPE_MAP.get(kind)
+            if not mapped:
+                continue
+            native_type = mapped['type']
+            classification = mapped['classification']
+            used_fallback = True
         if mode == 'feature':
             if native_type in NATIVE_FEATURE_TYPES:
                 result.append(c)
+                if used_fallback and fallback_count is not None:
+                    fallback_count.append(c['number'])
         elif mode == 'maintenance':
             if native_type in NATIVE_MAINTENANCE_TYPES:
                 result.append(c)
+                if used_fallback and fallback_count is not None:
+                    fallback_count.append(c['number'])
             elif native_type in NATIVE_MAINTENANCE_CLASSIFIABLE_TYPES:
-                if classification_map is None:
+                if classification_map is None and not used_fallback:
                     result.append(c)
-                elif classification_map.get(c['number']) in MAINTENANCE_CLASSIFICATIONS:
+                elif classification in MAINTENANCE_CLASSIFICATIONS:
                     result.append(c)
+                    if used_fallback and fallback_count is not None:
+                        fallback_count.append(c['number'])
     return result
 
 
@@ -143,7 +169,7 @@ def select_story(candidates, mode='story', agent_gating='disabled', project_map=
 
 
 def select_pool(candidates, mode='story', agent_gating='disabled', project_map=None,
-                type_map=None, classification_map=None):
+                type_map=None, classification_map=None, fallback_count=None):
     """The ordered, filtered candidate list (best first). Empty list if none.
 
     `project_map` is the ClaudeProject.md label map; every label the filters and
@@ -157,10 +183,14 @@ def select_pool(candidates, mode='story', agent_gating='disabled', project_map=N
     query. When set, mode filtering uses ``filter_by_native_type`` instead of
     the label-based ``_filter_by_mode``. `classification_map` is an optional
     companion dict of ``{issue_number: classification_option_name}`` for
-    refining Feature-typed issues in maintenance mode.
+    refining Feature-typed issues in maintenance mode. `fallback_count`, when
+    passed a list, is appended with the number of each candidate that
+    `filter_by_native_type` classified via its `type-*` label or `[PREFIX]`
+    title rather than a native type, so the caller can report it.
     """
     if type_map and mode != 'story':
-        pool = filter_by_native_type(candidates, mode, type_map, classification_map)
+        pool = filter_by_native_type(candidates, mode, type_map, classification_map,
+                                     project_map, fallback_count)
     else:
         pool = _filter_by_mode(candidates, mode, project_map)
     pool = _filter_refinement(pool, project_map)

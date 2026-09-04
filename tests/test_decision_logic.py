@@ -794,6 +794,66 @@ class TestNativeTypeFiltering(unittest.TestCase):
         result = filter_by_native_type(candidates, 'feature', self.TYPE_MAP)
         self.assertEqual(result, [])
 
+    # Fallback: an issue with no native type is classified through its own
+    # type-* label or [PREFIX] title (declared_kind), not silently dropped.
+    # Regression guard for the bug where feature/maintenance mode returned
+    # nothing at all on an org where no issue had a native type set yet.
+
+    def test_untyped_candidate_falls_back_to_type_label_feature(self):
+        candidates = [_issue(99, ['type-story'])]
+        result = filter_by_native_type(candidates, 'feature', self.TYPE_MAP)
+        self.assertEqual([c['number'] for c in result], [99])
+
+    def test_untyped_candidate_falls_back_to_type_label_maintenance(self):
+        candidates = [_issue(99, ['type-bug'])]
+        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)
+        self.assertEqual([c['number'] for c in result], [99])
+
+    def test_untyped_candidate_falls_back_to_title_prefix(self):
+        candidates = [dict(_issue(99, []), title='[BUG] Crash on save')]
+        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)
+        self.assertEqual([c['number'] for c in result], [99])
+
+    def test_untyped_candidate_falls_back_to_debt_label_maintenance(self):
+        """A type-debt label maps to native Feature + Tech Debt classification."""
+        candidates = [_issue(99, ['type-debt'])]
+        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)
+        self.assertEqual([c['number'] for c in result], [99])
+
+    def test_untyped_candidate_with_no_declared_kind_still_excluded(self):
+        """No native type, no type-* label, no [PREFIX] title: genuinely unclassifiable."""
+        candidates = [_issue(99, ['priority-high'])]
+        result = filter_by_native_type(candidates, 'feature', self.TYPE_MAP)
+        self.assertEqual(result, [])
+
+    def test_untyped_candidate_wrong_kind_excluded_from_mode(self):
+        """A type-story fallback does not qualify for maintenance mode."""
+        candidates = [_issue(99, ['type-story'])]
+        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)
+        self.assertEqual(result, [])
+
+    def test_fallback_count_records_only_fallback_classified_numbers(self):
+        fallback = []
+        candidates = [_issue(1, []), _issue(99, ['type-story'])]
+        result = filter_by_native_type(candidates, 'feature', self.TYPE_MAP,
+                                       fallback_count=fallback)
+        self.assertEqual([c['number'] for c in result], [1, 99])
+        self.assertEqual(fallback, [99])
+
+    def test_fallback_count_untouched_when_no_fallback_used(self):
+        fallback = []
+        candidates = [_issue(1, [])]
+        filter_by_native_type(candidates, 'feature', self.TYPE_MAP, fallback_count=fallback)
+        self.assertEqual(fallback, [])
+
+    def test_select_pool_reports_fallback_count(self):
+        fallback = []
+        candidates = [_issue(1, []), _issue(99, ['type-bug'])]
+        pool = select_pool(candidates, mode='maintenance', type_map=self.TYPE_MAP,
+                           fallback_count=fallback)
+        self.assertEqual({c['number'] for c in pool}, {99})
+        self.assertEqual(fallback, [99])
+
     def test_select_pool_uses_type_map_when_provided(self):
         """select_pool routes through native-type filter when type_map is set."""
         candidates = [
