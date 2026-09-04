@@ -1216,5 +1216,55 @@ class TestSpecCycles(unittest.TestCase):
         self.assertEqual(wf_core.spec_cycles(entries), [])
 
 
+class TestSpecLevels(unittest.TestCase):
+    """Aliases cannot reference each other, so parents must land a request early."""
+
+    def test_a_tree_splits_into_one_level_per_generation(self):
+        entries = [{'key': 'epic'}, {'key': 'f1', 'parent': 'epic'},
+                   {'key': 's1', 'parent': 'f1'}]
+        levels, unplaceable = wf_core.spec_levels(entries)
+        self.assertEqual([[e['key'] for e in l] for l in levels],
+                         [['epic'], ['f1'], ['s1']])
+        self.assertEqual(unplaceable, [])
+
+    def test_siblings_share_a_level_so_they_share_a_request(self):
+        entries = [{'key': 'epic'}, {'key': 'a', 'parent': 'epic'},
+                   {'key': 'b', 'parent': 'epic'}]
+        levels, _ = wf_core.spec_levels(entries)
+        self.assertEqual(len(levels), 2)
+        self.assertEqual([e['key'] for e in levels[1]], ['a', 'b'])
+
+    def test_a_parent_outside_the_spec_is_a_root_here(self):
+        """An existing epic already has a node id; nothing has to be created first."""
+        levels, _ = wf_core.spec_levels([{'key': 'a', 'parent': 186}])
+        self.assertEqual(len(levels), 1)
+
+    def test_an_existing_issue_can_parent_a_new_one_within_the_spec(self):
+        entries = [{'number': 42}, {'key': 'child', 'parent': 42}]
+        levels, _ = wf_core.spec_levels(entries)
+        self.assertEqual([[e.get('key') or e['number'] for e in l] for l in levels],
+                         [[42], ['child']])
+
+    def test_a_parent_cycle_is_reported_rather_than_looped_over(self):
+        entries = [{'key': 'a', 'parent': 'b'}, {'key': 'b', 'parent': 'a'}]
+        levels, unplaceable = wf_core.spec_levels(entries)
+        self.assertEqual(levels, [])
+        self.assertEqual(len(unplaceable), 2)
+
+
+class TestBatchEntries(unittest.TestCase):
+    """The node cap is a named constant, and it actually splits."""
+
+    def test_a_level_within_the_cap_is_one_request(self):
+        items = list(range(wf_core.BATCH_MAX_NODES))
+        self.assertEqual(len(wf_core.batch_entries(items)), 1)
+
+    def test_one_over_the_cap_becomes_two_requests(self):
+        items = list(range(wf_core.BATCH_MAX_NODES + 1))
+        chunks = wf_core.batch_entries(items)
+        self.assertEqual(len(chunks), 2)
+        self.assertEqual(sum(len(c) for c in chunks), len(items))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

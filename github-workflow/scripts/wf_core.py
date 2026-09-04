@@ -530,6 +530,66 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
     return errors, skipped, plans
 
 
+# How many issues ride in one aliased multi-mutation. GraphQL caps the nodes a
+# single request may address, and a whole backlog in one document would trip it,
+# so a large spec is split into several requests rather than failing at the
+# limit. Twenty is comfortably inside GitHub's cap while still turning a
+# thirteen-issue epic tree into three requests.
+BATCH_MAX_NODES = 20
+
+
+def batch_entries(items, size=BATCH_MAX_NODES):
+    """Split a level into requests of at most `size` entries."""
+    size = size if size and size > 0 else len(items) or 1
+    return [list(items[i:i + size]) for i in range(0, len(items), size)]
+
+
+def _entry_refs(entry):
+    """Every name this entry answers to: its spec key, and its number both ways."""
+    refs = []
+    if entry.get('key') is not None:
+        refs.append(entry['key'])
+    if entry.get('number') is not None:
+        refs.extend([entry['number'], str(entry['number'])])
+    return refs
+
+
+def spec_levels(entries):
+    """Group entries into hierarchy levels, parents before children.
+
+    Aliased multi-mutations cannot reference each other's output, so a child's
+    `parentIssueId` only exists once its parent's batch has come back. Level 0
+    is everything whose parent is absent or lives outside this spec; each later
+    level is the entries whose parent landed in the level before it.
+
+    Returns (levels, unplaceable). `unplaceable` is the entries in a parent
+    cycle — a different fault from `spec_cycles`, which looks at `blocked_by`,
+    and one that no amount of retrying would resolve.
+
+    This is a level assignment rather than the flat build order
+    `plan_bulk_order()` produces, and it is keyed on spec-local `key`s that
+    have no issue number yet, so it is a separate walk rather than a second
+    copy of one.
+    """
+    by_ref = {}
+    for entry in entries:
+        for ref in _entry_refs(entry):
+            by_ref[ref] = entry
+
+    levels, placed, remaining = [], set(), list(entries)
+    while remaining:
+        layer = [e for e in remaining
+                 if e.get('parent') is None
+                 or e.get('parent') not in by_ref
+                 or id(by_ref[e['parent']]) in placed]
+        if not layer:
+            break
+        placed.update(id(e) for e in layer)
+        levels.append(layer)
+        remaining = [e for e in remaining if id(e) not in placed]
+    return levels, remaining
+
+
 def spec_cycles(entries):
     """Dependency cycles within a spec, as lists of entry references.
 

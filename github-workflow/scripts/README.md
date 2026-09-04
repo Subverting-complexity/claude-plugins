@@ -158,6 +158,8 @@ each described as optional — and the measured result of "optional" in one
 consuming repo was 7 typed issues out of 82, no field values at all, and no
 error anywhere. So the command is deliberately strict.
 
+A spec can describe a whole epic tree, and one invocation applies all of it.
+
 ### The spec
 
 A JSON object with an `issues` list (a bare list is accepted too). An entry
@@ -204,6 +206,37 @@ Created numbers are **written back into the spec file**, which is what makes a
 re-run after a partial failure complete the remainder rather than creating
 everything a second time.
 
+### How a tree is applied
+
+Aliased multi-mutations let many issues be created in one request, but an alias
+cannot reference another alias's output — so a child's `parentIssueId` only
+exists once its parent's request has come back. The command therefore works in
+**hierarchy levels**, parents before children, and puts the dependency edges
+last:
+
+| Phase | Requests | What happens |
+| ----- | -------- | ------------ |
+| Prerequisite | 1 query | The repository id, every label id, and the node id of every issue the spec references but does not create — one lookup, not three. |
+| Per level | 1 mutation per `wf_core.BATCH_MAX_NODES` entries | Every issue at that level is created in one aliased `createIssue`. |
+| Link | 1 mutation per `BATCH_MAX_NODES` operations | Every `blocked_by` edge, plus any body whose `## Dependencies` section could not be written at create time. |
+
+Edges come last so an edge may point at **any** issue in the tree regardless of
+level, including one created in the final batch.
+
+An epic with three features and nine stories is therefore **four mutations**
+(three levels plus the link phase) on top of the one prerequisite lookup, rather
+than the hundred-odd round trips a per-issue loop would take. There is a test
+that asserts exactly that count against a recorded transport, because it is the
+kind of property that silently regresses.
+
+Each `createIssue` asks for the full issue selection in its own payload, so
+GitHub returns the issue **as it now holds it** — verification comes back with
+the create rather than costing a round trip of its own.
+
+Updates are not batched. An update has to read the issue first to decide what
+differs, and the levels only exist to make creation possible; a re-applied spec
+is dominated by no-ops in any case.
+
 ### What it refuses, and why
 
 Everything decidable offline is decided before the first mutation, because a
@@ -217,7 +250,10 @@ half-applied epic tree is far harder to reason about than a refused spec:
   is the list.
 - **A placeholder** (`TODO`) counts as missing, so an audit's proposal cannot
   quietly pass as a value.
-- **A dependency cycle** within the spec exits 22 before anything is written.
+- **A dependency cycle** within the spec exits 22 before anything is written,
+  and so does a **parent cycle** — a different fault, and equally unresolvable.
+- **A label or referenced issue that does not exist** in the repo exits 22,
+  named, before the first mutation.
 - **A field this org does not define** is skipped, not an error — an org is
   allowed fewer fields than the default inventory. It is reported once for the
   run on stderr, not once per issue.
@@ -235,9 +271,18 @@ unblocks, so dropping it would silently break auto-unblocking.
 
 An accepted mutation is not a changed value — an unpinned field or a
 permission that stops short of writing both return success. So the command
-re-reads each issue and compares it to the spec, and exits 23 `verify-failed`
-naming each mismatch. The issues still exist; the command is telling you the
-metadata did not land.
+compares every issue against the spec and exits 23 `verify-failed` naming each
+mismatch. The issues still exist; the command is telling you the metadata did
+not land.
+
+### Partial failure is reported, not swallowed
+
+A batch answers a partial failure with the aliases that worked and an error
+carrying the path of each one that did not, so one bad entry does not take its
+neighbours down with it. The command exits 24 `partial`, names the entries that
+failed, and writes the numbers of the ones that landed back into the spec —
+which turns them into no-op updates, so re-running the same spec completes the
+remainder rather than creating anything twice.
 
 ## Settling a merged PR — `post-merge`
 

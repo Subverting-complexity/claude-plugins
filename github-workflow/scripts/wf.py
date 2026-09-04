@@ -682,9 +682,10 @@ def cmd_org_capabilities(args):
 # refuses a spec that omits metadata the org defines, and it reads every write
 # back rather than trusting that an accepted mutation did something.
 
-ISSUE_READBACK_QUERY = (
-    'query($owner:String!,$repo:String!,$number:Int!){'
-    ' repository(owner:$owner,name:$repo){ issue(number:$number){'
+# The selection every read-back uses. A mutation payload can carry it too, so
+# `createIssue` returns the issue *as GitHub now holds it* — which turns
+# verification from an extra round trip per issue into a free one.
+ISSUE_SELECTION = (
     '  id number title body'
     '  issueType { name }'
     '  parent { number }'
@@ -698,6 +699,12 @@ ISSUE_READBACK_QUERY = (
     '   ... on IssueFieldDateValue { field { ... on IssueFieldDate { name } } value }'
     '   ... on IssueFieldNumberValue { field { ... on IssueFieldNumber { name } } value }'
     '  } }'
+)
+
+ISSUE_READBACK_QUERY = (
+    'query($owner:String!,$repo:String!,$number:Int!){'
+    ' repository(owner:$owner,name:$repo){ issue(number:$number){'
+    + ISSUE_SELECTION +
     ' } } }'
 )
 
@@ -745,33 +752,52 @@ def _values_match(wanted, actual):
     return str(wanted) == str(actual)
 
 
-def resolve_repo_id(cfg, repo=None):
+def resolve_spec_context(cfg, label_names, numbers, repo=None):
+    """One lookup for everything the batches need before they can be built.
+
+    The repository's node id, the id of every label the spec names, and the
+    node id of every issue the spec references but does not create. Doing this
+    as one query rather than three keeps the whole prerequisite phase to a
+    single round trip, which is what leaves room for the epic tree itself.
+
+    Returns (ok, context, err).
+    """
     owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
+    wanted = sorted({int(n) for n in numbers})
+    aliases = [('n%d' % n, n) for n in wanted]
+    issue_parts = ' '.join('%s: issue(number:%d){ id number }' % (alias, number)
+                           for alias, number in aliases)
     ok, data, err = gh_graphql(
-        'query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ id } }',
+        'query($owner:String!,$repo:String!){'
+        ' repository(owner:$owner,name:$repo){ id'
+        ' labels(first:100){ nodes { id name } } %s } }' % issue_parts,
         owner=owner, repo=name)
     if not ok:
         return False, None, err
-    rid = ((data or {}).get('repository') or {}).get('id')
-    return (True, rid, '') if rid else (False, None, 'repository %s/%s not found'
-                                        % (owner, name))
 
+    repository = (data or {}).get('repository')
+    if not repository:
+        return False, None, 'repository %s/%s not found' % (owner, name)
 
-def resolve_label_ids(cfg, names, repo=None):
-    """Label name → node id for the names given. (ok, {name: id}, missing, err)."""
-    if not names:
-        return True, {}, [], ''
-    owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
-    ok, data, err = gh_graphql(
-        'query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){'
-        ' labels(first:100){ nodes { id name } } } }',
-        owner=owner, repo=name)
-    if not ok:
-        return False, {}, [], err
-    have = {n['name']: n['id']
-            for n in (((data or {}).get('repository') or {}).get('labels') or {}).get('nodes') or []}
-    resolved = {n: have[n] for n in names if n in have}
-    return True, resolved, [n for n in names if n not in have], ''
+    have_labels = {n['name']: n['id'] for n
+                   in (repository.get('labels') or {}).get('nodes') or []}
+    issues = {}
+    missing_issues = []
+    for alias, number in aliases:
+        node = repository.get(alias)
+        if node:
+            issues[number] = node['id']
+        else:
+            missing_issues.append(number)
+
+    return True, {
+        'repo_id': repository['id'],
+        'repo': '%s/%s' % (owner, name),
+        'labels': {n: have_labels[n] for n in label_names if n in have_labels},
+        'missing_labels': [n for n in label_names if n not in have_labels],
+        'issues': issues,
+        'missing_issues': missing_issues,
+    }, ''
 
 
 def _mutation_result(code, out, err, path):
@@ -805,36 +831,82 @@ def _graphql_json(query, variables):
     return code, out, err
 
 
-def create_issue(cfg, repo_id, entry, plan, caps, parent_id=None, label_ids=()):
-    """One `createIssue` carrying everything. Returns (ok, {number, id}, err).
+def _batch_result(code, out, err, aliases, field='issue'):
+    """Unwrap an aliased multi-mutation. Returns {alias: (ok, node, err)}.
 
-    Everything in one mutation because `CreateIssueInput` accepts it: title,
-    body, labels, native type, parent and every field value. The alternative is
-    a create followed by a mutation per property, which is where the metadata
-    used to get lost.
+    GraphQL answers a partial failure with the aliases that worked in `data`
+    and an error carrying the path of each one that did not, so a batch reports
+    per-entry outcomes rather than collapsing to one verdict. That is what lets
+    the caller say which issues landed.
     """
-    fields = [f['input'] for f in plan['fields'].values()]
-    args = {'repositoryId': repo_id, 'title': entry.get('title') or ''}
-    body = entry.get('body')
-    if body:
-        args['body'] = body
-    if plan['type']:
-        args['issueTypeId'] = caps['type_map'][plan['type']]
-    if parent_id:
-        args['parentIssueId'] = parent_id
+    try:
+        parsed = json.loads(out) if (out or '').strip() else None
+    except json.JSONDecodeError as exc:
+        parsed = None
+        err = 'could not parse GraphQL JSON: %s' % exc
+    data = (parsed or {}).get('data') or {}
+    by_alias = {}
+    for entry in (parsed or {}).get('errors') or []:
+        path = entry.get('path') or []
+        if path:
+            by_alias.setdefault(path[0], entry.get('message', 'mutation failed'))
 
-    # `labelIds` and `issueFields` are lists, which `_graphql_args` cannot type
-    # as scalars, so the whole input rides as a JSON variable instead.
-    if label_ids:
-        args['labelIds'] = list(label_ids)
-    if fields:
-        args['issueFields'] = fields
+    out_map = {}
+    for alias in aliases:
+        node = (data.get(alias) or {}).get(field) if data.get(alias) else None
+        if node:
+            out_map[alias] = (True, node, '')
+        else:
+            out_map[alias] = (False, None, by_alias.get(alias)
+                              or (err or '').strip()
+                              or ('mutation failed' if code else 'mutation returned nothing'))
+    return out_map
 
-    code, out, err = _graphql_json(
-        'mutation($input:CreateIssueInput!){'
-        ' createIssue(input:$input){ issue { id number } } }',
-        {'input': args})
-    return _mutation_result(code, out, err, ['createIssue', 'issue'])
+
+def send_create_batch(inputs):
+    """Create many issues in one request. Returns {alias: (ok, issue, err)}.
+
+    Aliases cannot reference each other's output, which is exactly why the
+    caller batches by hierarchy level: everything in one request is independent
+    of everything else in it.
+    """
+    aliases = ['a%d' % n for n in range(len(inputs))]
+    decls = ','.join('$%s:CreateIssueInput!' % a for a in aliases)
+    body = ' '.join('%s: createIssue(input:$%s){ issue { %s } }'
+                    % (a, a, ISSUE_SELECTION) for a in aliases)
+    code, out, err = _graphql_json('mutation(%s){ %s }' % (decls, body),
+                                   dict(zip(aliases, inputs)))
+    return _batch_result(code, out, err, aliases)
+
+
+def send_link_batch(ops):
+    """Apply dependency edges and body rewrites in one request.
+
+    `ops` are (alias, kind, variables) with kind `'blocked-by'` or `'body'`.
+    Both kinds ride together because they are the same phase: the last one,
+    once every issue in the spec exists and every reference resolves.
+    """
+    decls, body, aliases = [], [], []
+    variables = {}
+    for alias, kind, args in ops:
+        aliases.append(alias)
+        if kind == 'blocked-by':
+            decls.append('$%s_i:ID!,$%s_b:ID!' % (alias, alias))
+            body.append('%s: addBlockedBy(input:{issueId:$%s_i,blockingIssueId:$%s_b})'
+                        '{ issue { id blockedBy(first:50){ nodes { number } } } }'
+                        % (alias, alias, alias))
+            variables['%s_i' % alias] = args['issue_id']
+            variables['%s_b' % alias] = args['blocking_id']
+        else:
+            decls.append('$%s_i:ID!,$%s_t:String!' % (alias, alias))
+            body.append('%s: updateIssue(input:{id:$%s_i,body:$%s_t})'
+                        '{ issue { id body } }' % (alias, alias, alias))
+            variables['%s_i' % alias] = args['issue_id']
+            variables['%s_t' % alias] = args['body']
+    code, out, err = _graphql_json('mutation(%s){ %s }' % (','.join(decls),
+                                                           ' '.join(body)),
+                                   variables)
+    return _batch_result(code, out, err, aliases)
 
 
 def set_issue_type(issue_id, type_id):
@@ -866,20 +938,18 @@ def add_blocked_by(issue_id, blocking_id):
     return _mutation_result(code, out, err, ['addBlockedBy', 'issue'])
 
 
-def verify_issue(cfg, number, plan, expect_type=None, expect_parent=None,
-                 expect_blocked_by=(), repo=None):
-    """Read the issue back and compare it to what the spec asked for.
+def issue_mismatches(number, issue, plan, expect_type=None, expect_parent=None,
+                     expect_blocked_by=()):
+    """Compare an issue as GitHub holds it against what the spec asked for.
 
-    A mutation that GitHub accepts is not the same as a mutation that changed
-    anything — an unpinned field, a silently-ignored id, a permission that
-    stops short of writing. Every mismatch is named, because "the write
-    succeeded and the value is not there" is precisely the failure that went
-    unnoticed for months.
+    A mutation GitHub accepts is not a value GitHub stored — an unpinned field,
+    a silently-ignored id, a permission that stops short of writing. Every
+    mismatch is named, because "the write succeeded and the value is not there"
+    is precisely the failure that went unnoticed for months.
+
+    Pure, so it serves both a read-back query and a mutation payload that
+    carried the same selection.
     """
-    ok, issue, err = read_issue(cfg, number, repo)
-    if not ok:
-        return False, ['#%s: could not read back: %s' % (number, err)]
-
     mismatches = []
     if expect_type:
         got = (issue.get('issueType') or {}).get('name')
@@ -899,12 +969,22 @@ def verify_issue(cfg, number, plan, expect_type=None, expect_parent=None,
             mismatches.append('#%s: parent is %s, expected #%s'
                               % (number, '#%s' % got if got else 'unset', expect_parent))
 
-    if expect_blocked_by:
-        have = {n['number'] for n in (issue.get('blockedBy') or {}).get('nodes') or []}
-        for want in expect_blocked_by:
-            if want not in have:
-                mismatches.append('#%s: missing blocked-by edge to #%s' % (number, want))
+    have = {n['number'] for n in (issue.get('blockedBy') or {}).get('nodes') or []}
+    for want in expect_blocked_by or ():
+        if want not in have:
+            mismatches.append('#%s: missing blocked-by edge to #%s' % (number, want))
 
+    return mismatches
+
+
+def verify_issue(cfg, number, plan, expect_type=None, expect_parent=None,
+                 expect_blocked_by=(), repo=None):
+    """Read the issue back and compare it. Returns (passed, mismatches)."""
+    ok, issue, err = read_issue(cfg, number, repo)
+    if not ok:
+        return False, ['#%s: could not read back: %s' % (number, err)]
+    mismatches = issue_mismatches(number, issue, plan, expect_type,
+                                  expect_parent, expect_blocked_by)
     return not mismatches, mismatches
 
 
@@ -974,144 +1054,251 @@ def _resolve_reference(ref, resolved):
     return resolved.get(ref)
 
 
-def apply_entry(cfg, caps, entry, plan, repo_id, resolved, repo=None):
-    """Create or update one issue, then read it back. Returns a result dict.
+def _blockers(entry, resolved):
+    """(resolved numbers, references that resolve to nothing)."""
+    numbers, unresolved = [], []
+    for ref in entry.get('blocked_by') or []:
+        number = _resolve_reference(ref, resolved)
+        (numbers if number is not None else unresolved).append(
+            number if number is not None else ref)
+    return numbers, unresolved
 
-    A create is a single `createIssue` carrying everything the spec asked for.
-    An update sets only what actually differs, so re-running a spec is a no-op
-    rather than a rewrite — which is what makes recovering from a partial
-    failure safe.
+
+def _result(entry, action):
+    return {'entry': wf_core.entry_label(entry), 'key': entry.get('key'),
+            'action': action, 'number': entry.get('number'), 'changed': [],
+            'errors': [], 'mismatches': []}
+
+
+def _parent_id(entry, resolved, node_ids):
+    """(parent number, parent node id, err). (None, None, '') when there is none."""
+    if entry.get('parent') is None:
+        return None, None, ''
+    number = _resolve_reference(entry['parent'], resolved)
+    if number is None:
+        return None, None, ('parent %r is neither an issue number nor a key in '
+                            'this spec' % entry['parent'])
+    node_id = node_ids.get(number)
+    if not node_id:
+        return number, None, 'parent #%s could not be resolved' % number
+    return number, node_id, ''
+
+
+def _create_input(cfg, ctx, caps, entry, plan, parent_id, body):
+    args = {'repositoryId': ctx['repo_id'], 'title': entry.get('title') or ''}
+    if body:
+        args['body'] = body
+    if plan['type']:
+        args['issueTypeId'] = caps['type_map'][plan['type']]
+    if parent_id:
+        args['parentIssueId'] = parent_id
+    label_ids = sorted(ctx['labels'][label(cfg, l)]
+                       for l in entry.get('labels') or [])
+    if label_ids:
+        args['labelIds'] = label_ids
+    fields = [f['input'] for f in plan['fields'].values()]
+    if fields:
+        args['issueFields'] = fields
+    return args
+
+
+def create_level(cfg, ctx, caps, plans, resolved, node_ids):
+    """Create one hierarchy level, in batches. Returns a result per plan.
+
+    Everything in a level is independent of everything else in it, which is
+    what makes one aliased request correct: no alias needs another alias's
+    output. A level of thirteen and a level of one cost the same one round
+    trip, capped by `wf_core.BATCH_MAX_NODES`.
     """
-    name = wf_core.entry_label(entry)
-    result = {'entry': name, 'key': entry.get('key'), 'action': None,
-              'number': entry.get('number'), 'changed': [], 'errors': []}
+    results, ready, pending = {}, [], []
+    for plan in plans:
+        entry = plan['entry']
+        result = _result(entry, 'create')
+        results[id(entry)] = result
 
-    parent_number = _resolve_reference(entry.get('parent'), resolved) \
-        if entry.get('parent') is not None else None
-    parent_id = None
-    if parent_number:
-        ok, parent, err = read_issue(cfg, parent_number, repo)
-        if not ok:
-            result['errors'].append("parent #%s: %s" % (parent_number, err))
-            return result
-        parent_id = parent['id']
+        parent_number, parent_id, err = _parent_id(entry, resolved, node_ids)
+        if err:
+            result['errors'].append(err)
+            continue
+        result['parent_number'] = parent_number
 
-    label_names = [label(cfg, l) for l in (entry.get('labels') or [])]
-    ok, label_ids, missing, err = resolve_label_ids(cfg, label_names, repo)
+        numbers, _unresolved = _blockers(entry, resolved)
+        # Only the blockers that already have numbers can go in the body now.
+        # The rest are patched in the link phase, once every issue exists.
+        body = ensure_dependency_section(entry.get('body'), numbers)
+        result['sent_body'] = body
+        ready.append(_create_input(cfg, ctx, caps, entry, plan, parent_id, body))
+        pending.append((plan, result))
+
+    for chunk_start in range(0, len(pending), wf_core.BATCH_MAX_NODES):
+        window = slice(chunk_start, chunk_start + wf_core.BATCH_MAX_NODES)
+        outcomes = send_create_batch(ready[window])
+        for offset, (plan, result) in enumerate(pending[window]):
+            ok, issue, err = outcomes['a%d' % offset]
+            if not ok:
+                result['errors'].append('create failed: %s' % err)
+                continue
+            result['number'] = issue['number']
+            result['issue_id'] = issue['id']
+            result['issue'] = issue
+            result['changed'] = ['created']
+            node_ids[issue['number']] = issue['id']
+            if plan['entry'].get('key'):
+                resolved[plan['entry']['key']] = issue['number']
+            plan['entry']['number'] = issue['number']
+            # The create payload carried the full selection, so the issue is
+            # verified here without a second round trip.
+            result['mismatches'] = issue_mismatches(
+                issue['number'], issue, plan, expect_type=plan['type'],
+                expect_parent=result.get('parent_number'))
+
+    return [results[id(p['entry'])] for p in plans]
+
+
+def update_entry(cfg, ctx, caps, plan, resolved, node_ids):
+    """Bring an existing issue in line with the spec, setting only what differs.
+
+    An update that changes nothing is what makes re-running a spec safe, so
+    every property is compared before it is written.
+    """
+    entry = plan['entry']
+    result = _result(entry, 'update')
+    repo = ctx['repo']
+
+    parent_number, parent_id, err = _parent_id(entry, resolved, node_ids)
+    if err:
+        result['errors'].append(err)
+        return result
+    result['parent_number'] = parent_number
+
+    ok, current, err = read_issue(cfg, entry['number'], repo)
     if not ok:
-        result['errors'].append('label lookup failed: %s' % err)
+        result['errors'].append(err)
         return result
-    if missing:
-        result['errors'].append('labels do not exist in this repo: %s'
-                                % ', '.join(missing))
-        return result
+    result['issue_id'] = current['id']
+    result['issue'] = current
+    node_ids[int(entry['number'])] = current['id']
 
-    blocked_numbers = [_resolve_reference(b, resolved)
-                       for b in (entry.get('blocked_by') or [])]
-    if any(b is None for b in blocked_numbers):
-        unresolved = [b for b, n in zip(entry.get('blocked_by') or [], blocked_numbers)
-                      if n is None]
-        result['errors'].append('blocked-by references nothing in this spec or repo: %s'
-                                % ', '.join(str(u) for u in unresolved))
-        return result
-
-    body = ensure_dependency_section(entry.get('body'), blocked_numbers)
-    entry = dict(entry, body=body)
-
-    if not entry.get('number'):
-        result['action'] = 'create'
-        ok, issue, err = create_issue(cfg, repo_id, entry, plan, caps,
-                                      parent_id=parent_id,
-                                      label_ids=sorted(label_ids.values()))
+    if plan['type'] and (current.get('issueType') or {}).get('name') != plan['type']:
+        ok, _, err = set_issue_type(current['id'], caps['type_map'][plan['type']])
         if not ok:
-            result['errors'].append('create failed: %s' % err)
+            result['errors'].append('set type failed: %s' % err)
             return result
-        result['number'] = issue['number']
-        result['issue_id'] = issue['id']
-        result['changed'] = ['created']
-        if entry.get('key'):
-            resolved[entry['key']] = issue['number']
-    else:
-        result['action'] = 'update'
-        ok, current, err = read_issue(cfg, entry['number'], repo)
+        result['changed'].append('type')
+
+    have = issue_field_values(current)
+    stale = [f['input'] for name, f in plan['fields'].items()
+             if not _values_match(f['value'], have.get(name))]
+    if stale:
+        ok, _, err = set_issue_fields(current['id'], stale)
         if not ok:
-            result['errors'].append(err)
+            result['errors'].append('set fields failed: %s' % err)
             return result
-        result['issue_id'] = current['id']
+        result['changed'].append('fields')
 
-        if plan['type'] and (current.get('issueType') or {}).get('name') != plan['type']:
-            ok, _, err = set_issue_type(current['id'], caps['type_map'][plan['type']])
-            if not ok:
-                result['errors'].append('set type failed: %s' % err)
-                return result
-            result['changed'].append('type')
-
-        have = issue_field_values(current)
-        stale = [f['input'] for name_, f in plan['fields'].items()
-                 if not _values_match(f['value'], have.get(name_))]
-        if stale:
-            ok, _, err = set_issue_fields(current['id'], stale)
-            if not ok:
-                result['errors'].append('set fields failed: %s' % err)
-                return result
-            result['changed'].append('fields')
-
-        if parent_id and (current.get('parent') or {}).get('number') != parent_number:
-            ok, _, err = add_sub_issue(parent_id, current['id'])
-            if not ok:
-                result['errors'].append('set parent failed: %s' % err)
-                return result
-            result['changed'].append('parent')
-
-        if body and body != (current.get('body') or body):
-            code, _, berr = run(['gh', 'issue', 'edit', str(entry['number']),
-                                 '--repo', repo or '%s/%s' % (cfg['org'], cfg['repo']),
-                                 '--body', body])
-            if code != 0:
-                result['errors'].append('body update failed: %s' % berr.strip())
-                return result
-            result['changed'].append('body')
-
-        wanted_labels = set(label_ids)
-        current_labels = {n['name'] for n in (current.get('labels') or {}).get('nodes') or []}
-        add = sorted(wanted_labels - current_labels)
-        if add:
-            code, _, lerr = run(['gh', 'issue', 'edit', str(entry['number']),
-                                 '--repo', repo or '%s/%s' % (cfg['org'], cfg['repo'])]
-                                + sum((['--add-label', n] for n in add), []))
-            if code != 0:
-                result['errors'].append('label update failed: %s' % lerr.strip())
-                return result
-            result['changed'].append('labels')
-
-    # Native blocked-by edges, alongside the body prose written above. Both are
-    # deliberate: the edge is what the portal and the audit read, the prose is
-    # what `wf_core.parse_dependencies()` reads to decide when to unblock.
-    if blocked_numbers:
-        ok, current, err = read_issue(cfg, result['number'], repo)
+    if parent_id and (current.get('parent') or {}).get('number') != parent_number:
+        ok, _, err = add_sub_issue(parent_id, current['id'])
         if not ok:
-            result['errors'].append(err)
+            result['errors'].append('set parent failed: %s' % err)
             return result
-        have = {n['number'] for n in (current.get('blockedBy') or {}).get('nodes') or []}
-        for blocker in blocked_numbers:
+        result['changed'].append('parent')
+
+    wanted = {label(cfg, l) for l in entry.get('labels') or []}
+    present = {n['name'] for n in (current.get('labels') or {}).get('nodes') or []}
+    add = sorted(wanted - present)
+    if add:
+        code, _, lerr = run(['gh', 'issue', 'edit', str(entry['number']),
+                             '--repo', repo]
+                            + sum((['--add-label', n] for n in add), []))
+        if code != 0:
+            result['errors'].append('label update failed: %s' % lerr.strip())
+            return result
+        result['changed'].append('labels')
+
+    if result['changed']:
+        _, result['mismatches'] = verify_issue(
+            cfg, entry['number'], plan, expect_type=plan['type'],
+            expect_parent=parent_number, repo=repo)
+    return result
+
+
+def link_phase(cfg, plans, results, resolved, node_ids):
+    """Apply every dependency edge and body rewrite, in one batch per chunk.
+
+    Last, deliberately: an edge may point at any issue in the tree, including
+    one created in the final level, and an alias cannot reference another
+    alias's output. Waiting until everything exists is what makes a reference
+    to any level legal.
+
+    Edges are written twice on purpose — a native `addBlockedBy`, which is what
+    GitHub's UI and the audit read, and a `## Dependencies` body section, which
+    is what `wf_core.parse_dependencies()` reads to decide when an issue
+    unblocks. Dropping the prose would silently break auto-unblocking.
+    """
+    ops, owners = [], []
+    for plan, result in zip(plans, results):
+        entry = plan['entry']
+        if result['errors'] or not result.get('number'):
+            continue
+        numbers, unresolved = _blockers(entry, resolved)
+        if unresolved:
+            result['errors'].append(
+                'blocked-by references nothing in this spec or repo: %s'
+                % ', '.join(str(u) for u in unresolved))
+            continue
+        result['blocked_by'] = numbers
+        if not numbers:
+            continue
+
+        issue = result.get('issue') or {}
+        have = {n['number'] for n in (issue.get('blockedBy') or {}).get('nodes') or []}
+        for blocker in numbers:
             if blocker in have:
                 continue
-            ok, blocking, err = read_issue(cfg, blocker, repo)
-            if not ok:
-                result['errors'].append('blocker #%s: %s' % (blocker, err))
-                return result
-            ok, _, err = add_blocked_by(current['id'], blocking['id'])
-            if not ok:
-                result['errors'].append('blocked-by #%s failed: %s' % (blocker, err))
-                return result
-            result['changed'].append('blocked-by #%s' % blocker)
+            blocking_id = node_ids.get(blocker)
+            if not blocking_id:
+                result['errors'].append('blocker #%s could not be resolved' % blocker)
+                continue
+            owners.append((result, 'blocked-by', blocker))
+            ops.append(('blocked-by', {'issue_id': result['issue_id'],
+                                       'blocking_id': blocking_id}))
 
-    passed, mismatches = verify_issue(
-        cfg, result['number'], plan, expect_type=plan['type'],
-        expect_parent=parent_number, expect_blocked_by=blocked_numbers, repo=repo)
-    if not passed:
-        result['verify_failed'] = mismatches
-    return result
+        wanted_body = ensure_dependency_section(entry.get('body'), numbers)
+        current_body = result.get('sent_body', issue.get('body'))
+        if wanted_body != current_body:
+            owners.append((result, 'body', None))
+            ops.append(('body', {'issue_id': result['issue_id'],
+                                 'body': wanted_body}))
+
+    for chunk_start in range(0, len(ops), wf_core.BATCH_MAX_NODES):
+        window = slice(chunk_start, chunk_start + wf_core.BATCH_MAX_NODES)
+        batch = [('b%d' % n, kind, args)
+                 for n, (kind, args) in enumerate(ops[window])]
+        outcomes = send_link_batch(batch)
+        for offset, (result, kind, blocker) in enumerate(owners[window]):
+            ok, node, err = outcomes['b%d' % offset]
+            if not ok:
+                result['errors'].append(
+                    '%s failed: %s' % ('blocked-by #%s' % blocker
+                                       if kind == 'blocked-by' else 'body update',
+                                       err))
+                continue
+            result['changed'].append('blocked-by #%s' % blocker
+                                     if kind == 'blocked-by' else 'body')
+            if kind == 'blocked-by':
+                result['issue'] = dict(result.get('issue') or {},
+                                       blockedBy=node.get('blockedBy') or {})
+
+    # The edge mutations returned the issue's blockers, so the check is free.
+    for result in results:
+        for want in result.get('blocked_by') or ():
+            have = {n['number'] for n
+                    in ((result.get('issue') or {}).get('blockedBy')
+                        or {}).get('nodes') or []}
+            if want not in have:
+                result['mismatches'].append('#%s: missing blocked-by edge to #%s'
+                                            % (result['number'], want))
+    return results
 
 
 def cmd_issue_apply(args):
@@ -1142,6 +1329,13 @@ def cmd_issue_apply(args):
              reason='dependency cycle in the spec',
              cycles=[' -> '.join(str(n) for n in c) for c in cycles])
 
+    levels, unplaceable = wf_core.spec_levels(entries)
+    if unplaceable:
+        emit('spec-invalid', EXIT_SPEC, spec=args.spec,
+             reason='parent cycle in the spec: these entries can never be created '
+                    'because each waits on another in the group',
+             entries=[wf_core.entry_label(e) for e in unplaceable])
+
     errors, skipped, plans = wf_core.validate_spec(
         entries, caps['field_map'], caps['type_map'], cfg.get('fields', {}))
     if errors:
@@ -1156,32 +1350,56 @@ def cmd_issue_apply(args):
         eprint('wf: skipped %d field(s) this org does not define: %s'
                % (len(skipped), ', '.join(sorted(skipped))))
 
-    repo = args.repo
-    ok, repo_id, err = resolve_repo_id(cfg, repo)
+    label_names = sorted({label(cfg, l) for e in entries
+                          for l in (e.get('labels') or [])})
+    referenced = set()
+    for entry in entries:
+        candidates = [entry.get('number'), entry.get('parent')]
+        candidates.extend(entry.get('blocked_by') or [])
+        for ref in candidates:
+            if isinstance(ref, int):
+                referenced.add(ref)
+            elif isinstance(ref, str) and ref.isdigit():
+                referenced.add(int(ref))
+    ok, ctx, err = resolve_spec_context(cfg, label_names, referenced, args.repo)
     if not ok:
-        emit('error', EXIT_ENV, reason='could not resolve repository: %s' % err)
+        emit('error', EXIT_ENV, reason='could not resolve the repository: %s' % err)
+    if ctx['missing_labels']:
+        emit('spec-invalid', EXIT_SPEC, spec=args.spec,
+             reason='labels the spec names do not exist in this repo',
+             labels=ctx['missing_labels'])
+    if ctx['missing_issues']:
+        emit('spec-invalid', EXIT_SPEC, spec=args.spec,
+             reason='issues the spec references do not exist in this repo',
+             issues=ctx['missing_issues'])
 
     if args.dry_run:
         emit('ok', EXIT_OK, spec=args.spec, dry_run=True,
+             levels=[[wf_core.entry_label(e) for e in level] for level in levels],
              would_apply=[{'entry': wf_core.entry_label(p['entry']),
                            'action': 'update' if p['entry'].get('number') else 'create',
                            'type': p['type'],
                            'fields': sorted(p['fields'])} for p in plans],
              skipped_fields=sorted(skipped))
 
-    resolved = {e['key']: e['number'] for e in entries
+    plan_by_entry = {id(p['entry']): p for p in plans}
+    resolved = {e['key']: int(e['number']) for e in entries
                 if e.get('key') and e.get('number')}
-    results, failed, verify_failed = [], [], []
-    for plan in plans:
-        entry = plan['entry']
-        result = apply_entry(cfg, caps, entry, plan, repo_id, resolved, repo)
-        results.append(result)
-        if result['errors']:
-            failed.append(result)
-        if result.get('verify_failed'):
-            verify_failed.append(result)
-        if result.get('number') and not entry.get('number'):
-            entry['number'] = result['number']
+    node_ids = dict(ctx['issues'])
+
+    ordered_plans, results = [], []
+    for level in levels:
+        level_plans = [plan_by_entry[id(e)] for e in level]
+        creates = [p for p in level_plans if not p['entry'].get('number')]
+        updates = [p for p in level_plans if p['entry'].get('number')]
+        if creates:
+            ordered_plans.extend(creates)
+            results.extend(create_level(cfg, ctx, caps, creates, resolved, node_ids))
+        for plan in updates:
+            ordered_plans.append(plan)
+            results.append(update_entry(cfg, ctx, caps, plan, resolved, node_ids))
+
+    link_phase(cfg, ordered_plans, results, resolved, node_ids)
 
     wrote_back, wb_err = write_back_numbers(args.spec, raw, entries)
 
@@ -1191,12 +1409,9 @@ def cmd_issue_apply(args):
     if not wrote_back:
         payload['write_back_error'] = wb_err
 
-    if verify_failed and not failed:
-        emit('verify-failed', EXIT_VERIFY,
-             reason='%d issue(s) were written but do not read back as specified'
-                    % len(verify_failed),
-             mismatches=sum((r['verify_failed'] for r in verify_failed), []),
-             **payload)
+    failed = [r for r in results if r['errors']]
+    mismatched = [r for r in results if r['mismatches']]
+
     if failed:
         landed = [r for r in results if r.get('number') and not r['errors']]
         emit('partial', EXIT_PARTIAL,
@@ -1205,6 +1420,12 @@ def cmd_issue_apply(args):
                     'that landed into no-op updates'
                     % (len(failed), len(results), len(landed)),
              failed=[{'entry': r['entry'], 'errors': r['errors']} for r in failed],
+             **payload)
+    if mismatched:
+        emit('verify-failed', EXIT_VERIFY,
+             reason='%d issue(s) were written but do not read back as specified'
+                    % len(mismatched),
+             mismatches=sum((r['mismatches'] for r in mismatched), []),
              **payload)
 
     emit('ok', EXIT_OK, **payload)
