@@ -7,6 +7,18 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 6.1.1
+
+- Fixed: on a type-capable org, `execute --mode feature`/`--mode maintenance`
+  silently dropped an issue that had no native issue type set yet, instead of
+  falling back to its `type-*` label or `[PREFIX]` title. An org with zero
+  typed issues got an empty pool from either mode with no error — plain
+  `execute` (story mode) was unaffected, which is why it went unnoticed.
+  `filter_by_native_type` now classifies an untyped issue the same way the
+  label path would, and `wf pick`/`wf candidates` report how many candidates
+  were classified this way, pointing at `wf issue-audit` to backfill the
+  native type.
+
 ## github-workflow 6.1.0
 
 - `## Issue Types & Fields` in `templates/ClaudeProject.md` is a complete,

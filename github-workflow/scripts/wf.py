@@ -2506,11 +2506,17 @@ def cmd_pick(args):
     if not ok:
         emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
 
+    # Issues with no native type still enter the pool, classified through their
+    # own type-* label or [PREFIX] title (see filter_by_native_type). That is a
+    # fallback, not a silent success, so it is collected here and reported —
+    # never dropped quietly the way an untyped issue used to be.
+    type_fallback = []
+
     backlog_mode, issues = narrow_to_sprint(cfg, issues)
     pool = wf_core.select_pool(issues, mode=args.mode,
                                agent_gating=cfg.get('agent_gating', 'disabled'),
                                project_map=cfg.get('labels', {}),
-                               type_map=type_map)
+                               type_map=type_map, fallback_count=type_fallback)
 
     selected, side_effects = None, []
     if pool:
@@ -2526,11 +2532,18 @@ def cmd_pick(args):
                 pool = wf_core.select_pool(issues, mode=args.mode,
                                            agent_gating=cfg.get('agent_gating', 'disabled'),
                                            project_map=cfg.get('labels', {}),
-                                           type_map=type_map)
+                                           type_map=type_map, fallback_count=type_fallback)
                 if pool:
                     selected, more_effects = claim_validate_walk(cfg, pool, backlog_mode,
                                                                  siblings)
                     side_effects.extend(more_effects)
+
+    if type_fallback:
+        eprint('wf: %d candidate(s) have no native issue type; classified for %s '
+               'mode by their type-* label or [PREFIX] title instead: %s '
+               '(run wf issue-audit to backfill the native type)'
+               % (len(type_fallback), args.mode,
+                  ', '.join('#%d' % n for n in sorted(set(type_fallback)))))
 
     if not selected and not pool:
         emit('no-candidates', EXIT_NO_CANDIDATES,
@@ -2540,10 +2553,10 @@ def cmd_pick(args):
              reason='every candidate was claimed-away, blocked, or already resolved',
              backlog_mode=backlog_mode, side_effects=side_effects)
 
-    finish_pick(args, cfg, selected, side_effects, backlog_mode)
+    finish_pick(args, cfg, selected, side_effects, backlog_mode, type_fallback)
 
 
-def finish_pick(args, cfg, selected, side_effects, backlog_mode):
+def finish_pick(args, cfg, selected, side_effects, backlog_mode, type_fallback=None):
     """Build the `ok` result for a selected story, optionally checking out, and emit."""
     result = {
         'number': selected['number'],
@@ -2558,6 +2571,10 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode):
         'side_effects': side_effects,
         'checked_out': False,
     }
+    if type_fallback and selected['number'] in type_fallback:
+        # This one has no native issue type: it was classified for the run
+        # by its type-* label or [PREFIX] title instead (filter_by_native_type).
+        result['native_type_fallback'] = True
     siblings = [int(n) for n in (getattr(args, 'sibling', None) or [])]
     if siblings:
         result['siblings'] = siblings
@@ -2631,11 +2648,12 @@ def cmd_candidates(args):
     if not ok:
         emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
 
+    type_fallback = []
     backlog_mode, issues = narrow_to_sprint(cfg, issues)
     pool = wf_core.select_pool(issues, mode=args.mode,
                                agent_gating=cfg.get('agent_gating', 'disabled'),
                                project_map=cfg.get('labels', {}),
-                               type_map=type_map)
+                               type_map=type_map, fallback_count=type_fallback)
     if not pool:
         emit('no-candidates', EXIT_NO_CANDIDATES,
              reason='no ready, unassigned issues match', backlog_mode=backlog_mode)
@@ -2644,6 +2662,7 @@ def cmd_candidates(args):
     if args.limit and args.limit > 0:
         pool = pool[:args.limit]
 
+    fallback_set = set(type_fallback)
     listed = []
     for cand in pool:
         body = cand.get('body') or ''
@@ -2651,7 +2670,7 @@ def cmd_candidates(args):
         if args.body_chars and args.body_chars > 0 and len(body) > args.body_chars:
             body, truncated = body[:args.body_chars], True
         deps, dep_overflow = wf_core.parse_dependencies(cand.get('body'))
-        listed.append({
+        entry = {
             'number': cand['number'],
             'title': cand['title'],
             'url': cand.get('url', ''),
@@ -2661,10 +2680,16 @@ def cmd_candidates(args):
             'body_truncated': truncated,
             'dependencies': deps,
             'dependency_overflow': dep_overflow,
-        })
+        }
+        if cand['number'] in fallback_set:
+            # No native issue type: classified for this listing by its
+            # type-* label or [PREFIX] title instead (filter_by_native_type).
+            entry['native_type_fallback'] = True
+        listed.append(entry)
 
     emit('ok', EXIT_OK, mode=args.mode, backlog_mode=backlog_mode,
-         total=total, listed=len(listed), candidates=listed)
+         total=total, listed=len(listed), candidates=listed,
+         native_type_fallback_count=len(fallback_set))
 
 
 def cmd_update_next(args):
