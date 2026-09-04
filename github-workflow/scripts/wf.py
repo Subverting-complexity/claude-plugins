@@ -571,6 +571,23 @@ def _denied_paths(errors):
     return denied
 
 
+def _capability_record_is_usable(cached):
+    """Whether a cached capability record can be trusted without re-querying.
+
+    A record carrying no types and no fields is indistinguishable from never
+    having resolved. For an org that is almost always a failed lookup that got
+    written, so it is treated as a cache miss and re-queried, which lets an
+    already-poisoned cache heal itself without anyone knowing to pass
+    `--refresh`. A user-owned repo has no issue types by design, so its empty
+    record is legitimate and is trusted -- which is what `owner_kind` is for.
+    A record written before that key existed has no claim to being empty on
+    purpose, so it is re-queried once and rewritten with it.
+    """
+    if cached.get('type_map') or cached.get('field_map'):
+        return True
+    return cached.get('owner_kind') == 'user'
+
+
 def resolve_org_capabilities(cfg, refresh=False, root=None):
     """Resolve the org's issue types and fields, through the cache.
 
@@ -580,10 +597,12 @@ def resolve_org_capabilities(cfg, refresh=False, root=None):
     """
     if not refresh:
         cached = load_capability_cache(root)
-        if 'type_capable' in cached and 'field_map' in cached:
+        if 'type_capable' in cached and 'field_map' in cached and (
+                _capability_record_is_usable(cached)):
             return True, {'type_capable': cached['type_capable'],
                           'type_map': cached.get('type_map') or {},
                           'field_map': cached.get('field_map') or {},
+                          'owner_kind': cached.get('owner_kind') or '',
                           'cached': True}, ''
 
     data, errors, err = gh_graphql_partial(ORG_CAPABILITY_QUERY, login=cfg['org'])
@@ -593,8 +612,10 @@ def resolve_org_capabilities(cfg, refresh=False, root=None):
 
     denied = _denied_paths(errors)
     type_capable, type_map, field_map = parse_org_capabilities(data)
+    owner_kind = 'organization' if (data or {}).get('organization') else 'user'
     caps = {'type_capable': type_capable, 'type_map': type_map,
             'field_map': field_map, 'cached': False,
+            'owner_kind': owner_kind,
             'denied': sorted(denied),
             'errors': [e.get('message', '') for e in errors]}
 
@@ -602,9 +623,18 @@ def resolve_org_capabilities(cfg, refresh=False, root=None):
     # false` that really meant "not allowed to look" would make every later run
     # quietly fall back to labels — the silent-blank failure this whole feature
     # exists to stop.
-    if not denied:
+    #
+    # An org that answers with no types and no fields is the same failure
+    # wearing different clothes: it is what an under-scoped or expired token
+    # looks like, and GitHub does not always attach a FORBIDDEN error to say so.
+    # Caching that turns one bad round trip into a permanent silent fallback, so
+    # it is not written. A user-owned repo genuinely has neither, so that empty
+    # is cached and marked, and does not cost a round trip on every run.
+    if not denied and not (owner_kind == 'organization'
+                           and not type_map and not field_map):
         merge_capability_cache({'type_capable': type_capable, 'type_map': type_map,
-                                'field_map': field_map}, root)
+                                'field_map': field_map,
+                                'owner_kind': owner_kind}, root)
     return True, caps, ''
 
 
