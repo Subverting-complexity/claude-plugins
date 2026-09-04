@@ -41,6 +41,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-next --checkout
 
 # Emit the parsed config cache (.claude/wf-config.json) from ClaudeProject.md
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config
+
+# Resolve the org's native issue types + issue fields (cached; --refresh re-queries)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" org-capabilities
 ```
 
 Run from the **target repo root** so the CLI can read `ClaudeProject.md`
@@ -76,6 +79,7 @@ run carries a `status` field and the exit code mirrors it:
 | 10   | `no-candidates` | The ready pool was empty.                                      |
 | 11   | `all-blocked`   | Every candidate was claimed away, blocked, or already resolved.|
 | 20   | `error`         | Environment/auth problem (not a repo, no `gh`, no config).     |
+| 21   | `no-capabilities` | The org resolves but reports no issue types and no fields.  |
 | 30   | `unsupported`   | Path not in the CLI yet — caller falls back to the skill.      |
 
 Mutations to the **winning** issue (claim, assign, `status-in-progress`) are
@@ -83,6 +87,58 @@ silent; mutations to **other** issues (returning a dependency-blocked one to
 `status-blocked`, closing one already resolved by a merged PR — which also
 moves it to the **Done** board column) are always reported in the
 `side_effects` array.
+
+## Org capabilities — `org-capabilities`
+
+Resolves what the org can actually classify an issue with: its **enabled
+native issue types** and every **org issue field** with the option ids needed
+to write single-select and multi-select values. One GraphQL round trip, cached
+to `.claude/issue-fields-cache.json`; `--refresh` re-queries and rewrites its
+own keys while preserving any other key in that file.
+
+The command is GraphQL and not REST because REST
+(`/orgs/{org}/issue-fields`) returns `null` for every option id, which makes
+those fields readable but not writable.
+
+Output beyond `type_map` and `field_map`:
+
+- `owner_kind` — `organization` or `user`.
+- `resolved_fields` — purpose key → the concrete field name that exists here.
+- `missing_fields` — the purpose keys that do not resolve, each with the name
+  that was looked for.
+- `cached` — whether this run answered from the cache.
+
+Four outcomes a caller must tell apart:
+
+| Situation | Exit | `status` |
+| --------- | ---- | -------- |
+| Types and/or fields resolved | 0 | `ok`, `owner_kind: organization` |
+| A user-owned repo — issue types are an org-only feature | 0 | `ok`, `owner_kind: user` |
+| The account may not read a capability | 21 | `no-capabilities`, with `denied` |
+| The org resolves but reports neither types nor fields | 21 | `no-capabilities` |
+
+The last two are the cases that did not exist before, and both are the same
+underlying mistake: treating "we could not find out" as "there is nothing
+there". An under-scoped token, an expired one, or an account without org
+access all look identical to an org that has simply not enabled issue types,
+and carrying on regardless is how a repo ends up creating issues with blank
+metadata and no error anywhere.
+
+The denial case is worth calling out because GraphQL reports it *partially*:
+GitHub returns the issue fields the account may read alongside a `FORBIDDEN`
+error for the issue types it may not, so a naive read sees fields, sees no
+types, and concludes the org is not type-capable. `wf` reads the error list
+too, reports the denied paths in `denied`, and — importantly — **does not
+cache the result**, because a cached `type_capable: false` that really meant
+"not allowed to look" would make every later run fall back to labels in
+silence. The usual fix is `gh auth switch`; `gh auth status` shows which
+account is active and what scopes it has.
+
+Field **names** are overridable per project in `ClaudeProject.md` →
+`## Issue Types & Fields`; the value maps behind them are Python data in
+`wf_core.py` (`NATIVE_TYPE_MAP`, `CLASSIFICATION_OPTIONS`,
+`FIELD_NAME_DEFAULTS`, `FIELD_DATA_TYPES`, `PRIORITY_FIELD_OPTIONS`,
+`EFFORT_FIELD_OPTIONS`, `ORIGIN_FIELD_OPTIONS`).
 
 ## Settling a merged PR — `post-merge`
 

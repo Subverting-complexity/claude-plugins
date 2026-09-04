@@ -96,77 +96,54 @@ map in `ClaudeProject.md`; defaults below.
 
 When the target org has **native GitHub issue types** and **org issue
 fields** configured, the workflow uses them as the first-class
-classification and metadata — see `templates/issue-fields-resolution.md`
-for the runtime resolution + mutation procedure. This section is the
-**single source of truth** for the purpose→value mappings; a project may
-override any of it in `ClaudeProject.md` → `## Issue Types & Fields`.
+classification and metadata.
 
-### Native issue type map ("by nature")
+**The purpose→value maps are not in this file.** They live as Python data
+in `scripts/wf_core.py`, and the tooling applies them directly:
 
-The workflow's kind → native issue type, the `Classification` field option
-(subcategory; always set — never leave blank), and the `type-*` label used
-as the fallback on a non-type-capable org:
+| Map | Constant in `wf_core.py` |
+|-----|--------------------------|
+| Workflow kind → native type, `Classification`, `type-*` fallback | `NATIVE_TYPE_MAP` |
+| Every valid `Classification` option | `CLASSIFICATION_OPTIONS` |
+| Purpose key → field name, and its data type | `FIELD_NAME_DEFAULTS`, `FIELD_DATA_TYPES` |
+| The four fields set on every issue | `MANDATORY_FIELD_KEYS` |
+| `priority-*` label → `Priority` option | `PRIORITY_FIELD_OPTIONS` |
+| Size estimate → `Effort` option | `EFFORT_FIELD_OPTIONS` |
+| Creating command → `Origin` option | `ORIGIN_FIELD_OPTIONS` |
 
-| Workflow kind | Native issue type | `Classification` option | `type-*` fallback label |
-|---------------|-------------------|-------------------------|-------------------------|
-| story         | User Story        | New Feature             | `type-story` |
-| bug           | Bug               | Bug Fix ¹               | `type-bug` |
-| security      | Bug               | Security                | `type-security` |
-| tech debt     | Feature           | Tech Debt               | `type-debt` |
-| architecture  | Feature           | Architecture            | `type-arch` |
-| feature       | Feature           | New Feature ²           | `type-story` |
-| epic          | Epic              | New Feature             | `type-story` |
-| spike         | User Story        | Spike                   | `type-story` |
-| chore         | User Story        | Chore                   | `type-bug` |
+They were markdown tables here until the mechanism moved into `wf`. Data
+in prose could not be validated, and nothing noticed when it stopped
+matching the org — 82 issues in one consuming repo had 7 native types set
+between them and no field values at all. Restating any of these tables
+here would recreate exactly that: a second copy that drifts silently. Add
+a value by editing `wf_core.py`, where the tests cover it.
 
-¹ Use **Regression** if something previously worked and broke; use
-**Performance** if the bug is a speed or memory degradation. Bug Fix is
-the default for any other broken behaviour.
+To see what a specific org actually has enabled, resolve it rather than
+assuming:
 
-² Use **Enhancement** if the feature improves something existing rather
-than delivering new capability. Use **Integration** if the primary work
-is connecting to an external system, API, or third-party service.
-Use **Documentation** if the issue is tracking docs/guides only.
-Use **Performance** if the primary goal is a speed or efficiency improvement.
+    wf org-capabilities
 
-The full set of valid `Classification` options:
-New Feature · Enhancement · Bug Fix · Regression · Performance ·
-Security · Tech Debt · Architecture · Integration · Spike · Chore ·
-Documentation
+That reports the enabled native types, every issue field with its option
+ids, which purpose keys resolve against this org, and which do not. It
+caches to `.claude/issue-fields-cache.json`; `--refresh` re-queries.
 
-### Field-name inventory
+A project overrides any **field name** in `ClaudeProject.md` →
+`## Issue Types & Fields`, resolved through `wf_core.resolve_field_name()`
+— the same project-map-then-default path labels use. A project does not
+override the value maps; those are the workflow's own vocabulary.
 
-Resolved via `ClaudeProject.md` → `## Issue Types & Fields`; defaults here.
+### Choosing a `Classification`
 
-| Purpose key            | Default field name | Data type     |
-|------------------------|--------------------|---------------|
-| `field-priority`       | `Priority`         | single-select |
-| `field-effort`         | `Effort`           | single-select |
-| `field-type`           | `Classification`   | single-select |
-| `field-origin`         | `Origin`           | single-select |
-| `field-start`          | `Start date`       | date          |
-| `field-target`         | `Target date`      | date          |
-| `field-parent`         | `Parent`           | text          |
-| `field-status-reason`  | `Status reason`    | text          |
+`NATIVE_TYPE_MAP` gives the default choice for each workflow kind. That
+default is the "by nature" answer, not the only valid one, and picking a
+better one is a judgement the map cannot make:
 
-### Priority field option map
-
-The `priority-*` label purpose → `Priority` field option (both are set;
-priority is dual-tracked — see `default-labels-rationale.md`):
-
-| Priority label purpose | `Priority` field option |
-|------------------------|-------------------------|
-| `priority-critical`    | Urgent                  |
-| `priority-high`        | High                    |
-| `priority-medium`      | Medium                  |
-| `priority-low`         | Low                     |
-
-### Effort & Origin field option maps
-
-The `Effort` (size estimate) and `Origin` (creating command/session) field
-option maps live in `templates/label-reference.md` — they are used only on
-the **issue-creation** path (`report-issue`, `execute`,
-`feature-discovery`), not the claim/selection path. Resolve them there.
+- For a bug, prefer **Regression** when something previously worked and
+  broke, or **Performance** when the defect is speed or memory.
+- For a feature, prefer **Enhancement** when it improves something that
+  already exists, **Integration** when the work is connecting to an
+  external system or third-party service, **Documentation** when it
+  tracks docs only, or **Performance** when speed is the point.
 
 ## Issue Lifecycle State Labels
 

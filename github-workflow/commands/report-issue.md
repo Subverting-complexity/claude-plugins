@@ -244,8 +244,7 @@ label-only result from the steps above with no error.
    issue fields) of `issue-fields-resolution.md`.
 2. Resolve this issue's node id (**Step 3**).
 3. **Native type (Step 4)** — if the org is type-capable, map the Step 2
-   classification to a native type via the *Native issue type map* in
-   `templates/default-labels.md`:
+   classification to a native type via `wf_core.NATIVE_TYPE_MAP`:
    - Bug → **Bug**, Security → **Bug**, Architecture → **Feature**,
      Tech Debt → **Feature**.
    - Set it with `updateIssueIssueType`, then **remove the now-redundant

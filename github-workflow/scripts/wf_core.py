@@ -227,6 +227,131 @@ def current_lifecycle_label(labels, project_map):
     return None
 
 
+# ── Issue types + org field values ───────────────────────────────────────────
+# The canonical purpose→value maps for native issue types and org issue
+# fields. These were markdown tables in `templates/default-labels.md` and
+# `templates/label-reference.md`, which meant nothing could validate them and
+# every consumer re-read prose to apply them. The tables in those files are now
+# generated from here; this module is the source of truth.
+#
+# A project overrides any *field name* in `ClaudeProject.md` →
+# `## Issue Types & Fields`, resolved through `resolve_field_name()` — the same
+# project-map-then-default path `resolve_label()` uses for labels.
+
+# Workflow kind → native issue type, `Classification` option, and the `type-*`
+# label used as the fallback on an org without native types.
+#
+# The Classification entry is the default "by nature" choice, not the only
+# valid one. For a bug, prefer `Regression` when something previously worked
+# and broke, or `Performance` when the defect is speed or memory. For a
+# feature, prefer `Enhancement` when it improves something existing,
+# `Integration` when the work is connecting to an external system,
+# `Documentation` when it tracks docs only, or `Performance` when speed is the
+# point.
+NATIVE_TYPE_MAP = {
+    'story':        {'type': 'User Story', 'classification': 'New Feature',  'label': 'type-story'},
+    'bug':          {'type': 'Bug',        'classification': 'Bug Fix',      'label': 'type-bug'},
+    'security':     {'type': 'Bug',        'classification': 'Security',     'label': 'type-security'},
+    'tech debt':    {'type': 'Feature',    'classification': 'Tech Debt',    'label': 'type-debt'},
+    'architecture': {'type': 'Feature',    'classification': 'Architecture', 'label': 'type-arch'},
+    'feature':      {'type': 'Feature',    'classification': 'New Feature',  'label': 'type-story'},
+    'epic':         {'type': 'Epic',       'classification': 'New Feature',  'label': 'type-story'},
+    'spike':        {'type': 'User Story', 'classification': 'Spike',        'label': 'type-story'},
+    'chore':        {'type': 'User Story', 'classification': 'Chore',        'label': 'type-bug'},
+}
+
+# Every valid `Classification` option. A value outside this set is a spec
+# error, not a new option — the org owns the field, and adding to it is a
+# deliberate org-level change.
+CLASSIFICATION_OPTIONS = (
+    'New Feature', 'Enhancement', 'Bug Fix', 'Regression', 'Performance',
+    'Security', 'Tech Debt', 'Architecture', 'Integration', 'Spike', 'Chore',
+    'Documentation', 'Accessibility',
+)
+
+# Purpose key → default org field name, and the field's data type. The data
+# type decides which mutation shape a value needs, so it belongs next to the
+# name rather than being re-derived from the live schema every time.
+FIELD_NAME_DEFAULTS = {
+    'field-priority':      'Priority',
+    'field-effort':        'Effort',
+    'field-type':          'Classification',
+    'field-origin':        'Origin',
+    'field-start':         'Start date',
+    'field-target':        'Target date',
+    'field-parent':        'Parent',
+    'field-status-reason': 'Status reason',
+}
+
+FIELD_DATA_TYPES = {
+    'field-priority':      'single-select',
+    'field-effort':        'single-select',
+    'field-type':          'multi-select',
+    'field-origin':        'single-select',
+    'field-start':         'date',
+    'field-target':        'date',
+    'field-parent':        'text',
+    'field-status-reason': 'text',
+}
+
+# The four fields the tooling sets on every issue it creates. Preflight checks
+# that every enabled issue type is pinned to all of them, because a value
+# written to an unpinned field is stored and then never shown.
+MANDATORY_FIELD_KEYS = ('field-priority', 'field-effort', 'field-type', 'field-origin')
+
+# `priority-*` label purpose → `Priority` field option. Priority is
+# dual-tracked: the label drives selection ordering, the field drives the
+# portal's own views.
+PRIORITY_FIELD_OPTIONS = {
+    'priority-critical': 'Urgent',
+    'priority-high':     'High',
+    'priority-medium':   'Medium',
+    'priority-low':      'Low',
+}
+
+# Story size estimate → `Effort` field option.
+EFFORT_FIELD_OPTIONS = {
+    'large':  'High',
+    'medium': 'Medium',
+    'small':  'Low',
+}
+
+# Creating command or session → `Origin` field option.
+ORIGIN_FIELD_OPTIONS = {
+    'feature-discovery': 'Feature Discovery',
+    'grill-me':          'Grill-Me Session',
+    'security-audit':    'Security Audit',
+    'code-review':       'Code Review',
+    'report-issue':      'Development',
+    'execute':           'Development',
+    'human':             'Stakeholder Request',
+}
+
+
+def resolve_field_name(purpose_key, project_map, defaults=None):
+    """Resolve a field purpose key to a concrete org field name.
+
+    Same resolution order as `resolve_label()`: the project's own map from
+    `ClaudeProject.md` first, then the default inventory, then the key itself
+    so a caller never gets an empty string.
+    """
+    if defaults is None:
+        defaults = FIELD_NAME_DEFAULTS
+    return (project_map or {}).get(purpose_key) or defaults.get(purpose_key) or purpose_key
+
+
+def field_purpose_for_name(field_name, project_map, defaults=None):
+    """Reverse `resolve_field_name()`: concrete field name → purpose key, or None.
+
+    Preflight uses this to report an org field that no purpose key maps to,
+    which is how a newly added org field gets noticed instead of sitting unused.
+    """
+    for key in (defaults or FIELD_NAME_DEFAULTS):
+        if resolve_field_name(key, project_map, defaults) == field_name:
+            return key
+    return None
+
+
 # ── PR review-state labels + selection ───────────────────────────────────────
 # Mirrors the code-review
 # skill (Step 1). Review-state names default to the `review-` prefix
