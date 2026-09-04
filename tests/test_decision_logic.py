@@ -1266,5 +1266,162 @@ class TestBatchEntries(unittest.TestCase):
         self.assertEqual(sum(len(c) for c in chunks), len(items))
 
 
+# ── issue audit ──────────────────────────────────────────────────────────────
+
+_AUDIT_FIELDS = {'Priority': {}, 'Effort': {}, 'Classification': {}, 'Origin': {}}
+
+
+def _node(**over):
+    issue = {'number': 5, 'title': 'A story', 'body': '',
+             'issueType': {'name': 'User Story'},
+             'labels': {'nodes': []}, 'blockedBy': {'nodes': []},
+             'issueFieldValues': {'nodes': []}}
+    issue.update(over)
+    return issue
+
+
+def _field_value(name, value):
+    if isinstance(value, list):
+        return {'field': {'name': name}, 'options': [{'name': v} for v in value]}
+    return {'field': {'name': name}, 'name': value}
+
+
+def _kinds(result):
+    return [g['kind'] for g in result['gaps']]
+
+
+class TestDeclaredKind(unittest.TestCase):
+    """What an issue says it is, as opposed to what GitHub has it typed as."""
+
+    def test_a_type_label_wins_over_the_title(self):
+        kind, source = wf_core.declared_kind('[STORY] a thing', ['type-bug'], {})
+        self.assertEqual((kind, source), ('bug', 'label'))
+
+    def test_a_title_prefix_is_read_when_there_is_no_label(self):
+        self.assertEqual(wf_core.declared_kind('[DEBT] tidy up', [], {}),
+                         ('tech debt', 'title'))
+
+    def test_an_unknown_prefix_claims_nothing(self):
+        self.assertEqual(wf_core.declared_kind('[WIP] a thing', [], {}),
+                         (None, None))
+
+    def test_a_renamed_label_still_resolves(self):
+        kind, _ = wf_core.declared_kind('x', ['kind/bug'], {'type-bug': 'kind/bug'})
+        self.assertEqual(kind, 'bug')
+
+
+class TestAuditIssue(unittest.TestCase):
+    """The audit reads and proposes. It must never decide to write."""
+
+    def test_a_fully_classified_issue_has_no_gaps(self):
+        issue = _node(issueFieldValues={'nodes': [
+            _field_value('Priority', 'High'), _field_value('Effort', 'Medium'),
+            _field_value('Classification', ['New Feature']),
+            _field_value('Origin', 'Development')]})
+        self.assertEqual(_kinds(wf_core.audit_issue(issue, _AUDIT_FIELDS)), [])
+
+    def test_an_untyped_issue_is_a_gap(self):
+        result = wf_core.audit_issue(_node(issueType=None), {})
+        self.assertEqual(_kinds(result), ['missing-type'])
+
+    def test_every_org_field_with_no_value_is_a_gap(self):
+        result = wf_core.audit_issue(_node(), _AUDIT_FIELDS)
+        self.assertEqual(_kinds(result), ['missing-field'] * 4)
+
+    def test_a_field_the_org_does_not_define_is_not_a_gap(self):
+        """The audit reports against the org's real shape, not a wish list."""
+        result = wf_core.audit_issue(_node(), {'Priority': {}})
+        self.assertEqual(_kinds(result), ['missing-field'])
+
+    def test_a_native_type_contradicting_the_label_is_a_gap(self):
+        issue = _node(labels={'nodes': [{'name': 'type-bug'}]})
+        result = wf_core.audit_issue(issue, {})
+        self.assertEqual(_kinds(result), ['type-contradiction'])
+        self.assertIn('Bug', result['gaps'][0]['detail'])
+
+    def test_a_debt_issue_typed_feature_is_caught_in_the_classification(self):
+        """GitHub's five types cannot express tech debt; Classification can."""
+        issue = _node(title='[DEBT] tidy up', issueType={'name': 'Feature'},
+                       issueFieldValues={'nodes': [
+                           _field_value('Classification', ['New Feature'])]})
+        result = wf_core.audit_issue(issue, {'Classification': {}})
+        self.assertEqual(_kinds(result), ['classification-contradiction'])
+        self.assertIn('Tech Debt', result['gaps'][0]['detail'])
+
+    def test_a_body_dependency_with_no_edge_is_proposed(self):
+        issue = _node(body='## Dependencies\n\nBlocked by #3\n')
+        result = wf_core.audit_issue(issue, {}, open_numbers={3, 5})
+        self.assertEqual(_kinds(result), ['missing-edge'])
+        self.assertEqual(result['proposed']['blocked_by'], [3])
+
+    def test_an_edge_that_already_exists_is_not_reported(self):
+        issue = _node(body='Blocked by #3', blockedBy={'nodes': [{'number': 3}]})
+        result = wf_core.audit_issue(issue, {}, open_numbers={3, 5})
+        self.assertEqual(_kinds(result), [])
+
+    def test_a_dependency_on_a_closed_issue_is_reported_not_proposed(self):
+        """An edge to a closed issue would be applied and then sit there inert."""
+        issue = _node(body='Blocked by #3')
+        result = wf_core.audit_issue(issue, {}, open_numbers={5})
+        self.assertEqual(_kinds(result), ['dependency-closed'])
+        self.assertNotIn('blocked_by', result['proposed'])
+
+    def test_priority_is_inferred_from_the_issue_own_label(self):
+        issue = _node(labels={'nodes': [{'name': 'priority-high'}]})
+        result = wf_core.audit_issue(issue, {'Priority': {}})
+        self.assertEqual(result['proposed']['fields']['field-priority'], 'High')
+
+    def test_what_cannot_be_inferred_becomes_a_placeholder(self):
+        """Silence must not pass: `issue-apply` refuses the spec until it is filled."""
+        result = wf_core.audit_issue(_node(), _AUDIT_FIELDS)
+        fields = result['proposed']['fields']
+        self.assertEqual(fields['field-effort'], wf_core.SPEC_PLACEHOLDER)
+        self.assertEqual(fields['field-origin'], wf_core.SPEC_PLACEHOLDER)
+
+    def test_a_situational_field_is_reported_but_not_proposed(self):
+        """A start date nobody set is not a value the backfill should invent."""
+        result = wf_core.audit_issue(_node(), {'Start date': {}})
+        self.assertEqual(_kinds(result), ['missing-field'])
+        self.assertNotIn('fields', result['proposed'])
+
+    def test_the_proposed_entry_is_a_valid_apply_spec_once_filled(self):
+        result = wf_core.audit_issue(_node(title='[BUG] it breaks'), _AUDIT_FIELDS)
+        entry = result['proposed']
+        entry['fields'] = dict(entry['fields'], **{'field-priority': 'High',
+                                                   'field-effort': 'Medium',
+                                                   'field-origin': 'Development'})
+        field_map = {
+            'Priority': {'id': 'p', 'data_type': 'single-select',
+                         'options': {'High': 'o1'}},
+            'Effort': {'id': 'e', 'data_type': 'single-select',
+                       'options': {'Medium': 'o2'}},
+            'Classification': {'id': 'c', 'data_type': 'multi-select',
+                               'options': {'Bug Fix': 'o3'}},
+            'Origin': {'id': 'o', 'data_type': 'single-select',
+                       'options': {'Development': 'o4'}},
+        }
+        errors, _, _ = wf_core.validate_spec([entry], field_map, {'Bug': 'IT_bug'})
+        self.assertEqual(errors, [])
+
+    def test_the_spec_before_filling_is_refused(self):
+        """The placeholder is the whole mechanism, so assert it actually refuses."""
+        result = wf_core.audit_issue(_node(), _AUDIT_FIELDS)
+        field_map = {'Effort': {'id': 'e', 'data_type': 'single-select',
+                                'options': {'Medium': 'o2'}}}
+        errors, _, _ = wf_core.validate_spec([result['proposed']], field_map, {})
+        self.assertTrue(any('Effort' in e for e in errors), errors)
+
+
+class TestAuditSummary(unittest.TestCase):
+
+    def test_counts_by_kind_and_by_node(self):
+        audited = [{'gaps': [{'kind': 'missing-type'}, {'kind': 'missing-field'}]},
+                   {'gaps': [{'kind': 'missing-field'}]},
+                   {'gaps': []}]
+        self.assertEqual(wf_core.audit_summary(audited),
+                         {'issues_scanned': 3, 'issues_with_gaps': 2,
+                          'gaps': {'missing-type': 1, 'missing-field': 2}})
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

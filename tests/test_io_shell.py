@@ -1361,6 +1361,127 @@ class TestEpicTreeBatching(_ApplyCase):
                          ['create', 'update', 'update'])
 
 
+class TestIssueAudit(_ApplyCase):
+    """The audit reads and proposes. It must never issue a mutation."""
+
+    def _issue(self, number, **over):
+        issue = {'number': number, 'title': 'Story %d' % number, 'body': '',
+                 'issueType': {'name': 'User Story'},
+                 'labels': {'nodes': []}, 'blockedBy': {'nodes': []},
+                 'parent': None, 'issueFieldValues': {'nodes': []}}
+        issue.update(over)
+        return issue
+
+    def _run(self, issues, extra_argv=(), pages=None, caps=None):
+        """Run the audit against a canned issue list. Returns (code, payload, sent)."""
+        out = os.path.join(self.dir, 'audit.json')
+        args = wf.build_parser().parse_args(
+            ['issue-audit', '--out', out, *extra_argv])
+        sent = []
+        remaining = list(pages if pages is not None else [issues])
+
+        def gh_graphql(query, **fields):
+            sent.append(('query', fields))
+            page = remaining.pop(0)
+            return True, {'repository': {'issues': {
+                'pageInfo': {'hasNextPage': bool(remaining),
+                             'endCursor': 'c%d' % len(sent)},
+                'nodes': page}}}, ''
+
+        def no_mutations(*a, **k):
+            raise AssertionError('the audit must not write')
+
+        with mock.patch.object(wf, 'load_config', lambda: (True, _cfg(), '')), \
+                mock.patch.object(wf, 'resolve_org_capabilities',
+                                  lambda cfg, refresh=False, root=None:
+                                  (True, caps or _APPLY_CAPS, '')), \
+                mock.patch.object(wf, 'gh_graphql', gh_graphql), \
+                mock.patch.object(wf, '_graphql_json', no_mutations), \
+                mock.patch.object(wf, 'run', no_mutations), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code, payload = _capture(wf.cmd_issue_audit, args)
+        spec = None
+        if os.path.isfile(out):
+            with open(out, encoding='utf-8') as fh:
+                spec = json.load(fh)
+        return code, payload, sent, spec
+
+    def _classified(self, number, **over):
+        return self._issue(number, issueFieldValues={'nodes': [
+            {'field': {'name': 'Priority'}, 'name': 'High'},
+            {'field': {'name': 'Effort'}, 'name': 'Medium'},
+            {'field': {'name': 'Classification'},
+             'options': [{'name': 'New Feature'}]}]}, **over)
+
+    def test_a_clean_backlog_exits_zero_and_writes_no_spec(self):
+        code, payload, _, spec = self._run([self._classified(1)])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertIsNone(spec)
+        self.assertEqual(payload['summary']['issues_with_gaps'], 0)
+
+    def test_gaps_exit_non_zero_so_it_can_run_as_a_check(self):
+        code, payload, _, _ = self._run([self._issue(1)])
+        self.assertEqual(code, wf.EXIT_GAPS)
+        self.assertEqual(payload['status'], 'gaps')
+
+    def test_the_spec_it_writes_is_what_issue_apply_consumes(self):
+        code, payload, _, spec = self._run([self._issue(1)])
+        self.assertEqual(code, wf.EXIT_GAPS)
+        self.assertEqual(spec['issues'][0]['number'], 1)
+        self.assertEqual(spec['issues'][0]['fields']['field-effort'],
+                         wf_core.SPEC_PLACEHOLDER)
+        self.assertTrue(payload['spec_written'])
+
+    def test_it_issues_no_mutation_of_its_own(self):
+        """Both transports raise if touched, so this asserts by construction."""
+        issue = self._issue(1, body='Blocked by #2')
+        code, _, sent, _ = self._run([issue, self._issue(2)])
+        self.assertEqual(code, wf.EXIT_GAPS)
+        self.assertEqual([kind for kind, _ in sent], ['query'])
+
+    def test_an_inferred_edge_is_proposed_not_applied(self):
+        """Body prose is not reliable enough to build a graph from unattended."""
+        issue = self._issue(1, body='## Dependencies\n\nBlocked by #2\n')
+        _, payload, _, spec = self._run([issue, self._classified(2)])
+        self.assertEqual(spec['issues'][0]['blocked_by'], [2])
+        kinds = [g['kind'] for g in payload['issues'][0]['gaps']]
+        self.assertIn('missing-edge', kinds)
+
+    def test_quiet_keeps_the_exit_code_and_drops_the_detail(self):
+        code, payload, _, _ = self._run([self._issue(1)], ['--quiet'])
+        self.assertEqual(code, wf.EXIT_GAPS)
+        self.assertNotIn('issues', payload)
+        self.assertEqual(payload['summary']['issues_with_gaps'], 1)
+
+    def test_limit_stops_the_scan_early(self):
+        issues = [self._issue(n) for n in range(1, 6)]
+        _, payload, _, _ = self._run(issues, ['--limit', '2'])
+        self.assertEqual(payload['summary']['issues_scanned'], 2)
+
+    def test_since_is_passed_to_the_query(self):
+        _, _, sent, _ = self._run([self._classified(1)], ['--since', '2026-01-01'])
+        self.assertEqual(sent[0][1]['since'], '2026-01-01')
+
+    def test_pages_are_followed_to_the_end(self):
+        pages = [[self._classified(1)], [self._classified(2)]]
+        _, payload, sent, _ = self._run(None, pages=pages)
+        self.assertEqual(len(sent), 2)
+        self.assertEqual(payload['summary']['issues_scanned'], 2)
+
+    def test_repo_targets_another_repo_without_reconfiguring(self):
+        """Adoption happens one repo at a time, from a single working copy."""
+        _, payload, _, _ = self._run([self._classified(1)],
+                                     ['--repo', 'acme/other'])
+        self.assertEqual(payload['repo'], 'acme/other')
+
+    def test_a_denied_capability_refuses_rather_than_reporting_a_clean_repo(self):
+        code, payload, _, _ = self._run(
+            [self._classified(1)],
+            caps=dict(_APPLY_CAPS, denied=['organization.issueFields']))
+        self.assertEqual(code, wf.EXIT_CAPABILITY)
+        self.assertEqual(payload['status'], 'no-capabilities')
+
+
 class TestDependencySection(unittest.TestCase):
     """The body prose `wf_core.parse_dependencies()` reads back."""
 
