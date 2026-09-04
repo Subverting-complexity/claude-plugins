@@ -1423,5 +1423,229 @@ class TestAuditSummary(unittest.TestCase):
                           'gaps': {'missing-type': 1, 'missing-field': 2}})
 
 
+# ── preflight: configuration and label drift ─────────────────────────────────
+
+_ALL_SECTIONS = list(wf_core.REQUIRED_CONFIG_SECTIONS)
+
+
+def _levels(findings):
+    return [f['level'] for f in findings]
+
+
+def _checks(findings):
+    return [f['check'] for f in findings]
+
+
+class TestConfigSections(unittest.TestCase):
+
+    def test_a_complete_config_has_no_findings(self):
+        self.assertEqual(wf_core.config_section_findings(_ALL_SECTIONS), [])
+
+    def test_a_missing_section_fails_and_names_itself(self):
+        """The case that must be caught: the section the field tooling reads."""
+        present = [h for h in _ALL_SECTIONS if h != 'Issue Types & Fields']
+        findings = wf_core.config_section_findings(present)
+        self.assertEqual(_levels(findings), [wf_core.CRITICAL])
+        self.assertIn('Issue Types & Fields', findings[0]['detail'])
+        self.assertIn('setup', findings[0]['fix'])
+        self.assertEqual(findings[0]['where'], 'ClaudeProject.md')
+
+    def test_an_authoring_qualifier_still_counts_as_present(self):
+        """The template writes `## Project Board (optional)`; that is the section."""
+        headings = ['%s (optional)' % h for h in _ALL_SECTIONS]
+        self.assertEqual(wf_core.config_section_findings(headings), [])
+
+    def test_every_missing_section_is_reported_separately(self):
+        findings = wf_core.config_section_findings([])
+        self.assertEqual(len(findings), len(_ALL_SECTIONS))
+
+
+class TestScanLabelReferences(unittest.TestCase):
+    """What an instruction file actually tells an agent to apply."""
+
+    def test_a_literal_label_is_a_reference(self):
+        found = wf_core.scan_label_references('gh issue edit 1 --add-label status-ready')
+        self.assertEqual(found, [{'label': 'status-ready', 'line': 1}])
+
+    def test_every_label_flag_shape_is_read(self):
+        text = ('a --label alpha-one\n'
+                'b --add-label "beta-two"\n'
+                "c --remove-label 'gamma-three'\n"
+                'd --add-label=delta-four\n')
+        self.assertEqual([f['label'] for f in wf_core.scan_label_references(text)],
+                         ['alpha-one', 'beta-two', 'gamma-three', 'delta-four'])
+
+    def test_a_comma_separated_list_is_split(self):
+        found = wf_core.scan_label_references('x --add-label "type-bug,priority-high"')
+        self.assertEqual([f['label'] for f in found], ['type-bug', 'priority-high'])
+
+    def test_trailing_prose_punctuation_is_not_part_of_the_name(self):
+        found = wf_core.scan_label_references('apply `gh pr edit --add-label status-in-review`.')
+        self.assertEqual([f['label'] for f in found], ['status-in-review'])
+
+    def test_a_placeholder_is_not_a_claim_about_any_label(self):
+        """These files say "the label you resolved" in three different ways."""
+        text = ('a --add-label "{status_ready_label}"\n'
+                'b --remove-label <verdict-label>\n'
+                'c --add-label {review-state-label}\n'
+                'd --add-label X\n')
+        self.assertEqual(wf_core.scan_label_references(text), [])
+
+    def test_the_line_is_reported_so_the_fix_is_one_click_away(self):
+        found = wf_core.scan_label_references('\n\ngh issue edit --add-label type-bug')
+        self.assertEqual(found[0]['line'], 3)
+
+
+class TestLabelReferenceFindings(unittest.TestCase):
+
+    def _ref(self, label, file='skills/bulk-execute/references/set-selection.md'):
+        return {'file': file, 'label': label, 'line': 42}
+
+    def test_a_retired_label_fails(self):
+        """The named case: a call site still applying a label the repo dropped."""
+        findings = wf_core.label_reference_findings(
+            [self._ref('status-ready')], ['status-in-progress'])
+        self.assertEqual(_levels(findings), [wf_core.CRITICAL])
+        self.assertIn('set-selection.md', findings[0]['detail'])
+        self.assertIn('status-ready', findings[0]['detail'])
+        self.assertTrue(findings[0]['where'].endswith(':42'))
+
+    def test_a_label_the_repo_has_is_not_reported(self):
+        self.assertEqual(wf_core.label_reference_findings(
+            [self._ref('status-ready')], ['status-ready']), [])
+
+    def test_a_renamed_purpose_key_is_named_in_the_finding(self):
+        """Hard-coding the default is wrong on a project that renamed it."""
+        findings = wf_core.label_reference_findings(
+            [self._ref('status-ready')], ['ready'], {'status-ready': 'ready'})
+        self.assertIn('maps `status-ready` to `ready`', findings[0]['detail'])
+
+    def test_one_finding_per_file_and_label(self):
+        refs = [self._ref('status-ready'), self._ref('status-ready'),
+                self._ref('status-ready', 'commands/other.md')]
+        self.assertEqual(len(wf_core.label_reference_findings(refs, [])), 2)
+
+
+class TestConfigLabelFindings(unittest.TestCase):
+
+    def test_a_mapped_label_the_repo_lacks_fails(self):
+        findings = wf_core.config_label_findings(
+            {'claude-ready': 'claude-ready'}, {}, ['type-bug'])
+        self.assertEqual(_levels(findings), [wf_core.CRITICAL])
+        self.assertIn('claude-ready', findings[0]['detail'])
+
+    def test_review_labels_are_checked_against_their_own_file(self):
+        findings = wf_core.config_label_findings(
+            {}, {'review-approved': 'approved'}, [])
+        self.assertIn('review.config.md', findings[0]['detail'])
+
+    def test_a_fully_present_map_is_clean(self):
+        self.assertEqual(wf_core.config_label_findings(
+            {'type-bug': 'type-bug'}, {'review-approved': 'review-approved'},
+            ['type-bug', 'review-approved']), [])
+
+
+class TestLabelDriftFindings(unittest.TestCase):
+
+    def test_a_separator_that_drifted_is_a_warning(self):
+        findings = wf_core.label_drift_findings(['priority-medium', 'priority:medium'])
+        self.assertEqual(_levels(findings), [wf_core.WARNING])
+        self.assertIn('priority:medium', findings[0]['detail'])
+
+    def test_a_dropped_prefix_is_a_warning(self):
+        findings = wf_core.label_drift_findings(['bug', 'type-bug'])
+        self.assertEqual(_checks(findings), ['label-drift'])
+        self.assertIn('type-bug', findings[0]['fix'])
+
+    def test_drift_never_fails_because_the_fix_deletes_data(self):
+        findings = wf_core.label_drift_findings(
+            ['bug', 'type-bug', 'status:ready', 'status-ready'])
+        self.assertEqual(set(_levels(findings)), {wf_core.WARNING})
+
+    def test_two_labels_that_only_look_alike_are_left_alone(self):
+        self.assertEqual(wf_core.label_drift_findings(
+            ['type-bug', 'type-debt', 'documentation']), [])
+
+
+class TestPinnedFieldFindings(unittest.TestCase):
+    """A value written to an unpinned field is stored and then never shown."""
+
+    _REQUIRED = ['Priority', 'Effort', 'Classification', 'Origin']
+
+    def _type(self, name, pinned, enabled=True):
+        return {'name': name, 'enabled': enabled, 'pinned': list(pinned)}
+
+    def test_a_type_missing_a_field_the_tooling_writes_fails(self):
+        findings = wf_core.pinned_field_findings(
+            [self._type('Bug', ['Priority', 'Effort', 'Classification'])],
+            self._REQUIRED)
+        self.assertEqual(_levels(findings), [wf_core.CRITICAL])
+        self.assertIn('Origin', findings[0]['detail'])
+
+    def test_the_fix_names_the_type_and_where_to_pin_it(self):
+        findings = wf_core.pinned_field_findings(
+            [self._type('Bug', [])], self._REQUIRED)
+        self.assertIn('`Bug`', findings[0]['fix'])
+        self.assertIn('Pin to issues', findings[0]['fix'])
+        self.assertIn('Planning', findings[0]['fix'])
+
+    def test_a_disabled_type_is_not_checked(self):
+        """A type nobody can pick cannot hold a wrong value."""
+        self.assertEqual(wf_core.pinned_field_findings(
+            [self._type('Task', [], enabled=False)], self._REQUIRED), [])
+
+    def test_asymmetry_warns_and_does_not_fail(self):
+        """`Epic` is correctly not pinned to `Parent` — an epic is the parent."""
+        findings = wf_core.pinned_field_findings(
+            [self._type('User Story', self._REQUIRED + ['Parent']),
+             self._type('Epic', self._REQUIRED)], self._REQUIRED)
+        self.assertEqual(_levels(findings), [wf_core.WARNING])
+        self.assertEqual(findings[0]['check'], 'pin-asymmetry')
+        self.assertIn('`Parent`', findings[0]['detail'])
+        self.assertIn('`Epic`', findings[0]['detail'])
+
+    def test_a_correctly_pinned_org_is_clean(self):
+        findings = wf_core.pinned_field_findings(
+            [self._type('Bug', self._REQUIRED),
+             self._type('Epic', self._REQUIRED)], self._REQUIRED)
+        self.assertEqual(findings, [])
+
+
+class TestUnmappedFieldFindings(unittest.TestCase):
+
+    def test_an_org_field_no_purpose_key_maps_warns(self):
+        findings = wf_core.unmapped_field_findings(['Priority', 'Team'])
+        self.assertEqual(_levels(findings), [wf_core.WARNING])
+        self.assertIn('Team', findings[0]['detail'])
+
+    def test_a_renamed_field_the_project_mapped_is_clean(self):
+        self.assertEqual(wf_core.unmapped_field_findings(
+            ['Urgency'], {'field-priority': 'Urgency'}), [])
+
+
+class TestBoardColumnFindings(unittest.TestCase):
+
+    def test_a_stale_option_id_warns(self):
+        findings = wf_core.board_column_findings(
+            {'col-in-progress': 'dead1234'}, {'47fc9ee4': 'In Progress'})
+        self.assertEqual(_levels(findings), [wf_core.WARNING])
+        self.assertIn('col-in-progress', findings[0]['detail'])
+
+    def test_a_live_option_id_is_clean(self):
+        self.assertEqual(wf_core.board_column_findings(
+            {'col-in-progress': '47fc9ee4'}, {'47fc9ee4': 'In Progress'}), [])
+
+
+class TestPreflightSummary(unittest.TestCase):
+
+    def test_counts_by_level_and_by_check(self):
+        findings = [wf_core.finding(wf_core.CRITICAL, 'config-section', 'd', 'f'),
+                    wf_core.finding(wf_core.WARNING, 'label-drift', 'd', 'f'),
+                    wf_core.finding(wf_core.WARNING, 'label-drift', 'd', 'f')]
+        self.assertEqual(wf_core.preflight_summary(findings),
+                         {'critical': 1, 'warning': 2,
+                          'checks': {'config-section': 1, 'label-drift': 2}})
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

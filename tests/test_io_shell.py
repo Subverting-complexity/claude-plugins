@@ -1482,6 +1482,213 @@ class TestIssueAudit(_ApplyCase):
         self.assertEqual(payload['status'], 'no-capabilities')
 
 
+class TestConfigAudit(unittest.TestCase):
+    """Preflight's drift checks: what fails, what warns, and what it costs."""
+
+    _SECTIONS = list(wf_core.REQUIRED_CONFIG_SECTIONS)
+    _PINNED = ['Priority', 'Effort', 'Classification', 'Origin']
+    _LABELS = ['status-ready', 'status-in-progress', 'type-bug']
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.scan = os.path.join(self.dir, 'plugin')
+        os.makedirs(self.scan)
+
+    def _write_config(self, sections):
+        path = os.path.join(self.dir, 'ClaudeProject.md')
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write('# Project\n\n')
+            for name in sections:
+                fh.write('## %s\n\nbody\n\n' % name)
+
+    def _write_instruction(self, name, text):
+        with open(os.path.join(self.scan, name), 'w', encoding='utf-8') as fh:
+            fh.write(text)
+
+    def _run(self, sections=None, labels=None, types=None, board=None,
+             cfg_over=None, argv=(), caps=None, pins_ok=True):
+        self._write_config(self._SECTIONS if sections is None else sections)
+        cfg = _cfg(**(cfg_over or {}))
+        args = wf.build_parser().parse_args(
+            ['config-audit', '--scan', self.scan, *argv])
+        sent = []
+
+        def gh_graphql(query, **fields):
+            sent.append('repo')
+            return True, {'repository': {'labels': {
+                'pageInfo': {'hasNextPage': False, 'endCursor': None},
+                'nodes': [{'name': n} for n
+                          in (self._LABELS if labels is None else labels)]}},
+                'board': board}, ''
+
+        def gh_graphql_partial(query, **fields):
+            sent.append('pins')
+            if not pins_ok:
+                return None, [{'message': 'forbidden'}], 'boom'
+            nodes = [{'name': t['name'], 'isEnabled': t['enabled'],
+                      'pinnedFields': [{'name': n} for n in t['pinned']]}
+                     for t in (types if types is not None
+                               else [{'name': 'User Story', 'enabled': True,
+                                      'pinned': self._PINNED}])]
+            return {'organization': {'issueTypes': {'nodes': nodes}}}, [], ''
+
+        with mock.patch.object(wf, 'load_config', lambda: (True, cfg, '')), \
+                mock.patch.object(wf, 'repo_root', lambda: self.dir), \
+                mock.patch.object(wf, 'resolve_org_capabilities',
+                                  lambda cfg, refresh=False, root=None:
+                                  (True, caps or _APPLY_CAPS, '')), \
+                mock.patch.object(wf, 'gh_graphql', gh_graphql), \
+                mock.patch.object(wf, 'gh_graphql_partial', gh_graphql_partial), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code, payload = _capture(wf.cmd_config_audit, args)
+        return code, payload, sent
+
+    def _checks(self, payload):
+        return [f['check'] for f in payload['findings']]
+
+    # ── the clean case ───────────────────────────────────────────────────────
+
+    def test_a_configured_project_passes(self):
+        code, payload, _ = self._run()
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['status'], 'ok')
+        self.assertEqual(payload['findings'], [])
+
+    def test_the_clean_case_says_what_it_compared(self):
+        _, payload, _ = self._run()
+        for check in ('config-section', 'label-reference', 'config-label',
+                      'label-drift', 'field-unmapped', 'field-unpinned'):
+            self.assertIn(check, payload['checked'])
+
+    # ── the four failures ────────────────────────────────────────────────────
+
+    def test_a_missing_section_fails_the_run(self):
+        code, payload, _ = self._run(
+            sections=[s for s in self._SECTIONS if s != 'Issue Types & Fields'])
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(payload['status'], 'drift')
+        self.assertEqual(self._checks(payload), ['config-section'])
+
+    def test_a_call_site_applying_a_retired_label_fails_the_run(self):
+        """The named case: `set-selection.md` still applying `status-ready`."""
+        self._write_instruction(
+            'set-selection.md',
+            'Mark it ready:\n\n    gh issue edit $n --add-label status-ready\n')
+        code, payload, _ = self._run(labels=['status-in-progress'])
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(self._checks(payload), ['label-missing'])
+        self.assertIn('set-selection.md', payload['findings'][0]['detail'])
+
+    def test_a_configured_label_the_repo_lacks_fails_the_run(self):
+        code, payload, _ = self._run(
+            cfg_over={'labels': {'claude-ready': 'claude-ready'}})
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertIn('config-label', self._checks(payload))
+
+    def test_an_unpinned_mandatory_field_fails_the_run(self):
+        code, payload, _ = self._run(types=[
+            {'name': 'User Story', 'enabled': True,
+             'pinned': ['Priority', 'Effort', 'Classification']}])
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(self._checks(payload), ['field-unpinned'])
+        self.assertIn('Origin', payload['findings'][0]['detail'])
+
+    # ── the warnings ─────────────────────────────────────────────────────────
+
+    def test_pin_asymmetry_warns_without_failing_the_run(self):
+        """`Epic` is not pinned to `Parent`, correctly. That is not an error."""
+        code, payload, _ = self._run(types=[
+            {'name': 'User Story', 'enabled': True,
+             'pinned': self._PINNED + ['Parent']},
+            {'name': 'Epic', 'enabled': True, 'pinned': self._PINNED}])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(self._checks(payload), ['pin-asymmetry'])
+
+    def test_label_drift_warns_without_failing_the_run(self):
+        code, payload, _ = self._run(
+            labels=self._LABELS + ['priority-medium', 'priority:medium', 'bug'])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(set(self._checks(payload)), {'label-drift'})
+        self.assertEqual(payload['summary']['warning'], 2)
+
+    def test_an_unmapped_org_field_warns(self):
+        caps = dict(_APPLY_CAPS, field_map=dict(_APPLY_CAPS['field_map'],
+                                                **{'Team': {}}))
+        code, payload, _ = self._run(caps=caps)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertIn('field-unmapped', self._checks(payload))
+
+    def test_a_board_column_that_no_longer_resolves_warns(self):
+        board = {'title': 'widgets', 'field': {'options': [
+            {'id': 'live1234', 'name': 'In Progress'}]}}
+        code, payload, _ = self._run(
+            board=board,
+            cfg_over={'board': {'project_node_id': 'PVT_1',
+                                'project_title': 'widgets',
+                                'status_field_name': 'Status',
+                                'columns': {'col-in-progress': 'dead1234'}}})
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(self._checks(payload), ['board-column'])
+
+    def test_a_node_id_pointing_at_a_different_board_warns(self):
+        board = {'title': 'something else', 'field': {'options': []}}
+        _, payload, _ = self._run(
+            board=board,
+            cfg_over={'board': {'project_node_id': 'PVT_1',
+                                'project_title': 'widgets',
+                                'status_field_name': 'Status', 'columns': {}}})
+        self.assertEqual(self._checks(payload), ['board-title'])
+
+    def test_unreadable_pinning_is_reported_rather_than_assumed_correct(self):
+        """Not knowing is not the same as being fine."""
+        code, payload, _ = self._run(pins_ok=False)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(self._checks(payload), ['pin-unknown'])
+        self.assertIn('field-unpinned', payload['skipped'])
+
+    # ── what it costs, and what it refuses ───────────────────────────────────
+
+    def test_the_api_checks_cost_two_round_trips(self):
+        """Preflight runs at the top of every session, so this is a budget."""
+        _, _, sent = self._run(
+            cfg_over={'board': {'project_node_id': 'PVT_1', 'project_title': None,
+                                'status_field_name': 'Status', 'columns': {}}},
+            board={'title': None, 'field': {'options': []}})
+        self.assertEqual(sent, ['repo', 'pins'])
+
+    def test_offline_runs_the_checks_that_need_no_network(self):
+        def explode(*a, **k):
+            raise AssertionError('--offline must not touch the network')
+
+        with mock.patch.object(wf, 'gh_graphql', explode):
+            code, payload, _ = self._run(
+                sections=[s for s in self._SECTIONS if s != 'Label Map'],
+                argv=['--offline'])
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(self._checks(payload), ['config-section'])
+        self.assertEqual(payload['checked'], ['config-section'])
+
+    def test_quiet_keeps_the_exit_code_and_drops_the_detail(self):
+        code, payload, _ = self._run(sections=[], argv=['--quiet'])
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertNotIn('findings', payload)
+        self.assertEqual(payload['summary']['critical'], len(self._SECTIONS))
+
+    def test_a_denied_capability_refuses_rather_than_reporting_a_clean_org(self):
+        code, payload, _ = self._run(
+            caps=dict(_APPLY_CAPS, denied=['organization.issueFields']))
+        self.assertEqual(code, wf.EXIT_CAPABILITY)
+        self.assertEqual(payload['status'], 'no-capabilities')
+
+    def test_a_placeholder_in_an_instruction_file_is_not_a_label(self):
+        self._write_instruction(
+            'claim.md', 'gh issue edit $n --add-label "{status_ready_label}"\n')
+        code, payload, _ = self._run(labels=[])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(self._checks(payload), [])
+
+
 class TestDependencySection(unittest.TestCase):
     """The body prose `wf_core.parse_dependencies()` reads back."""
 

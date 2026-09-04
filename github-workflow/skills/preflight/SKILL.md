@@ -61,7 +61,7 @@ else
       echo "WARNING placeholders: $placeholders unreplaced template placeholder(s)"
       grep -nE '\{(org|repo|name|id|package_manager|quality_gate_command|branch_pattern|default_branch|n|criteria|path/to/doc)\}' ClaudeProject.md 2>/dev/null | head -5
     fi
-    for section in "## Identity" "## Package Manager" "## Quality Gate" "## Branch Convention" "## Label Map"; do
+    for section in "## Identity" "## Package Manager" "## Quality Gate" "## Branch Convention" "## Label Map" "## Issue Types & Fields"; do
       slug=$(echo "$section" | sed 's/## //; s/ /-/g' | tr '[:upper:]' '[:lower:]')
       if grep -q "$section" ClaudeProject.md 2>/dev/null; then
         echo "OK section-$slug"
@@ -322,6 +322,38 @@ if [ -f ClaudeProject.md ]; then
 fi
 ```
 
+### Configuration and label drift
+
+`ClaudeProject.md`, the labels the repo actually carries, and the org's
+issue-type configuration drift apart quietly: a label gets renamed and a
+call site still applies the old name, an org field stops being pinned and
+every value written to it disappears from the issue form. None of it
+raises an error. `wf config-audit` compares all three in two API calls.
+
+```!
+if [ -f ClaudeProject.md ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" ]; then
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit --quiet 2>/dev/null
+  echo "CONFIG_AUDIT_EXIT: $?"
+fi
+```
+
+Read the `summary` it printed:
+
+- `critical` is `0` — nothing here blocks. If `warning` is above zero,
+  that is one informational line at most (see Section 3), never a prompt.
+- `critical` is above zero (exit code 26, `"status": "drift"`) — these
+  are CRITICAL. Re-run **without** `--quiet` to list them; each finding
+  names the file to open (`where`) and the fix (`fix`). Report them
+  verbatim rather than paraphrasing: the fix for an unpinned field is a
+  specific form in the org settings, and a paraphrase loses it.
+- The command did not run (no `CONFIG_AUDIT_EXIT` line) — the plugin's
+  scripts are not on disk. No finding; the other checks still stand.
+
+It costs two round-trips and runs once per session, because a passing
+preflight writes `.claude/preflight-passed.txt` and later commands skip
+it. Use `config-audit --offline` when only the file-level checks are
+wanted.
+
 ### Review configuration
 
 ```!
@@ -360,7 +392,11 @@ Read all output from the checks above. Categorize:
   gap that escalates even though board *moves* are best-effort: a board
   that exists but cannot mirror the lifecycle is a real misconfiguration
   the user must resolve (setup creates the columns), not a default-covered
-  gap.
+  gap. `config-audit` reporting `"status": "drift"` is also CRITICAL: a
+  call site applying a label the repo does not have, or an issue type not
+  pinned to a field the tooling writes, produces a *wrong* result rather
+  than a defaulted one — the command runs, GitHub accepts it, and the
+  value is never seen.
 - **WARNING** — something is missing **but a default covers it**, so the
   workflow proceeds: an unmapped label purpose (resolves to its default
   name via `templates/default-labels.md`), unreplaced placeholders,
@@ -374,7 +410,10 @@ Read all output from the checks above. Categorize:
   **no CI gate** — neither GitHub required status checks nor
   `require-ci-before-merge` (an approved PR could merge with no CI
   guarantee; `/github-workflow:setup harden` wires up the gate).
-  **Defaults are not
+  or any `config-audit` finding at `warning` level (label drift, an org
+  field no purpose key maps, a stale board column, issue-type pinning
+  that could not be read — each degrades the workflow without breaking
+  it). **Defaults are not
   a failure** — every label, the issue lifecycle states, and the
   review-state labels all have defaults, so a missing mapping is never
   critical on its own. (Best-effort board identity is **not** checked
