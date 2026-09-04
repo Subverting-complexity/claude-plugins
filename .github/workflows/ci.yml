@@ -120,9 +120,16 @@ jobs:
       # That is routing every review finding, not restatement, and the
       # reasoning went to execute-rationale.md rather than into this window.
       # Measured 48376; 49400 is ~2.1%, matching the convention above.
-      - name: Check execute whole-run footprint (budget 49400 tokens)
+      #
+      # Recalibrated again from 49400: Phase 8 dropped to one reviewer but
+      # gained the severity rubric, which decides what a review may raise at
+      # all, and Phase 9 gained the test that decides whether a re-review
+      # happens. Both are decision procedures the run has to carry, and the
+      # reasoning behind them went to execute-rationale.md, which this gate
+      # skips. Measured 49156; 50150 is ~2.0%, matching the convention above.
+      - name: Check execute whole-run footprint (budget 50150 tokens)
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 49400
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 50150
 
       # Recalibrated from 37000: the pinned-PR path, the read-only overrides,
       # and the sanctioned-caller carve-out in auto-merge.md are new. Measured
@@ -150,9 +157,14 @@ jobs:
         run: |
           bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md             --exclude github-workflow/skills/execute/references/review-and-merge.md             --exclude github-workflow/skills/code-review/references/auto-merge.md             --budget 33950
 
-      - name: Check bulk-execute whole-run footprint (budget 47700 tokens)
+      # Recalibrated from 47700 for the same reason as execute's whole-run
+      # window above: the shared review reference gained the severity rubric
+      # and the re-review test. bulk-execute reuses that file rather than
+      # restating it, so only this window moves and its build window does not.
+      # Measured 47904; 48860 is ~2.0%, matching the convention above.
+      - name: Check bulk-execute whole-run footprint (budget 48860 tokens)
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 47700
+        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 48860
 
       - name: Check code-review skill footprint (budget 40700 tokens)
         shell: bash

@@ -186,5 +186,5 @@ Phase 10 or at an exit Phases 8 to 10 name, nowhere else.
 it was removed: this session wrote the code, so it shares every assumption
 the code was built on and cannot judge it, and anything it files duplicates
 what the Phase 8 agents file minutes later. Note the limit. The diff goes
-to reviewers **you** spawn and their findings come back to **you**. Your
+to a reviewer **you** spawn and its findings come back to **you**. Your
 judgement of the code is set aside, never your ownership of the run.

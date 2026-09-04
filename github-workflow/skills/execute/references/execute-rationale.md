@@ -44,11 +44,45 @@ self-contained, with follow-up issues filed for the remainder. Incomplete
 work that is *not* shippable does not get a PR at all; it stays on the
 pushed branch with the issue marked `status-needs-attention`.
 
+## Why one reviewer, and why the severity rubric
+
+Phase 8 used to spawn two reviewers with different lenses. The second one
+mostly returned the first one's findings again, at a second reviewer's cost,
+and every extra finding had to be reconciled by hand into one verdict. The
+independence the phase needs comes from a context that never saw the build,
+which one agent supplies as well as two.
+
+What actually decided whether a review was useful was not how many agents
+read the diff but what they were allowed to raise. An unfiltered review of a
+real diff returns a long list in which two blocking defects sit among
+fifteen preferences, and the run then spends its remaining budget answering
+the preferences. The rubric is the filter: blocking findings, quick fixes,
+the two things worth filing, and an explicit fourth bucket of observations
+that are not findings at all and are left unsaid.
+
+## Why a re-review has to be earned
+
+Re-reviewing after every push turned a finished pull request into an open
+one. Each round costs a push, an agent and a round trip, and most rounds
+were spent re-reading a diff whose only change since the last reading was a
+deleted unused import or a filled-in test case. The quality gate already
+covers that class of change.
+
+So the trigger is the nature of the rework rather than the fact of it: new
+or changed logic, a new file or dependency, a behaviour change, a security
+fix, or a file the first review never read. Anything smaller is pushed with
+the gate as its evidence and named in the review comment, so the record
+stays honest about what a fresh context did and did not see. The loop is
+capped at one round for the same reason the budget is capped: a PR that is
+still contested after one round of rework is better handed to the next
+`/github-workflow:code-review` run, which reads it fresh, than argued with
+by a session that has been on it for hours.
+
 ## Why a disclosed self-review is allowed to merge
 
 Phase 8 exists because the session that wrote the code cannot judge it: it
 shares every assumption the code was built on. Where a separate agent context
-can be spawned, nothing changes — two fresh reviewers decide the verdict.
+can be spawned, nothing changes — a fresh reviewer decides the verdict.
 
 The question is what to do when no separate context is available at all,
 which happens when `execute` is itself running as a subagent and the harness
@@ -89,7 +123,7 @@ review and merge to settle what one edit on an already-checked-out branch
 would have settled.
 
 It is also the cheapest possible moment to fix. The branch is checked out,
-the context that wrote the code is live, the reviewers have just read it,
+the context that wrote the code is live, the reviewer has just read it,
 and the pull request has not merged. Every one of those advantages is gone
 by the time a filed issue is picked up.
 
@@ -102,5 +136,5 @@ finds it.
 
 Out-of-scope problems keep going to the board because fixing them here would
 be the opposite mistake. A pre-existing bug repaired mid-review widens a diff
-the reviewers have already read, and the wider the diff the less the review
+the reviewer has already read, and the wider the diff the less the review
 means.

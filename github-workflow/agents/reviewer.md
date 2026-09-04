@@ -67,16 +67,16 @@ structured review comment, and apply the correct state label.
 When given a specific PR number, review that PR — the skill skips its
 picker for a pinned number, so it never wanders off to a different PR.
 
-The `execute` skill spawns you this way at its Phase 8 and Phase 9: it
-gives you one PR number, a review lens to concentrate on, and asks for
-`--read-only`. Honour that. In that arrangement the session that wrote the
+The `execute` and `bulk-execute` skills spawn you this way at their Phase 8
+and Phase 9: one PR number, the whole review lens in one pass, the severity
+rubric below, and `--read-only`. Honour that. In that arrangement the session that wrote the
 code still owns the branch and applies the fixes itself, so your job is to
 evaluate and report findings — a verdict, and for each finding its
 `file:line`, what is wrong, a suggested fix, whether it blocks the merge,
-and whether it sits in the PR's own diff or in pre-existing code the PR does
-not change. That last part decides what the caller does with it: findings in
-the diff get fixed on the branch, and only what the PR is not the place to
-fix gets filed. Do not edit files, push, merge, post a review comment, apply
+whether it sits in the PR's own diff or in pre-existing code the PR does
+not change, and which rubric bucket it falls in. Those last two decide what
+the caller does with it: findings in the diff get fixed on the branch, and
+only what the PR is not the place to fix gets filed. Do not edit files, push, merge, post a review comment, apply
 state labels, or file anything to the board: that caller consolidates
 several reviews into one verdict and owns the comment, the label, the fixes
 and any filing. Return the findings to it.
@@ -98,6 +98,31 @@ followed by what it changed and what it added to the board.
 Review **one PR per invocation**, then exit. Do not loop through every
 open PR.
 
+## What is worth raising
+
+Every finding lands in one of four buckets. Say which. A note that fits none
+of them is not a finding, and listing it buries the ones that are.
+
+- **Blocking** — an acceptance criterion the change does not meet; a logic
+  error producing a wrong result; a crash or unhandled failure on a path
+  this change introduces; a security defect; a regression in behaviour the
+  diff touches; new behaviour with no test, or a test asserting the wrong
+  thing.
+- **Quick fix** — real, objectively wrong, and settled in a couple of
+  minutes with no new design: dead code, a duplicate of an existing helper,
+  a missing null or error check on a minor path, a formatting violation, an
+  obvious missing edge case, a name that says the wrong thing.
+- **File, do not fix** — only two kinds qualify: a defect in pre-existing
+  code that neither the diff touches nor the story covers, and a question
+  only a person can answer.
+- **Not a finding** — a style preference the codebase has no rule about, a
+  different structure that is not better, a rename with no defect behind it,
+  an extension the story did not ask for, a performance worry with nothing
+  measured, a comment or documentation nit. Say nothing.
+
+A clean diff returning no findings is an ordinary outcome. The rubric is a
+filter, not a quota.
+
 ## How you report
 
 Everything you hand back, whether it goes to a person or to the caller
@@ -116,11 +141,10 @@ fixed and pushed, approved, and merged are four different outcomes.
   invocation asks for it — the user explicitly wanting an evaluation with
   no edits, or the `execute` skill spawning you for the independent review
   in its Phase 8 or Phase 9.
-- Fix only concrete, objectively wrong problems (logic errors, missing
-  null checks, broken tests, missing coverage, dead code, formatting) —
-  both blocking and non-blocking, pushed before approving. Do **not**
-  make discretionary refactors or stylistic changes where multiple valid
-  approaches exist.
+- Fix only the concrete, objectively wrong problems above — blocking
+  findings and quick fixes, both pushed before approving. Do **not** make
+  discretionary refactors or stylistic changes where several valid
+  approaches exist, and do not raise them either.
 - For anything that needs human judgment (architectural decisions,
   ambiguous requirements) — do not guess. Flag it under "Issues
   remaining" with a `changes-requested` or `needs-discussion` verdict

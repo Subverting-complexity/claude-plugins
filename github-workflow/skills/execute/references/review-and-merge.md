@@ -52,44 +52,48 @@ build.
    git rev-parse HEAD
    ```
 
-2. **Spawn two review agents in parallel**, both in the same tool-call
-   batch so they run concurrently. Use agent type `github-workflow:Reviewer`
+2. **Spawn one review agent.** Use agent type `github-workflow:Reviewer`
    (defined in `agents/reviewer.md`); if the harness does not offer plugin
-   agents, use a general-purpose subagent. Give each one:
+   agents, use a general-purpose subagent. One agent is enough: the
+   independence this phase needs comes from a context that never saw the
+   build, not from the number of readers. Give it:
 
    - The PR number **and** title, its URL, the head SHA from step 1, and
-     the issue number and title it closes.
+     the issue number and title it closes, with its acceptance criteria.
    - The command to run: `/github-workflow:code-review {pr_number}
      --read-only`.
-   - Its review lens, so the two passes do not simply repeat each other.
-     The first agent covers correctness and story alignment: does the
-     change actually satisfy the acceptance criteria, and is the logic
-     right. The second covers security, error handling, test coverage,
-     and regressions in code the diff touches indirectly.
-   - **That you own the verdict.** Each agent must return its findings and
-     verdict to you and must **not** post a review comment or reconcile the
-     PR's labels. Two concurrent reviewers relabelling would overwrite each
-     other last-writer-wins, and two contradictory review comments at the
-     same SHA would confuse the re-review in Phase 9. `read-only-mode.md`
-     sanctions this override for a caller that owns the verdict; say so
-     explicitly in the prompt, because its default is to relabel.
+   - **One pass covering the whole diff**, in this order: correctness and
+     story alignment — does the change actually satisfy the acceptance
+     criteria, and is the logic right — then security, error handling, test
+     coverage, and regressions in code the diff touches indirectly.
+   - **The severity rubric at the end of this phase, quoted into the
+     prompt.** It decides what the agent may raise at all, and it is the
+     difference between a review naming three real problems and one
+     returning twenty entries nobody will act on. Ask for each finding to
+     carry its bucket.
+   - **That you own the verdict.** The agent must return its findings to you
+     and must **not** post a review comment or reconcile the PR's labels.
+     You are mid-run on this branch and about to post one consolidated
+     verdict in step 5; a reviewer labelling the PR underneath you would
+     contradict it. `read-only-mode.md` sanctions this override for a caller
+     that owns the verdict; say so explicitly in the prompt, because its
+     default is to relabel.
    - What to return: the verdict, and every finding with its `file:line`,
-     a sentence on what is wrong, a suggested fix, whether it blocks the
-     merge, and **whether it sits in this PR's diff or in pre-existing code
-     the PR does not change**. You need that last part to apply the
-     fix-in-scope rule in Phase 9 — the first kind you fix on this branch,
-     the second kind you file. Ask for the classification explicitly;
-     without it you have to re-derive it from the diff yourself. Neither
-     agent files anything either way: read-only mode never writes to the
-     board.
+     its rubric bucket, a sentence on what is wrong, a suggested fix, and
+     **whether it sits in this PR's diff or in pre-existing code the PR does
+     not change**. You need that last part to apply the fix-in-scope rule in
+     Phase 9 — the first kind you fix on this branch, the second kind you
+     file. Ask for the classification explicitly; without it you have to
+     re-derive it from the diff yourself. The agent files nothing either
+     way: read-only mode never writes to the board.
 
    **Read-only is not optional here.** You still own the branch, and a
    reviewer pushing to it while you hold it would collide with your own
    commits. Read-only mode evaluates without claiming the PR, without
    editing files, and without merging, and it checks out **detached**
    because git refuses to check out a branch that another worktree already
-   holds — which yours does. Because those agents change no files, the
-   worktree the harness gives each of them is discarded cleanly (see
+   holds — which yours does. Because that agent changes no files, the
+   worktree the harness gives it is discarded cleanly (see
    `docs/worktree-config.md`).
 
 3. **If no subagent can be spawned at all** — the harness offers no
@@ -102,7 +106,8 @@ build.
    Only when that also fails, run `/github-workflow:code-review {pr_number}
    --read-only` inline in this session, and record that this happened —
    `mkdir -p .claude && touch .claude/self-review.flag` — so the disclosure
-   below survives a compaction the way the other flags do.
+   below survives a compaction the way the other flags do. The severity
+   rubric governs an inline review exactly as it governs an agent's.
 
    An inline review is a **self-review**: the same context that wrote the code
    judges it, so it is weaker evidence than this phase is designed to produce,
@@ -119,71 +124,93 @@ build.
    failing quality gate, an unapproved verdict, red or absent CI — all still
    apply, and they are the ones carrying real evidence about the code.
 
-4. **Merge the two reports into one findings list.** Where both agents
-   raise the same problem, keep one entry and note that both found it.
-   Where they disagree on severity, take the stricter reading. The
-   combined verdict is the strictest of the two: any Changes Requested or
-   Needs Discussion outranks an Approved.
+4. **Sift what comes back.** Drop anything the agent raised that the rubric
+   says is not a finding, and take the stricter reading where a finding is
+   genuinely ambiguous between blocking and quick fix. What survives is the
+   findings list; one agent means there is nothing to reconcile.
 
 5. **Post one consolidated review comment and set the label yourself.**
    Write the comment following `templates/body-file-write.md` (temp file
-   plus `--body-file`), naming the two lenses, the combined verdict, and
-   each finding. Then reconcile the PR's review-state label to the combined
-   verdict, which is why the reviewers were told not to:
+   plus `--body-file`), naming what was reviewed, the verdict, and each
+   finding with its bucket. Then reconcile the PR's review-state label,
+   which is why the reviewer was told not to:
 
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict <approved|changes-requested|needs-discussion>
    ```
 
    **One override.** If `.claude/gate-failed.flag` exists, record
-   `changes-requested` whatever the reviewers concluded. Phase 7 applied that
+   `changes-requested` whatever the reviewer concluded. Phase 7 applied that
    label deliberately to block the merge while the quality gate is red, and
    this call strips every other state label, so an approving verdict would
-   quietly remove the guard. Say in the comment that the reviewers approved
+   quietly remove the guard. Say in the comment that the review approved
    the code but the gate is still red.
 
-## Phase 9 — Apply the fixes and re-review
+### The severity rubric
 
-If the combined verdict is **Approved** with no blocking findings, go
-straight to Phase 10 — **unless `.claude/gate-failed.flag` exists**. A red
-quality gate is outstanding work even when the reviewers liked the code, and
-it is the one thing that will stop Phase 10 merging, so enter this phase to
-repair it: skip to step 3, fix the gate, and re-review from step 4 once it is
-green. Without this the flag can never be cleared on the path where clearing
-it matters most, and the run ends with an approved PR it refuses to merge.
+Every finding lands in one of four buckets, and the reviewer is asked to
+say which. A note that fits none of them is not a finding.
+
+**Blocking.** The pull request does not merge until it is fixed:
+
+- an acceptance criterion the change does not meet;
+- a logic error that produces a wrong result, or a crash or unhandled
+  failure on a path this change introduces;
+- a security defect — injection, a committed secret, a new surface with no
+  authorisation check, unvalidated input reaching something dangerous;
+- a regression in behaviour the diff touches;
+- new behaviour the story specifies with no test, or a test asserting the
+  wrong thing.
+
+**Quick fix.** Real, objectively wrong, and settled in a couple of minutes
+with no new design: dead code, a duplicate of a helper that already exists,
+a missing null or error check on a minor path, a formatting violation, an
+obvious missing edge case in a test, a name that says the wrong thing.
+Phase 9 fixes these without ceremony. They do not block the merge, and on
+their own they do not earn a re-review.
+
+**File, do not fix.** Exactly two kinds qualify: a defect in pre-existing
+code that neither the diff touches nor the story covers, and a question
+only a person can answer. Nothing else. "It could be filed" is not a
+reason to file something sitting in a diff you are already holding.
+
+**Not a finding.** Say nothing about a style preference the codebase has no
+rule about, a different structure that is not better, a rename with no
+defect behind it, an extension the story did not ask for, a performance
+worry with nothing measured, or a comment and documentation nit. Each one
+buries the findings that matter.
+
+The rubric is a filter, not a quota. A clean diff that returns no findings
+is an ordinary outcome and reads as one.
+
+## Phase 9 — Apply the fixes, re-review only when they earn it
+
+If the verdict is **Approved** with no blocking findings and no quick fixes
+worth applying, go straight to Phase 10 — **unless
+`.claude/gate-failed.flag` exists**. A red quality gate is outstanding work
+even when the review liked the code, and it is the one thing that will stop
+Phase 10 merging, so enter this phase to repair it: skip to step 3, fix the
+gate, and judge the re-review at step 4 once it is green. Without this the
+flag can never be cleared on the path where clearing it matters most, and
+the run ends with an approved PR it refuses to merge.
 
 Otherwise work through the findings on the branch you are already on:
 
-1. **Fix, do not file, every finding against this PR's own diff or against
-   the story it closes, where the answer is objectively correct** — a logic
-   error, a missing null check, a missing or wrong test, unhandled failure on
-   a new external call, dead code, a formatting violation, an acceptance
-   criterion the change does not yet meet. The story's own requirements are
-   in scope whether or not the current diff touches them: a gap the reviewers
-   found there is work this run has not finished, not new work for the board.
-   Fix the blocking findings first, then the
-   non-blocking ones. A reviewer's finding against the feature this run just
-   built is the run's own unfinished work, and an issue filed in place of a
-   fix is that defect merged and rebadged as somebody else's backlog item.
-   Non-blocking is not a reason to file either: a small cleanup in a diff
-   you are already holding, on a branch you are already on, is cheaper to do
-   now than to schedule, review and merge separately later.
-2. **File only what this PR is not the place to fix.** Two kinds qualify,
-   and nothing else does:
-   - A finding in **pre-existing code that neither the diff touches nor the
-     story covers**. Fixing it here would widen a diff the reviewers have
-     already read, so file it
-     with `/github-workflow:report-issue` (autonomous, `status-ready`,
-     correct type, referencing this PR and the `file:line`) and leave the
-     branch alone.
-   - A finding that genuinely needs **human judgment** — an architectural
-     decision, an ambiguous requirement, a fix whose right shape is a
-     product question. File the question the same way. Do not guess at it,
-     and do not drop it. Unlike the first kind, this one also holds the PR:
-     see the Needs Discussion rule below.
-
-   If a finding is in the diff and you can fix it, fixing it is the outcome
-   this phase exists for. "It can be filed" is not a reason to file it.
+1. **Fix every blocking finding, and every quick fix, that sits in this
+   PR's diff or in the story it closes.** Blocking ones first. The story's
+   own requirements are in scope whether or not the current diff touches
+   them: a gap found there is work this run has not finished, not new work
+   for the board. A two-minute correction on a branch you are already
+   holding costs less now than it costs to schedule, review and merge
+   later, and an issue filed in place of a fix is that defect merged and
+   rebadged as somebody else's backlog item.
+2. **File only the two things the rubric says to file:** a defect in
+   pre-existing code that neither the diff touches nor the story covers,
+   and a question that genuinely needs human judgment. File either with
+   `/github-workflow:report-issue` (autonomous, `status-ready`, correct
+   type, referencing this PR and the `file:line`). The second kind also
+   holds the PR: see the Needs Discussion rule below. Do not guess at it,
+   and do not drop it.
 3. Re-run the quality gate from `ClaudeProject.md`, then commit and push.
    The same Phase 5 rule applies: if the gate is still red after a
    reasonable number of attempts, stop fixing, leave the PR unmerged, and
@@ -191,39 +218,54 @@ Otherwise work through the findings on the branch you are already on:
    exists, delete it (`rm -f .claude/gate-failed.flag`) — the rework fixed
    what Phase 5 could not, and leaving the flag would block Phase 10 from
    ever merging this run.
-4. **Re-review.** Record the new head SHA, then spawn one fresh reviewer
-   the same way as Phase 8 — read-only, detached, findings returned to you,
-   no relabelling — asked to confirm whether the previous findings are
-   resolved and whether the fixes introduced anything new. One agent is
-   enough for a re-review; the two lenses already ran against the original
-   diff. Post the consolidated comment and reconcile the label again — with
+4. **Re-review only when the rework was substantial.** A re-review costs a
+   push, an agent and a round trip, and running one after every commit is
+   how a run that had a working pull request an hour ago still has an open
+   one. Spawn a re-reviewer only when the rework did at least one of these:
+
+   - changed or added logic, rather than correcting it in place;
+   - added a file, an interface, or a dependency;
+   - changed behaviour a user or a caller would notice;
+   - fixed a security defect;
+   - touched code outside the files the first review read.
+
+   If the rework was quick fixes only, do **not** re-review: the quality
+   gate in step 3 is the check on that class of change and it has already
+   run. Note in the review comment what was fixed without a second reading,
+   so the record is honest about what a fresh context saw.
+
+   When a re-review is warranted, record the new head SHA and spawn **one**
+   agent the same way as Phase 8 — read-only, detached, findings returned to
+   you, no relabelling, the same rubric quoted in — pointed at the **rework
+   commits** rather than the whole pull request, and asked whether the
+   blocking findings are resolved and whether the fixes introduced anything
+   new. Post the consolidated comment and reconcile the label again, with
    the same gate-failed override as Phase 8 step 5: while
    `.claude/gate-failed.flag` exists, record `changes-requested` whatever the
-   reviewer concluded. When this round was entered only to repair a red
-   quality gate and the reviewers had already approved, the re-review is
-   still worth its cost: the gate fix is new code that nobody has read.
-5. Repeat this loop — fix, push, re-review — until the verdict is
-   Approved, **as far as the session budget allows**. Before starting
-   another round, check the elapsed time and how much of the token budget
-   is left, and start the round only if you can finish it: a round costs a
-   push plus one agent's review. In practice this settles in one or two
-   rounds.
+   reviewer concluded.
+5. **One re-review round, then stop.** If it comes back Approved, go to
+   Phase 10. If it still requests changes, do not open another round: apply
+   anything in it that is a quick fix, push, and leave the pull request
+   carrying `changes-requested` with a comment naming what is outstanding.
+   The next `/github-workflow:code-review` run picks a `changes-requested`
+   PR up on its own, in a context that is not several hours into this one
+   and reads the diff fresh. Report the run as reviewed, reworked and not
+   merged, and say what remains.
 
-A **Needs Discussion** verdict is the one case more rework cannot settle,
-because it means a reviewer found a question only a person can answer. It is
-the human-judgment exception in step 2, not a general licence to file:
-everything else the reviewers found in this diff was fixed in step 1. Do
-not loop on it: file the question to the board with
-`/github-workflow:report-issue`, leave the PR open carrying that verdict,
-say in your final report what has to be decided, run **Exit cleanup**, and
-exit without merging.
+A **Needs Discussion** verdict is the one case rework cannot settle,
+because it means the reviewer found a question only a person can answer. It
+is the human-judgment exception in step 2, not a general licence to file:
+everything else found in this diff was fixed in step 1. Do not loop on it:
+file the question to the board with `/github-workflow:report-issue`, leave
+the PR open carrying that verdict, say in your final report what has to be
+decided, run **Exit cleanup**, and exit without merging.
 
 **When the budget runs out before approval**, stop cleanly. Step 5 of Phase
-8 left the PR carrying the combined verdict, so a `changes-requested` PR is
-picked up automatically by the next `/github-workflow:code-review` run,
-which reworks and re-reviews it. Post one comment naming what is still
-outstanding, report it, run **Exit cleanup**, and exit without merging. Do
-not merge a PR whose review never reached an approved verdict.
+8 left the PR carrying the verdict, so a `changes-requested` PR is picked up
+automatically by the next `/github-workflow:code-review` run, which reworks
+and re-reviews it. Post one comment naming what is still outstanding, report
+it, run **Exit cleanup**, and exit without merging. Do not merge a PR whose
+review never reached an approved verdict.
 
 ## Phase 10 — Merge and settle
 
@@ -249,7 +291,7 @@ exit through **Exit cleanup**:
   read the body if the flag is no longer in context. Reconciling duplicates
   belongs to code review, which keeps the better-implemented PR and closes
   the other.
-- The combined verdict is not Approved.
+- The verdict is not Approved.
 
 A self-review (`test -f .claude/self-review.flag`) is **not** on that list.
 It merges, provided Phase 8 step 3's disclosure is on the PR comment and
@@ -353,7 +395,7 @@ board's **Done** column. Report each settled issue by number and title.
 
 Then run **Exit cleanup** (`references/exit-cleanup.md`) as the final step,
 which releases the `pr-{pr_number}` claim, and report the run in full: the
-story implemented, the PR merged, what the reviewers found and what you
+story implemented, the PR merged, what the review found and what you
 changed in response, anything filed to the board, and the issues now closed.
 Keep those last two apart in the report and say why each filed item was
 filed — unrelated to this PR, or an open question for a person. A run that

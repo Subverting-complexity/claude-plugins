@@ -130,11 +130,11 @@ red rather than moving on to the next story. Code stacked on a broken tree
 is harder to attribute, not easier, and the run has a better outcome
 available: ship what is green, release the rest.
 
-## Why the reviewers are asked about scope creep
+## Why the reviewer is asked about scope creep
 
-Two reviewers with the usual lenses catch what they catch in a single-story
-diff. A multi-story diff adds one failure mode they will not go looking for:
-a change that belongs to none of the stories, which in a large diff reads as
+A reviewer with the usual lens catches what it catches in a single-story
+diff. A multi-story diff adds one failure mode it will not go looking for: a
+change that belongs to none of the stories, which in a large diff reads as
 just more of the same. Asking the question explicitly is cheap and it is the
 one thing a bulk review needs that a single-story review does not.
 
@@ -173,8 +173,8 @@ else will touch them either. Refusing to merge without an independent
 reviewer would trade weaker evidence for a larger backlog of work that is
 finished but cannot land.
 
-What does change is the standard the fallback is held to. Both review lenses
-plus the scope-creep question are carried explicitly, one pass each, because
+What does change is the standard the fallback is held to. The whole lens
+plus the scope-creep question is carried explicitly and in order, because
 the failure mode of an inline review of a large diff is a single skim that
 reports nothing; and the disclosure lists the stories the pull request
 closes, because how much a weak verdict matters depends on how much it
