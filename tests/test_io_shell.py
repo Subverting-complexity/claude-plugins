@@ -877,5 +877,344 @@ class TestGraphqlPartial(unittest.TestCase):
         self.assertEqual(err, 'boom')
 
 
+# ── issue-apply ──────────────────────────────────────────────────────────────
+# The command writes, so the transport is recorded rather than sent. The fake
+# below is a small GitHub: it applies each mutation to an in-memory store and
+# serves `read_issue` from the same store, so a test can assert both what was
+# sent *and* that reading it back agrees — which is the property the command's
+# verification step exists to enforce.
+
+_APPLY_CAPS = {
+    'type_capable': True,
+    'type_map': {'User Story': 'IT_story', 'Epic': 'IT_epic'},
+    'field_map': {
+        'Priority': {'id': 'F_pri', 'data_type': 'single-select',
+                     'options': {'High': 'o_hi', 'Medium': 'o_med'}},
+        'Effort': {'id': 'F_eff', 'data_type': 'single-select',
+                   'options': {'Medium': 'o_effmed'}},
+        'Classification': {'id': 'F_cls', 'data_type': 'multi-select',
+                           'options': {'New Feature': 'o_nf'}},
+    },
+    'denied': [], 'errors': [], 'cached': False,
+}
+
+
+class _FakeHub(object):
+    """An in-memory GitHub for the mutations `issue-apply` sends."""
+
+    def __init__(self, issues=(), swallow_fields=False, fail_create=False):
+        self.issues = {i['number']: i for i in issues}
+        self.next_number = max(self.issues, default=100) + 1
+        self.sent = []
+        # `swallow_fields` models the failure the verification step is for: a
+        # mutation GitHub accepts that changes nothing.
+        self.swallow_fields = swallow_fields
+        self.fail_create = fail_create
+        self.type_names = {v: k for k, v in _APPLY_CAPS['type_map'].items()}
+        self.field_names = {m['id']: (n, m) for n, m
+                            in _APPLY_CAPS['field_map'].items()}
+
+    # -- reads --
+    def read_issue(self, cfg, number, repo=None):
+        issue = self.issues.get(int(number))
+        if not issue:
+            return False, None, 'issue #%s not found' % number
+        nodes = []
+        for name, value in issue['fields'].items():
+            if isinstance(value, list):
+                nodes.append({'field': {'name': name},
+                              'options': [{'name': v} for v in value]})
+            else:
+                nodes.append({'field': {'name': name}, 'name': value})
+        return True, {
+            'id': issue['id'], 'number': issue['number'],
+            'title': issue['title'], 'body': issue['body'],
+            'issueType': {'name': issue['type']} if issue['type'] else None,
+            'parent': {'number': issue['parent']} if issue['parent'] else None,
+            'blockedBy': {'nodes': [{'number': n} for n in issue['blocked_by']]},
+            'labels': {'nodes': [{'name': n} for n in issue['labels']]},
+            'issueFieldValues': {'nodes': nodes},
+        }, ''
+
+    def _by_id(self, node_id):
+        for issue in self.issues.values():
+            if issue['id'] == node_id:
+                return issue
+        return None
+
+    def _apply_fields(self, issue, inputs):
+        if self.swallow_fields:
+            return
+        for spec in inputs:
+            name, meta = self.field_names[spec['fieldId']]
+            if 'multiSelectOptionIds' in spec:
+                back = {v: k for k, v in meta['options'].items()}
+                issue['fields'][name] = sorted(back[o] for o
+                                               in spec['multiSelectOptionIds'])
+            elif 'singleSelectOptionId' in spec:
+                back = {v: k for k, v in meta['options'].items()}
+                issue['fields'][name] = back[spec['singleSelectOptionId']]
+            else:
+                issue['fields'][name] = list(spec.values())[1]
+
+    # -- writes --
+    def graphql_json(self, query, variables):
+        def ok(payload):
+            return 0, json.dumps({'data': payload}), ''
+
+        if 'createIssue' in query:
+            self.sent.append(('createIssue', variables))
+            if self.fail_create:
+                return 1, json.dumps({'errors': [{'message': 'nope'}]}), ''
+            arg = variables['input']
+            number = self.next_number
+            self.next_number += 1
+            issue = {'id': 'I_%d' % number, 'number': number,
+                     'title': arg.get('title'), 'body': arg.get('body') or '',
+                     'type': self.type_names.get(arg.get('issueTypeId')),
+                     'fields': {}, 'parent': None, 'blocked_by': [],
+                     'labels': list(arg.get('labelIds') or [])}
+            self.issues[number] = issue
+            self._apply_fields(issue, arg.get('issueFields') or [])
+            if arg.get('parentIssueId'):
+                parent = self._by_id(arg['parentIssueId'])
+                issue['parent'] = parent['number'] if parent else None
+            return ok({'createIssue': {'issue': {'id': issue['id'],
+                                                 'number': number}}})
+
+        if 'updateIssueIssueType' in query:
+            self.sent.append(('updateIssueIssueType', variables))
+            issue = self._by_id(variables['i'])
+            issue['type'] = self.type_names.get(variables['t'])
+            return ok({'updateIssueIssueType': {'issue': {'id': issue['id']}}})
+
+        if 'setIssueFieldValue' in query:
+            self.sent.append(('setIssueFieldValue', variables))
+            issue = self._by_id(variables['i'])
+            self._apply_fields(issue, variables['f'])
+            return ok({'setIssueFieldValue': {'issue': {'id': issue['id']}}})
+
+        if 'addSubIssue' in query:
+            self.sent.append(('addSubIssue', variables))
+            parent, child = self._by_id(variables['p']), self._by_id(variables['c'])
+            child['parent'] = parent['number']
+            return ok({'addSubIssue': {'issue': {'id': parent['id']}}})
+
+        if 'addBlockedBy' in query:
+            self.sent.append(('addBlockedBy', variables))
+            issue, blocker = self._by_id(variables['i']), self._by_id(variables['b'])
+            issue['blocked_by'].append(blocker['number'])
+            return ok({'addBlockedBy': {'issue': {'id': issue['id']}}})
+
+        raise AssertionError('unexpected mutation: %s' % query)
+
+    def names_sent(self):
+        return [name for name, _ in self.sent]
+
+
+def _existing(number, **over):
+    issue = {'id': 'I_%d' % number, 'number': number, 'title': 'issue %d' % number,
+             'body': '', 'type': None, 'fields': {}, 'parent': None,
+             'blocked_by': [], 'labels': []}
+    issue.update(over)
+    return issue
+
+
+class TestIssueApply(unittest.TestCase):
+    """One command, everything on the issue, and every write read back."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+
+    def _spec_file(self, entries):
+        path = os.path.join(self.dir, 'spec.json')
+        with open(path, 'w', encoding='utf-8') as fh:
+            json.dump({'issues': entries}, fh)
+        return path
+
+    def _run(self, entries, hub, extra_argv=()):
+        path = self._spec_file(entries)
+        args = wf.build_parser().parse_args(['issue-apply', path, *extra_argv])
+        stderr = io.StringIO()
+        with mock.patch.object(wf, 'load_config', lambda: (True, _cfg(), '')), \
+                mock.patch.object(wf, 'resolve_org_capabilities',
+                                  lambda cfg, refresh=False, root=None:
+                                  (True, _APPLY_CAPS, '')), \
+                mock.patch.object(wf, 'resolve_repo_id',
+                                  lambda cfg, repo=None: (True, 'R_1', '')), \
+                mock.patch.object(wf, 'resolve_label_ids',
+                                  lambda cfg, names, repo=None:
+                                  (True, {n: 'L_%s' % n for n in names}, [], '')), \
+                mock.patch.object(wf, 'read_issue', hub.read_issue), \
+                mock.patch.object(wf, '_graphql_json', hub.graphql_json), \
+                mock.patch.object(wf, 'run',
+                                  lambda a, input_text=None: (0, '', '')), \
+                contextlib.redirect_stderr(stderr):
+            code, payload = _capture(wf.cmd_issue_apply, args)
+        with open(path, encoding='utf-8') as fh:
+            written = json.load(fh)
+        return code, payload, stderr.getvalue(), written
+
+    def _full(self, **over):
+        entry = {'key': 'a', 'title': 'A story', 'kind': 'story',
+                 'fields': {'field-priority': 'High', 'field-effort': 'Medium'}}
+        entry.update(over)
+        return entry
+
+    def test_a_create_is_one_mutation_carrying_everything(self):
+        """The point of the command: no create-then-patch sequence to half-fail."""
+        hub = _FakeHub()
+        code, payload, _, written = self._run([self._full()], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(hub.names_sent(), ['createIssue'])
+        sent = hub.sent[0][1]['input']
+        self.assertEqual(sent['issueTypeId'], 'IT_story')
+        self.assertEqual(len(sent['issueFields']), 3)
+        self.assertEqual(payload['applied'][0]['action'], 'create')
+
+    def test_the_created_number_is_written_back_to_the_spec(self):
+        """So a re-run after a partial failure completes it instead of duplicating."""
+        hub = _FakeHub()
+        _, payload, _, written = self._run([self._full()], hub)
+        self.assertTrue(payload['numbers_written_back'])
+        self.assertEqual(written['issues'][0]['number'],
+                         payload['applied'][0]['number'])
+
+    def test_re_applying_an_already_correct_issue_writes_nothing(self):
+        """Idempotence is what makes re-running a spec a safe recovery step."""
+        hub = _FakeHub([_existing(42, type='User Story',
+                                  fields={'Priority': 'High', 'Effort': 'Medium',
+                                          'Classification': ['New Feature']})])
+        code, payload, _, _ = self._run([self._full(number=42)], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(hub.names_sent(), [])
+        self.assertEqual(payload['applied'][0]['changed'], [])
+
+    def test_an_update_sets_only_what_differs(self):
+        hub = _FakeHub([_existing(42, type='User Story',
+                                  fields={'Priority': 'Medium', 'Effort': 'Medium',
+                                          'Classification': ['New Feature']})])
+        _, payload, _, _ = self._run([self._full(number=42)], hub)
+        self.assertEqual(hub.names_sent(), ['setIssueFieldValue'])
+        self.assertEqual(len(hub.sent[0][1]['f']), 1)
+        self.assertEqual(payload['applied'][0]['changed'], ['fields'])
+
+    def test_a_missing_mandatory_field_refuses_before_any_write(self):
+        hub = _FakeHub()
+        entry = self._full(fields={'field-effort': 'Medium'})
+        code, payload, _, _ = self._run([entry], hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertEqual(payload['status'], 'spec-invalid')
+        self.assertIn('Priority', payload['errors'][0])
+        self.assertEqual(hub.sent, [])
+
+    def test_a_cycle_refuses_before_any_write(self):
+        hub = _FakeHub()
+        entries = [self._full(key='a', blocked_by=['b']),
+                   self._full(key='b', blocked_by=['a'])]
+        code, payload, _, _ = self._run(entries, hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertEqual(hub.sent, [])
+        self.assertTrue(payload['cycles'])
+
+    def test_an_undefined_field_is_reported_once_for_the_run(self):
+        """Once per issue would bury the errors that actually matter."""
+        hub = _FakeHub()
+        entries = [self._full(key='a',
+                              fields={'field-priority': 'High',
+                                      'field-effort': 'Medium',
+                                      'field-origin': 'Development'}),
+                   self._full(key='b',
+                              fields={'field-priority': 'High',
+                                      'field-effort': 'Medium',
+                                      'field-origin': 'Development'})]
+        code, payload, stderr, _ = self._run(entries, hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['skipped_fields'], ['Origin'])
+        self.assertEqual(stderr.count('Origin'), 1)
+
+    def test_a_write_that_does_not_stick_exits_verify_failed(self):
+        """An accepted mutation is not a changed value. This is the whole point."""
+        hub = _FakeHub(swallow_fields=True)
+        code, payload, _, _ = self._run([self._full()], hub)
+        self.assertEqual(code, wf.EXIT_VERIFY)
+        self.assertEqual(payload['status'], 'verify-failed')
+        self.assertTrue(any('Priority' in m for m in payload['mismatches']))
+
+    def test_a_dependency_is_written_as_an_edge_and_in_the_body(self):
+        """Both, deliberately: the edge drives the portal, the prose drives unblocking."""
+        hub = _FakeHub([_existing(7)])
+        code, payload, _, _ = self._run([self._full(blocked_by=[7])], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertIn('addBlockedBy', hub.names_sent())
+        created = hub.issues[payload['applied'][0]['number']]
+        self.assertIn('Blocked by #7', created['body'])
+
+    def test_a_spec_local_reference_resolves_to_the_number_just_created(self):
+        hub = _FakeHub()
+        entries = [self._full(key='epic', kind='epic'),
+                   self._full(key='child', parent='epic', blocked_by=['epic'])]
+        code, payload, _, _ = self._run(entries, hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        epic_number = payload['applied'][0]['number']
+        child = hub.issues[payload['applied'][1]['number']]
+        self.assertEqual(child['parent'], epic_number)
+        self.assertEqual(child['blocked_by'], [epic_number])
+
+    def test_a_failed_entry_reports_partial_and_keeps_what_landed(self):
+        hub = _FakeHub(fail_create=True)
+        code, payload, _, _ = self._run([self._full()], hub)
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+        self.assertEqual(payload['status'], 'partial')
+        self.assertIn('create failed', payload['failed'][0]['errors'][0])
+
+    def test_dry_run_validates_and_writes_nothing(self):
+        hub = _FakeHub()
+        code, payload, _, written = self._run([self._full()], hub, ['--dry-run'])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertTrue(payload['dry_run'])
+        self.assertEqual(hub.sent, [])
+        self.assertNotIn('number', written['issues'][0])
+
+    def test_a_denied_capability_refuses_rather_than_writing_blanks(self):
+        path = self._spec_file([self._full()])
+        args = wf.build_parser().parse_args(['issue-apply', path])
+        denied = dict(_APPLY_CAPS, denied=['organization.issueTypes'])
+        with mock.patch.object(wf, 'load_config', lambda: (True, _cfg(), '')), \
+                mock.patch.object(wf, 'resolve_org_capabilities',
+                                  lambda cfg, refresh=False, root=None:
+                                  (True, denied, '')):
+            code, payload = _capture(wf.cmd_issue_apply, args)
+        self.assertEqual(code, wf.EXIT_CAPABILITY)
+        self.assertEqual(payload['status'], 'no-capabilities')
+
+
+class TestDependencySection(unittest.TestCase):
+    """The body prose `wf_core.parse_dependencies()` reads back."""
+
+    def test_a_section_is_added_to_a_body_that_has_none(self):
+        body = wf.ensure_dependency_section('Some context.', [7, 9])
+        self.assertIn('## Dependencies', body)
+        self.assertIn('Blocked by #7', body)
+        self.assertIn('Some context.', body)
+
+    def test_an_existing_section_is_replaced_not_appended(self):
+        body = wf.ensure_dependency_section(
+            'Intro\n\n## Dependencies\n\nBlocked by #1\n', [7])
+        self.assertEqual(body.count('## Dependencies'), 1)
+        self.assertNotIn('#1', body)
+
+    def test_a_following_section_survives(self):
+        body = wf.ensure_dependency_section(
+            'Intro\n\n## Dependencies\n\nBlocked by #1\n\n## Acceptance\n\nA thing.\n',
+            [7])
+        self.assertIn('## Acceptance', body)
+        self.assertIn('A thing.', body)
+
+    def test_no_dependencies_leaves_the_body_alone(self):
+        self.assertEqual(wf.ensure_dependency_section('Intro', []), 'Intro')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

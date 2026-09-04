@@ -1065,5 +1065,156 @@ class TestIssueValueMaps(unittest.TestCase):
                           'priority-medium', 'priority-low'})
 
 
+# ── issue-spec validation ────────────────────────────────────────────────────
+# `wf issue-apply` refuses a bad spec before it writes anything, so all of the
+# refusing is pure and testable here. The org shape below is deliberately not
+# the full inventory: it omits `Origin`, which is how an org with fewer fields
+# than the defaults is exercised.
+
+_FIELD_MAP = {
+    'Priority': {'id': 'F_pri', 'data_type': 'single-select',
+                 'options': {'High': 'o_hi', 'Medium': 'o_med'}},
+    'Effort': {'id': 'F_eff', 'data_type': 'single-select',
+               'options': {'Medium': 'o_effmed'}},
+    'Classification': {'id': 'F_cls', 'data_type': 'multi-select',
+                       'options': {'New Feature': 'o_nf', 'Bug Fix': 'o_bf'}},
+}
+_TYPE_MAP = {'User Story': 'IT_story', 'Epic': 'IT_epic', 'Bug': 'IT_bug'}
+
+
+def _entry(**over):
+    entry = {'key': 'a', 'title': 'A story', 'kind': 'story',
+             'fields': {'field-priority': 'High', 'field-effort': 'Medium'}}
+    entry.update(over)
+    return entry
+
+
+class TestValidateSpec(unittest.TestCase):
+    """The gate that stops blank metadata reaching GitHub."""
+
+    def test_a_complete_entry_produces_a_plan_and_no_errors(self):
+        errors, skipped, plans = wf_core.validate_spec(
+            [_entry()], _FIELD_MAP, _TYPE_MAP)
+        self.assertEqual(errors, [])
+        self.assertEqual(plans[0]['type'], 'User Story')
+        self.assertEqual(plans[0]['fields']['Priority']['input'],
+                         {'fieldId': 'F_pri', 'singleSelectOptionId': 'o_hi'})
+
+    def test_kind_supplies_the_classification_the_entry_did_not_name(self):
+        """A `kind` is the whole point of the map: it implies both type and class."""
+        _, _, plans = wf_core.validate_spec([_entry()], _FIELD_MAP, _TYPE_MAP)
+        self.assertEqual(plans[0]['fields']['Classification']['input'],
+                         {'fieldId': 'F_cls', 'multiSelectOptionIds': ['o_nf']})
+
+    def test_a_missing_mandatory_field_names_the_issue_and_the_field(self):
+        entry = _entry(fields={'field-effort': 'Medium'})
+        errors, _, _ = wf_core.validate_spec([entry], _FIELD_MAP, _TYPE_MAP)
+        self.assertEqual(len(errors), 1)
+        self.assertIn('a', errors[0])
+        self.assertIn('Priority', errors[0])
+
+    def test_a_placeholder_counts_as_missing(self):
+        """`TODO` is what an audit writes; it must not be able to pass as a value."""
+        entry = _entry(fields={'field-priority': wf_core.SPEC_PLACEHOLDER,
+                               'field-effort': 'Medium'})
+        errors, _, _ = wf_core.validate_spec([entry], _FIELD_MAP, _TYPE_MAP)
+        self.assertEqual(len(errors), 1)
+        self.assertIn('Priority', errors[0])
+
+    def test_a_field_this_org_does_not_define_is_skipped_not_an_error(self):
+        """An org is allowed fewer fields than the default inventory."""
+        entry = _entry(fields=dict(_entry()['fields'], **{'field-origin': 'Development'}))
+        errors, skipped, plans = wf_core.validate_spec([entry], _FIELD_MAP, _TYPE_MAP)
+        self.assertEqual(errors, [])
+        self.assertEqual(skipped, {'Origin'})
+        self.assertNotIn('Origin', plans[0]['fields'])
+
+    def test_an_option_the_field_does_not_offer_is_an_error(self):
+        entry = _entry(fields={'field-priority': 'Blocker', 'field-effort': 'Medium'})
+        errors, _, _ = wf_core.validate_spec([entry], _FIELD_MAP, _TYPE_MAP)
+        self.assertEqual(len(errors), 1)
+        self.assertIn('Blocker', errors[0])
+
+    def test_a_type_the_org_has_not_enabled_is_an_error(self):
+        entry = _entry(type='Feature')
+        errors, _, _ = wf_core.validate_spec([entry], _FIELD_MAP, _TYPE_MAP)
+        self.assertTrue(any('Feature' in e for e in errors), errors)
+
+    def test_an_unknown_kind_is_an_error(self):
+        errors, _, _ = wf_core.validate_spec([_entry(kind='saga')],
+                                             _FIELD_MAP, _TYPE_MAP)
+        self.assertTrue(any('saga' in e for e in errors), errors)
+
+    def test_an_entry_with_neither_title_nor_number_is_an_error(self):
+        entry = _entry(title=None)
+        entry.pop('title')
+        errors, _, _ = wf_core.validate_spec([entry], _FIELD_MAP, _TYPE_MAP)
+        self.assertTrue(any('title' in e for e in errors), errors)
+
+    def test_a_duplicate_key_is_an_error(self):
+        errors, _, _ = wf_core.validate_spec([_entry(), _entry()],
+                                             _FIELD_MAP, _TYPE_MAP)
+        self.assertTrue(any('duplicate key' in e for e in errors), errors)
+
+    def test_a_project_field_rename_is_honoured(self):
+        """A project that calls Priority something else still validates against it."""
+        field_map = dict(_FIELD_MAP)
+        field_map['Severity'] = field_map.pop('Priority')
+        errors, _, plans = wf_core.validate_spec(
+            [_entry()], field_map, _TYPE_MAP, {'field-priority': 'Severity'})
+        self.assertEqual(errors, [])
+        self.assertIn('Severity', plans[0]['fields'])
+
+
+class TestFieldValueInput(unittest.TestCase):
+    """The value key depends on the field's data type, not the value's shape."""
+
+    def test_each_data_type_uses_its_own_key(self):
+        cases = [
+            ({'id': 'f', 'data_type': 'date'}, '2026-01-01',
+             {'fieldId': 'f', 'dateValue': '2026-01-01'}),
+            ({'id': 'f', 'data_type': 'text'}, 'note',
+             {'fieldId': 'f', 'textValue': 'note'}),
+            ({'id': 'f', 'data_type': 'number'}, 3,
+             {'fieldId': 'f', 'numberValue': 3.0}),
+        ]
+        for meta, value, expected in cases:
+            shaped, err = wf_core.field_value_input(meta, value)
+            self.assertEqual(err, None)
+            self.assertEqual(shaped, expected)
+
+    def test_a_single_select_refuses_two_values(self):
+        meta = {'id': 'f', 'data_type': 'single-select',
+                'options': {'A': 'a', 'B': 'b'}}
+        _, err = wf_core.field_value_input(meta, ['A', 'B'])
+        self.assertIn('exactly one', err)
+
+    def test_a_multi_select_accepts_a_bare_string(self):
+        meta = {'id': 'f', 'data_type': 'multi-select', 'options': {'A': 'a'}}
+        shaped, err = wf_core.field_value_input(meta, 'A')
+        self.assertEqual(err, None)
+        self.assertEqual(shaped, {'fieldId': 'f', 'multiSelectOptionIds': ['a']})
+
+
+class TestSpecCycles(unittest.TestCase):
+    """A cycle cannot be applied; finding it half-way through is much worse."""
+
+    def test_a_two_entry_cycle_is_reported(self):
+        entries = [{'key': 'a', 'blocked_by': ['b']},
+                   {'key': 'b', 'blocked_by': ['a']}]
+        self.assertEqual(len(wf_core.spec_cycles(entries)), 1)
+
+    def test_a_chain_is_not_a_cycle(self):
+        entries = [{'key': 'a', 'blocked_by': ['b']},
+                   {'key': 'b', 'blocked_by': ['c']},
+                   {'key': 'c'}]
+        self.assertEqual(wf_core.spec_cycles(entries), [])
+
+    def test_a_reference_outside_the_spec_is_not_a_cycle(self):
+        """An existing issue number is a real dependency, not this spec's problem."""
+        entries = [{'key': 'a', 'blocked_by': [187]}]
+        self.assertEqual(wf_core.spec_cycles(entries), [])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
