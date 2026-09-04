@@ -56,6 +56,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit
 
 # …against another repo in the org, newest 50 only, counts only (for CI)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --repo acme/other --limit 50 --quiet
+
+# Report configuration and label drift (what preflight runs)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit
+
+# …file-level checks only, no network
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit --offline
 ```
 
 Run from the **target repo root** so the CLI can read `ClaudeProject.md`
@@ -96,6 +102,7 @@ run carries a `status` field and the exit code mirrors it:
 | 23   | `verify-failed` | A write was accepted but does not read back. Issues exist.     |
 | 24   | `partial`       | Some entries applied, some failed. Re-run to finish.           |
 | 25   | `gaps`          | `issue-audit` found issues missing metadata. Nothing written.  |
+| 26   | `drift`         | `config-audit` found a configuration problem that breaks work. |
 | 30   | `unsupported`   | Path not in the CLI yet — caller falls back to the skill.      |
 
 Mutations to the **winning** issue (claim, assign, `status-in-progress`) are
@@ -348,6 +355,66 @@ proceed one repo at a time from a single working copy.
 > Deleting an org issue field permanently destroys every value set on it, in
 > every repo. Before any such change, run this audit with `--repo` against each
 > repo that matters and read the values first.
+
+## Configuration drift — `config-audit`
+
+Three things describe how a project works, and they drift apart quietly:
+`ClaudeProject.md`, the labels the repo actually carries, and the org's issue
+types and fields. Nothing errors when they disagree. A label gets renamed and a
+call site keeps applying the old name — `gh` refuses the edit and the issue
+stays where it was. An issue type stops being pinned to a field and every value
+written to it is stored correctly and shown nowhere.
+
+`config-audit` compares all three. It is what `skills/preflight` runs, and it
+never writes.
+
+### What it reports
+
+| Finding | Level | Meaning |
+| ------- | ----- | ------- |
+| `config-section` | critical | `ClaudeProject.md` is missing a section the plugin reads, so its values fall back to defaults silently. |
+| `label-missing` | critical | An instruction file tells an agent to apply a label the repo does not have. |
+| `config-label` | critical | The project's own label map names a label the repo does not have. |
+| `field-unpinned` | critical | An enabled issue type is not pinned to a field the tooling writes. |
+| `label-drift` | warning | Two live labels mean the same thing (`priority:medium` beside `priority-medium`, `bug` beside `type-bug`). |
+| `pin-asymmetry` | warning | A field some enabled types pin and others do not. |
+| `field-unmapped` | warning | An org field no purpose key resolves to, so nothing ever sets it. |
+| `board-column` / `board-title` | warning | The recorded board snapshot no longer matches the live board. |
+| `pin-unknown` | warning | `IssueType.pinnedFields` could not be read, so pinning is unverified. |
+
+### Why the split is where it is
+
+One question decides it: does the workflow produce a **wrong** result, or a
+**degraded** one? A missing section or a label that does not exist produces
+wrong behaviour — the command runs, GitHub accepts or refuses it, and the
+outcome is not what anyone asked for. An org field nobody mapped or a stale
+board snapshot degrades gracefully, so it warns and the run continues.
+
+Pin asymmetry is the case that makes the distinction concrete. `Epic` is not
+pinned to `Parent`, and that is correct — an epic *is* the parent. So a field
+that some enabled types carry and others do not can only ever be a warning, and
+only the four fields the tooling actually writes
+(`wf_core.MANDATORY_FIELD_KEYS`) are ever a failure.
+
+The fix text is written to be reported verbatim. For an unpinned field it names
+the type, the fields, and the form: org settings → Planning → Issue fields →
+the field's edit form → "Pin to issues". A paraphrase loses the only part that
+tells someone where to click.
+
+### Placeholders are not labels
+
+The label scan reads `--add-label`, `--remove-label` and `--label` out of every
+`.md` file under the plugin root (`--scan` points it elsewhere) and checks the
+names against the repo. It only ever checks **literals**. These files write "the
+label you resolved" as `{status_ready_label}`, `<verdict-label>` or a bare `X`
+in an example, and none of those is a claim about any particular label.
+
+### Cost
+
+Two round trips: one repo query carrying the labels and the board together, and
+one org query for the pinning. Org capabilities come from the cache. `--offline`
+runs only the checks that need no network, `--quiet` drops the per-finding
+detail and keeps the exit code, and exit 26 makes it usable as a CI gate.
 
 ## Settling a merged PR — `post-merge`
 

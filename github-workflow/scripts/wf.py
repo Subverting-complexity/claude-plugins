@@ -65,6 +65,7 @@ EXIT_SPEC = 22
 EXIT_VERIFY = 23
 EXIT_PARTIAL = 24
 EXIT_GAPS = 25
+EXIT_DRIFT = 26
 EXIT_UNSUPPORTED = 30
 EXIT_USAGE = 2
 
@@ -1558,6 +1559,290 @@ def cmd_issue_audit(args):
          **payload)
 
 
+# ── config-audit ─────────────────────────────────────────────────────────────
+# What preflight runs. It compares three things that drift apart quietly:
+# `ClaudeProject.md`, the labels the repo actually carries, and the org's own
+# issue-type and field configuration. Every check is read-only.
+#
+# The decisions all live in `wf_core`; this half fetches and reports. The API
+# calls are deliberately few: one org query for the pinning, one repo query that
+# carries the labels and the board together, and the capability cache for the
+# rest — so preflight stays cheap enough to run at the top of every session.
+
+PINNED_FIELD_QUERY = (
+    'query($login:String!){'
+    ' organization(login:$login){'
+    '  issueTypes(first:50){ nodes {'
+    '   name isEnabled'
+    '   pinnedFields {'
+    '    __typename'
+    '    ... on IssueFieldSingleSelect { name }'
+    '    ... on IssueFieldMultiSelect { name }'
+    '    ... on IssueFieldDate { name }'
+    '    ... on IssueFieldText { name }'
+    '    ... on IssueFieldNumber { name }'
+    '   }'
+    '  } }'
+    ' } }'
+)
+
+_LABEL_PAGE = (
+    '  labels(first:100,after:$after){'
+    '   pageInfo { hasNextPage endCursor } nodes { name }'
+    '  }'
+)
+
+REPO_LABEL_QUERY = (
+    'query($owner:String!,$repo:String!,$after:String){'
+    ' repository(owner:$owner,name:$repo){' + _LABEL_PAGE + ' } }'
+)
+
+# Labels and the board in one document, because they are always wanted together
+# and GraphQL will answer both from a single round trip.
+REPO_LABEL_BOARD_QUERY = (
+    'query($owner:String!,$repo:String!,$after:String,$board:ID!,$status:String!){'
+    ' repository(owner:$owner,name:$repo){' + _LABEL_PAGE + ' }'
+    ' board: node(id:$board){ ... on ProjectV2 {'
+    '  title'
+    '  field(name:$status){ ... on ProjectV2SingleSelectField {'
+    '   id name options { id name } } }'
+    ' } } }'
+)
+
+
+def fetch_issue_type_pins(cfg):
+    """Which org fields each issue type pins to its form. (ok, types, err).
+
+    `pinnedFields` is a plain list on `IssueType`, not a connection. A token
+    that may not read it, or a schema that does not have it, comes back as
+    `ok=False` — preflight reports that as a warning rather than pretending
+    every type is pinned correctly.
+    """
+    data, errors, err = gh_graphql_partial(PINNED_FIELD_QUERY, login=cfg['org'])
+    org = (data or {}).get('organization') if data else None
+    if not org:
+        return False, [], (err or json.dumps(errors)
+                           or 'no issue types returned for %s' % cfg['org'])
+    types = []
+    for node in (org.get('issueTypes') or {}).get('nodes') or []:
+        if not node or not node.get('name'):
+            continue
+        types.append({'name': node['name'],
+                      'enabled': bool(node.get('isEnabled')),
+                      'pinned': [f['name'] for f in node.get('pinnedFields') or []
+                                 if f and f.get('name')]})
+    return True, types, ''
+
+
+def fetch_repo_state(cfg, repo=None):
+    """Every label in the repo, plus the configured board. (ok, state, err)."""
+    owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
+    board_id = (cfg.get('board') or {}).get('project_node_id')
+    status_name = (cfg.get('board') or {}).get('status_field_name') or 'Status'
+
+    labels, board, cursor, first = [], None, None, True
+    while True:
+        fields = {'owner': owner, 'repo': name}
+        if cursor:
+            fields['after'] = cursor
+        if first and board_id:
+            query = REPO_LABEL_BOARD_QUERY
+            fields.update({'board': board_id, 'status': status_name})
+        else:
+            query = REPO_LABEL_QUERY
+        ok, data, err = gh_graphql(query, **fields)
+        if not ok:
+            return False, None, err
+        if first:
+            board = (data or {}).get('board')
+        page = (((data or {}).get('repository') or {}).get('labels')) or {}
+        labels.extend(n['name'] for n in page.get('nodes') or [] if n.get('name'))
+        info = page.get('pageInfo') or {}
+        if not info.get('hasNextPage'):
+            return True, {'labels': labels, 'board': board}, ''
+        cursor, first = info.get('endCursor'), False
+
+
+def plugin_scan_roots(explicit=None):
+    """Where to look for files that tell an agent to apply a label.
+
+    Defaults to the plugin this script ships in — `CLAUDE_PLUGIN_ROOT` at
+    runtime, the script's own plugin directory otherwise, which is what makes
+    the check work in this repo's own checkout.
+    """
+    if explicit:
+        return [os.path.abspath(r) for r in explicit]
+    env = os.environ.get('CLAUDE_PLUGIN_ROOT')
+    if env and os.path.isdir(env):
+        return [os.path.abspath(env)]
+    return [os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]
+
+
+def scan_plugin_labels(roots, base=None):
+    """Every concrete label the instruction files under `roots` apply."""
+    references = []
+    for root in roots:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames
+                           if not d.startswith('.') and d != 'node_modules']
+            for name in sorted(filenames):
+                if not name.endswith('.md'):
+                    continue
+                path = os.path.join(dirpath, name)
+                try:
+                    with open(path, encoding='utf-8') as fh:
+                        text = fh.read()
+                except OSError:
+                    continue
+                rel = os.path.relpath(path, base or root).replace(os.sep, '/')
+                for ref in wf_core.scan_label_references(text):
+                    references.append(dict(ref, file=rel))
+    return references
+
+
+def cmd_config_audit(args):
+    ok, cfg, err = load_config()
+    if not ok:
+        emit('error', EXIT_ENV, reason=err)
+    root = repo_root() or '.'
+    source = config_paths(root)[1]
+    source_rel = os.path.basename(source)
+
+    findings, checked, skipped = [], [], []
+
+    # ── offline ──────────────────────────────────────────────────────────────
+    headings = []
+    if os.path.isfile(source):
+        with open(source, encoding='utf-8') as fh:
+            headings = re.findall(r'^#{1,3}\s+(.+?)\s*$', fh.read(), re.MULTILINE)
+    findings.extend(wf_core.config_section_findings(headings, source_rel))
+    checked.append('config-section')
+
+    roots = plugin_scan_roots(args.scan)
+    references = scan_plugin_labels(roots, base=root)
+    checked.append('label-reference')
+
+    if args.offline:
+        skipped = ['label-reference', 'config-label', 'label-drift',
+                   'field-unpinned', 'field-unmapped', 'board-column']
+        checked = ['config-section']
+        return _emit_audit(findings, checked, skipped, cfg, args)
+
+    # ── the repo: labels and the board, in one round trip ────────────────────
+    ok, state, err = fetch_repo_state(cfg, args.repo)
+    if not ok:
+        emit('error', EXIT_ENV, repo='%s/%s' % (cfg['org'], cfg['repo']),
+             reason='could not read the repo\'s labels: %s' % err)
+    live = state['labels']
+
+    findings.extend(wf_core.label_reference_findings(references, live,
+                                                     cfg.get('labels')))
+    findings.extend(wf_core.config_label_findings(
+        cfg.get('labels'), cfg.get('review_labels'), live, source_rel))
+    findings.extend(wf_core.label_drift_findings(live, cfg.get('labels')))
+    checked.extend(['config-label', 'label-drift'])
+
+    board_cfg = cfg.get('board') or {}
+    if board_cfg.get('project_node_id'):
+        findings.extend(_board_findings(board_cfg, state['board'], source_rel))
+        checked.append('board-column')
+    else:
+        skipped.append('board-column')
+
+    # ── the org: field pinning, and fields nothing maps ──────────────────────
+    ok, caps, err = resolve_org_capabilities(cfg, refresh=args.refresh)
+    if not ok:
+        emit('error', EXIT_ENV, reason=err, org=cfg['org'])
+    if caps.get('denied'):
+        emit('no-capabilities', EXIT_CAPABILITY, org=cfg['org'],
+             denied=caps['denied'],
+             reason='the authenticated account may not read %s for this org, so '
+                    'the org half of the configuration cannot be checked'
+                    % ' and '.join(caps['denied']))
+
+    findings.extend(wf_core.unmapped_field_findings(caps['field_map'],
+                                                    cfg.get('fields'), source_rel))
+    checked.append('field-unmapped')
+
+    if caps['type_capable']:
+        required = [field_name(cfg, k) for k in wf_core.MANDATORY_FIELD_KEYS]
+        ok, types, err = fetch_issue_type_pins(cfg)
+        if ok:
+            findings.extend(wf_core.pinned_field_findings(types, required))
+            checked.append('field-unpinned')
+        else:
+            # Not knowing is not the same as being fine, and reporting it as a
+            # pass would recreate the silent blank this command exists to catch.
+            findings.append(wf_core.finding(
+                wf_core.WARNING, 'pin-unknown',
+                'could not read `IssueType.pinnedFields` for %s (%s), so whether '
+                'the tooling\'s fields appear on an issue form is unverified'
+                % (cfg['org'], err),
+                'check the token carries `read:org`, then re-run'))
+            skipped.append('field-unpinned')
+    else:
+        skipped.append('field-unpinned')
+
+    return _emit_audit(findings, checked, skipped, cfg, args)
+
+
+def _board_findings(board_cfg, live_board, path):
+    """The board half: does the recorded snapshot still describe the live board?"""
+    if not live_board:
+        return [wf_core.finding(
+            wf_core.WARNING, 'board-column',
+            '`project-node-id` `%s` does not resolve to a board, so every board '
+            'move is skipped' % board_cfg['project_node_id'],
+            'record the current board\'s node id, or set it to `n/a`', path)]
+    out = []
+    title = board_cfg.get('project_title')
+    if title and live_board.get('title') and live_board['title'] != title:
+        out.append(wf_core.finding(
+            wf_core.WARNING, 'board-title',
+            '`project-title` says `%s` but the recorded node id resolves to `%s`'
+            % (title, live_board['title']),
+            'confirm which board this project should write to, then update '
+            'either the title or the node id', path))
+    field = live_board.get('field') or {}
+    options = {o['id']: o['name'] for o in field.get('options') or []}
+    out.extend(wf_core.board_column_findings(board_cfg.get('columns'), options,
+                                             path))
+    return out
+
+
+def _emit_audit(findings, checked, skipped, cfg, args):
+    summary = wf_core.preflight_summary(findings)
+    payload = {'org': cfg['org'], 'repo': args.repo or '%s/%s' % (cfg['org'],
+                                                                  cfg['repo']),
+               'summary': summary, 'checked': checked, 'skipped': skipped}
+    if not args.quiet:
+        payload['findings'] = findings
+
+    if summary['critical']:
+        emit('drift', EXIT_DRIFT,
+             reason='%d configuration problem%s will produce wrong behaviour, '
+                    'and %d more will degrade it'
+                    % (summary['critical'], '' if summary['critical'] == 1 else 's',
+                       summary['warning']),
+             **payload)
+    if summary['warning']:
+        # Warnings alone exit zero: they describe a workflow that still does the
+        # right thing, and a preflight that blocks on them would train everyone
+        # to skip it.
+        emit('ok', EXIT_OK,
+             reason='no configuration problem will produce wrong behaviour; %d '
+                    'will degrade it' % summary['warning'], **payload)
+    if skipped:
+        # Never report agreement between things this run did not compare.
+        emit('ok', EXIT_OK,
+             reason='nothing wrong in the %d check%s that ran; %s did not run'
+                    % (len(checked), '' if len(checked) == 1 else 's',
+                       ', '.join(sorted(set(skipped)))), **payload)
+    emit('ok', EXIT_OK,
+         reason='ClaudeProject.md, the repo\'s labels and the org\'s issue '
+                'configuration agree', **payload)
+
+
 def fetch_native_types(cfg):
     """Fetch native issue types for all open issues via GraphQL.
 
@@ -2668,6 +2953,22 @@ def build_parser():
     au.add_argument('--refresh', action='store_true',
                     help='re-query org capabilities instead of reading the cache')
     au.set_defaults(func=cmd_issue_audit)
+
+    ca = sub.add_parser('config-audit',
+                        help='report configuration and label drift between '
+                             'ClaudeProject.md, the repo and the org')
+    ca.add_argument('--repo', default=None,
+                    help='audit this owner/name instead of the configured repo')
+    ca.add_argument('--scan', action='append', default=None,
+                    help='directory of instruction files to scan for label '
+                         'references (repeatable; defaults to the plugin root)')
+    ca.add_argument('--offline', action='store_true',
+                    help='run only the checks that need no network')
+    ca.add_argument('--quiet', action='store_true',
+                    help='report counts only, keeping the exit code, for CI')
+    ca.add_argument('--refresh', action='store_true',
+                    help='re-query org capabilities instead of reading the cache')
+    ca.set_defaults(func=cmd_config_audit)
 
     return parser
 

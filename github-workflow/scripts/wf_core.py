@@ -805,6 +805,315 @@ def audit_summary(audited):
             'gaps': counts}
 
 
+# ── preflight: configuration and label drift ─────────────────────────────────
+# Everything a project can get wrong between `ClaudeProject.md`, the labels the
+# repo actually carries, and the org's own field pinning. It is all pure: this
+# section decides what is wrong and what the fix is, and never looks anything up.
+#
+# The severity split is deliberate, and comes from one question — does the
+# workflow produce a *wrong* result or a *degraded* one? A missing section, or a
+# label an agent is told to apply that does not exist, produce wrong behaviour,
+# so they fail. An org field nobody mapped, or a board snapshot that has gone
+# stale, degrade gracefully, so they warn.
+
+CRITICAL, WARNING = 'critical', 'warning'
+
+# Every section of `ClaudeProject.md` the plugin reads. A project missing one
+# does not get a smaller feature set; it gets the default silently, which is how
+# an entire classification scheme went unapplied without an error.
+REQUIRED_CONFIG_SECTIONS = (
+    'Identity',
+    'Package Manager',
+    'Quality Gate',
+    'Branch Convention',
+    'Label Map',
+    'Issue Types & Fields',
+)
+
+_SECTION_FIXES = {
+    'Issue Types & Fields': (
+        "run `/github-workflow:setup` to write it from the org's live issue "
+        'types and fields, or copy the section from '
+        '`github-workflow/templates/ClaudeProject.md`'),
+}
+_SECTION_FIX_DEFAULT = ('copy the section from '
+                        '`github-workflow/templates/ClaudeProject.md` and fill '
+                        'it in for this project')
+
+
+def finding(level, check, detail, fix, where=None):
+    """One preflight result. `where` is the file a person would open to fix it."""
+    out = {'level': level, 'check': check, 'detail': detail, 'fix': fix}
+    if where:
+        out['where'] = where
+    return out
+
+
+def _names(values):
+    """`a`, `b` and `c` — because a finding is read by a person, not parsed."""
+    names = ['`%s`' % v for v in values]
+    if len(names) < 2:
+        return names[0] if names else ''
+    return '%s and %s' % (', '.join(names[:-1]), names[-1])
+
+
+def _normalise_heading(text):
+    return re.sub(r'\s*\(.*\)\s*$', '', (text or '').strip()).strip().lower()
+
+
+def config_section_findings(headings, path='ClaudeProject.md',
+                            required=REQUIRED_CONFIG_SECTIONS):
+    """Sections the plugin reads that `ClaudeProject.md` does not carry.
+
+    Named one at a time rather than counted, because "your config is
+    incomplete" is not something anyone can act on.
+    """
+    present = {_normalise_heading(h) for h in headings or ()}
+    out = []
+    for section in required:
+        if _normalise_heading(section) in present:
+            continue
+        out.append(finding(
+            CRITICAL, 'config-section',
+            '%s has no `## %s` section, so every value in it falls back to the '
+            'default without saying so' % (path, section),
+            _SECTION_FIXES.get(section, _SECTION_FIX_DEFAULT), path))
+    return out
+
+
+# A label flag in an instruction file: `--add-label`, `--remove-label` or plain
+# `--label`, with the value written any of the three ways a shell takes it.
+_LABEL_FLAG_RE = re.compile(
+    r'--(?:add-|remove-)?labels?[\s=]+("[^"]*"|\'[^\']*\'|[^\s|;&)]+)')
+
+# What a real label name looks like. Anything else inside a label flag is one of
+# these files saying "the label you resolved" — `{status_ready_label}`,
+# `<verdict-label>`, a bare `X` in an example — which is not a claim about any
+# particular label and must not be checked as if it were.
+_LABEL_NAME_RE = re.compile(r'^[a-z0-9][a-z0-9._:/-]{1,49}$')
+
+_LABEL_TRIM = '`\'".,;:*()[]'
+
+
+def scan_label_references(text):
+    """Every concrete label an instruction file tells an agent to apply.
+
+    Returns `[{'label': name, 'line': n}]`. Literals only — see
+    `_LABEL_NAME_RE` for why placeholders are skipped rather than resolved.
+    """
+    found = []
+    for number, line in enumerate((text or '').splitlines(), 1):
+        for match in _LABEL_FLAG_RE.finditer(line):
+            raw = match.group(1).strip('"\'')
+            for token in raw.split(','):
+                token = token.strip().strip(_LABEL_TRIM)
+                if token and _LABEL_NAME_RE.match(token):
+                    found.append({'label': token, 'line': number})
+    return found
+
+
+def _purpose_note(name, project_map):
+    """If a hard-coded label is a purpose key the project renamed, say so."""
+    mapped = (project_map or {}).get(name)
+    if mapped and mapped != name:
+        return (' — this project maps `%s` to `%s`, and the file hard-codes the '
+                'default' % (name, mapped))
+    return ''
+
+
+def label_reference_findings(references, live_labels, project_map=None):
+    """Files that tell an agent to apply a label the repo does not have.
+
+    `references` is `[{'file': path, 'label': name, 'line': n}]`. The agent runs
+    the command, `gh` refuses it, and the issue stays in whatever state it was
+    already in — so this fails rather than warns.
+    """
+    live = set(live_labels or ())
+    seen, out = set(), []
+    for ref in references:
+        key = (ref['file'], ref['label'])
+        if ref['label'] in live or key in seen:
+            continue
+        seen.add(key)
+        out.append(finding(
+            CRITICAL, 'label-missing',
+            '`%s` tells an agent to apply `%s`, which does not exist in this '
+            'repo%s' % (ref['file'], ref['label'],
+                        _purpose_note(ref['label'], project_map)),
+            'either create the label, or rewrite the call site to resolve it '
+            'through the label map',
+            '%s:%s' % (ref['file'], ref['line'])))
+    return out
+
+
+def config_label_findings(project_map, review_labels, live_labels,
+                          path='ClaudeProject.md'):
+    """Labels the project's own config names that the repo does not carry."""
+    live = set(live_labels or ())
+    out = []
+    for source, mapping in (('`## Label Map` in %s' % path, project_map or {}),
+                            ('`docs/review.config.md`', review_labels or {})):
+        for purpose, name in sorted(mapping.items()):
+            if name in live:
+                continue
+            out.append(finding(
+                CRITICAL, 'config-label',
+                '%s maps `%s` to `%s`, which does not exist in this repo'
+                % (source, purpose, name),
+                'create the label, or correct the mapping to the name the repo '
+                'actually uses', path))
+    return out
+
+
+def _drift_key(name):
+    """A label name with every separator flattened, for near-miss grouping."""
+    return re.sub(r'[\s:_/]+', '-', (name or '').strip().lower())
+
+
+def label_drift_findings(live_labels, project_map=None):
+    """Two live labels that plainly mean the same thing.
+
+    Two shapes, both seen in the wild: a separator that drifted
+    (`priority:medium` beside `priority-medium`), and a prefix that was dropped
+    (`bug` beside `type-bug`). Neither breaks a command, so both warn — but each
+    one silently splits a backlog in half, because selection matches one name
+    and some of the issues carry the other.
+    """
+    live = sorted(set(live_labels or ()))
+    out = []
+
+    grouped = {}
+    for name in live:
+        grouped.setdefault(_drift_key(name), []).append(name)
+    for names in sorted(grouped.values()):
+        if len(names) < 2:
+            continue
+        out.append(finding(
+            WARNING, 'label-drift',
+            '%s differ only in punctuation, so issues carrying one are invisible '
+            'to a query for the other' % _names(names),
+            'move every issue onto one of them and delete the rest'))
+
+    present = set(live)
+    for purpose in sorted(_DEFAULT_LABELS):
+        name = resolve_label(purpose, project_map or {})
+        if name not in present or '-' not in name:
+            continue
+        bare = name.split('-', 1)[1]
+        if bare in present:
+            out.append(finding(
+                WARNING, 'label-drift',
+                '`%s` exists alongside `%s`, and the workflow only ever applies '
+                '`%s`' % (bare, name, name),
+                'move every issue off `%s` onto `%s`, then delete `%s`'
+                % (bare, name, bare)))
+    return out
+
+
+def pinned_field_findings(issue_types, required_names, portal_hint=True):
+    """Types whose issue form will not show a field the tooling writes to.
+
+    A field value is stored against the issue and the field, not against the
+    type, so an unpinned field keeps whatever it holds and simply stops
+    appearing on the issue's form. The write succeeds, the value is real, and
+    nobody can see it — which is why this fails rather than warns.
+
+    Asymmetry between types is a separate and softer matter: `Epic` is not
+    pinned to `Parent` on purpose, because an epic is the parent. So a field
+    some enabled types carry and others do not is a warning, and only the
+    fields the tooling actually writes are ever a failure.
+    """
+    enabled = [t for t in issue_types or () if t.get('enabled')]
+    required = list(required_names or ())
+    out = []
+
+    for entry in enabled:
+        missing = [n for n in required if n not in set(entry.get('pinned') or ())]
+        if not missing:
+            continue
+        fix = 'pin them to `%s`' % entry['name']
+        if portal_hint:
+            fix += (' in the org settings: Planning → Issue fields → the '
+                    'field\'s edit form → "Pin to issues"')
+        out.append(finding(
+            CRITICAL, 'field-unpinned',
+            'issue type `%s` is not pinned to %s, so a value the tooling writes '
+            'is stored and then never shown on the issue'
+            % (entry['name'], _names(missing)),
+            fix))
+
+    everywhere = {}
+    for entry in enabled:
+        for name in entry.get('pinned') or ():
+            everywhere.setdefault(name, set()).add(entry['name'])
+    names = {e['name'] for e in enabled}
+    for name in sorted(everywhere):
+        if name in required:
+            continue
+        absent = sorted(names - everywhere[name])
+        if not absent:
+            continue
+        out.append(finding(
+            WARNING, 'pin-asymmetry',
+            '`%s` is pinned to %s but not to %s'
+            % (name, _names(sorted(everywhere[name])), _names(absent)),
+            'no action if that is deliberate — a type that cannot hold the '
+            'field should not pin it, which is why `Epic` correctly does not '
+            'pin `Parent`: an epic is the parent'))
+    return out
+
+
+def unmapped_field_findings(field_names, project_fields=None,
+                            path='ClaudeProject.md'):
+    """Org fields that no purpose key resolves to.
+
+    The tooling cannot write one, so the field sits empty on every issue the
+    workflow creates. That degrades rather than breaks, so it warns.
+    """
+    out = []
+    for name in sorted(set(field_names or ())):
+        if field_purpose_for_name(name, project_fields or {}):
+            continue
+        out.append(finding(
+            WARNING, 'field-unmapped',
+            'the org defines `%s`, which no purpose key in `## Issue Types & '
+            'Fields` maps to, so nothing ever sets it' % name,
+            'add a row mapping a `field-*` purpose key to `%s`, or leave the '
+            'field to be filled in by hand' % name, path))
+    return out
+
+
+def board_column_findings(columns, live_options, path='ClaudeProject.md'):
+    """Board columns recorded in config that no longer resolve on the board.
+
+    `columns` is `{purpose key: option id}`, `live_options` is
+    `{option id: name}`. A stale id means the move is skipped, not that the
+    issue is lost — the lifecycle labels stay authoritative — so this warns.
+    """
+    live = live_options or {}
+    out = []
+    for purpose, option_id in sorted((columns or {}).items()):
+        if option_id in live:
+            continue
+        out.append(finding(
+            WARNING, 'board-column',
+            '`%s` is recorded as option `%s`, which the board no longer has, so '
+            'that move is skipped' % (purpose, option_id),
+            'refresh the `### Status Options` table from the live board',
+            path))
+    return out
+
+
+def preflight_summary(findings):
+    """Counts by level and by check, so a run reports a shape, not a wall."""
+    checks = {}
+    for entry in findings:
+        checks[entry['check']] = checks.get(entry['check'], 0) + 1
+    return {'critical': sum(1 for f in findings if f['level'] == CRITICAL),
+            'warning': sum(1 for f in findings if f['level'] == WARNING),
+            'checks': checks}
+
+
 # ── PR review-state labels + selection ───────────────────────────────────────
 # Mirrors the code-review
 # skill (Step 1). Review-state names default to the `review-` prefix
