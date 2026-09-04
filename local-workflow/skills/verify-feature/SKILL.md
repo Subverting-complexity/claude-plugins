@@ -2,12 +2,12 @@
 name: verify-feature
 description: >-
   Verify that the feature on the current branch is contained, complete, and free
-  of unexpected downstream side effects, producing a structured report with a fix
-  plan per issue. Use to check a feature before merge, audit its blast radius, or
-  confirm completeness. Uses a linked story/issue as the scope baseline when
-  available, else the branch diff. Do NOT use for general code review without
-  feature context (use code-review) or architecture-level codebase audits (use
-  code-architect audit mode).
+  of duplication, needless complexity, regressions, and unexpected downstream
+  side effects, reporting each issue with a fix plan. Use to check a feature
+  before merge or audit its blast radius. Uses a linked story/issue as the scope
+  baseline when available, else the branch diff. Do NOT use for general code
+  review without feature context (use code-review) or architecture-level codebase
+  audits (use code-architect audit mode).
 allowed-tools:
   - Read
   - Glob
@@ -168,6 +168,56 @@ Evaluate whether the feature is well built.
   code left in the changes?
 - Are all new code paths reachable? Is there dead code in the diff?
 
+### Duplication
+
+Code that repeats something the codebase already has is the most common
+avoidable problem on a feature branch, and it stays invisible unless you
+go looking. For each meaningful block of new logic, look for an existing
+equivalent before accepting it.
+
+- **Search by what the code does, not by what it is called.** Grep for
+  the operation itself — the endpoint it calls, the field it maps, the
+  rule it validates, the error it formats. An existing helper rarely
+  shares the new code's name.
+- **Check the likely homes first**: shared utility modules, the base
+  class or interface the new type sits under, and any sibling feature
+  that already solves the same problem.
+- **Look inside the diff as well.** The same block pasted into two or
+  three new files is duplication that arrived with this branch.
+- **Near-duplicates count.** Logic that differs only in a literal, a type
+  parameter, or one extra branch is still duplication.
+
+Where an existing equivalent exists, name it — file and symbol — and say
+what the new code would have to change to use it. Where you only see a
+resemblance, say that instead of asserting a duplicate.
+
+Not every repetition is worth removing. Two similar blocks that serve
+different callers and are likely to diverge are often better left apart;
+say so rather than proposing an abstraction over them.
+
+### Complexity
+
+Judge the new code against how the rest of this codebase is written, not
+against an ideal. Flag it when it is harder to follow than the problem
+requires:
+
+- Nesting more than about three levels deep, or a function long enough
+  that its parts have to be held in the reader's head at once.
+- A function doing several unrelated things, or taking a boolean flag
+  that selects between two behaviours.
+- Indirection with a single implementation — an interface, factory,
+  wrapper, or configuration switch that has one caller and no second
+  case in prospect.
+- Generalisation for requirements that do not exist yet.
+- Expressions that need a comment to be readable, where a plain version
+  would not.
+- State for one concern spread across several places when one would do.
+
+For each, say what makes it hard to follow and what the simpler shape
+would be. The proposed replacement has to be genuinely simpler than what
+it replaces — do not trade nesting for a layer of abstraction that costs
+the reader more.
+
 ### Pattern adherence
 
 - Does the new code follow existing codebase patterns for similar
@@ -192,9 +242,10 @@ Evaluate whether the feature is well built.
 
 ---
 
-## Step 5 — Downstream Side Effect Analysis
+## Step 5 — Downstream Side Effects and Regressions
 
-Trace the impact of every change on code outside the feature boundary.
+Trace the impact of every change on code outside the feature boundary,
+and on behaviour that already worked before this branch.
 
 ### Changed signatures
 
@@ -220,6 +271,31 @@ For any modified data model, DTO, config structure, or API contract:
 - Verify serialization/deserialization still works
 - Check for downstream consumers (other services, stored data, caches)
   that expect the old shape
+
+### Regressions in existing behaviour
+
+A regression is behaviour that worked before this branch and does not
+work, or works differently, after it. Read the changed hunks as a diff
+rather than reading the final file — a removed line leaves no trace in
+the new version. For every hunk that touches a pre-existing code path,
+ask what depended on the line that changed, and check:
+
+- **Tests deleted, skipped, or weakened.** An assertion loosened from an
+  exact value to "not null", a case removed rather than updated, a test
+  marked skipped. Say which behaviour is no longer covered.
+- **Behaviour quietly dropped.** A validation check, guard clause, null
+  check, retry, or catch block removed from a path that other callers
+  still use.
+- **Defaults and configuration changed.** A default value, feature flag,
+  timeout, or limit that now differs for existing users as well as for
+  the new feature.
+- **Existing callers taking a new branch.** A condition widened or
+  narrowed so that code which used to take one path now takes another.
+- **Work added to an existing path.** A call, query, or await placed
+  inside a loop or a hot path that previously did without it.
+
+Where you cannot tell from the code whether the old behaviour was
+deliberate, say what was removed and ask the author.
 
 ### Removed code
 
@@ -302,8 +378,9 @@ Rules for the voice:
 of the system it touches, and whether it looks clean or has issues worth
 resolving before merge.
 
-**Findings**, grouped under `Containment`, `Implementation Quality`, and
-`Downstream Side Effects`. Write each one as described above, under a
+**Findings**, grouped under `Containment`, `Implementation Quality`
+(which carries duplication and complexity), and `Downstream Side Effects
+and Regressions`. Write each one as described above, under a
 heading that carries the location and how much it matters:
 
 ```

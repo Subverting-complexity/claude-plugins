@@ -37,9 +37,11 @@ cd "$REPO_ROOT"
 CHARS_PER_TOKEN_X10=35
 
 # --- Budgets (calibrated from post-Lever-A/B measured baselines) ------------
-# Description: current max is 494 chars (verify-feature); 510 sits ~3.2% above
-# it. (Block-scalar descriptions like verify-feature's run longer than the
-# single-line ones, so the binding max is well above debugging's 434.)
+# Description: current max is 503 chars (verify-feature, after it took on
+# duplication, complexity and regressions); 510 sits ~1.4% above it, so a
+# further description edit there has to trim before it adds. (Block-scalar
+# descriptions like verify-feature's run longer than the single-line ones, so
+# the binding max is well above debugging's 434.)
 DESC_BUDGET_CHARS=510
 # Body: the Anthropic ≤500-line guideline; most skills sit well under it.
 BODY_BUDGET_LINES=500
