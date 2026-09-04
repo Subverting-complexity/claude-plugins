@@ -589,5 +589,293 @@ class TestRunDecoding(unittest.TestCase):
         self.assertIsNone(parsed)
 
 
+# ── org capability resolution ────────────────────────────────────────────────
+
+_ORG_CAPS_RESPONSE = {
+    'organization': {
+        'issueTypes': {'nodes': [
+            {'id': 'IT_bug', 'name': 'Bug', 'isEnabled': True},
+            {'id': 'IT_story', 'name': 'User Story', 'isEnabled': True},
+            {'id': 'IT_task', 'name': 'Task', 'isEnabled': False},
+        ]},
+        'issueFields': {'nodes': [
+            {'__typename': 'IssueFieldSingleSelect', 'id': 'IFSS_pri',
+             'name': 'Priority',
+             'options': [{'id': 'o_urgent', 'name': 'Urgent'},
+                         {'id': 'o_low', 'name': 'Low'}]},
+            {'__typename': 'IssueFieldMultiSelect', 'id': 'IFMS_class',
+             'name': 'Classification',
+             'options': [{'id': 'o_newfeat', 'name': 'New Feature'}]},
+            {'__typename': 'IssueFieldDate', 'id': 'IFD_start',
+             'name': 'Start date'},
+            {'__typename': 'IssueFieldText', 'id': 'IFT_parent',
+             'name': 'Parent'},
+        ]},
+    },
+}
+
+
+class TestParseOrgCapabilities(unittest.TestCase):
+    """Shaping the GraphQL response is pure, so assert it without any I/O."""
+
+    def test_enabled_types_and_typed_fields(self):
+        capable, types, fields = wf.parse_org_capabilities(_ORG_CAPS_RESPONSE)
+        self.assertTrue(capable)
+        # `Task` is disabled: carrying it would only invite a mutation that fails.
+        self.assertEqual(types, {'Bug': 'IT_bug', 'User Story': 'IT_story'})
+        self.assertEqual(fields['Priority']['data_type'], 'single-select')
+        self.assertEqual(fields['Classification']['data_type'], 'multi-select')
+        self.assertEqual(fields['Start date']['data_type'], 'date')
+        self.assertEqual(fields['Parent']['data_type'], 'text')
+
+    def test_multi_select_option_ids_survive(self):
+        """The whole reason this query is GraphQL and not REST."""
+        _, _, fields = wf.parse_org_capabilities(_ORG_CAPS_RESPONSE)
+        self.assertEqual(fields['Classification']['options'],
+                         {'New Feature': 'o_newfeat'})
+        self.assertEqual(fields['Priority']['options'],
+                         {'Urgent': 'o_urgent', 'Low': 'o_low'})
+
+    def test_user_account_is_not_type_capable(self):
+        """A user-owned repo resolves `organization` to null. Valid, not an error."""
+        capable, types, fields = wf.parse_org_capabilities({'organization': None})
+        self.assertFalse(capable)
+        self.assertEqual((types, fields), ({}, {}))
+
+
+class TestCapabilityCache(unittest.TestCase):
+    """The cache must hit, miss, refresh, and never clobber a neighbouring key."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.cfg = _cfg(org='acme')
+        self.calls = []
+
+    def _stub_graphql(self, data=None, errors=(), err=''):
+        def fake(query, **fields):
+            self.calls.append(fields)
+            return (data if data is not None else _ORG_CAPS_RESPONSE), list(errors), err
+        return fake
+
+    def test_miss_queries_then_writes_the_cache(self):
+        with mock.patch.object(wf, 'gh_graphql_partial', self._stub_graphql()):
+            ok, caps, err = wf.resolve_org_capabilities(self.cfg, root=self.root)
+        self.assertTrue(ok, err)
+        self.assertEqual(len(self.calls), 1)
+        self.assertFalse(caps['cached'])
+        with open(wf.capability_cache_path(self.root), encoding='utf-8') as fh:
+            on_disk = json.load(fh)
+        self.assertEqual(on_disk['type_map'], {'Bug': 'IT_bug', 'User Story': 'IT_story'})
+
+    def test_hit_skips_the_round_trip(self):
+        with mock.patch.object(wf, 'gh_graphql_partial', self._stub_graphql()):
+            wf.resolve_org_capabilities(self.cfg, root=self.root)
+            ok, caps, _ = wf.resolve_org_capabilities(self.cfg, root=self.root)
+        self.assertTrue(ok)
+        self.assertTrue(caps['cached'])
+        self.assertEqual(len(self.calls), 1, 'second call must not re-query')
+
+    def test_refresh_forces_a_requery(self):
+        with mock.patch.object(wf, 'gh_graphql_partial', self._stub_graphql()):
+            wf.resolve_org_capabilities(self.cfg, root=self.root)
+            ok, caps, _ = wf.resolve_org_capabilities(self.cfg, root=self.root, refresh=True)
+        self.assertTrue(ok)
+        self.assertFalse(caps['cached'])
+        self.assertEqual(len(self.calls), 2)
+
+    def test_merge_preserves_unrelated_keys(self):
+        """`issue-apply` and `issue-audit` share this file; a refresh must not eat them."""
+        wf.merge_capability_cache({'skips_reported': True, 'type_map': {'stale': 'x'}},
+                                  root=self.root)
+        with mock.patch.object(wf, 'gh_graphql_partial', self._stub_graphql()):
+            wf.resolve_org_capabilities(self.cfg, root=self.root, refresh=True)
+        with open(wf.capability_cache_path(self.root), encoding='utf-8') as fh:
+            on_disk = json.load(fh)
+        self.assertTrue(on_disk['skips_reported'], 'unrelated key was clobbered')
+        self.assertNotIn('stale', on_disk['type_map'], 'refresh must replace its own keys')
+
+    def test_unreadable_cache_is_ignored_not_fatal(self):
+        path = wf.capability_cache_path(self.root)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write('{not json')
+        with mock.patch.object(wf, 'gh_graphql_partial', self._stub_graphql()):
+            with contextlib.redirect_stderr(io.StringIO()):
+                ok, caps, _ = wf.resolve_org_capabilities(self.cfg, root=self.root)
+        self.assertTrue(ok)
+        self.assertFalse(caps['cached'])
+
+
+class TestOrgCapabilitiesCommand(unittest.TestCase):
+    """The command's status/exit contract, which is what callers branch on."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        patches = [
+            mock.patch.object(wf, 'repo_root', lambda: self.root),
+            mock.patch.object(wf, 'load_config', lambda: (True, _cfg(org='acme'), '')),
+        ]
+        for pa in patches:
+            pa.start()
+            self.addCleanup(pa.stop)
+
+    def _args(self, *argv):
+        return wf.build_parser().parse_args(['org-capabilities', *argv])
+
+    def test_ok_reports_resolved_purpose_keys(self):
+        with mock.patch.object(wf, 'gh_graphql_partial',
+                               lambda q, **f: (_ORG_CAPS_RESPONSE, [], '')):
+            code, payload = _capture(wf.cmd_org_capabilities, self._args())
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['status'], 'ok')
+        self.assertTrue(payload['type_capable'])
+        self.assertEqual(payload['resolved_fields']['field-priority'], 'Priority')
+        # Effort is absent from this fixture org, so it is reported, not assumed.
+        missing = {m['purpose'] for m in payload['missing_fields']}
+        self.assertIn('field-effort', missing)
+
+    def test_user_account_exits_zero(self):
+        """Not every repo is org-owned, and that is a configuration, not a fault."""
+        self.addCleanup(mock.patch.object(wf, 'org_exists', lambda cfg: False).stop)
+        mock.patch.object(wf, 'org_exists', lambda cfg: False).start()
+        with mock.patch.object(wf, 'gh_graphql_partial',
+                               lambda q, **f: ({'organization': None}, [], '')):
+            code, payload = _capture(wf.cmd_org_capabilities, self._args())
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['owner_kind'], 'user')
+        self.assertFalse(payload['type_capable'])
+
+    def test_empty_org_exits_non_zero(self):
+        """An org that resolves but reports nothing is an under-scoped token."""
+        empty = {'organization': {'issueTypes': {'nodes': []},
+                                  'issueFields': {'nodes': []}}}
+
+        # The capability query comes back empty; the existence probe confirms
+        # the org is really there, which is what makes this a failure.
+        with mock.patch.object(wf, 'gh_graphql_partial',
+                               lambda q, **f: (empty, [], '')), \
+             mock.patch.object(wf, 'org_exists', lambda cfg: True):
+            code, payload = _capture(wf.cmd_org_capabilities, self._args())
+        self.assertEqual(code, wf.EXIT_CAPABILITY)
+        self.assertEqual(payload['status'], 'no-capabilities')
+        self.assertIn('read:org', payload['reason'])
+
+    def test_query_failure_is_an_environment_error(self):
+        with mock.patch.object(wf, 'gh_graphql_partial',
+                               lambda q, **f: (None, [], 'HTTP 401')):
+            code, payload = _capture(wf.cmd_org_capabilities, self._args())
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertEqual(payload['status'], 'error')
+
+
+class TestFieldNameOverrides(unittest.TestCase):
+    """A project that renamed an org field must keep working."""
+
+    def test_claude_project_section_overrides_the_default(self):
+        cfg = wf.parse_claude_project(
+            '# P\n\n## Issue Types & Fields\n\n'
+            '| Purpose key | Field name |\n| --- | --- |\n'
+            '| field-priority | `Urgency` |\n'
+            '| field-effort | `Effort` |\n')
+        self.assertEqual(cfg['fields']['field-priority'], 'Urgency')
+        self.assertEqual(wf.field_name(cfg, 'field-priority'), 'Urgency')
+        # An unlisted key still falls through to the default inventory.
+        self.assertEqual(wf.field_name(cfg, 'field-parent'), 'Parent')
+
+    def test_absent_section_leaves_every_default_in_place(self):
+        cfg = wf.parse_claude_project('# P\n\n## Identity\n\n| org | acme |\n')
+        self.assertEqual(cfg['fields'], {})
+        self.assertEqual(wf.field_name(cfg, 'field-type'), 'Classification')
+
+
+class TestDeniedCapability(unittest.TestCase):
+    """A refused capability must not read as an absent one.
+
+    GraphQL answers a partly-authorised query with the fields the token may
+    read plus a FORBIDDEN error for the rest. Treating that as "this org has no
+    issue types" is how a run ends up creating issues with blank metadata and
+    reporting success.
+    """
+
+    FORBIDDEN = [{'type': 'FORBIDDEN', 'path': ['organization', 'issueTypes'],
+                  'message': 'acctname does not have permission to retrieve '
+                             'issueType information.'}]
+    PARTIAL = {'organization': {
+        'issueTypes': None,
+        'issueFields': {'nodes': [
+            {'__typename': 'IssueFieldSingleSelect', 'id': 'IFSS_pri',
+             'name': 'Priority', 'options': [{'id': 'o1', 'name': 'Urgent'}]},
+        ]},
+    }}
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        for pa in (mock.patch.object(wf, 'repo_root', lambda: self.root),
+                   mock.patch.object(wf, 'load_config',
+                                     lambda: (True, _cfg(org='acme'), ''))):
+            pa.start()
+            self.addCleanup(pa.stop)
+
+    def _args(self, *argv):
+        return wf.build_parser().parse_args(['org-capabilities', *argv])
+
+    def test_denied_path_is_extracted(self):
+        self.assertEqual(wf._denied_paths(self.FORBIDDEN),
+                         {'organization', 'issueTypes'})
+
+    def test_non_forbidden_errors_are_not_denials(self):
+        self.assertEqual(wf._denied_paths([{'type': 'NOT_FOUND', 'path': ['x']}]), set())
+
+    def test_denial_exits_non_zero_even_though_fields_resolved(self):
+        with mock.patch.object(wf, 'gh_graphql_partial',
+                               lambda q, **f: (self.PARTIAL, self.FORBIDDEN, '')):
+            code, payload = _capture(wf.cmd_org_capabilities, self._args())
+        self.assertEqual(code, wf.EXIT_CAPABILITY)
+        self.assertEqual(payload['status'], 'no-capabilities')
+        self.assertIn('issueTypes', payload['denied'])
+        self.assertIn('gh auth switch', payload['reason'])
+
+    def test_denial_is_never_cached(self):
+        """A cached `type_capable: false` that meant 'not allowed to look'
+        would make every later run fall back to labels in silence."""
+        with mock.patch.object(wf, 'gh_graphql_partial',
+                               lambda q, **f: (self.PARTIAL, self.FORBIDDEN, '')):
+            ok, caps, _ = wf.resolve_org_capabilities(_cfg(org='acme'), root=self.root)
+        self.assertTrue(ok)
+        self.assertEqual(caps['denied'], ['issueTypes', 'organization'])
+        self.assertFalse(os.path.isfile(wf.capability_cache_path(self.root)),
+                         'a denied capability was written to the cache')
+
+    def test_unparseable_response_is_an_error(self):
+        with mock.patch.object(wf, 'gh_graphql_partial',
+                               lambda q, **f: (None, [], 'HTTP 502')):
+            code, payload = _capture(wf.cmd_org_capabilities, self._args())
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertEqual(payload['status'], 'error')
+
+
+class TestGraphqlPartial(unittest.TestCase):
+    """`gh` exits non-zero on a partial response; the body still matters."""
+
+    def test_data_survives_a_non_zero_exit(self):
+        body = json.dumps({'data': {'organization': {'issueFields': {'nodes': []}}},
+                           'errors': [{'type': 'FORBIDDEN', 'path': ['organization',
+                                                                     'issueTypes']}]})
+        with mock.patch.object(wf, 'run', lambda a, input_text=None: (1, body, 'forbidden')):
+            data, errors, err = wf.gh_graphql_partial('query{}', login='acme')
+        self.assertIsNotNone(data)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(err, 'forbidden')
+
+    def test_empty_body_is_reported_as_an_error(self):
+        with mock.patch.object(wf, 'run', lambda a, input_text=None: (1, '', 'boom')):
+            data, errors, err = wf.gh_graphql_partial('query{}', login='acme')
+        self.assertIsNone(data)
+        self.assertEqual(err, 'boom')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

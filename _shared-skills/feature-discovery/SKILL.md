@@ -408,8 +408,9 @@ issues. If they accept:
      `needs-refinement` label.
 4. **Native type + fields** (best-effort, capability-gated) — for each
    created issue, upgrade it from labels to the org's native issue type
-   and fields per `templates/issue-fields-resolution.md`, using the
-   *Native issue type map* and field maps in `templates/default-labels.md`:
+   and fields per `templates/issue-fields-resolution.md`, using the value
+   maps in `wf_core.py` (`NATIVE_TYPE_MAP`, `EFFORT_FIELD_OPTIONS`,
+   `PRIORITY_FIELD_OPTIONS`, `ORIGIN_FIELD_OPTIONS`):
    - **Native type**: a story → **User Story**; an epic → **Epic**. Set it
      with `updateIssueIssueType` and drop the redundant `type-*` label on a
      type-capable org.

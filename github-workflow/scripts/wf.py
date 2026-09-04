@@ -12,6 +12,7 @@ First cut implements the story picker:
 
     wf pick [--mode story] [--checkout]   # claim the next story, optionally branch
     wf config                             # emit .claude/wf-config.json from ClaudeProject.md
+    wf org-capabilities [--refresh]       # resolve the org's issue types + issue fields
 
 Contract:
   - A single JSON object is written to **stdout**; all human diagnostics go to
@@ -21,6 +22,9 @@ Contract:
       10 status=no-candidates the ready pool was empty
       11 status=all-blocked   every candidate was blocked / already resolved
       20 status=error         environment/auth problem (not in a repo, no gh, …)
+      21 status=no-capabilities an org that resolves but reports neither issue
+                              types nor issue fields — a broken or under-scoped
+                              token looks like this, an unconfigured org does not
       30 status=unsupported   this path isn't in the CLI yet — caller should
                               fall back to the inline skill procedure
   - Mutations to the *winning* issue (claim, assign, status-in-progress) are
@@ -52,6 +56,7 @@ EXIT_OK = 0
 EXIT_NO_CANDIDATES = 10
 EXIT_ALL_BLOCKED = 11
 EXIT_ENV = 20
+EXIT_CAPABILITY = 21
 EXIT_UNSUPPORTED = 30
 EXIT_USAGE = 2
 
@@ -216,7 +221,7 @@ def parse_claude_project(text):
     cfg = {
         'org': None, 'repo': None, 'default_branch': 'main',
         'branch_convention': 'feature/{number}/{short-desc}',
-        'labels': {}, 'review_labels': {}, 'ready_gate': 'label',
+        'labels': {}, 'review_labels': {}, 'fields': {}, 'ready_gate': 'label',
         'agent_gating': 'disabled', 'type_capable': False,
         'board': {'project_node_id': None, 'project_title': None,
                   'status_field_name': 'Status', 'status_field_id': None,
@@ -262,6 +267,12 @@ def parse_claude_project(text):
 
     if re.search(r'is\*{0,2}\s*type-capable', text, re.IGNORECASE):
         cfg['type_capable'] = True
+
+    # Field-name overrides: a project that renamed an org field records the new
+    # name here, and `wf_core.resolve_field_name` prefers it over the default.
+    for cells in _rows(_section(text, 'Issue Types & Fields')):
+        if len(cells) >= 2 and cells[1] and re.match(r'^field-[a-z-]+$', cells[0]):
+            cfg['fields'][cells[0]] = cells[1]
 
     board_block = _section(text, 'Project Board')
     for cells in _rows(board_block):
@@ -340,6 +351,10 @@ def label(cfg, purpose):
     return wf_core.resolve_label(purpose, cfg.get('labels', {}))
 
 
+def field_name(cfg, purpose):
+    return wf_core.resolve_field_name(purpose, cfg.get('fields', {}))
+
+
 # ── candidate assembly ───────────────────────────────────────────────────────
 
 def _norm_issue(raw):
@@ -406,6 +421,247 @@ def _board_column_candidates(cfg, column_name):
             'url': content.get('url', ''),
         })
     return True, issues, ''
+
+
+# -- org capability resolution -----------------------------------------------
+
+CAPABILITY_CACHE_NAME = 'issue-fields-cache.json'
+
+# Both halves of the org's capability surface in one round trip: the enabled
+# native issue types, and every issue field with its option ids.
+#
+# This is GraphQL and not REST on purpose. The REST endpoint
+# `/orgs/{org}/issue-fields` returns `null` for every option id, which makes a
+# single-select or multi-select field impossible to write -- you can read the
+# option names but never name one in a mutation. Do not "simplify" this back to
+# REST.
+ORG_CAPABILITY_QUERY = (
+    'query($login:String!){'
+    ' organization(login:$login){'
+    '  issueTypes(first:50){ nodes { id name isEnabled } }'
+    '  issueFields(first:50){ nodes {'
+    '   __typename'
+    '   ... on IssueFieldSingleSelect { id name options { id name } }'
+    '   ... on IssueFieldMultiSelect { id name options { id name } }'
+    '   ... on IssueFieldDate { id name }'
+    '   ... on IssueFieldText { id name }'
+    '   ... on IssueFieldNumber { id name }'
+    '  } }'
+    ' } }'
+)
+
+_FIELD_TYPENAMES = {
+    'IssueFieldSingleSelect': 'single-select',
+    'IssueFieldMultiSelect': 'multi-select',
+    'IssueFieldDate': 'date',
+    'IssueFieldText': 'text',
+    'IssueFieldNumber': 'number',
+}
+
+
+def capability_cache_path(root=None):
+    return os.path.join(root or repo_root(), '.claude', CAPABILITY_CACHE_NAME)
+
+
+def load_capability_cache(root=None):
+    """Read the capability cache. Returns {} when absent or unreadable."""
+    path = capability_cache_path(root)
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding='utf-8') as fh:
+            cached = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        eprint('wf: ignoring unreadable capability cache (%s)' % exc)
+        return {}
+    return cached if isinstance(cached, dict) else {}
+
+
+def merge_capability_cache(values, root=None):
+    """Merge keys into the capability cache, preserving every other key.
+
+    Merged rather than overwritten because this file is shared: `issue-apply`
+    and `issue-audit` write their own keys into it, and a capability refresh
+    must not discard them.
+    """
+    path = capability_cache_path(root)
+    cached = load_capability_cache(root)
+    cached.update(values)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as fh:
+        json.dump(cached, fh, indent=2, sort_keys=True)
+        fh.write('\n')
+    return cached
+
+
+def parse_org_capabilities(data):
+    """Shape the GraphQL response into (type_capable, type_map, field_map).
+
+    `type_map` is {type name: node id} for enabled types only -- a disabled type
+    cannot be set, so carrying it would only invite a mutation that fails.
+    `field_map` is {field name: {id, data_type, options: {option name: id}}}.
+    """
+    org = (data or {}).get('organization')
+    if not org:
+        # A user-owned repo resolves `organization` to null. Issue types are an
+        # org-only feature, so this is a valid configuration, not a failure.
+        return False, {}, {}
+
+    type_map = {}
+    for node in (org.get('issueTypes') or {}).get('nodes') or []:
+        if node and node.get('isEnabled') and node.get('name'):
+            type_map[node['name']] = node['id']
+
+    field_map = {}
+    for node in (org.get('issueFields') or {}).get('nodes') or []:
+        if not node or not node.get('name'):
+            continue
+        field_map[node['name']] = {
+            'id': node['id'],
+            'data_type': _FIELD_TYPENAMES.get(node.get('__typename'), 'unknown'),
+            'options': {o['name']: o['id'] for o in (node.get('options') or [])},
+        }
+
+    return bool(type_map), type_map, field_map
+
+
+def gh_graphql_partial(query, **fields):
+    """Like `gh_graphql`, but keeps the data GitHub returned alongside errors.
+
+    GraphQL answers a partly-authorised query with both: the fields the token
+    may read, and a `FORBIDDEN` error naming the ones it may not. `gh` exits
+    non-zero in that case and `gh_graphql` discards the whole response, which
+    is right everywhere else — a half-applied mutation is not a result. Here it
+    is the difference between "this org has no issue types" and "this token may
+    not see them", and those two must not be reported the same way.
+
+    Returns (data, errors, err) where `errors` is the GraphQL error list.
+    """
+    code, out, err = run(_graphql_args(query, fields))
+    try:
+        parsed = json.loads(out) if (out or '').strip() else None
+    except json.JSONDecodeError:
+        parsed = None
+    if parsed is None:
+        return None, [], (err or '').strip() or 'no response from gh api graphql'
+    return parsed.get('data'), parsed.get('errors') or [], (
+        '' if code == 0 else (err or '').strip())
+
+
+def _denied_paths(errors):
+    """The top-level query fields a FORBIDDEN error named, e.g. {'issueTypes'}."""
+    denied = set()
+    for e in errors or []:
+        if (e.get('type') or '').upper() != 'FORBIDDEN':
+            continue
+        for part in e.get('path') or []:
+            if isinstance(part, str):
+                denied.add(part)
+    return denied
+
+
+def resolve_org_capabilities(cfg, refresh=False, root=None):
+    """Resolve the org's issue types and fields, through the cache.
+
+    Returns (ok, capabilities, err). `capabilities` carries `type_capable`,
+    `type_map` and `field_map`. A cache hit skips the round trip entirely;
+    `refresh=True` forces the query and rewrites those three keys.
+    """
+    if not refresh:
+        cached = load_capability_cache(root)
+        if 'type_capable' in cached and 'field_map' in cached:
+            return True, {'type_capable': cached['type_capable'],
+                          'type_map': cached.get('type_map') or {},
+                          'field_map': cached.get('field_map') or {},
+                          'cached': True}, ''
+
+    data, errors, err = gh_graphql_partial(ORG_CAPABILITY_QUERY, login=cfg['org'])
+    if data is None:
+        return False, None, 'org capability query failed: %s' % (
+            err or json.dumps(errors))
+
+    denied = _denied_paths(errors)
+    type_capable, type_map, field_map = parse_org_capabilities(data)
+    caps = {'type_capable': type_capable, 'type_map': type_map,
+            'field_map': field_map, 'cached': False,
+            'denied': sorted(denied),
+            'errors': [e.get('message', '') for e in errors]}
+
+    # Never cache a capability the token was refused. A cached `type_capable:
+    # false` that really meant "not allowed to look" would make every later run
+    # quietly fall back to labels — the silent-blank failure this whole feature
+    # exists to stop.
+    if not denied:
+        merge_capability_cache({'type_capable': type_capable, 'type_map': type_map,
+                                'field_map': field_map}, root)
+    return True, caps, ''
+
+
+def org_exists(cfg):
+    """Whether the configured owner resolves as an organization at all.
+
+    Separates the two ways `resolve_org_capabilities` can come back empty: a
+    user-owned repo, which is valid, from an org whose capabilities the token
+    cannot see, which is not.
+    """
+    ok, data, _ = gh_graphql(
+        'query($login:String!){ organization(login:$login){ id } }',
+        login=cfg['org'])
+    return bool(ok and (data or {}).get('organization'))
+
+
+def cmd_org_capabilities(args):
+    ok, cfg, err = load_config()
+    if not ok:
+        emit('error', EXIT_ENV, reason=err)
+
+    ok, caps, err = resolve_org_capabilities(cfg, refresh=args.refresh)
+    if not ok:
+        emit('error', EXIT_ENV, reason=err, org=cfg['org'])
+
+    # A refused capability is not an absent one. An org that has not enabled
+    # issue types is a valid configuration to fall back from; a token that may
+    # not read them tells us nothing about the org, and carrying on would
+    # create issues with blank metadata and no error — the exact failure this
+    # command exists to prevent. Stop and name the account.
+    if caps.get('denied'):
+        emit('no-capabilities', EXIT_CAPABILITY, org=cfg['org'],
+             denied=caps['denied'], errors=caps['errors'],
+             reason='the authenticated account may not read %s for this org; '
+                    'switch accounts (gh auth switch) or grant it access — this '
+                    'is not the same as the org having none'
+                    % ' and '.join(caps['denied']))
+
+    # An org that resolves but reports neither types nor fields is not the same
+    # as a user account, and not the same as an org that simply has not enabled
+    # them: it is what an under-scoped or expired token looks like. Exiting
+    # non-zero here is the only thing that tells those apart.
+    if not caps['type_capable'] and not caps['field_map']:
+        if org_exists(cfg):
+            emit('no-capabilities', EXIT_CAPABILITY, org=cfg['org'],
+                 reason='org resolves but reports no issue types and no issue '
+                        'fields; check the token carries the read:org scope',
+                 type_capable=False, type_map={}, field_map={})
+        emit('ok', EXIT_OK, org=cfg['org'], owner_kind='user',
+             type_capable=False, type_map={}, field_map={},
+             cached=caps.get('cached', False),
+             note='user-owned repo: native issue types are an org-only feature')
+
+    # Report which purpose keys actually resolve against this org, so a caller
+    # does not have to re-derive the mapping to know what it can set.
+    resolved, missing = {}, []
+    for key in wf_core.FIELD_NAME_DEFAULTS:
+        name = field_name(cfg, key)
+        if name in caps['field_map']:
+            resolved[key] = name
+        else:
+            missing.append({'purpose': key, 'expected_name': name})
+
+    emit('ok', EXIT_OK, org=cfg['org'], owner_kind='organization',
+         type_capable=caps['type_capable'], type_map=caps['type_map'],
+         field_map=caps['field_map'], cached=caps.get('cached', False),
+         resolved_fields=resolved, missing_fields=missing,
+         cache=os.path.relpath(capability_cache_path(), repo_root()))
 
 
 def fetch_native_types(cfg):
@@ -1480,6 +1736,14 @@ def build_parser():
 
     cfg = sub.add_parser('config', help='emit .claude/wf-config.json from ClaudeProject.md')
     cfg.set_defaults(func=cmd_config)
+
+    caps = sub.add_parser('org-capabilities',
+                          help="resolve the org's enabled native issue types and its "
+                               'issue fields (with option ids) into '
+                               '.claude/issue-fields-cache.json')
+    caps.add_argument('--refresh', action='store_true',
+                      help='re-query the org instead of reading the cache')
+    caps.set_defaults(func=cmd_org_capabilities)
 
     return parser
 

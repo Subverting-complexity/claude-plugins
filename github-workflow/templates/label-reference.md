@@ -9,28 +9,13 @@ labels, native-type map, priority map, and board columns all stay in
 `default-labels.md` — resolve through the single path described there; the
 tables below are the value maps for the dimensions used off the claim path.
 
-## Effort field option map
+## Effort and Origin field option maps
 
-The story size estimate (from the story template) → `Effort` field option:
-
-| Size estimate | `Effort` field option |
-|---------------|-----------------------|
-| large         | High                  |
-| medium        | Medium                |
-| small         | Low                   |
-
-## Origin field option map
-
-The creating command/session → `Origin` field option:
-
-| Creating command / session                       | `Origin` option     |
-|--------------------------------------------------|---------------------|
-| `feature-discovery`                              | Feature Discovery   |
-| `feature-discovery` validation session             | Feature Discovery   |
-| `security-audit` / `execute` audit (security)    | Security Audit      |
-| `code-review`                                    | Code Review         |
-| `report-issue` (found during dev), `execute`     | Development         |
-| human / stakeholder request                      | Stakeholder Request |
+These moved into `scripts/wf_core.py` as `EFFORT_FIELD_OPTIONS` (story size
+estimate → `Effort` option) and `ORIGIN_FIELD_OPTIONS` (creating command or
+session → `Origin` option), alongside the rest of the issue-field value maps.
+`wf` applies them directly, so there is nothing to look up by hand. See
+`templates/default-labels.md` → *Issue Types & Field Values*.
 
 ## Review State Labels
 

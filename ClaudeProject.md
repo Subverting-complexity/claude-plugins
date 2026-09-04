@@ -76,10 +76,9 @@ GitHub issue types — **Bug**, **Feature**, **User Story**, **Epic** — and
 org issue fields. The workflow uses them as the first-class classification
 and metadata, not just labels; on a type-capable org the native type
 replaces the `type-*` label (priority stays dual-tracked with its label).
-Resolution and mutations follow `github-workflow/templates/issue-fields-resolution.md`;
-the purpose→value maps (the "by nature" type mapping, priority/effort/origin
-maps) live in `github-workflow/templates/default-labels.md` → *Issue Types
-& Field Values*.
+Resolve the live capabilities with `wf org-capabilities`; the purpose→value
+maps (the "by nature" type mapping, and the priority, effort and origin maps)
+are Python data in `github-workflow/scripts/wf_core.py`.
 
 Field names match the defaults:
 
@@ -94,9 +93,10 @@ Field names match the defaults:
 | field-parent         | `Parent`        |
 | field-status-reason  | `Status reason` |
 
-> The `Origin` field must exist in the org for it to be populated (single
-> select: Security Audit, Feature Discovery, Code Review, Development,
-> Stakeholder Request). All other fields above already exist.
+All eight fields exist in this org. `Classification` is a **multi-select**;
+the rest are single-select, date or text as `wf_core.FIELD_DATA_TYPES`
+records. Run `wf org-capabilities` for the live option ids rather than
+copying them here.
 
 ## Ready Gate
 

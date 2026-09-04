@@ -28,109 +28,38 @@ Inputs:
 > fences and must be run by hand, not inside a `!`-prefixed auto-run block
 > — an auto-run block truncates at the first fence (see issue #33).
 
-## Session cache
+## Steps 1 and 2 — Resolve the org's types and fields
 
-Steps 1 and 2 each make a GraphQL round-trip to discover org capabilities.
-In multi-issue sessions (audit mode, `feature-discovery` breakdowns) those
-calls — and the "skipped field 'X'" messages — would otherwise repeat per
-issue rather than once per session.
+Both discovery steps are one command:
 
-Cache both results in `.claude/issue-fields-cache.json`. Each step checks for
-its own key before querying, then merges its results into the file on a cache
-miss. Steps 1 and 2 are independent — the file may hold only one key if only
-one step has run so far. The `execute` skill's "Exit cleanup" deletes this file
-alongside the other `.claude/` scratch files.
+    wf org-capabilities [--refresh]
 
-Cache keys:
+It resolves the org's enabled native issue types and every issue field with
+its option ids in a single GraphQL round trip, caches the result to
+`.claude/issue-fields-cache.json`, and reads that cache on later runs.
+`--refresh` forces a re-query. The `execute` skill's exit cleanup deletes the
+cache alongside the other `.claude/` scratch files.
 
-| Key | Set by | Value |
-| --- | ------ | ----- |
-| `type_capable` + `type_map` | Step 1 | boolean + `{name, id}` array |
-| `field_map` | Step 2 | `{name, id, options}` array |
-| `skips_reported` | Step 5 | `true` after the first emission of skip messages |
+Read the exit code, not the prose:
 
-To check for a key: parse `.claude/issue-fields-cache.json` and test whether
-the key is present. To write (merge, not overwrite): read the file if it
-exists, update the dict, write it back. Use `python3`, `py -3`, or `python`
-(whichever is available) for the JSON read-merge-write. If none runs (no
-Python on this machine), **skip the cache write** and proceed with the
-freshly-resolved values, noting once "field cache skipped: no Python
-available" — the cache is an optimisation; never fail the workflow over it.
+| Exit | Status | What it means | What to do |
+|------|--------|---------------|------------|
+| 0 | `ok`, `owner_kind: organization` | Types and fields resolved | Use `type_map` and `field_map` from the JSON |
+| 0 | `ok`, `owner_kind: user` | A user-owned repo — issue types are org-only | Classify with `type-*` labels; this is valid, not a fault |
+| 21 | `no-capabilities`, with `denied` | The account may not read issue types or fields for this org | Stop. Run `gh auth status`, then `gh auth switch` to an account with access |
+| 21 | `no-capabilities` | The org resolves but reports neither types nor fields | Stop. The token is under-scoped — it needs `read:org` |
+| 20 | `error` | Not in a repo, no `gh`, auth failure | Fix the environment |
 
-## Step 1 — Discover native issue types (capability gate)
+The JSON also carries `resolved_fields` (purpose key → the field name that
+exists on this org) and `missing_fields` (the ones that do not), so a caller
+knows what it can set without re-deriving the mapping.
 
-List the org's enabled issue types and map each **name** to its node id:
+It is GraphQL and not REST deliberately: `/orgs/{org}/issue-fields` returns
+`null` for every option id, which makes single-select and multi-select fields
+impossible to write. The query lives in `wf.ORG_CAPABILITY_QUERY` with that
+note attached.
 
-**Session cache check.** If `.claude/issue-fields-cache.json` contains
-`type_capable`, read `type_capable` and `type_map` from it and skip the
-query below. On a miss, run the query then merge both keys into the cache
-file (preserving any existing keys, such as a prior Step 2's `field_map`).
-
-```
-gh api graphql -f query='query($login:String!){
-  organization(login:$login){
-    issueTypes(first:20){ nodes { id name isEnabled } }
-  }
-}' -F login='{org}' \
-  --jq '[.data.organization.issueTypes.nodes[] | select(.isEnabled) | {name, id}]'
-```
-
-- **Returns one or more enabled types** → the org is **type-capable**.
-  Build a name→id map (`Bug`, `Feature`, `User Story`, `Epic`). Native
-  types are now the **authoritative** classification; do **not** also
-  apply the `type-*` label (the native type renders in the issues list on
-  its own). The selector filters by native type (Step 5).
-- **Errors, returns empty, or the owner is a user account** (the
-  `organization` field is null — issue types are an org-only feature) →
-  the org is **not type-capable**. Fall back to today's behaviour
-  unchanged: classify with the `type-*` labels from
-  `templates/default-labels.md` and filter on those labels. Skip every
-  native-type step below; never treat the absence of native types as an
-  error.
-
-Resolve the workflow's kind → native type through the **native-type map**
-in `templates/default-labels.md` (the "by nature" default). When a mapped
-type name is not in the discovered set, fall back to the `type-*` label
-for that one issue and note it.
-
-## Step 2 — Discover org issue fields (per-field capability gate)
-
-List the org's issue fields with their options. **Use the GraphQL query
-below, not the REST endpoint** — REST (`/orgs/{org}/issue-fields`) returns
-`null` for all option IDs, making single-select fields unusable:
-
-**Session cache check.** If the cache contains `field_map`, read it and
-skip the query. On a miss, run the query then merge `field_map` into the
-cache file (preserving any existing keys).
-
-```
-gh api graphql -f query='query($org:String!){
-  organization(login:$org){
-    issueFields(first:20){
-      nodes {
-        ... on IssueFieldSingleSelect {
-          id name
-          options { id name }
-        }
-        ... on IssueFieldDate {
-          id name
-        }
-        ... on IssueFieldText {
-          id name
-        }
-      }
-    }
-  }
-}' -F org='{org}' \
-  --jq '[.data.organization.issueFields.nodes[] | select(. != null) | {name, id, options}]'
-```
-
-Build a name→`{id, options}` map (for single-select fields, `options` is a
-list of `{name, id}` pairs with real node IDs). Each field is gated
-**independently**: populate only the fields the org actually defines, and
-skip any that are absent. An org defining none of these fields creates
-issues exactly as today (labels only) — a valid configuration, not a
-failure.
+### Reporting a field the org does not define
 
 **Surface each skip, don't swallow it.** When a field the command *intends*
 to set (per the table below) is not in the discovered map — never defined,
@@ -147,19 +76,24 @@ skipped field 'Origin' (not found in org issue fields)
 This is informational, never an error — the issue is still created and
 still carries its labels.
 
-Resolve a field's purpose to its concrete name through `ClaudeProject.md`
-→ `## Issue Types & Fields` (defaults in `templates/default-labels.md`):
+Field names and their data types are `wf_core.FIELD_NAME_DEFAULTS` and
+`wf_core.FIELD_DATA_TYPES`; `wf org-capabilities` reports which of them this
+org actually defines. Do not restate them here — the copy that used to live
+in this table said `Classification` was single-select for some time after the
+org converted it to multi-select, and nothing caught it.
 
-| Purpose key      | Default field name | Type          | Set by |
-|------------------|--------------------|---------------|--------|
-| `field-priority` | `Priority`         | single-select | report-issue, execute, feature-discovery |
-| `field-effort`   | `Effort`           | single-select | every issue-creating command |
-| `field-type`     | `Classification`   | single-select | every issue-creating command |
-| `field-origin`   | `Origin`           | single-select | every issue-creating command |
-| `field-start`    | `Start date`       | date          | execute (on claim) |
-| `field-target`   | `Target date`      | date          | execute (on PR creation — records actual completion date) |
-| `field-parent`   | `Parent`           | text          | feature-discovery (epic-child link) |
-| `field-status-reason` | `Status reason` | text         | block-story (blocker description) |
+Which command sets which field:
+
+| Purpose key | Set by |
+|-------------|--------|
+| `field-priority` | report-issue, execute, feature-discovery |
+| `field-effort` | every issue-creating command |
+| `field-type` | every issue-creating command |
+| `field-origin` | every issue-creating command |
+| `field-start` | execute (on claim) |
+| `field-target` | execute (on PR creation — records actual completion date) |
+| `field-parent` | feature-discovery (epic-child link) |
+| `field-status-reason` | block-story (blocker description) |
 
 ## Step 3 — Get the issue's node id
 

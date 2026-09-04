@@ -53,6 +53,7 @@ from wf_core import (  # noqa: E402
 # parse_claude_project lives in the I/O shell (wf.py) but does no I/O itself —
 # it is pure text parsing, so it is exercised offline here alongside the core.
 from wf import parse_claude_project, _graphql_args  # noqa: E402
+import wf_core  # noqa: E402  (module handle for the value-map tables)
 
 
 # ── Tests ────────────────────────────────────────────────────────────────────
@@ -1003,6 +1004,65 @@ class TestBulkSetOrdering(unittest.TestCase):
 
     def test_empty_set_is_handled(self):
         self.assertEqual(plan_bulk_order([]), ([], []))
+
+
+# ── issue type + org field value maps ────────────────────────────────────────
+
+class TestFieldNameResolution(unittest.TestCase):
+    """Field names resolve project-map first, then defaults, then the key."""
+
+    def test_project_map_wins(self):
+        self.assertEqual(
+            wf_core.resolve_field_name('field-priority', {'field-priority': 'Urgency'}),
+            'Urgency')
+
+    def test_default_used_when_unmapped(self):
+        self.assertEqual(wf_core.resolve_field_name('field-type', {}), 'Classification')
+
+    def test_unknown_key_returns_itself(self):
+        self.assertEqual(wf_core.resolve_field_name('field-nonsense', {}), 'field-nonsense')
+
+    def test_empty_project_value_falls_through(self):
+        self.assertEqual(wf_core.resolve_field_name('field-effort', {'field-effort': ''}),
+                         'Effort')
+
+    def test_reverse_lookup_finds_the_purpose(self):
+        self.assertEqual(wf_core.field_purpose_for_name('Classification', {}), 'field-type')
+        self.assertEqual(
+            wf_core.field_purpose_for_name('Urgency', {'field-priority': 'Urgency'}),
+            'field-priority')
+
+    def test_reverse_lookup_of_an_unmapped_field_is_none(self):
+        """This is how preflight notices a newly added org field."""
+        self.assertIsNone(wf_core.field_purpose_for_name('Squad', {}))
+
+
+class TestIssueValueMaps(unittest.TestCase):
+    """The maps that were markdown tables, now validatable."""
+
+    def test_every_native_type_entry_is_complete(self):
+        for kind, entry in wf_core.NATIVE_TYPE_MAP.items():
+            self.assertEqual(set(entry), {'type', 'classification', 'label'}, kind)
+
+    def test_every_classification_is_a_valid_option(self):
+        for kind, entry in wf_core.NATIVE_TYPE_MAP.items():
+            self.assertIn(entry['classification'], wf_core.CLASSIFICATION_OPTIONS, kind)
+
+    def test_every_fallback_label_is_a_known_purpose_key(self):
+        for kind, entry in wf_core.NATIVE_TYPE_MAP.items():
+            self.assertEqual(wf_core.resolve_label(entry['label'], {}), entry['label'], kind)
+
+    def test_every_field_key_has_a_name_and_a_data_type(self):
+        self.assertEqual(set(wf_core.FIELD_NAME_DEFAULTS), set(wf_core.FIELD_DATA_TYPES))
+
+    def test_mandatory_keys_are_real_fields(self):
+        for key in wf_core.MANDATORY_FIELD_KEYS:
+            self.assertIn(key, wf_core.FIELD_NAME_DEFAULTS, key)
+
+    def test_priority_options_cover_every_priority_label(self):
+        self.assertEqual(set(wf_core.PRIORITY_FIELD_OPTIONS),
+                         {'priority-critical', 'priority-high',
+                          'priority-medium', 'priority-low'})
 
 
 if __name__ == '__main__':

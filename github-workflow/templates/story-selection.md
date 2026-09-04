@@ -93,7 +93,7 @@ Then narrow the list with **local** filters (no API calls):
   - **Type-capable org** → kind is the issue's **native issue type**. `gh`
     cannot project it (`--json issueType` is unsupported), so fetch it via
     GraphQL once and build a `number → type` map, then filter using the
-    *Native issue type map* in `templates/default-labels.md` (feature keeps
+    kind mapping in `wf_core.NATIVE_TYPE_MAP` (feature keeps
     `User Story`; maintenance keeps `Bug` + any `Feature` whose
     `Type of issue` is Tech Debt/Architecture/Security):
     ```
