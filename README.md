@@ -48,6 +48,65 @@ Or run `/plugin` inside Claude Code (after step 1) to browse and install
 interactively. Restart your session afterward so the plugins' skills,
 commands, agents, and hooks load.
 
+### Picking up a new version
+
+An installed plugin does not update itself, and the failure mode is
+silence: `claude plugin update` reports *already at latest* against the
+**cached** copy of the marketplace, not against what is on `main`. So the
+marketplace refresh is not optional — it is the step that makes the update
+mean anything.
+
+```bash
+claude plugin marketplace update subverting-complexity
+claude plugin update github-workflow@subverting-complexity
+```
+
+Then restart the session, so the new skills, commands, agents and hooks
+load.
+
+Run these from a normal shell, not inside a Claude Code session — the CLI
+blocks nested sessions. If you need to run one from inside, prefix it with
+`env -u CLAUDECODE`. The command is `claude plugin`, singular.
+
+Check what you actually have with `claude plugin list`, and compare against
+the version in
+[`github-workflow/.claude-plugin/plugin.json`](github-workflow/.claude-plugin/plugin.json).
+[`CHANGELOG.md`](CHANGELOG.md) says what changed and what breaks.
+
+**Registering the marketplace is a per-machine step, once ever.** A repo
+can commit `enabledPlugins` to its own `.claude/settings.json`, so sessions
+opened there enable the plugin without anyone installing it by hand — but a
+machine that has never run `claude plugin marketplace add` fetches nothing
+and reports *No plugins installed*, with no error explaining why. See
+[`CLAUDE.md`](CLAUDE.md#declaring-a-plugin-in-a-consuming-project) for the
+verified behaviour matrix.
+
+### Who consumes these plugins
+
+The blast radius of a breaking release cannot be judged without this list,
+and a project board is not proof of an install. Verified against committed
+`.claude/settings.json` and `ClaudeProject.md` on 4 September 2026 — re-run
+the check when cutting a major release.
+
+**Committed plugin declaration** (`enabledPlugins` in
+`.claude/settings.json`, so every session in the repo enables it):
+
+| Repo | Plugin |
+| ---- | ------ |
+| `CadenceReader` | `github-workflow` |
+| `Secret.Broker` | `github-workflow` |
+
+**Configured for `github-workflow` but no committed declaration** — these
+carry a `ClaudeProject.md`, so the plugin is driven there from a
+per-machine install. They are affected by a breaking release just as much,
+but nothing in the repo records the dependency:
+
+`Invexis`, `Refrain`, `Telltale`, `Mutation`, `GoogleAppsScripts`,
+`GTM-AI`.
+
+This repo dogfoods `github-workflow` on its own backlog and is configured
+the same way.
+
 ### Configuring `github-workflow`
 
 `github-workflow` exposes a few user-config options. The only **required** one

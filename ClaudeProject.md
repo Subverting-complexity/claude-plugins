@@ -71,32 +71,51 @@ Agent gating is disabled, so no `claude-ready` label is configured.
 
 ## Issue Types & Fields
 
-This org (`Subverting-complexity`) **is** type-capable: it has native
-GitHub issue types — **Bug**, **Feature**, **User Story**, **Epic** — and
-org issue fields. The workflow uses them as the first-class classification
-and metadata, not just labels; on a type-capable org the native type
-replaces the `type-*` label (priority stays dual-tracked with its label).
-Resolve the live capabilities with `wf org-capabilities`; the purpose→value
-maps (the "by nature" type mapping, and the priority, effort and origin maps)
-are Python data in `github-workflow/scripts/wf_core.py`.
+Written from `wf org-capabilities` against `Subverting-complexity`.
+Re-run `/github-workflow:setup` after enabling a type or adding a field.
 
-Field names match the defaults:
+### Capability
 
-| Purpose key          | Field name      |
-| -------------------- | --------------- |
-| field-priority       | `Priority`      |
-| field-effort         | `Effort`        |
+| Setting | Value |
+| ------- | ----- |
+| type-capable | `yes` |
+
+An organisation with native issue types enabled: **Bug**, **Chore**,
+**Epic**, **Feature**, **User Story**. The native type is the first-class
+classification here, so the `type-*` label is dropped from an issue once
+the type is set. Priority stays dual-tracked with its label — the label
+orders selection, the field drives the board's own views.
+
+### Field names
+
+All eight resolve to their default names.
+
+| Purpose key          | Field name       |
+| -------------------- | ---------------- |
+| field-priority       | `Priority`       |
+| field-effort         | `Effort`         |
 | field-type           | `Classification` |
-| field-origin         | `Origin`        |
-| field-start          | `Start date`    |
-| field-target         | `Target date`   |
-| field-parent         | `Parent`        |
-| field-status-reason  | `Status reason` |
+| field-origin         | `Origin`         |
+| field-start          | `Start date`     |
+| field-target         | `Target date`    |
+| field-parent         | `Parent`         |
+| field-status-reason  | `Status reason`  |
 
-All eight fields exist in this org. `Classification` is a **multi-select**;
-the rest are single-select, date or text as `wf_core.FIELD_DATA_TYPES`
-records. Run `wf org-capabilities` for the live option ids rather than
-copying them here.
+`Classification` is a **multi-select**; the rest are single-select, date or
+text as `wf_core.FIELD_DATA_TYPES` records. `field-priority`,
+`field-effort`, `field-type` and `field-origin` are mandatory on every
+issue the workflow creates — `wf issue-apply` refuses a spec that leaves
+one blank.
+
+### Missing
+
+| Field | Consequence |
+| ----- | ----------- |
+| _(none)_ | — |
+
+The purpose→value maps are Python data in
+`github-workflow/scripts/wf_core.py`. Run `wf org-capabilities` for the
+live option ids rather than copying them here, where they would go stale.
 
 ## Ready Gate
 
