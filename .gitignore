@@ -14,6 +14,7 @@
 **/.claude/claim-*.sha
 **/.claude/wf-config.json
 **/.claude/issue-fields-cache.json
+**/.claude/issue-audit-spec.json
 **/.claude/*.flag
 
 # graphify — generated graph artifacts (large, derived, or machine-local)

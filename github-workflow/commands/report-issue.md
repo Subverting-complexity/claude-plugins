@@ -108,35 +108,6 @@ case, flat backlog mode, or no open milestones), the issue is created
 without a milestone — do **not** pass an empty `--milestone` flag, as
 `gh` rejects it.
 
-### 4b. Validate and create labels
-
-Before creating the issue, ensure all selected labels exist on the
-repository. Fetch the current label list:
-
-```
-gh label list --repo {org}/{repo} --json name --jq '.[].name'
-```
-
-For each label in the assembled list (type, priority, lifecycle state,
-and `claude-authored`), resolve its name by purpose key via
-`templates/default-labels.md` and check if it appears in the output. If a
-label is missing (setup should
-have created it), create it with the guarded create-if-missing pattern
-from `templates/default-labels.md` — **without `--force`** so existing
-label metadata is never overwritten:
-
-```
-gh label create "{label_name}" --repo {org}/{repo} --description "{description}" --color "{color}"
-```
-
-Use these colours (matching the setup wizard defaults):
-- Priority: critical `#B60205`, high `#D93F0B`, medium `#FBCA04`, low `#0E8A16`
-- Type: story `#1D76DB`, bug `#D93F0B`, security `#B60205`, debt `#FBCA04`, arch `#0E8A16`
-
-This step is best-effort. If label creation fails (permissions, etc.),
-log a warning and proceed — `gh issue create` will still apply labels
-that already exist.
-
 ### 4c. Resolve the repository's issue template
 
 Follow `templates/issue-template-resolution.md` to find out whether the
@@ -155,10 +126,6 @@ Step 5 leaves the assignee blank.
 
 ### 5. Create the issue
 
-Assemble the label list from the type, priority, lifecycle-state, and
-`claude-authored` labels selected in Step 3, comma-separated, omitting
-any that are not configured.
-
 Write the issue body to the standard in
 `../skills/writing-github-issues/SKILL.md`, then apply it following
 `templates/body-file-write.md` (temp file + `--body-file`):
@@ -168,15 +135,20 @@ Write the issue body to the standard in
 gh issue create --repo {org}/{repo} \
   --title "{prefix} {title}" \
   --body-file {tempfile} \
-  --label "{type_label},{priority_label}" \
+  --label "{type_label},{priority_label},{lifecycle_label},claude-authored" \
   --milestone "{current_milestone}"
 
 # Flat mode (no milestone) — omit the --milestone flag entirely:
 gh issue create --repo {org}/{repo} \
   --title "{prefix} {title}" \
   --body-file {tempfile} \
-  --label "{type_label},{priority_label}"
+  --label "{type_label},{priority_label},{lifecycle_label},claude-authored"
 ```
+
+Pass **all four** label groups Step 3 selected, comma-separated, omitting
+only those the project does not define. An issue created without its
+lifecycle label is never picked up by `execute`, which selects on
+`status-ready`, and it is the one easiest to leave out.
 
 **Leave the assignee blank.** Do not pass `--assignee`/`--add-assignee`
 here, and do not follow up with a `gh issue edit --add-assignee`.

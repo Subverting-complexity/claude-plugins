@@ -180,6 +180,15 @@ cache the result**, because a cached `type_capable: false` that really meant
 silence. The usual fix is `gh auth switch`; `gh auth status` shows which
 account is active and what scopes it has.
 
+`NOT_FOUND` counts as a denial for the same reason. GitHub returns it when the
+account may not see the organisation at all, and reading it as "no such org"
+recorded `owner_kind: user` — an org filed away as a personal account, cached
+with no expiry, every issue created after that with no type and no field values
+and nothing reporting it. An empty result is now only believed when it carries
+the current `CAPABILITY_CACHE_SCHEMA`, so a cache written by a version whose
+conclusion is no longer trusted heals itself on the next run instead of waiting
+for someone to know about `--refresh`.
+
 Field **names** are overridable per project in `ClaudeProject.md` →
 `## Issue Types & Fields`; the value maps behind them are Python data in
 `wf_core.py` (`NATIVE_TYPE_MAP`, `CLASSIFICATION_OPTIONS`,
@@ -234,7 +243,7 @@ with a `number` is an update; one without is a create.
 | `title`, `body` | As on GitHub. A create needs a title. |
 | `kind` | One of `wf_core.NATIVE_TYPE_MAP`'s keys (`story`, `bug`, `epic`, `spike`, …). Supplies both the native type and a default `Classification`. |
 | `type` | An explicit native type name, overriding what `kind` implies. |
-| `labels` | Purpose keys or literal names; resolved through the project's label map. |
+| `labels` | Purpose keys or literal names; resolved through the project's label map. A create writes only what is named here, so an entry with no `labels` gets no ready-gate label and no priority, and `pick` will never select it. The command says so on stderr. |
 | `parent` | An issue number, or another entry's `key`. |
 | `blocked_by` | A list of issue numbers and/or `key`s. |
 | `fields` | Purpose key → value. Names resolve through `ClaudeProject.md`'s `## Issue Types & Fields`, then `wf_core.FIELD_NAME_DEFAULTS`. |
@@ -337,15 +346,23 @@ prove it.
 | Gap | Meaning |
 | --- | ------- |
 | `missing-type` | The org has issue types enabled and this issue has none. |
-| `missing-field` | An org field this issue holds no value for. |
+| `missing-field` | One of the four mandatory fields (`wf_core.MANDATORY_FIELD_KEYS`) this issue holds no value for. |
 | `type-contradiction` | The native type disagrees with the `type-*` label or the title prefix. |
-| `classification-contradiction` | The `Classification` value disagrees with them. |
+| `classification-contradiction` | The `Classification` value cannot be true of the declared kind — a story classified `Bug Fix`, a bug classified `New Feature`. |
 | `missing-edge` | The body names a blocker, either way round, with no native edge. |
 | `dependency-closed` | The body depends on an issue that is not open. |
 | `dependency-overflow` | More than `wf_core.DEP_LIMIT` dependencies — an epic, not a story. |
 | `missing-parent` | `--parents` only. The body says it is part of an issue and GitHub shows it as free-standing. |
 | `parent-closed` | `--parents` only. The parent the body names is not open. |
 | `parent-differs` | `--parents` only. The body names one parent and the hierarchy has another. Reported, never changed. |
+
+`Classification` is checked for **incompatibility**, not for agreement
+(`wf_core.INCOMPATIBLE_CLASSIFICATIONS`). It is a multi-select describing what
+the work touches, so a story classified `Documentation`, `Performance` or
+`Integration` is telling the truth and only a defect classification —
+`Bug Fix`, `Regression` — contradicts it, and vice versa for a bug. Requiring
+agreement instead produced false positives on every issue that had been
+classified carefully.
 
 A `[DEBT]` issue typed `Feature` is **not** a type contradiction on an org whose
 types are GitHub's five defaults: none of them can express tech debt, which is
@@ -417,9 +434,13 @@ Every issue with a gap becomes an `issue-apply` entry in
 
 Priority is inferred from the issue's own `priority-*` label and Classification
 from its declared kind. Effort and Origin are not guessable from an existing
-issue, so they come out as placeholders. Situational fields — Start date,
-Target date, Parent, Status reason — are *reported* when empty but never
-proposed: a start date nobody set is not a value a backfill should invent.
+issue, so they come out as placeholders.
+
+Only the four mandatory fields are checked. Situational fields — Start date,
+Target date, Parent, Status reason — are not reported at all: a start date
+nobody set is not a gap, and reporting them turned one 69-issue backlog into
+275 findings that no amount of work could clear, which made the audit useless
+as a check.
 
 ### Running it as a check
 
@@ -529,8 +550,12 @@ creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
   feature/maintenance filter by the `type-*` **label**; on type-capable
   orgs they filter by the native `issueType` field via a single GraphQL
   query (`fetch_native_types`), falling back to label filtering if the
-  query fails. The empty-pool auto-ready dependency scan runs inline
-  before returning `no-candidates`.
+  query fails. An issue the query returns with **no** type is routed on
+  the kind its `type-*` label or `[PREFIX]` title claims
+  (`FALLBACK_FEATURE_KINDS` / `FALLBACK_MAINTENANCE_KINDS`), so a
+  half-classified backlog does not silently lose its untyped half. The
+  empty-pool auto-ready dependency scan runs inline before returning
+  `no-candidates`.
 - **`review-next`** — the *label-driven* subset. A PR whose head SHA changed
   since its last review (needing review without a label) is **not** detected
   here, so `code-review` treats `no-candidates` as non-conclusive and falls

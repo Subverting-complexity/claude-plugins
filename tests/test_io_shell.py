@@ -906,8 +906,21 @@ class TestDeniedCapability(unittest.TestCase):
         self.assertEqual(wf._denied_paths(self.FORBIDDEN),
                          {'organization', 'issueTypes'})
 
-    def test_non_forbidden_errors_are_not_denials(self):
-        self.assertEqual(wf._denied_paths([{'type': 'NOT_FOUND', 'path': ['x']}]), set())
+    def test_not_found_is_a_denial(self):
+        """NOT_FOUND is what GitHub answers for an org the token may not see.
+
+        Reading it as an absence is how a real organisation came to be cached
+        as a personal account, after which every issue was created with no type
+        and no field values and nothing reported it.
+        """
+        self.assertEqual(wf._denied_paths([{'type': 'NOT_FOUND', 'path': ['organization']}]),
+                         {'organization'})
+
+    def test_a_refusal_with_no_path_still_counts(self):
+        self.assertEqual(wf._denied_paths([{'type': 'FORBIDDEN'}]), {'organization'})
+
+    def test_an_ordinary_error_is_not_a_denial(self):
+        self.assertEqual(wf._denied_paths([{'type': 'INTERNAL', 'path': ['x']}]), set())
 
     def test_denial_exits_non_zero_even_though_fields_resolved(self):
         with mock.patch.object(wf, 'gh_graphql_partial',
@@ -928,6 +941,70 @@ class TestDeniedCapability(unittest.TestCase):
         self.assertEqual(caps['denied'], ['issueTypes', 'organization'])
         self.assertFalse(os.path.isfile(wf.capability_cache_path(self.root)),
                          'a denied capability was written to the cache')
+
+    def test_an_org_read_as_a_user_is_not_cached(self):
+        """An unreadable org answers with `organization: null` and an error.
+
+        Caching that as a personal account is what silently switched a whole
+        org onto the label-only path: no type, no field values, no complaint.
+        """
+        answer = ({'organization': None},
+                  [{'type': 'NOT_FOUND', 'path': ['organization']}], '')
+        with mock.patch.object(wf, 'gh_graphql_partial', lambda q, **f: answer):
+            ok, caps, _ = wf.resolve_org_capabilities(_cfg(org='acme'), root=self.root)
+        self.assertTrue(ok)
+        self.assertEqual(caps['denied'], ['organization'])
+        self.assertFalse(os.path.isfile(wf.capability_cache_path(self.root)),
+                         'an unreadable org was cached as a user account')
+
+    def test_an_empty_answer_carrying_any_error_is_not_cached(self):
+        answer = ({'organization': None}, [{'type': 'INTERNAL'}], '')
+        with mock.patch.object(wf, 'gh_graphql_partial', lambda q, **f: answer):
+            wf.resolve_org_capabilities(_cfg(org='acme'), root=self.root)
+        self.assertFalse(os.path.isfile(wf.capability_cache_path(self.root)))
+
+    def test_a_genuine_user_account_is_cached_with_the_schema(self):
+        answer = ({'organization': None}, [], '')
+        with mock.patch.object(wf, 'gh_graphql_partial', lambda q, **f: answer):
+            wf.resolve_org_capabilities(_cfg(org='someone'), root=self.root)
+        cached = wf.load_capability_cache(self.root)
+        self.assertEqual(cached['owner_kind'], 'user')
+        self.assertEqual(cached['schema'], wf.CAPABILITY_CACHE_SCHEMA)
+
+    def test_an_empty_record_from_an_older_schema_is_re_queried(self):
+        """A cache poisoned before the fix heals itself, without `--refresh`."""
+        wf.merge_capability_cache({'type_capable': False, 'type_map': {},
+                                   'field_map': {}, 'owner_kind': 'user'},
+                                  self.root)
+        self.assertFalse(wf._capability_record_is_usable(
+            wf.load_capability_cache(self.root)))
+        calls = []
+
+        def _answer(q, **f):
+            calls.append(f)
+            return ({'organization': {'issueTypes': {'nodes': [
+                {'id': 'IT_1', 'name': 'Bug', 'isEnabled': True}]},
+                'issueFields': {'nodes': []}}}, [], '')
+
+        with mock.patch.object(wf, 'gh_graphql_partial', _answer):
+            ok, caps, _ = wf.resolve_org_capabilities(_cfg(org='acme'), root=self.root)
+        self.assertEqual(len(calls), 1, 'the poisoned record was trusted')
+        self.assertTrue(caps['type_capable'])
+        self.assertEqual(wf.load_capability_cache(self.root)['schema'],
+                         wf.CAPABILITY_CACHE_SCHEMA)
+
+    def test_a_current_schema_user_record_costs_no_round_trip(self):
+        wf.merge_capability_cache({'type_capable': False, 'type_map': {},
+                                   'field_map': {}, 'owner_kind': 'user',
+                                   'schema': wf.CAPABILITY_CACHE_SCHEMA}, self.root)
+
+        def _boom(q, **f):
+            raise AssertionError('a valid cached record was re-queried')
+
+        with mock.patch.object(wf, 'gh_graphql_partial', _boom):
+            ok, caps, _ = wf.resolve_org_capabilities(_cfg(org='someone'), root=self.root)
+        self.assertTrue(ok)
+        self.assertTrue(caps['cached'])
 
     def test_unparseable_response_is_an_error(self):
         with mock.patch.object(wf, 'gh_graphql_partial',
@@ -1391,6 +1468,28 @@ class TestIssueApply(_ApplyCase):
             code, payload = _capture(wf.cmd_issue_apply, args)
         self.assertEqual(code, wf.EXIT_CAPABILITY)
         self.assertEqual(payload['status'], 'no-capabilities')
+
+    def test_a_create_naming_no_labels_is_reported(self):
+        """Nothing else supplies them, so the issue would be unpickable."""
+        hub = _FakeHub()
+        code, _, stderr, _ = self._run([self._full()], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertIn('name no labels', stderr)
+
+    def test_a_create_that_names_labels_is_not_reported(self):
+        hub = _FakeHub()
+        code, _, stderr, _ = self._run(
+            [self._full(labels=['priority-high'])], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertNotIn('name no labels', stderr)
+
+    def test_an_update_is_never_reported_for_labels(self):
+        """An issue that already exists got its labels when it was filed."""
+        hub = _FakeHub([_existing(42, type='User Story',
+                                  fields={'Priority': 'High', 'Effort': 'Medium',
+                                          'Classification': ['New Feature']})])
+        _, _, stderr, _ = self._run([self._full(number=42)], hub)
+        self.assertNotIn('name no labels', stderr)
 
 
 class TestEpicTreeBatching(_ApplyCase):

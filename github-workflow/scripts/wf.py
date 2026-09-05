@@ -438,6 +438,16 @@ def _board_column_candidates(cfg, column_name):
 
 CAPABILITY_CACHE_NAME = 'issue-fields-cache.json'
 
+# Bumped when a cached record could have been written by a version whose
+# conclusion is no longer trusted. An empty record is only believed when it
+# carries the current schema, so a cache poisoned by an older version heals
+# itself on the next run instead of waiting for someone to know about
+# `--refresh`. Version 2: before it, a capability query that failed with a
+# NOT_FOUND error was recorded as `owner_kind: user` -- an org read as a
+# personal account, cached forever, every issue thereafter created with no
+# type and no field values and no error anywhere.
+CAPABILITY_CACHE_SCHEMA = 2
+
 # Both halves of the org's capability surface in one round trip: the enabled
 # native issue types, and every issue field with its option ids.
 #
@@ -559,15 +569,28 @@ def gh_graphql_partial(query, **fields):
         '' if code == 0 else (err or '').strip())
 
 
+# The GraphQL error types that mean "this account could not read it", as
+# opposed to "it is not there". `NOT_FOUND` is in here because that is what
+# GitHub answers for an org the token may not see -- the same org read by an
+# authorised token answers normally. Treating it as an absence is what let a
+# real organisation be cached as a personal account.
+UNREADABLE_ERROR_TYPES = frozenset({'FORBIDDEN', 'NOT_FOUND', 'UNAUTHORIZED'})
+
+
 def _denied_paths(errors):
-    """The top-level query fields a FORBIDDEN error named, e.g. {'issueTypes'}."""
+    """The query fields an error says this account could not read.
+
+    Returns e.g. {'issueTypes'}, or {'organization'} when the whole org was
+    unreadable. An error carrying no usable path still counts, under the name
+    `organization`, so a refusal is never silently discarded for want of a
+    path.
+    """
     denied = set()
     for e in errors or []:
-        if (e.get('type') or '').upper() != 'FORBIDDEN':
+        if (e.get('type') or '').upper() not in UNREADABLE_ERROR_TYPES:
             continue
-        for part in e.get('path') or []:
-            if isinstance(part, str):
-                denied.add(part)
+        named = {part for part in (e.get('path') or []) if isinstance(part, str)}
+        denied |= named or {'organization'}
     return denied
 
 
@@ -580,12 +603,15 @@ def _capability_record_is_usable(cached):
     already-poisoned cache heal itself without anyone knowing to pass
     `--refresh`. A user-owned repo has no issue types by design, so its empty
     record is legitimate and is trusted -- which is what `owner_kind` is for.
-    A record written before that key existed has no claim to being empty on
-    purpose, so it is re-queried once and rewritten with it.
+    A record written before that key existed, or by a schema version whose
+    conclusion is no longer trusted, has no claim to being empty on purpose, so
+    it is re-queried once and rewritten -- which is how a cache poisoned by an
+    earlier version heals without anyone knowing to pass `--refresh`.
     """
     if cached.get('type_map') or cached.get('field_map'):
         return True
-    return cached.get('owner_kind') == 'user'
+    return (cached.get('owner_kind') == 'user'
+            and cached.get('schema') == CAPABILITY_CACHE_SCHEMA)
 
 
 def resolve_org_capabilities(cfg, refresh=False, root=None):
@@ -630,11 +656,16 @@ def resolve_org_capabilities(cfg, refresh=False, root=None):
     # Caching that turns one bad round trip into a permanent silent fallback, so
     # it is not written. A user-owned repo genuinely has neither, so that empty
     # is cached and marked, and does not cost a round trip on every run.
-    if not denied and not (owner_kind == 'organization'
-                           and not type_map and not field_map):
+    #
+    # An empty answer that arrived alongside *any* GraphQL error is not an
+    # answer at all, whatever the error says, so `errors` is checked rather
+    # than only the ones recognised as refusals.
+    empty = not type_map and not field_map
+    if not denied and not (empty and (owner_kind == 'organization' or errors)):
         merge_capability_cache({'type_capable': type_capable, 'type_map': type_map,
                                 'field_map': field_map,
-                                'owner_kind': owner_kind}, root)
+                                'owner_kind': owner_kind,
+                                'schema': CAPABILITY_CACHE_SCHEMA}, root)
     return True, caps, ''
 
 
@@ -668,10 +699,10 @@ def cmd_org_capabilities(args):
     if caps.get('denied'):
         emit('no-capabilities', EXIT_CAPABILITY, org=cfg['org'],
              denied=caps['denied'], errors=caps['errors'],
-             reason='the authenticated account may not read %s for this org; '
-                    'switch accounts (gh auth switch) or grant it access — this '
-                    'is not the same as the org having none'
-                    % ' and '.join(caps['denied']))
+             reason='the account signed in to gh may not read %s for %s; switch '
+                    'accounts (gh auth switch) or grant it access — this is not '
+                    'the same as the org having none, and nothing was cached'
+                    % (' and '.join(caps['denied']), cfg['org']))
 
     # An org that resolves but reports neither types nor fields is not the same
     # as a user account, and not the same as an org that simply has not enabled
@@ -1391,6 +1422,19 @@ def cmd_issue_apply(args):
         eprint('wf: skipped %d field(s) this org does not define: %s'
                % (len(skipped), ', '.join(sorted(skipped))))
 
+    # A create writes only what the spec names, and nothing here supplies the
+    # lifecycle labels the pickers read: an issue created with no `labels` has
+    # neither the ready gate's label nor a priority to sort on, so `execute`
+    # never selects it. Warned rather than defaulted, because the spec is the
+    # authority on what an issue carries and a label appearing from nowhere
+    # would be as surprising as the missing one.
+    unlabelled = [wf_core.entry_label(e) for e in entries
+                  if not e.get('number') and not e.get('labels')]
+    if unlabelled:
+        eprint('wf: %d new issue(s) name no labels, so nothing marks them ready '
+               'or gives them a priority: %s'
+               % (len(unlabelled), ', '.join(unlabelled)))
+
     label_names = sorted({label(cfg, l) for e in entries
                           for l in (e.get('labels') or [])})
     referenced = set()
@@ -1570,8 +1614,14 @@ def cmd_issue_audit(args):
     with_gaps = [a for a in audited if a['gaps']]
     summary = wf_core.audit_summary(audited)
 
-    spec_path = args.out or os.path.join(repo_root() or '.', '.claude',
-                                         AUDIT_SPEC_DEFAULT)
+    # Normalised because `repo_root()` comes back from git with forward
+    # slashes and `os.path.join` adds the platform's, which produced a mixed
+    # path the user then had to retype by hand.
+    # An explicit `--out` is used exactly as the caller typed it, and needs no
+    # repo lookup at all.
+    root = None if args.out else repo_root()
+    spec_path = os.path.normpath(
+        args.out or os.path.join(root or '.', '.claude', AUDIT_SPEC_DEFAULT))
     wrote, write_err = (True, '')
     if with_gaps:
         wrote, write_err = write_audit_spec(spec_path,
@@ -1595,11 +1645,22 @@ def cmd_issue_audit(args):
     # input to the backfill, but it is deliberately not applied here: the
     # dependency edges in it are inferred from body prose, which is not
     # reliable enough to write a graph from unattended.
+    # The path is reported relative to the repo when it sits inside it: the
+    # absolute form is long enough that printing it twice buried the counts
+    # that are the actual result.
+    shown = spec_path
+    if root:
+        try:
+            relative = os.path.relpath(spec_path, root)
+        except ValueError:
+            relative = spec_path
+        if not relative.startswith('..'):
+            shown = relative
     emit('gaps', EXIT_GAPS,
          reason='%d of %d open issues in %s are missing metadata. Review %s, '
                 'fill in every %s, then run: wf.sh issue-apply %s'
                 % (summary['issues_with_gaps'], summary['issues_scanned'], repo,
-                   spec_path, wf_core.SPEC_PLACEHOLDER, spec_path),
+                   shown, wf_core.SPEC_PLACEHOLDER, shown),
          **payload)
 
 

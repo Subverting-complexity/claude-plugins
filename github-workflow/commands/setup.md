@@ -1,6 +1,6 @@
 ---
-description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "harden auto-merge", "set up ecosystem tools", "reap claims".'
-argument-hint: '[harden|ecosystem|reap|wf]'
+description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "harden auto-merge", "set up ecosystem tools", "reap claims", "audit my issues".'
+argument-hint: '[harden|ecosystem|reap|wf|issues]'
 ---
 
 # Setup
@@ -39,6 +39,12 @@ no agent will pick it up (a crashed session left a lock behind), or
 as a scheduled routine to keep the claim namespace clean. Verify
 prerequisites (Step 1), read `ClaudeProject.md` for org/repo, then
 jump straight to Step 10.
+
+If `$ARGUMENTS` is `issues` (or `backlog`), **skip the full onboarding**
+and run **only Step 11 — Audit the backlog's issue metadata** against the
+already-configured project. Use this to find issues that carry no native
+type, no field values or no dependency edges, and to backfill them.
+Verify prerequisites (Step 1), then jump straight to Step 11.
 
 If `$ARGUMENTS` is `wf` (or `picker`), **skip the full onboarding** and
 run **only Step 1b — Set up the `wf` picker runtime** against the
@@ -472,13 +478,24 @@ Then write `## Issue Types & Fields` into `ClaudeProject.md` following
 3. **Missing** — one row per entry in `missing_fields`, saying what the
    workflow does without it.
 
-**Write the section either way.** On exit **21** (`no-capabilities`) the org
-has no types and no fields: write the section saying exactly that
-(`type-capable: no`, every field under *Missing*). An org without them is
-fully supported on the label-only path — but "this org has none" and
-"nobody wrote this section" must not look the same, which is the failure
-this step exists to prevent. `wf config-audit` reports a missing section as
-CRITICAL, so leaving it out breaks preflight in the consumer's repo.
+**Write the section either way**, but read exit **21**
+(`no-capabilities`) carefully first, because it covers two different
+answers and only one of them may be written down:
+
+- The payload carries a **`denied`** list — the signed-in account may not
+  read this org's types and fields, so nothing is known about them. Say
+  which account and what it could not read, point at `gh auth switch`, and
+  **leave any existing section alone**. Writing `type-capable: no` here
+  records a failed lookup as a fact, and every issue created afterwards
+  gets no type and no field values with nothing reporting it.
+- No `denied` list — the org genuinely has neither: write the section
+  saying exactly that (`type-capable: no`, every field under *Missing*).
+
+An org without types and fields is fully supported on the label-only path
+— but "this org has none" and "nobody wrote this section" must not look
+the same, which is the failure this step exists to prevent. `wf
+config-audit` reports a missing section as CRITICAL, so leaving it out
+breaks preflight in the consumer's repo.
 
 Flag the mandatory four — `field-priority`, `field-effort`, `field-type`,
 `field-origin` — if any is missing, because `wf issue-apply` refuses to
@@ -668,6 +685,51 @@ ref with its reason so a person can decide.
 It is safe to run at any time — it never reaps a ref that still backs a
 running session — and is schedulable via `/schedule` calling
 `/github-workflow:setup reap`.
+
+### 11. Audit the backlog's issue metadata
+
+Step 5e records what the org *can* classify an issue with. This checks
+what the open issues actually carry, because nothing else does: an issue
+created outside the workflow, or before the org enabled types, sits there
+with no type and no field values, and no error anywhere says so. It only
+reads.
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit
+```
+
+Add `--repo owner/name` to audit a different repository, `--limit N` or
+`--since 2026-01-01` to work through a large backlog in slices, and
+`--parents` to also report the parent an issue's body claims but the
+hierarchy does not have (off by default — a story created through
+`feature-discovery` already carries its epic, so reading it back out of
+the body only re-derives what the pipeline knew).
+
+Read the exit code: **0** means every open issue carries its type, its
+field values and its dependency edges — say so and stop. **25** means it
+found gaps and wrote a spec, by default `.claude/issue-audit-spec.json`.
+**21** means the org's capabilities could not be read, so there is nothing
+to audit against; fix that first (Step 5e) rather than reporting a clean
+backlog.
+
+On **25**, open the spec. Every value the audit could not infer is the
+placeholder `TODO`, and `issue-apply` refuses a spec that still contains
+one, so fill each in — priority, effort and origin are the usual ones.
+Then apply it:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/issue-audit-spec.json
+```
+
+Dependency edges are **proposed, never applied unattended**: they are read
+out of body prose, which is not reliable enough to build a graph from
+without someone looking. Check each `blocked_by` before applying, and
+delete the ones that are wrong.
+
+Report the counts by gap kind and name what you changed. A
+`dependency-closed` finding is not fixed by the spec — the body cites an
+issue that is no longer open, so either the body is stale or the
+dependency was resolved; say which issues and leave them to the user.
 
 ## Troubleshooting
 
