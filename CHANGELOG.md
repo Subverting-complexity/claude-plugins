@@ -7,6 +7,64 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 6.2.0
+
+- Added: `issue-audit` now proposes the **parent** an issue's body claims. An
+  issue whose first line says `Part of the Cadence Plus epic (#959)` and which
+  GitHub renders as free-standing was invisible as a child — the epic showed no
+  sub-issues, and nothing anywhere reported that the two disagreed. Nothing in
+  the plugin had ever read that sentence, though `issue-apply` could already
+  write the relationship, so the capability existed and the audit simply never
+  asked for it. On the backlog this was found in, one epic had 21 issues
+  claiming membership and zero children. An issue that already has *a* parent
+  is reported and left alone: a deeper parent is usually the more specific
+  truth, and reparenting would flatten a hierarchy somebody built on purpose.
+
+- Fixed: `parse_dependencies` treated every bare `#N` under a `## Dependencies`
+  heading as a blocker. Real bodies put all of this under that heading —
+  `Changes the scope of #982 and #1000`, `Supersedes #981`, `None of the three
+  manual tasks block it`, `Depends on nothing. #863 does not have to land
+  first` — so the edges it proposed pointed the wrong way, named work the body
+  says is explicitly *not* required, and made issues block each other for
+  merely mentioning each other. Measured against one 70-issue backlog it
+  proposed 44 edges of which seven formed cycles, and the whole set had to be
+  discarded by hand. A marker now has to sit in front of the reference, a
+  negated marker (`No longer blocked on #1004`) is excluded, and a clause about
+  some other issue (an epic's status list) no longer contributes the epic's own
+  edges.
+
+- Fixed: a dependency marker only ever captured the **first** reference after
+  it, so `Depends on #977 and #1032` silently became one edge. This was the
+  quieter half of the same defect and cost roughly half the real edges in the
+  backlog measured.
+
+- Added: `Blocks #N` is read and folded onto the issue it names. The edge
+  belongs to the other issue, so only a whole-repo pass can place it, and until
+  now nothing did — in practice the provisioning task is the one that knows
+  what it holds up, and none of that reached the graph.
+
+- Added: `NATIVE_TYPE_PREFERENCES`, so an org that has added a `Chore` issue
+  type gets `Chore` for `tech debt` and `chore` rather than the `Feature` that
+  GitHub's five defaults force. `NATIVE_MAINTENANCE_TYPES` gains `Chore` with
+  it, which is not cosmetic: without it a backlog that types its debt correctly
+  empties its own `execute mode=maintenance` pool, because the filter kept only
+  `Bug`.
+
+- Fixed: `issue-apply` refuses a spec entry that leaves a mandatory field blank
+  and does not first check whether the issue already carries one, so an entry
+  the audit proposed purely to add a parent or an edge was rejected for
+  "missing" a value that was sitting on the issue. The audit now repeats the
+  existing value, which makes the write a no-op and lets the spec round-trip.
+
+- Fixed: `skills/bulk-execute/references/set-selection.md` told an agent to
+  return a dropped story to the backlog with a literal `--add-label
+  status-ready`. A project that renamed the label, or that runs the `none`
+  ready-gate and has no ready label at all, got the whole `gh issue edit`
+  refused — including the unassign, so the story stayed claimed by an agent
+  that had already walked away. Both label names now resolve through the
+  project's label map, and the ready label is dropped entirely under the `none`
+  gate.
+
 ## github-workflow 6.1.3
 
 - Fixed: `setIssueFieldValue` declared its `issueFields` variable as
