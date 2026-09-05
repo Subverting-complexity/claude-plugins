@@ -1,7 +1,8 @@
 # Shared Skills Manifest
 
-Canonical source for skills shared across multiple plugins. **Never
-edit plugin copies directly** — edit here, then run `sync-skills.ps1`.
+Canonical source for the 15 skills shared across multiple plugins.
+**Never edit plugin copies directly** — edit here, then sync. The edit
+procedure is in [`CLAUDE.md`](../CLAUDE.md#how-to-edit).
 
 ## Shared skills
 
@@ -38,7 +39,7 @@ here. Do not "deduplicate" them into `_shared-skills/`.
 | Skill | Why not shared |
 |-------|----------------|
 | `code-review` | github: full PR-lifecycle manager; local: lightweight diff reviewer. Divergence intentional — different products sharing a trigger |
-| `execute` (github) / `build` (local) | Different jobs, and now different names. github's `execute` runs the whole GitHub loop — claim a story, build it, open a PR, have it reviewed independently, merge it. local's `build` stops at a commit. They shared the name `execute` until the duplicate descriptions made the two indistinguishable to the picker; shared skills cite whichever applies via `{{EXECUTE_SKILL}}` |
+| `execute` (github) / `build` (local) | Different jobs, different names. github's `execute` runs the whole GitHub loop — claim a story, build it, open a PR, have it reviewed independently, merge it. local's `build` stops at a commit. Shared skills cite whichever applies via `{{EXECUTE_SKILL}}` |
 | `bulk-execute` (github) | github-only, and deliberately not a flag on `execute`. It needs GitHub issues, claims, a board and one PR closing several issues, none of which local-workflow has. It reuses `execute`'s review, merge and cleanup references rather than copying them |
 | `writing-github-issues` (github) | github-only. It is the standard for every GitHub issue title and body the plugin writes, and local-workflow has no issue tracker to write one for. The shared skills that can produce a GitHub issue (`feature-discovery`, `repo-scaffolding`, `user-story`, `references/story-template.md`) name it in prose and degrade to the story template when a plugin does not ship it, rather than citing a path that would dangle in local-workflow. It is the counterpart to the shared `user-facing-communication`: that one shapes what you say **to** the user, this one shapes the issue body, and neither reaches into the other |
 | `preflight` | github: board/label/auth validator; local: lightweight git/config checks |
@@ -55,14 +56,12 @@ The sync script replaces these placeholders with plugin-specific values:
 | `{{PLUGIN_VERSION}}` | Plugin version from `plugin.json` (e.g., `1.7.0`) |
 | `{{EXECUTE_SKILL}}` | Name of that plugin's end-to-end orchestrator: `execute` in github-workflow, `build` in local-workflow |
 
-`{{EXECUTE_SKILL}}` exists because the two orchestrators do different jobs
-and used to share the name `execute`. With both plugins installed, nothing
-in context distinguished them, so the picker chose between identical
-descriptions arbitrarily. A shared skill that wants to point at "this
-plugin's end-to-end command" writes `/{{PLUGIN_NAME}}:{{EXECUTE_SKILL}}`
-and resolves to the right one. The mapping lives in `get_execute_skill`
-(`sync-skills.sh`) and `Get-ExecuteSkill` (`sync-skills.ps1`) — add a case
-to both when a plugin joins.
+A shared skill points at "this plugin's end-to-end command" by writing
+`/{{PLUGIN_NAME}}:{{EXECUTE_SKILL}}`, which resolves to the right one.
+Without it the two orchestrators would share a name and the skill picker
+would choose between identical descriptions arbitrarily. The mapping lives
+in `get_execute_skill` (`sync-skills.sh`) and `Get-ExecuteSkill`
+(`sync-skills.ps1`) — add a case to both when a plugin joins.
 
 ## Sync commands
 
@@ -76,11 +75,3 @@ to both when a plugin joins.
 # Check for drift without writing (CI use)
 ./sync-skills.ps1 -Verify
 ```
-
-## Workflow
-
-1. Edit the canonical file in `_shared-skills/`
-2. Run `./sync-skills.ps1`
-3. Review the synced copies (they get a `<!-- SYNCED -->` comment)
-4. Commit everything together (canonical + synced copies)
-5. Bump plugin versions if the change is user-facing

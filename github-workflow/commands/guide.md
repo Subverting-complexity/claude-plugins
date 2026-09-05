@@ -6,14 +6,13 @@ description: 'Orientation and help. Trigger: "help", "how do I use this", "get s
 
 Help the user understand the plugin and figure out where to start.
 
-**Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`.
-
-The **shape** of what you report follows
-`../skills/user-facing-communication/SKILL.md`: lead with the outcome and
-the current state, put anything outstanding, blocked or assumed where it
-cannot be missed, name every work item as well as numbering it, and leave
-out the investigation history. It applies to every reply you write, not
-only the last one.
+**Output standard.** Everything a person reads — plans, questions, findings, summaries, and
+anything posted or committed — follows `../skills/_shared/wording-standard.md`
+for how it reads, `../skills/user-facing-communication/SKILL.md` for what it
+contains and in what order (outcome and current state first, then anything
+outstanding, blocked or assumed, every work item named as well as numbered,
+no investigation history), and `../skills/_shared/banned-patterns.md` for what
+must never appear. Every reply, not only the last one.
 
 Trigger: when the user asks "how do I use this", "how do I get started",
 "what can you do", "help", or similar orientation questions.

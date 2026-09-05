@@ -13,13 +13,15 @@ short: open with the actual problem, use `## Summary` plus only the
 sections that carry information, cut the investigation history, and keep
 any uncertainty the source had.
 
-**Everything else you say about the issue** follows
-`../skills/user-facing-communication/SKILL.md`: what you filed and its
-current state first, the issue named as well as numbered, and anything
-outstanding or assumed where it cannot be missed. That standard shapes
-your reply. The issue standard shapes the issue.
-
-**Plain-English output.** Anything you show the user should be plain and high-level for a reader who is not involved in this codebase: explain what a thing is rather than only naming it, keep it concise, and avoid the patterns in `../skills/_shared/banned-patterns.md`. Full standard: `../skills/_shared/wording-standard.md`. Inside the issue body, `writing-github-issues` governs the structure and length; banned-patterns still applies there in full.
+**Output standard.** Everything a person reads — plans, questions, findings, summaries, and
+anything posted or committed — follows `../skills/_shared/wording-standard.md`
+for how it reads, `../skills/user-facing-communication/SKILL.md` for what it
+contains and in what order (outcome and current state first, then anything
+outstanding, blocked or assumed, every work item named as well as numbered,
+no investigation history), and `../skills/_shared/banned-patterns.md` for what
+must never appear. Every reply, not only the last one. Inside the issue
+body the issue standard above governs structure and length; banned
+patterns still apply there in full.
 
 ## Preflight
 

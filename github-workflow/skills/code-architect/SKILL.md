@@ -26,16 +26,15 @@ allowed-tools:
 
 Design, audit, and document codebases using principles from Clean Architecture, Design Patterns, and Fundamentals of Software Architecture.
 
-## Plain-English output
+## Output standard
 
-Everything you write for a person to read (the plan, findings, summaries, and any committed text) follows `_shared/wording-standard.md` and avoids `_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
-
-The **shape** of what you report follows
-`skills/user-facing-communication/SKILL.md`: lead with the outcome and
-the current state, put anything outstanding, blocked or assumed where it
-cannot be missed, name every work item as well as numbering it, and leave
-out the investigation history. It applies to every reply you write, not
-only the last one.
+Everything a person reads — plans, questions, findings, summaries, and
+anything posted or committed — follows `skills/_shared/wording-standard.md`
+for how it reads, `skills/user-facing-communication/SKILL.md` for what it
+contains and in what order (outcome and current state first, then anything
+outstanding, blocked or assumed, every work item named as well as numbered,
+no investigation history), and `skills/_shared/banned-patterns.md` for what
+must never appear. Every reply, not only the last one.
 
 ## Project structure (auto-loaded)
 

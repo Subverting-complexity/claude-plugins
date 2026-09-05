@@ -241,8 +241,10 @@ returns you to **Step 2b** to review the updated PR.
 ### Step 2 — Claim the PR
 
 Multiple review agents may run concurrently — possibly under the same
-GitHub identity, where a shared label cannot exclude a rival. Take the
-claim:
+GitHub identity, where a shared label cannot exclude a rival. **Claiming is
+the first mutating action of any review:** it must precede checkout,
+gathering context, reading and evaluating, or a second agent may start the
+same review.
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim --pr <number>
@@ -251,21 +253,17 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim --pr <number>
 - **Exit 0** — you hold it. `refs/claims/pr-<number>` is the actual lock (a
   server-side compare-and-swap), and the command has already applied the
   `reviewing` state label as the human-visible marker. No label read-back.
-- **Exit 27** (`lost`) — another agent owns this PR. Make **no** changes:
-  in the picker loop move to the next PR; on a named PR, report that and
-  exit rather than reviewing a different one.
+- **Exit 27** (`lost`) — another agent owns this PR. Make **no** changes.
+  In the picker loop, claim the next candidate in Step 1's priority order;
+  if every candidate is lost, report that all PRs are being handled by other
+  agents and exit cleanly. On a named PR, report that and exit rather than
+  reviewing a different one. Never retry a lost claim.
 - **Exit 20** — a broken environment, not a rival (usually no write access
   to `refs/claims/*`). Report it and stop; never fall back to a bare label
-  as a "soft" claim, which reintroduces the race the ref removes. **This claim is the first mutating action of
-any review** — it must precede checkout, gathering context, reading, or
-evaluating, or a second agent may start the same review.
+  as a "soft" claim, which reintroduces the race the ref removes.
 
-If Acquire reports the claim lost, another agent owns this PR: leave it
-untouched and attempt Acquire on the next candidate in Step 1's priority
-order. If every candidate is lost, report that all PRs are being handled
-by other agents and exit cleanly — do not retry or fall back. Label
-semantics and concurrency rules live in `references/review-workflow.md`
-(load only if needed).
+Label semantics and concurrency rules live in
+`references/review-workflow.md` (load only if needed).
 
 ### Step 2b — Reconcile duplicate PRs for the same issue
 
@@ -471,7 +469,7 @@ unrelated refactors, formatting changes, or comment edits.
 Fix concrete, objectively wrong problems directly on the PR branch. Fix
 **both** tiers (blocking and non-blocking) before approving — non-blocking
 cleanups are pushed, not deferred. Anything you cannot fix in place is filed
-to the board in Step 7f; nothing is silently dropped.
+to the board in Step 7e; nothing is silently dropped.
 
 #### 7a — Triage findings into tiers
 
@@ -491,19 +489,24 @@ Sort every finding from Step 6 into two tiers:
   - Null-forgiving operators, unnecessary casts
   - Comment or naming cleanups where the fix is obvious
 
+Neither tier includes stylistic preferences where several approaches are
+valid, architectural decisions that need human judgment, or anything whose
+right answer depends on product or design context. Those are not findings
+you fix; raise them in the review comment or file them in Step 7e.
+
 #### 7b — Fix the blocking tier
 
 Fix every blocking finding. Commit each fix (or a small logical group)
 with a clear message. These are non-negotiable. If a blocking issue
 genuinely cannot be auto-fixed (needs human or design judgment), do not
 guess — leave it for the verdict in Step 8 and file it to the board in
-Step 7f.
+Step 7e.
 
 #### 7c — Fix the non-blocking tier
 
 Fix the non-blocking findings too, and commit them. The only non-blocking
 items that survive to the review comment are ones you genuinely **cannot**
-fix in place (see Step 7f).
+fix in place (see Step 7e).
 
 #### 7d — Push
 
@@ -513,14 +516,9 @@ Push all fixes:
 git push
 ```
 
-Do **not** fix:
-- Stylistic preferences where multiple valid approaches exist
-- Architectural decisions that require human judgment
-- Issues where the "right fix" depends on product or design context
-
 After pushing fixes, update the recorded commit SHA to the new `HEAD`.
 
-#### 7f — File anything you could not fix to the board
+#### 7e — File anything you could not fix to the board
 
 For every problem you detected but did **not** fix on the branch, run
 `/github-workflow:report-issue` (autonomous — do not pause for confirmation).
@@ -537,18 +535,18 @@ Requested" verdict.
 
 Re-evaluate the PR state **after** Step 7 fixes. Issues that were
 auto-fixed do not count as remaining issues. Non-blocking problems you
-could not fix in place have been filed to the board in Step 7f, so they
+could not fix in place have been filed to the board in Step 7e, so they
 are tracked for automatic pickup and do **not** count against the
 verdict either.
 
 - **Approved** — Zero hard non-compliance failures and zero remaining
   *blocking* issues. All blocking problems were either absent or
   auto-fixed. Non-blocking problems were either fixed and pushed
-  (Step 7c) or filed to the board (Step 7f); neither blocks approval. PR
+  (Step 7c) or filed to the board (Step 7e); neither blocks approval. PR
   is ready to merge.
 - **Changes Requested** — Any hard non-compliance failure, or any remaining
   *blocking* problem that could not be auto-fixed and needs human
-  judgment (it was also filed to the board in Step 7f for automatic
+  judgment (it was also filed to the board in Step 7e for automatic
   pickup).
 - **Needs Discussion** — No hard failures, but architectural questions or
   ambiguities need human judgment before merge.
@@ -608,7 +606,7 @@ Reference specific file:line locations.]
 
 ### Issues remaining (filed to board)
 [Numbered list of problems that could not be auto-fixed, each naming the
-issue filed for it in Step 7f by its actual type and number — e.g.
+issue filed for it in Step 7e by its actual type and number — e.g.
 "bug #45: null deref in `parse()` (`src/parse.ts:12`)". These are queued
 for automatic pickup, no human approval needed. If none, say "No issues
 remaining."]
@@ -708,7 +706,7 @@ Changed:
 - <each fix you pushed in Step 7 / 11, one line each — or "Nothing; the PR was already correct.">
 
 Added to the board:
-- <each issue filed in Step 7f / 11, named by its actual type and number — e.g. "bug #45: null deref in parse()" — or "Nothing.">
+- <each issue filed in Step 7e / 11, named by its actual type and number — e.g. "bug #45: null deref in parse()" — or "Nothing.">
 ```
 
 Always name added items by their **actual issue type** (bug, security,

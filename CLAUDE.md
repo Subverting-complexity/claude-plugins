@@ -44,16 +44,10 @@ This repo contains multiple Claude Code plugins that share skills.
 
 ## Shared Skills
 
-These skills exist in `_shared-skills/` and are deployed to multiple
-plugins. The full list is in `_shared-skills/MANIFEST.md`:
-
-- `code-architect`
-- `feature-discovery`
-- `repo-scaffolding`
-- `structured-coding`
-- `user-facing-communication`
-- `_shared/` (banned-patterns)
-- `references/` (story-template)
+Fifteen skills live in `_shared-skills/` and are deployed to both plugins,
+alongside `_shared/` (wording standard and banned patterns) and
+`references/` (story template). The list, and what is deliberately *not*
+shared, are in `_shared-skills/MANIFEST.md`.
 
 `user-facing-communication` is the standard for every reply either plugin
 writes to a person: what was done and the current state first, then
@@ -205,5 +199,6 @@ relevant to what you're working on.
 | File | When to consult |
 | ---- | --------------- |
 | `ClaudeProject.md` | Project identity, labels, quality gate, branch convention, board config. Read at the start of any workflow command. |
+| `docs/consumers.md` | Which repos depend on these plugins. Read before cutting a major or otherwise breaking release, to judge the blast radius. |
 | `docs/review.config.md` | Review-state labels, the non-compliance gates a PR must clear, tech-stack review rules, and the auto-merge settings. Read when reviewing a PR or when asking why a run did or did not merge. Auto-merge is enabled here, so a finished `execute` run merges its own PR once the review approves. |
 | `.claude/ecosystem.md` | Installed Claude Code companion tool cheat-sheet (Graphify, RTK, ccusage, ecc-agentshield). Read before searching the codebase or running an audit/review: prefer `graphify query` over blind file search; run `ecc-agentshield scan` when touching config files; use `npx ccusage` to check token spend. |

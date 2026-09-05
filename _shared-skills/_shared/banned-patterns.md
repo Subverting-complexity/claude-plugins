@@ -19,6 +19,13 @@ revolutionize, innovative, cutting-edge, game-changing, seamless, scalable, prof
 versatile, meaningful, imperative, dynamic, impactful, optimize, elevate, enable, leverage,
 synergy, ecosystem, framework, paradigm, holistic, actionable
 
+**Names are exempt.** A banned word is banned as filler, not as a name. When
+a word is the actual name of the thing you are talking about, use it: the
+*harness* that runs agents and worktrees, the *ecosystem* file listing
+installed tools, a *framework* the project actually depends on, backlog
+*refinement*, story *prioritisation*. The ban is on reaching for the word
+when a plain one would do.
+
 ## Phrases — never use
 
 - "That being said" / "It's worth noting" / "It's important to note"

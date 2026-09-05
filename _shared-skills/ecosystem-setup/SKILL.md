@@ -11,18 +11,15 @@ enabled in `.claude/ecosystem.md`. That cheat-sheet is what the
 to decide which tools to run automatically — without it, those skills
 have no idea the tools are installed.
 
-**Plain-English output.** Anything you show the user should be plain and
-high-level for a reader who is not involved in this codebase: explain
-what a thing is rather than only naming it, keep it concise, and avoid
-the patterns in `_shared/banned-patterns.md`. Full standard:
-`_shared/wording-standard.md`.
+## Output standard
 
-The **shape** of what you report follows
-`skills/user-facing-communication/SKILL.md`: lead with the outcome and
-the current state, put anything outstanding, blocked or assumed where it
-cannot be missed, name every work item as well as numbering it, and leave
-out the investigation history. It applies to every reply you write, not
-only the last one.
+Everything a person reads — plans, questions, findings, summaries, and
+anything posted or committed — follows `skills/_shared/wording-standard.md`
+for how it reads, `skills/user-facing-communication/SKILL.md` for what it
+contains and in what order (outcome and current state first, then anything
+outstanding, blocked or assumed, every work item named as well as numbered,
+no investigation history), and `skills/_shared/banned-patterns.md` for what
+must never appear. Every reply, not only the last one.
 
 This whole skill is **optional and additive** — skip any tool the user
 declines or that is not relevant. Ask once at the start, with a one-line

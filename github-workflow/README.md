@@ -10,12 +10,13 @@ what the review asks for. It merges too, on projects that switch merging on
 ## Install
 
 ```bash
-# From local path
-claude --plugin-dir ./plugins/github-workflow
-
-# Or install from marketplace once published
-/plugin install github-workflow
+claude plugin marketplace add Subverting-complexity/claude-plugins
+claude plugin install github-workflow@subverting-complexity
 ```
+
+Run both from a normal shell, not inside a Claude Code session, then
+restart the session so skills, commands, agents and hooks load. Adding
+the marketplace is a per-machine step you do once, ever.
 
 ## Usage
 
@@ -44,27 +45,8 @@ agents.
 github-workflow/
 ├── .claude-plugin/
 │   └── plugin.json            # Plugin manifest
-├── skills/                    # Skills catalogue — see "Skills" below
-│   ├── execute/               # Orchestrator: pick → build → PR → review → merge
-│   ├── bulk-execute/          # Same loop for 2-5 related stories on one branch
-│   ├── code-architect/        # Architecture design and audit (SOLID + Clean)
-│   ├── structured-coding/     # Structured coding methodology
-│   ├── code-review/           # Deep PR review, labels, optional auto-merge
-│   ├── preflight/             # Project-config health check
-│   ├── feature-discovery/     # Break features into stories + stress-test plans
-│   ├── verify-feature/        # Verify a change against its story
-│   ├── security-audit/        # Security-focused codebase audit
-│   ├── debugging/             # Systematic root-cause debugging
-│   ├── repo-scaffolding/      # Repository structure and setup
-│   ├── user-story/            # Author user stories
-│   ├── writing-github-issues/ # Issue-body standard (short, scannable)
-│   ├── user-facing-communication/ # Reply standard (outcome + state first)
-│   ├── acceptance-criteria/   # Author acceptance criteria
-│   ├── pr-description/        # Author PR descriptions
-│   ├── doc-writer/            # Write and update documentation
-│   ├── ecosystem-setup/       # Set up companion tools, write ecosystem.md
-│   └── _shared/               # Wording + banned-patterns standards
-├── commands/                  # 8 slash commands — see "Usage" above
+├── skills/                    # See "Skills" below
+├── commands/                  # block-story, guide, report-issue, setup
 ├── agents/                    # builder, reviewer, doc-writer
 ├── references/
 │   └── story-template.md      # Shared story issue template
@@ -285,10 +267,13 @@ them or directly.
 | `acceptance-criteria` | Authors acceptance criteria                       |
 | `pr-description`      | Authors PR descriptions                           |
 | `doc-writer`          | Writes and updates documentation                  |
+| `ecosystem-setup`     | Sets up companion tools, writes `ecosystem.md`    |
+| `support-request`     | Support-request and incident write-ups            |
+| `tone`                | Polishes correspondence in the user's voice       |
 
 ## Adapting for a new project
 
-1. Load the plugin: `claude --plugin-dir /path/to/github-workflow`
+1. Install the plugin (see [Install](#install)).
 2. Run `/github-workflow:setup` to generate config files.
 3. Say "start the next story" or run `/github-workflow:execute`.
 
@@ -304,5 +289,4 @@ Once installed, your scheduled task prompts become one-liners:
 | Work through a related group | `Run /github-workflow:bulk-execute`  |
 | Fix bugs           | `Run /github-workflow:execute --mode maintenance` |
 | Audit codebase     | `Run /github-workflow:execute --mode audit`  |
-| Review a PR        | `Run /github-workflow:code-review`           |
-| Fix review feedback| `Run /github-workflow:code-review`           |
+| Review a PR, or apply review feedback | `Run /github-workflow:code-review` |

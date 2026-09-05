@@ -101,7 +101,7 @@ To add (a) as well — belt and braces, and the only thing that also binds
 humans — apply protection requiring these six contexts, which are the job
 names in `.github/workflows/ci.yml`:
 
-- `Verify shared skills and runtime variants are in sync`
+- `Verify shared skills are in sync`
 - `Lint skill metadata`
 - `Test workflow decision logic and wf.py I/O shell`
 - `Check plugin versions are bumped`

@@ -201,109 +201,6 @@ function Remove-OrphanedFiles {
     }
 }
 
-# ---------------------------------------------------------------------------
-# Runtime variant compilation (PowerShell equivalent of bash functions above)
-# ---------------------------------------------------------------------------
-
-function Strip-RationaleBlocks {
-    param([string]$Content)
-    $lines = $Content -split "`n"
-    $result = [System.Collections.Generic.List[string]]::new()
-    $skip = $false
-    $prevBlank = $false
-
-    foreach ($line in $lines) {
-        if ($line -match '<!-- rationale:start -->') { $skip = $true; continue }
-        if ($line -match '<!-- rationale:end -->') { $skip = $false; continue }
-        if ($skip) { continue }
-        if ($line -match '^[[:space:]]*$' -or $line.Trim() -eq '') {
-            if (-not $prevBlank) { $result.Add(''); $prevBlank = $true }
-            continue
-        }
-        $result.Add($line)
-        $prevBlank = $false
-    }
-
-    while ($result.Count -gt 0 -and $result[$result.Count - 1] -eq '') {
-        $result.RemoveAt($result.Count - 1)
-    }
-
-    return ($result -join "`n")
-}
-
-function Compile-RuntimeVariants {
-    $templatesDir = Join-Path (Join-Path $repoRoot 'github-workflow') 'templates'
-    $runtimeDir = Join-Path $templatesDir 'runtime'
-
-    if (-not (Test-Path $templatesDir)) { return }
-
-    $compiled = 0
-    $expectedRuntime = @{}
-
-    $templateFiles = Get-ChildItem -Path $templatesDir -Filter '*.md' -File -ErrorAction SilentlyContinue
-    foreach ($srcFile in $templateFiles) {
-        $filename = $srcFile.Name
-
-        if ($filename -match '-rationale\.md$') { continue }
-
-        $srcContent = Get-Content -Path $srcFile.FullName -Raw -Encoding UTF8
-        if ($srcContent -notmatch '<!-- rationale:start -->') { continue }
-
-        $expectedRuntime[$filename] = $true
-        $dstFile = Join-Path $runtimeDir $filename
-        $header = "<!-- COMPILED from templates/$filename -- edit the source, not this file. -->"
-        $stripped = Strip-RationaleBlocks -Content ($srcContent -replace "`r`n", "`n")
-        $fullContent = $header + "`n" + $stripped
-
-        if ($Verify) {
-            if (-not (Test-Path $dstFile)) {
-                Write-Output "  MISSING: runtime/$filename"
-                $script:driftFound = $true
-            } else {
-                $existing = (Get-Content -Path $dstFile -Raw -Encoding UTF8) -replace "`r`n", "`n"
-                if ($existing.Trim() -ne $fullContent.Trim()) {
-                    Write-Output "  DRIFT: runtime/$filename"
-                    $script:driftFound = $true
-                } else {
-                    Write-Output "  OK: runtime/$filename"
-                }
-            }
-        } else {
-            if (-not (Test-Path $runtimeDir)) {
-                New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
-            }
-            $existing = ''
-            if (Test-Path $dstFile) {
-                $existing = (Get-Content -Path $dstFile -Raw -Encoding UTF8) -replace "`r`n", "`n"
-            }
-            if ($existing.Trim() -ne $fullContent.Trim()) {
-                [System.IO.File]::WriteAllText($dstFile, $fullContent + "`n", [System.Text.UTF8Encoding]::new($false))
-                Write-Output "  Compiled: runtime/$filename"
-                $compiled++
-            }
-        }
-    }
-
-    if (Test-Path $runtimeDir) {
-        $runtimeFiles = Get-ChildItem -Path $runtimeDir -Filter '*.md' -File -ErrorAction SilentlyContinue
-        foreach ($rf in $runtimeFiles) {
-            if (-not $expectedRuntime.ContainsKey($rf.Name)) {
-                if ($Verify) {
-                    Write-Output "  ORPHAN: runtime/$($rf.Name) (would be deleted)"
-                    $script:driftFound = $true
-                } else {
-                    Remove-Item -Path $rf.FullName -Force
-                    Write-Output "  Deleted orphan: runtime/$($rf.Name)"
-                }
-            }
-        }
-    }
-
-    if (-not $Verify -and $compiled -gt 0) {
-        Write-Output "  $compiled runtime variant(s) compiled."
-    }
-}
-
 foreach ($pluginName in $plugins) {
     $pluginSkillsDir = Join-Path (Join-Path $repoRoot $pluginName) 'skills'
 
@@ -348,10 +245,6 @@ foreach ($pluginName in $plugins) {
         Remove-OrphanedFiles -DestDir (Join-Path (Join-Path $repoRoot $pluginName) 'references') -Label 'references'
     }
 }
-
-Write-Output ""
-Write-Output "[runtime variants]"
-Compile-RuntimeVariants
 
 Write-Output ""
 if ($Verify) {

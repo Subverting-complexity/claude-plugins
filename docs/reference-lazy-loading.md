@@ -36,9 +36,10 @@ when the PR is actually conflicting.
 `github-workflow/skills/code-review/SKILL.md` keeps the every-run review
 loop (find, claim, read, evaluate, fix, post, label) inline and defers
 the rest to references loaded on their triggers: `read-only-mode.md`,
-`duplicate-reconciliation.md`, `re-review.md`, `auto-merge.md` (which
-loads `conflict-resolution.md`), `review-workflow.md` (label lookup and
-the Step 10 fallback), and `review-config-guide.md`. Its "Reference
+`duplicate-reconciliation.md`, `rework-cascade.md`, `re-review.md`,
+`auto-merge.md` (which loads `conflict-resolution.md`),
+`review-workflow.md` (label lookup and the Step 10 fallback), and
+`review-config-guide.md`. Its "Reference
 Material" section lists each file with its trigger. `execute` follows
 the same shape (`finish.md`, `review-and-merge.md`,
 `escape-hatches.md`, `audit-mode.md`, …), and `review-and-merge.md` in turn
