@@ -57,6 +57,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit
 # …against another repo in the org, newest 50 only, counts only (for CI)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --repo acme/other --limit 50 --quiet
 
+# …and read the parent each body claims, for a backlog that predates spec-created issues
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --parents
+
 # Report configuration and label drift (what preflight runs)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit
 
@@ -340,9 +343,9 @@ prove it.
 | `missing-edge` | The body names a blocker, either way round, with no native edge. |
 | `dependency-closed` | The body depends on an issue that is not open. |
 | `dependency-overflow` | More than `wf_core.DEP_LIMIT` dependencies — an epic, not a story. |
-| `missing-parent` | The body says it is part of an issue and GitHub shows it as free-standing. |
-| `parent-closed` | The parent the body names is not open. |
-| `parent-differs` | The body names one parent and the hierarchy has another. Reported, never changed. |
+| `missing-parent` | `--parents` only. The body says it is part of an issue and GitHub shows it as free-standing. |
+| `parent-closed` | `--parents` only. The parent the body names is not open. |
+| `parent-differs` | `--parents` only. The body names one parent and the hierarchy has another. Reported, never changed. |
 
 A `[DEBT]` issue typed `Feature` is **not** a type contradiction on an org whose
 types are GitHub's five defaults: none of them can express tech debt, which is
@@ -366,6 +369,17 @@ of phrasings in precedence order, and an issue that **already has** a parent is
 left alone even when the body names a different one, because a deeper parent is
 usually the more specific truth and reparenting would flatten a hierarchy
 somebody built on purpose.
+
+This one is **opt-in**, and the reason is worth stating rather than treating as
+caution. A story created through `feature-discovery` carries `"parent"` in the
+spec that creates it, so on a repo whose issues all arrive that way, parsing
+the sentence back out of the body only re-derives what the pipeline already
+knew, and every issue that politely repeats its epic in the first line shows up
+as a gap. Where the prose is the only record — a backlog written before any of
+this existed, or an issue typed into the GitHub UI — pass `--parents` and the
+three gaps above come back. The dependency half is **not** opt-in: it is not
+a backfill at all, because `parse_dependencies` is what `wf pick`, `wf
+candidates` and the unblock sweep read on every run.
 
 **A marker has to sit in front of the reference.** An earlier version swept
 every bare `#N` under a `## Dependencies` heading. Real bodies put all of this

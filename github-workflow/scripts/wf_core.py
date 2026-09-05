@@ -862,7 +862,8 @@ def infer_priority(labels, project_map=None):
 
 
 def audit_issue(issue, field_map, type_capable=True, project_map=None,
-                project_fields=None, open_numbers=None, type_map=None):
+                project_fields=None, open_numbers=None, type_map=None,
+                parents=False):
     """Every gap on one issue, plus the spec entry that would close them.
 
     `issue` is a read-back node. Returns a dict carrying `gaps` (each with a
@@ -874,6 +875,16 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
     Dependency edges are **proposed, never written**. Body prose is not
     reliable enough to build a dependency graph from unattended, so a missing
     edge lands in the spec for review rather than in a mutation.
+
+    `parents` is off by default, and that is a statement about where parents
+    come from rather than about how well the parsing works. A story created
+    through `feature-discovery` carries its epic in the spec that creates it,
+    so reading the sentence back out of the body afterwards re-derives
+    something the pipeline already knew. The prose is the only source for a
+    backlog written before any of this existed, or for an issue somebody typed
+    into the GitHub UI, so the capability stays — it just has to be asked for,
+    which keeps a routine audit from reporting a parent gap on every issue
+    whose body politely repeats its epic.
     """
     project_map = project_map or {}
     project_fields = project_fields or {}
@@ -983,13 +994,17 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
     # as a free-standing issue is the gap this closes: the epic renders with
     # no children, and nothing anywhere reports that they disagree.
     #
+    # Opt-in, because on a backlog whose issues are created from specs the
+    # parent is already in the spec, and re-reading it out of the body is a
+    # backfill for the ones that predate that. See the docstring.
+    #
     # An issue that already has *a* parent is left alone, even when the body
     # names a different one. A deeper parent is usually the more specific
     # truth — four slices parented to the architecture issue that split them,
     # whose bodies all still name the epic two levels up — and reparenting
     # them to the epic would flatten a hierarchy somebody built on purpose.
     proposed_parent = None
-    claimed_parent = parse_parent(issue.get('body'))
+    claimed_parent = parse_parent(issue.get('body')) if parents else None
     current_parent = (issue.get('parent') or {}).get('number')
     if claimed_parent and claimed_parent != number and not current_parent:
         if open_numbers is not None and claimed_parent not in open_numbers:

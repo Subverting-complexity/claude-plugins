@@ -511,11 +511,12 @@ def _gap_kinds(entry):
 
 
 class TestParentGaps(unittest.TestCase):
-    """The audit half: an issue that names its epic and has no parent."""
+    """The audit half, under `--parents`: an issue that names its epic."""
 
     def test_a_claimed_parent_with_no_native_parent_is_proposed(self):
         node = _audit_node(1131, body="Part of the Cadence Plus epic (#959).")
-        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1131, 959})
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1131, 959},
+                                    parents=True)
         self.assertIn('missing-parent', _gap_kinds(entry))
         self.assertEqual(entry['proposed']['parent'], 959)
 
@@ -524,21 +525,55 @@ class TestParentGaps(unittest.TestCase):
         node = _audit_node(1126, body="Part of the Cadence Plus epic (#959).",
                            parent=1124)
         entry = wf_core.audit_issue(node, _AUDIT_FIELDS,
-                                    open_numbers={1126, 959, 1124})
+                                    open_numbers={1126, 959, 1124},
+                                    parents=True)
         self.assertIn('parent-differs', _gap_kinds(entry))
         self.assertNotIn('parent', entry['proposed'])
 
     def test_a_matching_parent_is_not_a_gap(self):
         node = _audit_node(1126, body="Part of #1124.", parent=1124)
-        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1126, 1124})
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1126, 1124},
+                                    parents=True)
         self.assertNotIn('parent-differs', _gap_kinds(entry))
         self.assertNotIn('missing-parent', _gap_kinds(entry))
 
     def test_a_closed_parent_is_reported_but_not_proposed(self):
         node = _audit_node(1131, body="Part of #959.")
-        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1131})
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1131},
+                                    parents=True)
         self.assertIn('parent-closed', _gap_kinds(entry))
         self.assertNotIn('parent', entry['proposed'])
+
+
+class TestParentsAreOptIn(unittest.TestCase):
+    """Without `--parents` the body's claim is not read at all.
+
+    An issue created from a `feature-discovery` spec already carries its
+    parent, so a routine audit that re-derived it from the first line would
+    report a gap on every issue that names its epic and propose a value the
+    pipeline had already written.
+    """
+
+    BODY = "Part of the Cadence Plus epic (#959)."
+
+    def test_no_parent_gap_by_default(self):
+        node = _audit_node(1131, body=self.BODY)
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1131, 959})
+        for kind in ('missing-parent', 'parent-closed', 'parent-differs'):
+            self.assertNotIn(kind, _gap_kinds(entry))
+
+    def test_no_parent_proposed_by_default(self):
+        node = _audit_node(1131, body=self.BODY)
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1131, 959})
+        self.assertNotIn('parent', entry['proposed'])
+
+    def test_the_dependency_half_is_not_gated(self):
+        """`parse_dependencies` is picker logic, not backfill: always on."""
+        node = _audit_node(1131, body="Blocked by #1124.")
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS,
+                                    open_numbers={1131, 1124})
+        self.assertIn('missing-edge', _gap_kinds(entry))
+        self.assertEqual(entry['proposed']['blocked_by'], [1124])
 
 
 class TestReverseEdgeFolding(unittest.TestCase):

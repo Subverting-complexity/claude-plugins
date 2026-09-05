@@ -7,6 +7,26 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 6.2.1
+
+- Changed: the parent an issue's body claims is now read only under
+  `issue-audit --parents`, and a routine audit no longer proposes one. 6.2.0
+  added the parsing to backfill a hierarchy that had been written in prose and
+  never applied, which it did. Going forward it re-derives something the
+  pipeline already knows: `feature-discovery` writes `"parent"` into the spec
+  that creates a story, so on a repo whose issues arrive that way every issue
+  that names its epic in the first line was reported as a gap carrying a value
+  it already had. The capability stays, because a backlog written before any of
+  this existed and an issue typed into the GitHub UI still have nowhere else to
+  say it — it just has to be asked for. `missing-parent`, `parent-closed` and
+  `parent-differs` are `--parents` only.
+
+  The dependency half is deliberately **not** gated. `parse_dependencies` is
+  not backfill code at all: `wf pick`, `wf candidates` and the unblock sweep
+  read it on every run, and before 6.2.0 it classed four stories on one backlog
+  as meta-issues that `execute` could never select, and reported a fifth
+  blocked on the strength of a prose mention.
+
 ## github-workflow 6.2.0
 
 - Added: `issue-audit` now proposes the **parent** an issue's body claims. An
