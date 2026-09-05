@@ -1560,8 +1560,12 @@ def cmd_issue_audit(args):
                                    type_capable=caps['type_capable'],
                                    project_map=cfg.get('labels') or {},
                                    project_fields=cfg.get('fields') or {},
-                                   open_numbers=open_numbers)
+                                   open_numbers=open_numbers,
+                                   type_map=caps.get('type_map') or {})
                for issue in issues]
+    # `Blocks #N` names an edge on the *other* issue, so it can only be placed
+    # once every issue has been audited.
+    audited = wf_core.fold_reverse_edges(audited, issues, open_numbers)
     with_gaps = [a for a in audited if a['gaps']]
     summary = wf_core.audit_summary(audited)
 

@@ -252,11 +252,19 @@ If it **was claimed**, return it to the backlog properly, in this order:
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
    ```
-2. Restore the pool state, so the picker can select it again:
+2. Restore the pool state, so the picker can select it again. Resolve both
+   names through `## Label Map` in ClaudeProject.md rather than typing the
+   purpose keys: a project that renamed `status-in-progress` gets a `gh`
+   failure and an issue left assigned, and a project on the `none`
+   ready-gate has no ready label at all, so `--add-label` names one that
+   does not exist and the whole edit is refused, the unassign with it.
    ```
    gh issue edit {number} --repo {org}/{repo} --remove-assignee @me \
-     --remove-label status-in-progress --add-label status-ready
+     --remove-label {in-progress-label} --add-label {ready-label}
    ```
+   Drop the `--add-label` clause entirely when `ready-gate` is `none`.
+   There is nothing to restore there: unassigning is what returns the issue
+   to the pool.
 3. Move the board back to Backlog:
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-backlog

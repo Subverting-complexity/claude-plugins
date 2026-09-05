@@ -337,22 +337,66 @@ prove it.
 | `missing-field` | An org field this issue holds no value for. |
 | `type-contradiction` | The native type disagrees with the `type-*` label or the title prefix. |
 | `classification-contradiction` | The `Classification` value disagrees with them. |
-| `missing-edge` | The body's `## Dependencies` claims a blocker with no native edge. |
+| `missing-edge` | The body names a blocker, either way round, with no native edge. |
 | `dependency-closed` | The body depends on an issue that is not open. |
 | `dependency-overflow` | More than `wf_core.DEP_LIMIT` dependencies — an epic, not a story. |
+| `missing-parent` | The body says it is part of an issue and GitHub shows it as free-standing. |
+| `parent-closed` | The parent the body names is not open. |
+| `parent-differs` | The body names one parent and the hierarchy has another. Reported, never changed. |
 
-A `[DEBT]` issue typed `Feature` is deliberately **not** a type contradiction.
-GitHub's five native types cannot express tech debt, which is precisely what
-`Classification` is for, so the contradiction to look for there is in the field.
+A `[DEBT]` issue typed `Feature` is **not** a type contradiction on an org whose
+types are GitHub's five defaults: none of them can express tech debt, which is
+precisely what `Classification` is for. An org that has added a `Chore` type is
+a different case, and `wf_core.NATIVE_TYPE_PREFERENCES` is where that is said:
+`tech debt` and `chore` become `Chore` where the org has one, and the `Feature`
+default stands where it does not. Adding a preference has a consequence beyond
+the audit, so read `NATIVE_MAINTENANCE_TYPES` with it — a type that is not in
+that set cannot be picked by `execute mode=maintenance` at all.
+
+### Relationships
+
+Two of the gaps above come from body prose that no earlier version read, and
+both are worth understanding before trusting a proposal.
+
+**A parent is a native relationship, not the `Parent` field.** An issue whose
+first line says `Part of the Cadence Plus epic (#959)` and which GitHub renders
+as free-standing is invisible as a child: the epic shows no sub-issues and
+nothing reports that the two disagree. `wf_core.parse_parent` reads a fixed set
+of phrasings in precedence order, and an issue that **already has** a parent is
+left alone even when the body names a different one, because a deeper parent is
+usually the more specific truth and reparenting would flatten a hierarchy
+somebody built on purpose.
+
+**A marker has to sit in front of the reference.** An earlier version swept
+every bare `#N` under a `## Dependencies` heading. Real bodies put all of this
+under that heading — `Changes the scope of #982 and #1000`, `Supersedes #981`,
+`None of the three manual tasks block it`, `Depends on nothing. #863 does not
+have to land first` — and against one 70-issue backlog the sweep proposed 44
+edges of which seven formed cycles. So `Depends on`, `Depends upon`,
+`Blocked by`, `Blocked on` and `Requires` are read where they introduce a
+reference run, `After #N` only as a list item inside the `## Dependencies`
+section, and anything else is prose. A negated marker (`No longer blocked on
+#1004`) and a clause that is about some other issue (`Sign in with Apple
+(#979) — blocked on #1032`, in an epic's status list) are both excluded.
+
+`Blocks #N` is read too, and folded onto the issue it names rather than the one
+that wrote it: the provisioning task is usually the only one that knows what it
+holds up, so half a backlog's dependency graph was written down in a direction
+nothing looked at.
 
 ### The spec it writes
 
 Every issue with a gap becomes an `issue-apply` entry in
 `.claude/issue-audit-spec.json` (override with `--out`). Two rules govern it:
 
-- **Inferred dependency edges are proposed, never written.** Body prose is not
-  reliable enough to build a dependency graph from unattended, so a proposed
-  edge sits in the spec for a person or an agent to review.
+- **Inferred edges and parents are proposed, never written.** Body prose is not
+  reliable enough to build a graph from unattended, so a proposed edge or
+  parent sits in the spec for a person or an agent to review.
+- **A mandatory field the issue already carries is repeated in the entry.**
+  `issue-apply` refuses a spec that leaves one blank and does not first check
+  the issue, so without this an entry proposed purely to add a parent or an
+  edge was rejected for "missing" a value that was already there. Repeating it
+  makes the write a no-op and lets the spec round-trip.
 - **What cannot be inferred becomes `TODO`.** `issue-apply`'s mandatory-field
   check treats a placeholder as missing, so the spec is refused until someone
   fills it in. Silence must not pass for a value.

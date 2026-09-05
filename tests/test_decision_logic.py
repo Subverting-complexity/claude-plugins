@@ -358,23 +358,65 @@ class TestSelectPool(unittest.TestCase):
 
 
 class TestDependencyParsing(unittest.TestCase):
-    """Fixed dependency markers."""
+    """Fixed dependency markers.
+
+    Every "prose is not a dependency" case below is a real body from a
+    70-issue backlog that the previous bare-`#N` sweep read as an edge.
+    """
 
     def test_extracts_each_marker_form(self):
-        body = "Depends on #1. Blocked by #2. After #3. Requires #4."
+        body = ("Depends on #1. Blocked by #2. Blocked on #3. Requires #4. "
+                "Depends upon #5.")
         deps, overflow = parse_dependencies(body)
-        self.assertEqual(deps, [1, 2, 3, 4])
+        self.assertEqual(deps, [1, 2, 3, 4, 5])
         self.assertFalse(overflow)
 
     def test_is_case_insensitive(self):
         deps, _ = parse_dependencies("DEPENDS ON #7 and Requires #8")
         self.assertEqual(deps, [7, 8])
 
-    def test_dependencies_section_hash_refs(self):
-        body = "## Context\nbuild it\n## Dependencies\n- #11\n- #12\n## Notes\nsee #99"
-        deps, _ = parse_dependencies(body)
-        # #99 is in Notes, not Dependencies, and matches no marker → excluded
-        self.assertEqual(deps, [11, 12])
+    def test_a_marker_takes_the_whole_reference_run(self):
+        """`and #N` used to be dropped silently, halving real edges."""
+        deps, _ = parse_dependencies("Depends on #977 and #1032.")
+        self.assertEqual(deps, [977, 1032])
+        deps, _ = parse_dependencies("Blocked by #981, #991, #979 and #980.")
+        self.assertEqual(deps, [979, 980, 981, 991])
+        deps, _ = parse_dependencies("Blocked by **#1003** and **#1004**.")
+        self.assertEqual(deps, [1003, 1004])
+
+    def test_after_counts_only_as_a_list_item_under_dependencies(self):
+        body = "## Dependencies\n\n- After #1126\n"
+        self.assertEqual(parse_dependencies(body)[0], [1126])
+
+    def test_after_in_narrative_is_not_a_dependency(self):
+        """An `after` in a sentence is a note that they already landed."""
+        body = "## Dependencies\n\nThe scope narrowed after #431 and #682 merged.\n"
+        self.assertEqual(parse_dependencies(body)[0], [])
+        self.assertEqual(parse_dependencies("Easier after #1204.")[0], [])
+
+    def test_bare_refs_under_dependencies_are_not_dependencies(self):
+        """The heading is not a marker. Bodies put all of this under it."""
+        for line in (
+            "Changes the scope of #982, #1000, #1030 and #1097.",
+            "None of the epic's manual tasks - #1002, #1003 or #1004 - block it.",
+            "Supersedes #981.",
+            "Splits #1032.",
+        ):
+            body = "## Dependencies\n\n%s\n" % line
+            self.assertEqual(parse_dependencies(body)[0], [], line)
+
+    def test_a_reference_before_the_marker_owns_the_clause(self):
+        """An epic's status list describes its children, not itself."""
+        body = "- Sign in with Apple, verified on the backend (#979) - *blocked on #1032*"
+        self.assertEqual(parse_dependencies(body)[0], [])
+
+    def test_a_negated_marker_is_not_a_dependency(self):
+        self.assertEqual(parse_dependencies("No longer blocked on #1004.")[0], [])
+        self.assertEqual(parse_dependencies("This is not blocked by #863.")[0], [])
+
+    def test_a_denial_next_to_a_bare_reference(self):
+        body = "Depends on nothing. #863 does not have to land first."
+        self.assertEqual(parse_dependencies(body)[0], [])
 
     def test_bare_hash_outside_section_is_ignored(self):
         deps, _ = parse_dependencies("Fixes the thing in #50 area generally")
@@ -393,6 +435,225 @@ class TestDependencyParsing(unittest.TestCase):
     def test_empty_or_none_body(self):
         self.assertEqual(parse_dependencies('')[0], [])
         self.assertEqual(parse_dependencies(None)[0], [])
+
+
+class TestBlocksParsing(unittest.TestCase):
+    """`Blocks #N` - the marker that names an edge on the *other* issue."""
+
+    def test_reads_both_markers_and_the_whole_run(self):
+        self.assertEqual(wf_core.parse_blocks("Blocks #979 and #980."),
+                         [979, 980])
+        self.assertEqual(wf_core.parse_blocks("Blocking #1123."), [1123])
+
+    def test_forward_and_reverse_markers_do_not_cross(self):
+        body = "Blocked by #980. Blocks #1123."
+        self.assertEqual(parse_dependencies(body)[0], [980])
+        self.assertEqual(wf_core.parse_blocks(body), [1123])
+
+    def test_empty_body(self):
+        self.assertEqual(wf_core.parse_blocks(''), [])
+        self.assertEqual(wf_core.parse_blocks(None), [])
+
+
+class TestParentParsing(unittest.TestCase):
+    """The phrasings that name an issue's parent."""
+
+    def test_each_accepted_phrasing(self):
+        for body, expected in (
+            ("Part of the Cadence Plus epic (#959).", 959),
+            ("Part of #1124.", 1124),
+            ("Sub-issue of #1124.", 1124),
+            ("Subissue of #1124.", 1124),
+            ("**Parent**: #959", 959),
+            ("Epic: #959", 959),
+        ):
+            self.assertEqual(wf_core.parse_parent(body), expected, body)
+
+    def test_the_epic_phrasing_wins_over_a_looser_one_elsewhere(self):
+        """#1095's shape: the epic on line 1, an abandoned plan forty down."""
+        body = ("Part of the Cadence Plus epic (#959).\n\n"
+                "...\n\nThe pages would move to the new domain as part of #1005.")
+        self.assertEqual(wf_core.parse_parent(body), 959)
+
+    def test_two_candidates_at_the_same_precedence_answer_nothing(self):
+        body = "Part of #1124.\n\nAlso part of #1125."
+        self.assertIsNone(wf_core.parse_parent(body))
+
+    def test_a_cross_reference_is_not_a_parent(self):
+        self.assertIsNone(wf_core.parse_parent("Split out of #1032."))
+        self.assertIsNone(wf_core.parse_parent("See #959 for the wider plan."))
+
+    def test_empty_body(self):
+        self.assertIsNone(wf_core.parse_parent(''))
+        self.assertIsNone(wf_core.parse_parent(None))
+
+
+def _audit_node(number, title='[STORY] Something', body='', parent=None,
+                blocked_by=(), field_values=(), issue_type='User Story'):
+    """A read-back issue node, shaped as the audit query returns it."""
+    return {
+        'number': number,
+        'title': title,
+        'body': body,
+        'labels': {'nodes': []},
+        'issueType': {'name': issue_type} if issue_type else None,
+        'issueFieldValues': {'nodes': list(field_values)},
+        'blockedBy': {'nodes': [{'number': n} for n in blocked_by]},
+        'parent': {'number': parent} if parent else None,
+    }
+
+
+_AUDIT_FIELDS = {'Priority': {}, 'Effort': {}, 'Classification': {}, 'Origin': {}}
+
+
+def _gap_kinds(entry):
+    return sorted(g['kind'] for g in entry['gaps'])
+
+
+class TestParentGaps(unittest.TestCase):
+    """The audit half: an issue that names its epic and has no parent."""
+
+    def test_a_claimed_parent_with_no_native_parent_is_proposed(self):
+        node = _audit_node(1131, body="Part of the Cadence Plus epic (#959).")
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1131, 959})
+        self.assertIn('missing-parent', _gap_kinds(entry))
+        self.assertEqual(entry['proposed']['parent'], 959)
+
+    def test_an_issue_that_already_has_a_parent_is_left_alone(self):
+        """A deeper parent is the more specific truth; do not flatten it."""
+        node = _audit_node(1126, body="Part of the Cadence Plus epic (#959).",
+                           parent=1124)
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS,
+                                    open_numbers={1126, 959, 1124})
+        self.assertIn('parent-differs', _gap_kinds(entry))
+        self.assertNotIn('parent', entry['proposed'])
+
+    def test_a_matching_parent_is_not_a_gap(self):
+        node = _audit_node(1126, body="Part of #1124.", parent=1124)
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1126, 1124})
+        self.assertNotIn('parent-differs', _gap_kinds(entry))
+        self.assertNotIn('missing-parent', _gap_kinds(entry))
+
+    def test_a_closed_parent_is_reported_but_not_proposed(self):
+        node = _audit_node(1131, body="Part of #959.")
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1131})
+        self.assertIn('parent-closed', _gap_kinds(entry))
+        self.assertNotIn('parent', entry['proposed'])
+
+
+class TestReverseEdgeFolding(unittest.TestCase):
+    """`Blocks #N` placed on the issue it actually belongs to."""
+
+    def _run(self, nodes, open_numbers=None):
+        audited = [wf_core.audit_issue(n, _AUDIT_FIELDS,
+                                       open_numbers=open_numbers)
+                   for n in nodes]
+        return {a['number']: a
+                for a in wf_core.fold_reverse_edges(audited, nodes, open_numbers)}
+
+    def test_the_edge_lands_on_the_blocked_issue(self):
+        nodes = [_audit_node(1032, body="Blocks #979 and #980."),
+                 _audit_node(979), _audit_node(980)]
+        by = self._run(nodes, {1032, 979, 980})
+        self.assertEqual(by[979]['proposed']['blocked_by'], [1032])
+        self.assertEqual(by[980]['proposed']['blocked_by'], [1032])
+        self.assertNotIn('blocked_by', by[1032]['proposed'])
+        self.assertIn('missing-edge', _gap_kinds(by[979]))
+
+    def test_an_edge_the_graph_already_has_is_not_proposed(self):
+        nodes = [_audit_node(1032, body="Blocks #979."),
+                 _audit_node(979, blocked_by=[1032])]
+        by = self._run(nodes, {1032, 979})
+        self.assertNotIn('blocked_by', by[979]['proposed'])
+
+    def test_a_blocked_issue_outside_the_scan_is_skipped(self):
+        nodes = [_audit_node(1032, body="Blocks #979.")]
+        by = self._run(nodes, {1032})
+        self.assertNotIn('blocked_by', by[1032]['proposed'])
+
+    def test_the_reverse_edge_merges_with_a_forward_one(self):
+        nodes = [_audit_node(1032, body="Blocks #979."),
+                 _audit_node(979, body="Blocked by #977.")]
+        by = self._run(nodes, {1032, 979, 977})
+        self.assertEqual(by[979]['proposed']['blocked_by'], [977, 1032])
+
+
+class TestNativeTypePreference(unittest.TestCase):
+    """`tech debt` is `Chore` on an org that has one, `Feature` otherwise."""
+
+    def test_the_preferred_type_is_used_when_the_org_has_it(self):
+        self.assertEqual(
+            wf_core.native_type_for('tech debt', {'Feature': 1, 'Chore': 2}),
+            'Chore')
+
+    def test_the_default_stands_when_the_org_has_no_chore(self):
+        self.assertEqual(wf_core.native_type_for('tech debt', {'Feature': 1}),
+                         'Feature')
+        self.assertEqual(wf_core.native_type_for('tech debt', None), 'Feature')
+
+    def test_kinds_with_no_preference_are_untouched(self):
+        rich = {'Feature': 1, 'Chore': 2, 'Bug': 3, 'User Story': 4}
+        self.assertEqual(wf_core.native_type_for('bug', rich), 'Bug')
+        self.assertEqual(wf_core.native_type_for('feature', rich), 'Feature')
+        self.assertEqual(wf_core.native_type_for('architecture', rich), 'Feature')
+
+    def test_an_unknown_kind_has_no_type(self):
+        self.assertIsNone(wf_core.native_type_for('nonsense', {'Chore': 1}))
+
+    def test_every_preference_names_a_real_kind(self):
+        for kind in wf_core.NATIVE_TYPE_PREFERENCES:
+            self.assertIn(kind, wf_core.NATIVE_TYPE_MAP, kind)
+
+    def test_the_audit_reads_the_org_type_map(self):
+        """Without this a Chore-typed debt issue reads as a contradiction."""
+        node = _audit_node(700, title='[DEBT] Rate-limit the sign-in route',
+                           issue_type='Chore')
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS,
+                                    type_map={'Feature': 1, 'Chore': 2})
+        self.assertNotIn('type-contradiction', _gap_kinds(entry))
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS,
+                                    type_map={'Feature': 1})
+        self.assertIn('type-contradiction', _gap_kinds(entry))
+
+    def test_resolve_entry_type_follows_the_same_preference(self):
+        self.assertEqual(
+            wf_core.resolve_entry_type({'kind': 'tech debt'},
+                                       {'Feature': 1, 'Chore': 2}),
+            ('Chore', None))
+        self.assertEqual(
+            wf_core.resolve_entry_type({'kind': 'tech debt'}, {'Feature': 1}),
+            ('Feature', None))
+
+    def test_an_explicit_type_on_the_entry_wins(self):
+        self.assertEqual(
+            wf_core.resolve_entry_type({'kind': 'tech debt', 'type': 'Bug'},
+                                       {'Chore': 1}),
+            ('Bug', None))
+
+
+class TestMandatoryFieldCarryThrough(unittest.TestCase):
+    """A parent-only proposal must still satisfy `issue-apply`'s field check."""
+
+    FILLED = (
+        {'field': {'name': 'Priority'}, 'name': 'High'},
+        {'field': {'name': 'Effort'}, 'name': 'M'},
+        {'field': {'name': 'Classification'}, 'options': [{'name': 'New Feature'}]},
+        {'field': {'name': 'Origin'}, 'name': 'Planned'},
+    )
+
+    def test_values_the_issue_already_holds_are_repeated_in_the_proposal(self):
+        node = _audit_node(1131, body="Part of the Cadence Plus epic (#959).",
+                           field_values=self.FILLED)
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1131, 959})
+        fields = entry['proposed']['fields']
+        for purpose in wf_core.MANDATORY_FIELD_KEYS:
+            self.assertIn(purpose, fields, purpose)
+        self.assertEqual(fields['field-priority'], 'High')
+
+    def test_a_filled_field_is_not_reported_as_a_gap(self):
+        node = _audit_node(1131, field_values=self.FILLED)
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS)
+        self.assertNotIn('missing-field', _gap_kinds(entry))
 
 
 class TestBranchNaming(unittest.TestCase):
@@ -1831,6 +2092,32 @@ class TestBoardColumnNames(unittest.TestCase):
         for key in ('col-backlog', 'col-ready', 'col-in-progress',
                     'col-in-review', 'col-blocked', 'col-done'):
             self.assertIn(key, wf_core.BOARD_COLUMN_NAMES)
+
+
+class TestChoreIsMaintenance(unittest.TestCase):
+    """A `Chore`-typed issue has to reach `execute mode=maintenance`.
+
+    Typing tech debt as `Chore` on an org that has the type is the right
+    answer and, on its own, silently emptied the maintenance pool: the
+    filter only kept `Bug`.
+    """
+
+    TYPE_MAP = {1: 'Chore', 2: 'Bug', 3: 'User Story'}
+
+    def test_chore_is_kept_in_maintenance_mode(self):
+        candidates = [_issue(1, []), _issue(2, []), _issue(3, [])]
+        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)
+        self.assertEqual([c['number'] for c in result], [1, 2])
+
+    def test_chore_is_not_a_feature_candidate(self):
+        result = filter_by_native_type([_issue(1, [])], 'feature', self.TYPE_MAP)
+        self.assertEqual(result, [])
+
+    def test_chore_needs_no_classification_to_qualify(self):
+        """Unlike `Feature`, whose Classification decides."""
+        result = filter_by_native_type([_issue(1, [])], 'maintenance',
+                                       self.TYPE_MAP, {1: 'New Feature'})
+        self.assertEqual([c['number'] for c in result], [1])
 
 
 if __name__ == '__main__':

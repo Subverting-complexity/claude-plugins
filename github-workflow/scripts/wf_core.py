@@ -69,10 +69,18 @@ def _filter_by_mode(candidates, mode, project_map=None):
 #
 # Native type map (from templates/default-labels.md):
 #   feature mode  → keep User Story
-#   maintenance   → keep Bug + Feature (with Classification filter if available)
+#   maintenance   → keep Bug + Chore + Feature (with Classification filter
+#                   if available)
+#
+# `Chore` is unconditional rather than classification-filtered because an org
+# only has that type if it added it, and it added it for exactly this work.
+# It has to be here: the moment tech debt starts being typed `Chore` (see
+# `NATIVE_TYPE_PREFERENCES`), a maintenance pool that only knows about `Bug`
+# and `Feature` stops returning any of it, and an empty pool reads as a clean
+# backlog rather than as a filter that no longer matches anything.
 
 NATIVE_FEATURE_TYPES = frozenset({'User Story'})
-NATIVE_MAINTENANCE_TYPES = frozenset({'Bug'})
+NATIVE_MAINTENANCE_TYPES = frozenset({'Bug', 'Chore'})
 NATIVE_MAINTENANCE_CLASSIFIABLE_TYPES = frozenset({'Feature'})
 MAINTENANCE_CLASSIFICATIONS = frozenset({
     'Tech Debt', 'Architecture', 'Security',
@@ -287,6 +295,42 @@ NATIVE_TYPE_MAP = {
     'spike':        {'type': 'User Story', 'classification': 'Spike',        'label': 'type-story'},
     'chore':        {'type': 'User Story', 'classification': 'Chore',        'label': 'type-bug'},
 }
+
+# The type above is the one GitHub always offers. Where an org has enabled a
+# better-fitting type, that one wins — this is the preference, in order, and
+# `native_type_for()` walks it against the types the org actually has.
+#
+# Tech debt and chores are the reason this exists. GitHub's built-in set has
+# nothing for work that is neither a defect nor a new capability, so both were
+# mapped to types that plainly are not what they are: `Feature` for tech debt
+# and `User Story` for a chore. An org that has since added `Chore` gets an
+# audit reporting every one of its `[DEBT]` issues as a contradiction, with
+# the map itself as the thing in the wrong. Preferences are only ever taken
+# when the org has the type, so an org with the default set is unaffected.
+# Architecture work is deliberately not here. It changes what the system is,
+# which `Feature` expresses well enough, and the one org measured had already
+# typed all five of its `[ARCH]` issues that way.
+NATIVE_TYPE_PREFERENCES = {
+    'tech debt': ('Chore',),
+    'chore':     ('Chore',),
+}
+
+
+def native_type_for(kind, type_map=None):
+    """The native issue type for a kind, given the types an org has enabled.
+
+    `type_map` is the org's `name -> id` map from `org-capabilities`. Without
+    it the always-available type is returned, so every caller that has not
+    resolved capabilities keeps its previous answer.
+    """
+    mapped = NATIVE_TYPE_MAP.get(kind)
+    if not mapped:
+        return None
+    if type_map:
+        for preferred in NATIVE_TYPE_PREFERENCES.get(kind, ()):
+            if preferred in type_map:
+                return preferred
+    return mapped['type']
 
 # Every valid `Classification` option. A value outside this set is a spec
 # error, not a new option — the org owns the field, and adding to it is a
@@ -522,18 +566,22 @@ def entry_label(entry):
     return entry.get('key') or entry.get('title') or '<unnamed entry>'
 
 
-def resolve_entry_type(entry):
-    """The native issue type an entry asks for, or None. (type_name, err)."""
+def resolve_entry_type(entry, type_map=None):
+    """The native issue type an entry asks for, or None. (type_name, err).
+
+    An explicit `type` on the entry always wins. Otherwise the kind decides,
+    against the types the org has enabled — see `native_type_for`.
+    """
     if entry.get('type'):
         return entry['type'], None
     kind = entry.get('kind')
     if not kind:
         return None, None
-    mapped = NATIVE_TYPE_MAP.get(str(kind).lower())
-    if not mapped:
+    key = str(kind).lower()
+    if key not in NATIVE_TYPE_MAP:
         return None, "unknown kind '%s' (expected one of: %s)" % (
             kind, ', '.join(sorted(NATIVE_TYPE_MAP)))
-    return mapped['type'], None
+    return native_type_for(key, type_map), None
 
 
 def default_classification(entry):
@@ -620,7 +668,7 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
             seen_numbers.add(number)
 
         # Native type.
-        type_name, err = resolve_entry_type(entry)
+        type_name, err = resolve_entry_type(entry, type_map)
         if err:
             errors.append('%s: %s' % (name, err))
         elif type_name:
@@ -814,7 +862,7 @@ def infer_priority(labels, project_map=None):
 
 
 def audit_issue(issue, field_map, type_capable=True, project_map=None,
-                project_fields=None, open_numbers=None):
+                project_fields=None, open_numbers=None, type_map=None):
     """Every gap on one issue, plus the spec entry that would close them.
 
     `issue` is a read-back node. Returns a dict carrying `gaps` (each with a
@@ -841,7 +889,7 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
         gaps.append({'kind': 'missing-type',
                      'detail': 'no native issue type'})
     elif type_capable and kind:
-        expected = NATIVE_TYPE_MAP[kind]['type']
+        expected = native_type_for(kind, type_map)
         if native != expected:
             gaps.append({'kind': 'type-contradiction',
                          'detail': "native type is '%s' but the %s says '%s', "
@@ -884,6 +932,15 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
         if concrete not in field_map:
             continue
         if _is_supplied(have.get(concrete)):
+            if purpose in MANDATORY_FIELD_KEYS:
+                # Carry the value the issue already holds into the proposal.
+                # `issue-apply` refuses a spec that leaves a mandatory field
+                # blank, and it does not first check whether the issue is
+                # already carrying one — so an entry proposed for some other
+                # reason entirely, a parent or an edge, was rejected for
+                # "missing" a value that was sitting on the issue. Repeating
+                # it makes the write a no-op and the spec round-trip.
+                proposed_fields[purpose] = have[concrete]
             continue
         gaps.append({'kind': 'missing-field',
                      'detail': "no value for '%s'" % concrete})
@@ -921,14 +978,87 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
                      'detail': 'more than %d dependencies in the body; not '
                                'proposed automatically' % DEP_LIMIT})
 
+    # The parent the body claims and the hierarchy does not have. An issue
+    # whose first line says "Part of the X epic (#N)" and which GitHub shows
+    # as a free-standing issue is the gap this closes: the epic renders with
+    # no children, and nothing anywhere reports that they disagree.
+    #
+    # An issue that already has *a* parent is left alone, even when the body
+    # names a different one. A deeper parent is usually the more specific
+    # truth — four slices parented to the architecture issue that split them,
+    # whose bodies all still name the epic two levels up — and reparenting
+    # them to the epic would flatten a hierarchy somebody built on purpose.
+    proposed_parent = None
+    claimed_parent = parse_parent(issue.get('body'))
+    current_parent = (issue.get('parent') or {}).get('number')
+    if claimed_parent and claimed_parent != number and not current_parent:
+        if open_numbers is not None and claimed_parent not in open_numbers:
+            gaps.append({'kind': 'parent-closed',
+                         'detail': 'the body says this is part of #%s, which is '
+                                   'not open' % claimed_parent})
+        else:
+            gaps.append({'kind': 'missing-parent',
+                         'detail': 'the body says this is part of #%s and it has '
+                                   'no parent' % claimed_parent})
+            proposed_parent = claimed_parent
+    elif claimed_parent and current_parent and claimed_parent != current_parent:
+        gaps.append({'kind': 'parent-differs',
+                     'detail': 'the body says this is part of #%s but its parent '
+                               'is #%s; not changed automatically'
+                               % (claimed_parent, current_parent)})
+
     proposed = {'number': number, 'title': title}
     if kind:
         proposed['kind'] = kind
     if proposed_fields:
         proposed['fields'] = proposed_fields
+    if proposed_parent:
+        proposed['parent'] = proposed_parent
     if proposed_edges:
         proposed['blocked_by'] = sorted(proposed_edges)
     return {'number': number, 'title': title, 'gaps': gaps, 'proposed': proposed}
+
+
+def fold_reverse_edges(audited, issues, open_numbers=None):
+    """Add the edges that `Blocks #N` states, to the issues they belong to.
+
+    `audit_issue` sees one issue at a time, which is enough for every marker
+    that points away from the issue being read and no use at all for the one
+    that points back. "#1032 blocks #979" is an edge on #979, and #979's own
+    body need never mention it — in practice the provisioning task is the one
+    that knows what it holds up. Before this, half the dependency graph a
+    backlog had written down was simply invisible to the audit.
+
+    Mutates and returns `audited` so the caller keeps one list.
+    """
+    by_number = {a['number']: a for a in audited}
+    have_edges = {}
+    for issue in issues:
+        have_edges[issue.get('number')] = {
+            n['number'] for n in (issue.get('blockedBy') or {}).get('nodes') or []}
+
+    for issue in issues:
+        blocker = issue.get('number')
+        for blocked in parse_blocks(issue.get('body')):
+            if blocked == blocker:
+                continue
+            entry = by_number.get(blocked)
+            if entry is None:
+                continue  # outside this scan, or closed
+            if open_numbers is not None and blocker not in open_numbers:
+                continue
+            if blocker in (have_edges.get(blocked) or set()):
+                continue
+            proposed = entry['proposed'].setdefault('blocked_by', [])
+            if blocker in proposed:
+                continue
+            proposed.append(blocker)
+            entry['proposed']['blocked_by'] = sorted(proposed)
+            entry['gaps'].append(
+                {'kind': 'missing-edge',
+                 'detail': '#%s says it blocks this, with no native edge'
+                           % blocker})
+    return audited
 
 
 def audit_summary(audited):
@@ -1420,48 +1550,190 @@ def get_sprint_candidates(candidates, sprint_title):
     return [c for c in candidates if c.get('milestone') == sprint_title]
 
 
-# ── Dependency parsing ───────────────────────────────────────────────────────
-# Story validation — fixed patterns, no judgment.
+# ── Dependency parsing ───────────────────────────────────────────────────
+# Story validation — fixed markers, no judgment.
+#
+# The one rule here is that a reference only counts when a marker says what it
+# means. An earlier version swept every bare `#N` inside a `## Dependencies`
+# section, on the reasoning that a reference under that heading is a
+# dependency. It is not. Real backlogs put all of this under that heading:
+#
+#     Depends on #977 and #1032.
+#     Scope changed by #1124.
+#     None of the epic's three manual tasks — #1002, #1003 or #1004 — block it.
+#     Depends on nothing. #863 does not have to land first.
+#     Changes the scope of #982, #1000, #1030 and #1097.
+#     Supersedes #981.  /  Splits #1032.  /  Blocked by #980. Splits #1032.
+#
+# Sweeping those produced edges pointing the wrong way, edges to work the body
+# explicitly says is *not* required, and mutual blocks between issues that
+# merely reference each other. Measured against one 70-issue backlog the sweep
+# proposed 44 edges of which seven formed cycles, and the whole set had to be
+# thrown away by hand. So the marker now has to sit immediately before the
+# reference, and an unmarked `#N` is prose.
 
-_DEP_LINE_PATTERNS = [
-    re.compile(r'\bdepends on\s+#(\d+)', re.IGNORECASE),
-    re.compile(r'\bblocked by\s+#(\d+)', re.IGNORECASE),
-    re.compile(r'\bafter\s+#(\d+)', re.IGNORECASE),
-    re.compile(r'\brequires\s+#(\d+)', re.IGNORECASE),
-]
+# Forward markers: "this issue cannot start until N". Each is matched
+# immediately before the reference run it introduces.
+_DEP_MARKERS = r'depends\s+on|depends\s+upon|blocked\s+by|blocked\s+on|requires'
+
+# Reverse markers: "N cannot start until this issue". The edge belongs to the
+# *other* issue, which is why these are returned separately — see
+# `parse_blocks` and `fold_reverse_edges`.
+_BLOCKS_MARKERS = r'blocks|blocking'
+
+# A run of references a single marker introduces: `#977 and #1032`,
+# `#981, #991, #979 and #980`, `**#1003** and **#1004**`. Without this a
+# marker only ever captured the first number and every "and #N" was silently
+# dropped, which is the quieter half of the same bug.
+_REF_RUN = r'(?:[\s,;&]|and\b|\*\*|`)*#(\d+)'
+
+_DEP_MARKER_RE = re.compile(
+    r'\b(?:%s)\b((?:%s)+)' % (_DEP_MARKERS, _REF_RUN), re.IGNORECASE)
+_BLOCKS_MARKER_RE = re.compile(
+    r'\b(?:%s)\b((?:%s)+)' % (_BLOCKS_MARKERS, _REF_RUN), re.IGNORECASE)
+_REF_RE = re.compile(r'#(\d+)')
+
+# `After #N` is a dependency in a list item under `## Dependencies` and
+# narrative anywhere else — "after #431 and #682 merged" is a note about work
+# that already landed, and "Easier after #1204" says the opposite of blocking.
+# So it counts only at the start of a line or bullet inside that section.
+_AFTER_LINE_RE = re.compile(r'^\s*(?:[-*+]\s*)?after\b((?:%s)+)' % _REF_RUN,
+                            re.IGNORECASE | re.MULTILINE)
+
 _DEP_SECTION_RE = re.compile(
     r'^#{1,6}\s*dependencies\s*$(.*?)(?=^#{1,6}\s|\Z)',
     re.IGNORECASE | re.MULTILINE | re.DOTALL,
 )
-_HASH_REF_RE = re.compile(r'#(\d+)')
+
+# Fixed phrasings that name an issue's parent. Anything looser invents a
+# hierarchy out of cross-references, which is the same mistake the dependency
+# sweep made.
+_PARENT_PATTERNS = [
+    re.compile(r'\bpart\s+of\s+the\b[^#\n]{0,80}?\bepic\b[^#\n]{0,20}#(\d+)',
+               re.IGNORECASE),
+    re.compile(r'\bpart\s+of\s+#(\d+)', re.IGNORECASE),
+    re.compile(r'\bsub-?issue\s+of\s+#(\d+)', re.IGNORECASE),
+    re.compile(r'^\s*(?:\*\*)?parent(?:\*\*)?\s*:\s*(?:\*\*)?#(\d+)',
+               re.IGNORECASE | re.MULTILINE),
+    re.compile(r'^\s*(?:\*\*)?epic(?:\*\*)?\s*:\s*(?:\*\*)?#(\d+)',
+               re.IGNORECASE | re.MULTILINE),
+]
+
 DEP_LIMIT = 5
 
 
+# A marker is read inside one clause, not one line, because two unrelated
+# statements share a line constantly: "Part of the Cadence Plus epic (#959).
+# Depends on #1097 and #1098." is a parent statement followed by a dependency
+# statement, and only the second one is about waiting for anything.
+_CLAUSE_SPLIT_RE = re.compile(r'(?<=[.!?:])\s+|\n')
+
+# A reference *earlier in the same clause* means the clause is about that
+# issue rather than about the body's own. This is what an epic's status list
+# looks like — "- Sign in with Apple (#979) — *blocked on #1032*" says #979 is
+# blocked, not the epic. Reading those as the epic's own dependencies made an
+# epic depend on its own children.
+_NEGATION_RE = re.compile(r"(?:\bno\s+longer|\bnot\b|\bnever\b|n't|\bwithout\b)"
+                          r'[^#]{0,20}$', re.IGNORECASE)
+
+
+def _refs(run):
+    """Every issue number in a matched reference run, in order."""
+    return [int(m.group(1)) for m in _REF_RE.finditer(run or '')]
+
+
+def _marked_refs(text, pattern):
+    """References introduced by a marker, clause by clause.
+
+    Two things disqualify a match, and both come from real bodies rather than
+    from caution: an *unmarked* reference before the marker in the same clause
+    (the clause is about that issue), and a negator before the marker ("No
+    longer blocked on #1004" is a note that something stopped being a
+    dependency).
+
+    "Unmarked" is what `consumed` tracks. Only the text since the previous
+    accepted match is examined, because a clause may carry two markers in a
+    row — "Depends on #7 and requires #8" — and the first marker's own
+    reference must not disqualify the second. A match that is rejected does
+    not advance `consumed`, so the reference that rejected it goes on
+    rejecting whatever follows it in the same clause.
+    """
+    found = []
+    for clause in _CLAUSE_SPLIT_RE.split(text or ''):
+        consumed = 0
+        for m in pattern.finditer(clause):
+            before = clause[consumed:m.start()]
+            if _REF_RE.search(before):
+                continue
+            if _NEGATION_RE.search(before):
+                continue
+            found.extend(_refs(m.group(1)))
+            consumed = m.end()
+    return found
+
+
 def parse_dependencies(body):
-    """Extract dependency issue numbers from an issue body.
+    """Extract the issues an issue is waiting on. Returns (deps, overflow).
 
-    Recognises the fixed markers `Depends on #N`, `Blocked by #N`, `After #N`,
-    `Requires #N`, and bare `#N` references inside a `## Dependencies` section.
-    Self-references and duplicates are dropped.
+    Recognises `Depends on #N`, `Depends upon #N`, `Blocked by #N`,
+    `Blocked on #N` and `Requires #N` anywhere in the body, and `After #N` at
+    the start of a line or bullet inside a `## Dependencies` section. Each
+    marker takes the whole run of references that follows it, so
+    `Depends on #977 and #1032` is two dependencies rather than one.
 
-    Returns (deps, overflow):
-      deps     — sorted unique list of referenced issue numbers (ints).
-      overflow — True if more than DEP_LIMIT distinct deps were found. Per the
-                 template, that many references means a meta/epic issue whose
-                 dependencies cannot be cheaply validated, so the caller treats
-                 it as unresolved rather than checking each one.
+    A reference with no marker in front of it is prose and is ignored, however
+    prominently it is placed. Self-references and duplicates are dropped.
+
+      deps     — sorted unique issue numbers.
+      overflow — True when more than DEP_LIMIT distinct dependencies were
+                 found. Per the template that many references means a meta or
+                 epic issue whose dependencies cannot be cheaply validated, so
+                 the caller treats it as unresolved rather than checking each.
     """
     body = body or ''
-    found = set()
-    for pat in _DEP_LINE_PATTERNS:
-        for m in pat.finditer(body):
-            found.add(int(m.group(1)))
+    found = set(_marked_refs(body, _DEP_MARKER_RE))
     section = _DEP_SECTION_RE.search(body)
     if section:
-        for m in _HASH_REF_RE.finditer(section.group(1)):
-            found.add(int(m.group(1)))
+        found.update(_marked_refs(section.group(1), _AFTER_LINE_RE))
     deps = sorted(found)
     return deps, len(deps) > DEP_LIMIT
+
+
+def parse_blocks(body):
+    """Extract the issues an issue says it blocks, from `Blocks #N`.
+
+    Returned separately from `parse_dependencies` because the edge belongs to
+    the other issue: "#1032 blocks #979" is an edge on #979. Only a whole-repo
+    pass can place it, which `fold_reverse_edges` does.
+    """
+    return sorted(set(_marked_refs(body or '', _BLOCKS_MARKER_RE)))
+
+
+def parse_parent(body):
+    """The issue this one says it is part of, or None.
+
+    Fixed phrasings only: `Part of the <name> epic (#N)`, `Part of #N`,
+    `Sub-issue of #N`, and `Parent:`/`Epic:` at the start of a line. Returns
+    None when the body names more than one distinct candidate, because a body
+    that disagrees with itself is a thing to read rather than a thing to
+    apply.
+    """
+    body = body or ''
+    # In precedence order: a body that names its epic outright has answered
+    # the question, and a looser `part of #N` elsewhere in the prose does not
+    # get to make that ambiguous. #1095 says "Part of the Cadence Plus epic
+    # (#959)" in its first line and, forty lines down, "the pages would move
+    # to the new domain as part of #1005" — one is the parent, the other is a
+    # sentence about a plan that was abandoned.
+    for pattern in _PARENT_PATTERNS:
+        found = set()
+        for m in pattern.finditer(body):
+            found.add(int(m.group(1)))
+        if len(found) == 1:
+            return found.pop()
+        if found:
+            return None
+    return None
 
 
 # ── Closing-reference normalisation ──────────────────────────────────────────

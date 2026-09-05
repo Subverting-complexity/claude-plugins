@@ -145,6 +145,25 @@ A project overrides any **field name** in `ClaudeProject.md` →
 — the same project-map-then-default path labels use. A project does not
 override the value maps; those are the workflow's own vocabulary.
 
+### When the org has more than the five default types
+
+`NATIVE_TYPE_MAP` is written for GitHub's five defaults, where nothing can
+express tech debt and `Feature` is the least wrong answer. An org may add
+its own types, and `wf_core.NATIVE_TYPE_PREFERENCES` is where a better
+answer is recorded: `tech debt` and `chore` become `Chore` on an org that
+has that type, and fall back to the map's `Feature` on one that does not.
+`org-capabilities` reports the enabled types, and `native_type_for(kind,
+type_map)` is the single place the choice is made, so the audit and the
+backfill cannot disagree about it.
+
+Adding a preference has one consequence outside the mapping, and it is easy
+to miss: `NATIVE_MAINTENANCE_TYPES` decides what `execute mode=maintenance`
+may pick. A type that is not in that set is invisible to the picker, so a
+backlog that starts typing its debt `Chore` empties its own maintenance pool
+unless `Chore` is there too. `architecture` deliberately has no preference —
+the one org measured had already typed every `[ARCH]` issue `Feature`, and
+moving them would have been a change nobody asked for.
+
 ### Choosing a `Classification`
 
 `NATIVE_TYPE_MAP` gives the default choice for each workflow kind. That
