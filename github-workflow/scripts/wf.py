@@ -1561,7 +1561,8 @@ def cmd_issue_audit(args):
                                    project_map=cfg.get('labels') or {},
                                    project_fields=cfg.get('fields') or {},
                                    open_numbers=open_numbers,
-                                   type_map=caps.get('type_map') or {})
+                                   type_map=caps.get('type_map') or {},
+                                   parents=args.parents)
                for issue in issues]
     # `Blocks #N` names an edge on the *other* issue, so it can only be placed
     # once every issue has been audited.
@@ -3343,6 +3344,12 @@ def build_parser():
     au.add_argument('--out', default=None,
                     help='where to write the backfill spec '
                          '(default .claude/%s)' % AUDIT_SPEC_DEFAULT)
+    au.add_argument('--parents', action='store_true',
+                    help='also read the parent each body claims ("Part of the '
+                         'X epic (#N)") and propose it where the issue has '
+                         'none. Off by default: an issue created from a spec '
+                         'already carries its parent, so this is for a backlog '
+                         'written before that, or issues filed by hand')
     au.add_argument('--quiet', action='store_true',
                     help='report counts only, keeping the exit code, for CI')
     au.add_argument('--refresh', action='store_true',
