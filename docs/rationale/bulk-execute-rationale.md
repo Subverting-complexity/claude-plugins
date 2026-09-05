@@ -163,7 +163,7 @@ than a failed run.
 
 `execute` merges on a self-review when no separate agent context can be
 spawned, provided the run says so on the pull request and in its report. The
-reasoning is in `skills/execute/references/execute-rationale.md`: a workflow
+reasoning is in `docs/rationale/execute-rationale.md`: a workflow
 that can only finish when the harness happens to offer subagents is a
 workflow that stops half way in every nested run, leaving an unreviewed pull
 request that nothing is scheduled to pick up.

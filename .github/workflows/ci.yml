@@ -8,7 +8,7 @@ on:
 
 jobs:
   sync-check:
-    name: Verify shared skills and runtime variants are in sync
+    name: Verify shared skills are in sync
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,101 +74,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Two checks, because execute's footprint now spans two windows. The
-      # tight one protects what this gate was built for — the pick/plan/build
-      # path — by excluding the two references that only load once a PR
-      # exists. The loose one keeps the whole run bounded. Raising the loose
-      # budget alone would have let the build window regrow ~9k tokens
-      # unnoticed. Measured 34077 and 44113; budgets are ~2.0% above each.
+      # Budget convention: each budget is the last measured footprint plus
+      # ~2%. Lower it when a change shrinks a window; raise it only when a
+      # change adds a decision the run has to carry, and say so in the commit.
       #
-      # Build window recalibrated from 34800: SKILL.md gained the cross-phase
-      # "Fix in scope, file out of scope" rule, which decides what happens to
-      # every problem the run finds and so has to sit in this window rather
-      # than behind a reference that only loads once a PR exists. Its
-      # reasoning went to docs/rationale/execute-rationale.md, which this gate skips, so the
-      # window carries the rule alone. Measured 34904; 35600 is ~2.0%,
-      # matching the convention above.
-      - name: Check execute build-window footprint (budget 35600 tokens)
+      # The orchestrators get two windows each. The build window excludes the
+      # references that only load once a PR exists, so it protects the
+      # pick/plan/build path that this gate was built for. The whole-run
+      # window keeps the rest bounded. Raising the whole-run budget alone
+      # would let the build window regrow unnoticed.
+      - name: Check execute build-window footprint
         shell: bash
         run: |
           bash count-tokens.sh github-workflow/skills/execute/SKILL.md \
             --exclude github-workflow/skills/execute/references/review-and-merge.md \
             --exclude github-workflow/skills/code-review/references/auto-merge.md \
-            --budget 35600
+            --budget 19650
 
-      # Recalibrated from 45900: auto-merge.md's step 3a gained the branch for
-      # an empty check rollup (the usual symptom of exhausted Actions billing,
-      # which the old wording could never fire on because it required a failing
-      # check to inspect), and Phase 8 gained the general-purpose-agent
-      # fallback plus the self-review disclosure. Both are new decision paths,
-      # not restatement, and the rationale for the latter went to
-      # docs/rationale/execute-rationale.md rather than into this window. Still after the PR
-      # exists, so the build-window budget above is untouched.
-      #
-      # Recalibrated again from 47000: auto-merge.md gained step 3b, the merge
-      # path for a project with no GitHub-visible pipeline, which is the third
-      # distinct CI-gate outcome and not expressible as a variant of the other
-      # two (3a-ii requires active workflows; 3b requires none). The prose that
-      # only explains the setting went to review.config.template.md, which no
-      # skill cites, so this window carries the decision procedure alone.
-      # Measured 47058; 48000 is ~2.0%, matching the convention above.
-      #
-      # Recalibrated again from 48000: Phase 9 rewrote its fix/file steps
-      # around the "Fix in scope, file out of scope" rule, Phase 8 now asks
-      # each reviewer which side of the diff a finding sits on, and Phase 10
-      # says why the auto-merge fallbacks that file are not exceptions to it.
-      # That is routing every review finding, not restatement, and the
-      # reasoning went to docs/rationale/execute-rationale.md rather than into this window.
-      # Measured 48376; 49400 is ~2.1%, matching the convention above.
-      #
-      # Recalibrated again from 49400: Phase 8 dropped to one reviewer but
-      # gained the severity rubric, which decides what a review may raise at
-      # all, and Phase 9 gained the test that decides whether a re-review
-      # happens. Both are decision procedures the run has to carry, and the
-      # reasoning behind them went to docs/rationale/execute-rationale.md, which this gate
-      # skips. Measured 49156; 50150 is ~2.0%, matching the convention above.
-      - name: Check execute whole-run footprint (budget 50150 tokens)
+      - name: Check execute whole-run footprint
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 50150
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 33980
 
-      # Recalibrated from 37000: the pinned-PR path, the read-only overrides,
-      # and the sanctioned-caller carve-out in auto-merge.md are new. Measured
-      # 37699; 38800 is ~2.9%.
-      #
-      # Recalibrated again from 38800: the same step 3b as above, plus the
-      # setup question that decides the setting in review-config-guide.md.
-      # Note the prior budget had already tightened to ~220 tokens of headroom
-      # before this change, so the raise covers that drift as well as step 3b.
-      # Measured 39910; 40700 is ~2.0%.
-      # bulk-execute is the third orchestrator. It gets the same two-window
-      # treatment as execute: a tight budget on the choose/plan/build window
-      # (its own SKILL.md plus set-selection.md and bulk-finish.md, minus the
-      # two references that only load once a PR exists) and a loose one on the
-      # whole run. It reuses execute's review-and-merge.md rather than
-      # restating it, which is why the loose budget lands close to execute's.
-      # Recalibrated from 33200 and 46950 when the Phase 8 substitutions gained
-      # the self-review fallback section: the path a bulk run takes when the
-      # harness cannot spawn a separate reviewer context. That text sits in
-      # SKILL.md rather than a post-PR reference because it belongs beside the
-      # other Phase 8 substitutions, so it lands in both windows.
-      # Measured 33282 and 46754; budgets are ~2.0% above each.
-      - name: Check bulk-execute build-window footprint (budget 33950 tokens)
+      - name: Check bulk-execute build-window footprint
         shell: bash
         run: |
-          bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md             --exclude github-workflow/skills/execute/references/review-and-merge.md             --exclude github-workflow/skills/code-review/references/auto-merge.md             --budget 33950
+          bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md \
+            --exclude github-workflow/skills/execute/references/review-and-merge.md \
+            --exclude github-workflow/skills/code-review/references/auto-merge.md \
+            --budget 22830
 
-      # Recalibrated from 47700 for the same reason as execute's whole-run
-      # window above: the shared review reference gained the severity rubric
-      # and the re-review test. bulk-execute reuses that file rather than
-      # restating it, so only this window moves and its build window does not.
-      # Measured 47904; 48860 is ~2.0%, matching the convention above.
-      - name: Check bulk-execute whole-run footprint (budget 48860 tokens)
+      - name: Check bulk-execute whole-run footprint
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 48860
+        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 37160
 
-      - name: Check code-review skill footprint (budget 40700 tokens)
+      - name: Check code-review skill footprint
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 40700
+        run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 31270
 
       - name: Check description and body budgets (ratchet)
         shell: bash

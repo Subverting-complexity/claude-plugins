@@ -30,6 +30,16 @@ every vague answer, challenge weak reasoning, surface conflicts between
 decisions, and don't move on until each question has a concrete answer or a
 conscious deferral with a stated reason.
 
+## Output standard
+
+Everything a person reads — plans, questions, findings, summaries, and
+anything posted or committed — follows `skills/_shared/wording-standard.md`
+for how it reads, `skills/user-facing-communication/SKILL.md` for what it
+contains and in what order (outcome and current state first, then anything
+outstanding, blocked or assumed, every work item named as well as numbered,
+no investigation history), and `skills/_shared/banned-patterns.md` for what
+must never appear. Every reply, not only the last one.
+
 ## Skills Used
 
 Read each skill's SKILL.md when you reach the phase that needs it.
@@ -160,13 +170,6 @@ Clear and easy to read:
 
 See `_shared/wording-standard.md` for the full standard and a second
 example.
-
-The **shape** of what you report follows
-`skills/user-facing-communication/SKILL.md`: lead with the outcome and
-the current state, put anything outstanding, blocked or assumed where it
-cannot be missed, name every work item as well as numbering it, and leave
-out the investigation history. It applies to every reply you write, not
-only the last one.
 
 ### Interview mechanics
 

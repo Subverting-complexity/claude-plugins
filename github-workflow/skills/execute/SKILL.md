@@ -35,16 +35,15 @@ has been reviewed and answered, not when the PR opens. Nothing in this run
 reviews its own work: the review that counts happens in Phase 8, in agent
 contexts that never saw the build.
 
-## Plain-English output
+## Output standard
 
-Everything you write for a person to read (plan, progress notes, PR description, final summary) follows `skills/_shared/wording-standard.md` and avoids `skills/_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
-
-The **shape** of what you report follows
-`skills/user-facing-communication/SKILL.md`: lead with the outcome and
-the current state, put anything outstanding, blocked or assumed where it
-cannot be missed, name every work item as well as numbering it, and leave
-out the investigation history. It applies to every reply you write, not
-only the last one.
+Everything a person reads — plans, questions, findings, summaries, and
+anything posted or committed — follows `skills/_shared/wording-standard.md`
+for how it reads, `skills/user-facing-communication/SKILL.md` for what it
+contains and in what order (outcome and current state first, then anything
+outstanding, blocked or assumed, every work item named as well as numbered,
+no investigation history), and `skills/_shared/banned-patterns.md` for what
+must never appear. Every reply, not only the last one.
 
 **This workflow is fully autonomous.** Every phase flows into the next
 without pausing for user input — except the **interactive discovery

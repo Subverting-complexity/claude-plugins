@@ -44,21 +44,21 @@ choosing it well and shrinking it when it turns out to be wrong.
 stories touch different subsystems, or when any one of them is large enough
 to fill a session on its own.
 
-## Plain-English output
+## Output standard
 
-Everything you write for a person to read (plan, progress notes, PR description, final summary) follows `skills/_shared/wording-standard.md` and avoids `skills/_shared/banned-patterns.md`. Assume a technically capable reader who is not involved in this codebase. Explain what a component or pattern is before you rely on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation. Reread anything you send and strip staccato fragments and banned patterns first.
+Everything a person reads — plans, questions, findings, summaries, and
+anything posted or committed — follows `skills/_shared/wording-standard.md`
+for how it reads, `skills/user-facing-communication/SKILL.md` for what it
+contains and in what order (outcome and current state first, then anything
+outstanding, blocked or assumed, every work item named as well as numbered,
+no investigation history), and `skills/_shared/banned-patterns.md` for what
+must never appear. Every reply, not only the last one.
 
-The **shape** of every reply you write, not only the last one, follows
-`skills/user-facing-communication/SKILL.md`: outcome and current state
-first, anything outstanding or blocked where it cannot be missed, every
-work item named as well as numbered, no investigation history, and no
-narration of this workflow or its phases.
-
-**This workflow is fully autonomous.** Every phase flows into the next
-without pausing for user input. Opening the pull request is not a stopping
-point: Phases 8 to 10 need no permission, no confirmation and no green CI.
-A run that reports its new PR and offers to review it if asked has stopped
-half way, however finished it sounds.
+**This workflow is fully autonomous.** Every phase flows into the next without
+pausing for user input, and none of it is narrated to the user. Opening the
+pull request is not a stopping point: Phases 8 to 10 need no permission, no
+confirmation and no green CI. A run that reports its new PR and offers to
+review it if asked has stopped half way, however finished it sounds.
 
 The one thing this workflow does stop for is a **set it cannot justify**.
 If nothing in the backlog is genuinely related to the lead story, say so

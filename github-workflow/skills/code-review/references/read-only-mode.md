@@ -25,7 +25,7 @@ When `$ARGUMENTS.mode` is `read-only`:
   review comment, recommending which to keep. Then continue reviewing the
   selected PR.
 - **Skip Step 7** (Fix issues) entirely — do not edit any files or push
-  commits, and do not file anything to the board (Step 7f is a mutation).
+  commits, and do not file anything to the board (Step 7e is a mutation).
 - In Step 8, determine the verdict based on raw findings (nothing was auto-fixed).
 - In Step 9, post the review comment with "Fixes applied: None (read-only
   mode)." The "Issues remaining" section lists the raw findings (nothing

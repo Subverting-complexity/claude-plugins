@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Token-budget gate for skill/command descriptions and skill bodies (Lever D).
+# Token-budget gate for skill/command descriptions and skill bodies.
 #
-# A ratchet: the Lever A/B/F context savings cannot silently regrow. CI fails
-# the build when any deployed skill or command exceeds its budget.
+# A ratchet: context already trimmed out of a file cannot silently regrow. CI
+# fails the build when any deployed skill or command exceeds its budget.
 #
 #   - Description budget (skills + commands): a per-file char cap on the YAML
-#     frontmatter `description:` value. Calibrated just above the post-Lever-A
-#     measured max so it locks in the trim without blocking normal edits.
+#     frontmatter `description:` value. Calibrated just above the measured
+#     max so it locks in the trim without blocking normal edits.
 #   - Body budget (skills): a per-file line cap on the body (everything after
 #     the closing frontmatter `---`). Defaults to the Anthropic ≤500-line
 #     guideline; large orchestrators get an explicit, calibrated override.
 #
-# Budgets are calibrated from the post-A/B baselines — see BODY_OVERRIDE and the
+# Budgets are calibrated from measured baselines — see BODY_OVERRIDE and the
 # defaults below. Re-measure and re-calibrate (never just raise to silence a
 # failure) if a deliberate, reviewed change grows a file.
 #
@@ -36,7 +36,7 @@ cd "$REPO_ROOT"
 # count-tokens.sh). Integer arithmetic: chars * 10 / 35.
 CHARS_PER_TOKEN_X10=35
 
-# --- Budgets (calibrated from post-Lever-A/B measured baselines) ------------
+# --- Budgets (calibrated from measured baselines) --------------------------
 # Description: current max is 503 chars (verify-feature, after it took on
 # duplication, complexity and regressions); 510 sits ~1.4% above it, so a
 # further description edit there has to trim before it adds. (Block-scalar

@@ -7,6 +7,50 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 6.4.0 · local-workflow 2.11.0
+
+Consolidation pass across both plugins. No behaviour changes to any
+workflow; the changes are to what the instructions say and how much of
+it there is.
+
+- Changed: the output standard every skill and command carries is now one
+  block naming the three files that govern a reply (how it reads, what it
+  contains and in what order, and what must never appear) instead of two
+  paragraphs restating them. Roughly 45% shorter, in about 30 files.
+- Fixed: `code-review` Step 2 said both "make no changes and move on" and,
+  a paragraph later, that a lost claim should be retried against other
+  candidates. It now says the first, once. The undefined term "Acquire" is
+  gone, and the claim-ordering rule is a heading sentence rather than a
+  run-on inside an unrelated exit-code bullet.
+- Fixed: `code-review` Step 7 skipped from 7d to 7f, and its "do not fix"
+  list sat under *Push* rather than under triage. Renumbered to 7a–7e with
+  the exclusions where the triage happens.
+- Removed: the runtime-variant compiler in `sync-skills.sh` and
+  `sync-skills.ps1` (~190 lines of duplicated logic). It compiled
+  `github-workflow/templates/runtime/worktree-hygiene.md`, which nothing
+  ever loaded. The rationale it stripped now lives in
+  `docs/rationale/worktree-hygiene-rationale.md`, matching every other
+  template, and the template itself is 30 lines shorter at runtime.
+- Fixed: the instruction-token footprint budgets in CI sat ~48% above what
+  the files actually measure, so the gate had been passing vacuously.
+  Re-ratcheted to measured + 2%, and the accreted recalibration history
+  replaced by one statement of the convention.
+- Fixed: `banned-patterns.md` banned words the plugins require as names —
+  *harness*, *ecosystem*, *framework*, backlog *refinement*. Names are now
+  explicitly exempt; the ban is on reaching for the word as filler.
+- Fixed: both plugin READMEs told you to install with `--plugin-dir` and
+  said the marketplace was unpublished. `github-workflow`'s claimed 8 slash
+  commands (there are 4) and listed its skills twice; `local-workflow`'s
+  omitted `debugging`, `doc-writer`, `security-audit` and `preflight`, and
+  described six shared skills as local-only.
+- Fixed: the shared-skill count (15, was stated as 12), the `ClaudeProject.md`
+  skill list, and a dangling path in `docs/rationale/bulk-execute-rationale.md`.
+- Changed: the "how to edit a shared skill" procedure was written out in
+  three places. `CLAUDE.md` now holds it; `README.md` and
+  `_shared-skills/MANIFEST.md` point there.
+- Moved: the internal consumer inventory out of the public marketplace
+  README into `docs/consumers.md`.
+
 ## github-workflow 6.3.0
 
 - Fixed: a capability lookup that came back `NOT_FOUND` was recorded as

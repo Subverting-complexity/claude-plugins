@@ -13,7 +13,7 @@ Both plugins share a single canonical set of skills (architecture design,
 feature discovery, structured coding, code review, security audit, and more),
 so the two stay consistent. See [Repository layout](#repository-layout) below.
 
-> **Install one, not both.** The two plugins overlap heavily — 12 of their
+> **Install one, not both.** The two plugins overlap heavily — 15 of their
 > skills are identical copies. Installing both loads those skill descriptions
 > into every session *twice* and puts duplicate entries in the skill picker,
 > which wastes context and can make Claude trigger the wrong copy. Pick the one
@@ -80,32 +80,6 @@ machine that has never run `claude plugin marketplace add` fetches nothing
 and reports *No plugins installed*, with no error explaining why. See
 [`CLAUDE.md`](CLAUDE.md#declaring-a-plugin-in-a-consuming-project) for the
 verified behaviour matrix.
-
-### Who consumes these plugins
-
-The blast radius of a breaking release cannot be judged without this list,
-and a project board is not proof of an install. Verified against committed
-`.claude/settings.json` and `ClaudeProject.md` on 4 September 2026 — re-run
-the check when cutting a major release.
-
-**Committed plugin declaration** (`enabledPlugins` in
-`.claude/settings.json`, so every session in the repo enables it):
-
-| Repo | Plugin |
-| ---- | ------ |
-| `CadenceReader` | `github-workflow` |
-| `Secret.Broker` | `github-workflow` |
-
-**Configured for `github-workflow` but no committed declaration** — these
-carry a `ClaudeProject.md`, so the plugin is driven there from a
-per-machine install. They are affected by a breaking release just as much,
-but nothing in the repo records the dependency:
-
-`Invexis`, `Refrain`, `Telltale`, `Mutation`, `GoogleAppsScripts`,
-`GTM-AI`.
-
-This repo dogfoods `github-workflow` on its own backlog and is configured
-the same way.
 
 ### Configuring `github-workflow`
 
@@ -182,17 +156,12 @@ harness worktree configuration and a manual cleanup routine.
 
 ## Contributing
 
-Read **[`CLAUDE.md`](CLAUDE.md)** first — it documents the rules that keep the
-shared skills consistent. In short:
-
-1. **Never edit a synced skill copy.** Files beginning with
-   `<!-- SYNCED from _shared-skills/ -->` are generated. Edit the canonical
-   source under `_shared-skills/` instead.
-2. **Run `./sync-skills.sh` (or `./sync-skills.ps1`) after editing a shared
-   skill**, and commit the canonical file together with its synced copies.
-3. **Bump the affected plugin's version** in
-   `{plugin}/.claude-plugin/plugin.json` before merging (patch / minor / major
-   per the guidance in `CLAUDE.md`).
+Read **[`CLAUDE.md`](CLAUDE.md)** first — it holds the rules that keep the
+shared skills consistent, and it is the only place they are written down.
+The one you will hit first: a skill file carrying a
+`<!-- SYNCED from _shared-skills/ -->` banner is generated, so edit the
+canonical source under `_shared-skills/` instead. The pre-commit hook
+blocks the mistake.
 
 Bootstrap your clone once (idempotent) — this pins line endings to LF
 (so files don't churn to CRLF on Windows and leave worktrees stuck
