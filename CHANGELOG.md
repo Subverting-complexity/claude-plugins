@@ -7,6 +7,48 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 6.3.0
+
+- Fixed: a capability lookup that came back `NOT_FOUND` was recorded as
+  `owner_kind: user`, filing an organisation away as a personal account. GitHub
+  returns that error when the signed-in account may not see the org at all, so
+  the result was a cache saying the org has no issue types and no fields, with
+  no expiry — after which every issue was created with no type, no field values
+  and no error anywhere. `NOT_FOUND` now counts as a denial alongside
+  `FORBIDDEN` and `UNAUTHORIZED`, and an empty result is only believed when it
+  carries the current cache schema, so a cache written by an earlier version
+  heals itself on the next run instead of waiting for someone to know about
+  `--refresh`.
+- Fixed: `issue-audit` reported a `Classification` gap on issues that were
+  classified correctly. It required the value to agree with the issue's kind,
+  but `Classification` is a multi-select describing what the work touches, so a
+  story marked `Documentation` or `Performance` was telling the truth. It now
+  reports only genuine incompatibilities — a story classified `Bug Fix`, a bug
+  classified `New Feature`.
+- Fixed: `issue-audit` checked every org field, including Start date, Target
+  date, Parent and Status reason, which nobody sets on most issues. On one
+  69-issue backlog that produced 275 findings that no amount of work could
+  clear, which made the audit useless as a check. It now checks the four
+  mandatory fields only. The same backlog now reports two findings, both real.
+- Fixed: an untyped issue was routed by looking its declared kind up in the
+  type map, which put `[CHORE]` in feature mode and made `[FEATURE]` and
+  `[EPIC]` vanish from every mode. Feature and maintenance now have their own
+  explicit kind sets.
+- Changed: `issue-apply` says on stderr when a spec creates an issue that names
+  no labels. Nothing else supplies them, so such an issue carries no ready-gate
+  label and no priority and `pick` will never select it.
+- Changed: `setup` gained an `issues` focus and a step that audits the
+  backlog's metadata, so `issue-audit` is reachable from a command rather than
+  only from the CLI. Its exit-21 guidance now separates "the account may not
+  look" from "the org genuinely has none", which are opposite situations that
+  read identically.
+- Changed: `report-issue` lost a redundant step that re-applied labels the
+  previous step had already set, and both of its command samples now include
+  the lifecycle label — without it the issue is filed but never picked up.
+- Changed: the audit spec path is reported relative to the repository, and
+  `.claude/issue-audit-spec.json` is now ignored by git like every other `wf`
+  scratch file.
+
 ## github-workflow 6.2.1
 
 - Changed: the parent an issue's body claims is now read only under

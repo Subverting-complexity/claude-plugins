@@ -86,6 +86,22 @@ MAINTENANCE_CLASSIFICATIONS = frozenset({
     'Tech Debt', 'Architecture', 'Security',
 })
 
+# Where an untyped issue goes, by the kind its `type-*` label or `[PREFIX]`
+# title claims. This is stated directly rather than derived by looking the kind
+# up in `NATIVE_TYPE_MAP` and re-filtering by the resulting type, because that
+# route gave three wrong answers. A chore mapped to `User Story`, so an untyped
+# `[CHORE]` landed in **feature** mode while a natively typed `Chore` landed in
+# maintenance — the same issue in opposite pools depending only on whether
+# anyone had typed it yet. `[FEATURE]` and `[EPIC]` mapped to types that match
+# neither pool, so both vanished from every mode without a word.
+#
+# An epic is in neither set on purpose: it is a container for work rather than
+# work, which is also why `NATIVE_FEATURE_TYPES` excludes the native `Epic`.
+FALLBACK_FEATURE_KINDS = frozenset({'story', 'feature', 'spike'})
+FALLBACK_MAINTENANCE_KINDS = frozenset({
+    'bug', 'security', 'tech debt', 'architecture', 'chore',
+})
+
 
 def filter_by_native_type(candidates, mode, type_map, classification_map=None,
                           project_map=None, fallback_count=None):
@@ -98,49 +114,45 @@ def filter_by_native_type(candidates, mode, type_map, classification_map=None,
     candidates are included as a best-effort fallback.
     story mode: no filter (returns all).
 
-    An issue with no native type is not dropped: it falls back to the type
-    its own `type-*` label or `[PREFIX]` title claims (`declared_kind()`),
-    the same classification the label path (`_filter_by_mode`) would use.
-    Without this, an untyped issue on a type-capable org silently vanishes
-    from `feature`/`maintenance` mode — `story` mode is unaffected, which is
-    why the gap went unnoticed on orgs with zero typed issues. `fallback_count`,
-    when passed a list, records the number of each classified this way so the
+    An issue with no native type is not dropped: it is routed on the kind its
+    own `type-*` label or `[PREFIX]` title claims (`declared_kind()`), through
+    `FALLBACK_FEATURE_KINDS` / `FALLBACK_MAINTENANCE_KINDS`. Without this, an
+    untyped issue on a type-capable org silently vanishes from
+    `feature`/`maintenance` mode — `story` mode is unaffected, which is why the
+    gap went unnoticed on orgs with zero typed issues. `fallback_count`, when
+    passed a list, records the number of each issue routed this way so the
     caller can report it rather than let it pass silently.
     """
     if mode == 'story':
         return list(candidates)
+    wanted_kinds = (FALLBACK_FEATURE_KINDS if mode == 'feature'
+                    else FALLBACK_MAINTENANCE_KINDS)
     result = []
     for c in candidates:
         native_type = type_map.get(c['number'])
         classification = classification_map.get(c['number']) if classification_map else None
-        used_fallback = False
         if not native_type:
+            # No native type: route on the kind the issue claims, which is the
+            # answer the label path would give.
             kind, _source = declared_kind(c.get('title'), c.get('labels'), project_map)
-            if not kind:
-                continue  # genuinely unclassifiable: no native type, label, or title prefix
-            mapped = NATIVE_TYPE_MAP.get(kind)
-            if not mapped:
-                continue
-            native_type = mapped['type']
-            classification = mapped['classification']
-            used_fallback = True
+            if kind in wanted_kinds:
+                result.append(c)
+                if fallback_count is not None:
+                    fallback_count.append(c['number'])
+            continue
         if mode == 'feature':
             if native_type in NATIVE_FEATURE_TYPES:
                 result.append(c)
-                if used_fallback and fallback_count is not None:
-                    fallback_count.append(c['number'])
         elif mode == 'maintenance':
             if native_type in NATIVE_MAINTENANCE_TYPES:
                 result.append(c)
-                if used_fallback and fallback_count is not None:
-                    fallback_count.append(c['number'])
             elif native_type in NATIVE_MAINTENANCE_CLASSIFIABLE_TYPES:
-                if classification_map is None and not used_fallback:
+                # A `Feature` is maintenance only when its Classification says
+                # so. With no Classification field to read, keep it: a missed
+                # candidate is worse than a stray one, and the audit reports
+                # the missing value separately.
+                if classification_map is None or classification in MAINTENANCE_CLASSIFICATIONS:
                     result.append(c)
-                elif classification in MAINTENANCE_CLASSIFICATIONS:
-                    result.append(c)
-                    if used_fallback and fallback_count is not None:
-                        fallback_count.append(c['number'])
     return result
 
 
@@ -340,6 +352,52 @@ CLASSIFICATION_OPTIONS = (
     'Security', 'Tech Debt', 'Architecture', 'Integration', 'Spike', 'Chore',
     'Documentation', 'Accessibility',
 )
+
+# The only Classification values that contradict the kind an issue claims to
+# be. `NATIVE_TYPE_MAP` names a *default* classification per kind; almost every
+# other value is a legitimate refinement rather than a disagreement, so the
+# audit states what cannot be true instead of enumerating what may.
+#
+# Most of the field says which *area* the work touches — Security, Performance,
+# Accessibility, Documentation, Integration — and any kind of work can touch
+# any area. Real backlogs are full of accessibility debt, documentation debt
+# and security debt, all correctly labelled. Only two small groups say what
+# kind of *change* it is, and those are the ones that can conflict:
+#
+#   `Bug Fix` / `Regression`  — something worked, or should have, and does not.
+#   `New Feature` / `Enhancement` — capability that was not there before.
+#
+# A story is not a regression; a bug is not a new feature; tech debt is by
+# definition not new capability. Everything else is left alone. Comparing
+# against the default instead produced eleven findings on one real backlog and
+# every one of them was wrong, which is worse than no check at all: it teaches
+# the reader to skip the output.
+_DEFECT_CLASSIFICATIONS = frozenset({'Bug Fix', 'Regression'})
+_NEW_WORK_CLASSIFICATIONS = frozenset({'New Feature', 'Enhancement'})
+
+INCOMPATIBLE_CLASSIFICATIONS = {
+    'story':        _DEFECT_CLASSIFICATIONS,
+    'feature':      _DEFECT_CLASSIFICATIONS,
+    'epic':         _DEFECT_CLASSIFICATIONS,
+    'bug':          _NEW_WORK_CLASSIFICATIONS,
+    'security':     _NEW_WORK_CLASSIFICATIONS,
+    'tech debt':    _NEW_WORK_CLASSIFICATIONS,
+    'architecture': _NEW_WORK_CLASSIFICATIONS,
+    'chore':        _NEW_WORK_CLASSIFICATIONS,
+}
+
+
+def classification_conflicts(kind, values):
+    """The values on `kind` that contradict it, or [] when none do.
+
+    A kind with no rule conflicts with nothing: the audit should not invent one
+    for a kind this module does not model.
+    """
+    barred = INCOMPATIBLE_CLASSIFICATIONS.get(str(kind or '').lower())
+    if not barred:
+        return []
+    return [v for v in values if v in barred]
+
 
 # Purpose key → default org field name, and the field's data type. The data
 # type decides which mutation shape a value needs, so it belongs next to the
@@ -906,9 +964,7 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
                          'detail': "native type is '%s' but the %s says '%s', "
                                    "which is '%s'" % (native, source, kind, expected)})
 
-    # Field values. Every field the org defines is checked, because a field
-    # nobody fills is indistinguishable from one nobody needed until someone
-    # looks.
+    # The field values the issue already carries, by field name.
     have = {}
     for node in (issue.get('issueFieldValues') or {}).get('nodes') or []:
         name = (node.get('field') or {}).get('name')
@@ -928,37 +984,40 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
     if kind:
         class_name = resolve_field_name('field-type', project_fields)
         current = have.get(class_name)
-        expected = (default_classification({'kind': kind}) or [None])[0]
-        if _is_supplied(current) and expected:
+        if _is_supplied(current):
             values = current if isinstance(current, list) else [current]
-            if expected not in values:
+            conflicts = classification_conflicts(kind, values)
+            if conflicts:
                 gaps.append({'kind': 'classification-contradiction',
-                             'detail': "%s is %r but the %s says '%s', which is "
-                                       "'%s'" % (class_name, current, source,
-                                                 kind, expected)})
+                             'detail': "%s is %s, which cannot be true of a '%s'"
+                                       ' (the %s says it is one)'
+                                       % (class_name, ', '.join(repr(c) for c in conflicts),
+                                          kind, source)})
 
+    # Only the mandatory four. The other fields an org defines — a start date, a
+    # target date, a free-text parent or status reason — are situational, and
+    # the backfill has never proposed a value for one. Reporting them anyway
+    # made every issue in a fully classified backlog come back as "missing
+    # metadata": 275 findings across 69 issues on one real repo, every one of
+    # them a field nobody was ever going to fill. An audit that cannot come
+    # back clean cannot be used as a check, which is what it is for.
     proposed_fields = {}
-    for purpose in FIELD_NAME_DEFAULTS:
+    for purpose in MANDATORY_FIELD_KEYS:
         concrete = resolve_field_name(purpose, project_fields)
         if concrete not in field_map:
             continue
         if _is_supplied(have.get(concrete)):
-            if purpose in MANDATORY_FIELD_KEYS:
-                # Carry the value the issue already holds into the proposal.
-                # `issue-apply` refuses a spec that leaves a mandatory field
-                # blank, and it does not first check whether the issue is
-                # already carrying one — so an entry proposed for some other
-                # reason entirely, a parent or an edge, was rejected for
-                # "missing" a value that was sitting on the issue. Repeating
-                # it makes the write a no-op and the spec round-trip.
-                proposed_fields[purpose] = have[concrete]
+            # Carry the value the issue already holds into the proposal.
+            # `issue-apply` refuses a spec that leaves a mandatory field blank,
+            # and it does not first check whether the issue is already carrying
+            # one — so an entry proposed for some other reason entirely, a
+            # parent or an edge, was rejected for "missing" a value that was
+            # sitting on the issue. Repeating it makes the write a no-op and
+            # the spec round-trip.
+            proposed_fields[purpose] = have[concrete]
             continue
         gaps.append({'kind': 'missing-field',
                      'detail': "no value for '%s'" % concrete})
-        if purpose not in MANDATORY_FIELD_KEYS:
-            # Situational by nature — a start date nobody set is not a gap the
-            # backfill should invent a value for.
-            continue
         if purpose == 'field-type' and kind:
             proposed_fields[purpose] = default_classification({'kind': kind})
         elif purpose == 'field-priority':

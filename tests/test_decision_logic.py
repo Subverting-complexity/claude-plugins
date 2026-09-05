@@ -1128,6 +1128,38 @@ class TestNativeTypeFiltering(unittest.TestCase):
         result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)
         self.assertEqual(result, [])
 
+    def test_an_untyped_chore_is_maintenance_like_a_typed_one(self):
+        """Routing an untyped issue through its would-be native type put a
+        `[CHORE]` in **feature** mode while a natively typed `Chore` went to
+        maintenance — the same issue in opposite pools depending only on
+        whether anyone had typed it yet."""
+        candidates = [dict(_issue(99, []), title='[CHORE] rotate the keys')]
+        self.assertEqual(
+            [c['number'] for c in
+             filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)], [99])
+        self.assertEqual(filter_by_native_type(candidates, 'feature', self.TYPE_MAP), [])
+
+    def test_an_untyped_feature_is_a_feature_candidate(self):
+        """`[FEATURE]` mapped to a native type that matched neither pool, so it
+        vanished from both modes without a word."""
+        candidates = [dict(_issue(99, []), title='[FEATURE] add export')]
+        self.assertEqual(
+            [c['number'] for c in
+             filter_by_native_type(candidates, 'feature', self.TYPE_MAP)], [99])
+
+    def test_an_untyped_epic_is_in_neither_pool(self):
+        """An epic is a container for work, not work — matching the native
+        `Epic`, which `NATIVE_FEATURE_TYPES` also excludes."""
+        candidates = [dict(_issue(99, []), title='[EPIC] payments')]
+        self.assertEqual(filter_by_native_type(candidates, 'feature', self.TYPE_MAP), [])
+        self.assertEqual(filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP), [])
+
+    def test_an_untyped_spike_is_a_feature_candidate(self):
+        candidates = [dict(_issue(99, []), title='[SPIKE] measure the parser')]
+        self.assertEqual(
+            [c['number'] for c in
+             filter_by_native_type(candidates, 'feature', self.TYPE_MAP)], [99])
+
     def test_fallback_count_records_only_fallback_classified_numbers(self):
         fallback = []
         candidates = [_issue(1, []), _issue(99, ['type-story'])]
@@ -1700,7 +1732,52 @@ class TestAuditIssue(unittest.TestCase):
                            _field_value('Classification', ['New Feature'])]})
         result = wf_core.audit_issue(issue, {'Classification': {}})
         self.assertEqual(_kinds(result), ['classification-contradiction'])
-        self.assertIn('Tech Debt', result['gaps'][0]['detail'])
+        self.assertIn('New Feature', result['gaps'][0]['detail'])
+        self.assertIn('tech debt', result['gaps'][0]['detail'])
+
+    def test_a_classification_that_is_merely_not_the_default_is_not_a_gap(self):
+        """`New Feature` is a story's default, not the only thing it may be.
+
+        Comparing against the default alone reported every deliberate choice as
+        a contradiction — eleven findings on one real backlog, all eleven wrong.
+        """
+        for value in ('Enhancement', 'Documentation', 'Integration', 'Chore',
+                      'Performance', 'Accessibility', 'Spike'):
+            issue = _node(title='[STORY] do the thing',
+                          issueType={'name': 'User Story'},
+                          issueFieldValues={'nodes': [
+                              _field_value('Classification', [value])]})
+            result = wf_core.audit_issue(issue, {'Classification': {}})
+            self.assertEqual(_kinds(result), [], '%s should be allowed on a story' % value)
+
+    def test_debt_may_say_which_area_it_is_debt_in(self):
+        """Accessibility debt, documentation debt and security debt are all real.
+
+        Four such issues on one live backlog were reported as contradictions
+        because the check compared against `Tech Debt` and nothing else.
+        """
+        for value in ('Accessibility', 'Documentation', 'Security', 'Performance'):
+            issue = _node(title='[DEBT] tidy up', issueType={'name': 'Chore'},
+                          issueFieldValues={'nodes': [
+                              _field_value('Classification', [value])]})
+            result = wf_core.audit_issue(issue, {'Classification': {}}, type_capable=True,
+                                         type_map={'Chore': 'IT_chore'})
+            self.assertEqual(_kinds(result), [], '%s should be allowed on debt' % value)
+
+    def test_a_bug_classified_as_new_capability_is_a_gap(self):
+        issue = _node(title='[BUG] it breaks', issueType={'name': 'Bug'},
+                      issueFieldValues={'nodes': [
+                          _field_value('Classification', ['New Feature'])]})
+        result = wf_core.audit_issue(issue, {'Classification': {}})
+        self.assertEqual(_kinds(result), ['classification-contradiction'])
+
+    def test_a_story_classified_as_a_defect_is_still_a_gap(self):
+        """Narrowing the check must not silence the pairing it exists for."""
+        issue = _node(title='[STORY] do the thing', issueType={'name': 'User Story'},
+                      issueFieldValues={'nodes': [
+                          _field_value('Classification', ['Regression'])]})
+        result = wf_core.audit_issue(issue, {'Classification': {}})
+        self.assertEqual(_kinds(result), ['classification-contradiction'])
 
     def test_a_body_dependency_with_no_edge_is_proposed(self):
         issue = _node(body='## Dependencies\n\nBlocked by #3\n')
@@ -1732,11 +1809,29 @@ class TestAuditIssue(unittest.TestCase):
         self.assertEqual(fields['field-effort'], wf_core.SPEC_PLACEHOLDER)
         self.assertEqual(fields['field-origin'], wf_core.SPEC_PLACEHOLDER)
 
-    def test_a_situational_field_is_reported_but_not_proposed(self):
-        """A start date nobody set is not a value the backfill should invent."""
-        result = wf_core.audit_issue(_node(), {'Start date': {}})
-        self.assertEqual(_kinds(result), ['missing-field'])
+    def test_a_situational_field_is_not_a_gap(self):
+        """A start date nobody set is not missing metadata.
+
+        The backfill has never proposed a value for one, so reporting it only
+        ensured a fully classified backlog could never come back clean — 275
+        such findings across 69 issues on one real repo.
+        """
+        result = wf_core.audit_issue(_node(), {'Start date': {}, 'Target date': {},
+                                               'Parent': {}, 'Status reason': {}})
+        self.assertEqual(_kinds(result), [])
         self.assertNotIn('fields', result['proposed'])
+
+    def test_a_fully_classified_issue_reports_no_gaps(self):
+        """The whole point of an audit is that it can come back clean."""
+        issue = _node(title='[BUG] it breaks', issueType={'name': 'Bug'},
+                      issueFieldValues={'nodes': [
+                          _field_value('Priority', 'High'),
+                          _field_value('Effort', 'Medium'),
+                          _field_value('Classification', ['Bug Fix']),
+                          _field_value('Origin', 'Development')]})
+        result = wf_core.audit_issue(issue, dict(_AUDIT_FIELDS, **{
+            'Start date': {}, 'Target date': {}}))
+        self.assertEqual(_kinds(result), [])
 
     def test_the_proposed_entry_is_a_valid_apply_spec_once_filled(self):
         result = wf_core.audit_issue(_node(title='[BUG] it breaks'), _AUDIT_FIELDS)
