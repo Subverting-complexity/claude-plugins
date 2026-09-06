@@ -63,10 +63,12 @@ declare -A BODY_OVERRIDE=(
     ["github-workflow/skills/execute/SKILL.md"]=600
     # The multi-story orchestrator. Same 11 phases as execute, plus set
     # selection and the substitutions that let it reuse execute's review,
-    # merge and cleanup references rather than copy them. Body is 499 lines
-    # after the self-review fallback section; 520 is ~4.2% headroom, matching
-    # the calibration above.
-    ["github-workflow/skills/bulk-execute/SKILL.md"]=520
+    # merge and cleanup references rather than copy them. Body is 522 lines
+    # after narrowing the start-of-run claim sweep, whose two safety rules
+    # (untracked files only, issue claims only) have to sit beside the
+    # destructive command they constrain; 530 is ~1.5% headroom, tighter than
+    # the calibration above because this file has no slack left to give.
+    ["github-workflow/skills/bulk-execute/SKILL.md"]=530
 )
 
 # --- Helpers ----------------------------------------------------------------

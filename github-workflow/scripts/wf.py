@@ -2220,6 +2220,24 @@ def close_resolved(cfg, issue, pr_number):
 
 # ── board move + branch (--checkout) ─────────────────────────────────────────
 
+def best_effort(step, *args):
+    """Run one best-effort side effect. Returns (ok, message) and never raises.
+
+    The steps between the claim and the branch — the board move, the start
+    date — are cosmetic, and the branch is not. A story that is claimed with
+    no branch to work on is the worst outcome available here: the caller has
+    nothing to build in and someone has to reap the claim by hand. So an
+    unexpected failure inside one of these is reported in its own message and
+    the run carries on, exactly as a returned error would be.
+    """
+    try:
+        return step(*args)
+    except Exception as exc:  # noqa: BLE001 - deliberate: see docstring
+        label = getattr(step, '__name__', 'step').replace('_', ' ')
+        return False, '%s failed unexpectedly (%s: %s)' % (
+            label, type(exc).__name__, exc)
+
+
 def board_move_in_progress(cfg, number):
     """Move the issue to the In Progress column. Returns (moved, message)."""
     return board_move(cfg, number, 'In Progress')
@@ -2303,18 +2321,22 @@ def set_start_date(cfg, number):
     meta = (caps.get('field_map') or {}).get(name)
     if not meta:
         return False, 'the org does not define a %s field' % name
-    value, verr = wf_core.field_value_input(
-        meta, datetime.now(timezone.utc).strftime('%Y-%m-%d'))
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    value, verr = wf_core.field_value_input(meta, today)
     if verr:
         return False, verr
     ok, data, jerr = gh_json(['issue', 'view', str(number), '--repo',
                               '%s/%s' % (cfg['org'], cfg['repo']), '--json', 'id'])
     if not ok or not data or not data.get('id'):
         return False, 'could not read the issue node id (%s)' % jerr.strip()
-    applied, merr = set_issue_fields(data['id'], [value])
+    # Three values, not two: `set_issue_fields` answers (ok, node, err) like
+    # every other `_mutation_result` caller. Unpacking two raised ValueError
+    # *after* the claim, the label, the assignment and the board move had all
+    # landed, so the run looked failed and was not.
+    applied, _, merr = set_issue_fields(data['id'], [value])
     if not applied:
         return False, merr
-    return True, 'set %s to %s' % (name, value['dateValue'])
+    return True, 'set %s to %s' % (name, today)
 
 
 def checkout_branch(cfg, issue):
@@ -2683,12 +2705,13 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode, type_fallback=N
         result['siblings'] = siblings
 
     if args.checkout:
-        moved, board_msg = board_move_in_progress(cfg, selected['number'])
+        moved, board_msg = best_effort(board_move_in_progress, cfg,
+                                       selected['number'])
         result['board_moved'] = moved
         result['board_message'] = board_msg
         if not moved and board_msg != 'no board configured':
             eprint('wf: board move skipped — %s' % board_msg)
-        dated, date_msg = set_start_date(cfg, selected['number'])
+        dated, date_msg = best_effort(set_start_date, cfg, selected['number'])
         result['start_date_set'] = dated
         result['start_date_message'] = date_msg
         if getattr(args, 'no_branch', False):
