@@ -434,7 +434,8 @@ issues. If they accept:
    - `field-effort` comes from the story's size estimate: large → **High**,
      medium → **Medium**, small → **Low**.
    - `field-priority` is set only where the plan assigned one, and stays
-     dual-tracked with the `priority-*` label.
+     dual-tracked with the `priority-*` label. The field is what orders
+     `pick`; the label is the fallback for issues without one.
    - `blocked_by` writes a native edge **and** the body's `## Dependencies`
      prose, so the markers from step 2 stay authoritative.
 

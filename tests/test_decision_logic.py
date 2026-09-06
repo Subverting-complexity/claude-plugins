@@ -37,6 +37,7 @@ from wf_core import (  # noqa: E402
     detect_backlog_mode,
     filter_by_native_type,
     get_sprint_candidates,
+    is_maintenance_classification,
     parse_dependencies,
     plan_bulk_order,
     reconcile_review_labels,
@@ -1023,6 +1024,75 @@ class TestBoardConfigParsing(unittest.TestCase):
         self.assertIsNone(board['project_node_id'])
 
 
+class TestPriorityFieldOrdering(unittest.TestCase):
+    """The org's `Priority` field orders the pool; the label is the fallback.
+
+    Priority used to be dual-tracked -- the label decided pick order, the field
+    decided what the portal showed -- so setting Priority in the portal, which
+    is where a person actually sets it, changed the views and left the picker
+    reading a label nobody had touched. The field is the source of truth now.
+    """
+
+    def _pool(self, candidates, priority_map):
+        return [c['number'] for c in
+                select_pool(candidates, priority_map=priority_map)]
+
+    def test_the_field_outranks_the_label(self):
+        """#1 says low on its label and Urgent on its field: it goes first."""
+        candidates = [_issue(1, ['priority-low', 'status-ready']),
+                      _issue(2, ['priority-critical', 'status-ready'])]
+        self.assertEqual(self._pool(candidates, {1: 'Urgent'}), [1, 2])
+
+    def test_the_full_field_order_is_urgent_high_medium_low(self):
+        candidates = [_issue(n, ['status-ready']) for n in (1, 2, 3, 4)]
+        order = {1: 'Low', 2: 'Medium', 3: 'High', 4: 'Urgent'}
+        self.assertEqual(self._pool(candidates, order), [4, 3, 2, 1])
+
+    def test_an_issue_with_no_field_value_falls_back_to_its_label(self):
+        """Mixed backlogs are the normal case mid-migration, not an error."""
+        candidates = [_issue(1, ['status-ready']),                     # Urgent, field
+                      _issue(2, ['priority-critical', 'status-ready']),  # label only
+                      _issue(3, ['priority-low', 'status-ready'])]
+        self.assertEqual(self._pool(candidates, {1: 'Medium'}), [2, 1, 3])
+
+    def test_the_option_name_is_matched_case_insensitively(self):
+        candidates = [_issue(1, ['status-ready']), _issue(2, ['status-ready'])]
+        self.assertEqual(self._pool(candidates, {2: 'urgent'}), [2, 1])
+
+    def test_an_unrecognised_option_falls_back_to_the_label(self):
+        """An org that renamed its options is not silently unprioritised."""
+        candidates = [_issue(1, ['priority-low', 'status-ready']),
+                      _issue(2, ['priority-critical', 'status-ready'])]
+        self.assertEqual(self._pool(candidates, {1: 'P0'}), [2, 1])
+
+    def test_no_map_at_all_leaves_label_ordering_untouched(self):
+        candidates = [_issue(1, ['priority-low', 'status-ready']),
+                      _issue(2, ['priority-critical', 'status-ready'])]
+        self.assertEqual(self._pool(candidates, None), [2, 1])
+
+    def test_every_field_option_the_tooling_writes_has_a_rank(self):
+        """The value `issue-apply` writes must be one the picker can order."""
+        for option in wf_core.PRIORITY_FIELD_OPTIONS.values():
+            self.assertIn(option.lower(), wf_core.PRIORITY_FIELD_RANK, option)
+
+
+class TestClassificationValues(unittest.TestCase):
+    """`Classification` is a multi-select, so a value is a list as often as a string."""
+
+    def test_a_single_maintenance_option_counts(self):
+        self.assertTrue(is_maintenance_classification('Tech Debt'))
+
+    def test_one_maintenance_option_among_several_counts(self):
+        self.assertTrue(is_maintenance_classification(['New Feature', 'Architecture']))
+
+    def test_a_list_with_no_maintenance_option_does_not(self):
+        self.assertFalse(is_maintenance_classification(['New Feature']))
+
+    def test_an_empty_value_does_not(self):
+        self.assertFalse(is_maintenance_classification([]))
+        self.assertFalse(is_maintenance_classification(None))
+
+
 class TestNativeTypeFiltering(unittest.TestCase):
     """Native issue type filtering for type-capable orgs.
 
@@ -1084,6 +1154,37 @@ class TestNativeTypeFiltering(unittest.TestCase):
         result = filter_by_native_type(candidates, 'maintenance',
                                         self.TYPE_MAP, classification_map)
         self.assertEqual([c['number'] for c in result], [3, 4])
+
+    def test_a_multi_select_classification_is_read_as_a_list(self):
+        """The live API returns Classification as an option list, not a string."""
+        classification_map = {3: ['Architecture', 'New Feature'],
+                              4: ['New Feature']}
+        candidates = [_issue(3, []), _issue(4, [])]
+        result = filter_by_native_type(candidates, 'maintenance',
+                                       self.TYPE_MAP, classification_map)
+        self.assertEqual([c['number'] for c in result], [3])
+
+    def test_an_unclassified_feature_is_routed_by_its_own_declared_kind(self):
+        """The field exists but this issue has none, so read what it claims.
+
+        Dropping it would repeat the untyped-issue bug: an issue that is
+        plainly tech debt vanishing from maintenance mode because a field
+        nobody filled in says nothing about it.
+        """
+        classification_map = {4: ['New Feature']}
+        candidates = [_issue(3, ['type-debt']), _issue(4, [])]
+        fallback = []
+        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP,
+                                       classification_map, None, fallback)
+        self.assertEqual([c['number'] for c in result], [3])
+        self.assertEqual(fallback, [3])
+
+    def test_an_unclassified_feature_claiming_nothing_is_still_excluded(self):
+        classification_map = {4: ['New Feature']}
+        candidates = [_issue(3, []), _issue(4, [])]
+        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP,
+                                       classification_map)
+        self.assertEqual(result, [])
 
     def test_candidate_without_type_info_excluded(self):
         candidates = [_issue(99, [])]

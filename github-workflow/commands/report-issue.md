@@ -228,8 +228,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/report-spec.json
   type and the `Classification` value together, so neither is chosen here.
 - `field-priority` is the Step 3 priority as the field names it: Critical
   becomes **Urgent**, the rest keep their names. **Keep** the `priority-*`
-  label as well — priority is dual-tracked, the label orders selection and
-  the field drives the portal's views.
+  label as well — priority is dual-tracked: the field orders selection and
+  drives the portal's views, and the label is the fallback for issues the
+  field was never set on.
 - `field-effort` is your scope assessment: **Low** for a targeted fix in a
   few files, **Medium** for moderate scope with some investigation, **High**
   for broad impact, architectural change or significant unknowns.
