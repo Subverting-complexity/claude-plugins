@@ -180,3 +180,73 @@ jobs:
             echo "OK: $plugin_dir ($name@$version)"
           done
           exit $status
+
+      - name: Check the marketplace manifest
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+
+          MARKET_KEYS = {'name', 'owner', 'metadata', 'plugins'}
+          ENTRY_KEYS = {'name', 'source', 'description', 'version', 'author',
+                        'homepage', 'repository', 'license', 'category',
+                        'keywords', 'strict'}
+
+          status = 0
+          failed = 0
+          def fail(msg):
+              global status, failed
+              print('FAIL: ' + msg)
+              status = 1
+              failed += 1
+
+          path = '.claude-plugin/marketplace.json'
+          market = json.load(open(path, encoding='utf-8'))
+
+          for key in ('name', 'owner', 'plugins'):
+              if not market.get(key):
+                  fail(f'{path} missing {key!r}')
+
+          extra = sorted(set(market) - MARKET_KEYS)
+          if extra:
+              fail(f'{path} has unrecognized key(s): {", ".join(extra)} - Claude Code ignores these at load time')
+
+          listed = set()
+          for entry in market.get('plugins', []):
+              before = failed
+              name = entry.get('name', '')
+              source = entry.get('source', '')
+              if not name or not source or not entry.get('description'):
+                  fail(f'{path} entry {name or "<unnamed>"} needs name, source and description')
+                  continue
+              listed.add(name)
+
+              extra = sorted(set(entry) - ENTRY_KEYS)
+              if extra:
+                  fail(f'{path} entry {name} has unrecognized key(s): {", ".join(extra)}')
+
+              manifest = os.path.join(source, '.claude-plugin', 'plugin.json')
+              if not os.path.isfile(manifest):
+                  fail(f'{path} entry {name} points at {source}, which has no plugin.json')
+                  continue
+
+              declared = json.load(open(manifest, encoding='utf-8')).get('name', '')
+              if declared != name:
+                  fail(f'{path} entry {name} points at a plugin that calls itself {declared!r} - an install would resolve nothing')
+
+              # A version here would be a second source of truth that goes stale
+              # the moment plugin.json is bumped without it.
+              if 'version' in entry:
+                  fail(f'{path} entry {name} carries a version; versions live in {manifest} alone')
+
+              if failed == before:
+                  print(f'OK: {name} -> {source}')
+
+          on_disk = {d for d in os.listdir('.')
+                     if os.path.isfile(os.path.join(d, '.claude-plugin', 'plugin.json'))}
+          for missing in sorted(on_disk - listed):
+              fail(f'{missing} ships a plugin.json but is not listed in {path}, so nobody can install it')
+
+          sys.exit(status)
+          PY
+

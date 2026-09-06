@@ -1,28 +1,55 @@
 {
   "name": "subverting-complexity",
   "owner": {
-    "name": "Subverting Complexity"
+    "name": "Subverting Complexity",
+    "url": "https://github.com/Subverting-complexity"
   },
-  "description": "Development workflow plugins by Subverting Complexity",
-  "repository": "https://github.com/Subverting-complexity/claude-plugins",
-  "license": "MIT",
-  "keywords": [
-    "workflow",
-    "automation",
-    "development",
-    "code-review",
-    "architecture"
-  ],
+  "metadata": {
+    "description": "Development workflow plugins by Subverting Complexity: one for GitHub-backed work, one for work that stays on your machine."
+  },
   "plugins": [
     {
       "name": "github-workflow",
       "source": "./github-workflow",
-      "description": "End-to-end GitHub development workflow"
+      "description": "Takes a GitHub story end to end: picks it off the backlog, plans, builds, runs the quality gate, opens a pull request, has that pull request reviewed by agents in a fresh context, and merges it where auto-merge is enabled.",
+      "author": {
+        "name": "Subverting Complexity"
+      },
+      "homepage": "https://github.com/Subverting-complexity/claude-plugins/blob/main/github-workflow/README.md",
+      "repository": "https://github.com/Subverting-complexity/claude-plugins",
+      "license": "MIT",
+      "category": "workflow",
+      "keywords": [
+        "github",
+        "workflow",
+        "automation",
+        "code-review",
+        "backlog",
+        "sprint",
+        "story",
+        "pr"
+      ]
     },
     {
       "name": "local-workflow",
       "source": "./local-workflow",
-      "description": "Project-agnostic plugin for local development work"
+      "description": "Plans, writes, verifies and commits a task on your machine. No issue tracker and no pull request, plus architecture design and audit, feature discovery, debugging, security audit and documentation.",
+      "author": {
+        "name": "Subverting Complexity"
+      },
+      "homepage": "https://github.com/Subverting-complexity/claude-plugins/blob/main/local-workflow/README.md",
+      "repository": "https://github.com/Subverting-complexity/claude-plugins",
+      "license": "MIT",
+      "category": "workflow",
+      "keywords": [
+        "workflow",
+        "coding",
+        "architecture",
+        "code-review",
+        "user-story",
+        "documentation",
+        "tone"
+      ]
     }
   ]
 }
