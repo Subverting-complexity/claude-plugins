@@ -33,6 +33,11 @@ paths, identifiers and configuration values where they are needed.
 
 A very small story may be a Summary and acceptance criteria alone.
 
+Write each paragraph on **one single line**. Never hard-wrap prose at 72,
+80 or any other column: the tracker reflows markdown to the reader's own
+width, so wrapping only fixes the breaks where they suit nobody and makes
+the story painful to edit later.
+
 ## Sections to add only when they carry information
 
 Each of these is optional. An empty or obvious one is worse than none,
@@ -48,7 +53,7 @@ and none of them may repeat what the Summary already said.
 | `## Verification` | Verification needs more than the acceptance criteria convey: a physical device, several environments, a regression check, specific commands. |
 | `## Dependencies` | Real ordering constraints only. `Depends on #N` / `Blocked by #N`, plus external dependencies. |
 | `## Out of scope` | There is a realistic risk the work expands into something that should stay separate. |
-| `## Manual step` | Part of the work cannot be done by the agent or developer doing the rest. Say exactly what a person must do, and why. |
+| `## Manual step` | The story cannot be finished until a person does something no agent can do. Say exactly what, and why. A story with this section also takes the `[Manual]` title prefix and the `status-blocked` label, so it is visible in a list and never picked up by an agent that cannot finish it. Work a person must do that belongs to a *different* story goes under `## Dependencies` instead. |
 
 Do not reach for these out of habit, and do not add a "Definition of
 done" section: the acceptance criteria and the project's quality gate

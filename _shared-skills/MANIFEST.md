@@ -28,7 +28,7 @@ procedure is in [`CLAUDE.md`](../CLAUDE.md#how-to-edit).
 
 | Directory | Deployed to | Notes |
 |-----------|-------------|-------|
-| `_shared/` | `{plugin}/skills/_shared/` | Banned patterns and wording standards, shared across all skills |
+| `_shared/` | `{plugin}/skills/_shared/` | Banned patterns, the wording standard, and `body-standard.md` — the single standard behind every issue body, pull request description and comment. `pr-description` and github-workflow's `writing-github-issues` are its two entry points and hold only what differs between them |
 | `references/` | `{plugin}/references/` | Story template, shared across plugins |
 
 ## Not shared (and why)

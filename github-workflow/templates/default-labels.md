@@ -197,7 +197,7 @@ the label map in `ClaudeProject.md`; defaults below.
 | `needs-refinement` | `needs-refinement` | `D4C5F9` | Needs a refinement session before pickup | feature-discovery / report-issue |
 | `status-in-progress` | `status-in-progress` | `1D76DB` | An agent is actively working this issue now | execute |
 | `status-parked` | `status-parked` | `C5DEF5` | Deliberately set aside by a human, will resume | human / update via park |
-| `status-blocked` | `status-blocked` | `B60205` | Cannot proceed — external or dependency blocker | block-story |
+| `status-blocked` | `status-blocked` | `B60205` | Cannot proceed — external or dependency blocker, including a step only a person can do | block-story / any command filing a `[Manual]` issue |
 | `status-in-review` | `status-in-review` | `FBCA04` | PR is open, awaiting review / merge | execute |
 | `status-needs-attention` | `status-needs-attention` | `D93F0B` | A run failed or errored — needs human intervention | execute (error/timeout) |
 

@@ -7,6 +7,37 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 7.1.0 / local-workflow 2.13.0
+
+- **One standard behind every issue and pull request body.** The rules
+  that were half-stated in `pr-description` and half in
+  `writing-github-issues` now live once, in
+  `skills/_shared/body-standard.md`: the section vocabulary, the Summary
+  and bullet rules, the title rules, the style, and what never appears.
+  Those two skills are now entry points over it and hold only what
+  genuinely differs, so an issue and a pull request read the same way.
+
+- **Bodies are never hard-wrapped.** Each paragraph is one line, however
+  long it runs. GitHub reflows markdown to whoever is reading it, so
+  wrapping at 72 or 80 columns only fixed the breaks where they suited
+  nobody and made every later edit rewrap a paragraph. The worked
+  examples in both skills were themselves wrapped, which is what taught
+  the habit; they are not any more.
+
+- **A pull request body has a fixed shape.** `## Summary`, `## Changes`,
+  `## Test plan`, in that order, every time, with `Closes #N` at the end
+  and no invented headings. Previously the body was a `##` section per
+  component, so no two pull requests looked alike. `execute` and
+  `bulk-execute` now build their bodies from that shape rather than
+  describing their own.
+
+- **Issues a person has to finish are marked uniformly** (github-workflow):
+  `[Manual]` at the front of the title, the existing `status-blocked`
+  label, and a `## Manual step` section saying what has to be done and
+  why. The three go together. `[Manual]` is the only title prefix the
+  workflow keeps, because nothing native records that an issue needs a
+  human, and story selection already skips `status-blocked`.
+
 ## local-workflow 2.12.0
 
 - **`feature-discovery` writes one spec.** Where the host plugin provides

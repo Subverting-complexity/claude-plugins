@@ -21,6 +21,11 @@ a skill, with the story shape in `references/story-template.md`): a
 information. Ask which one you are producing if it is not clear from the
 request.
 
+Whichever destination it has, the story is a tracker body, so
+`_shared/body-standard.md` applies: standard section names, plain
+sentences, exact identifiers, and **each paragraph on one unwrapped
+line**. Never break prose at 72, 80 or any other column.
+
 Write user stories that give developers a clear picture of what to build and why. Every story follows the same structure so readers know exactly where to look: a business-facing Overview and an implementation-focused Technical section.
 
 ## Output Format

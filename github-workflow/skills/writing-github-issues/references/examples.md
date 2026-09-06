@@ -134,10 +134,6 @@ Update the configuration, apply the database migrations, deploy sandbox first an
 - Apply migrations to sandbox first, then production.
 - Deploy sandbox first, then production.
 
-## Manual step
-
-An organisation owner must grant the Cloudflare GitHub App access before automatic GitHub deployments can be enabled. This is not required for the first manual deploy.
-
 ## Verification
 
 - Both health endpoints respond from the real Workers.
@@ -150,18 +146,53 @@ An organisation owner must grant the Cloudflare GitHub App access before automat
 - Apple and Google private credentials.
 - Store product configuration.
 - A dedicated API domain.
+- Enabling automatic GitHub deployments, which needs the access granted in #61. The first deploy is manual.
 ```
 
 Left out: provisioning history, resource-by-resource background and previous limitations that no longer affect the work.
+
+The deploy itself is automatable, so this issue takes no `[Manual]` prefix. The one step a person has to do is separate work, and it lives in its own issue below.
+
+---
+
+## 5. A step only a person can do
+
+### Title
+
+[Manual] Grant the Cloudflare GitHub App access to the organisation
+
+### Labels
+
+`status-blocked`, plus the usual priority label.
+
+### Body
+
+```markdown
+## Summary
+
+Automatic GitHub deployments for the Cadence API cannot be enabled until the Cloudflare GitHub App has access to the organisation. Deploys are manual until then.
+
+## Manual step
+
+An organisation owner must install the Cloudflare GitHub App on the `Subverting-complexity` organisation and grant it access to the `cadence-api` repository. Only an owner can approve a third-party app, so no agent and no developer without owner rights can do this.
+
+## Acceptance criteria
+
+- The Cloudflare GitHub App is installed on the organisation with access to `cadence-api`.
+- A push to `main` triggers a Cloudflare deployment.
+```
+
+The three markers go together: `[Manual]` in the title, `status-blocked` on the issue, and a `## Manual step` section saying what a person must do and why.
 
 ---
 
 ## Pattern
 
-All 4 examples:
+All 5 examples:
 
 - Start with the actual problem.
 - Use only the sections that add information.
 - Keep uncertainty when the source is uncertain.
 - Remove investigation history and proof of work.
 - Avoid repeating the same point in multiple sections.
+- Put each paragraph on one line, with no hard wrapping.

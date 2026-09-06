@@ -1003,6 +1003,11 @@ def strip_title_prefix(title):
     opens with a bracket meaning something else -- `[v2]`, `[iOS]` -- is left
     exactly as written, because guessing there would silently edit somebody's
     words.
+
+    `[Manual]` is deliberately not a kind and must never become one. It marks
+    an issue a person has to finish, which no native field records, so the
+    title is the only place it can live. Adding it to TITLE_PREFIX_KINDS would
+    strip it off every issue that needs it.
     """
     match = _TITLE_PREFIX_RE.match(title or '')
     if not match:

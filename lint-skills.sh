@@ -159,6 +159,43 @@ else
     done
 fi
 
+# Body-writing wiring: _shared/body-standard.md is the single standard behind
+# every body written into a tracker or forge — an issue, a pull request
+# description, a comment. Two entry points sit on it (pr-description for pull
+# requests, writing-github-issues for issues) and hold only what differs. That
+# split only holds if both entry points, the wording standard that defers to
+# it, and the write-mechanics template all point at it. Add a file whenever a
+# new path starts composing a body; do not delete an entry to make the gate
+# pass.
+declare -a body_standard_copies=(
+    "github-workflow/skills/_shared/body-standard.md"
+    "local-workflow/skills/_shared/body-standard.md"
+)
+declare -a body_authoring_files=(
+    "github-workflow/skills/pr-description/SKILL.md"
+    "local-workflow/skills/pr-description/SKILL.md"
+    "github-workflow/skills/writing-github-issues/SKILL.md"
+    "github-workflow/templates/body-file-write.md"     # the write mechanics
+    "github-workflow/skills/_shared/wording-standard.md"  # states the precedence
+    "local-workflow/skills/_shared/wording-standard.md"
+)
+
+for f in "${body_standard_copies[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is missing — the body standard every issue and PR body follows"
+        status=1
+    fi
+done
+for f in "${body_authoring_files[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is listed as a body-authoring path but does not exist"
+        status=1
+    elif ! grep -qF 'body-standard.md' "$f"; then
+        echo "FAIL: $f composes issue or PR bodies but does not cite body-standard.md"
+        status=1
+    fi
+done
+
 # A repository can publish an issue template that GitHub pre-fills in the web
 # UI but that --body-file silently bypasses. The paths that CREATE an issue
 # have to resolve it, or every issue the plugin files ignores the project's own

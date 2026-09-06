@@ -387,7 +387,14 @@ issues. If they accept:
    `references/story-template.md`). The interview produces far more
    material than a story needs, so this is where most of it gets left
    behind: no discovery history, no restating the Summary under another
-   heading, and no section that would be empty.
+   heading, and no section that would be empty. Write each paragraph on
+   one unwrapped line (`_shared/body-standard.md`).
+
+   A story that cannot be finished without a person, because it needs a
+   permission or an approval no agent can give, is marked three ways
+   together: `[Manual]` at the front of the title, the `status-blocked`
+   label in place of the usual lifecycle label, and a `## Manual step`
+   section saying what has to be done and why.
 
    Check once, before the first issue, whether the repository publishes
    an issue template, either its own or one inherited from the

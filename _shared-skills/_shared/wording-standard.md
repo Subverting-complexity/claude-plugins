@@ -94,18 +94,24 @@ much as to free-text prose. The option text is often all an autonomous
 reader sees, so it must carry the problem and the proposed solution on
 its own.
 
-## Exception: GitHub issue titles and bodies
+## Exception: issue and pull request bodies
 
-A plugin that files GitHub issues carries a `writing-github-issues`
-skill (github-workflow does). Where it exists, it governs the title and
-body of an issue: which sections there are, how long the body runs, and
-what gets cut. An issue is read by someone about to do the work, so it
-is shorter than this standard would otherwise produce, and it leaves out
-the investigation that found the problem.
+Anything written into a tracker or forge field — an issue body, a pull
+request description, a comment on one — follows
+`_shared/body-standard.md` instead. It decides the sections, the length,
+the title, and the rule that each paragraph is one unwrapped line. Such a
+body is read by someone about to do or review the work, so it is shorter
+than this standard would otherwise produce, and it leaves out the
+investigation that found the problem.
 
-Everything else you write still follows this standard, including the
-comment you post on an issue, and what you tell the person about the
-issue you filed. `_shared/banned-patterns.md` applies to all of it, and
+Two entry points sit on that standard and hold only what differs:
+`skills/pr-description/SKILL.md` for a pull request, and
+`writing-github-issues` for a GitHub issue, in whichever plugin ships it
+(github-workflow does).
+
+Everything else you write still follows this standard, including what you
+tell the person about the issue you filed or the pull request you opened.
+`_shared/banned-patterns.md` applies to all of it, and
 `skills/user-facing-communication/SKILL.md` still shapes the reply.
 
 ## Before you send anything

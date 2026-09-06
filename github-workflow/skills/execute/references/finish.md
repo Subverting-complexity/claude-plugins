@@ -51,14 +51,35 @@ light.
    gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}
    ```
 
-   - Title under 70 chars
+   The body has the fixed shape in `skills/pr-description/SKILL.md`. Do not
+   invent a different one per story:
+
+   ```markdown
+   ## Summary
+
+   ## Changes
+
+   ## Test plan
+   ```
+
+   - Title under 70 chars.
+   - `## Summary` is two to four plain sentences on what was built and why,
+     written so a reviewer who has not seen the issue can follow it.
+   - `## Changes` is one bullet per change, each on its own single line,
+     grouped under `###` sub-headings only when the story touched more than
+     three areas.
+   - `## Test plan` says how it was verified and which acceptance criteria
+     that covers.
    - **Always** close the associated issue: each linked issue on its own
-     line as `Closes #42`. A story PR must never omit this.
-   - Include a test plan section
-   - Summary of what was built and acceptance criteria addressed
-   - If the **gate-failed flag** is set (`test -f .claude/gate-failed.flag`,
-     written in Phase 5), prepend a "Quality Gate Failed" section with the
-     last error output.
+     line as `Closes #42`, at the very end of the body, under no heading. A
+     story PR must never omit this.
+   - Add no other top-level section, except `## Manual step` when finishing
+     the story needs a person, and `## Quality gate failed` when the
+     **gate-failed flag** is set (`test -f .claude/gate-failed.flag`,
+     written in Phase 5), which goes above `## Summary` with the last error
+     output.
+   - Write every paragraph on one line. `templates/body-file-write.md` has
+     the no-wrapping rule.
 
 2b. Validate the PR body — read it back and apply the corruption test and
    retry in `templates/body-file-write.md` (**Validate** + **Retry**). For

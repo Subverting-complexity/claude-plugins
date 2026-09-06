@@ -64,18 +64,36 @@ not "Fix #41 and #43 and #47". A reader scanning the pull request list
 should be able to tell what changed without opening it.
 
 **Body.** A bulk pull request asks more of a reviewer than a single-story
-one, so the body has to do more work. In this order:
+one, so it adds one section to the fixed shape in
+`skills/pr-description/SKILL.md` and keeps everything else the same. Use
+these headings, with these names, in this order, on every bulk pull
+request:
 
-1. **What this change is** — two or three sentences on the shared thread:
-   what the stories have in common and why they are one change rather than
-   three. This is the paragraph that makes the diff readable, and it is the
-   one most worth writing carefully.
-2. **The stories** — a table, each row giving the issue **number and
+```markdown
+## Summary
+
+## Stories
+
+## Changes
+
+## Test plan
+```
+
+1. **`## Summary`** — two or three sentences on the shared thread: what the
+   stories have in common and why they are one change rather than three.
+   This is the paragraph that makes the diff readable, and it is the one
+   most worth writing carefully.
+2. **`## Stories`** — a table, each row giving the issue **number and
    title** together, plus one line on what it asked for. Never a bare list
    of numbers: a reader should not have to open three issues to find out
    what the pull request does.
-3. **`Closes #N` lines** — one per built story, each on its own line. This
-   is what settles the issues on merge, so it must be exact:
+3. **`## Changes`** — a `###` sub-section per story, in build order, saying
+   what was implemented and which acceptance criteria it answers.
+4. **`## Test plan`** — how to verify the change, with the per-story steps
+   kept distinguishable so a tester can check each story separately.
+5. **`Closes #N` lines** — at the very end of the body, one per built
+   story, each on its own line and under no heading. This is what settles
+   the issues on merge, so it must be exact:
    - Every built story gets one. A missing line leaves that issue open
      after the merge, assigned and labelled `status-in-review`, with
      nothing left to pick it up.
@@ -83,14 +101,14 @@ one, so the body has to do more work. In this order:
      dropped or unfinished story closes it on merge with no code behind it,
      which is the worst outcome this workflow can produce. Read
      `.claude/bulk-set.json` rather than trusting memory here.
-4. **What changed, per story** — a short section each, in build order,
-   saying what was implemented and which acceptance criteria it answers.
-5. **Test plan** — how to verify the change, with the per-story steps kept
-   distinguishable so a tester can check each story separately.
-6. **Quality Gate Failed** — only when `.claude/gate-failed.flag` exists
-   (`test -f .claude/gate-failed.flag`, written in Phase 5). Prepend the
-   section with the last error output, and say which stories were built and
-   which were released back to the backlog because of it.
+6. **`## Quality gate failed`** — only when `.claude/gate-failed.flag`
+   exists (`test -f .claude/gate-failed.flag`, written in Phase 5). It is
+   the one section that goes **above** `## Summary`. Give the last error
+   output, and say which stories were built and which were released back to
+   the backlog because of it.
+
+Add no other top-level section, and write every paragraph on one line —
+`templates/body-file-write.md` has the no-wrapping rule.
 
 ## 2b. Validate the body
 

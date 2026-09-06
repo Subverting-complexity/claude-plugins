@@ -45,9 +45,17 @@ This repo contains multiple Claude Code plugins that share skills.
 ## Shared Skills
 
 Fifteen skills live in `_shared-skills/` and are deployed to both plugins,
-alongside `_shared/` (wording standard and banned patterns) and
-`references/` (story template). The list, and what is deliberately *not*
+alongside `_shared/` (wording standard, banned patterns and body standard)
+and `references/` (story template). The list, and what is deliberately *not*
 shared, are in `_shared-skills/MANIFEST.md`.
+
+`_shared/body-standard.md` is the single standard for every body written
+into a tracker or forge: an issue, a pull request description, a comment.
+`pr-description` and github-workflow's `writing-github-issues` are its two
+entry points and carry only what differs between a pull request and an
+issue. `lint-skills.sh` asserts that both of them, the wording standard and
+`templates/body-file-write.md` still cite it, so the two cannot drift apart
+again.
 
 `user-facing-communication` is the standard for every reply either plugin
 writes to a person: what was done and the current state first, then

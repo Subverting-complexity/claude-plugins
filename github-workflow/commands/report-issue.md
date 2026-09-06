@@ -82,9 +82,15 @@ Also include:
 
 - **Lifecycle state** — exactly one, so the new issue is never
   unlabelled: `status-ready` when the report is actionable as written
-  (it includes where and a suggested fix — the usual case), or
+  (it includes where and a suggested fix — the usual case),
   `needs-refinement` when the report is too vague to implement without a
-  refinement session.
+  refinement session, or `status-blocked` when the issue cannot be closed
+  until a person does something no agent can do (grant a permission, add a
+  secret, approve a submission). In that last case the title also takes the
+  `[Manual]` prefix and the body gets a `## Manual step` section — the three
+  go together, and the rule is in
+  `../skills/writing-github-issues/SKILL.md` under **Issues that need a
+  person**.
 - **Provenance** — `claude-authored`, since this issue is Claude-created.
 
 Build the label list from whichever of these the project actually
@@ -164,10 +170,13 @@ found no current milestone. It takes the milestone's title, and a title that
 names no **open** milestone fails the spec rather than filing the issue
 outside the sprint.
 
-**The title carries no prefix.** No `[BUG]`, `[SECURITY]`, `[ARCH]` or
-`[DEBT]`, no priority and no size. GitHub renders the issue type and the
-fields beside the title already. `wf issue-apply` strips such a prefix if one
-slips in, and reports that it did.
+**The title carries no prefix**, with one exception. No `[BUG]`,
+`[SECURITY]`, `[ARCH]` or `[DEBT]`, no priority and no size. GitHub renders
+the issue type and the fields beside the title already. `wf issue-apply`
+strips such a prefix if one slips in, and reports that it did.
+
+The exception is `[Manual]`, for an issue a person has to do (Step 3). It is
+kept, because nothing native says an issue needs a human.
 
 **The labels carry no type.** `kind` supplies the native issue type and the
 `Classification` value together. A `type-*` label in the list is dropped for
@@ -253,9 +262,10 @@ chosen in Step 3 (see `templates/default-labels.md` → Board Columns):
 
 - `status-ready` → **Ready** (`col-ready`)
 - `needs-refinement` → **Backlog** (`col-backlog`)
+- `status-blocked` → **Blocked** (`col-blocked`)
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column {col-ready|col-backlog}
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column {col-ready|col-backlog|col-blocked}
 ```
 
 The command adds the issue to the board (a new issue is never on it yet),
