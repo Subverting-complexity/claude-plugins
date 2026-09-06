@@ -2,11 +2,7 @@
 
 Canonical procedure for **every** multi-line body this plugin writes — an issue body, a pull request description, a comment — so the write mechanics, the line formatting and the corruption test never drift between callers. Run it wherever a caller says "write the body following `templates/body-file-write.md`".
 
-## What goes in the file
-
-The text itself is written to `skills/_shared/body-standard.md`, which is the one standard behind every body: an issue, a pull request description or a comment. Its two entry points add only what differs — `skills/writing-github-issues/SKILL.md` for an issue, `skills/pr-body/SKILL.md` for a pull request.
-
-The rule that matters most here, because it is the one the file mechanics make easy to get wrong: **never hard-wrap**. Each paragraph is one single line, however long it runs. Never break prose at 72, 80 or any other column. The only line breaks a body has are the ones markdown needs.
+What goes *in* the file is decided by `skills/_shared/body-standard.md`, through `skills/writing-github-issues/SKILL.md` for an issue or `skills/pr-body/SKILL.md` for a pull request. The one rule these mechanics make easy to break: **never hard-wrap**. Each paragraph is one line, however long it runs.
 
 ## The rule: a body always goes in a file
 

@@ -83,13 +83,18 @@ jobs:
       # pick/plan/build path that this gate was built for. The whole-run
       # window keeps the rest bounded. Raising the whole-run budget alone
       # would let the build window regrow unnoticed.
+      # Raised from 19650 in the body-standard change: Phase 7 now carries the
+      # fixed PR body shape (## Summary / ## Changes / ## Test plan, Closes #N
+      # last) and the pointer to the standard behind it, which is a decision the
+      # run has to make and could not make from the old "a section per
+      # component" wording.
       - name: Check execute build-window footprint
         shell: bash
         run: |
           bash count-tokens.sh github-workflow/skills/execute/SKILL.md \
             --exclude github-workflow/skills/execute/references/review-and-merge.md \
             --exclude github-workflow/skills/code-review/references/auto-merge.md \
-            --budget 19650
+            --budget 20100
 
       - name: Check execute whole-run footprint
         shell: bash

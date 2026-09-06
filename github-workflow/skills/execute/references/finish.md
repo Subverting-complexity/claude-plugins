@@ -35,7 +35,7 @@ Read this at Phase 7 of the `execute` workflow (quality gate passed, work commit
    gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}
    ```
 
-   The body has the fixed shape in `skills/pr-body/SKILL.md`. Do not invent a different one per story:
+   The body has the fixed shape in `skills/pr-body/SKILL.md`, never one invented per story:
 
    ```markdown
    ## Summary
@@ -46,12 +46,10 @@ Read this at Phase 7 of the `execute` workflow (quality gate passed, work commit
    ```
 
    - Title under 70 chars.
-   - `## Summary` is two to four plain sentences on what was built and why, written so a reviewer who has not seen the issue can follow it.
-   - `## Changes` is one bullet per change, each on its own single line, grouped under `###` sub-headings only when the story touched more than three areas.
-   - `## Test plan` says how it was verified and which acceptance criteria that covers.
+   - `## Summary` is two to four plain sentences on what was built and why, for a reviewer who has not seen the issue. `## Changes` is one bullet per change, under `###` sub-headings only past three areas. `## Test plan` says how it was verified and which acceptance criteria that covers.
    - **Always** close the associated issue: each linked issue on its own line as `Closes #42`, at the very end of the body, under no heading. A story PR must never omit this.
-   - Add no other top-level section, except `## Manual step` when finishing the story needs a person, and `## Quality gate failed` when the **gate-failed flag** is set (`test -f .claude/gate-failed.flag`, written in Phase 5), which goes above `## Summary` with the last error output.
-   - Write every paragraph on one line. `templates/body-file-write.md` has the no-wrapping rule.
+   - Add no other top-level section, except `## Manual step` when finishing the story needs a person, and `## Quality gate failed` when `.claude/gate-failed.flag` exists (written in Phase 5), which goes above `## Summary` with the last error output.
+   - Write every paragraph on one line.
 
 2b. Validate the PR body — read it back and apply the corruption test and retry in `templates/body-file-write.md` (**Validate** + **Retry**). For a PR body the test also requires a `Closes #N` line for every linked issue; if any is missing, add it via `gh pr edit --body-file` before proceeding.
 
