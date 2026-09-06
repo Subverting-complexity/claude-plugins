@@ -103,7 +103,17 @@ claude plugin update local-workflow@subverting-complexity
 
 Without the marketplace refresh, `plugin update` reports "already at latest" against the cached version — not the actual latest on main.
 
-> The command is `claude plugin` (singular). Run it from a normal shell, not inside a Claude Code session — the CLI blocks nested sessions; if needed, prefix with `env -u CLAUDECODE`. Verify a manifest before shipping with `claude plugin validate ./<plugin>` — it catches schema errors (e.g. unrecognized keys) that plain JSON validation misses.
+> The command is `claude plugin` (singular). Run it from a normal shell, not inside a Claude Code session — the CLI blocks nested sessions; if needed, prefix with `env -u CLAUDECODE`. Verify a manifest before shipping with `claude plugin validate ./<plugin>` — it catches schema errors (e.g. unrecognized keys) that plain JSON validation misses. `claude plugin validate .` does the same for the marketplace manifest.
+
+## The marketplace manifest
+
+`.claude-plugin/marketplace.json` is the listing every consumer resolves against, so a mistake in it breaks installs for every repo in [`docs/consumers.md`](docs/consumers.md) at once, and the failure mode is silence rather than an error. Two rules keep it honest.
+
+**A plugin's version lives in its own `plugin.json` and nowhere else.** An entry in the marketplace manifest must not carry a `version`. A second copy goes stale the first time someone bumps `plugin.json` without it, and from then on `claude plugin update` compares against a number nobody maintains.
+
+**Every plugin directory is listed, and every entry points at the plugin that claims that name.** An entry whose `source` holds a `plugin.json` with a different `name` resolves to nothing; a plugin directory with no entry cannot be installed at all.
+
+CI checks both, plus the accepted top-level and per-entry keys, in the *Validate plugin manifests* job. Claude Code silently ignores a key it does not recognise, which is why the gate rejects one rather than warning.
 
 ## Declaring a plugin in a consuming project
 
