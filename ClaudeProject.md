@@ -50,7 +50,7 @@ Example: `feature/27/fix-wrong-board`
 ## Label Map
 
 All priority, type, and status labels use their default purpose-key
-names (e.g., `priority-critical`, `status-ready`, `type-bug`). See
+names (e.g., `priority-critical`, `status-ready`). See
 `github-workflow/templates/default-labels.md` for the full list and
 the lifecycle state machine.
 
@@ -164,16 +164,6 @@ Issues should include these sections at minimum:
 1. **Context** — What this is about and why it matters
 2. **Requirements** — Acceptance criteria and constraints
 3. **Notes** (optional) — Dependencies, references, edge cases
-
-## Issue Prefixes
-
-| Type         | Prefix       |
-| ------------ | ------------ |
-| Story        | `[STORY]`    |
-| Bug          | `[BUG]`      |
-| Security     | `[SECURITY]` |
-| Architecture | `[ARCH]`     |
-| Tech Debt    | `[DEBT]`     |
 
 ## Project Board
 

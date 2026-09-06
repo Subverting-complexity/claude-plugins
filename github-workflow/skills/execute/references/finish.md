@@ -43,8 +43,9 @@ light.
    `gh pr view {sibling_number} --repo {org}/{repo} --json state --jq '.state'`;
    if it is no longer `OPEN`, drop the flag line and proceed normally.
 
-2. Create a real PR (never a draft). Write the body following
-   `templates/body-file-write.md` (temp file + `--body-file`):
+2. Create a real PR (never a draft). Write the body to a file with the
+   Write tool and pass `--body-file` — never `--body "..."`. The rule and
+   the read-back check are in `templates/body-file-write.md`:
 
    ```
    gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}

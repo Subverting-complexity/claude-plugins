@@ -325,7 +325,6 @@ For anything not auto-detected, ask the user interactively:
   (The code-review skill also supports its own custom labels — those
   are configured separately in `review.config.md` during Step 7.)
 - **Quality gate command** — if not auto-detected
-- **Issue prefixes** — suggest `[STORY]`, `[BUG]`, `[SECURITY]`, `[ARCH]`, `[DEBT]`
 - **Refinement skill** — which skill to use when a `needs-refinement`
   story is next in the queue. Default: `feature-discovery` (runs in
   validation mode for lightweight Q&A, or discovery mode for full

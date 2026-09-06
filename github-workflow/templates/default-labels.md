@@ -89,16 +89,18 @@ already said.
 
 ## Workflow Labels
 
-These control issue typing and prioritization. Resolved via the label
+These control prioritization and agent gating. Resolved via the label
 map in `ClaudeProject.md`; defaults below.
+
+There is deliberately no `type-*` label here. What kind of work an issue is
+comes from GitHub's **native issue type** and the org's `Classification`
+field, and nothing reads a type label: `wf pick` filters on the native type,
+and `wf issue-apply` strips a `type-*` label and a `[BUG]`-style title prefix
+off every issue it writes. A project whose label map still carries a `type-*`
+row is told to delete it by `wf config-audit` (`type-label-deprecated`).
 
 | Purpose key | Default Name | Color | Description |
 |-------------|-------------|-------|-------------|
-| `type-story` | `type-story` | `1D76DB` | Feature story |
-| `type-bug` | `type-bug` | `D93F0B` | Bug fix |
-| `type-security` | `type-security` | `B60205` | Security issue |
-| `type-debt` | `type-debt` | `FBCA04` | Technical debt |
-| `type-arch` | `type-arch` | `0E8A16` | Architecture issue |
 | `priority-critical` | `priority-critical` | `B60205` | Critical priority |
 | `priority-high` | `priority-high` | `D93F0B` | High priority |
 | `priority-medium` | `priority-medium` | `FBCA04` | Medium priority |
@@ -113,16 +115,18 @@ classification and metadata.
 
 `pick` reads them too, not just writes them: the pool is ordered by the
 org's `Priority` field and a `Feature` counts as maintenance work only when
-its `Classification` says so. The `priority-*` and `type-*` labels are the
-fallback, for issues the fields were never set on and for orgs that do not
-define them.
+its `Classification` says so. The `priority-*` labels are the fallback for
+issues the `Priority` field was never set on. The native **type** has no
+fallback: an issue the org has not typed is left out of a `feature` or
+`maintenance` pool and named, and an org with no native types at all cannot
+run those modes (`wf pick --mode story` still works).
 
 **The purpose→value maps are not in this file.** They live as Python data
 in `scripts/wf_core.py`, and the tooling applies them directly:
 
 | Map | Constant in `wf_core.py` |
 |-----|--------------------------|
-| Workflow kind → native type, `Classification`, `type-*` fallback | `NATIVE_TYPE_MAP` |
+| Workflow kind → native type and `Classification` | `NATIVE_TYPE_MAP` |
 | Every valid `Classification` option | `CLASSIFICATION_OPTIONS` |
 | Purpose key → field name, and its data type | `FIELD_NAME_DEFAULTS`, `FIELD_DATA_TYPES` |
 | The four fields set on every issue | `MANDATORY_FIELD_KEYS` |

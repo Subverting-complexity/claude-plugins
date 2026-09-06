@@ -27,8 +27,7 @@ sys.path.insert(
 )
 from wf_core import (  # noqa: E402
     BULK_MAX,
-    _filter_by_mode,
-    actionable_update_label,
+        actionable_update_label,
     blocking_dependencies,
     branch_name,
     branch_slug,
@@ -147,32 +146,34 @@ class TestStorySelection(unittest.TestCase):
         # Both eligible; lowest number wins
         self.assertEqual(select_story(candidates, mode='story')['number'], 1)
 
-    def test_feature_mode_keeps_only_type_story(self):
+    # A `type-*` label classifies nothing any more, on any org. An org that
+    # has not enabled native issue types cannot answer a feature/maintenance
+    # question at all, and saying so is the point -- guessing from labels is
+    # what put a `[CHORE]` in the feature pool.
+
+    def test_feature_mode_without_native_types_selects_nothing(self):
         candidates = [
             _issue(1, ['priority-high', 'type-bug', 'status-ready']),
             _issue(2, ['priority-medium', 'type-story', 'status-ready']),
         ]
-        self.assertEqual(select_story(candidates, mode='feature')['number'], 2)
-
-    def test_feature_mode_no_eligible_returns_none(self):
-        candidates = [_issue(1, ['priority-high', 'type-bug', 'status-ready'])]
         self.assertIsNone(select_story(candidates, mode='feature'))
 
-    def test_maintenance_mode_accepts_all_non_story_types(self):
-        candidates = [
-            _issue(1, ['priority-medium', 'type-story', 'status-ready']),   # excluded
-            _issue(2, ['priority-medium', 'type-bug', 'status-ready']),
-            _issue(3, ['priority-medium', 'type-security', 'status-ready']),
-            _issue(4, ['priority-medium', 'type-debt', 'status-ready']),
-            _issue(5, ['priority-medium', 'type-arch', 'status-ready']),
-        ]
-        pool = _filter_by_mode(candidates, mode='maintenance')
-        numbers = {c['number'] for c in pool}
-        self.assertNotIn(1, numbers)
-        self.assertIn(2, numbers)
-        self.assertIn(3, numbers)
-        self.assertIn(4, numbers)
-        self.assertIn(5, numbers)
+    def test_maintenance_mode_without_native_types_selects_nothing(self):
+        candidates = [_issue(1, ['priority-medium', 'type-bug', 'status-ready'])]
+        self.assertIsNone(select_story(candidates, mode='maintenance'))
+
+    def test_the_unanswerable_candidates_are_named_not_dropped(self):
+        unclassified = []
+        candidates = [_issue(1, ['type-bug']), _issue(2, ['type-story'])]
+        pool = select_pool(candidates, mode='maintenance',
+                           unclassified=unclassified)
+        self.assertEqual(pool, [])
+        self.assertEqual(unclassified, [1, 2])
+
+    def test_story_mode_still_needs_no_types_at_all(self):
+        """Story mode asks no type question, so it is unaffected."""
+        candidates = [_issue(1, ['priority-high', 'status-ready'])]
+        self.assertEqual(select_story(candidates)['number'], 1)
 
     # Agent gating
 
@@ -246,15 +247,6 @@ class TestSelectionHonoursProjectLabelMap(unittest.TestCase):
         ]
         self.assertEqual(
             select_story(candidates, agent_gating='enabled',
-                         project_map=self.PROJECT_MAP)['number'], 2)
-
-    def test_feature_mode_uses_remapped_type_label(self):
-        candidates = [
-            _issue(1, ['P1', 'kind-bug']),     # renamed type-bug → excluded
-            _issue(2, ['P2', 'kind-story']),   # renamed type-story → kept
-        ]
-        self.assertEqual(
-            select_story(candidates, mode='feature',
                          project_map=self.PROJECT_MAP)['number'], 2)
 
     def test_remapped_project_does_not_come_up_empty(self):
@@ -1195,20 +1187,19 @@ class TestNativeTypeFiltering(unittest.TestCase):
                                        self.TYPE_MAP, classification_map)
         self.assertEqual([c['number'] for c in result], [3])
 
-    def test_an_unclassified_feature_is_routed_by_its_own_declared_kind(self):
-        """The field exists but this issue has none, so read what it claims.
+    def test_an_unclassified_feature_is_left_out_and_named(self):
+        """The field exists, this issue has no value: unanswerable.
 
-        Dropping it would repeat the untyped-issue bug: an issue that is
-        plainly tech debt vanishing from maintenance mode because a field
-        nobody filled in says nothing about it.
+        It is not guessed at from a `type-*` label, and not dropped in
+        silence either -- its number comes back so the run can say so.
         """
         classification_map = {4: ['New Feature']}
         candidates = [_issue(3, ['type-debt']), _issue(4, [])]
-        fallback = []
+        unclassified = []
         result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP,
-                                       classification_map, None, fallback)
-        self.assertEqual([c['number'] for c in result], [3])
-        self.assertEqual(fallback, [3])
+                                       classification_map, None, unclassified)
+        self.assertEqual(result, [])
+        self.assertEqual(unclassified, [3])
 
     def test_an_unclassified_feature_claiming_nothing_is_still_excluded(self):
         classification_map = {4: ['New Feature']}
@@ -1222,97 +1213,45 @@ class TestNativeTypeFiltering(unittest.TestCase):
         result = filter_by_native_type(candidates, 'feature', self.TYPE_MAP)
         self.assertEqual(result, [])
 
-    # Fallback: an issue with no native type is classified through its own
-    # type-* label or [PREFIX] title (declared_kind), not silently dropped.
-    # Regression guard for the bug where feature/maintenance mode returned
-    # nothing at all on an org where no issue had a native type set yet.
+    # The native type is the only classifier on a type-capable org. Reading a
+    # `type-*` label or a `[PREFIX]` title here would be reading exhaust the
+    # workflow no longer writes, and it used to give wrong answers.
 
-    def test_untyped_candidate_falls_back_to_type_label_feature(self):
+    def test_a_type_label_does_not_classify_an_untyped_issue(self):
         candidates = [_issue(99, ['type-story'])]
-        result = filter_by_native_type(candidates, 'feature', self.TYPE_MAP)
-        self.assertEqual([c['number'] for c in result], [99])
+        self.assertEqual(
+            filter_by_native_type(candidates, 'feature', self.TYPE_MAP), [])
+        self.assertEqual(
+            filter_by_native_type([_issue(98, ['type-bug'])], 'maintenance',
+                                  self.TYPE_MAP), [])
 
-    def test_untyped_candidate_falls_back_to_type_label_maintenance(self):
-        candidates = [_issue(99, ['type-bug'])]
-        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)
-        self.assertEqual([c['number'] for c in result], [99])
-
-    def test_untyped_candidate_falls_back_to_title_prefix(self):
+    def test_a_title_prefix_does_not_classify_an_untyped_issue(self):
         candidates = [dict(_issue(99, []), title='[BUG] Crash on save')]
-        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)
-        self.assertEqual([c['number'] for c in result], [99])
-
-    def test_untyped_candidate_falls_back_to_debt_label_maintenance(self):
-        """A type-debt label maps to native Feature + Tech Debt classification."""
-        candidates = [_issue(99, ['type-debt'])]
-        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)
-        self.assertEqual([c['number'] for c in result], [99])
-
-    def test_untyped_candidate_with_no_declared_kind_still_excluded(self):
-        """No native type, no type-* label, no [PREFIX] title: genuinely unclassifiable."""
-        candidates = [_issue(99, ['priority-high'])]
-        result = filter_by_native_type(candidates, 'feature', self.TYPE_MAP)
-        self.assertEqual(result, [])
-
-    def test_untyped_candidate_wrong_kind_excluded_from_mode(self):
-        """A type-story fallback does not qualify for maintenance mode."""
-        candidates = [_issue(99, ['type-story'])]
-        result = filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)
-        self.assertEqual(result, [])
-
-    def test_an_untyped_chore_is_maintenance_like_a_typed_one(self):
-        """Routing an untyped issue through its would-be native type put a
-        `[CHORE]` in **feature** mode while a natively typed `Chore` went to
-        maintenance — the same issue in opposite pools depending only on
-        whether anyone had typed it yet."""
-        candidates = [dict(_issue(99, []), title='[CHORE] rotate the keys')]
         self.assertEqual(
-            [c['number'] for c in
-             filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP)], [99])
-        self.assertEqual(filter_by_native_type(candidates, 'feature', self.TYPE_MAP), [])
+            filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP), [])
 
-    def test_an_untyped_feature_is_a_feature_candidate(self):
-        """`[FEATURE]` mapped to a native type that matched neither pool, so it
-        vanished from both modes without a word."""
-        candidates = [dict(_issue(99, []), title='[FEATURE] add export')]
-        self.assertEqual(
-            [c['number'] for c in
-             filter_by_native_type(candidates, 'feature', self.TYPE_MAP)], [99])
-
-    def test_an_untyped_epic_is_in_neither_pool(self):
-        """An epic is a container for work, not work — matching the native
-        `Epic`, which `NATIVE_FEATURE_TYPES` also excludes."""
-        candidates = [dict(_issue(99, []), title='[EPIC] payments')]
-        self.assertEqual(filter_by_native_type(candidates, 'feature', self.TYPE_MAP), [])
-        self.assertEqual(filter_by_native_type(candidates, 'maintenance', self.TYPE_MAP), [])
-
-    def test_an_untyped_spike_is_a_feature_candidate(self):
-        candidates = [dict(_issue(99, []), title='[SPIKE] measure the parser')]
-        self.assertEqual(
-            [c['number'] for c in
-             filter_by_native_type(candidates, 'feature', self.TYPE_MAP)], [99])
-
-    def test_fallback_count_records_only_fallback_classified_numbers(self):
-        fallback = []
+    def test_an_untyped_issue_is_named_rather_than_dropped_in_silence(self):
+        """A short pool has to read as a gap in the data, not a clean backlog."""
+        unclassified = []
         candidates = [_issue(1, []), _issue(99, ['type-story'])]
         result = filter_by_native_type(candidates, 'feature', self.TYPE_MAP,
-                                       fallback_count=fallback)
-        self.assertEqual([c['number'] for c in result], [1, 99])
-        self.assertEqual(fallback, [99])
+                                       unclassified=unclassified)
+        self.assertEqual([c['number'] for c in result], [1])
+        self.assertEqual(unclassified, [99])
 
-    def test_fallback_count_untouched_when_no_fallback_used(self):
-        fallback = []
-        candidates = [_issue(1, [])]
-        filter_by_native_type(candidates, 'feature', self.TYPE_MAP, fallback_count=fallback)
-        self.assertEqual(fallback, [])
+    def test_nothing_is_recorded_when_every_candidate_is_typed(self):
+        unclassified = []
+        filter_by_native_type([_issue(1, [])], 'feature', self.TYPE_MAP,
+                              unclassified=unclassified)
+        self.assertEqual(unclassified, [])
 
-    def test_select_pool_reports_fallback_count(self):
-        fallback = []
-        candidates = [_issue(1, []), _issue(99, ['type-bug'])]
+    def test_select_pool_reports_what_it_left_out(self):
+        unclassified = []
+        candidates = [_issue(2, []), _issue(99, ['type-bug'])]
         pool = select_pool(candidates, mode='maintenance', type_map=self.TYPE_MAP,
-                           fallback_count=fallback)
-        self.assertEqual({c['number'] for c in pool}, {99})
-        self.assertEqual(fallback, [99])
+                           unclassified=unclassified)
+        self.assertEqual({c['number'] for c in pool}, {2})
+        self.assertEqual(unclassified, [99])
 
     def test_select_pool_uses_type_map_when_provided(self):
         """select_pool routes through native-type filter when type_map is set."""
@@ -1331,14 +1270,16 @@ class TestNativeTypeFiltering(unittest.TestCase):
         pool = select_pool(candidates, mode='story', type_map=self.TYPE_MAP)
         self.assertEqual(len(pool), 3)
 
-    def test_select_pool_falls_back_to_labels_without_type_map(self):
-        """Without type_map, select_pool uses label-based filtering as before."""
+    def test_select_pool_without_a_type_map_classifies_nothing(self):
+        """No native types, no answer -- and every candidate is named."""
         candidates = [
             _issue(1, ['priority-high', 'type-story']),
             _issue(2, ['priority-medium', 'type-bug']),
         ]
-        pool = select_pool(candidates, mode='feature')
-        self.assertEqual([c['number'] for c in pool], [1])
+        unclassified = []
+        pool = select_pool(candidates, mode='feature', unclassified=unclassified)
+        self.assertEqual(pool, [])
+        self.assertEqual(unclassified, [1, 2])
 
 
 class TestClosingIssueNumbers(unittest.TestCase):
@@ -1560,15 +1501,20 @@ class TestIssueValueMaps(unittest.TestCase):
 
     def test_every_native_type_entry_is_complete(self):
         for kind, entry in wf_core.NATIVE_TYPE_MAP.items():
-            self.assertEqual(set(entry), {'type', 'classification', 'label'}, kind)
+            self.assertEqual(set(entry), {'type', 'classification'}, kind)
 
     def test_every_classification_is_a_valid_option(self):
         for kind, entry in wf_core.NATIVE_TYPE_MAP.items():
             self.assertIn(entry['classification'], wf_core.CLASSIFICATION_OPTIONS, kind)
 
-    def test_every_fallback_label_is_a_known_purpose_key(self):
+    def test_no_kind_names_a_fallback_label(self):
+        """There is no label path left to fall back to."""
         for kind, entry in wf_core.NATIVE_TYPE_MAP.items():
-            self.assertEqual(wf_core.resolve_label(entry['label'], {}), entry['label'], kind)
+            self.assertNotIn('label', entry, kind)
+
+    def test_the_label_map_defines_no_type_label(self):
+        self.assertEqual(
+            [k for k in wf_core._DEFAULT_LABELS if k.startswith('type-')], [])
 
     def test_every_field_key_has_a_name_and_a_data_type(self):
         self.assertEqual(set(wf_core.FIELD_NAME_DEFAULTS), set(wf_core.FIELD_DATA_TYPES))
@@ -2134,18 +2080,18 @@ class TestLabelDriftFindings(unittest.TestCase):
         self.assertIn('priority:medium', findings[0]['detail'])
 
     def test_a_dropped_prefix_is_a_warning(self):
-        findings = wf_core.label_drift_findings(['bug', 'type-bug'])
+        findings = wf_core.label_drift_findings(['ready', 'status-ready'])
         self.assertEqual(_checks(findings), ['label-drift'])
-        self.assertIn('type-bug', findings[0]['fix'])
+        self.assertIn('status-ready', findings[0]['fix'])
 
     def test_drift_never_fails_because_the_fix_deletes_data(self):
         findings = wf_core.label_drift_findings(
-            ['bug', 'type-bug', 'status:ready', 'status-ready'])
+            ['ready', 'status-ready', 'priority:high', 'priority-high'])
         self.assertEqual(set(_levels(findings)), {wf_core.WARNING})
 
     def test_two_labels_that_only_look_alike_are_left_alone(self):
         self.assertEqual(wf_core.label_drift_findings(
-            ['type-bug', 'type-debt', 'documentation']), [])
+            ['status-ready', 'status-parked', 'documentation']), [])
 
 
 class TestPinnedFieldFindings(unittest.TestCase):
@@ -2216,6 +2162,111 @@ class TestPinnedFieldFindings(unittest.TestCase):
             [self._type('Bug', self._REQUIRED),
              self._type('Epic', self._REQUIRED)], self._REQUIRED)
         self.assertEqual(findings, [])
+
+
+class TestTypedIssueWriteShape(unittest.TestCase):
+    """What the native type makes redundant on the way in.
+
+    A typed issue said it was a bug four times over -- the `[BUG]` prefix, the
+    native type, the `bug` label and the `Classification` field. These take the
+    duplicates back out at the one place that writes an issue.
+    """
+
+    def test_a_type_label_is_dropped_and_the_rest_kept_in_order(self):
+        kept, dropped = wf_core.strip_type_labels(
+            ['priority-high', 'type-bug', 'status-ready'])
+        self.assertEqual(kept, ['priority-high', 'status-ready'])
+        self.assertEqual(dropped, ['type-bug'])
+
+    def test_a_renamed_type_label_is_dropped_too(self):
+        kept, dropped = wf_core.strip_type_labels(
+            ['kind/bug', 'P1'], {'type-bug': 'kind/bug'})
+        self.assertEqual(kept, ['P1'])
+        self.assertEqual(dropped, ['kind/bug'])
+
+    def test_a_purpose_key_is_dropped_like_the_literal_name(self):
+        """A spec may name either; both mean the same thing."""
+        kept, _ = wf_core.strip_type_labels(['type-story', 'claude-authored'])
+        self.assertEqual(kept, ['claude-authored'])
+
+    def test_labels_with_no_type_among_them_are_untouched(self):
+        labels = ['priority-low', 'status-ready']
+        kept, dropped = wf_core.strip_type_labels(labels)
+        self.assertEqual(kept, labels)
+        self.assertEqual(dropped, [])
+
+    def test_a_kind_prefix_is_stripped_from_the_title(self):
+        self.assertEqual(wf_core.strip_title_prefix('[BUG] Crash on save'),
+                         'Crash on save')
+        self.assertEqual(wf_core.strip_title_prefix('[DEBT]   Stale docs'),
+                         'Stale docs')
+
+    def test_a_bracket_that_is_not_a_kind_is_left_alone(self):
+        """Editing somebody's title on a guess is worse than a long title."""
+        for title in ('[v2] Rewrite the parser', '[iOS] Keyboard overlaps',
+                      'Plain title', ''):
+            with self.subTest(title=title):
+                self.assertEqual(wf_core.strip_title_prefix(title), title)
+
+
+class TestDeprecatedLabelFindings(unittest.TestCase):
+    """The `type-*` rows that outlived what read them."""
+
+    def test_a_mapped_type_label_is_reported_once(self):
+        findings = wf_core.deprecated_label_findings(
+            {'type-bug': 'bug', 'type-story': 'story', 'status-ready': 'ready'},
+            ['bug', 'story', 'ready'])
+        self.assertEqual(_levels(findings), [wf_core.WARNING])
+        self.assertEqual(findings[0]['check'], 'type-label-deprecated')
+        self.assertIn('type-bug', findings[0]['detail'])
+        self.assertIn('type-story', findings[0]['detail'])
+
+    def test_a_label_map_without_type_rows_is_clean(self):
+        self.assertEqual(wf_core.deprecated_label_findings(
+            {'status-ready': 'status:ready'}, ['status:ready']), [])
+
+    def test_a_stray_type_label_nobody_maps_is_not_a_finding(self):
+        """Nothing reads it, so it is clutter rather than a trap."""
+        self.assertEqual(wf_core.deprecated_label_findings(
+            {}, ['type-bug', 'type-story']), [])
+
+
+class TestUnmappedLabelFindings(unittest.TestCase):
+    """A purpose key the repo carries under a name nothing maps it to.
+
+    This is the silent one: the label exists, the config validates, and the
+    picker resolves the purpose key to a default that matches no issue -- so a
+    parked issue stays in the pool and nothing anywhere says why.
+    """
+
+    LIVE = ['status:ready', 'status:parked', 'needs-refinement', 'bug']
+
+    def test_a_near_miss_with_no_map_row_fails(self):
+        findings = wf_core.unmapped_label_findings(
+            {'status-ready': 'status:ready'}, self.LIVE)
+        self.assertEqual(_levels(findings), [wf_core.CRITICAL])
+        self.assertEqual(findings[0]['check'], 'label-unmapped')
+        self.assertIn('status:parked', findings[0]['detail'])
+        self.assertIn('status-parked', findings[0]['fix'])
+
+    def test_a_mapped_key_is_not_reported(self):
+        self.assertEqual(wf_core.unmapped_label_findings(
+            {'status-ready': 'status:ready',
+             'status-parked': 'status:parked'}, self.LIVE), [])
+
+    def test_a_key_the_repo_carries_under_its_default_name_is_fine(self):
+        """No row needed when the default is what the repo actually uses."""
+        self.assertEqual(wf_core.unmapped_label_findings(
+            {}, ['status-ready', 'status-parked', 'needs-refinement']), [])
+
+    def test_a_key_the_project_simply_does_not_use_is_not_reported(self):
+        """Absence is not drift. Only a near miss means the filter will fail."""
+        self.assertEqual(wf_core.unmapped_label_findings({}, ['bug', 'chore']), [])
+
+    def test_underscores_and_slashes_count_as_the_same_near_miss(self):
+        findings = wf_core.unmapped_label_findings({}, ['status_blocked'])
+        self.assertEqual(len(findings), 1)
+        self.assertIn('status_blocked', findings[0]['detail'])
 
 
 class TestUnmappedFieldFindings(unittest.TestCase):

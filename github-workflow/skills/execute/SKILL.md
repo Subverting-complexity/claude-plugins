@@ -244,7 +244,7 @@ requests in a loop. (design rationale: `docs/rationale/execute-rationale.md`
 Default mode is `story`. Override with `$ARGUMENTS.mode`:
 
 - **story** — Pick and implement the next highest-priority issue regardless of type
-- **feature** — Pick only feature stories (type-story label)
+- **feature** — Pick only feature stories (native issue type `User Story`)
 - **maintenance** — Pick and fix the next bug, security, architecture, or
   tech debt issue ("bug" is accepted as an alias and treated as
   maintenance, for backward compatibility)

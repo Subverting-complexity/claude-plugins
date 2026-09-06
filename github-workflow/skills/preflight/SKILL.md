@@ -301,7 +301,6 @@ if [ -f ClaudeProject.md ]; then
   else
     missing=0
     for purpose in priority-critical priority-high priority-medium priority-low \
-                   type-story type-bug type-security type-arch type-debt \
                    status-ready needs-refinement status-in-progress status-parked \
                    status-blocked status-in-review status-needs-attention \
                    claude-authored; do

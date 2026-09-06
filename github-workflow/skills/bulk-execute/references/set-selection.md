@@ -132,7 +132,7 @@ or **both** of the two weak ones.
   importer; two stories adding fields to one form.
 
 **None of these counts as relatedness**, however tempting: both are small,
-both are high priority, both are `type-bug`, both are in this repo, both are
+both are high priority, both are typed `Bug`, both are in this repo, both are
 in this sprint on their own, or the pool happens to hold exactly three
 stories.
 

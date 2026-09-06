@@ -196,12 +196,23 @@ class TestPickStatusContract(unittest.TestCase):
         # Only the User Story candidate was attempted (issue 2 / Bug was filtered out).
         self.assertEqual([s['issue'] for s in payload['side_effects']], [1])
 
-    def test_label_typed_feature_mode_does_not_defer(self):
-        """The same feature mode on a label-typed org runs here (not unsupported)."""
+    def test_feature_mode_without_native_types_is_refused(self):
+        """No classifier, no answer -- and it says which, rather than guessing."""
         self._use_cfg(_cfg(type_capable=False))
-        with mock.patch.object(wf, 'assemble_candidates', return_value=(True, [], '')):
+        with mock.patch.object(wf, 'load_issue_facets', return_value=_facets({})), \
+                mock.patch.object(wf, 'assemble_candidates',
+                                  return_value=(True, [_candidate(1)], '')):
             code, payload = _capture(wf.cmd_pick, _pick_args('--mode', 'feature'))
-        # Empty pool, but it reached selection rather than emitting unsupported.
+        self.assertEqual(code, wf.EXIT_CAPABILITY)
+        self.assertEqual(payload['status'], 'no-capabilities')
+        self.assertIn('native issue type', payload['reason'])
+
+    def test_story_mode_never_asks_the_org_for_a_type(self):
+        self._use_cfg(_cfg(type_capable=False))
+        with mock.patch.object(wf, 'load_issue_facets', return_value=_facets({})), \
+                mock.patch.object(wf, 'assemble_candidates',
+                                  return_value=(True, [], '')):
+            code, payload = _capture(wf.cmd_pick, _pick_args())
         self.assertEqual(code, wf.EXIT_NO_CANDIDATES)
         self.assertEqual(payload['status'], 'no-candidates')
 
@@ -577,6 +588,108 @@ def _board_page(items, has_next=False, cursor=None):
     return {'node': {'items': {
         'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
         'nodes': list(items)}}}
+
+
+class TestSpecBodyFile(unittest.TestCase):
+    """A body that lives in a file rather than inside the JSON.
+
+    A body is prose -- fenced code, backticks, `$`, quotes, blank lines -- and
+    hand-building that into a JSON string in a shell is where bodies get
+    mangled. Naming a file sidesteps it.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.path = os.path.join(self.dir, 'body.md')
+        with open(self.path, 'w', encoding='utf-8') as fh:
+            fh.write('## Summary\n\nA `$PATH` "quote" and a ``fence``.\n')
+
+    def test_the_file_is_read_verbatim(self):
+        body, err = wf.entry_body({'body_file': self.path})
+        self.assertEqual(err, '')
+        self.assertIn('A `$PATH` "quote"', body)
+
+    def test_an_inline_body_wins_and_reads_nothing(self):
+        body, err = wf.entry_body({'body': 'inline', 'body_file': 'nope.md'})
+        self.assertEqual((body, err), ('inline', ''))
+
+    def test_an_entry_with_neither_has_no_body(self):
+        self.assertEqual(wf.entry_body({'title': 'x'}), (None, ''))
+
+    def test_a_file_that_is_not_there_is_a_spec_error(self):
+        errors = wf.spec_body_errors([{'title': 'x',
+                                       'body_file': os.path.join(self.dir, 'gone.md')}])
+        self.assertEqual(len(errors), 1)
+        self.assertIn('body_file', errors[0])
+
+    def test_a_readable_spec_reports_nothing(self):
+        self.assertEqual(wf.spec_body_errors([{'body_file': self.path}]), [])
+
+
+class TestTypedCreateInput(unittest.TestCase):
+    """What `issue-apply` writes when the org types the issue natively.
+
+    The rule lives at the one place that builds a create, so the three
+    commands that file issues cannot each keep their own house style -- which
+    is why the board ended up with `[BUG]` titles beside untitled ones and a
+    `bug` label beside a `Bug` type.
+    """
+
+    CTX = {'repo_id': 'R_1', 'labels': {'type-bug': 'L_type', 'priority-high':
+                                        'L_pri', 'status-ready': 'L_ready'}}
+    CAPS = {'type_map': {'Bug': 'IT_bug'}}
+
+    def _build(self, entry, native_type='Bug', cfg=None):
+        plan = {'type': native_type, 'fields': {}}
+        dropped = []
+        args = wf._create_input(cfg or _cfg(), self.CTX, self.CAPS, entry, plan,
+                                None, entry.get('body'), dropped)
+        return args, dropped
+
+    def test_a_type_label_is_not_written_when_the_type_says_it(self):
+        args, dropped = self._build(
+            {'title': 'Crash on save',
+             'labels': ['type-bug', 'priority-high', 'status-ready']})
+        self.assertEqual(args['labelIds'], sorted(['L_pri', 'L_ready']))
+        self.assertEqual(dropped, ['type-bug'])
+
+    def test_a_kind_prefix_is_not_written_into_the_title(self):
+        args, dropped = self._build({'title': '[BUG] Crash on save',
+                                     'labels': ['status-ready']})
+        self.assertEqual(args['title'], 'Crash on save')
+        self.assertIn('[BUG]', dropped)
+
+    def test_the_native_type_is_still_set(self):
+        args, _ = self._build({'title': 'Crash on save'})
+        self.assertEqual(args['issueTypeId'], 'IT_bug')
+
+    def test_an_untyped_entry_is_stripped_the_same_way(self):
+        """On every org: a classifier nothing reads is clutter, not a fallback."""
+        args, dropped = self._build({'title': '[BUG] Crash on save',
+                                     'labels': ['type-bug', 'status-ready']},
+                                    native_type=None)
+        self.assertEqual(args['title'], 'Crash on save')
+        self.assertEqual(args['labelIds'], ['L_ready'])
+        self.assertEqual(dropped, ['type-bug', '[BUG]'])
+        self.assertNotIn('issueTypeId', args)
+
+    def test_a_named_milestone_rides_in_the_same_create(self):
+        """Sprint placement is part of the one write, not a follow-up edit."""
+        ctx = dict(self.CTX, milestones={'Sprint 7': 'MI_7'})
+        args = wf._create_input(_cfg(), ctx, self.CAPS,
+                                {'title': 'Crash on save', 'milestone': 'Sprint 7'},
+                                {'type': 'Bug', 'fields': {}}, None, None, [])
+        self.assertEqual(args['milestoneId'], 'MI_7')
+
+    def test_no_milestone_key_means_no_milestone_written(self):
+        args, _ = self._build({'title': 'Crash on save'})
+        self.assertNotIn('milestoneId', args)
+
+    def test_nothing_is_reported_when_the_entry_was_already_clean(self):
+        _, dropped = self._build({'title': 'Crash on save',
+                                  'labels': ['status-ready']})
+        self.assertEqual(dropped, [])
 
 
 class TestBoardColumnCandidates(unittest.TestCase):
@@ -2289,9 +2402,17 @@ class TestConfigAudit(unittest.TestCase):
         self.assertEqual(self._checks(payload), [])
         self.assertEqual(payload['summary']['warning'], 0)
 
+    def test_a_lifecycle_label_the_map_never_claims_fails(self):
+        """The silent one: `pick` then filters on a name no issue carries."""
+        code, payload, _ = self._run(
+            labels=self._LABELS + ['status:parked'],
+            cfg_over={'labels': {'status-ready': 'status-ready'}})
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertIn('label-unmapped', self._checks(payload))
+
     def test_label_drift_warns_without_failing_the_run(self):
         code, payload, _ = self._run(
-            labels=self._LABELS + ['priority-medium', 'priority:medium', 'bug'])
+            labels=self._LABELS + ['priority-medium', 'priority:medium', 'ready'])
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(set(self._checks(payload)), {'label-drift'})
         self.assertEqual(payload['summary']['warning'], 2)

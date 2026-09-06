@@ -781,6 +781,7 @@ def cmd_org_capabilities(args):
 ISSUE_SELECTION = (
     '  id number title body'
     '  issueType { name }'
+    '  milestone { title }'
     '  parent { number }'
     '  blockedBy(first:50){ nodes { number } }'
     '  labels(first:50){ nodes { name } }'
@@ -845,13 +846,15 @@ def _values_match(wanted, actual):
     return str(wanted) == str(actual)
 
 
-def resolve_spec_context(cfg, label_names, numbers, repo=None):
+def resolve_spec_context(cfg, label_names, numbers, repo=None,
+                         milestone_titles=None):
     """One lookup for everything the batches need before they can be built.
 
-    The repository's node id, the id of every label the spec names, and the
-    node id of every issue the spec references but does not create. Doing this
-    as one query rather than three keeps the whole prerequisite phase to a
-    single round trip, which is what leaves room for the epic tree itself.
+    The repository's node id, the id of every label and open milestone the
+    spec names, and the node id of every issue the spec references but does not
+    create. Doing this as one query rather than four keeps the whole
+    prerequisite phase to a single round trip, which is what leaves room for
+    the epic tree itself.
 
     Returns (ok, context, err).
     """
@@ -863,7 +866,9 @@ def resolve_spec_context(cfg, label_names, numbers, repo=None):
     ok, data, err = gh_graphql(
         'query($owner:String!,$repo:String!){'
         ' repository(owner:$owner,name:$repo){ id'
-        ' labels(first:100){ nodes { id name } } %s } }' % issue_parts,
+        ' labels(first:100){ nodes { id name } }'
+        ' milestones(first:100,states:OPEN){ nodes { id title } } %s } }'
+        % issue_parts,
         owner=owner, repo=name)
     if not ok:
         return False, None, err
@@ -874,6 +879,9 @@ def resolve_spec_context(cfg, label_names, numbers, repo=None):
 
     have_labels = {n['name']: n['id'] for n
                    in (repository.get('labels') or {}).get('nodes') or []}
+    wanted_milestones = sorted(set(milestone_titles or ()))
+    have_milestones = {n['title']: n['id'] for n
+                       in (repository.get('milestones') or {}).get('nodes') or []}
     issues = {}
     missing_issues = []
     for alias, number in aliases:
@@ -888,6 +896,10 @@ def resolve_spec_context(cfg, label_names, numbers, repo=None):
         'repo': '%s/%s' % (owner, name),
         'labels': {n: have_labels[n] for n in label_names if n in have_labels},
         'missing_labels': [n for n in label_names if n not in have_labels],
+        'milestones': {t: have_milestones[t] for t in wanted_milestones
+                       if t in have_milestones},
+        'missing_milestones': [t for t in wanted_milestones
+                               if t not in have_milestones],
         'issues': issues,
         'missing_issues': missing_issues,
     }, ''
@@ -1129,6 +1141,39 @@ def load_spec(path):
     return True, entries, raw, ''
 
 
+def entry_body(entry):
+    """The entry's body, from `body` or from the file `body_file` names.
+
+    A body is prose: fenced code, backticks, `$`, quotes and blank lines. The
+    caller writing it to a file and naming the file is what keeps it intact,
+    because building the JSON string by hand in a shell is where bodies get
+    mangled. Read here rather than at load time so the spec file written back
+    afterwards still says `body_file`, not a thousand inlined characters.
+
+    Returns (body, err).
+    """
+    if entry.get('body') is not None:
+        return entry['body'], ''
+    path = entry.get('body_file')
+    if not path:
+        return None, ''
+    try:
+        with open(path, encoding='utf-8') as fh:
+            return fh.read(), ''
+    except OSError as exc:
+        return None, 'could not read body_file %s: %s' % (path, exc)
+
+
+def spec_body_errors(entries):
+    """Every `body_file` that cannot be read, before anything is written."""
+    out = []
+    for entry in entries:
+        _, err = entry_body(entry)
+        if err:
+            out.append('%s: %s' % (wf_core.entry_label(entry), err))
+    return out
+
+
 def write_back_numbers(path, raw, entries):
     """Write created issue numbers back into the spec file.
 
@@ -1184,16 +1229,37 @@ def _parent_id(entry, resolved, node_ids):
     return number, node_id, ''
 
 
-def _create_input(cfg, ctx, caps, entry, plan, parent_id, body):
-    args = {'repositoryId': ctx['repo_id'], 'title': entry.get('title') or ''}
+def _create_input(cfg, ctx, caps, entry, plan, parent_id, body, dropped=None):
+    """The `createIssue` input for one entry.
+
+    The native issue type is the classification, so the two older ways of
+    saying the same thing are taken back out here rather than left to every
+    caller: a `type-*` label is dropped, and a `[BUG]`-style title prefix is
+    stripped. This happens on every org, including one with no native types --
+    a classifier nothing reads is clutter, not a fallback. Doing it at the one
+    place that writes an issue is what stops the three commands that create
+    issues from each having their own house style. `dropped`, when a list is
+    passed, collects what was removed so the run can report it.
+    """
+    title = wf_core.strip_title_prefix(entry.get('title') or '')
+    labels, type_labels = wf_core.strip_type_labels(entry.get('labels') or [],
+                                                    cfg.get('labels'))
+    if dropped is not None:
+        dropped.extend(type_labels)
+        raw = entry.get('title') or ''
+        if title != raw:
+            dropped.append(raw[:len(raw) - len(title)].strip())
+    args = {'repositoryId': ctx['repo_id'], 'title': title}
     if body:
         args['body'] = body
     if plan['type']:
         args['issueTypeId'] = caps['type_map'][plan['type']]
     if parent_id:
         args['parentIssueId'] = parent_id
-    label_ids = sorted(ctx['labels'][label(cfg, l)]
-                       for l in entry.get('labels') or [])
+    milestone = entry.get('milestone')
+    if milestone:
+        args['milestoneId'] = ctx['milestones'][milestone]
+    label_ids = sorted(ctx['labels'][label(cfg, l)] for l in labels)
     if label_ids:
         args['labelIds'] = label_ids
     fields = [f['input'] for f in plan['fields'].values()]
@@ -1225,9 +1291,18 @@ def create_level(cfg, ctx, caps, plans, resolved, node_ids):
         numbers, _unresolved = _blockers(entry, resolved)
         # Only the blockers that already have numbers can go in the body now.
         # The rest are patched in the link phase, once every issue exists.
-        body = ensure_dependency_section(entry.get('body'), numbers)
+        raw_body, _ = entry_body(entry)
+        body = ensure_dependency_section(raw_body, numbers)
         result['sent_body'] = body
-        ready.append(_create_input(cfg, ctx, caps, entry, plan, parent_id, body))
+        dropped = []
+        ready.append(_create_input(cfg, ctx, caps, entry, plan, parent_id, body,
+                                   dropped))
+        if dropped:
+            # Not an error and not silent: the entry asked for something no
+            # longer written anywhere, and the caller should stop asking.
+            result['changed'].append(
+                'dropped %s -- the issue type classifies this issue now'
+                % ', '.join(repr(d) for d in dropped))
         pending.append((plan, result))
 
     for chunk_start in range(0, len(pending), wf_core.BATCH_MAX_NODES):
@@ -1241,7 +1316,7 @@ def create_level(cfg, ctx, caps, plans, resolved, node_ids):
             result['number'] = issue['number']
             result['issue_id'] = issue['id']
             result['issue'] = issue
-            result['changed'] = ['created']
+            result['changed'].insert(0, 'created')
             node_ids[issue['number']] = issue['id']
             if plan['entry'].get('key'):
                 resolved[plan['entry']['key']] = issue['number']
@@ -1303,6 +1378,15 @@ def update_entry(cfg, ctx, caps, plan, resolved, node_ids):
             return result
         result['changed'].append('parent')
 
+    milestone = entry.get('milestone')
+    if milestone and (current.get('milestone') or {}).get('title') != milestone:
+        code, _, merr = run(['gh', 'issue', 'edit', str(entry['number']),
+                             '--repo', repo, '--milestone', milestone])
+        if code != 0:
+            result['errors'].append('milestone update failed: %s' % merr.strip())
+            return result
+        result['changed'].append('milestone')
+
     wanted = {label(cfg, l) for l in entry.get('labels') or []}
     present = {n['name'] for n in (current.get('labels') or {}).get('nodes') or []}
     add = sorted(wanted - present)
@@ -1363,7 +1447,8 @@ def link_phase(cfg, plans, results, resolved, node_ids):
             ops.append(('blocked-by', {'issue_id': result['issue_id'],
                                        'blocking_id': blocking_id}))
 
-        wanted_body = ensure_dependency_section(entry.get('body'), numbers)
+        raw_body, _ = entry_body(entry)
+        wanted_body = ensure_dependency_section(raw_body, numbers)
         current_body = result.get('sent_body', issue.get('body'))
         if wanted_body != current_body:
             owners.append((result, 'body', None))
@@ -1423,6 +1508,11 @@ def cmd_issue_apply(args):
     # Everything that can be decided offline is decided before the first write.
     # A spec that is wrong should cost nothing, and a half-applied tree is much
     # harder to reason about than a refused one.
+    body_errors = spec_body_errors(entries)
+    if body_errors:
+        emit('spec-invalid', EXIT_SPEC, spec=args.spec, errors=body_errors,
+             reason='a body_file the spec names could not be read')
+
     cycles = wf_core.spec_cycles(entries)
     if cycles:
         emit('spec-invalid', EXIT_SPEC, spec=args.spec,
@@ -1474,13 +1564,19 @@ def cmd_issue_apply(args):
                 referenced.add(ref)
             elif isinstance(ref, str) and ref.isdigit():
                 referenced.add(int(ref))
-    ok, ctx, err = resolve_spec_context(cfg, label_names, referenced, args.repo)
+    milestones = [e['milestone'] for e in entries if e.get('milestone')]
+    ok, ctx, err = resolve_spec_context(cfg, label_names, referenced, args.repo,
+                                        milestones)
     if not ok:
         emit('error', EXIT_ENV, reason='could not resolve the repository: %s' % err)
     if ctx['missing_labels']:
         emit('spec-invalid', EXIT_SPEC, spec=args.spec,
              reason='labels the spec names do not exist in this repo',
              labels=ctx['missing_labels'])
+    if ctx['missing_milestones']:
+        emit('spec-invalid', EXIT_SPEC, spec=args.spec,
+             reason='milestones the spec names are not open in this repo',
+             milestones=ctx['missing_milestones'])
     if ctx['missing_issues']:
         emit('spec-invalid', EXIT_SPEC, spec=args.spec,
              reason='issues the spec references do not exist in this repo',
@@ -1873,7 +1969,11 @@ def cmd_config_audit(args):
     findings.extend(wf_core.config_label_findings(
         cfg.get('labels'), cfg.get('review_labels'), live, source_rel))
     findings.extend(wf_core.label_drift_findings(live, cfg.get('labels')))
-    checked.extend(['config-label', 'label-drift'])
+    findings.extend(wf_core.unmapped_label_findings(
+        cfg.get('labels'), live, source_rel))
+    findings.extend(wf_core.deprecated_label_findings(
+        cfg.get('labels'), live, source_rel))
+    checked.extend(['config-label', 'label-drift', 'label-unmapped', 'type-label-deprecated'])
 
     board_cfg = cfg.get('board') or {}
     if board_cfg.get('project_node_id'):
@@ -2733,11 +2833,19 @@ def cmd_pick(args):
     facets = load_issue_facets(cfg)
     priority_map = facets['priority']
     type_map = classification_map = None
-    if args.mode != 'story' and cfg.get('type_capable'):
+    if args.mode != 'story':
         type_map = facets['types'] or None
         classification_map = facets['classification'] if type_map else None
-        if type_map:
-            eprint('wf: type-capable org — filtering %s mode by native issueType' % args.mode)
+        if not type_map:
+            # The native type is the only classifier. Without one, `feature`
+            # and `maintenance` are unanswerable -- and answering them wrongly
+            # by label is exactly what this replaced.
+            emit('no-capabilities', EXIT_CAPABILITY, mode=args.mode,
+                 reason='no issue on this backlog carries a native issue type, so '
+                        '%s mode cannot be told apart from any other. Enable issue '
+                        'types for the org and run `wf issue-audit` to backfill '
+                        'them, or pick with `--mode story`.' % args.mode)
+        eprint('wf: filtering %s mode by native issueType' % args.mode)
 
     gate = cfg.get('ready_gate', 'label')
     if gate not in ('label', 'none', 'board-column', 'both'):
@@ -2748,11 +2856,10 @@ def cmd_pick(args):
     if not ok:
         emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
 
-    # Issues with no native type still enter the pool, classified through their
-    # own type-* label or [PREFIX] title (see filter_by_native_type). That is a
-    # fallback, not a silent success, so it is collected here and reported —
-    # never dropped quietly the way an untyped issue used to be.
-    type_fallback = []
+    # An issue the org has not typed is out of a feature/maintenance pool --
+    # the native type is the only classifier now. Collected here so the run can
+    # name it, because a pool that is quietly short reads as a clean backlog.
+    unclassified = []
 
     backlog_mode, issues = narrow_to_sprint(cfg, issues)
     pool = wf_core.select_pool(issues, mode=args.mode,
@@ -2760,7 +2867,7 @@ def cmd_pick(args):
                                project_map=cfg.get('labels', {}),
                                type_map=type_map,
                                classification_map=classification_map,
-                               fallback_count=type_fallback,
+                               unclassified=unclassified,
                                priority_map=priority_map)
 
     selected, side_effects = None, []
@@ -2779,7 +2886,7 @@ def cmd_pick(args):
                                            project_map=cfg.get('labels', {}),
                                            type_map=type_map,
                                            classification_map=classification_map,
-                                           fallback_count=type_fallback,
+                                           unclassified=unclassified,
                                            priority_map=priority_map)
                 if pool:
                     selected, more_effects = claim_validate_walk(cfg, pool, backlog_mode,
@@ -2788,12 +2895,11 @@ def cmd_pick(args):
 
     report_priority_fallback(pool, priority_map)
 
-    if type_fallback:
-        eprint('wf: %d candidate(s) have no native issue type; classified for %s '
-               'mode by their type-* label or [PREFIX] title instead: %s '
-               '(run wf issue-audit to backfill the native type)'
-               % (len(type_fallback), args.mode,
-                  ', '.join('#%d' % n for n in sorted(set(type_fallback)))))
+    if unclassified:
+        eprint('wf: %d issue(s) left out of the %s pool because the org has not '
+               'typed or classified them: %s (run wf issue-audit to backfill)'
+               % (len(set(unclassified)), args.mode,
+                  ', '.join('#%d' % n for n in sorted(set(unclassified)))))
 
     if not selected and not pool:
         emit('no-candidates', EXIT_NO_CANDIDATES,
@@ -2803,10 +2909,10 @@ def cmd_pick(args):
              reason='every candidate was claimed-away, blocked, or already resolved',
              backlog_mode=backlog_mode, side_effects=side_effects)
 
-    finish_pick(args, cfg, selected, side_effects, backlog_mode, type_fallback)
+    finish_pick(args, cfg, selected, side_effects, backlog_mode)
 
 
-def finish_pick(args, cfg, selected, side_effects, backlog_mode, type_fallback=None):
+def finish_pick(args, cfg, selected, side_effects, backlog_mode):
     """Build the `ok` result for a selected story, optionally checking out, and emit."""
     result = {
         'number': selected['number'],
@@ -2821,10 +2927,6 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode, type_fallback=N
         'side_effects': side_effects,
         'checked_out': False,
     }
-    if type_fallback and selected['number'] in type_fallback:
-        # This one has no native issue type: it was classified for the run
-        # by its type-* label or [PREFIX] title instead (filter_by_native_type).
-        result['native_type_fallback'] = True
     siblings = [int(n) for n in (getattr(args, 'sibling', None) or [])]
     if siblings:
         result['siblings'] = siblings
@@ -2899,14 +3001,14 @@ def cmd_candidates(args):
     if not ok:
         emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
 
-    type_fallback = []
+    unclassified = []
     backlog_mode, issues = narrow_to_sprint(cfg, issues)
     pool = wf_core.select_pool(issues, mode=args.mode,
                                agent_gating=cfg.get('agent_gating', 'disabled'),
                                project_map=cfg.get('labels', {}),
                                type_map=type_map,
                                classification_map=classification_map,
-                               fallback_count=type_fallback,
+                               unclassified=unclassified,
                                priority_map=priority_map)
     if not pool:
         emit('no-candidates', EXIT_NO_CANDIDATES,
@@ -2917,7 +3019,6 @@ def cmd_candidates(args):
     if args.limit and args.limit > 0:
         pool = pool[:args.limit]
 
-    fallback_set = set(type_fallback)
     listed = []
     for cand in pool:
         body = cand.get('body') or ''
@@ -2939,15 +3040,14 @@ def cmd_candidates(args):
             # None means the issue has none and its label ordered it instead.
             'priority': priority_map.get(cand['number']),
         }
-        if cand['number'] in fallback_set:
-            # No native issue type: classified for this listing by its
-            # type-* label or [PREFIX] title instead (filter_by_native_type).
-            entry['native_type_fallback'] = True
         listed.append(entry)
 
     emit('ok', EXIT_OK, mode=args.mode, backlog_mode=backlog_mode,
          total=total, listed=len(listed), candidates=listed,
-         native_type_fallback_count=len(fallback_set),
+         # Issues the org has not typed or classified, and which are therefore
+         # not in this pool at all. Reported so a short list reads as a gap in
+         # the data rather than as a clean backlog.
+         unclassified=sorted(set(unclassified)),
          label_ordered_count=len([c for c in pool
                                   if not priority_map.get(c['number'])]))
 

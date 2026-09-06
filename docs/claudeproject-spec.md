@@ -41,7 +41,7 @@ wizard) if the literal level-2 heading is absent:
 | `## Label Map` | Purpose → label tables (may use `###` sub-tables). |
 
 **Recommended** — read by commands, default-covered when absent:
-`## Story Template`, `## Issue Prefixes`, `## Session Budget`,
+`## Story Template`, `## Session Budget`,
 `## Ready Gate`, `## Agent Gating`, `## Refinement`,
 `## Issue Types & Fields`.
 

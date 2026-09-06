@@ -7,6 +7,68 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## local-workflow 2.12.0
+
+- **`feature-discovery` writes one spec.** Where the host plugin provides
+  `wf issue-apply` (github-workflow does), the whole story tree — titles,
+  bodies, native types, fields, labels, parents and dependency edges — is
+  created in a single command rather than created and then upgraded. Each
+  body goes in its own file that the spec names, so nothing is hand-built
+  into a JSON string. No `type-*` label and no `[STORY]` title prefix is
+  written any more.
+
+## github-workflow 7.0.0
+
+The native issue type is now the only thing that says what kind of work an
+issue is, and one command writes every issue.
+
+**Breaking.** A `type-*` label classifies nothing any more, on any project.
+
+- **`type-*` labels are gone from the label map.** `type-story`,
+  `type-bug`, `type-security`, `type-debt` and `type-arch` are no longer
+  purposes the tooling knows how to use. `wf config-audit` reports a
+  project whose `## Label Map` still maps one (`type-label-deprecated`,
+  a warning) and tells you which rows to delete. The labels themselves can
+  stay on old issues; nothing reads them.
+- **`## Issue Prefixes` is gone** from the `ClaudeProject.md` template and
+  the spec. Titles carry no `[BUG]`, `[STORY]` or `[DEBT]` prefix.
+- **`wf pick --mode feature|maintenance` needs native issue types.** It
+  filters on the `issueType` field alone; an issue the org has not typed is
+  out of the pool and named on stderr instead of being guessed at from a
+  label or a title prefix. A project whose backlog carries no native type at
+  all now exits `no-capabilities` (21) saying so, where it used to filter by
+  label. `--mode story` is unaffected. To migrate: enable issue types for the
+  org, then run `wf issue-audit` and apply the spec it proposes — it reads
+  the old `type-*` labels and `[PREFIX]` titles precisely so it can backfill
+  from them.
+
+**One write path for issues.** `report-issue` and `feature-discovery` both
+create issues through `wf issue-apply` now — one spec carrying the title,
+body, native type, `Classification`, field values, labels, parent, blockers
+and milestone, applied and read back in one request. Neither calls
+`gh issue create`, and neither creates a label-only issue and upgrades it
+afterwards. That two-step is why the board held half-classified issues.
+
+- `issue-apply` strips a `type-*` label and a `[BUG]`-style title prefix off
+  every issue it writes, on every org, and reports what it dropped.
+- New spec key **`body_file`**: name a file and the body is read from it, so
+  fenced code, backticks, `$` and quotes are never hand-built into a JSON
+  string. The spec file keeps saying `body_file` after a write-back.
+- New spec key **`milestone`**: an open milestone's title, so sprint
+  placement rides in the same write. A title that names no open milestone
+  fails the spec before anything is written.
+- **A body always goes in a file.** `templates/body-file-write.md` now says
+  so as a rule and says how — write the file with the Write tool rather than
+  a shell heredoc, and if it must be the shell, a quoted heredoc. This
+  covers pull request bodies and comments too.
+
+**How issues are named.** `writing-github-issues` now carries the title
+standard explicitly: a verb-first outcome phrase, sentence case, no trailing
+full stop, roughly 70 characters or fewer, identifiers exact, and no
+metadata in the title at all — no kind prefix, no priority, no size, no
+sprint, no component tag. GitHub renders the type, the labels and the fields
+beside the title already.
+
 ## github-workflow 6.5.1
 
 Three ways the picker and the config audit disagreed with their own
