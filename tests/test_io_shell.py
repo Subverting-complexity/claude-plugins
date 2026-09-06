@@ -563,6 +563,86 @@ class TestIssueFacets(unittest.TestCase):
         self.assertEqual(facets['priority'], {1: 'High'})
 
 
+def _board_item(number, status='Ready', labels=(), assignee=None, state='OPEN'):
+    return {'fieldValueByName': {'name': status} if status else None,
+            'content': {'number': number, 'title': 'story %d' % number,
+                        'body': '', 'state': state, 'url': '',
+                        'labels': {'nodes': [{'name': n} for n in labels]},
+                        'milestone': None,
+                        'assignees': {'nodes': ([{'login': assignee}]
+                                                if assignee else [])}}}
+
+
+def _board_page(items, has_next=False, cursor=None):
+    return {'node': {'items': {
+        'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
+        'nodes': list(items)}}}
+
+
+class TestBoardColumnCandidates(unittest.TestCase):
+    """The `board-column` ready gate.
+
+    It asked for 200 records on a connection GitHub caps at 100, which is a
+    hard error rather than a short answer -- so this gate did not degrade, it
+    failed the whole `pick` with `candidate fetch failed`.
+    """
+
+    CFG = None
+
+    def _run(self, pages):
+        calls = []
+
+        def fake(query, **fields):
+            calls.append((query, fields))
+            return (True, pages[len(calls) - 1], '')
+
+        cfg = _cfg()
+        cfg['board'] = {'project_node_id': 'PVT_x', 'status_field_name': 'Status'}
+        with mock.patch.object(wf, 'gh_graphql', side_effect=fake):
+            ok, issues, err = wf._board_column_candidates(cfg, 'Ready')
+        return ok, issues, err, calls
+
+    def test_the_page_size_is_within_githubs_connection_limit(self):
+        ok, _, _, calls = self._run([_board_page([])])
+        self.assertTrue(ok)
+        size = int(re.search(r'items\(first:(\d+)', calls[0][0]).group(1))
+        self.assertLessEqual(size, 100, 'GitHub rejects a page over 100 outright')
+
+    def test_a_second_page_is_followed_with_the_cursor(self):
+        pages = [_board_page([_board_item(1)], has_next=True, cursor='CUR'),
+                 _board_page([_board_item(2)])]
+        ok, issues, _, calls = self._run(pages)
+        self.assertTrue(ok)
+        self.assertEqual(len(calls), 2)
+        self.assertIn('after:$cursor', calls[1][0])
+        self.assertEqual(calls[1][1]['cursor'], 'CUR')
+        self.assertEqual([i['number'] for i in issues], [1, 2])
+
+    def test_the_first_page_declares_no_cursor_variable(self):
+        """An unused non-null variable is a GraphQL error, not a no-op."""
+        _, _, _, calls = self._run([_board_page([])])
+        self.assertNotIn('cursor', calls[0][0])
+        self.assertNotIn('cursor', calls[0][1])
+
+    def test_paging_stops_at_the_cap(self):
+        pages = [_board_page([_board_item(n)], has_next=True, cursor='C%d' % n)
+                 for n in range(1, 6)]
+        _, _, _, calls = self._run(pages)
+        self.assertEqual(len(calls), wf.BOARD_MAX_PAGES)
+
+    def test_only_open_unassigned_items_in_the_named_column_are_returned(self):
+        pages = [_board_page([
+            _board_item(1),
+            _board_item(2, status='In Progress'),
+            _board_item(3, assignee='someone'),
+            _board_item(4, state='CLOSED'),
+            _board_item(5, status=None),
+        ])]
+        ok, issues, _, _ = self._run(pages)
+        self.assertTrue(ok)
+        self.assertEqual([i['number'] for i in issues], [1])
+
+
 class TestCandidatesCommand(unittest.TestCase):
     """`wf candidates` reads the pool and claims nothing.
 
@@ -2187,13 +2267,27 @@ class TestConfigAudit(unittest.TestCase):
     # ── the warnings ─────────────────────────────────────────────────────────
 
     def test_pin_asymmetry_warns_without_failing_the_run(self):
-        """`Epic` is not pinned to `Parent`, correctly. That is not an error."""
+        """A field one type carries and another does not. Soft, not an error."""
+        code, payload, _ = self._run(types=[
+            {'name': 'User Story', 'enabled': True,
+             'pinned': self._PINNED + ['Team']},
+            {'name': 'Epic', 'enabled': True, 'pinned': self._PINNED}])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(self._checks(payload), ['pin-asymmetry'])
+
+    def test_parent_unpinned_on_epic_leaves_the_audit_clean(self):
+        """The one asymmetry the audit itself calls correct is not reported.
+
+        An org configured exactly as the workflow wants it should come back
+        with nothing at all, so that a warning always means something.
+        """
         code, payload, _ = self._run(types=[
             {'name': 'User Story', 'enabled': True,
              'pinned': self._PINNED + ['Parent']},
             {'name': 'Epic', 'enabled': True, 'pinned': self._PINNED}])
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(self._checks(payload), ['pin-asymmetry'])
+        self.assertEqual(self._checks(payload), [])
+        self.assertEqual(payload['summary']['warning'], 0)
 
     def test_label_drift_warns_without_failing_the_run(self):
         code, payload, _ = self._run(

@@ -380,6 +380,32 @@ def _norm_issue(raw):
     }
 
 
+# GitHub caps a connection page at 100, so the board query pages too. Two
+# pages of items match the 200-issue window the label gate reads.
+BOARD_PAGE_SIZE = 100
+BOARD_MAX_PAGES = 2
+
+
+def _board_items_query(field_name, paged):
+    """The board-items query, with the `after:` clause only when paging."""
+    return (
+        'query($id:ID!%s){ node(id:$id){ ... on ProjectV2 {'
+        ' items(first:%d%s){'
+        '  pageInfo { hasNextPage endCursor }'
+        '  nodes {'
+        '   fieldValueByName(name:"%s"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }'
+        '   content { ... on Issue {'
+        '     number title body state url'
+        '     labels(first:20){ nodes { name } }'
+        '     milestone { title }'
+        '     assignees(first:1){ nodes { login } }'
+        '   } }'
+        ' } } } } }'
+        % (',$cursor:String!' if paged else '', BOARD_PAGE_SIZE,
+           ',after:$cursor' if paged else '',
+           field_name.replace('"', '\\"')))
+
+
 def _board_column_candidates(cfg, column_name):
     """Fetch unassigned open issues in the named board column via GraphQL.
 
@@ -391,24 +417,26 @@ def _board_column_candidates(cfg, column_name):
     if not node:
         return False, None, 'board-column gate requires a configured board (project-node-id)'
     field_name = board.get('status_field_name', 'Status')
-    ok, data, err = gh_graphql(
-        'query($id:ID!){ node(id:$id){ ... on ProjectV2 {'
-        ' items(first:200){ nodes {'
-        '   fieldValueByName(name:"%s"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }'
-        '   content { ... on Issue {'
-        '     number title body state url'
-        '     labels(first:20){ nodes { name } }'
-        '     milestone { title }'
-        '     assignees(first:1){ nodes { login } }'
-        '   } }'
-        ' } } } } }' % field_name.replace('"', '\\"'),
-        id=node)
-    if not ok or not data:
-        return False, None, 'board-column query failed: %s' % err
-    try:
-        nodes = data['node']['items']['nodes']
-    except (KeyError, TypeError):
-        return False, None, 'unexpected board-column response shape'
+    nodes, cursor, pages = [], None, 0
+    while pages < BOARD_MAX_PAGES:
+        args = {'id': node}
+        if cursor:
+            args['cursor'] = cursor
+        ok, data, err = gh_graphql(_board_items_query(field_name, bool(cursor)), **args)
+        if not ok or not data:
+            return False, None, 'board-column query failed: %s' % err
+        try:
+            connection = data['node']['items']
+            nodes.extend(connection['nodes'])
+        except (KeyError, TypeError):
+            return False, None, 'unexpected board-column response shape'
+        pages += 1
+        page_info = connection.get('pageInfo') or {}
+        if not page_info.get('hasNextPage'):
+            break
+        cursor = page_info.get('endCursor')
+        if not cursor:
+            break
     issues = []
     for item in nodes:
         fv = item.get('fieldValueByName')
@@ -2073,14 +2101,17 @@ def assemble_candidates(cfg):
             return False, None, err
         return True, [_norm_issue(r) for r in data or []], ''
     if gate == 'none':
+        # No lifecycle filter here. This gate used to drop `status-blocked` and
+        # nothing else, which let parked, in-review and needs-attention issues
+        # into the pool. `wf_core._filter_unavailable` now drops all six for
+        # every gate, so a gate cannot disagree with the others about what
+        # "available" means.
         args = ['issue', 'list', '--repo', repo, '--state', 'open',
                 '--assignee', '', '--json', fields, '--limit', '200']
         ok, data, err = gh_json(args)
         if not ok:
             return False, None, err
-        blocked = label(cfg, 'status-blocked')
-        issues = [_norm_issue(r) for r in data or []]
-        return True, [i for i in issues if blocked not in i['labels']], ''
+        return True, [_norm_issue(r) for r in data or []], ''
     if gate == 'board-column':
         return _board_column_candidates(cfg, 'Ready')
     if gate == 'both':

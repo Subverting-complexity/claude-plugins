@@ -7,6 +7,28 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 6.5.1
+
+Three ways the picker and the config audit disagreed with their own
+documentation.
+
+- **`pick` now skips parked issues.** Under `ready-gate: none` the only
+  lifecycle label it excluded was `status-blocked`, so a `status-parked`
+  issue a human had deliberately set aside came straight back as a
+  candidate — and so did one that was in review or needed attention. All
+  six unavailable states are now filtered for every ready-gate, in one
+  place, so a gate cannot have its own answer. `status-ready` is the only
+  pickable lifecycle state; an issue carrying no lifecycle label at all
+  stays eligible, which is what `ready-gate: none` relies on.
+- **The `board-column` and `both` ready-gates worked at all.** Their query
+  asked GitHub for 200 board items in one page, which is rejected outright
+  with `EXCESSIVE_PAGINATION`, so `pick` failed with `candidate fetch
+  failed` on every project using them. Now paged 100 at a time.
+- **`config-audit` no longer warns about the one asymmetry it calls
+  correct.** `Parent` is deliberately not pinned to `Epic` — an epic is the
+  parent — and the audit said so in the fix text of the warning it raised
+  about it. A correctly configured org now audits clean.
+
 ## local-workflow 2.11.1
 
 - `feature-discovery` now says which of the two priority tracks orders the

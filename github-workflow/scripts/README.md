@@ -560,7 +560,12 @@ creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
   `FALLBACK_MAINTENANCE_KINDS`), and so is a `Feature` the org left
   unclassified, so a half-classified backlog does not silently lose its
   unclassified half. Each fallback is reported on stderr with the issues
-  it applied to. The
+  it applied to. Whatever the gate, an issue is out of the pool if its
+  lifecycle label says it is unavailable — `status-parked`,
+  `status-blocked`, `status-in-progress`, `status-in-review`,
+  `status-needs-attention` or `needs-refinement`. `status-ready` is the only
+  lifecycle state that is pickable, and an issue carrying no lifecycle label
+  at all stays eligible, which is what `ready-gate: none` relies on. The
   empty-pool auto-ready dependency scan runs inline before returning
   `no-candidates`.
 - **`review-next`** — the *label-driven* subset. A PR whose head SHA changed
