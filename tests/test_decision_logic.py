@@ -114,6 +114,28 @@ class TestStorySelection(unittest.TestCase):
     def test_empty_pool_returns_none(self):
         self.assertIsNone(select_story([]))
 
+    # Lifecycle filter -- every state but status-ready is out of the pool
+
+    def test_parked_is_out_of_the_pool(self):
+        """A human set it aside; the picker does not take it back."""
+        candidates = [
+            _issue(1, ['priority-critical', 'status-parked']),
+            _issue(2, ['priority-low', 'status-ready']),
+        ]
+        self.assertEqual(select_story(candidates)['number'], 2)
+
+    def test_every_unavailable_lifecycle_state_is_out_of_the_pool(self):
+        for state in ('status-parked', 'status-blocked', 'status-in-progress',
+                      'status-in-review', 'status-needs-attention',
+                      'needs-refinement'):
+            with self.subTest(state=state):
+                self.assertIsNone(
+                    select_story([_issue(1, ['priority-critical', state])]))
+
+    def test_no_lifecycle_label_at_all_stays_eligible(self):
+        """`ready-gate: none` depends on this: unlabelled is not unavailable."""
+        self.assertEqual(select_story([_issue(7, ['priority-low'])])['number'], 7)
+
     # Mode filter
 
     def test_story_mode_accepts_any_type(self):
@@ -199,6 +221,15 @@ class TestSelectionHonoursProjectLabelMap(unittest.TestCase):
         ]
         self.assertEqual(
             select_story(candidates, project_map=self.PROJECT_MAP)['number'], 10)
+
+    def test_parked_filter_uses_remapped_label(self):
+        candidates = [
+            _issue(1, ['P1', 'on-hold']),  # renamed status-parked -> excluded
+            _issue(2, ['P2', 'status-ready']),
+        ]
+        project_map = dict(self.PROJECT_MAP, **{'status-parked': 'on-hold'})
+        self.assertEqual(
+            select_story(candidates, project_map=project_map)['number'], 2)
 
     def test_refinement_filter_uses_remapped_label(self):
         candidates = [
@@ -2145,14 +2176,40 @@ class TestPinnedFieldFindings(unittest.TestCase):
             [self._type('Task', [], enabled=False)], self._REQUIRED), [])
 
     def test_asymmetry_warns_and_does_not_fail(self):
-        """`Epic` is correctly not pinned to `Parent` — an epic is the parent."""
+        """A field one type carries and another does not is soft, not fatal."""
         findings = wf_core.pinned_field_findings(
-            [self._type('User Story', self._REQUIRED + ['Parent']),
+            [self._type('User Story', self._REQUIRED + ['Team']),
              self._type('Epic', self._REQUIRED)], self._REQUIRED)
         self.assertEqual(_levels(findings), [wf_core.WARNING])
         self.assertEqual(findings[0]['check'], 'pin-asymmetry')
-        self.assertIn('`Parent`', findings[0]['detail'])
+        self.assertIn('`Team`', findings[0]['detail'])
         self.assertIn('`Epic`', findings[0]['detail'])
+
+    def test_parent_unpinned_on_epic_is_not_reported_at_all(self):
+        """An epic is the parent, so it has no parent to record.
+
+        The audit used to warn about this and then say in its own fix text
+        that it was correct, which is how a clean run stops meaning anything.
+        """
+        self.assertEqual(wf_core.pinned_field_findings(
+            [self._type('User Story', self._REQUIRED + ['Parent']),
+             self._type('Epic', self._REQUIRED)], self._REQUIRED), [])
+
+    def test_the_parent_exemption_ignores_case(self):
+        """The names are org-configured, so the pair is matched case-blind."""
+        self.assertEqual(wf_core.pinned_field_findings(
+            [self._type('Story', self._REQUIRED + ['parent']),
+             self._type('epic', self._REQUIRED)], self._REQUIRED), [])
+
+    def test_parent_missing_from_a_type_that_is_not_epic_still_warns(self):
+        """Only `Epic` is exempt — a story with no `Parent` is a real gap."""
+        findings = wf_core.pinned_field_findings(
+            [self._type('User Story', self._REQUIRED + ['Parent']),
+             self._type('Bug', self._REQUIRED),
+             self._type('Epic', self._REQUIRED)], self._REQUIRED)
+        self.assertEqual(_levels(findings), [wf_core.WARNING])
+        self.assertIn('`Bug`', findings[0]['detail'])
+        self.assertNotIn('`Epic`', findings[0]['detail'])
 
     def test_a_correctly_pinned_org_is_clean(self):
         findings = wf_core.pinned_field_findings(

@@ -195,10 +195,28 @@ def filter_by_native_type(candidates, mode, type_map, classification_map=None,
     return result
 
 
-def _filter_refinement(candidates, project_map=None):
-    """Exclude issues that carry needs-refinement — not yet ready for pickup."""
-    needs = resolve_label('needs-refinement', project_map or {})
-    return [c for c in candidates if needs not in c.get('labels', [])]
+def _filter_unavailable(candidates, project_map=None):
+    """Exclude issues whose lifecycle label says they are not up for pickup.
+
+    Exactly one lifecycle label is on an issue at a time and `status-ready` is
+    the only one that means "pick me", so every other one takes the issue out
+    of the pool: parked, blocked, in progress, in review, needs attention and
+    needs refinement alike. An issue carrying no lifecycle label at all stays
+    eligible, which is what `ready-gate: none` depends on.
+
+    This is here, in the shared pool filter, rather than in each gate's query,
+    because the gates disagreed about it and only one of them was right. The
+    `label` gate excludes all six by asking for `status-ready`; `none` asked
+    about `status-blocked` alone and let a parked issue straight through; and
+    `board-column` deferred to a board that the labels are meant to be
+    authoritative over. One filter over the assembled pool means a gate cannot
+    quietly have its own answer.
+    """
+    project_map = project_map or {}
+    excluded = {resolve_label(key, project_map)
+                for key in LIFECYCLE_KEYS if key != 'status-ready'}
+    return [c for c in candidates
+            if not any(lbl in excluded for lbl in c.get('labels', []))]
 
 
 def _filter_agent_gating(candidates, agent_gating, project_map=None):
@@ -267,7 +285,7 @@ def select_pool(candidates, mode='story', agent_gating='disabled', project_map=N
                                      project_map, fallback_count)
     else:
         pool = _filter_by_mode(candidates, mode, project_map)
-    pool = _filter_refinement(pool, project_map)
+    pool = _filter_unavailable(pool, project_map)
     pool = _filter_agent_gating(pool, agent_gating, project_map)
     return _sort_candidates(pool, project_map, priority_map)
 
@@ -1414,6 +1432,16 @@ def label_drift_findings(live_labels, project_map=None):
     return out
 
 
+# Asymmetry that is correct by construction, so the audit stays silent about
+# it. An audit that reports a finding and then tells you in the same breath
+# that it is fine is an audit people learn to skim, and the whole value of
+# `preflight` is that a clean run means something. `Parent` on `Epic` is the
+# only such pair the workflow knows of: an epic *is* the parent, so it has no
+# parent of its own to record. Keyed and matched lower-case because these are
+# org-configured names.
+STRUCTURAL_PIN_EXEMPTIONS = {'parent': frozenset({'epic'})}
+
+
 def pinned_field_findings(issue_types, required_names, portal_hint=True):
     """Types whose issue form will not show a field the tooling writes to.
 
@@ -1422,10 +1450,10 @@ def pinned_field_findings(issue_types, required_names, portal_hint=True):
     appearing on the issue's form. The write succeeds, the value is real, and
     nobody can see it — which is why this fails rather than warns.
 
-    Asymmetry between types is a separate and softer matter: `Epic` is not
-    pinned to `Parent` on purpose, because an epic is the parent. So a field
-    some enabled types carry and others do not is a warning, and only the
-    fields the tooling actually writes are ever a failure.
+    Asymmetry between types is a separate and softer matter: a field some
+    enabled types carry and others do not is a warning, and only the fields the
+    tooling actually writes are ever a failure. Asymmetry that is correct by
+    construction is not reported at all -- see `STRUCTURAL_PIN_EXEMPTIONS`.
     """
     enabled = [t for t in issue_types or () if t.get('enabled')]
     required = list(required_names or ())
@@ -1454,7 +1482,9 @@ def pinned_field_findings(issue_types, required_names, portal_hint=True):
     for name in sorted(everywhere):
         if name in required:
             continue
-        absent = sorted(names - everywhere[name])
+        exempt = STRUCTURAL_PIN_EXEMPTIONS.get(name.strip().lower(), frozenset())
+        absent = sorted(n for n in names - everywhere[name]
+                        if n.strip().lower() not in exempt)
         if not absent:
             continue
         out.append(finding(
@@ -1462,8 +1492,7 @@ def pinned_field_findings(issue_types, required_names, portal_hint=True):
             '`%s` is pinned to %s but not to %s'
             % (name, _names(sorted(everywhere[name])), _names(absent)),
             'no action if that is deliberate — a type that cannot hold the '
-            'field should not pin it, which is why `Epic` correctly does not '
-            'pin `Parent`: an epic is the parent'))
+            'field should not pin it'))
     return out
 
 
