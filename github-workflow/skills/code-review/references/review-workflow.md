@@ -1,26 +1,14 @@
 # Review Workflow Reference
 
-Read this when you need to look up a **label purpose**, verify the
-**claim/release procedure** for a PR, or run the **label reconciliation
-fallback** for Step 10 (when `wf review-finish` is unavailable). Skip it
-on the common path when label names and claim steps are already clear
-from `SKILL.md`.
+Read this when you need to look up a **label purpose**, verify the **claim/release procedure** for a PR, or run the **label reconciliation fallback** for Step 10 (when `wf review-finish` is unavailable). Skip it on the common path when label names and claim steps are already clear from `SKILL.md`.
 
-For background on the feedback loop (how builders address review
-comments, how change significance is classified) and why duplicate PRs
-arise, see `docs/rationale/review-workflow-rationale.md` — not read at
-runtime.
+For background on the feedback loop (how builders address review comments, how change significance is classified) and why duplicate PRs arise, see `docs/rationale/review-workflow-rationale.md` — not read at runtime.
 
 ---
 
 ## Label Reference for Agents
 
-Any agent encountering these labels on a PR should understand what they
-mean and what action (if any) to take. Labels use the prefix defined in
-`review.config.md`. The bare names below (`reviewing`, `updating`,
-`approved`, …) are **purpose keys** — resolve each to its concrete name
-through the single path in `templates/default-labels.md` before applying
-or filtering. Never apply a bare name literally.
+Any agent encountering these labels on a PR should understand what they mean and what action (if any) to take. Labels use the prefix defined in `review.config.md`. The bare names below (`reviewing`, `updating`, `approved`, …) are **purpose keys** — resolve each to its concrete name through the single path in `templates/default-labels.md` before applying or filtering. Never apply a bare name literally.
 
 ### State labels (mutually exclusive — exactly one per PR)
 
@@ -45,41 +33,20 @@ or filtering. Never apply a bare name literally.
 
 ## Concurrency rules
 
-The real lock is an atomic claim ref, **not** a label. Both reviewing and
-updating a PR claim the same `refs/claims/pr-<number>` ref via
-`wf claim`, so a reviewer and an updater are mutually
-exclusive on a PR even under a shared GitHub identity (a shared label
-cannot guarantee this — it reads present for every agent). The `reviewing`
-/ `updating` labels remain **human-visible display markers** that the
-skip checks below still read.
+The real lock is an atomic claim ref, **not** a label. Both reviewing and updating a PR claim the same `refs/claims/pr-<number>` ref via `wf claim`, so a reviewer and an updater are mutually exclusive on a PR even under a shared GitHub identity (a shared label cannot guarantee this — it reads present for every agent). The `reviewing` / `updating` labels remain **human-visible display markers** that the skip checks below still read.
 
-- **Before reviewing**: Check for `reviewing` and `updating` labels as a
-  cheap first filter — if either is present, skip the PR entirely. The
-  atomic claim is the authoritative gate if the labels race.
+- **Before reviewing**: Check for `reviewing` and `updating` labels as a cheap first filter — if either is present, skip the PR entirely. The atomic claim is the authoritative gate if the labels race.
 - **Before updating**: Same label pre-check, then claim atomically.
-- **Claiming**: Run `wf claim --pr <number>` for target
-  `pr-<number>`. On success it applies your display label (`reviewing` or
-  `updating`). If the claim is lost, exit without changes — do not fall
-  back to a label-only claim.
-- **On exit or error**: Run **Release** for `pr-<number>` (delete the
-  ref), then remove your display label so other agents can proceed.
+- **Claiming**: Run `wf claim --pr <number>` for target `pr-<number>`. On success it applies your display label (`reviewing` or `updating`). If the claim is lost, exit without changes — do not fall back to a label-only claim.
+- **On exit or error**: Run **Release** for `pr-<number>` (delete the ref), then remove your display label so other agents can proceed.
 
-**Push-race safety.** A reviewer records HEAD at checkout, may push fixes,
-and footers `Reviewed at <SHA>`. A concurrent builder push between checkout
-and the reviewer's push would make that push a non-fast-forward reject —
-but the shared `refs/claims/pr-<number>` mutex means a reviewer and an
-updater can never hold the PR at the same time, so this race cannot occur.
-The claim ref, not the labels, is what guarantees it.
+**Push-race safety.** A reviewer records HEAD at checkout, may push fixes, and footers `Reviewed at <SHA>`. A concurrent builder push between checkout and the reviewer's push would make that push a non-fast-forward reject — but the shared `refs/claims/pr-<number>` mutex means a reviewer and an updater can never hold the PR at the same time, so this race cannot occur. The claim ref, not the labels, is what guarantees it.
 
 ---
 
 ## Label reconciliation fallback (Step 10)
 
-Use this **only** when `wf review-finish` errors or Python is absent.
-Apply the verdict label and remove the other state labels with plain
-`gh`, resolving each name by purpose key through
-`templates/default-labels.md` (review-state purposes via
-`review.config.md` when present):
+Use this **only** when `wf review-finish` errors or Python is absent. Apply the verdict label and remove the other state labels with plain `gh`, resolving each name by purpose key through `templates/default-labels.md` (review-state purposes via `review.config.md` when present):
 
 ```bash
 gh pr edit <number> --repo <org>/<repo> --add-label <verdict-label> \
@@ -87,10 +54,7 @@ gh pr edit <number> --repo <org>/<repo> --add-label <verdict-label> \
   --remove-label <needs-re-review> --remove-label <other-verdict-labels…>
 ```
 
-The remove commands no-op if the label isn't present. If the add fails
-because the verdict label doesn't exist on the repo, create it guarded —
-**without `--force`** so existing metadata is never overwritten — then
-retry the add:
+The remove commands no-op if the label isn't present. If the add fails because the verdict label doesn't exist on the repo, create it guarded — **without `--force`** so existing metadata is never overwritten — then retry the add:
 
 ```bash
 gh label create "<verdict-label>" --repo <org>/<repo> --description "<desc>" --color "<color>"

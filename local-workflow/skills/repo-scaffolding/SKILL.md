@@ -12,13 +12,7 @@ Plan and decompose a new project into epics and user stories. Get to the core of
 
 ## Output standard
 
-Everything a person reads — plans, questions, findings, summaries, and
-anything posted or committed — follows `skills/_shared/wording-standard.md`
-for how it reads, `skills/user-facing-communication/SKILL.md` for what it
-contains and in what order (outcome and current state first, then anything
-outstanding, blocked or assumed, every work item named as well as numbered,
-no investigation history), and `skills/_shared/banned-patterns.md` for what
-must never appear. Every reply, not only the last one.
+Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
 ## Skills Used
 
@@ -51,9 +45,7 @@ Before asking the user anything, gather what you can from whatever they've provi
 
 ### Research output
 
-Present a brief summary of what you found, then state the scope tier
-and which interview sections you plan to cover. Use `AskUserQuestion`
-to confirm:
+Present a brief summary of what you found, then state the scope tier and which interview sections you plan to cover. Use `AskUserQuestion` to confirm:
 
 - "Agree with scope (Recommended)" — proceed with the detected tier
 - "This is bigger than that" — bump up a tier
@@ -78,17 +70,12 @@ Be relentless. The goal is shared understanding with every open question resolve
 
 ### Using AskUserQuestion
 
-Use the `AskUserQuestion` tool for any question with a bounded answer
-set: binary choices, picking from discovered patterns, confirming
-recommendations, scope in/out decisions, phase-gate confirmations.
+Use the `AskUserQuestion` tool for any question with a bounded answer set: binary choices, picking from discovered patterns, confirming recommendations, scope in/out decisions, phase-gate confirmations.
 
 - 2-4 options per question, short labels.
-- Your recommended answer should be the first option with
-  "(Recommended)" appended to the label.
+- Your recommended answer should be the first option with "(Recommended)" appended to the label.
 - Batch up to 4 related questions in a single `AskUserQuestion` call.
-- The user can always select "Other" to type a custom answer. If you
-  find yourself wanting to add an "Other" option manually, just ask
-  in plain text instead.
+- The user can always select "Other" to type a custom answer. If you find yourself wanting to add an "Other" option manually, just ask in plain text instead.
 
 ### Interview sections
 
@@ -178,12 +165,7 @@ For small-scope work, there may be only one epic or even just stories with no ep
 
 ### Story structure
 
-Use the story template from `references/story-template.md`. It is short
-on purpose: a Summary, the changes, and acceptance criteria, plus only
-the sections that carry information the implementer would otherwise have
-to guess. Where the plugin provides a `writing-github-issues` skill
-(github-workflow does), read it before writing stories that become
-GitHub issues, and follow it for the title as well as the body.
+Use the story template from `references/story-template.md`. It is short on purpose: a Summary, the changes, and acceptance criteria, plus only the sections that carry information the implementer would otherwise have to guess. Where the plugin provides a `writing-github-issues` skill (github-workflow does), read it before writing stories that become GitHub issues, and follow it for the title as well as the body.
 
 ### Story sizing
 
@@ -224,9 +206,4 @@ Iterate until confirmed.
 
 ## Output
 
-The final deliverable is epics and stories with acceptance criteria
-and dependency ordering, presented in the conversation. The user can
-then create issues, board items, or tickets in their project
-management tool of choice. Do **not** write specification documents
-to the filesystem — the conversation and the resulting GitHub issues
-are the record.
+The final deliverable is epics and stories with acceptance criteria and dependency ordering, presented in the conversation. The user can then create issues, board items, or tickets in their project management tool of choice. Do **not** write specification documents to the filesystem — the conversation and the resulting GitHub issues are the record.

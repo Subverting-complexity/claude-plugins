@@ -5,52 +5,22 @@ description: "Detect, install, and configure Claude Code companion tools (Graphi
 
 # Ecosystem Setup
 
-Set up commonly used Claude Code companion tools and record what was
-enabled in `.claude/ecosystem.md`. That cheat-sheet is what the
-`/{{PLUGIN_NAME}}:{{EXECUTE_SKILL}}` and `/{{PLUGIN_NAME}}:code-review` skills read
-to decide which tools to run automatically — without it, those skills
-have no idea the tools are installed.
+Set up commonly used Claude Code companion tools and record what was enabled in `.claude/ecosystem.md`. That cheat-sheet is what the `/{{PLUGIN_NAME}}:{{EXECUTE_SKILL}}` and `/{{PLUGIN_NAME}}:code-review` skills read to decide which tools to run automatically — without it, those skills have no idea the tools are installed.
 
 ## Output standard
 
-Everything a person reads — plans, questions, findings, summaries, and
-anything posted or committed — follows `skills/_shared/wording-standard.md`
-for how it reads, `skills/user-facing-communication/SKILL.md` for what it
-contains and in what order (outcome and current state first, then anything
-outstanding, blocked or assumed, every work item named as well as numbered,
-no investigation history), and `skills/_shared/banned-patterns.md` for what
-must never appear. Every reply, not only the last one.
+Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
-This whole skill is **optional and additive** — skip any tool the user
-declines or that is not relevant. Ask once at the start, with a one-line
-sense of what is on offer: "Want to set up any Claude Code companion
-tools? They are optional and skippable — a codebase knowledge graph
-(Graphify) for graph-grounded answers, terminal/context token optimizers
-(RTK, Headroom), cost history (ccusage), a config security scanner
-(ecc-agentshield), and code intelligence for JS/TS projects only
-(Fallow)."
+This whole skill is **optional and additive** — skip any tool the user declines or that is not relevant. Ask once at the start, with a one-line sense of what is on offer: "Want to set up any Claude Code companion tools? They are optional and skippable — a codebase knowledge graph (Graphify) for graph-grounded answers, terminal/context token optimizers (RTK, Headroom), cost history (ccusage), a config security scanner (ecc-agentshield), and code intelligence for JS/TS projects only (Fallow)."
 
 **Filter what you offer** before asking, on two grounds:
 
-1. **Project allowlist** — if the project config declares one (an
-   `Ecosystem tools:` line or `## Ecosystem Tools` section in
-   `ClaudeProject.md` where the project has one, or an `Ecosystem tools:`
-   line in the header of an existing `.claude/ecosystem.md`), offer
-   **only** the tools it names. No allowlist means every tool is on the
-   table.
-2. **Language family** — never offer a tool outside the stack it supports:
-   Fallow is **JS/TS projects only** (see its section for the detection
-   check). Report each filtered-out tool with a one-line reason so the
-   user knows it was considered, and drop it from the ask-line above.
+1. **Project allowlist** — if the project config declares one (an `Ecosystem tools:` line or `## Ecosystem Tools` section in `ClaudeProject.md` where the project has one, or an `Ecosystem tools:` line in the header of an existing `.claude/ecosystem.md`), offer **only** the tools it names. No allowlist means every tool is on the table.
+2. **Language family** — never offer a tool outside the stack it supports: Fallow is **JS/TS projects only** (see its section for the detection check). Report each filtered-out tool with a one-line reason so the user knows it was considered, and drop it from the ask-line above.
 
-Track which tools the user enables. At the end, if at least one tool is
-enabled, write `.claude/ecosystem.md` containing only those tools'
-entries (see **Generate `.claude/ecosystem.md`** below) and **delete any
-`.claude/ecosystem-declined` marker** left by a previous decline — the
-project is now opted in.
+Track which tools the user enables. At the end, if at least one tool is enabled, write `.claude/ecosystem.md` containing only those tools' entries (see **Generate `.claude/ecosystem.md`** below) and **delete any `.claude/ecosystem-declined` marker** left by a previous decline — the project is now opted in.
 
-**If the user declines everything**, write **no** tool cheat-sheet, but do
-drop a tiny opt-out marker so nothing nags them again:
+**If the user declines everything**, write **no** tool cheat-sheet, but do drop a tiny opt-out marker so nothing nags them again:
 
 ```
 .claude/ecosystem-declined
@@ -68,34 +38,21 @@ later, run `/{{PLUGIN_NAME}}:ecosystem-setup` (or
 `.claude/ecosystem.md`.
 ```
 
-This marker is the deliberate-opt-out signal: it carries no tool content
-and adds nothing to a workflow context window (skills only check whether
-it exists), but it tells the onboarding nudge in `preflight` to stay
-quiet. Mention the user can `.gitignore` it if the opt-out is personal
-rather than a team decision. (A project with **neither** `ecosystem.md`
-**nor** this marker is simply one that never ran setup — that is the only
-state the nudge speaks up in.)
+This marker is the deliberate-opt-out signal: it carries no tool content and adds nothing to a workflow context window (skills only check whether it exists), but it tells the onboarding nudge in `preflight` to stay quiet. Mention the user can `.gitignore` it if the opt-out is personal rather than a team decision. (A project with **neither** `ecosystem.md` **nor** this marker is simply one that never ran setup — that is the only state the nudge speaks up in.)
 
-If `.claude/ecosystem.md` already exists, this skill **regenerates** it:
-re-run detection, let the user add or drop tools, and rewrite the file
-from the enabled set. If the user drops every tool during a regenerate,
-remove `.claude/ecosystem.md` and write the `ecosystem-declined` marker
-instead.
+If `.claude/ecosystem.md` already exists, this skill **regenerates** it: re-run detection, let the user add or drop tools, and rewrite the file from the enabled set. If the user drops every tool during a regenerate, remove `.claude/ecosystem.md` and write the `ecosystem-declined` marker instead.
 
 ---
 
 ## Graphify — codebase knowledge graph
 
-Graphify builds a queryable graph of the codebase so agents get
-graph-grounded answers instead of file-searching blind.
+Graphify builds a queryable graph of the codebase so agents get graph-grounded answers instead of file-searching blind.
 
-> The setup steps below assume git (`git mv`, `git add`, `.gitignore`) —
-> adapt the staging and ignore steps for projects on another VCS.
+> The setup steps below assume git (`git mv`, `git add`, `.gitignore`) — adapt the staging and ignore steps for projects on another VCS.
 
 **Detect:** `graphify --version`
 
-If not installed, offer install commands and skip remaining config if
-the user declines:
+If not installed, offer install commands and skip remaining config if the user declines:
 ```
 uv tool install graphifyy   # preferred (isolated env)
 # or: pip install graphifyy
@@ -103,22 +60,12 @@ uv tool install graphifyy   # preferred (isolated env)
 
 If installed (or just installed), run these checks in order:
 
-1. **First build** — if `graphify-out/manifest.json` does not exist,
-   run `graphify .` from the repo root. Large repos (>500 files) will
-   prompt for confirmation; remind the user that docs/images cost tokens
-   per file (~200–500 each) while code files are free. After the build:
+1. **First build** — if `graphify-out/manifest.json` does not exist, run `graphify .` from the repo root. Large repos (>500 files) will prompt for confirmation; remind the user that docs/images cost tokens per file (~200–500 each) while code files are free. After the build:
    ```
    git mv graphify-out/GRAPH_REPORT.md docs/GRAPH_REPORT.md
    git add graphify-out/cache/ graphify-out/.graphify_labels.json docs/GRAPH_REPORT.md
    ```
-   Tell the user to include these in their next commit. (The cache is the
-   token receipt — once committed, any fresh clone rebuilds the graph for
-   free via `graphify . --update`.) Commit only the content-addressed
-   `cache/ast/` and `cache/semantic/` files — NOT `manifest.json` or
-   `cache/stat-index.json`. Those are path/mtime indexes that embed
-   absolute worktree paths, so they churn on every run in every worktree
-   and dirty the tree; they belong in `.gitignore` (next step) and rebuild
-   locally for free.
+   Tell the user to include these in their next commit. (The cache is the token receipt — once committed, any fresh clone rebuilds the graph for free via `graphify . --update`.) Commit only the content-addressed `cache/ast/` and `cache/semantic/` files — NOT `manifest.json` or `cache/stat-index.json`. Those are path/mtime indexes that embed absolute worktree paths, so they churn on every run in every worktree and dirty the tree; they belong in `.gitignore` (next step) and rebuild locally for free.
 
 2. **`.gitignore`** — add entries if not already present:
    ```
@@ -135,13 +82,11 @@ If installed (or just installed), run these checks in order:
    graphify-out/cache/stat-index.json
    ```
 
-3. **Stop hook** — add to `.claude/settings.json` if not already
-   present. Merge under `hooks.Stop[0].hooks` rather than replacing:
+3. **Stop hook** — add to `.claude/settings.json` if not already present. Merge under `hooks.Stop[0].hooks` rather than replacing:
    ```json
    { "type": "command", "command": "graphify . --update --no-viz" }
    ```
-   This keeps the graph fresh automatically at the end of every Claude
-   Code session — right after files change, before the next agent starts.
+   This keeps the graph fresh automatically at the end of every Claude Code session — right after files change, before the next agent starts.
 
 Ecosystem entry (written to `.claude/ecosystem.md`):
 ```
@@ -165,36 +110,23 @@ file search for structure questions. Kept fresh automatically by the
 
 ## RTK — token optimizer
 
-RTK filters boilerplate from Bash output (passing tests, repeated
-headers) while keeping errors, diffs, and stack traces. Runs as a
-global PreToolUse hook — transparent to normal usage, no per-project
-configuration needed.
+RTK filters boilerplate from Bash output (passing tests, repeated headers) while keeping errors, diffs, and stack traces. Runs as a global PreToolUse hook — transparent to normal usage, no per-project configuration needed.
 
-**Detect:** `rtk --version`, then `rtk gain` (the real test — it must
-print savings stats). A bare `rtk --version` can succeed against the
-wrong binary: there is a separate, unrelated `rtk` ("Rust Type Kit") on
-crates.io. If `rtk gain` errors with "command not found", the wrong
-package is installed.
+**Detect:** `rtk --version`, then `rtk gain` (the real test — it must print savings stats). A bare `rtk --version` can succeed against the wrong binary: there is a separate, unrelated `rtk` ("Rust Type Kit") on crates.io. If `rtk gain` errors with "command not found", the wrong package is installed.
 
-If not installed (or the wrong one is), show the collision-safe install
-(`rtk-ai/rtk`):
+If not installed (or the wrong one is), show the collision-safe install (`rtk-ai/rtk`):
 ```
 curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh
 # or, with Rust: cargo install --git https://github.com/rtk-ai/rtk
 ```
-**Do not suggest plain `cargo install rtk`** — that pulls the wrong
-package from crates.io. Cannot auto-install; note it and skip config if
-the user declines.
+**Do not suggest plain `cargo install rtk`** — that pulls the wrong package from crates.io. Cannot auto-install; note it and skip config if the user declines.
 
-If installed correctly, the PreToolUse hook is set up by RTK's own
-initializer — do not hand-write it. Check `rtk init --show`; if no hook
-is present, offer to run:
+If installed correctly, the PreToolUse hook is set up by RTK's own initializer — do not hand-write it. Check `rtk init --show`; if no hook is present, offer to run:
 ```
 rtk init -g            # global hook, interactive (patches ~/.claude/settings.json)
 # or: rtk init -g --hook-only   # hook only, zero RTK tokens in context
 ```
-Only run it with the user's confirmation, since it edits their global
-settings. `rtk init` (no `-g`) installs a project-local hook instead.
+Only run it with the user's confirmation, since it edits their global settings. `rtk init` (no `-g`) installs a project-local hook instead.
 
 Ecosystem entry:
 ```
@@ -216,19 +148,11 @@ already filtered. No phase calls it directly.
 
 ## Headroom — context compression layer
 
-Headroom compresses what the agent feeds the model — tool outputs, logs,
-file contents, retrieved chunks, and conversation history — before the
-model reads it, claiming 60–95% fewer tokens with answer quality intact.
-It runs locally and is reversible: the originals stay on your machine and
-the model pulls full context back when it needs it. It overlaps with RTK
-(which only trims terminal output) but covers far more, so the two are
-complementary — run one or both.
+Headroom compresses what the agent feeds the model — tool outputs, logs, file contents, retrieved chunks, and conversation history — before the model reads it, claiming 60–95% fewer tokens with answer quality intact. It runs locally and is reversible: the originals stay on your machine and the model pulls full context back when it needs it. It overlaps with RTK (which only trims terminal output) but covers far more, so the two are complementary — run one or both.
 
-**Detect:** `headroom --version`, then `headroom perf` to confirm it runs
-and show any savings so far.
+**Detect:** `headroom --version`, then `headroom perf` to confirm it runs and show any savings so far.
 
-If not installed, offer install commands and skip the rest if the user
-declines (requires Python 3.10+):
+If not installed, offer install commands and skip the rest if the user declines (requires Python 3.10+):
 ```
 pip install "headroom-ai[all]"   # Python
 # or: npm install headroom-ai    # Node / TypeScript
@@ -236,19 +160,11 @@ pip install "headroom-ai[all]"   # Python
 
 Two ways to wire it into Claude Code — offer whichever the user prefers:
 
-1. **Transparent wrapper** — `headroom wrap claude` launches Claude Code
-   with compression applied to its context automatically. Add `--memory`
-   and `--code-graph` to carry more project context per token. Nothing to
-   configure; the user just launches through the wrapper.
+1. **Transparent wrapper** — `headroom wrap claude` launches Claude Code with compression applied to its context automatically. Add `--memory` and `--code-graph` to carry more project context per token. Nothing to configure; the user just launches through the wrapper.
 
-2. **MCP server** — `headroom mcp install` registers an MCP server so
-   agents can compress and recover context through tool calls
-   (`headroom_compress`, `headroom_retrieve`, `headroom_stats`). Only run
-   it with the user's confirmation, since it edits MCP config.
+2. **MCP server** — `headroom mcp install` registers an MCP server so agents can compress and recover context through tool calls (`headroom_compress`, `headroom_retrieve`, `headroom_stats`). Only run it with the user's confirmation, since it edits MCP config.
 
-`headroom learn` mines past failed sessions and writes corrections into
-`CLAUDE.md` / `AGENTS.md`. Mention it, but do not run it automatically —
-it edits project instruction files.
+`headroom learn` mines past failed sessions and writes corrections into `CLAUDE.md` / `AGENTS.md`. Mention it, but do not run it automatically — it edits project instruction files.
 
 Ecosystem entry:
 ```
@@ -273,13 +189,9 @@ goes broader (files, history, RAG).
 
 ## ccusage — Claude Code cost history
 
-ccusage reads local Claude Code JSONL session files and shows cost
-breakdowns by day, month, session, or project. Zero-install (npx), no
-configuration required. Complements the built-in `/cost` (which only
-shows the current session) with full historical data.
+ccusage reads local Claude Code JSONL session files and shows cost breakdowns by day, month, session, or project. Zero-install (npx), no configuration required. Complements the built-in `/cost` (which only shows the current session) with full historical data.
 
-Ask if the user wants it in their cheat-sheet. No detection or
-installation needed.
+Ask if the user wants it in their cheat-sheet. No detection or installation needed.
 
 Ecosystem entry:
 ```
@@ -300,22 +212,14 @@ calls it automatically.
 
 ## ecc-agentshield — config security scanner
 
-ecc-agentshield runs 102 deterministic rules across CLAUDE.md,
-settings.json, MCP configs, hooks, and skills — looking for hardcoded
-secrets, prompt injection vectors, overly permissive allowlists, and
-risky MCP endpoints. Zero-install (npx), no configuration required.
-Results are reproducible (no AI involved).
+ecc-agentshield runs 102 deterministic rules across CLAUDE.md, settings.json, MCP configs, hooks, and skills — looking for hardcoded secrets, prompt injection vectors, overly permissive allowlists, and risky MCP endpoints. Zero-install (npx), no configuration required. Results are reproducible (no AI involved).
 
 Offer to run it now to get an initial baseline report:
 ```
 npx ecc-agentshield scan      # or: npm install -g ecc-agentshield
 ```
 
-No configuration step. It auto-discovers the `~/.claude/` directory and
-the project's `.claude/` config and prints a graded A–F report (0–100).
-The default `scan` is the deterministic, no-AI path; the package also
-offers a deeper Claude-powered adversarial mode, but the workflow only
-relies on the reproducible `scan`.
+No configuration step. It auto-discovers the `~/.claude/` directory and the project's `.claude/` config and prints a graded A–F report (0–100). The default `scan` is the deterministic, no-AI path; the package also offers a deeper Claude-powered adversarial mode, but the workflow only relies on the reproducible `scan`.
 
 Ecosystem entry:
 ```
@@ -336,25 +240,15 @@ finding into the Security section.
 
 ## Fallow — codebase intelligence (TS/JS projects only)
 
-Fallow analyzes TypeScript/JavaScript codebases for unused exports,
-duplication, complexity hotspots, and architectural drift. Available
-as a CLI, VS Code extension, and MCP server for agent tool-call access
-directly from Claude Code.
+Fallow analyzes TypeScript/JavaScript codebases for unused exports, duplication, complexity hotspots, and architectural drift. Available as a CLI, VS Code extension, and MCP server for agent tool-call access directly from Claude Code.
 
-**Only offer this tool if the project is TypeScript/JavaScript** —
-check for `package.json`, `tsconfig.json`, or `.ts`/`.js` files at the
-repo root. For other stacks, report "Fallow: skipped (not a TS/JS
-project)" so the user knows it was considered.
+**Only offer this tool if the project is TypeScript/JavaScript** — check for `package.json`, `tsconfig.json`, or `.ts`/`.js` files at the repo root. For other stacks, report "Fallow: skipped (not a TS/JS project)" so the user knows it was considered.
 
 **Detect:** `npx fallow --version` (npx — no install needed for the CLI).
 
-The CLI runs with zero config: `npx fallow` for a first scan, then
-`npx fallow dead-code`, `npx fallow dupes`, `npx fallow health`, or
-`npx fallow fix --dry-run`.
+The CLI runs with zero config: `npx fallow` for a first scan, then `npx fallow dead-code`, `npx fallow dupes`, `npx fallow health`, or `npx fallow fix --dry-run`.
 
-If the user wants agents to query Fallow directly during tasks, register
-its **MCP server** in `.claude/settings.json` (merge under `mcpServers`,
-do not replace existing servers):
+If the user wants agents to query Fallow directly during tasks, register its **MCP server** in `.claude/settings.json` (merge under `mcpServers`, do not replace existing servers):
 ```json
 {
   "mcpServers": {
@@ -362,11 +256,7 @@ do not replace existing servers):
   }
 }
 ```
-That exposes tools such as `analyze` (dead code), `find_dupes`,
-`check_health` (complexity), and `audit` (changed-file dead code +
-complexity + duplication) for agent tool calls. See
-[fallow.tools](https://fallow.tools/) for the paid runtime-intelligence
-tier (`check_runtime_coverage`, `get_hot_paths`, `get_blast_radius`).
+That exposes tools such as `analyze` (dead code), `find_dupes`, `check_health` (complexity), and `audit` (changed-file dead code + complexity + duplication) for agent tool calls. See [fallow.tools](https://fallow.tools/) for the paid runtime-intelligence tier (`check_runtime_coverage`, `get_hot_paths`, `get_blast_radius`).
 
 Ecosystem entry:
 ```
@@ -389,15 +279,9 @@ the diff introduces.
 
 ## Commit reminder hook (optional)
 
-Offer a small Stop hook that nudges *you, the user* at the end of a
-session if work was left uncommitted — a deterministic backstop. A hook
-fires reliably because the harness runs it; a guideline in CLAUDE.md
-only fires if the agent remembers it.
+Offer a small Stop hook that nudges *you, the user* at the end of a session if work was left uncommitted — a deterministic backstop. A hook fires reliably because the harness runs it; a guideline in CLAUDE.md only fires if the agent remembers it.
 
-Ask: "Add a reminder that warns you at session end if you have
-uncommitted changes?" If yes, merge this into the project's
-`.claude/settings.json` under `hooks.Stop[0].hooks` (append — never
-replace an existing graphify or other Stop hook):
+Ask: "Add a reminder that warns you at session end if you have uncommitted changes?" If yes, merge this into the project's `.claude/settings.json` under `hooks.Stop[0].hooks` (append — never replace an existing graphify or other Stop hook):
 ```json
 {
   "type": "command",
@@ -405,9 +289,7 @@ replace an existing graphify or other Stop hook):
 }
 ```
 
-This prints the reminder only when the working tree is dirty; a clean
-tree stays silent. It is a nudge, not a blocker — it never fails the
-session or auto-commits. Skip silently if the user declines.
+This prints the reminder only when the working tree is dirty; a clean tree stays silent. It is a nudge, not a blocker — it never fails the session or auto-commits. Skip silently if the user declines.
 
 ---
 
@@ -415,8 +297,7 @@ session or auto-commits. Skip silently if the user declines.
 
 If at least one tool was enabled:
 
-1. **Write `.claude/ecosystem.md`** — include only the sections for the
-   enabled tools, using the compact entries above. Prefix the file with:
+1. **Write `.claude/ecosystem.md`** — include only the sections for the enabled tools, using the compact entries above. Prefix the file with:
    ```markdown
    <!-- Generated by /{{PLUGIN_NAME}}:ecosystem-setup — do not hand-edit. -->
    <!-- Regenerate: /{{PLUGIN_NAME}}:ecosystem-setup                      -->
@@ -424,36 +305,23 @@ If at least one tool was enabled:
    # Ecosystem Tools
 
    ```
-   Then append each enabled tool's section in the order: Graphify, RTK,
-   Headroom, ccusage, ecc-agentshield, Fallow. If a tool was offered but skipped
-   for a reason worth recording (e.g. Fallow on a non-TS/JS repo), add a
-   one-line note under the title explaining the omission.
+   Then append each enabled tool's section in the order: Graphify, RTK, Headroom, ccusage, ecc-agentshield, Fallow. If a tool was offered but skipped for a reason worth recording (e.g. Fallow on a non-TS/JS repo), add a one-line note under the title explaining the omission.
 
-2. **Point CLAUDE.md at it** — if the project's `CLAUDE.md` has a
-   "Supplementary Files" table, add a row if not already present:
+2. **Point CLAUDE.md at it** — if the project's `CLAUDE.md` has a "Supplementary Files" table, add a row if not already present:
    ```
    | `.claude/ecosystem.md` | Installed Claude Code companion tool cheat-sheet — graphify queries, cost tracking, security scanning, and codebase intelligence. |
    ```
-   If there is no such table (or no `CLAUDE.md`), tell the user they can
-   add this pointer once they have a Supplementary Files section, so any
-   future session discovers the cheat-sheet.
+   If there is no such table (or no `CLAUDE.md`), tell the user they can add this pointer once they have a Supplementary Files section, so any future session discovers the cheat-sheet.
 
-3. **Commit question** — ask whether to commit `.claude/ecosystem.md`
-   with the project (team-shared, all agents benefit) or add it to
-   `.gitignore` (personal-only). If personal-only, append
-   `.claude/ecosystem.md` to `.gitignore`.
+3. **Commit question** — ask whether to commit `.claude/ecosystem.md` with the project (team-shared, all agents benefit) or add it to `.gitignore` (personal-only). If personal-only, append `.claude/ecosystem.md` to `.gitignore`.
 
-4. **Print a summary** after setup completes, listing every tool and its
-   disposition so the user can see at a glance what was configured:
+4. **Print a summary** after setup completes, listing every tool and its disposition so the user can see at a glance what was configured:
    ```
    Ecosystem setup complete:
      Configured: Graphify, RTK, ccusage
      Skipped:    Fallow (not a TS/JS project)
      Declined:   Headroom, ecc-agentshield
    ```
-   Omit a category if it is empty (e.g. no "Skipped" line when every tool
-   was either configured or declined).
+   Omit a category if it is empty (e.g. no "Skipped" line when every tool was either configured or declined).
 
-If no tools were enabled, skip file generation entirely — no file, no
-table row, zero tokens in future contexts — but still print the summary
-so the user sees what was available and why nothing was configured.
+If no tools were enabled, skip file generation entirely — no file, no table row, zero tokens in future contexts — but still print the summary so the user sees what was available and why nothing was configured.

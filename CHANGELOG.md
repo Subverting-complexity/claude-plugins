@@ -7,6 +7,51 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 8.0.0 / local-workflow 2.13.0
+
+**Breaking (github-workflow):** the `pr-description` skill is renamed
+`pr-body`. Call `/github-workflow:pr-body` instead. local-workflow's
+`pr-description` is unchanged and keeps its name, because the two now
+write genuinely different bodies and a shared name hid that.
+
+- **One standard behind every issue and pull request body.** The rules
+  that were half-stated in `pr-description` and half in
+  `writing-github-issues` now live once, in
+  `skills/_shared/body-standard.md`: the section vocabulary, the Summary
+  and bullet rules, the title rules, the style, and what never appears.
+  Those skills are now entry points over it and hold only what genuinely
+  differs, so an issue and a pull request read the same way. Each entry
+  point has its own slash command, so the two pull request formats cannot
+  be reached by mistake.
+
+- **Bodies are never hard-wrapped.** Each paragraph is one line, however
+  long it runs. GitHub reflows markdown to whoever is reading it, so
+  wrapping at 72 or 80 columns only fixed the breaks where they suited
+  nobody and made every later edit rewrap a paragraph. The worked
+  examples in both skills were themselves wrapped, which is what taught
+  the habit; they are not any more.
+
+- **A pull request body has a fixed shape.** `## Summary`, `## Changes`,
+  `## Test plan`, in that order, every time, with `Closes #N` at the end
+  and no invented headings. Previously the body was a `##` section per
+  component, so no two pull requests looked alike. `execute` and
+  `bulk-execute` now build their bodies from that shape rather than
+  describing their own.
+
+- **The plugins' own instruction files are unwrapped too.** Every skill,
+  command, template, reference and doc in the repo is now one paragraph per
+  line. They were the examples the model copied when it wrapped a body, so
+  the rule and the files that teach it now agree. Content is unchanged: the
+  pass preserved every heading, table row, list item and fenced code block
+  byte for byte.
+
+- **Issues a person has to finish are marked uniformly** (github-workflow):
+  `[Manual]` at the front of the title, the existing `status-blocked`
+  label, and a `## Manual step` section saying what has to be done and
+  why. The three go together. `[Manual]` is the only title prefix the
+  workflow keeps, because nothing native records that an issue needs a
+  human, and story selection already skips `status-blocked`.
+
 ## local-workflow 2.12.0
 
 - **`feature-discovery` writes one spec.** Where the host plugin provides

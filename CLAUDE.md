@@ -2,72 +2,47 @@
 
 This repo contains multiple Claude Code plugins that share skills.
 
-> **Dogfooding note:** This repo is itself configured as a
-> `github-workflow` target. Project settings (org/repo, labels, quality
-> gate, board) live in [`ClaudeProject.md`](ClaudeProject.md); workflow
-> commands (`/github-workflow:execute`, `:code-review`, etc.) read it. The open backlog of plugin-hardening work is tracked on
-> the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8).
+> **Dogfooding note:** This repo is itself configured as a `github-workflow` target. Project settings (org/repo, labels, quality gate, board) live in [`ClaudeProject.md`](ClaudeProject.md); workflow commands (`/github-workflow:execute`, `:code-review`, etc.) read it. The open backlog of plugin-hardening work is tracked on the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8).
 
 ## CRITICAL RULES
 
-1. **NEVER edit a synced skill copy directly.** If the file contains
-   a line starting with `<!-- SYNCED from _shared-skills/ -->`, it is
-   generated. (In a `SKILL.md` the banner sits just below the YAML
-   frontmatter — which must stay on line 1 — so it is not always the
-   first line.) Edit the canonical source in `_shared-skills/` instead. See the
-   shared skills list in `_shared-skills/MANIFEST.md`. Before editing
-   ANY skill file, check whether it exists in `_shared-skills/` — if
-   it does, that is the only file you may edit.
+1. **NEVER edit a synced skill copy directly.** If the file contains a line starting with `<!-- SYNCED from _shared-skills/ -->`, it is generated. (In a `SKILL.md` the banner sits just below the YAML frontmatter — which must stay on line 1 — so it is not always the first line.) Edit the canonical source in `_shared-skills/` instead. See the shared skills list in `_shared-skills/MANIFEST.md`. Before editing ANY skill file, check whether it exists in `_shared-skills/` — if it does, that is the only file you may edit.
 
-2. **Always run `./sync-skills.ps1` (or `./sync-skills.sh`) after
-   editing a shared skill.** This deploys the change to all plugins.
-   Commit the canonical file AND the synced copies together in the
-   same commit.
+2. **Always run `./sync-skills.ps1` (or `./sync-skills.sh`) after editing a shared skill.** This deploys the change to all plugins. Commit the canonical file AND the synced copies together in the same commit.
 
-3. **Always bump plugin versions before merging.** If you changed any
-   file in a plugin (directly or via sync), bump that plugin's version
-   in `{plugin}/.claude-plugin/plugin.json`:
+3. **Always bump plugin versions before merging.** If you changed any file in a plugin (directly or via sync), bump that plugin's version in `{plugin}/.claude-plugin/plugin.json`:
    - **Patch** (x.y.Z): bug fixes, typo corrections, minor wording
    - **Minor** (x.Y.0): new skills, commands, behavioral changes
    - **Major** (X.0.0): breaking changes, removed skills
 
-4. **Always commit and open a PR when work is complete.** This is the
-   default and it **overrides** the generic "only commit/push when asked"
-   caution — finishing a unit of work here *means* committing it on a
-   feature branch and opening a pull request against `main`, without
-   waiting to be told. Only skip this if the user explicitly says not to
-   (e.g. "don't commit", "just show me the diff"). Never leave completed
-   changes uncommitted in the working tree. Before committing: branch off
-   `main` if on it, run the quality gate, sync shared skills (rule 2), and
-   bump versions (rule 3). End commit messages and PR bodies with the
-   standard co-author / generation trailers.
+4. **Always commit and open a PR when work is complete.** This is the default and it **overrides** the generic "only commit/push when asked" caution — finishing a unit of work here *means* committing it on a feature branch and opening a pull request against `main`, without waiting to be told. Only skip this if the user explicitly says not to (e.g. "don't commit", "just show me the diff"). Never leave completed changes uncommitted in the working tree. Before committing: branch off `main` if on it, run the quality gate, sync shared skills (rule 2), and bump versions (rule 3). End commit messages and PR bodies with the standard co-author / generation trailers.
 
 ## Shared Skills
 
-Fifteen skills live in `_shared-skills/` and are deployed to both plugins,
-alongside `_shared/` (wording standard and banned patterns) and
-`references/` (story template). The list, and what is deliberately *not*
-shared, are in `_shared-skills/MANIFEST.md`.
+Fourteen skills live in `_shared-skills/` and are deployed to both plugins, alongside `_shared/` (wording standard, banned patterns and body standard) and `references/` (story template). The list, and what is deliberately *not* shared, are in `_shared-skills/MANIFEST.md`.
 
-`user-facing-communication` is the standard for every reply either plugin
-writes to a person: what was done and the current state first, then
-anything outstanding, blocked or assumed. It reaches a session three
-ways, so it holds whether or not a workflow command is running: each
-plugin's `SessionStart` hook injects it, `_shared/wording-standard.md`
-cites it (and every skill cites that), and every skill, command and agent
-that writes to the user names it directly. `lint-skills.sh` asserts that
-last part, so the wiring cannot be dropped one file at a time.
+`_shared/body-standard.md` is the single standard for every body written into a tracker or forge: an issue, a pull request description, a comment. It holds the wording, the bullet and title rules, the style and the no-hard-wrapping rule. Its entry points carry only the part that differs, which is which sections a body has: `writing-github-issues` for a GitHub issue, `pr-body` in github-workflow and `pr-description` in local-workflow for a pull request.
+
+The two pull request skills are deliberately **not** shared, and they have separate slash commands (`/github-workflow:pr-body`, `/local-workflow:pr-description`) so neither format can be reached by mistake. github-workflow's is fixed (`## Summary` → `## Changes` → `## Test plan`, then `Closes #N`) because `execute`, `bulk-execute` and `code-review` read and extend those bodies. local-workflow's keeps the component-section format. Do not re-merge them into `_shared-skills/`.
+
+`lint-skills.sh` asserts that every entry point, the wording standard and `templates/body-file-write.md` still cite the body standard, so they cannot drift apart again.
+
+`user-facing-communication` is the standard for every reply either plugin writes to a person: what was done and the current state first, then anything outstanding, blocked or assumed. It reaches a session three ways, so it holds whether or not a workflow command is running: each plugin's `SessionStart` hook injects it, `_shared/wording-standard.md` cites it (and every skill cites that), and every skill, command and agent that writes to the user names it directly. `lint-skills.sh` asserts that last part, so the wiring cannot be dropped one file at a time.
 
 ### How to edit
 
 1. Edit the file in `_shared-skills/{skill}/SKILL.md`
-2. Use `{{PLUGIN_NAME}}` for plugin-specific references
-   (e.g., `/{{PLUGIN_NAME}}:execute`) and `{{PLUGIN_VERSION}}`
-   for version references
+2. Use `{{PLUGIN_NAME}}` for plugin-specific references (e.g., `/{{PLUGIN_NAME}}:execute`) and `{{PLUGIN_VERSION}}` for version references
 3. Run `./sync-skills.ps1` (or `./sync-skills.sh`) to deploy
 4. Run `./sync-skills.ps1 -Verify` to confirm zero drift
 5. Commit canonical + synced copies together
 6. Bump affected plugin versions
+
+### Never hard-wrap an instruction file
+
+Every markdown file in this repo is written one paragraph per line, however long the line runs. Do not reflow prose to 72, 80 or any other column, and do not rewrap a paragraph you edit. The only line breaks a file has are the ones markdown needs: between blocks, between list items, and inside fenced code.
+
+This is not cosmetic. These files are the examples the model learns the house style from, and while they were wrapped it wrapped the issue and pull request bodies it wrote — which trackers then reflowed, putting the breaks where they suited nobody. `_shared/body-standard.md` states the rule for bodies; this section states it for the files that teach it.
 
 ### Checking for drift
 
@@ -76,8 +51,7 @@ last part, so the wiring cannot be dropped one file at a time.
 ./sync-skills.sh --verify     # Bash (macOS/Linux)
 ```
 
-Returns exit code 1 if any plugin copy has drifted from the canonical
-source.
+Returns exit code 1 if any plugin copy has drifted from the canonical source.
 
 ## Plugins
 
@@ -88,11 +62,7 @@ source.
 
 ## Running parallel agents
 
-These workflows spawn parallel/background agents, each of which the harness
-places in its own git worktree. When running agents in parallel — especially
-on Windows, where per-worktree `node_modules` duplication causes file-lock
-cleanup failures — follow the recommended harness configuration and manual
-reap routine in [`docs/worktree-config.md`](docs/worktree-config.md).
+These workflows spawn parallel/background agents, each of which the harness places in its own git worktree. When running agents in parallel — especially on Windows, where per-worktree `node_modules` duplication causes file-lock cleanup failures — follow the recommended harness configuration and manual reap routine in [`docs/worktree-config.md`](docs/worktree-config.md).
 
 ## Tooling
 
@@ -112,24 +82,18 @@ reap routine in [`docs/worktree-config.md`](docs/worktree-config.md).
 
 ### Bootstrapping your clone
 
-Run this once after cloning (idempotent). It pins line endings to LF —
-matching `.gitattributes`, so files like `CLAUDE.md` don't churn to CRLF
-on Windows and leave worktrees stuck "dirty" — and installs the
-pre-commit hook:
+Run this once after cloning (idempotent). It pins line endings to LF — matching `.gitattributes`, so files like `CLAUDE.md` don't churn to CRLF on Windows and leave worktrees stuck "dirty" — and installs the pre-commit hook:
 
 ```bash
 ./bootstrap.sh      # macOS / Linux / Git Bash
 ./bootstrap.ps1     # Windows PowerShell
 ```
 
-This replaces the manual hook install (`cp hooks/pre-commit
-.git/hooks/pre-commit && chmod +x .git/hooks/pre-commit`), which still
-works if you only want the hook.
+This replaces the manual hook install (`cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit`), which still works if you only want the hook.
 
 ## Updating installed plugins
 
-After merging changes to main, the local Claude Code marketplace cache
-is stale. You must refresh it before updating:
+After merging changes to main, the local Claude Code marketplace cache is stale. You must refresh it before updating:
 
 ```powershell
 claude plugin marketplace update subverting-complexity
@@ -137,38 +101,21 @@ claude plugin update github-workflow@subverting-complexity
 claude plugin update local-workflow@subverting-complexity
 ```
 
-Without the marketplace refresh, `plugin update` reports "already at
-latest" against the cached version — not the actual latest on main.
+Without the marketplace refresh, `plugin update` reports "already at latest" against the cached version — not the actual latest on main.
 
-> The command is `claude plugin` (singular). Run it from a normal shell,
-> not inside a Claude Code session — the CLI blocks nested sessions; if
-> needed, prefix with `env -u CLAUDECODE`. Verify a manifest before
-> shipping with `claude plugin validate ./<plugin>` — it catches schema
-> errors (e.g. unrecognized keys) that plain JSON validation misses.
+> The command is `claude plugin` (singular). Run it from a normal shell, not inside a Claude Code session — the CLI blocks nested sessions; if needed, prefix with `env -u CLAUDECODE`. Verify a manifest before shipping with `claude plugin validate ./<plugin>` — it catches schema errors (e.g. unrecognized keys) that plain JSON validation misses.
 
 ## Declaring a plugin in a consuming project
 
-A project can commit its plugin dependency to
-`.claude/settings.json`, so that sessions opened in that repository
-enable the plugin without anyone installing it by hand:
+A project can commit its plugin dependency to `.claude/settings.json`, so that sessions opened in that repository enable the plugin without anyone installing it by hand:
 
 ```bash
 claude plugin install github-workflow@subverting-complexity --scope project
 ```
 
-Be aware of how that install splits itself across two files, because the
-split is easy to misread. The command writes `enabledPlugins` into the
-**project** settings, which is the part that gets committed, but it
-records the marketplace under `extraKnownMarketplaces` in the
-**user** settings, which stays on the machine that ran it.
+Be aware of how that install splits itself across two files, because the split is easy to misread. The command writes `enabledPlugins` into the **project** settings, which is the part that gets committed, but it records the marketplace under `extraKnownMarketplaces` in the **user** settings, which stays on the machine that ran it.
 
-The consequence is that a committed `enabledPlugins` entry names a
-marketplace the repository never declares. Adding
-`extraKnownMarketplaces` to the project settings alongside it looks like
-the fix, and it is harmless, but it does **not** work: a config that has
-never registered the marketplace does not fetch it on the strength of a
-project-level declaration. Verified against v2.1.220, in a repository
-whose committed settings declared both keys:
+The consequence is that a committed `enabledPlugins` entry names a marketplace the repository never declares. Adding `extraKnownMarketplaces` to the project settings alongside it looks like the fix, and it is harmless, but it does **not** work: a config that has never registered the marketplace does not fetch it on the strength of a project-level declaration. Verified against v2.1.220, in a repository whose committed settings declared both keys:
 
 | User config | Project settings | Result |
 | ----------- | ---------------- | ------ |
@@ -176,25 +123,17 @@ whose committed settings declared both keys:
 | Marketplace added | `enabledPlugins` only | Resolves, `Scope: project` |
 | Marketplace added | Both keys | Resolves, `Scope: project` |
 
-So the marketplace registration is a per-machine step that cannot be
-committed. Each developer runs this once, ever, and it covers every
-repository they subsequently clone:
+So the marketplace registration is a per-machine step that cannot be committed. Each developer runs this once, ever, and it covers every repository they subsequently clone:
 
 ```bash
 claude plugin marketplace add Subverting-complexity/claude-plugins
 ```
 
-After that one command, a repository's committed `enabledPlugins` is
-enough on its own — no `plugin install` per project. That is the real
-benefit of committing the declaration, and it is worth saying plainly in
-a consuming project's own README, because the failure mode when the
-marketplace is missing is silence rather than an error.
+After that one command, a repository's committed `enabledPlugins` is enough on its own — no `plugin install` per project. That is the real benefit of committing the declaration, and it is worth saying plainly in a consuming project's own README, because the failure mode when the marketplace is missing is silence rather than an error.
 
 ## Supplementary Files
 
-These files provide context for specific workflows. You don't need to
-read all of them every session — consult them when the topic is
-relevant to what you're working on.
+These files provide context for specific workflows. You don't need to read all of them every session — consult them when the topic is relevant to what you're working on.
 
 | File | When to consult |
 | ---- | --------------- |

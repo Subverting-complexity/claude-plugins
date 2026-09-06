@@ -1,24 +1,13 @@
 # Preflight — auto-merge safety checks
 
-Deep checks for the **opt-in** `auto-merge-on-approval` feature. Read and
-run these **only when** `ClaudeProject.md` references a `review.config.md`
-**and** that file has `auto-merge-on-approval: enabled`. In the default
-configuration (no `review.config.md`, or auto-merge disabled) none of this
-runs — skip it entirely; it is off the common path on purpose.
+Deep checks for the **opt-in** `auto-merge-on-approval` feature. Read and run these **only when** `ClaudeProject.md` references a `review.config.md` **and** that file has `auto-merge-on-approval: enabled`. In the default configuration (no `review.config.md`, or auto-merge disabled) none of this runs — skip it entirely; it is off the common path on purpose.
 
-Gating on that one setting is safe because it is the only thing that
-enables a merge anywhere in the plugin: it governs both
-`/github-workflow:code-review`'s merge step and the merge phase that ends a
-`/github-workflow:execute` run. There is no second path that merges without
-it, so a project this block skips is a project where nothing merges
-unattended.
+Gating on that one setting is safe because it is the only thing that enables a merge anywhere in the plugin: it governs both `/github-workflow:code-review`'s merge step and the merge phase that ends a `/github-workflow:execute` run. There is no second path that merges without it, so a project this block skips is a project where nothing merges unattended.
 
-When auto-merge is enabled, an approved PR is squash-merged automatically,
-so two repo-side settings must hold or a queued merge silently never fires:
+When auto-merge is enabled, an approved PR is squash-merged automatically, so two repo-side settings must hold or a queued merge silently never fires:
 
 1. the repo's **Allow auto-merge** setting is on, and
-2. **something enforces "CI green before merge"** — either GitHub required
-   status checks, or the plugin-side `require-ci-before-merge` flag.
+2. **something enforces "CI green before merge"** — either GitHub required status checks, or the plugin-side `require-ci-before-merge` flag.
 
 Run this block (it makes at most four `gh` calls, enabled case only):
 
@@ -67,6 +56,4 @@ elif [ -n "$automerge" ]; then
 fi
 ```
 
-Classify the output: a `WARNING` here is informational (reviews still run;
-only the queued-merge step is affected) — it never escalates to the wizard.
-`/github-workflow:setup harden` wires up the gate.
+Classify the output: a `WARNING` here is informational (reviews still run; only the queued-merge step is affected) — it never escalates to the wizard. `/github-workflow:setup harden` wires up the gate.

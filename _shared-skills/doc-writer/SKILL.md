@@ -1,6 +1,6 @@
 ---
 name: doc-writer
-description: "Write or update project documentation — README, API docs, architecture guides, migration guides, changelogs. Use when the user wants to write, generate, or update docs for a project or system. Do NOT use for code comments, PR descriptions (use pr-description), or user stories (use user-story)."
+description: "Write or update project documentation — README, API docs, architecture guides, migration guides, changelogs. Use when the user wants to write, generate, or update docs for a project or system. Do NOT use for code comments, pull request bodies, or user stories (use user-story)."
 allowed-tools:
   - Read
   - Edit
@@ -17,21 +17,11 @@ allowed-tools:
 
 # Documentation Writer
 
-Write or update project documentation based on the actual codebase.
-Documentation describes what exists — do not document aspirational
-features or planned changes.
+Write or update project documentation based on the actual codebase. Documentation describes what exists — do not document aspirational features or planned changes.
 
-Read `skills/_shared/wording-standard.md` and
-`skills/_shared/banned-patterns.md` before writing. All documentation
-must follow both. Assume a technically capable reader who is not involved
-in this codebase: explain what a component or pattern is before relying
-on its name, stay high-level and concise, and never let a string of
-identifiers replace a plain explanation.
+Read `skills/_shared/wording-standard.md` and `skills/_shared/banned-patterns.md` before writing. All documentation must follow both. Assume a technically capable reader who is not involved in this codebase: explain what a component or pattern is before relying on its name, stay high-level and concise, and never let a string of identifiers replace a plain explanation.
 
-`skills/user-facing-communication/SKILL.md` shapes what you say to the
-person **around** the documentation: lead with the outcome and the current
-state, keep it short, and surface anything outstanding or assumed. It
-governs your reply, not the documentation itself.
+`skills/user-facing-communication/SKILL.md` shapes what you say to the person **around** the documentation: lead with the outcome and the current state, keep it short, and surface anything outstanding or assumed. It governs your reply, not the documentation itself.
 
 ## Inputs
 
@@ -50,14 +40,9 @@ If the type is ambiguous, ask.
 
 Before writing, understand what you're documenting.
 
-1. **Read the code.** The codebase is the source of truth. Read entry
-   points, public APIs, key modules, config files, and test files to
-   understand behavior.
-2. **Read existing docs.** Check for README, docs/, wiki references,
-   inline JSDoc/docstrings, and OpenAPI specs. Understand what already
-   exists so you extend rather than duplicate.
-3. **Read git history** for context on recent changes (changelogs and
-   migration guides).
+1. **Read the code.** The codebase is the source of truth. Read entry points, public APIs, key modules, config files, and test files to understand behavior.
+2. **Read existing docs.** Check for README, docs/, wiki references, inline JSDoc/docstrings, and OpenAPI specs. Understand what already exists so you extend rather than duplicate.
+3. **Read git history** for context on recent changes (changelogs and migration guides).
 
 ## Phase 2 — Structure
 
@@ -99,24 +84,14 @@ Follow Keep a Changelog format:
 
 ## Phase 3 — Write
 
-1. **Be concrete.** Use real file names, real command output, real
-   config values from the project. Do not use placeholder examples
-   when real ones are available.
-2. **Be accurate.** Every command in the docs should actually work.
-   Every file path should exist. Every API example should match the
-   real response format.
-3. **Be brief.** One sentence where one sentence suffices. Code blocks
-   over prose for anything procedural. Tables over lists for
-   structured data.
-4. **Update, don't replace.** If docs already exist, modify them to
-   reflect the current state. Preserve sections the user may have
-   customized (contributing guidelines, license, badges).
+1. **Be concrete.** Use real file names, real command output, real config values from the project. Do not use placeholder examples when real ones are available.
+2. **Be accurate.** Every command in the docs should actually work. Every file path should exist. Every API example should match the real response format.
+3. **Be brief.** One sentence where one sentence suffices. Code blocks over prose for anything procedural. Tables over lists for structured data.
+4. **Update, don't replace.** If docs already exist, modify them to reflect the current state. Preserve sections the user may have customized (contributing guidelines, license, badges).
 
 ## Phase 4 — Verify
 
 1. **Check all file paths** referenced in the docs actually exist.
 2. **Check all commands** by running them if possible.
-3. **Check for staleness** — if the docs reference features, config
-   options, or APIs, verify they still exist in the current code.
-4. **Read the result** end-to-end as a new user would. Does it make
-   sense without prior context?
+3. **Check for staleness** — if the docs reference features, config options, or APIs, verify they still exist in the current code.
+4. **Read the result** end-to-end as a new user would. Does it make sense without prior context?

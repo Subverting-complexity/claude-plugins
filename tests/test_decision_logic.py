@@ -2208,6 +2208,25 @@ class TestTypedIssueWriteShape(unittest.TestCase):
             with self.subTest(title=title):
                 self.assertEqual(wf_core.strip_title_prefix(title), title)
 
+    def test_the_manual_prefix_survives(self):
+        """`[Manual]` says a person has to finish it, which no field records.
+
+        The title is the only place it can live, so stripping it would erase
+        the one marker that keeps such an issue visible.
+        """
+        for title in ('[Manual] Grant the app access to the org',
+                      '[manual] Rotate the signing key',
+                      '[MANUAL] Approve the store submission'):
+            with self.subTest(title=title):
+                self.assertEqual(wf_core.strip_title_prefix(title), title)
+        self.assertNotIn('MANUAL', wf_core.TITLE_PREFIX_KINDS)
+
+    def test_the_manual_prefix_is_not_a_declared_kind(self):
+        """It says who does the work, not what kind of work it is."""
+        kind, source = wf_core.declared_kind('[Manual] Grant access', [])
+        self.assertIsNone(kind)
+        self.assertIsNone(source)
+
 
 class TestDeprecatedLabelFindings(unittest.TestCase):
     """The `type-*` rows that outlived what read them."""

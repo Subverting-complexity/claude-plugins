@@ -1,9 +1,6 @@
 # local-workflow
 
-A Claude Code plugin for project-agnostic local development. No GitHub
-integration or platform dependencies required — install it on any
-project and get structured coding, architecture design, code review,
-user story writing, and more.
+A Claude Code plugin for project-agnostic local development. No GitHub integration or platform dependencies required — install it on any project and get structured coding, architecture design, code review, user story writing, and more.
 
 ## Install
 
@@ -12,14 +9,11 @@ claude plugin marketplace add Subverting-complexity/claude-plugins
 claude plugin install local-workflow@subverting-complexity
 ```
 
-Run both from a normal shell, not inside a Claude Code session, then
-restart the session so the skills and hooks load. Adding the marketplace
-is a per-machine step you do once, ever.
+Run both from a normal shell, not inside a Claude Code session, then restart the session so the skills and hooks load. Adding the marketplace is a per-machine step you do once, ever.
 
 ## Prerequisites
 
-`git` is the only tool required. There are no GitHub, platform, or
-Python dependencies.
+`git` is the only tool required. There are no GitHub, platform, or Python dependencies.
 
 ## Usage
 
@@ -116,20 +110,8 @@ This plugin is the counterpart to `github-workflow`. The key differences:
 | Board integration | None                               | Project board updates                  |
 | Not in the other  | `build`, `mobile-audit`            | `execute`, `bulk-execute`, `writing-github-issues` |
 
-`code-review` and `preflight` exist in both under the same name but are
-different skills, not synced copies: this plugin reviews a diff and checks
-local config, github-workflow manages a PR's whole lifecycle and validates
-board, label and auth setup.
+`code-review` and `preflight` exist in both under the same name but are different skills, not synced copies: this plugin reviews a diff and checks local config, github-workflow manages a PR's whole lifecycle and validates board, label and auth setup.
 
-Everything else — fifteen skills, listed in `_shared-skills/MANIFEST.md` —
-is shared and identical in both. In `github-workflow`, `ecosystem-setup`
-also backs the `setup` wizard's ecosystem step; here it is invoked on its
-own.
+Everything else — fifteen skills, listed in `_shared-skills/MANIFEST.md` — is shared and identical in both. In `github-workflow`, `ecosystem-setup` also backs the `setup` wizard's ecosystem step; here it is invoked on its own.
 
-Because local-workflow has no setup wizard or preflight check, `build`
-serves as the onboarding entry point for companion tools: the first time
-you build in a project that has not opted into *or* out of the tools, it
-surfaces a single optional, non-blocking tip pointing at
-`/local-workflow:ecosystem-setup`. Run that once to enable the tools (it
-writes `.claude/ecosystem.md`), or decline (it writes
-`.claude/ecosystem-declined`) — either way the tip goes quiet for good.
+Because local-workflow has no setup wizard or preflight check, `build` serves as the onboarding entry point for companion tools: the first time you build in a project that has not opted into *or* out of the tools, it surfaces a single optional, non-blocking tip pointing at `/local-workflow:ecosystem-setup`. Run that once to enable the tools (it writes `.claude/ecosystem.md`), or decline (it writes `.claude/ecosystem-declined`) — either way the tip goes quiet for good.

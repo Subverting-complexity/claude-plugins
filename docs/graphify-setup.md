@@ -2,10 +2,7 @@
 
 ## What this gives you
 
-A queryable knowledge graph of your codebase that any agent or developer can
-use without rebuilding from scratch. Once set up, agents run
-`graphify query "..."` to get graph-grounded answers instead of searching
-files blindly. The graph stays fresh automatically via a Claude Code hook.
+A queryable knowledge graph of your codebase that any agent or developer can use without rebuilding from scratch. Once set up, agents run `graphify query "..."` to get graph-grounded answers instead of searching files blindly. The graph stays fresh automatically via a Claude Code hook.
 
 ---
 
@@ -22,8 +19,7 @@ Verify: `graphify --version`
 
 ## Step 2 — First cold build
 
-Run from the repo root. If the corpus is over 500 files, graphify will warn
-you and show top subdirectories — pick a subfolder or confirm full repo.
+Run from the repo root. If the corpus is over 500 files, graphify will warn you and show top subdirectories — pick a subfolder or confirm full repo.
 
 ```
 graphify .
@@ -32,14 +28,11 @@ graphify .
 This runs in two parallel tracks:
 
 - **AST extraction** — static analysis of all code files, deterministic, zero tokens
-- **Semantic extraction** — LLM extraction of docs, images, YAML fixtures;
-  costs tokens per file (~200–500 each)
+- **Semantic extraction** — LLM extraction of docs, images, YAML fixtures; costs tokens per file (~200–500 each)
 
-For a ~1,000 file repo expect: 25–40k input tokens, 8–12k output tokens for
-the semantic pass. Code-only repos cost nothing.
+For a ~1,000 file repo expect: 25–40k input tokens, 8–12k output tokens for the semantic pass. Code-only repos cost nothing.
 
-If you have a Gemini API key, set it before running to use Gemini instead of
-Claude subagents for semantic extraction (cheaper, faster):
+If you have a Gemini API key, set it before running to use Gemini instead of Claude subagents for semantic extraction (cheaper, faster):
 
 ```
 export GEMINI_API_KEY=your_key
@@ -69,8 +62,7 @@ graphify-out/
 
 ## Step 3 — Commit the right things
 
-The rule: commit what makes future runs free and preserves human effort.
-Ignore what is large, derived, or machine-local.
+The rule: commit what makes future runs free and preserves human effort. Ignore what is large, derived, or machine-local.
 
 ### Add to `.gitignore`
 
@@ -122,9 +114,7 @@ git add docs/GRAPH_REPORT.md
 
 ## Step 4 — Add the Stop hook
 
-Add to `.claude/settings.json`. This runs `graphify . --update` silently at
-the end of every Claude Code session — right after an agent finishes a story,
-when files just changed.
+Add to `.claude/settings.json`. This runs `graphify . --update` silently at the end of every Claude Code session — right after an agent finishes a story, when files just changed.
 
 ```json
 {
@@ -143,22 +133,11 @@ when files just changed.
 }
 ```
 
-**Why a hook and not CI:**
-CI runs on GitHub's remote runners which have no Claude session. If a doc file
-changes and misses the semantic cache, CI would need a `GEMINI_API_KEY` secret
-or it silently fails. The Stop hook runs locally where Claude is already
-authenticated — cache hits are free, genuine doc changes extract naturally, no
-credentials to manage.
+**Why a hook and not CI:** CI runs on GitHub's remote runners which have no Claude session. If a doc file changes and misses the semantic cache, CI would need a `GEMINI_API_KEY` secret or it silently fails. The Stop hook runs locally where Claude is already authenticated — cache hits are free, genuine doc changes extract naturally, no credentials to manage.
 
-**Why not a git hook (`post-commit`, `post-merge`):**
-Git hooks aren't committed (they live in `.git/hooks/`), so every developer
-has to install them manually. The Claude Code Stop hook is in `settings.json`,
-which is committed — it travels with the repo and applies to all agents
-automatically.
+**Why not a git hook (`post-commit`, `post-merge`):** Git hooks aren't committed (they live in `.git/hooks/`), so every developer has to install them manually. The Claude Code Stop hook is in `settings.json`, which is committed — it travels with the repo and applies to all agents automatically.
 
-`--no-viz` skips regenerating `graph.html` on every session end. Agents query
-via `graphify query`, not the visual output. Generate the HTML manually when
-you want to browse the graph: `graphify export html`.
+`--no-viz` skips regenerating `graph.html` on every session end. Agents query via `graphify query`, not the visual output. Generate the HTML manually when you want to browse the graph: `graphify export html`.
 
 ---
 
@@ -189,9 +168,7 @@ graphify explain "SagaStepExecutor"
 graphify . --mcp
 ```
 
-Do not load `graph.json` directly into an agent's context — at 4–8 MB it
-consumes most of a context window and most of it is irrelevant to any given
-question. Use `graphify query` to get surgical, token-budgeted answers.
+Do not load `graph.json` directly into an agent's context — at 4–8 MB it consumes most of a context window and most of it is irrelevant to any given question. Use `graphify query` to get surgical, token-budgeted answers.
 
 ---
 
@@ -206,6 +183,4 @@ question. Use `graphify query` to get surgical, token-budgeted answers.
 | `--update` after 2–3 doc changes | ~500–1,500 total |
 | `--update` after a doc sprint (10+ files) | ~3,000–8,000 total |
 
-Once the cache is committed, the only ongoing token spend is for genuinely new
-or edited non-code files. Code changes — which are the vast majority of commits
-— are always free.
+Once the cache is committed, the only ongoing token spend is for genuinely new or edited non-code files. Code changes — which are the vast majority of commits — are always free.

@@ -10,26 +10,15 @@ description: >-
 
 # Preflight Check
 
-Verify project configuration is complete and consistent before running
-workflow commands.
+Verify project configuration is complete and consistent before running workflow commands.
 
 ## Output standard
 
-Everything a person reads — plans, questions, findings, summaries, and
-anything posted or committed — follows `skills/_shared/wording-standard.md`
-for how it reads, `skills/user-facing-communication/SKILL.md` for what it
-contains and in what order (outcome and current state first, then anything
-outstanding, blocked or assumed, every work item named as well as numbered,
-no investigation history), and `skills/_shared/banned-patterns.md` for what
-must never appear. Every reply, not only the last one.
+Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
 ## 1. Startup checks (one shell round-trip)
 
-Run suppression, GitHub-CLI auth, `ClaudeProject.md`, and `CLAUDE.md` in a
-**single** block so the common path costs one round-trip instead of four —
-and so a suppressed project pays for none of the auth/grep work. (None of
-these checks contain a code-fence delimiter, so they are safe in an
-auto-run block — see issue #33.)
+Run suppression, GitHub-CLI auth, `ClaudeProject.md`, and `CLAUDE.md` in a **single** block so the common path costs one round-trip instead of four — and so a suppressed project pays for none of the auth/grep work. (None of these checks contain a code-fence delimiter, so they are safe in an auto-run block — see issue #33.)
 
 ```!
 if [ -f .claude/preflight-passed.txt ]; then
@@ -115,149 +104,53 @@ else
 fi
 ```
 
-**React to the token, do not re-derive it.** The block prints exactly one
-of three lead tokens — branch on it without re-reading files:
+**React to the token, do not re-derive it.** The block prints exactly one of three lead tokens — branch on it without re-reading files:
 
-- `PREFLIGHT_ALREADY_PASSED` — preflight already passed earlier this
-  session (the marker exists). **Return silently and immediately**; run no
-  further checks. The calling command proceeds.
-- `PREFLIGHT_SUPPRESSED` — the user dismissed preflight reminders. Skip all
-  remaining checks, return silently, and let the calling command proceed.
-  They can re-enable by deleting `.claude/preflight-dismiss.md` or running
-  `/github-workflow:setup`.
-- `PREFLIGHT_ACTIVE` — the checks ran. Read `PREFLIGHT_CHEAP_VERDICT`: if it
-  is `OK` **and** the ready-gate is `label` or `none` (no required board —
-  confirm from the config already in context, no file re-read), there are no
-  further CRITICAL checks to run. Write the pass marker (Section 3) and
-  return silently. Only continue to the by-hand checks below when the gate is
-  `board-column`/`both` (a required board can be CRITICAL) or
-  `PREFLIGHT_CHEAP_VERDICT` is `CRITICAL`.
+- `PREFLIGHT_ALREADY_PASSED` — preflight already passed earlier this session (the marker exists). **Return silently and immediately**; run no further checks. The calling command proceeds.
+- `PREFLIGHT_SUPPRESSED` — the user dismissed preflight reminders. Skip all remaining checks, return silently, and let the calling command proceed. They can re-enable by deleting `.claude/preflight-dismiss.md` or running `/github-workflow:setup`.
+- `PREFLIGHT_ACTIVE` — the checks ran. Read `PREFLIGHT_CHEAP_VERDICT`: if it is `OK` **and** the ready-gate is `label` or `none` (no required board — confirm from the config already in context, no file re-read), there are no further CRITICAL checks to run. Write the pass marker (Section 3) and return silently. Only continue to the by-hand checks below when the gate is `board-column`/`both` (a required board can be CRITICAL) or `PREFLIGHT_CHEAP_VERDICT` is `CRITICAL`.
 
-**`CONFIG_RENAME_CANDIDATE` — alternative config file found.** If the
-block printed a `CONFIG_RENAME_CANDIDATE: {path}` line, a file with the
-right content but the wrong name exists. Use `AskUserQuestion` to offer:
-- **"Rename to ClaudeProject.md (Recommended)"** — rename the file
-  (`git mv {path} ClaudeProject.md`), re-run the startup checks, and
-  continue.
-- **"Run setup instead"** — invoke `/github-workflow:setup`, which will
-  create a fresh `ClaudeProject.md`.
+**`CONFIG_RENAME_CANDIDATE` — alternative config file found.** If the block printed a `CONFIG_RENAME_CANDIDATE: {path}` line, a file with the right content but the wrong name exists. Use `AskUserQuestion` to offer:
+- **"Rename to ClaudeProject.md (Recommended)"** — rename the file (`git mv {path} ClaudeProject.md`), re-run the startup checks, and continue.
+- **"Run setup instead"** — invoke `/github-workflow:setup`, which will create a fresh `ClaudeProject.md`.
 
-**`ECOSYSTEM_TIP` is informational, not a finding.** If the block printed an
-`ECOSYSTEM_TIP` line, the project is configured but has not opted into *or*
-out of the companion tools. It is **never** CRITICAL or WARNING and never
-gates a command. The only thing it changes: when you would otherwise return
-silently (everything OK, or WARNINGs-but-no-CRITICAL), print **one** plain
-line first — e.g. "Tip: companion tools like Graphify aren't set up. Run
-`/github-workflow:setup ecosystem` to enable them, or skip — it's optional."
-Then proceed exactly as before (write the pass marker, return control). It
-shows at most once per session (the pass marker short-circuits later runs),
-and once the user sets up or declines it stops entirely. If no `ECOSYSTEM_TIP`
-line was printed, say nothing about ecosystem tools.
+**`ECOSYSTEM_TIP` is informational, not a finding.** If the block printed an `ECOSYSTEM_TIP` line, the project is configured but has not opted into *or* out of the companion tools. It is **never** CRITICAL or WARNING and never gates a command. The only thing it changes: when you would otherwise return silently (everything OK, or WARNINGs-but-no-CRITICAL), print **one** plain line first — e.g. "Tip: companion tools like Graphify aren't set up. Run `/github-workflow:setup ecosystem` to enable them, or skip — it's optional." Then proceed exactly as before (write the pass marker, return control). It shows at most once per session (the pass marker short-circuits later runs), and once the user sets up or declines it stops entirely. If no `ECOSYSTEM_TIP` line was printed, say nothing about ecosystem tools.
 
 ## 2. Run diagnostics
 
-**Fast path (the common, healthy case).** Only **CRITICAL** items can
-block a command (gh auth, `ClaudeProject.md` + its required sections, a
-*required* board, `board-columns-incomplete`). Everything else is a
-WARNING that proceeds on a default. The one-shot block above already ran
-the cheap CRITICAL file/auth/section checks; the only checks left are the
-**by-hand** ones below (quality gate, ready-gate/board), and the board
-network check runs **only if a board is required or configured**. If
-nothing is CRITICAL, **return silently and let the command proceed** — do
-not compose a findings report. The WARNING-level results (placeholders,
-label-map completeness, CLAUDE.md, quality gate, review config) only ever
-print one informational line and never block.
+**Fast path (the common, healthy case).** Only **CRITICAL** items can block a command (gh auth, `ClaudeProject.md` + its required sections, a *required* board, `board-columns-incomplete`). Everything else is a WARNING that proceeds on a default. The one-shot block above already ran the cheap CRITICAL file/auth/section checks; the only checks left are the **by-hand** ones below (quality gate, ready-gate/board), and the board network check runs **only if a board is required or configured**. If nothing is CRITICAL, **return silently and let the command proceed** — do not compose a findings report. The WARNING-level results (placeholders, label-map completeness, CLAUDE.md, quality gate, review config) only ever print one informational line and never block.
 
 Collect the output from the block above and the by-hand checks below.
 
-**Reuse, don't re-read.** Several calling commands (`execute`,
-`code-review`, `block-story`) auto-load the full `ClaudeProject.md` into
-context before invoking preflight. When that copy is already present,
-evaluate the by-hand checks (quality gate, ready-gate/board) against it —
-do **not** open `ClaudeProject.md` again. Only read the file if it is not
-already in context.
+**Reuse, don't re-read.** Several calling commands (`execute`, `code-review`, `block-story`) auto-load the full `ClaudeProject.md` into context before invoking preflight. When that copy is already present, evaluate the by-hand checks (quality gate, ready-gate/board) against it — do **not** open `ClaudeProject.md` again. Only read the file if it is not already in context.
 
-**Run expensive checks only when needed.** Network calls here are
-conditional and rare. The board-identity `gh api` query runs **only when a
-board is required** (ready-gate `board-column`/`both`); for the common
-`label` ready-gate, skip it entirely — board writes are best-effort and
-`wf board-move` re-verifies identity at write time, so a preflight network
-round-trip every command is wasted tokens and latency.
-The auto-merge repo-setting and CI-gate checks run **only when
-`auto-merge-on-approval` is `enabled`** in `review.config.md` (an opt-in,
-off-by-default feature). None of these calls run in the default
-configuration.
+**Run expensive checks only when needed.** Network calls here are conditional and rare. The board-identity `gh api` query runs **only when a board is required** (ready-gate `board-column`/`both`); for the common `label` ready-gate, skip it entirely — board writes are best-effort and `wf board-move` re-verifies identity at write time, so a preflight network round-trip every command is wasted tokens and latency. The auto-merge repo-setting and CI-gate checks run **only when `auto-merge-on-approval` is `enabled`** in `review.config.md` (an opt-in, off-by-default feature). None of these calls run in the default configuration.
 
-> The GitHub-CLI, `ClaudeProject.md` (existence, placeholders, required
-> sections), and `CLAUDE.md` checks all run in the one-shot block in
-> Section 1 above. The remaining checks below are read by hand because
-> they need value extraction or a `gh` API call that an auto-run block
-> cannot do reliably (issue #33).
+> The GitHub-CLI, `ClaudeProject.md` (existence, placeholders, required sections), and `CLAUDE.md` checks all run in the one-shot block in Section 1 above. The remaining checks below are read by hand because they need value extraction or a `gh` API call that an auto-run block cannot do reliably (issue #33).
 
 ### Quality gate command
 
-Read this one by hand — do **not** use an auto-run (`!`-prefixed) block.
-The quality-gate command lives inside a fenced code block in
-`ClaudeProject.md`, and an auto-run block cannot contain a code-fence
-delimiter without truncating itself mid-command (this previously emitted
-a bash "unexpected EOF" error on every preflight run — issue #33).
+Read this one by hand — do **not** use an auto-run (`!`-prefixed) block. The quality-gate command lives inside a fenced code block in `ClaudeProject.md`, and an auto-run block cannot contain a code-fence delimiter without truncating itself mid-command (this previously emitted a bash "unexpected EOF" error on every preflight run — issue #33).
 
-Open `ClaudeProject.md`, find the `## Quality Gate` section, and read the
-command inside its fenced code block. Then classify:
+Open `ClaudeProject.md`, find the `## Quality Gate` section, and read the command inside its fenced code block. Then classify:
 
-- Section missing, command empty, or still the literal
-  `{quality_gate_command}` placeholder → emit
-  `WARNING quality-gate: not configured or has template placeholder`.
+- Section missing, command empty, or still the literal `{quality_gate_command}` placeholder → emit `WARNING quality-gate: not configured or has template placeholder`.
 - Otherwise → emit `OK quality-gate: {command}`.
 
 ### Ready-gate and project board
 
-Read this by hand — board identity needs a `gh` API call plus value
-extraction from `ClaudeProject.md` tables, which an auto-run (`!`) block
-cannot do reliably (and the `gh` query below contains a code fence,
-which would truncate an auto-run block — see issue #33).
+Read this by hand — board identity needs a `gh` API call plus value extraction from `ClaudeProject.md` tables, which an auto-run (`!`) block cannot do reliably (and the `gh` query below contains a code fence, which would truncate an auto-run block — see issue #33).
 
-1. Open `ClaudeProject.md`. In `## Ready Gate`, read the `ready-gate`
-   value (`label`, `board-column`, `both`, or `none`).
-2. A board is **required** when `ready-gate` is `board-column` or
-   `both`. It is **optional** (best-effort board updates only) when
-   `ready-gate` is `label` or `none` — neither needs a board, since
-   neither uses a "Ready" column to gate pickup.
-3. In `## Project Board`, read `project-node-id`, `project-title`, and
-   the Status option ids.
+1. Open `ClaudeProject.md`. In `## Ready Gate`, read the `ready-gate` value (`label`, `board-column`, `both`, or `none`).
+2. A board is **required** when `ready-gate` is `board-column` or `both`. It is **optional** (best-effort board updates only) when `ready-gate` is `label` or `none` — neither needs a board, since neither uses a "Ready" column to gate pickup.
+3. In `## Project Board`, read `project-node-id`, `project-title`, and the Status option ids.
 
 Classify:
 
-- **Board required but not configured** — a board is required and the
-  `## Project Board` section is missing, or `project-node-id` is absent,
-  `n/a`, or still a `{placeholder}`:
-  emit `CRITICAL board-config: ready-gate '{gate}' requires a project board, but none is configured`.
-- **Ready column missing** — `ready-gate` is `board-column` or `both`
-  and the "Ready" Status option id is `n/a` or absent:
-  emit `CRITICAL board-ready-option: ready-gate '{gate}' needs a "Ready" board column, but no Ready Status option id is configured`.
-- **Active lifecycle columns missing** — a board **is** configured
-  (`project-node-id` is real) but one or more of the three active
-  workflow columns is absent. This is a **local table read, no network
-  call** — check the `### Status Options` rows for `col-in-progress`,
-  `col-in-review`, and `col-blocked`; any whose Option ID is `n/a`,
-  absent, or still a `{placeholder}` is missing. If any are missing:
-  emit `CRITICAL board-columns-incomplete: board is configured but missing lifecycle column(s) {names}` —
-  the board cannot mirror the issue lifecycle until those columns exist.
-  Run this **whenever a board is configured**, independent of ready-gate;
-  setup creates these columns and records their option ids. A project with
-  **no** board configured produces no finding here (the board is
-  optional). The label ⇄ column pairing is in
-  `templates/default-labels.md` → Board Columns. This is a **presence**
-  check only (is an id recorded at all). Whether a recorded id still
-  matches the live column — *staleness* — is a different question: it is
-  validated by the live network check below on required boards, and on
-  every `wf board-move`, which resolves the option id live by column name,
-  so a stale snapshot self-heals at write time rather than misrouting an
-  issue.
-- **Board identity + snapshot freshness (required boards only)** — run this
-  network check **only when the board is required** (ready-gate
-  `board-column`/`both`). One query resolves the title **and** the live
-  Status options, so both checks share a single round-trip:
+- **Board required but not configured** — a board is required and the `## Project Board` section is missing, or `project-node-id` is absent, `n/a`, or still a `{placeholder}`: emit `CRITICAL board-config: ready-gate '{gate}' requires a project board, but none is configured`.
+- **Ready column missing** — `ready-gate` is `board-column` or `both` and the "Ready" Status option id is `n/a` or absent: emit `CRITICAL board-ready-option: ready-gate '{gate}' needs a "Ready" board column, but no Ready Status option id is configured`.
+- **Active lifecycle columns missing** — a board **is** configured (`project-node-id` is real) but one or more of the three active workflow columns is absent. This is a **local table read, no network call** — check the `### Status Options` rows for `col-in-progress`, `col-in-review`, and `col-blocked`; any whose Option ID is `n/a`, absent, or still a `{placeholder}` is missing. If any are missing: emit `CRITICAL board-columns-incomplete: board is configured but missing lifecycle column(s) {names}` — the board cannot mirror the issue lifecycle until those columns exist. Run this **whenever a board is configured**, independent of ready-gate; setup creates these columns and records their option ids. A project with **no** board configured produces no finding here (the board is optional). The label ⇄ column pairing is in `templates/default-labels.md` → Board Columns. This is a **presence** check only (is an id recorded at all). Whether a recorded id still matches the live column — *staleness* — is a different question: it is validated by the live network check below on required boards, and on every `wf board-move`, which resolves the option id live by column name, so a stale snapshot self-heals at write time rather than misrouting an issue.
+- **Board identity + snapshot freshness (required boards only)** — run this network check **only when the board is required** (ready-gate `board-column`/`both`). One query resolves the title **and** the live Status options, so both checks share a single round-trip:
 
   ```
   gh api graphql -f query='query($id:ID!){ node(id:$id){ ... on ProjectV2 {
@@ -266,27 +159,11 @@ Classify:
   } } }' -F id='<project-node-id>' --jq '{title:.data.node.title, options:.data.node.field.options}'
   ```
 
-  - Resolves and the title **matches** `project-title` →
-    emit `OK board-identity: '{project-title}'`.
-  - Does not resolve, or the resolved title **differs** from
-    `project-title` → emit
-    `CRITICAL board-identity: stored project-node-id resolves to '<resolved>' but project-title is '<configured>'`
-    (or `... does not resolve to a ProjectV2`).
-  - **Snapshot freshness** — for each lifecycle column recorded in
-    `### Status Options`, find the live option with the matching name and
-    compare its id to the snapshotted Option ID. Any that differ (or whose
-    name no longer exists live) → emit
-    `WARNING board-snapshot-stale: column(s) {names} recorded id(s) no longer match the live board; run /github-workflow:setup to refresh the snapshot`.
-    This is a WARNING, not CRITICAL — `wf board-move` resolves the option
-    id live, so moves stay correct regardless; the warning just prompts a
-    cleanup so the snapshot stays honest.
-- **Best-effort board (`label`/`none` ready-gate)** — do **not** make the
-  network call. Board writes are best-effort and `wf board-move` both
-  verifies identity and resolves the column id live at write time, so a
-  stale title or stale option id is caught and self-healed there, not on
-  every preflight. No finding here.
-- **Board not required and not configured** — no finding. A `label` or
-  `none` ready-gate with no board section is valid.
+  - Resolves and the title **matches** `project-title` → emit `OK board-identity: '{project-title}'`.
+  - Does not resolve, or the resolved title **differs** from `project-title` → emit `CRITICAL board-identity: stored project-node-id resolves to '<resolved>' but project-title is '<configured>'` (or `... does not resolve to a ProjectV2`).
+  - **Snapshot freshness** — for each lifecycle column recorded in `### Status Options`, find the live option with the matching name and compare its id to the snapshotted Option ID. Any that differ (or whose name no longer exists live) → emit `WARNING board-snapshot-stale: column(s) {names} recorded id(s) no longer match the live board; run /github-workflow:setup to refresh the snapshot`. This is a WARNING, not CRITICAL — `wf board-move` resolves the option id live, so moves stay correct regardless; the warning just prompts a cleanup so the snapshot stays honest.
+- **Best-effort board (`label`/`none` ready-gate)** — do **not** make the network call. Board writes are best-effort and `wf board-move` both verifies identity and resolves the column id live at write time, so a stale title or stale option id is caught and self-healed there, not on every preflight. No finding here.
+- **Board not required and not configured** — no finding. A `label` or `none` ready-gate with no board section is valid.
 
 ### Label-map completeness
 
@@ -320,11 +197,7 @@ fi
 
 ### Configuration and label drift
 
-`ClaudeProject.md`, the labels the repo actually carries, and the org's
-issue-type configuration drift apart quietly: a label gets renamed and a
-call site still applies the old name, an org field stops being pinned and
-every value written to it disappears from the issue form. None of it
-raises an error. `wf config-audit` compares all three in two API calls.
+`ClaudeProject.md`, the labels the repo actually carries, and the org's issue-type configuration drift apart quietly: a label gets renamed and a call site still applies the old name, an org field stops being pinned and every value written to it disappears from the issue form. None of it raises an error. `wf config-audit` compares all three in two API calls.
 
 ```!
 if [ -f ClaudeProject.md ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" ]; then
@@ -335,20 +208,11 @@ fi
 
 Read the `summary` it printed:
 
-- `critical` is `0` — nothing here blocks. If `warning` is above zero,
-  that is one informational line at most (see Section 3), never a prompt.
-- `critical` is above zero (exit code 26, `"status": "drift"`) — these
-  are CRITICAL. Re-run **without** `--quiet` to list them; each finding
-  names the file to open (`where`) and the fix (`fix`). Report them
-  verbatim rather than paraphrasing: the fix for an unpinned field is a
-  specific form in the org settings, and a paraphrase loses it.
-- The command did not run (no `CONFIG_AUDIT_EXIT` line) — the plugin's
-  scripts are not on disk. No finding; the other checks still stand.
+- `critical` is `0` — nothing here blocks. If `warning` is above zero, that is one informational line at most (see Section 3), never a prompt.
+- `critical` is above zero (exit code 26, `"status": "drift"`) — these are CRITICAL. Re-run **without** `--quiet` to list them; each finding names the file to open (`where`) and the fix (`fix`). Report them verbatim rather than paraphrasing: the fix for an unpinned field is a specific form in the org settings, and a paraphrase loses it.
+- The command did not run (no `CONFIG_AUDIT_EXIT` line) — the plugin's scripts are not on disk. No finding; the other checks still stand.
 
-It costs two round-trips and runs once per session, because a passing
-preflight writes `.claude/preflight-passed.txt` and later commands skip
-it. Use `config-audit --offline` when only the file-level checks are
-wanted.
+It costs two round-trips and runs once per session, because a passing preflight writes `.claude/preflight-passed.txt` and later commands skip it. Use `config-audit --offline` when only the file-level checks are wanted.
 
 ### Review configuration
 
@@ -369,64 +233,19 @@ if [ -f ClaudeProject.md ] && grep -q 'review\.config\.md' ClaudeProject.md 2>/d
 fi
 ```
 
-If the block above printed `AUTO_MERGE_ENABLED`, the opt-in auto-merge
-feature is on — read `references/review-auto-merge-checks.md` and run its
-safety checks (repo `Allow auto-merge` setting + CI gate). Otherwise skip
-it entirely; in the default configuration (no `review.config.md`, or
-auto-merge disabled) those checks never run.
+If the block above printed `AUTO_MERGE_ENABLED`, the opt-in auto-merge feature is on — read `references/review-auto-merge-checks.md` and run its safety checks (repo `Allow auto-merge` setting + CI gate). Otherwise skip it entirely; in the default configuration (no `review.config.md`, or auto-merge disabled) those checks never run.
 
 ## 3. Evaluate results
 
 Read all output from the checks above. Categorize:
 
-- **CRITICAL** — the workflow **cannot proceed and has no usable
-  default**: gh not authenticated, ClaudeProject.md missing, a required
-  section absent, a **required** board (ready-gate `board-column`/`both`)
-  unconfigured or its stored identity mismatched, or a **configured board
-  missing its active lifecycle columns** (`board-columns-incomplete`).
-  Only these trigger the wizard. The board-columns case is the one board
-  gap that escalates even though board *moves* are best-effort: a board
-  that exists but cannot mirror the lifecycle is a real misconfiguration
-  the user must resolve (setup creates the columns), not a default-covered
-  gap. `config-audit` reporting `"status": "drift"` is also CRITICAL: a
-  call site applying a label the repo does not have, or an issue type not
-  pinned to a field the tooling writes, produces a *wrong* result rather
-  than a defaulted one — the command runs, GitHub accepts it, and the
-  value is never seen.
-- **WARNING** — something is missing **but a default covers it**, so the
-  workflow proceeds: an unmapped label purpose (resolves to its default
-  name via `templates/default-labels.md`), unreplaced placeholders,
-  CLAUDE.md missing, quality gate not set, a referenced
-  `review.config.md` missing, a **required** board whose recorded column
-  option-ids no longer match the live board (`board-snapshot-stale` —
-  write-time live resolution keeps moves correct; the warning just prompts
-  a snapshot refresh), `auto-merge-on-approval` enabled while the
-  repo's "Allow auto-merge" setting is off (reviews still run; only the
-  queued-merge step is affected), or `auto-merge-on-approval` enabled with
-  **no CI gate** — neither GitHub required status checks nor
-  `require-ci-before-merge` (an approved PR could merge with no CI
-  guarantee; `/github-workflow:setup harden` wires up the gate).
-  or any `config-audit` finding at `warning` level (label drift, an org
-  field no purpose key maps, a stale board column, issue-type pinning
-  that could not be read — each degrades the workflow without breaking
-  it). **Defaults are not
-  a failure** — every label, the issue lifecycle states, and the
-  review-state labels all have defaults, so a missing mapping is never
-  critical on its own. (Best-effort board identity is **not** checked
-  here — `wf board-move` verifies it at write time.)
+- **CRITICAL** — the workflow **cannot proceed and has no usable default**: gh not authenticated, ClaudeProject.md missing, a required section absent, a **required** board (ready-gate `board-column`/`both`) unconfigured or its stored identity mismatched, or a **configured board missing its active lifecycle columns** (`board-columns-incomplete`). Only these trigger the wizard. The board-columns case is the one board gap that escalates even though board *moves* are best-effort: a board that exists but cannot mirror the lifecycle is a real misconfiguration the user must resolve (setup creates the columns), not a default-covered gap. `config-audit` reporting `"status": "drift"` is also CRITICAL: a call site applying a label the repo does not have, or an issue type not pinned to a field the tooling writes, produces a *wrong* result rather than a defaulted one — the command runs, GitHub accepts it, and the value is never seen.
+- **WARNING** — something is missing **but a default covers it**, so the workflow proceeds: an unmapped label purpose (resolves to its default name via `templates/default-labels.md`), unreplaced placeholders, CLAUDE.md missing, quality gate not set, a referenced `review.config.md` missing, a **required** board whose recorded column option-ids no longer match the live board (`board-snapshot-stale` — write-time live resolution keeps moves correct; the warning just prompts a snapshot refresh), `auto-merge-on-approval` enabled while the repo's "Allow auto-merge" setting is off (reviews still run; only the queued-merge step is affected), or `auto-merge-on-approval` enabled with **no CI gate** — neither GitHub required status checks nor `require-ci-before-merge` (an approved PR could merge with no CI guarantee; `/github-workflow:setup harden` wires up the gate). or any `config-audit` finding at `warning` level (label drift, an org field no purpose key maps, a stale board column, issue-type pinning that could not be read — each degrades the workflow without breaking it). **Defaults are not a failure** — every label, the issue lifecycle states, and the review-state labels all have defaults, so a missing mapping is never critical on its own. (Best-effort board identity is **not** checked here — `wf board-move` verifies it at write time.)
 - **OK** — check passed.
 
-**Defaults-first principle.** Everything that *can* default *does* default
-at runtime. The wizard exists only for the few things that genuinely have
-no default (identity, auth, required board). Never escalate a
-default-covered gap to the wizard.
+**Defaults-first principle.** Everything that *can* default *does* default at runtime. The wizard exists only for the few things that genuinely have no default (identity, auth, required board). Never escalate a default-covered gap to the wizard.
 
-**If every check is OK**: proceed silently — do not mention preflight to
-the user. (The one exception is the `ECOSYSTEM_TIP` line described in
-Section 1: if it was printed, emit that single optional-tools line first,
-then continue.) Write `.claude/preflight-passed.txt` (creating `.claude/`
-if it does not exist) so subsequent commands in this session can skip
-the redundant re-run:
+**If every check is OK**: proceed silently — do not mention preflight to the user. (The one exception is the `ECOSYSTEM_TIP` line described in Section 1: if it was printed, emit that single optional-tools line first, then continue.) Write `.claude/preflight-passed.txt` (creating `.claude/` if it does not exist) so subsequent commands in this session can skip the redundant re-run:
 
 ```
 mkdir -p .claude
@@ -435,51 +254,31 @@ echo "preflight-passed" > .claude/preflight-passed.txt
 
 Return control to the calling command.
 
-**If there are WARNINGs but NO CRITICAL items**: do **not** prompt or run
-the wizard. Print one concise line noting what is using defaults — e.g.
-"Using default labels for {purposes}; run `/github-workflow:setup` to
-customise" — then write `.claude/preflight-passed.txt` (same command as
-above) and return control to the calling command. The command resolves
-the missing names through `templates/default-labels.md` (and creates any
-missing GitHub labels with the guarded create-if-missing pattern) on its
-own.
+**If there are WARNINGs but NO CRITICAL items**: do **not** prompt or run the wizard. Print one concise line noting what is using defaults — e.g. "Using default labels for {purposes}; run `/github-workflow:setup` to customise" — then write `.claude/preflight-passed.txt` (same command as above) and return control to the calling command. The command resolves the missing names through `templates/default-labels.md` (and creates any missing GitHub labels with the guarded create-if-missing pattern) on its own.
 
 **If any CRITICAL item is present**: continue to step 4 (the wizard).
 
 ## 4. Present findings and ask (CRITICAL only)
 
-Reached only when at least one CRITICAL item exists. Show a brief summary
-using these markers:
+Reached only when at least one CRITICAL item exists. Show a brief summary using these markers:
 
 - `[pass]` for OK items — list these first, briefly
 - `[action needed]` for CRITICAL items
-- `[recommended]` for WARNING items — list them as informational
-  (they are proceeding on defaults), not as reasons to configure
+- `[recommended]` for WARNING items — list them as informational (they are proceeding on defaults), not as reasons to configure
 
 Then use `AskUserQuestion` with these options:
 
-- **"Configure now (Recommended)"** — Run `/github-workflow:setup` to
-  resolve the issues. After setup completes, the calling command
-  continues with the updated configuration.
-- **"Continue anyway"** — Proceed with the current command. Preflight
-  will check again next time.
-- **"Don't remind me"** — Suppress preflight checks until the user
-  runs `/github-workflow:setup` or deletes
-  `.claude/preflight-dismiss.md`.
+- **"Configure now (Recommended)"** — Run `/github-workflow:setup` to resolve the issues. After setup completes, the calling command continues with the updated configuration.
+- **"Continue anyway"** — Proceed with the current command. Preflight will check again next time.
+- **"Don't remind me"** — Suppress preflight checks until the user runs `/github-workflow:setup` or deletes `.claude/preflight-dismiss.md`.
 
 ## 5. Handle the response
 
-**Configure now**: Invoke `/github-workflow:setup`. Once setup is done,
-return to the calling command. Tell the user to re-run the command they
-originally asked for, since the configuration loaded at the start of
-the command was stale.
+**Configure now**: Invoke `/github-workflow:setup`. Once setup is done, return to the calling command. Tell the user to re-run the command they originally asked for, since the configuration loaded at the start of the command was stale.
 
-**Continue anyway**: Return immediately. The calling command proceeds
-with whatever configuration is available. Next invocation of any
-command will re-run preflight.
+**Continue anyway**: Return immediately. The calling command proceeds with whatever configuration is available. Next invocation of any command will re-run preflight.
 
-**Don't remind me**: Create `.claude/preflight-dismiss.md` with this
-content:
+**Don't remind me**: Create `.claude/preflight-dismiss.md` with this content:
 
 ```
 # Preflight checks dismissed

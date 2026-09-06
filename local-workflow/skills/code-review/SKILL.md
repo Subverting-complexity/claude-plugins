@@ -26,9 +26,7 @@ allowed-tools:
 
 # Code Review
 
-Review code changes for correctness, security, architecture, and quality.
-Works on uncommitted changes, branch diffs, specific commits, or named files.
-No platform integration required.
+Review code changes for correctness, security, architecture, and quality. Works on uncommitted changes, branch diffs, specific commits, or named files. No platform integration required.
 
 Read `CLAUDE.md` for project rules and coding standards if it exists.
 
@@ -46,8 +44,7 @@ Infer the scope from the user's request:
 | "Review the last commit" / a SHA | That specific commit |
 | "Review everything since X" | Diff from X to HEAD |
 
-If ambiguous, check `git status` and `git log --oneline -5` to understand
-the current state and ask if needed.
+If ambiguous, check `git status` and `git log --oneline -5` to understand the current state and ask if needed.
 
 ---
 
@@ -69,8 +66,7 @@ Run the appropriate git commands for the scope:
 - `git show <sha> --stat` for the file list
 - `git show <sha>` for the full diff
 
-Identify every changed file and classify the type of change (added,
-modified, deleted, renamed).
+Identify every changed file and classify the type of change (added, modified, deleted, renamed).
 
 ---
 
@@ -78,16 +74,11 @@ modified, deleted, renamed).
 
 For every changed file:
 
-1. Read the **full file**, not just the changed lines. Understand what it
-   does, how it is structured, and where the changes sit within it.
-2. Read the **files it imports from** and the **files that import it**.
-   Follow the dependency chain at least two levels deep.
-3. For every **function or method modified**, grep the codebase for all
-   call sites. Read each call site in context to verify the change is
-   safe for all consumers.
+1. Read the **full file**, not just the changed lines. Understand what it does, how it is structured, and where the changes sit within it.
+2. Read the **files it imports from** and the **files that import it**. Follow the dependency chain at least two levels deep.
+3. For every **function or method modified**, grep the codebase for all call sites. Read each call site in context to verify the change is safe for all consumers.
 
-Find and read existing **test files** for the changed modules. Understand
-what was already covered and what the changes add or modify.
+Find and read existing **test files** for the changed modules. Understand what was already covered and what the changes add or modify.
 
 ---
 
@@ -95,30 +86,17 @@ what was already covered and what the changes add or modify.
 
 Work through each area using the full codebase context.
 
-**Ecosystem tools.** If `.claude/ecosystem.md` exists, the project has opted
-into the codebase-intelligence tools it lists — reach for them before
-tracing the diff by hand and fold their output into the matching finding:
+**Ecosystem tools.** If `.claude/ecosystem.md` exists, the project has opted into the codebase-intelligence tools it lists — reach for them before tracing the diff by hand and fold their output into the matching finding:
 
-- **Graphify** → `graphify . --update` first, then prefer `graphify
-  query`/`graphify path` over blind file search to trace how the changed
-  functions connect to the rest of the tree (feeds *Regressions* and
-  *Architectural consistency*). A graph trace is the accelerant, not a
-  mandate — use it when it beats reading files, skip it when the blast
-  radius is obvious.
-- **Fallow** (TS/JS) → run it to surface unused exports and duplication the
-  diff introduces (feeds *Minimality* and dead-code findings).
-- **ecc-agentshield** → when the diff touches Claude Code config (CLAUDE.md,
-  `.claude/`, hooks, skills, MCP config), `npx ecc-agentshield scan` and
-  fold any finding into *Security*.
+- **Graphify** → `graphify . --update` first, then prefer `graphify query`/`graphify path` over blind file search to trace how the changed functions connect to the rest of the tree (feeds *Regressions* and *Architectural consistency*). A graph trace is the accelerant, not a mandate — use it when it beats reading files, skip it when the blast radius is obvious.
+- **Fallow** (TS/JS) → run it to surface unused exports and duplication the diff introduces (feeds *Minimality* and dead-code findings).
+- **ecc-agentshield** → when the diff touches Claude Code config (CLAUDE.md, `.claude/`, hooks, skills, MCP config), `npx ecc-agentshield scan` and fold any finding into *Security*.
 
-If `.claude/ecosystem.md` is absent, the project opted out — review by hand
-as normal and never nag about it. If a listed tool is not on `PATH`, note it
-in one line and continue; a missing tool never blocks the review.
+If `.claude/ecosystem.md` is absent, the project opted out — review by hand as normal and never nag about it. If a listed tool is not on `PATH`, note it in one line and continue; a missing tool never blocks the review.
 
 ### Logic and correctness
 
-Trace every logic path step by step through the actual code. For
-calculations, substitute concrete values and verify the arithmetic. Check:
+Trace every logic path step by step through the actual code. For calculations, substitute concrete values and verify the arithmetic. Check:
 
 - Boundary conditions (zero, one, max, null, empty, negative)
 - Concurrency (race conditions, double-reads, TOCTOU)
@@ -126,8 +104,7 @@ calculations, substitute concrete values and verify the arithmetic. Check:
 
 ### Type safety and nullability
 
-Are nullable types handled correctly? Could a null slip through to a
-dereference?
+Are nullable types handled correctly? Could a null slip through to a dereference?
 
 ### Security
 
@@ -138,28 +115,21 @@ dereference?
 
 ### Architectural consistency
 
-Does the change follow established codebase patterns, or introduce a new
-one without justification? One responsibility per file. Dependencies
-point in the right direction.
+Does the change follow established codebase patterns, or introduce a new one without justification? One responsibility per file. Dependencies point in the right direction.
 
 If `CLAUDE.md` or architecture docs define rules, check against them.
 
 ### Test quality and coverage
 
-Is every new code path exercised? Are boundary conditions and error paths
-tested? For bug fixes, is there a regression test? Are test assertions
-specific (not just "doesn't throw")?
+Is every new code path exercised? Are boundary conditions and error paths tested? For bug fixes, is there a regression test? Are test assertions specific (not just "doesn't throw")?
 
 ### Regressions
 
-From the callers and consumers found in Step 2, are any broken or subtly
-changed by this diff? Are unrelated code paths in the same files
-untouched and still correct?
+From the callers and consumers found in Step 2, are any broken or subtly changed by this diff? Are unrelated code paths in the same files untouched and still correct?
 
 ### Minimality
 
-Is every changed line necessary for the stated purpose? Flag unrelated
-refactors, formatting changes, or comment edits that are bundled in.
+Is every changed line necessary for the stated purpose? Flag unrelated refactors, formatting changes, or comment edits that are bundled in.
 
 ---
 
@@ -174,43 +144,31 @@ If the review finds concrete, objective problems, fix them directly:
 - Dead code introduced by the change
 - Mismatched types or incorrect casts
 
-Do **not** fix stylistic preferences or make discretionary refactors.
-Only fix things that are objectively wrong.
+Do **not** fix stylistic preferences or make discretionary refactors. Only fix things that are objectively wrong.
 
-If an issue is architectural or requires a design decision, flag it in
-the findings rather than fixing it.
+If an issue is architectural or requires a design decision, flag it in the findings rather than fixing it.
 
 ---
 
 ## Step 5 — Report Findings
 
-Write findings in plain English, following `_shared/wording-standard.md`.
-State **the problem and the suggested fix** in complete sentences that a
-reader without the full context can follow. Avoid telegraphic fragments
-and stacked clauses, define or avoid jargon, and keep `file:line`
-references and identifiers precise in backticks.
+Write findings in plain English, following `_shared/wording-standard.md`. State **the problem and the suggested fix** in complete sentences that a reader without the full context can follow. Avoid telegraphic fragments and stacked clauses, define or avoid jargon, and keep `file:line` references and identifiers precise in backticks.
 
-The **shape** of the review, and of what you report back when it is done,
-follows `skills/user-facing-communication/SKILL.md`: the verdict and the
-current state first, anything outstanding or assumed where it cannot be
-missed, and no investigation history.
+The **shape** of the review, and of what you report back when it is done, follows `skills/user-facing-communication/SKILL.md`: the verdict and the current state first, anything outstanding or assumed where it cannot be missed, and no investigation history.
 
 Present findings organized by severity:
 
 ### Critical
 
-Problems that would cause bugs, security vulnerabilities, or data loss.
-Must be fixed before commit or merge.
+Problems that would cause bugs, security vulnerabilities, or data loss. Must be fixed before commit or merge.
 
 ### Warning
 
-Issues that won't immediately break things but indicate risk: missing
-tests for complex logic, architectural violations, fragile assumptions.
+Issues that won't immediately break things but indicate risk: missing tests for complex logic, architectural violations, fragile assumptions.
 
 ### Suggestion
 
-Improvements that would make the code better but aren't blocking:
-naming, organization, patterns.
+Improvements that would make the code better but aren't blocking: naming, organization, patterns.
 
 For each finding:
 - Name the file and line number
@@ -218,13 +176,10 @@ For each finding:
 - Explain why it matters (what breaks, what risk it creates)
 - State whether it was fixed or needs attention
 
-**If no issues are found**, say so clearly in one sentence. Do not pad
-the output with praise or filler.
+**If no issues are found**, say so clearly in one sentence. Do not pad the output with praise or filler.
 
 ---
 
 ## When the User Asks "Is This Ready?"
 
-Give a direct answer: yes, no, or conditionally. If no, list what needs
-to change. Don't hedge with "it depends" when the code gives a clear
-answer.
+Give a direct answer: yes, no, or conditionally. If no, list what needs to change. Don't hedge with "it depends" when the code gives a clear answer.

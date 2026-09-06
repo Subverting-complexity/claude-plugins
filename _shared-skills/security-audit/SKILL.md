@@ -23,34 +23,19 @@ allowed-tools:
 
 # Security Audit
 
-Deep security-focused review of the codebase. This is not a general
-code review — it specifically targets security vulnerabilities, leaked
-secrets, and attack surface.
+Deep security-focused review of the codebase. This is not a general code review — it specifically targets security vulnerabilities, leaked secrets, and attack surface.
 
 ## Output standard
 
-Everything a person reads — plans, questions, findings, summaries, and
-anything posted or committed — follows `skills/_shared/wording-standard.md`
-for how it reads, `skills/user-facing-communication/SKILL.md` for what it
-contains and in what order (outcome and current state first, then anything
-outstanding, blocked or assumed, every work item named as well as numbered,
-no investigation history), and `skills/_shared/banned-patterns.md` for what
-must never appear. Every reply, not only the last one.
+Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
 ## Phase 1 — Scope
 
 Determine what to audit.
 
-1. **Detect the tech stack.** Read package manifests, build files, and
-   project structure to identify languages, frameworks, and package
-   managers.
-2. **Identify the attack surface.** What takes external input? HTTP
-   endpoints, CLI args, file uploads, WebSocket handlers, message
-   queue consumers, database queries, environment variables from
-   untrusted sources.
-3. **Check for existing security config.** Look for `.npmrc`,
-   `.snyk`, `dependabot.yml`, `.github/workflows/*security*`,
-   `SECURITY.md`, CSP headers, CORS config.
+1. **Detect the tech stack.** Read package manifests, build files, and project structure to identify languages, frameworks, and package managers.
+2. **Identify the attack surface.** What takes external input? HTTP endpoints, CLI args, file uploads, WebSocket handlers, message queue consumers, database queries, environment variables from untrusted sources.
+3. **Check for existing security config.** Look for `.npmrc`, `.snyk`, `dependabot.yml`, `.github/workflows/*security*`, `SECURITY.md`, CSP headers, CORS config.
 
 ## Phase 2 — Dependency Vulnerabilities
 
@@ -70,16 +55,14 @@ For each vulnerability found, record:
 - Whether a fix version exists
 - Whether the vulnerable code path is actually reachable
 
-Skip low-severity vulnerabilities in dev-only dependencies unless
-they affect the build pipeline.
+Skip low-severity vulnerabilities in dev-only dependencies unless they affect the build pipeline.
 
 ## Phase 3 — Secrets Detection
 
 Scan for hardcoded credentials, API keys, and tokens.
 
 1. **Search for common patterns:**
-   - API keys: strings matching `[A-Za-z0-9]{20,}` near keywords like
-     `key`, `token`, `secret`, `password`, `credential`, `auth`
+   - API keys: strings matching `[A-Za-z0-9]{20,}` near keywords like `key`, `token`, `secret`, `password`, `credential`, `auth`
    - Connection strings with embedded passwords
    - Private keys (RSA, SSH, PGP headers)
    - JWT tokens (three base64 segments separated by dots)
@@ -97,30 +80,16 @@ Scan for hardcoded credentials, API keys, and tokens.
 
 Check for the most common web application vulnerabilities:
 
-1. **Injection** — SQL, NoSQL, OS command, LDAP. Search for string
-   concatenation in queries, `exec()`, `eval()`, `system()` calls
-   with user input.
-2. **Broken Authentication** — Weak password policies, missing rate
-   limiting on auth endpoints, session tokens in URLs, missing
-   MFA support.
-3. **Sensitive Data Exposure** — Unencrypted storage of PII, tokens
-   in logs, verbose error messages in production, missing HTTPS
-   redirects.
-4. **XML External Entities (XXE)** — XML parsers accepting external
-   entity references.
-5. **Broken Access Control** — Missing authorization checks, IDOR
-   vulnerabilities, privilege escalation paths.
-6. **Security Misconfiguration** — Debug mode in production, default
-   credentials, unnecessary features enabled, missing security
-   headers.
-7. **Cross-Site Scripting (XSS)** — Unescaped user input in HTML,
-   `dangerouslySetInnerHTML`, `innerHTML` assignments.
-8. **Insecure Deserialization** — Untrusted data passed to
-   deserializers (pickle, Java serialization, JSON.parse of
-   user-controlled class constructors).
+1. **Injection** — SQL, NoSQL, OS command, LDAP. Search for string concatenation in queries, `exec()`, `eval()`, `system()` calls with user input.
+2. **Broken Authentication** — Weak password policies, missing rate limiting on auth endpoints, session tokens in URLs, missing MFA support.
+3. **Sensitive Data Exposure** — Unencrypted storage of PII, tokens in logs, verbose error messages in production, missing HTTPS redirects.
+4. **XML External Entities (XXE)** — XML parsers accepting external entity references.
+5. **Broken Access Control** — Missing authorization checks, IDOR vulnerabilities, privilege escalation paths.
+6. **Security Misconfiguration** — Debug mode in production, default credentials, unnecessary features enabled, missing security headers.
+7. **Cross-Site Scripting (XSS)** — Unescaped user input in HTML, `dangerouslySetInnerHTML`, `innerHTML` assignments.
+8. **Insecure Deserialization** — Untrusted data passed to deserializers (pickle, Java serialization, JSON.parse of user-controlled class constructors).
 9. **Known Vulnerabilities** — Covered in Phase 2.
-10. **Insufficient Logging** — Missing audit logs for auth events,
-    admin actions, and data access.
+10. **Insufficient Logging** — Missing audit logs for auth events, admin actions, and data access.
 
 Focus on items 1, 3, 5, and 7 — they are the most commonly exploited.
 
@@ -130,25 +99,20 @@ For every external input identified in Phase 1:
 
 1. Is it validated before use? (type, length, format, range)
 2. Is it sanitized before output? (HTML encoding, SQL parameterization)
-3. Are error messages safe? (no stack traces, no internal paths, no
-   sensitive data in responses)
+3. Are error messages safe? (no stack traces, no internal paths, no sensitive data in responses)
 4. Are file uploads restricted? (type, size, content validation)
 
 ## Phase 6 — Report
 
 Organize findings by severity:
 
-**Critical** — Exploitable now, data at risk, or secrets exposed.
-Fix immediately.
+**Critical** — Exploitable now, data at risk, or secrets exposed. Fix immediately.
 
-**High** — Exploitable with moderate effort or missing a key control.
-Fix before next release.
+**High** — Exploitable with moderate effort or missing a key control. Fix before next release.
 
-**Medium** — Defense-in-depth gaps or best-practice violations.
-Schedule for near-term fix.
+**Medium** — Defense-in-depth gaps or best-practice violations. Schedule for near-term fix.
 
-**Low** — Informational findings or hardening recommendations.
-Address opportunistically.
+**Low** — Informational findings or hardening recommendations. Address opportunistically.
 
 For each finding, include:
 - File and line number
@@ -156,6 +120,4 @@ For each finding, include:
 - How it could be exploited (attack scenario)
 - Recommended fix
 
-Do not make code changes during a security audit. Report findings only.
-Use `/{{PLUGIN_NAME}}:{{EXECUTE_SKILL}}` or `/{{PLUGIN_NAME}}:report-issue` to
-address individual findings.
+Do not make code changes during a security audit. Report findings only. Use `/{{PLUGIN_NAME}}:{{EXECUTE_SKILL}}` or `/{{PLUGIN_NAME}}:report-issue` to address individual findings.

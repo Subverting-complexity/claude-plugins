@@ -23,13 +23,7 @@ This skill defines how to approach coding tasks. The core philosophy: understand
 
 ## Output standard
 
-Everything a person reads — plans, questions, findings, summaries, and
-anything posted or committed — follows `skills/_shared/wording-standard.md`
-for how it reads, `skills/user-facing-communication/SKILL.md` for what it
-contains and in what order (outcome and current state first, then anything
-outstanding, blocked or assumed, every work item named as well as numbered,
-no investigation history), and `skills/_shared/banned-patterns.md` for what
-must never appear. Every reply, not only the last one.
+Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
 ## Current session state (auto-loaded)
 
@@ -96,11 +90,7 @@ Every task needs a clear definition of what "done" means. Before writing any cod
 
 This structure is **always** surfaced to the user — for every task, no matter how small. A one-line bug fix still gets an overview ("Fix the off-by-one error in pagination"), a technical section ("Change the offset calculation in `getPage()` from `page * size` to `(page - 1) * size`"), and acceptance criteria ("Page 1 returns the first N results, not the second N"). The depth scales with the task, but the structure is always there.
 
-Present this to the user and get confirmation before writing code —
-unless you are executing inside an autonomous workflow (e.g.,
-`/local-workflow:build`) that explicitly says not to pause. In
-that case, the issue requirements and architecture plan serve as the
-approved specification — proceed directly to Step 4.
+Present this to the user and get confirmation before writing code — unless you are executing inside an autonomous workflow (e.g., `/local-workflow:build`) that explicitly says not to pause. In that case, the issue requirements and architecture plan serve as the approved specification — proceed directly to Step 4.
 
 When the user's request is vague or ambiguous, ask clarifying questions to fill in the gaps in this structure before presenting it. Shape your questions around what's missing:
 

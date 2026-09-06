@@ -156,7 +156,7 @@ Plus additional distributed challenges: distributed logging, distributed transac
 
 **Characteristics ratings**:
 - Cost: ★★★★★ (low cost, simple)
-- Simplicity: ★★★★★ 
+- Simplicity: ★★★★★
 - Deployability: ★ (single deployment, all or nothing)
 - Testability: ★★ (harder to mock layers)
 - Scalability: ★ (can't scale layers independently)

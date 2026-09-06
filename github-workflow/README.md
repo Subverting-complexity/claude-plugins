@@ -1,11 +1,6 @@
 # github-workflow
 
-A Claude Code plugin that provides an end-to-end GitHub development
-workflow. Install it on any project and say "start the next story" — the
-plugin handles picking, planning, building, testing, opening a PR, and
-having that PR reviewed by separate agents in a fresh context, then applies
-what the review asks for. It merges too, on projects that switch merging on
-(see [Auto-merge](#auto-merge)); by default a run ends at an approved PR.
+A Claude Code plugin that provides an end-to-end GitHub development workflow. Install it on any project and say "start the next story" — the plugin handles picking, planning, building, testing, opening a PR, and having that PR reviewed by separate agents in a fresh context, then applies what the review asks for. It merges too, on projects that switch merging on (see [Auto-merge](#auto-merge)); by default a run ends at an approved PR.
 
 ## Install
 
@@ -14,9 +9,7 @@ claude plugin marketplace add Subverting-complexity/claude-plugins
 claude plugin install github-workflow@subverting-complexity
 ```
 
-Run both from a normal shell, not inside a Claude Code session, then
-restart the session so skills, commands, agents and hooks load. Adding
-the marketplace is a per-machine step you do once, ever.
+Run both from a normal shell, not inside a Claude Code session, then restart the session so skills, commands, agents and hooks load. Adding the marketplace is a per-machine step you do once, ever.
 
 ## Usage
 
@@ -35,9 +28,7 @@ the marketplace is a per-machine step you do once, ever.
 | `/github-workflow:setup`                | Interactive project onboarding wizard    |
 | `/github-workflow:guide`                | How to get started / what can I do?      |
 
-The **builder** agent is set as the default via `settings.json`. When
-the plugin is active, Claude operates as the builder unless you switch
-agents.
+The **builder** agent is set as the default via `settings.json`. When the plugin is active, Claude operates as the builder unless you switch agents.
 
 ## What's in the box
 
@@ -66,16 +57,10 @@ Run `/github-workflow:setup` to onboard your project. The wizard:
 2. Discovers your project board and fetches field IDs automatically.
 3. Checks for milestones to determine sprint vs flat backlog mode.
 4. Asks for your label scheme, branch convention, and quality gate.
-5. Generates `ClaudeProject.md` (project settings) and `CLAUDE.md`
-   (project rules) at your repo root.
-6. Optionally sets up Claude Code companion tools (Graphify, RTK,
-   ccusage, ecc-agentshield, Fallow) and writes `.claude/ecosystem.md`
-   so `execute` and `code-review` use them automatically. This step is
-   the shared `ecosystem-setup` skill — run it again any time with
-   `/github-workflow:setup ecosystem`.
+5. Generates `ClaudeProject.md` (project settings) and `CLAUDE.md` (project rules) at your repo root.
+6. Optionally sets up Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and writes `.claude/ecosystem.md` so `execute` and `code-review` use them automatically. This step is the shared `ecosystem-setup` skill — run it again any time with `/github-workflow:setup ecosystem`.
 
-If you already have these files, the setup wizard detects them and
-offers to fill in missing sections rather than overwrite.
+If you already have these files, the setup wizard detects them and offers to fill in missing sections rather than overwrite.
 
 ### Prerequisites
 
@@ -89,30 +74,19 @@ Tools the plugin expects on the host machine:
 
 The plugin also reads two files from the host project:
 
-**`ClaudeProject.md`** (required) — The single source of truth for all
-project-specific values. Every command and the skill read this file.
-Full format specification: [`docs/claudeproject-spec.md`](../docs/claudeproject-spec.md).
+**`ClaudeProject.md`** (required) — The single source of truth for all project-specific values. Every command and the skill read this file. Full format specification: [`docs/claudeproject-spec.md`](../docs/claudeproject-spec.md).
 
-Required sections: Identity, Package Manager, Quality Gate, Branch
-Convention, Label Map, Story Template.
+Required sections: Identity, Package Manager, Quality Gate, Branch Convention, Label Map, Story Template.
 
 Optional sections: Project Board, Reference Docs.
 
-**`CLAUDE.md`** (required) — Project rules, build principles, and
-session hygiene.
+**`CLAUDE.md`** (required) — Project rules, build principles, and session hygiene.
 
-**`docs/review.config.md`** (optional) — Review label definitions,
-non-compliance gates, and tech-stack review rules. Required by the
-`code-review` skill. Generated automatically on first code-review run,
-or during setup.
+**`docs/review.config.md`** (optional) — Review label definitions, non-compliance gates, and tech-stack review rules. Required by the `code-review` skill. Generated automatically on first code-review run, or during setup.
 
 ### Known limitations
 
-The `wf` story-picker resolves a single repo root via
-`git rev-parse --show-toplevel` and reads one `ClaudeProject.md` from it.
-Monorepos that want per-subproject boards, labels, or quality gates are
-not supported: configure one `ClaudeProject.md` at the repository root
-that covers the whole repo. Per-subproject configuration is unsupported.
+The `wf` story-picker resolves a single repo root via `git rev-parse --show-toplevel` and reads one `ClaudeProject.md` from it. Monorepos that want per-subproject boards, labels, or quality gates are not supported: configure one `ClaudeProject.md` at the repository root that covers the whole repo. Per-subproject configuration is unsupported.
 
 ## Backlog modes
 
@@ -121,8 +95,7 @@ The plugin supports two backlog styles, auto-detected from milestones:
 ### Sprint mode
 
 - Milestones with due dates represent sprints.
-- The plugin finds the earliest milestone with open issues — that's
-  the current sprint. No hardcoded sprint order needed.
+- The plugin finds the earliest milestone with open issues — that's the current sprint. No hardcoded sprint order needed.
 - Issues are picked by priority label, then issue number.
 - Product version filtering is optional.
 
@@ -136,8 +109,7 @@ Both modes use the same commands and skill — the pick logic adapts.
 
 ## Label map
 
-Instead of hardcoding label names, the plugin maps **purposes** to
-your repository's actual labels via `ClaudeProject.md`:
+Instead of hardcoding label names, the plugin maps **purposes** to your repository's actual labels via `ClaudeProject.md`:
 
 ```markdown
 | Purpose          | Label              |
@@ -151,22 +123,14 @@ This lets the same plugin work across repos with different label schemes.
 
 ## Project board
 
-A project without a board works fine — when no board is configured, the
-plugin skips board updates (status transitions, date stamps) silently.
+A project without a board works fine — when no board is configured, the plugin skips board updates (status transitions, date stamps) silently.
 
-This is the rule everywhere in the plugin: **"best-effort" never means
-"skip a configured feature."** It applies only to two cases:
+This is the rule everywhere in the plugin: **"best-effort" never means "skip a configured feature."** It applies only to two cases:
 
-1. **Feature not configured** — e.g. no board in `ClaudeProject.md`. The
-   step is skipped silently.
-2. **Inherently idempotent cleanup** — e.g. deleting a claim ref that may
-   already be gone, or removing a label that may not be present. The
-   "failure" is a no-op, not a swallowed error.
+1. **Feature not configured** — e.g. no board in `ClaudeProject.md`. The step is skipped silently.
+2. **Inherently idempotent cleanup** — e.g. deleting a claim ref that may already be gone, or removing a label that may not be present. The "failure" is a no-op, not a swallowed error.
 
-When a feature **is** configured, its steps fail loudly: a board, label,
-or milestone operation that errors is reported to the user, never
-swallowed. The workflow continues past the failed step, but the failure
-is surfaced.
+When a feature **is** configured, its steps fail loudly: a board, label, or milestone operation that errors is reported to the user, never swallowed. The workflow continues past the failed step, but the failure is surfaced.
 
 When configured, the setup wizard auto-fetches:
 
@@ -176,15 +140,7 @@ When configured, the setup wizard auto-fetches:
 
 ### Board columns mirror the lifecycle
 
-The board is the **board-side mirror** of the issue lifecycle labels.
-Every command that moves an issue to a new lifecycle *label* also moves
-its board item to the paired *column*, so the board never drifts from the
-labels. The canonical six-column set — the three **active workflow
-columns** (In Progress, In Review, Blocked) plus Backlog, Ready, and Done
-— and the full label ⇄ column pairing live in one place,
-`templates/default-labels.md` → Board Columns. Columns resolve by purpose
-key (`col-in-progress`, `col-in-review`, `col-blocked`, …) exactly like
-labels, so "apply == filter" holds for the board too.
+The board is the **board-side mirror** of the issue lifecycle labels. Every command that moves an issue to a new lifecycle *label* also moves its board item to the paired *column*, so the board never drifts from the labels. The canonical six-column set — the three **active workflow columns** (In Progress, In Review, Blocked) plus Backlog, Ready, and Done — and the full label ⇄ column pairing live in one place, `templates/default-labels.md` → Board Columns. Columns resolve by purpose key (`col-in-progress`, `col-in-review`, `col-blocked`, …) exactly like labels, so "apply == filter" holds for the board too.
 
 | Lifecycle label | Board column |
 | --------------- | ------------ |
@@ -193,36 +149,20 @@ labels, so "apply == filter" holds for the board too.
 | `status-blocked` (and `status-parked`) | Blocked |
 | `status-ready` | Ready |
 
-When a board is configured, the three active columns must exist: the
-setup wizard creates any that are missing (via `updateProjectV2Field`),
-and preflight raises a `board-columns-incomplete` error if one is absent.
-A project with no board configured skips all of this silently.
+When a board is configured, the three active columns must exist: the setup wizard creates any that are missing (via `updateProjectV2Field`), and preflight raises a `board-columns-incomplete` error if one is absent. A project with no board configured skips all of this silently.
 
 ## Auto-merge
 
-Both entry points can merge a pull request, and **one setting decides
-whether either of them does**: `Auto-Merge on Approval` in
-`docs/review.config.md`. It is `disabled` unless you turn it on, including
-when the file does not exist at all.
+Both entry points can merge a pull request, and **one setting decides whether either of them does**: `Auto-Merge on Approval` in `docs/review.config.md`. It is `disabled` unless you turn it on, including when the file does not exist at all.
 
 | Setting | `/github-workflow:execute` ends at | `/github-workflow:code-review` ends at |
 | ------- | ---------------------------------- | -------------------------------------- |
 | `disabled` (default) | An approved PR, reviewed and waiting for you | An approved PR |
 | `enabled` | A merged PR, with its issues closed and the board moved to Done | A merged PR |
 
-Keeping it to one switch is deliberate. The alternative — merging by default
-from `execute` and only on request from `code-review` — means the answer to
-"is this repository going to merge something without me" depends on which
-command happened to reach the PR, which is not a property anyone can hold in
-their head. Turn it on in `/github-workflow:setup`, which also runs the
-hardening step that makes "merge only after CI passes" actually enforceable.
+Keeping it to one switch is deliberate. The alternative — merging by default from `execute` and only on request from `code-review` — means the answer to "is this repository going to merge something without me" depends on which command happened to reach the PR, which is not a property anyone can hold in their head. Turn it on in `/github-workflow:setup`, which also runs the hardening step that makes "merge only after CI passes" actually enforceable.
 
-Two ways to suppress a merge on a project that has it on: pass `--no-merge`
-for a single `execute` run, or leave the PR at a non-approved verdict. And
-several conditions stop a merge on their own — a red quality gate, a
-possible duplicate PR, a review that could not run independently, a moved
-head SHA, absent or red CI. Each of those leaves the PR open with a comment
-saying why.
+Two ways to suppress a merge on a project that has it on: pass `--no-merge` for a single `execute` run, or leave the PR at a non-approved verdict. And several conditions stop a merge on their own — a red quality gate, a possible duplicate PR, a review that could not run independently, a moved head SHA, absent or red CI. Each of those leaves the PR open with a comment saying why.
 
 ## Agents
 
@@ -232,20 +172,13 @@ saying why.
 | **Reviewer**  | Validates PRs against issues  | Fixes and merges in full mode; read-only when `execute` spawns it for an independent review |
 | **DocWriter** | Updates documentation         | Restricted to `docs/`  |
 
-Each agent follows least privilege — only the tools it needs.
-The builder is the default agent when the plugin is active.
+Each agent follows least privilege — only the tools it needs. The builder is the default agent when the plugin is active.
 
-Unlike the skills, the agents are **plugin-specific and not shared or
-synced** from `_shared-skills/`: each agent's tool allowlist is
-least-privilege-scoped to this GitHub workflow (specific `gh` and `git`
-operations, board mutations), so the definitions would not transfer to a
-plugin with a different surface.
+Unlike the skills, the agents are **plugin-specific and not shared or synced** from `_shared-skills/`: each agent's tool allowlist is least-privilege-scoped to this GitHub workflow (specific `gh` and `git` operations, board mutations), so the definitions would not transfer to a plugin with a different surface.
 
 ## Skills
 
-The plugin bundles the following skills. The orchestrators (`execute`,
-`bulk-execute`, `code-review`) drive the workflow; the rest are invoked by
-them or directly.
+The plugin bundles the following skills. The orchestrators (`execute`, `bulk-execute`, `code-review`) drive the workflow; the rest are invoked by them or directly.
 
 | Skill                 | What it does                                       |
 | --------------------- | ------------------------------------------------- |
@@ -264,7 +197,7 @@ them or directly.
 | `writing-github-issues` | Standard for every issue title and body         |
 | `user-facing-communication` | Standard for every reply the user reads    |
 | `acceptance-criteria` | Authors acceptance criteria                       |
-| `pr-description`      | Authors PR descriptions                           |
+| `pr-body`             | Authors PR bodies to the fixed shape              |
 | `doc-writer`          | Writes and updates documentation                  |
 | `ecosystem-setup`     | Sets up companion tools, writes `ecosystem.md`    |
 | `support-request`     | Support-request and incident write-ups            |

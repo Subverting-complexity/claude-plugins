@@ -1,6 +1,6 @@
 ---
 name: support-request
-description: Write, format, or polish support request documentation. Use when the user mentions support requests or incident reports, or wants to document a technical issue and its resolution. Also trigger when the user pastes raw notes, logs, or ticket content to clean up into a support format. Covers internal and client-facing summaries. Do NOT use for user stories or feature specs (use user-story) or PR descriptions (use pr-description).
+description: Write, format, or polish support request documentation. Use when the user mentions support requests or incident reports, or wants to document a technical issue and its resolution. Also trigger when the user pastes raw notes, logs, or ticket content to clean up into a support format. Covers internal and client-facing summaries. Do NOT use for user stories or feature specs (use user-story) or pull request bodies.
 ---
 <!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
@@ -10,10 +10,7 @@ Read `_shared/banned-patterns.md` before writing. All banned patterns apply to s
 
 Write support documentation that is clear, structured, and consistent. Every support request follows the same bones so readers know exactly where to look.
 
-`skills/user-facing-communication/SKILL.md` shapes what you say to the
-person **around** the support document: lead with the outcome and the current
-state, keep it short, and surface anything outstanding or assumed. It
-governs your reply, not the support document itself.
+`skills/user-facing-communication/SKILL.md` shapes what you say to the person **around** the support document: lead with the outcome and the current state, keep it short, and surface anything outstanding or assumed. It governs your reply, not the support document itself.
 
 ## Output Format
 
@@ -67,8 +64,7 @@ State what was asked and why it matters. Include:
 Write as prose, but use bullet points when listing multiple discrete values (categories, permissions, fields, config items, etc.). This keeps lists scannable rather than buried in a sentence.
 
 ### 3. Findings / Resolution
-Use **Findings** when the work was investigative (debugging, root cause analysis, diagnosis).
-Use **Resolution** when the work was a discrete action (provisioning, granting access, config change).
+Use **Findings** when the work was investigative (debugging, root cause analysis, diagnosis). Use **Resolution** when the work was a discrete action (provisioning, granting access, config change).
 
 For **Findings**:
 - Use bullet points
