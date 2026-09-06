@@ -37,8 +37,7 @@ re-run this command. Otherwise, proceed.
 Read `ClaudeProject.md` and extract:
 
 - `org`, `repo` from Identity
-- Label map (for type and priority labels)
-- Issue prefixes
+- Label map (for priority and lifecycle labels)
 
 If `ClaudeProject.md` is missing or has no label map, use the default
 label names from `templates/default-labels.md`. When using defaults in
@@ -75,8 +74,9 @@ Then map the severity to a **priority label** from the label map in
 - **Low** — cosmetic, minor cleanup, or nice-to-have → `priority-low`
   label
 
-Also select the **type label** (`type-bug`, `type-security`, `type-arch`, or `type-debt`)
-from the label map based on the classification in Step 2.
+Do **not** select a type label. What kind of work this is comes from the
+native issue type in Step 5, and `type-*` labels are no longer part of the
+label map on any project.
 
 Also include:
 
@@ -122,45 +122,92 @@ and order. If none does, which is the common case, use the standard's own
 sections. Either way this is best-effort: a lookup failure falls back to
 the standard sections and never blocks the issue.
 
-If the template carries frontmatter labels, add them to the label list
-assembled in Step 3. Ignore any assignees it names, for the same reason
-Step 5 leaves the assignee blank.
+If a template carries frontmatter labels, add them to the label list
+assembled in Step 3, minus any `type-*` label — the native type says that.
+Ignore any assignees it names, for the same reason Step 5 leaves the
+assignee blank.
 
 ### 5. Create the issue
 
+One write, through `wf issue-apply`. It is the only path that creates an
+issue: it applies the title rules, the native issue type, the org's field
+values, the labels and the milestone together, so an issue filed here is
+shaped exactly like one filed by `feature-discovery` or `execute`.
+
 Write the issue body to the standard in
-`../skills/writing-github-issues/SKILL.md`, then apply it following
-`templates/body-file-write.md` (temp file + `--body-file`):
+`../skills/writing-github-issues/SKILL.md` — which is also where the title
+rules live — to `.claude/report-body.md` with the Write tool, and the
+spec beside it (`templates/body-file-write.md` — a body always goes in a
+file, never into a shell argument or a JSON string):
 
+```bash
+mkdir -p .claude
+cat > .claude/report-spec.json <<'JSON'
+{"issues": [{"title": "{title}",
+             "body_file": ".claude/report-body.md",
+             "kind": "{bug|security|architecture|tech debt}",
+             "milestone": "{current_milestone}",
+             "labels": ["{priority_label}", "{lifecycle_label}", "claude-authored"],
+             "fields": {"field-priority": "{Urgent|High|Medium|Low}",
+                        "field-effort": "{Low|Medium|High}",
+                        "field-origin": "Development"}}]}
+JSON
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/report-spec.json
 ```
-# Sprint mode (a current milestone was found):
-gh issue create --repo {org}/{repo} \
-  --title "{prefix} {title}" \
-  --body-file {tempfile} \
-  --label "{type_label},{priority_label},{lifecycle_label},claude-authored" \
-  --milestone "{current_milestone}"
 
-# Flat mode (no milestone) — omit the --milestone flag entirely:
-gh issue create --repo {org}/{repo} \
-  --title "{prefix} {title}" \
-  --body-file {tempfile} \
-  --label "{type_label},{priority_label},{lifecycle_label},claude-authored"
-```
+The body goes in a file and the spec names it (`body_file`) rather than
+carrying the text, because a body has backticks, `$`, quotes and blank lines
+in it and hand-building that into a JSON string is where bodies get mangled.
 
-Pass **all four** label groups Step 3 selected, comma-separated, omitting
-only those the project does not define. An issue created without its
-lifecycle label is never picked up by `execute`, which selects on
-`status-ready`, and it is the one easiest to leave out.
+Drop the `milestone` key entirely in flat-backlog mode, or whenever Step 4
+found no current milestone. It takes the milestone's title, and a title that
+names no **open** milestone fails the spec rather than filing the issue
+outside the sprint.
 
-**Leave the assignee blank.** Do not pass `--assignee`/`--add-assignee`
-here, and do not follow up with a `gh issue edit --add-assignee`.
-Creating an issue is never an act of claiming it: new issues must enter
-the unassigned pool so `execute` (which queries
-`--assignee ""`) can select them. Assignment happens only at claim time
-(`execute` Acquire), never at creation.
+**The title carries no prefix.** No `[BUG]`, `[SECURITY]`, `[ARCH]` or
+`[DEBT]`, no priority and no size. GitHub renders the issue type and the
+fields beside the title already. `wf issue-apply` strips such a prefix if one
+slips in, and reports that it did.
 
-Where `{prefix}` is `[BUG]`, `[SECURITY]`, `[ARCH]`, or `[DEBT]` from the Issue Prefixes
-table in `ClaudeProject.md`.
+**The labels carry no type.** `kind` supplies the native issue type and the
+`Classification` value together. A `type-*` label in the list is dropped for
+the same reason. Pass the priority label, the lifecycle label and
+`claude-authored`, omitting any the project does not define — an issue with
+no lifecycle label is never picked up by `execute`, and it is the one easiest
+to leave out.
+
+**Leave the assignee blank.** The spec has no assignee key, and you must not
+follow up with `gh issue edit --add-assignee`. Creating an issue is never an
+act of claiming it: new issues must enter the unassigned pool so `execute`
+(which queries `--assignee ""`) can select them. Assignment happens only at
+claim time (`execute` Acquire).
+
+**Field values.**
+
+- `kind` is the Step 2 classification in lower case.
+- `field-priority` is the Step 3 priority as the field names it: Critical
+  becomes **Urgent**, the rest keep their names. **Keep** the `priority-*`
+  label as well — priority is dual-tracked: the field orders selection and
+  drives the portal's views, and the label is the fallback for issues the
+  field was never set on.
+- `field-effort` is your scope assessment: **Low** for a targeted fix in a
+  few files, **Medium** for moderate scope with some investigation, **High**
+  for broad impact, architectural change or significant unknowns.
+- `field-origin` is **Development**, or **Security Audit** if this report
+  came out of a security audit session.
+
+**The issue number** comes back in the command's JSON as
+`applied[0].number`, and is written into the spec file too. Later steps need
+it.
+
+**Read the exit code.** **0** created it. **21** (`no-capabilities`) means the org defines no
+issue types or fields — report that the issue could not be classified rather
+than filing an unclassified one by hand. **22** (`spec-invalid`) means the
+spec is wrong (an unknown label, a milestone that is not open, a missing
+mandatory field): fix it and re-run. **23** and **24** mean the issue exists
+but some metadata did not land — report which, by number and title, and carry
+on. Re-running the same spec after a partial failure completes the remainder
+rather than filing a duplicate.
 
 **Body shape.** Follow `../skills/writing-github-issues/SKILL.md`.
 
@@ -190,76 +237,13 @@ is a routing decision for the caller (Step 3) and belongs in what you
 report back, not in the issue. A genuine ordering constraint between two
 issues goes in `## Dependencies` as `Blocked by #N`.
 
-### 5b. Verify labels (exit-code contract)
-
-Follow the label read-back policy in `templates/default-labels.md`:
-`gh issue create`/`gh issue edit` fail loudly on an unknown label, so
-**exit 0 means every label applied — do not read the labels back**. Only on a non-zero exit citing an unknown/missing label:
-create it with the guarded create-if-missing pattern from
-`templates/default-labels.md` (colors there too, no `--force`), retry
-the apply once, then read back to confirm — only after that retried
-failure:
-
-```
-gh issue edit {number} --repo {org}/{repo} --add-label "{label}"
-gh issue view {number} --repo {org}/{repo} --json labels --jq '[.labels[].name]'
-```
-
-### 5c. Native issue type + field values (best-effort)
-
-Upgrade the freshly-created issue from label-only classification to the
-org's **native issue type** and **issue field values** in one call. Write a
-one-entry update spec — `number` makes it an update, `kind` supplies both
-the native type and the `Classification` the org expects for it:
-
-```bash
-mkdir -p .claude
-cat > .claude/report-spec.json <<'JSON'
-{"issues": [{"number": {number},
-             "kind": "{bug|security|architecture|tech debt}",
-             "fields": {"field-priority": "{Urgent|High|Medium|Low}",
-                        "field-effort": "{Low|Medium|High}",
-                        "field-origin": "Development"}}]}
-JSON
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/report-spec.json
-```
-
-- `kind` is the Step 2 classification in lower case. It maps to the native
-  type and the `Classification` value together, so neither is chosen here.
-- `field-priority` is the Step 3 priority as the field names it: Critical
-  becomes **Urgent**, the rest keep their names. **Keep** the `priority-*`
-  label as well — priority is dual-tracked: the field orders selection and
-  drives the portal's views, and the label is the fallback for issues the
-  field was never set on.
-- `field-effort` is your scope assessment: **Low** for a targeted fix in a
-  few files, **Medium** for moderate scope with some investigation, **High**
-  for broad impact, architectural change or significant unknowns.
-- `field-origin` is **Development**, or **Security Audit** if this report
-  came out of a security audit session.
-
-Read the exit code: **0** applied it; **21** (`no-capabilities`) means the
-org defines no issue types or fields, so the label-only result from the
-steps above stands with no error; **22** (`spec-invalid`) means the spec is
-wrong, so fix it and re-run; **23** and **24** mean the issue exists but
-some metadata did not land — report which, by number and title, and carry
-on. Never fail the report over this.
-
-On an org that accepted the native type (exit 0), remove the now-redundant
-`type-*` label you applied in Step 5 — native type is not dual-tracked:
-
-```
-gh issue edit {number} --repo {org}/{repo} --remove-label "{type_label}"
-```
-
-On exit 21 leave that label alone: it is the only classification the org
-has.
-
 ### 6. Validate issue body
 
-After creating the issue, validate the body by reading it back and
-applying the corruption test and retry in `templates/body-file-write.md`
-(**Validate** + **Retry**). The `Closes #N` clause is PR-only and does not
-apply to an issue body.
+`issue-apply` reads the created issue back in the same request and reports
+any mismatch, so there is nothing to check by hand when it exits 0. Only if
+it reported a mismatch on the body, apply the corruption test and retry in
+`templates/body-file-write.md` (**Validate** + **Retry**). The `Closes #N`
+clause is PR-only and does not apply to an issue body.
 
 ### 6b. Place the issue on the board (best-effort, if configured)
 

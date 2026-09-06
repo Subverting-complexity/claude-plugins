@@ -53,16 +53,6 @@ and defaults: `templates/default-labels.md`.
 | priority-medium   | `{name}` |
 | priority-low      | `{name}` |
 
-### Type
-
-| Purpose       | Label    |
-| ------------- | -------- |
-| type-story    | `{name}` |
-| type-bug      | `{name}` |
-| type-security | `{name}` |
-| type-debt     | `{name}` |
-| type-arch     | `{name}` |
-
 ### Status (issue lifecycle)
 
 Every issue carries exactly one of these lifecycle labels (the issue-side
@@ -221,16 +211,6 @@ start-to-finish. Commit and push early so work survives an unexpected end.
 Issues should include at minimum: **Context** (what/why), **Requirements**
 (acceptance criteria + constraints), and optionally **Notes**
 (dependencies, references, edge cases).
-
-## Issue Prefixes
-
-| Type         | Prefix       |
-| ------------ | ------------ |
-| Story        | `[STORY]`    |
-| Bug          | `[BUG]`      |
-| Security     | `[SECURITY]` |
-| Architecture | `[ARCH]`     |
-| Tech Debt    | `[DEBT]`     |
 
 ## Project Board (optional)
 

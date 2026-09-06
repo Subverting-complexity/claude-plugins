@@ -240,13 +240,15 @@ with a `number` is an update; one without is a create.
 | --- | ------- |
 | `key` | A spec-local name, so entries can reference each other before any of them has a number. Optional, but required to be referenced. |
 | `number` | An existing issue to update. Absent means create. |
-| `title`, `body` | As on GitHub. A create needs a title. |
+| `title`, `body` | As on GitHub. A create needs a title. A `[BUG]`-style kind prefix is stripped from the title — the native type says that. |
+| `body_file` | A path to read the body from, used when `body` is absent. A body is prose — fenced code, backticks, `$`, quotes — and building that into a JSON string by hand in a shell is where bodies get mangled. The spec file keeps saying `body_file` after a write-back; the body is never inlined into it. |
 | `kind` | One of `wf_core.NATIVE_TYPE_MAP`'s keys (`story`, `bug`, `epic`, `spike`, …). Supplies both the native type and a default `Classification`. |
 | `type` | An explicit native type name, overriding what `kind` implies. |
-| `labels` | Purpose keys or literal names; resolved through the project's label map. A create writes only what is named here, so an entry with no `labels` gets no ready-gate label and no priority, and `pick` will never select it. The command says so on stderr. |
+| `labels` | Purpose keys or literal names; resolved through the project's label map. A `type-*` label is dropped — the native type classifies the issue. A create writes only what survives that, so an entry with no `labels` gets no ready-gate label and no priority, and `pick` will never select it. The command says so on stderr. |
 | `parent` | An issue number, or another entry's `key`. |
 | `blocked_by` | A list of issue numbers and/or `key`s. |
 | `fields` | Purpose key → value. Names resolve through `ClaudeProject.md`'s `## Issue Types & Fields`, then `wf_core.FIELD_NAME_DEFAULTS`. |
+| `milestone` | An open milestone's title, so a sprint placement rides in the same write. A title that names no open milestone fails the spec before anything is written. |
 
 Created numbers are **written back into the spec file**, which is what makes a
 re-run after a partial failure complete the remainder rather than creating
@@ -347,7 +349,7 @@ prove it.
 | --- | ------- |
 | `missing-type` | The org has issue types enabled and this issue has none. |
 | `missing-field` | One of the four mandatory fields (`wf_core.MANDATORY_FIELD_KEYS`) this issue holds no value for. |
-| `type-contradiction` | The native type disagrees with the `type-*` label or the title prefix. |
+| `type-contradiction` | The native type disagrees with a legacy `type-*` label or `[BUG]`-style title prefix the issue still carries. Reported so the stale one can be removed; neither is written any more. |
 | `classification-contradiction` | The `Classification` value cannot be true of the declared kind — a story classified `Bug Fix`, a bug classified `New Feature`. |
 | `missing-edge` | The body names a blocker, either way round, with no native edge. |
 | `dependency-closed` | The body depends on an issue that is not open. |
@@ -545,22 +547,18 @@ creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
 ## Scope / deferrals
 
 - **`pick`** — `--mode story` / `feature` / `maintenance` under all four
-  ready-gates (`label`, `none`, `board-column`, `both`), on both
-  label-typed and type-capable orgs. On label-typed projects,
-  feature/maintenance filter by the `type-*` **label**; on type-capable
-  orgs they filter by the native `issueType` field. One GraphQL query
-  (`fetch_issue_facets`) reads the type, the `Priority` field and the
+  ready-gates (`label`, `none`, `board-column`, `both`). One GraphQL query
+  (`fetch_issue_facets`) reads the native type, the `Priority` field and the
   `Classification` field for the open backlog, and the pool is ordered by
   `Priority` — `Urgent` → `High` → `Medium` → `Low`, then lowest issue
-  number. Labels are the fallback for every part of that: an issue with no
-  field value is ordered by its `priority-*` label, and a failed query
-  falls back to label ordering and label typing entirely. An issue the
-  query returns with **no** type is routed on the kind its `type-*` label
-  or `[PREFIX]` title claims (`FALLBACK_FEATURE_KINDS` /
-  `FALLBACK_MAINTENANCE_KINDS`), and so is a `Feature` the org left
-  unclassified, so a half-classified backlog does not silently lose its
-  unclassified half. Each fallback is reported on stderr with the issues
-  it applied to. Whatever the gate, an issue is out of the pool if its
+  number. An issue with no `Priority` value is ordered by its `priority-*`
+  label, which is the only surviving label fallback. **Type has none**:
+  `feature` and `maintenance` filter on the native `issueType` alone, so an
+  issue the org has not typed — or a `Feature` it left unclassified — is out
+  of the pool and named on stderr rather than guessed at from a `type-*`
+  label or a `[PREFIX]` title. An org whose backlog carries no native type at
+  all cannot answer those modes and `pick` exits `no-capabilities` (21)
+  saying so; `--mode story` is unaffected. Whatever the gate, an issue is out of the pool if its
   lifecycle label says it is unavailable — `status-parked`,
   `status-blocked`, `status-in-progress`, `status-in-review`,
   `status-needs-attention` or `needs-refinement`. `status-ready` is the only

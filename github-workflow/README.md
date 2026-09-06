@@ -94,7 +94,7 @@ project-specific values. Every command and the skill read this file.
 Full format specification: [`docs/claudeproject-spec.md`](../docs/claudeproject-spec.md).
 
 Required sections: Identity, Package Manager, Quality Gate, Branch
-Convention, Label Map, Story Template, Issue Prefixes.
+Convention, Label Map, Story Template.
 
 Optional sections: Project Board, Reference Docs.
 
@@ -143,7 +143,6 @@ your repository's actual labels via `ClaudeProject.md`:
 | Purpose          | Label              |
 | ---------------- | ------------------ |
 | priority-high    | `P1`               |
-| type-bug         | `bug`              |
 | status-ready     | `status:ready`     |
 | claude-authored  | `claude:authored`  |
 ```

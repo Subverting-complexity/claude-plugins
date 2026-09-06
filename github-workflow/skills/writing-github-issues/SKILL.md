@@ -46,7 +46,13 @@ The standards agree on the important part: explain the point in plain words. The
 
 ## Title
 
-Use a short outcome-based title.
+The title is the work, said once, in the fewest words that still identify it.
+
+- **Start with a verb** where the issue asks for a change: `Fix`, `Add`, `Remove`, `Split`, `Document`. A bug report may instead name the broken behaviour.
+- **Sentence case.** No trailing full stop.
+- **Roughly 70 characters or fewer**, so it survives GitHub's list views, the board and a notification email uncut.
+- **Keep identifiers exact** — file paths, flags, API names.
+- **No metadata in the title.** No `[BUG]`/`[STORY]`/`[DEBT]` prefix, no priority, no size, no sprint, no component tag, no issue number. GitHub renders the issue type, the labels and the fields beside the title in every view; repeating them there costs width and drifts out of step the moment one of them is edited.
 
 Good:
 
@@ -54,11 +60,34 @@ Good:
 
 > Remove stale accessibility comments
 
-Avoid background, history or vague wording.
+> Board column write fails when the project has over 100 items
+
+Not this:
+
+> [BUG] (High) Fix accessibility labels — Settings
+
+> Investigation into why the settings screen sometimes reads wrong
 
 The title belongs in GitHub's title field. Do not repeat it in the body.
 
-Where a project uses issue prefixes (`[BUG]`, `[SECURITY]`, `[ARCH]`, `[DEBT]`), the prefix belongs on the title and nowhere else.
+## Classification
+
+An issue says what kind of work it is **once**, through GitHub's native issue
+type (`Bug`, `User Story`, `Chore`, `Feature`, `Epic`, …) and the org's
+`Classification` field. Not through a title prefix, and not through a `type-*`
+label — neither is written any more, and `wf pick` reads neither. A spec that
+still names one has it stripped on the way in.
+
+Lifecycle state (`status-ready`, `needs-refinement`, `status-blocked`) and
+priority stay on labels: GitHub has no native field for the first, and the
+second is dual-tracked with the org's `Priority` field.
+
+## One write path
+
+Every issue this plugin files is created by `wf issue-apply` from a spec, so
+the title rules above, the native type and the field values are applied in one
+place rather than reinvented per command. Do not call `gh issue create`
+directly.
 
 ## Repository templates
 

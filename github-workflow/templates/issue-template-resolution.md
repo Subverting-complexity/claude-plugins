@@ -162,11 +162,11 @@ Handle each as follows:
   of claiming it. New issues must enter the unassigned pool so `execute`
   can select them, and assignment happens only at claim time. A template
   that names assignees does not override that.
-- **`title`** — treat as a suggestion. Where `ClaudeProject.md` defines
-  an issue prefix convention (`[BUG]`, `[SECURITY]`, `[ARCH]`,
-  `[DEBT]`), the project's prefix wins. Use the template's title only as
-  a starting point for the words after the prefix, and rewrite it to the
-  standard's title rules.
+- **`title`** — treat as a suggestion, and a starting point only.
+  Rewrite it to the title rules in
+  `../skills/writing-github-issues/SKILL.md`. A template that opens its
+  title with a `[BUG]`-style prefix loses it: the native issue type says
+  that, and `wf issue-apply` strips the prefix anyway.
 - **`type`** — the org's native issue type. The calling command already
   sets this (github-workflow through `wf issue-apply`); let that stand
   rather than overriding it from the template.

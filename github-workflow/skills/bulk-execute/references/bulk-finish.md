@@ -50,8 +50,9 @@ drop the flag line for any that is no longer `OPEN`.
 
 ## 2. Create one real pull request (never a draft)
 
-Write the body following `templates/body-file-write.md` (temp file plus
-`--body-file`), then:
+Write the body to a file with the Write tool and pass `--body-file` —
+never `--body "..."`. The rule and the read-back check are in
+`templates/body-file-write.md`. Then:
 
 ```
 gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}

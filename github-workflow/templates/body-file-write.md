@@ -1,27 +1,33 @@
 # Body-file write + validation
 
-Canonical procedure for **every** `gh` write that carries a multi-line
-body — `gh issue create`, `gh issue edit`, `gh pr create`, `gh pr edit`,
-`gh issue comment`, `gh pr comment`. It exists once here so the write
-mechanics and the corruption test never drift between callers.
+Canonical procedure for **every** multi-line body this plugin writes — an
+issue body, a pull request description, a comment — so the write mechanics
+and the corruption test never drift between callers. Run it wherever a
+caller says "write the body following `templates/body-file-write.md`".
 
-Run it wherever a caller says "write the body following
-`templates/body-file-write.md`".
+## The rule: a body always goes in a file
 
-## Why a temp file (never inline)
+A body is prose — fenced code, backticks, `$`, quotes, blank lines — and a
+shell or a JSON encoder eats every one of those. So **never build a body as
+a shell argument or inside a JSON string**. Not `--body "..."`, and never
+`--body -`, which does not read stdin: it sets the body to the literal `-`.
+That is where the corrupt one-character bodies below come from.
 
-**Always pass the body with `--body-file {tempfile}`. Never pass it
-inline** with `--body "..."` or, worse, `--body -`. Inline bodies hit
-Windows/PowerShell shell-escaping bugs, and `--body -` does **not** read
-stdin (it sets the body to the literal string `-`). Both produce the
-corrupt one-character bodies the validation below exists to catch.
+**Write the file with the Write tool**, not the shell: it takes the text
+exactly as you mean it, with no delimiter to collide with and nothing to
+escape. From the shell, use a *quoted* heredoc (`<<'BODY'`, never
+`<<BODY` — unquoted expands `$` and backticks before the file is written)
+with a delimiter that cannot appear in the text.
 
-## Write
+Then name the file rather than the text:
 
-1. Write the intended body to a temporary file.
-2. Run the `gh` command with `--body-file {tempfile}` (plus whatever
-   flags the caller specifies — `--title`, `--label`, `--milestone`, …).
-3. Delete the temp file after the command returns.
+- **Issues** — `wf issue-apply` with `"body_file"` on the entry. It is the
+  only path that creates or updates an issue body.
+- **PRs and comments** — the `gh` command with `--body-file {file}`, plus
+  whatever flags the caller specifies.
+
+Put anything a later step re-reads in `.claude/` and leave it there for a
+re-run; delete a temp file once the command returns.
 
 ## Validate (read back, apply the corruption test)
 

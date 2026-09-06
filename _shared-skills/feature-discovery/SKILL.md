@@ -395,32 +395,39 @@ issues. If they accept:
    uses its headings and order. github-workflow resolves this through
    `templates/issue-template-resolution.md`; the result is cached, so
    check once rather than per story.
-1. Create issues in **dependency order** — dependencies first so that
-   later stories can reference them by issue number.
-2. Include a `## Dependencies` section in each issue body listing
-   upstream dependencies by issue number (e.g., `Depends on #42`).
-3. Apply ready state based on dependency state:
-   - Stories with no unresolved dependencies (DAG roots) → mark as
-     ready per the project's `ready-gate` setting: apply the
-     `status-ready` label and/or move to the "Ready" board column.
-   - Stories whose dependencies are not yet closed →
-     do NOT mark as ready. The `## Dependencies` section in the body
-     is sufficient to communicate the dependency — no blocked label
-     is needed.
-   - Deferred stories (see "Deferred speccing") →
-     `needs-refinement` label.
-4. **Native type + fields** (best-effort, capability-gated) — labels alone
-   leave an issue unclassified in the org's own views, so upgrade each
-   created issue to the native issue type and the org's field values.
-   Under github-workflow this is one call for the whole set, not a loop:
-   write an update entry per issue and apply them together.
+1. **One write for the whole set.** Under github-workflow every issue is
+   created by `wf issue-apply` from a single spec — title, body, native
+   issue type, field values, labels, parent and dependency edges together.
+   Not a `gh issue create` loop, and not create-then-upgrade: an issue that
+   exists for a few seconds carrying only labels is what put half-classified
+   stories on the board.
+
+   The command works in dependency order for you. Entries reference each
+   other by `key` before any of them has a number, parents are created
+   before children, and edges are written last, so the whole tree is one
+   command whatever its shape.
+
+   Write each story's body to its own file in `.claude/` with the Write
+   tool, then the spec beside them:
 
    ```bash
    mkdir -p .claude
    cat > .claude/discovery-spec.json <<'JSON'
-   {"issues": [{"number": {number}, "kind": "{story|epic}",
-                "parent": {epic number, when the story belongs to one},
-                "blocked_by": [{upstream issue numbers}],
+   {"issues": [{"key": "epic",
+                "title": "{epic title}",
+                "body_file": ".claude/epic-body.md",
+                "kind": "epic",
+                "labels": ["{priority_label}", "{lifecycle_label}"],
+                "fields": {"field-priority": "{Urgent|High|Medium|Low}",
+                           "field-effort": "{Low|Medium|High}",
+                           "field-origin": "Feature Discovery"}},
+               {"key": "story-1",
+                "title": "{story title}",
+                "body_file": ".claude/story-1-body.md",
+                "kind": "story",
+                "parent": "epic",
+                "blocked_by": ["{other key or issue number}"],
+                "labels": ["{priority_label}", "{lifecycle_label}"],
                 "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                            "field-effort": "{Low|Medium|High}",
                            "field-origin": "Feature Discovery"}}]}
@@ -428,9 +435,16 @@ issues. If they accept:
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/discovery-spec.json
    ```
 
+   - Each body goes in its own file and the entry names it (`body_file`)
+     rather than carrying the text, so fenced code, backticks, `$` and
+     quotes survive intact. github-workflow states the rule once in
+     `templates/body-file-write.md`.
    - `kind` supplies the native type **and** the `Classification` value
      together (a story → User Story / New Feature, an epic → Epic), so
      neither is chosen by hand. Use `spike` for a research story.
+   - **No `type-*` label and no `[STORY]` title prefix.** The native type
+     classifies the issue; `issue-apply` strips both if a spec still names
+     them, and says that it did.
    - `field-effort` comes from the story's size estimate: large → **High**,
      medium → **Medium**, small → **Low**.
    - `field-priority` is set only where the plan assigned one, and stays
@@ -438,15 +452,35 @@ issues. If they accept:
      `pick`; the label is the fallback for issues without one.
    - `blocked_by` writes a native edge **and** the body's `## Dependencies`
      prose, so the markers from step 2 stay authoritative.
+   - Add `"milestone": "{title}"` to an entry in sprint mode. It must name
+     an open milestone.
+2. Include a `## Dependencies` section in each issue body listing
+   upstream dependencies by issue number (e.g., `Depends on #42`). Where a
+   dependency is another entry in the same spec and has no number yet, name
+   it in `blocked_by` by `key` and let `issue-apply` write the prose.
+3. Apply ready state based on dependency state, through each entry's
+   `labels`:
+   - Stories with no unresolved dependencies (DAG roots) → mark as
+     ready per the project's `ready-gate` setting: the `status-ready`
+     label and/or a move to the "Ready" board column.
+   - Stories whose dependencies are not yet closed →
+     do NOT mark as ready. The `## Dependencies` section in the body
+     is sufficient to communicate the dependency — no blocked label
+     is needed.
+   - Deferred stories (see "Deferred speccing") →
+     `needs-refinement` label.
+4. **Read the exit code.** **0** created them, and every issue number is
+   written back into the spec file, so a re-run after a partial failure
+   completes the remainder rather than filing duplicates. **21**
+   (`no-capabilities`) means the org defines no types or fields — report
+   that the stories could not be classified rather than filing them
+   unclassified by hand. **22** means the spec is wrong (an unknown label,
+   a milestone that is not open, a missing mandatory field), so fix it and
+   re-run. **23** and **24** mean the issues exist but some metadata did not
+   land, so name what failed and carry on.
 
-   Read the exit code: **0** applied it; **21** (`no-capabilities`) means
-   the org defines no types or fields, so the label-based result from the
-   steps above stands with no error; **22** means the spec is wrong, so fix
-   it and re-run; **23** and **24** mean the issues exist but some metadata
-   did not land, so name what failed and carry on.
-
-   Where the command is unavailable, say so and leave the label-based
-   result — do not hand-write the mutations.
+   Where the command is unavailable, say so and stop rather than
+   hand-writing the mutations.
 5. After creation, verify each issue body contains the correct
    dependency references. Use the post-creation validation pattern
    (see report-issue) to catch body corruption.

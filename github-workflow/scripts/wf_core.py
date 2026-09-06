@@ -52,32 +52,14 @@ def _priority_rank(labels, project_map=None, field_value=None):
     return len(_PRIORITY_ORDER)
 
 
-def _filter_by_mode(candidates, mode, project_map=None):
-    """Apply mode filter (label path — non-type-capable orgs).
-
-    story       — no type filter; all issues are eligible.
-    feature     — keep type-story issues only.
-    maintenance — keep bug / security / debt / architecture issues only.
-
-    This is the `type-*` **label** path, matched through the project map so a
-    project that renames the type labels is filtered correctly. On a type-capable
-    org the caller passes a `type_map` to `select_pool` instead, which routes
-    through `filter_by_native_type` and never reaches this function.
-    """
-    if mode == 'story':
-        return list(candidates)
-    project_map = project_map or {}
-    feature_keys = {'type-story'}
-    maintenance_keys = {'type-bug', 'type-security', 'type-debt', 'type-arch'}
-    keys = feature_keys if mode == 'feature' else maintenance_keys
-    keep = {resolve_label(k, project_map) for k in keys}
-    return [c for c in candidates if any(lbl in keep for lbl in c.get('labels', []))]
-
-
-# ── Native issue type filtering (type-capable orgs) ────────────────────────
-# When the org has native GitHub issue types, the authoritative classification
-# is the issueType field, not the type-* label. The type_map is built from a
-# single GraphQL query in wf.py and passed through select_pool.
+# ── Native issue type filtering ────────────────────────────────────────────
+# The native issueType is the only thing that classifies an issue. There is no
+# `type-*` label path any more, on any org: a label saying `bug` beside a type
+# saying `Bug` is two answers to one question, and the two drifted apart the
+# moment anyone edited either. The type_map is built from a single GraphQL
+# query in wf.py and passed through select_pool. An org that has not enabled
+# native issue types cannot answer a feature/maintenance question at all, and
+# `wf pick` says so rather than guessing.
 #
 # Native type map (from templates/default-labels.md):
 #   feature mode  → keep User Story
@@ -98,21 +80,22 @@ MAINTENANCE_CLASSIFICATIONS = frozenset({
     'Tech Debt', 'Architecture', 'Security',
 })
 
-# Where an untyped issue goes, by the kind its `type-*` label or `[PREFIX]`
-# title claims. This is stated directly rather than derived by looking the kind
-# up in `NATIVE_TYPE_MAP` and re-filtering by the resulting type, because that
-# route gave three wrong answers. A chore mapped to `User Story`, so an untyped
-# `[CHORE]` landed in **feature** mode while a natively typed `Chore` landed in
-# maintenance — the same issue in opposite pools depending only on whether
-# anyone had typed it yet. `[FEATURE]` and `[EPIC]` mapped to types that match
-# neither pool, so both vanished from every mode without a word.
+# On a type-capable org the native type is the *only* classifier. There is
+# deliberately no `type-*` label or `[PREFIX]` title fallback here: guessing
+# from a label the workflow no longer writes, or a prefix it no longer adds,
+# reintroduces the two-sources-of-truth problem native types exist to end --
+# and it guessed wrongly, routing an untyped `[CHORE]` into feature mode while
+# a natively typed `Chore` went to maintenance. An issue the org has not typed
+# is neither mis-filed nor silently dropped: it is left out of the mode pool
+# and named to the caller, so it reads as a gap in the data somebody can fill
+# rather than a guess nobody can see.
 #
-# An epic is in neither set on purpose: it is a container for work rather than
-# work, which is also why `NATIVE_FEATURE_TYPES` excludes the native `Epic`.
-FALLBACK_FEATURE_KINDS = frozenset({'story', 'feature', 'spike'})
-FALLBACK_MAINTENANCE_KINDS = frozenset({
-    'bug', 'security', 'tech debt', 'architecture', 'chore',
-})
+# Orgs with no native types at all never reach this function. `_filter_by_mode`
+# reads their `type-*` labels, which for them are the real classification
+# rather than a shadow of one.
+#
+# An epic is in no set on purpose: it is a container for work rather than work,
+# which is why `NATIVE_FEATURE_TYPES` excludes the native `Epic`.
 
 
 def is_maintenance_classification(value):
@@ -130,43 +113,32 @@ def is_maintenance_classification(value):
 
 
 def filter_by_native_type(candidates, mode, type_map, classification_map=None,
-                          project_map=None, fallback_count=None):
+                          project_map=None, unclassified=None):
     """Filter candidates by native issue type (type-capable orgs).
 
     feature mode: keep only User Story.
-    maintenance mode: keep Bug unconditionally, plus Feature when the
-    Classification field indicates tech debt / architecture / security.
-    When classification_map is unavailable (None), all Feature-typed
-    candidates are included as a best-effort fallback; when it is available
-    but the issue has no value, the issue is routed on its own declared kind
-    and recorded in `fallback_count`.
+    maintenance mode: keep Bug and Chore unconditionally, plus Feature when the
+    Classification field marks it as maintenance work. With no Classification
+    field to read at all (`classification_map` is None) every Feature is kept:
+    a stray candidate beats a missed one when the org cannot answer at all.
     story mode: no filter (returns all).
 
-    An issue with no native type is not dropped: it is routed on the kind its
-    own `type-*` label or `[PREFIX]` title claims (`declared_kind()`), through
-    `FALLBACK_FEATURE_KINDS` / `FALLBACK_MAINTENANCE_KINDS`. Without this, an
-    untyped issue on a type-capable org silently vanishes from
-    `feature`/`maintenance` mode — `story` mode is unaffected, which is why the
-    gap went unnoticed on orgs with zero typed issues. `fallback_count`, when
-    passed a list, records the number of each issue routed this way so the
-    caller can report it rather than let it pass silently.
+    The org's own answer is the only one consulted. An issue it has not typed,
+    and a `Feature` it has not classified on an org that does classify, are
+    left out of the mode pool and their numbers appended to `unclassified` when
+    a list is passed, so the caller can name them. Neither is guessed at from a
+    `type-*` label or a `[PREFIX]` title: the workflow stopped writing both on
+    type-capable orgs, so reading them would be reading its own stale exhaust.
     """
     if mode == 'story':
         return list(candidates)
-    wanted_kinds = (FALLBACK_FEATURE_KINDS if mode == 'feature'
-                    else FALLBACK_MAINTENANCE_KINDS)
     result = []
     for c in candidates:
         native_type = type_map.get(c['number'])
         classification = classification_map.get(c['number']) if classification_map else None
         if not native_type:
-            # No native type: route on the kind the issue claims, which is the
-            # answer the label path would give.
-            kind, _source = declared_kind(c.get('title'), c.get('labels'), project_map)
-            if kind in wanted_kinds:
-                result.append(c)
-                if fallback_count is not None:
-                    fallback_count.append(c['number'])
+            if unclassified is not None:
+                unclassified.append(c['number'])
             continue
         if mode == 'feature':
             if native_type in NATIVE_FEATURE_TYPES:
@@ -175,23 +147,15 @@ def filter_by_native_type(candidates, mode, type_map, classification_map=None,
             if native_type in NATIVE_MAINTENANCE_TYPES:
                 result.append(c)
             elif native_type in NATIVE_MAINTENANCE_CLASSIFIABLE_TYPES:
-                # A `Feature` is maintenance only when its Classification says
-                # so. With no Classification field to read at all, keep it: a
-                # missed candidate is worse than a stray one.
                 if classification_map is None:
                     result.append(c)
                 elif is_maintenance_classification(classification):
                     result.append(c)
-                elif not classification:
-                    # The field exists but this issue has no value, so read the
-                    # kind the issue itself claims -- the same fallback an
-                    # untyped issue gets, rather than dropping it unseen.
-                    kind, _source = declared_kind(c.get('title'), c.get('labels'),
-                                                  project_map)
-                    if kind in wanted_kinds:
-                        result.append(c)
-                        if fallback_count is not None:
-                            fallback_count.append(c['number'])
+                elif not classification and unclassified is not None:
+                    # A `Feature` on an org that does classify, carrying no
+                    # value of its own: unanswerable, so it is named rather
+                    # than guessed at.
+                    unclassified.append(c['number'])
     return result
 
 
@@ -255,7 +219,7 @@ def select_story(candidates, mode='story', agent_gating='disabled', project_map=
 
 
 def select_pool(candidates, mode='story', agent_gating='disabled', project_map=None,
-                type_map=None, classification_map=None, fallback_count=None,
+                type_map=None, classification_map=None, unclassified=None,
                 priority_map=None):
     """The ordered, filtered candidate list (best first). Empty list if none.
 
@@ -265,26 +229,36 @@ def select_pool(candidates, mode='story', agent_gating='disabled', project_map=N
     on a project that renames labels. Defaults to `{}` so
     a default-labelled project (and the offline tests) need not pass it.
 
-    `type_map`, when provided, activates native-type filtering (type-capable
-    orgs): a dict of ``{issue_number: native_type_name}`` built from a GraphQL
-    query. When set, mode filtering uses ``filter_by_native_type`` instead of
-    the label-based ``_filter_by_mode``. `classification_map` is an optional
+    `type_map` is a dict of ``{issue_number: native_type_name}`` built from a
+    GraphQL query, and it is the only classifier: outside `story` mode, an org
+    that supplies none has no way to tell a bug from a story, so every
+    candidate comes back named in `unclassified` and the pool is empty.
+    `classification_map` is an optional
     companion dict of ``{issue_number: classification_option_name}`` for
-    refining Feature-typed issues in maintenance mode. `fallback_count`, when
-    passed a list, is appended with the number of each candidate that
-    `filter_by_native_type` classified via its `type-*` label or `[PREFIX]`
-    title rather than a native type, so the caller can report it.
+    refining Feature-typed issues in maintenance mode. `unclassified`, when
+    passed a list, is appended with the number of every candidate the org has
+    not typed (or, for a `Feature`, not classified) and which was therefore
+    left out of the pool, so the caller can name the gap rather than return a
+    quietly short list.
 
     `priority_map` is ``{issue_number: Priority option name}`` from the org's
     own field. It orders the pool; an issue absent from it is ordered by its
     `priority-*` label instead. Defaults to `{}` for the same reason
     `project_map` does.
     """
-    if type_map and mode != 'story':
+    if mode == 'story':
+        pool = list(candidates)
+    elif type_map:
         pool = filter_by_native_type(candidates, mode, type_map, classification_map,
-                                     project_map, fallback_count)
+                                     project_map, unclassified)
     else:
-        pool = _filter_by_mode(candidates, mode, project_map)
+        # No native types on this org, and nothing else classifies an issue.
+        # Every candidate is unanswerable rather than eligible -- naming them
+        # is the whole point, since a pool that silently held everything would
+        # route a story into maintenance mode.
+        if unclassified is not None:
+            unclassified.extend(c['number'] for c in candidates)
+        pool = []
     pool = _filter_unavailable(pool, project_map)
     pool = _filter_agent_gating(pool, agent_gating, project_map)
     return _sort_candidates(pool, project_map, priority_map)
@@ -293,12 +267,12 @@ def select_pool(candidates, mode='story', agent_gating='disabled', project_map=N
 # ── Label resolution ─────────────────────────────────────────────────────────
 # github-workflow/templates/default-labels.md — "The single resolution path".
 
+# `type-*` is deliberately absent. The native issue type is what classifies an
+# issue; a label that repeats it is a second answer nothing reads, and a
+# project that still maps one is told to drop the row by
+# `deprecated_label_findings`. The names survive in `TYPE_LABEL_KINDS` only so
+# the write path can recognise and remove them.
 _DEFAULT_LABELS = {
-    'type-story': 'type-story',
-    'type-bug': 'type-bug',
-    'type-security': 'type-security',
-    'type-debt': 'type-debt',
-    'type-arch': 'type-arch',
     'priority-critical': 'priority-critical',
     'priority-high': 'priority-high',
     'priority-medium': 'priority-medium',
@@ -359,7 +333,6 @@ def current_lifecycle_label(labels, project_map):
 # project-map-then-default path `resolve_label()` uses for labels.
 
 # Workflow kind → native issue type, `Classification` option, and the `type-*`
-# label used as the fallback on an org without native types.
 #
 # The Classification entry is the default "by nature" choice, not the only
 # valid one. For a bug, prefer `Regression` when something previously worked
@@ -369,15 +342,15 @@ def current_lifecycle_label(labels, project_map):
 # `Documentation` when it tracks docs only, or `Performance` when speed is the
 # point.
 NATIVE_TYPE_MAP = {
-    'story':        {'type': 'User Story', 'classification': 'New Feature',  'label': 'type-story'},
-    'bug':          {'type': 'Bug',        'classification': 'Bug Fix',      'label': 'type-bug'},
-    'security':     {'type': 'Bug',        'classification': 'Security',     'label': 'type-security'},
-    'tech debt':    {'type': 'Feature',    'classification': 'Tech Debt',    'label': 'type-debt'},
-    'architecture': {'type': 'Feature',    'classification': 'Architecture', 'label': 'type-arch'},
-    'feature':      {'type': 'Feature',    'classification': 'New Feature',  'label': 'type-story'},
-    'epic':         {'type': 'Epic',       'classification': 'New Feature',  'label': 'type-story'},
-    'spike':        {'type': 'User Story', 'classification': 'Spike',        'label': 'type-story'},
-    'chore':        {'type': 'User Story', 'classification': 'Chore',        'label': 'type-bug'},
+    'story':        {'type': 'User Story', 'classification': 'New Feature'},
+    'bug':          {'type': 'Bug',        'classification': 'Bug Fix'},
+    'security':     {'type': 'Bug',        'classification': 'Security'},
+    'tech debt':    {'type': 'Feature',    'classification': 'Tech Debt'},
+    'architecture': {'type': 'Feature',    'classification': 'Architecture'},
+    'feature':      {'type': 'Feature',    'classification': 'New Feature'},
+    'epic':         {'type': 'Epic',       'classification': 'New Feature'},
+    'spike':        {'type': 'User Story', 'classification': 'Spike'},
+    'chore':        {'type': 'User Story', 'classification': 'Chore'},
 }
 
 # The type above is the one GitHub always offers. Where an org has enabled a
@@ -991,6 +964,54 @@ def declared_kind(title, labels, project_map=None):
     return None, None
 
 
+# ── writing an issue: what is no longer written ────────────────────────────
+# The native issue type is the classification. Writing it a second and third
+# time as a `type-*` label and a `[BUG]` title prefix buys nothing and costs
+# plenty: GitHub renders the type badge in every list, the prefix eats title
+# width in all of them, and a label that drifts from the type gives the picker
+# two answers to one question. These two functions are what the create path
+# uses, and they take the redundancy out of a caller's spec rather than
+# trusting every call site to remember -- so a spec that still names
+# `type-bug`, or a title that still starts `[BUG]`, produces a clean issue
+# anyway.
+#
+# This applies on every org, including one with no native types: a classifier
+# the tooling never reads is not a classifier, it is just clutter that outlives
+# whoever wrote it.
+
+def strip_type_labels(labels, project_map=None):
+    """The labels minus any `type-*` one. Returns (kept, dropped).
+
+    Order is preserved, and a label is matched through the project map like
+    everywhere else, so a project that renamed `type-bug` to `kind/bug` has it
+    dropped too.
+    """
+    project_map = project_map or {}
+    type_names = {resolve_label(key, project_map) for key in TYPE_LABEL_KINDS}
+    kept, dropped = [], []
+    for name in labels or []:
+        # A spec may name either the purpose key or the literal label.
+        literal = resolve_label(name, project_map) if name in TYPE_LABEL_KINDS else name
+        (dropped if literal in type_names else kept).append(name)
+    return kept, dropped
+
+
+def strip_title_prefix(title):
+    """The title minus a leading `[KIND]` the native type already states.
+
+    Only a prefix this workflow recognises as a kind is removed. A title that
+    opens with a bracket meaning something else -- `[v2]`, `[iOS]` -- is left
+    exactly as written, because guessing there would silently edit somebody's
+    words.
+    """
+    match = _TITLE_PREFIX_RE.match(title or '')
+    if not match:
+        return title
+    if match.group(1).strip().upper() not in TITLE_PREFIX_KINDS:
+        return title
+    return (title or '')[match.end():].strip()
+
+
 def infer_priority(labels, project_map=None):
     """The Priority value the issue's own `priority-*` label implies."""
     present = set(labels or ())
@@ -1387,6 +1408,65 @@ def config_label_findings(project_map, review_labels, live_labels,
     return out
 
 
+def deprecated_label_findings(project_map, live_labels, path='ClaudeProject.md'):
+    """The `type-*` rows and labels that no longer classify anything.
+
+    Nothing reads them: the native issue type is the classification, and the
+    write path removes a `type-*` label rather than applying one. A row left in
+    the label map is a standing invitation to hand-label an issue in a way the
+    picker will ignore, so it is reported once, with the row to delete.
+    """
+    rows = sorted(k for k in (project_map or {}) if k in TYPE_LABEL_KINDS)
+    if not rows:
+        return []
+    return [finding(
+        WARNING, 'type-label-deprecated',
+        '`## Label Map` in %s still maps %s, but a `type-*` label no longer '
+        'classifies anything -- the native issue type does, and the write path '
+        'strips the label off every issue it files' % (path, _names(rows)),
+        'delete %s from the label map; the labels themselves can go once '
+        'nobody filters on them by hand'
+        % ('that row' if len(rows) == 1 else 'those rows'),
+        path)]
+
+
+def unmapped_label_findings(project_map, live_labels, path='ClaudeProject.md'):
+    """Purpose keys the repo carries under a name nothing maps them to.
+
+    `config_label_findings` checks the rows the map *has*. This checks the rows
+    it does not: a repo whose label is `status:parked` while the map has no
+    `status-parked` row leaves `pick` resolving the purpose key to its default
+    `status-parked`, matching nothing, and quietly keeping a parked issue in
+    the pool. Nothing else notices -- the label exists, the config is valid,
+    and the filter is simply looking for a name no issue carries.
+
+    So the signal is a near miss rather than an absence: only when the repo
+    holds a label that flattens to the same key (`_drift_key` folds `:` and `-`
+    together) is a missing row wrong. A purpose key the project genuinely does
+    not use has no near miss and is not reported.
+    """
+    project_map = project_map or {}
+    by_key = {}
+    for name in live_labels or ():
+        by_key.setdefault(_drift_key(name), []).append(name)
+    out = []
+    for purpose in LIFECYCLE_KEYS + ['claude-ready']:
+        if project_map.get(purpose):
+            continue
+        default = _DEFAULT_LABELS.get(purpose, purpose)
+        near = [n for n in by_key.get(_drift_key(purpose), []) if n != default]
+        if not near or default in (live_labels or ()):
+            continue
+        out.append(finding(
+            CRITICAL, 'label-unmapped',
+            'this repo carries %s but `## Label Map` in %s has no `%s` row, so '
+            'the tooling looks for `%s` and matches nothing'
+            % (_names(sorted(near)), path, purpose, default),
+            'add `| %s | %s |` to the label map' % (purpose, sorted(near)[0]),
+            path))
+    return out
+
+
 def _drift_key(name):
     """A label name with every separator flattened, for near-miss grouping."""
     return re.sub(r'[\s:_/]+', '-', (name or '').strip().lower())
@@ -1397,7 +1477,7 @@ def label_drift_findings(live_labels, project_map=None):
 
     Two shapes, both seen in the wild: a separator that drifted
     (`priority:medium` beside `priority-medium`), and a prefix that was dropped
-    (`bug` beside `type-bug`). Neither breaks a command, so both warn — but each
+    (`ready` beside `status-ready`). Neither breaks a command, so both warn — but each
     one silently splits a backlog in half, because selection matches one name
     and some of the issues carry the other.
     """
