@@ -111,6 +111,12 @@ When the target org has **native GitHub issue types** and **org issue
 fields** configured, the workflow uses them as the first-class
 classification and metadata.
 
+`pick` reads them too, not just writes them: the pool is ordered by the
+org's `Priority` field and a `Feature` counts as maintenance work only when
+its `Classification` says so. The `priority-*` and `type-*` labels are the
+fallback, for issues the fields were never set on and for orgs that do not
+define them.
+
 **The purpose→value maps are not in this file.** They live as Python data
 in `scripts/wf_core.py`, and the tooling applies them directly:
 
@@ -121,6 +127,7 @@ in `scripts/wf_core.py`, and the tooling applies them directly:
 | Purpose key → field name, and its data type | `FIELD_NAME_DEFAULTS`, `FIELD_DATA_TYPES` |
 | The four fields set on every issue | `MANDATORY_FIELD_KEYS` |
 | `priority-*` label → `Priority` option | `PRIORITY_FIELD_OPTIONS` |
+| `Priority` option → pick order | `PRIORITY_FIELD_RANK` |
 | Size estimate → `Effort` option | `EFFORT_FIELD_OPTIONS` |
 | Creating command → `Origin` option | `ORIGIN_FIELD_OPTIONS` |
 

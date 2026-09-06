@@ -1948,31 +1948,115 @@ def _emit_audit(findings, checked, skipped, cfg, args):
                 'configuration agree', **payload)
 
 
-def fetch_native_types(cfg):
-    """Fetch native issue types for all open issues via GraphQL.
+# GitHub caps a connection page at 100 records -- asking for more is an
+# `EXCESSIVE_PAGINATION` error, not a truncated answer, so the whole query
+# fails. Two pages cover the same 200 open issues `assemble_candidates` reads
+# through `gh issue list --limit 200`, and the same newest-first order, so the
+# facets window and the candidate window are the same issues.
+FACET_PAGE_SIZE = 100
+FACET_MAX_PAGES = 2
 
-    Returns (ok, type_map, err) where type_map is {issue_number: type_name}.
-    Used on type-capable orgs so the fast path can filter by native type
-    instead of deferring to the inline skill procedure.
-    """
-    ok, data, err = gh_graphql(
-        'query($owner:String!,$repo:String!){'
+
+def _facets_query(paged):
+    """The open-issue facets query, with the `after:` clause only when paging."""
+    return (
+        'query($owner:String!,$repo:String!%s){'
         ' repository(owner:$owner,name:$repo){'
-        '  issues(first:200,states:OPEN){ nodes { number issueType { name } } }'
-        ' } }',
-        owner=cfg['org'], repo=cfg['repo'])
-    if not ok or not data:
-        return False, None, 'native type query failed: %s' % err
-    try:
-        nodes = data['repository']['issues']['nodes']
-    except (KeyError, TypeError):
-        return False, None, 'unexpected native type response shape'
-    type_map = {}
-    for node in nodes:
-        it = node.get('issueType')
-        if it and it.get('name'):
-            type_map[node['number']] = it['name']
-    return True, type_map, ''
+        '  issues(first:%d,states:OPEN,orderBy:{field:CREATED_AT,direction:DESC}%s){'
+        '   pageInfo { hasNextPage endCursor }'
+        '   nodes { number issueType { name }'
+        '    issueFieldValues(first:20){ nodes {'
+        '     ... on IssueFieldSingleSelectValue {'
+        '      field { ... on IssueFieldSingleSelect { name } } name }'
+        '     ... on IssueFieldMultiSelectValue {'
+        '      field { ... on IssueFieldMultiSelect { name } } options { name } }'
+        '    } }'
+        '   } } } }'
+        % (',$cursor:String!' if paged else '', FACET_PAGE_SIZE,
+           ',after:$cursor' if paged else ''))
+
+
+def fetch_issue_facets(cfg, priority_field='Priority',
+                       classification_field='Classification'):
+    """Native type, Priority and Classification for every open issue.
+
+    Returns (ok, facets, err) where facets is
+    ``{'types': {n: name}, 'priority': {n: option}, 'classification': {n: [options]}}``.
+
+    One query for all three because the picker needs all three about the same
+    row: the type to filter the pool, the Priority field to order it, and the
+    Classification to tell a `Feature` that is tech debt from one that is a new
+    feature. Fields the org does not define simply produce empty maps, and the
+    caller falls back to labels -- which is also what happens when the query
+    fails outright, so a repo whose schema has none of this still picks stories.
+    """
+    facets = {'types': {}, 'priority': {}, 'classification': {}}
+    cursor, pages = None, 0
+    while pages < FACET_MAX_PAGES:
+        args = {'owner': cfg['org'], 'repo': cfg['repo']}
+        if cursor:
+            args['cursor'] = cursor
+        ok, data, err = gh_graphql(_facets_query(bool(cursor)), **args)
+        if not ok or not data:
+            return False, facets, 'issue facet query failed: %s' % err
+        try:
+            connection = data['repository']['issues']
+            nodes = connection['nodes']
+        except (KeyError, TypeError):
+            return False, facets, 'unexpected issue facet response shape'
+        for node in nodes:
+            number = node.get('number')
+            if number is None:
+                continue
+            native = node.get('issueType') or {}
+            if native.get('name'):
+                facets['types'][number] = native['name']
+            values = issue_field_values(node)
+            if values.get(priority_field):
+                facets['priority'][number] = values[priority_field]
+            if values.get(classification_field):
+                facets['classification'][number] = values[classification_field]
+        pages += 1
+        page_info = connection.get('pageInfo') or {}
+        if not page_info.get('hasNextPage'):
+            break
+        cursor = page_info.get('endCursor')
+        if not cursor:
+            break
+    return True, facets, ''
+
+
+def report_priority_fallback(pool, priority_map):
+    """Say which candidates were ordered by label because their field is empty.
+
+    Only when the org clearly has the field -- some other candidate carried a
+    value -- so a project that orders by labels on purpose is not nagged on
+    every pick. Silence otherwise: an empty field on an org that has no such
+    field is not a gap in the data.
+    """
+    if not pool or not priority_map:
+        return
+    missing = sorted(c['number'] for c in pool if not priority_map.get(c['number']))
+    if not missing:
+        return
+    eprint('wf: %d candidate(s) have no Priority field value; ordered by their '
+           'priority-* label instead: %s (run wf issue-audit to backfill)'
+           % (len(missing), ', '.join('#%d' % n for n in missing)))
+
+
+def load_issue_facets(cfg):
+    """`fetch_issue_facets` with the failure already reported. Returns the maps.
+
+    Every map is empty on failure rather than absent, so each caller reads the
+    same shape and degrades to label ordering and label typing without a
+    branch of its own.
+    """
+    ok, facets, err = fetch_issue_facets(cfg, field_name(cfg, 'field-priority'),
+                                         field_name(cfg, 'field-type'))
+    if not ok:
+        eprint('wf: issue type/field lookup failed (%s); ordering and typing '
+               'this pool by labels instead' % err)
+    return facets
 
 
 def assemble_candidates(cfg):
@@ -2611,15 +2695,17 @@ def cmd_pick(args):
                  side_effects=side_effects)
         finish_pick(args, cfg, selected, side_effects, backlog_mode=None)
 
-    # On a type-capable org, feature/maintenance modes filter by native
-    # issueType instead of the type-* label. Fetch once before selection.
-    type_map = None
+    # The org's own view of the backlog: native type, Priority, Classification.
+    # One query, read before selection, because all three decide the pool --
+    # what is in it, what order it is in, and which `Feature` counts as
+    # maintenance. Labels are the fallback for whatever the org has not set.
+    facets = load_issue_facets(cfg)
+    priority_map = facets['priority']
+    type_map = classification_map = None
     if args.mode != 'story' and cfg.get('type_capable'):
-        ok_t, type_map, t_err = fetch_native_types(cfg)
-        if not ok_t:
-            eprint('wf: native type query failed (%s); falling back to label filtering' % t_err)
-            type_map = None
-        elif type_map:
+        type_map = facets['types'] or None
+        classification_map = facets['classification'] if type_map else None
+        if type_map:
             eprint('wf: type-capable org — filtering %s mode by native issueType' % args.mode)
 
     gate = cfg.get('ready_gate', 'label')
@@ -2641,7 +2727,10 @@ def cmd_pick(args):
     pool = wf_core.select_pool(issues, mode=args.mode,
                                agent_gating=cfg.get('agent_gating', 'disabled'),
                                project_map=cfg.get('labels', {}),
-                               type_map=type_map, fallback_count=type_fallback)
+                               type_map=type_map,
+                               classification_map=classification_map,
+                               fallback_count=type_fallback,
+                               priority_map=priority_map)
 
     selected, side_effects = None, []
     if pool:
@@ -2657,11 +2746,16 @@ def cmd_pick(args):
                 pool = wf_core.select_pool(issues, mode=args.mode,
                                            agent_gating=cfg.get('agent_gating', 'disabled'),
                                            project_map=cfg.get('labels', {}),
-                                           type_map=type_map, fallback_count=type_fallback)
+                                           type_map=type_map,
+                                           classification_map=classification_map,
+                                           fallback_count=type_fallback,
+                                           priority_map=priority_map)
                 if pool:
                     selected, more_effects = claim_validate_walk(cfg, pool, backlog_mode,
                                                                  siblings)
                     side_effects.extend(more_effects)
+
+    report_priority_fallback(pool, priority_map)
 
     if type_fallback:
         eprint('wf: %d candidate(s) have no native issue type; classified for %s '
@@ -2759,12 +2853,12 @@ def cmd_candidates(args):
     if not cfg.get('org') or not cfg.get('repo'):
         emit('error', EXIT_ENV, reason='org/repo missing from config')
 
-    type_map = None
+    facets = load_issue_facets(cfg)
+    priority_map = facets['priority']
+    type_map = classification_map = None
     if args.mode != 'story' and cfg.get('type_capable'):
-        ok_t, type_map, t_err = fetch_native_types(cfg)
-        if not ok_t:
-            eprint('wf: native type query failed (%s); falling back to label filtering' % t_err)
-            type_map = None
+        type_map = facets['types'] or None
+        classification_map = facets['classification'] if type_map else None
 
     gate = cfg.get('ready_gate', 'label')
     if gate not in ('label', 'none', 'board-column', 'both'):
@@ -2779,12 +2873,16 @@ def cmd_candidates(args):
     pool = wf_core.select_pool(issues, mode=args.mode,
                                agent_gating=cfg.get('agent_gating', 'disabled'),
                                project_map=cfg.get('labels', {}),
-                               type_map=type_map, fallback_count=type_fallback)
+                               type_map=type_map,
+                               classification_map=classification_map,
+                               fallback_count=type_fallback,
+                               priority_map=priority_map)
     if not pool:
         emit('no-candidates', EXIT_NO_CANDIDATES,
              reason='no ready, unassigned issues match', backlog_mode=backlog_mode)
 
     total = len(pool)
+    report_priority_fallback(pool, priority_map)
     if args.limit and args.limit > 0:
         pool = pool[:args.limit]
 
@@ -2806,6 +2904,9 @@ def cmd_candidates(args):
             'body_truncated': truncated,
             'dependencies': deps,
             'dependency_overflow': dep_overflow,
+            # The org's own Priority, which is what this listing is ordered by.
+            # None means the issue has none and its label ordered it instead.
+            'priority': priority_map.get(cand['number']),
         }
         if cand['number'] in fallback_set:
             # No native issue type: classified for this listing by its
@@ -2815,7 +2916,9 @@ def cmd_candidates(args):
 
     emit('ok', EXIT_OK, mode=args.mode, backlog_mode=backlog_mode,
          total=total, listed=len(listed), candidates=listed,
-         native_type_fallback_count=len(fallback_set))
+         native_type_fallback_count=len(fallback_set),
+         label_ordered_count=len([c for c in pool
+                                  if not priority_map.get(c['number'])]))
 
 
 def cmd_update_next(args):

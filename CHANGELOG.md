@@ -7,6 +7,37 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## local-workflow 2.11.1
+
+- `feature-discovery` now says which of the two priority tracks orders the
+  backlog: the native field, with the `priority-*` label as the fallback.
+
+## github-workflow 6.5.0
+
+`pick` now orders the backlog by the org's native **Priority** field and
+reads the native **Classification** field, instead of inferring both from
+labels.
+
+- **The pool is ordered by the `Priority` field.** `Urgent → High →
+  Medium → Low`, then lowest issue number, exactly as before. An issue
+  whose field is empty falls back to its `priority-*` label, and `pick`
+  says on stderr which candidates that applied to, so an unset field is
+  visible rather than silent.
+- **`candidates` reports it too.** Each entry carries its `priority` field
+  value (`null` when unset) and the payload carries `label_ordered_count`.
+- **Native type filtering works at all now.** The old lookup asked for 200
+  issues in one page, which GitHub rejects with `EXCESSIVE_PAGINATION`, so
+  every org silently fell back to labels. It is now paged 100 at a time.
+- **Maintenance mode reads `Classification`.** A native `Feature` counts as
+  maintenance work when its `Classification` says so (single- or
+  multi-select). A `Feature` with no classification is routed by its
+  declared kind rather than dropped.
+- Labels remain the fallback throughout: no field value, an unrecognised
+  option name, or a failed lookup all fall back to the label, and the
+  workflow *state* labels (`status-ready`, `status-blocked`,
+  `needs-refinement`, `claude-ready`) are unchanged — the org has no
+  equivalent field for them.
+
 ## github-workflow 6.4.1
 
 Claiming a story with `--checkout` crashed on any org that defines a

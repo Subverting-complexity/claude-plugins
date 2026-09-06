@@ -26,13 +26,25 @@ import re
 _PRIORITY_ORDER = ['priority-critical', 'priority-high', 'priority-medium', 'priority-low']
 
 
-def _priority_rank(labels, project_map=None):
-    """Returns sort key: 0=critical … 3=low, 4=no priority label.
+def _priority_rank(labels, project_map=None, field_value=None):
+    """Returns sort key: 0=critical … 3=low, 4=unprioritised.
 
-    Priority labels are matched through the project map (`resolve_label`), so a
-    project that renames `priority-high` → `P1` still sorts correctly instead of
-    treating every issue as unprioritised.
+    The org's `Priority` field wins when the issue has one. It is what a person
+    sets in the portal, what the portal's own views order by, and what the
+    tooling writes on every issue it creates, so an issue whose field says
+    `Urgent` has to be picked first whether or not anyone kept its
+    `priority-*` label in step.
+
+    The label is the fallback, and it stays one: an org that defines no
+    Priority field, and an issue nobody has set it on, would otherwise sort as
+    one undifferentiated block at the back of the pool. Labels are matched
+    through the project map (`resolve_label`), so a project that renames
+    `priority-high` → `P1` still sorts correctly.
     """
+    if field_value:
+        rank = PRIORITY_FIELD_RANK.get(str(field_value).strip().lower())
+        if rank is not None:
+            return rank
     project_map = project_map or {}
     for i, key in enumerate(_PRIORITY_ORDER):
         if resolve_label(key, project_map) in labels:
@@ -103,6 +115,20 @@ FALLBACK_MAINTENANCE_KINDS = frozenset({
 })
 
 
+def is_maintenance_classification(value):
+    """True when a `Classification` value marks the issue as maintenance work.
+
+    Classification is a multi-select, so a value arrives as a list at least as
+    often as a string, and one maintenance option among several is enough --
+    an issue classified `Architecture, New Feature` is architecture work that
+    also ships something new, and maintenance mode is where it belongs.
+    """
+    if not value:
+        return False
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    return any(v in MAINTENANCE_CLASSIFICATIONS for v in values)
+
+
 def filter_by_native_type(candidates, mode, type_map, classification_map=None,
                           project_map=None, fallback_count=None):
     """Filter candidates by native issue type (type-capable orgs).
@@ -111,7 +137,9 @@ def filter_by_native_type(candidates, mode, type_map, classification_map=None,
     maintenance mode: keep Bug unconditionally, plus Feature when the
     Classification field indicates tech debt / architecture / security.
     When classification_map is unavailable (None), all Feature-typed
-    candidates are included as a best-effort fallback.
+    candidates are included as a best-effort fallback; when it is available
+    but the issue has no value, the issue is routed on its own declared kind
+    and recorded in `fallback_count`.
     story mode: no filter (returns all).
 
     An issue with no native type is not dropped: it is routed on the kind its
@@ -148,11 +176,22 @@ def filter_by_native_type(candidates, mode, type_map, classification_map=None,
                 result.append(c)
             elif native_type in NATIVE_MAINTENANCE_CLASSIFIABLE_TYPES:
                 # A `Feature` is maintenance only when its Classification says
-                # so. With no Classification field to read, keep it: a missed
-                # candidate is worse than a stray one, and the audit reports
-                # the missing value separately.
-                if classification_map is None or classification in MAINTENANCE_CLASSIFICATIONS:
+                # so. With no Classification field to read at all, keep it: a
+                # missed candidate is worse than a stray one.
+                if classification_map is None:
                     result.append(c)
+                elif is_maintenance_classification(classification):
+                    result.append(c)
+                elif not classification:
+                    # The field exists but this issue has no value, so read the
+                    # kind the issue itself claims -- the same fallback an
+                    # untyped issue gets, rather than dropping it unseen.
+                    kind, _source = declared_kind(c.get('title'), c.get('labels'),
+                                                  project_map)
+                    if kind in wanted_kinds:
+                        result.append(c)
+                        if fallback_count is not None:
+                            fallback_count.append(c['number'])
     return result
 
 
@@ -170,13 +209,21 @@ def _filter_agent_gating(candidates, agent_gating, project_map=None):
     return [c for c in candidates if ready in c.get('labels', [])]
 
 
-def _sort_candidates(candidates, project_map=None):
-    """Sort by priority descending (critical first), then ascending issue number."""
+def _sort_candidates(candidates, project_map=None, priority_map=None):
+    """Sort by priority descending (critical first), then ascending issue number.
+
+    `priority_map` is ``{issue_number: Priority option name}`` read from the
+    org's own field; an issue missing from it falls back to its label.
+    """
+    priority_map = priority_map or {}
     return sorted(candidates,
-                  key=lambda c: (_priority_rank(c.get('labels', []), project_map), c['number']))
+                  key=lambda c: (_priority_rank(c.get('labels', []), project_map,
+                                                priority_map.get(c['number'])),
+                                 c['number']))
 
 
-def select_story(candidates, mode='story', agent_gating='disabled', project_map=None):
+def select_story(candidates, mode='story', agent_gating='disabled', project_map=None,
+                 priority_map=None):
     """Full selection pipeline: filter → sort → top candidate (or None).
 
     Returns the single best candidate, never a list — the caller claims it.
@@ -184,12 +231,14 @@ def select_story(candidates, mode='story', agent_gating='disabled', project_map=
     a claim is lost or a candidate proves blocked, so this returns the ordered
     survivors via `select_pool`; `select_story` is the convenience head.
     """
-    pool = select_pool(candidates, mode, agent_gating, project_map)
+    pool = select_pool(candidates, mode, agent_gating, project_map,
+                       priority_map=priority_map)
     return pool[0] if pool else None
 
 
 def select_pool(candidates, mode='story', agent_gating='disabled', project_map=None,
-                type_map=None, classification_map=None, fallback_count=None):
+                type_map=None, classification_map=None, fallback_count=None,
+                priority_map=None):
     """The ordered, filtered candidate list (best first). Empty list if none.
 
     `project_map` is the ClaudeProject.md label map; every label the filters and
@@ -207,6 +256,11 @@ def select_pool(candidates, mode='story', agent_gating='disabled', project_map=N
     passed a list, is appended with the number of each candidate that
     `filter_by_native_type` classified via its `type-*` label or `[PREFIX]`
     title rather than a native type, so the caller can report it.
+
+    `priority_map` is ``{issue_number: Priority option name}`` from the org's
+    own field. It orders the pool; an issue absent from it is ordered by its
+    `priority-*` label instead. Defaults to `{}` for the same reason
+    `project_map` does.
     """
     if type_map and mode != 'story':
         pool = filter_by_native_type(candidates, mode, type_map, classification_map,
@@ -215,7 +269,7 @@ def select_pool(candidates, mode='story', agent_gating='disabled', project_map=N
         pool = _filter_by_mode(candidates, mode, project_map)
     pool = _filter_refinement(pool, project_map)
     pool = _filter_agent_gating(pool, agent_gating, project_map)
-    return _sort_candidates(pool, project_map)
+    return _sort_candidates(pool, project_map, priority_map)
 
 
 # ── Label resolution ─────────────────────────────────────────────────────────
@@ -429,15 +483,24 @@ FIELD_DATA_TYPES = {
 # written to an unpinned field is stored and then never shown.
 MANDATORY_FIELD_KEYS = ('field-priority', 'field-effort', 'field-type', 'field-origin')
 
-# `priority-*` label purpose → `Priority` field option. Priority is
-# dual-tracked: the label drives selection ordering, the field drives the
-# portal's own views.
+# `priority-*` label purpose → `Priority` field option. The field is what the
+# picker orders by (`_priority_rank`) and what the portal's views show; this map
+# is how an issue's label is turned into a field value when one is created or
+# backfilled, and how a field-less issue is still ordered.
 PRIORITY_FIELD_OPTIONS = {
     'priority-critical': 'Urgent',
     'priority-high':     'High',
     'priority-medium':   'Medium',
     'priority-low':      'Low',
 }
+
+# `Priority` field option → the same sort rank the `priority-*` label carries,
+# derived from the two structures above so a new level cannot be added to one
+# and forgotten in the other. Keyed lower-case: the picker matches the org's
+# stored option name case-insensitively, and falls back to the label when the
+# org renamed its options to something this map does not know.
+PRIORITY_FIELD_RANK = {PRIORITY_FIELD_OPTIONS[key].lower(): rank
+                       for rank, key in enumerate(_PRIORITY_ORDER)}
 
 # Story size estimate → `Effort` field option.
 EFFORT_FIELD_OPTIONS = {

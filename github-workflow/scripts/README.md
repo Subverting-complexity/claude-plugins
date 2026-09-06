@@ -20,7 +20,7 @@ around that core.
 # One-time bootstrap: pin a dedicated Python virtualenv (reused thereafter)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" setup
 
-# Claim the next story (priority → lowest number → atomic claim) and print it
+# Claim the next story (Priority field → lowest number → atomic claim), print it
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick
 
 # …also move the board to In Progress and create/check out the branch
@@ -548,12 +548,19 @@ creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
   ready-gates (`label`, `none`, `board-column`, `both`), on both
   label-typed and type-capable orgs. On label-typed projects,
   feature/maintenance filter by the `type-*` **label**; on type-capable
-  orgs they filter by the native `issueType` field via a single GraphQL
-  query (`fetch_native_types`), falling back to label filtering if the
-  query fails. An issue the query returns with **no** type is routed on
-  the kind its `type-*` label or `[PREFIX]` title claims
-  (`FALLBACK_FEATURE_KINDS` / `FALLBACK_MAINTENANCE_KINDS`), so a
-  half-classified backlog does not silently lose its untyped half. The
+  orgs they filter by the native `issueType` field. One GraphQL query
+  (`fetch_issue_facets`) reads the type, the `Priority` field and the
+  `Classification` field for the open backlog, and the pool is ordered by
+  `Priority` — `Urgent` → `High` → `Medium` → `Low`, then lowest issue
+  number. Labels are the fallback for every part of that: an issue with no
+  field value is ordered by its `priority-*` label, and a failed query
+  falls back to label ordering and label typing entirely. An issue the
+  query returns with **no** type is routed on the kind its `type-*` label
+  or `[PREFIX]` title claims (`FALLBACK_FEATURE_KINDS` /
+  `FALLBACK_MAINTENANCE_KINDS`), and so is a `Feature` the org left
+  unclassified, so a half-classified backlog does not silently lose its
+  unclassified half. Each fallback is reported on stderr with the issues
+  it applied to. The
   empty-pool auto-ready dependency scan runs inline before returning
   `no-candidates`.
 - **`review-next`** — the *label-driven* subset. A PR whose head SHA changed

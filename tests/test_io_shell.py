@@ -105,6 +105,18 @@ def _candidate(number, labels=('status-ready',), milestone=None):
             'labels': list(labels), 'body': '', 'milestone': milestone, 'url': ''}
 
 
+def _facets(types=None, priority=None, classification=None):
+    """The `load_issue_facets` return shape; every map empty by default.
+
+    `cmd_pick` and `cmd_candidates` read the org's native types and field
+    values before selecting, so every test that drives them stubs this. Empty
+    maps are the no-org-metadata case, where the pool is typed and ordered by
+    labels exactly as it always was.
+    """
+    return {'types': types or {}, 'priority': priority or {},
+            'classification': classification or {}}
+
+
 def _git_available():
     try:
         return subprocess.run(['git', '--version'],
@@ -125,6 +137,9 @@ class TestPickStatusContract(unittest.TestCase):
         env = mock.patch.object(wf, 'check_environment', return_value=None)
         env.start()
         self.addCleanup(env.stop)
+        facets = mock.patch.object(wf, 'load_issue_facets', return_value=_facets())
+        facets.start()
+        self.addCleanup(facets.stop)
 
     def _use_cfg(self, cfg):
         p = mock.patch.object(wf, 'load_config', return_value=(True, cfg, ''))
@@ -168,8 +183,8 @@ class TestPickStatusContract(unittest.TestCase):
     def test_type_capable_feature_mode_uses_native_types(self):
         """feature mode on a type-capable org filters by native issueType."""
         self._use_cfg(_cfg(type_capable=True))
-        with mock.patch.object(wf, 'fetch_native_types',
-                               return_value=(True, {1: 'User Story', 2: 'Bug'}, '')), \
+        with mock.patch.object(wf, 'load_issue_facets',
+                               return_value=_facets({1: 'User Story', 2: 'Bug'})), \
                 mock.patch.object(wf, 'assemble_candidates',
                                   return_value=(True, [_candidate(1), _candidate(2)], '')):
             # Only issue 1 (User Story) passes the native-type filter;
@@ -236,6 +251,9 @@ class TestBulkPickPaths(unittest.TestCase):
         env = mock.patch.object(wf, 'check_environment', return_value=None)
         env.start()
         self.addCleanup(env.stop)
+        facets = mock.patch.object(wf, 'load_issue_facets', return_value=_facets())
+        facets.start()
+        self.addCleanup(facets.stop)
 
     def _use_cfg(self, cfg):
         p = mock.patch.object(wf, 'load_config', return_value=(True, cfg, ''))
@@ -398,6 +416,9 @@ class TestBestEffortSteps(unittest.TestCase):
         env = mock.patch.object(wf, 'check_environment', return_value=None)
         env.start()
         self.addCleanup(env.stop)
+        facets = mock.patch.object(wf, 'load_issue_facets', return_value=_facets())
+        facets.start()
+        self.addCleanup(facets.stop)
 
     def test_the_wrapper_turns_a_raise_into_a_message(self):
         def boom(cfg, number):
@@ -442,6 +463,106 @@ class TestBestEffortSteps(unittest.TestCase):
         self.assertIn('board move in progress', payload['board_message'])
 
 
+def _facet_node(number, type_name=None, values=()):
+    """One issue as the facets query returns it."""
+    nodes = []
+    for field, value in values:
+        if isinstance(value, (list, tuple)):
+            nodes.append({'field': {'name': field},
+                          'options': [{'name': v} for v in value]})
+        else:
+            nodes.append({'field': {'name': field}, 'name': value})
+    return {'number': number,
+            'issueType': {'name': type_name} if type_name else None,
+            'issueFieldValues': {'nodes': nodes}}
+
+
+def _facet_page(nodes, has_next=False, cursor='c1'):
+    return {'repository': {'issues': {
+        'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
+        'nodes': nodes}}}
+
+
+class TestIssueFacets(unittest.TestCase):
+    """The one query that tells the picker what the org itself says.
+
+    It replaced a query that asked for 200 records on a connection GitHub caps
+    at 100. That is a hard `EXCESSIVE_PAGINATION` error rather than a short
+    answer, so the query failed on every repo, every time, and the picker fell
+    back to labels while reporting a type-capable org. Nothing failed loudly
+    enough to notice, which is what these tests are for.
+    """
+
+    def _run(self, pages, cfg=None):
+        """Drive `fetch_issue_facets` over a scripted list of responses."""
+        calls = []
+
+        def fake(query, **fields):
+            calls.append((query, fields))
+            return (True, pages[len(calls) - 1], '')
+
+        with mock.patch.object(wf, 'gh_graphql', side_effect=fake):
+            ok, facets, err = wf.fetch_issue_facets(cfg or _cfg())
+        return ok, facets, err, calls
+
+    def test_the_page_size_is_within_githubs_connection_limit(self):
+        ok, _, _, calls = self._run([_facet_page([])])
+        self.assertTrue(ok)
+        size = int(re.search(r'issues\(first:(\d+)', calls[0][0]).group(1))
+        self.assertLessEqual(size, 100, 'GitHub rejects a page over 100 outright')
+
+    def test_one_query_answers_type_priority_and_classification(self):
+        page = _facet_page([
+            _facet_node(1, 'Feature', [('Priority', 'Urgent'),
+                                       ('Classification', ['Tech Debt'])]),
+            _facet_node(2, 'Bug', [('Priority', 'Low')]),
+            _facet_node(3),
+        ])
+        ok, facets, _, calls = self._run([page])
+        self.assertTrue(ok)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(facets['types'], {1: 'Feature', 2: 'Bug'})
+        self.assertEqual(facets['priority'], {1: 'Urgent', 2: 'Low'})
+        self.assertEqual(facets['classification'], {1: ['Tech Debt']})
+
+    def test_a_second_page_is_followed_with_the_cursor(self):
+        pages = [_facet_page([_facet_node(1, 'Bug')], has_next=True, cursor='CUR'),
+                 _facet_page([_facet_node(2, 'Feature')])]
+        ok, facets, _, calls = self._run(pages)
+        self.assertTrue(ok)
+        self.assertEqual(len(calls), 2)
+        self.assertIn('after:$cursor', calls[1][0])
+        self.assertEqual(calls[1][1]['cursor'], 'CUR')
+        self.assertEqual(facets['types'], {1: 'Bug', 2: 'Feature'})
+
+    def test_the_first_page_declares_no_cursor_variable(self):
+        """An unused non-null variable is a GraphQL error, not a no-op."""
+        _, _, _, calls = self._run([_facet_page([])])
+        self.assertNotIn('cursor', calls[0][0])
+        self.assertNotIn('cursor', calls[0][1])
+
+    def test_paging_stops_at_the_cap(self):
+        pages = [_facet_page([_facet_node(n, 'Bug')], has_next=True)
+                 for n in range(1, 6)]
+        _, _, _, calls = self._run(pages)
+        self.assertEqual(len(calls), wf.FACET_MAX_PAGES)
+
+    def test_a_failed_query_reports_and_returns_empty_maps(self):
+        with mock.patch.object(wf, 'gh_graphql', return_value=(False, None, 'boom')):
+            with contextlib.redirect_stderr(io.StringIO()) as errs:
+                facets = wf.load_issue_facets(_cfg())
+        self.assertEqual(facets, {'types': {}, 'priority': {}, 'classification': {}})
+        self.assertIn('ordering and typing this pool by labels', errs.getvalue())
+
+    def test_a_renamed_field_is_read_under_the_project_name(self):
+        """A project that renamed `Priority` still orders by its field."""
+        cfg = _cfg(fields={'field-priority': 'Urgency'})
+        page = _facet_page([_facet_node(1, 'Bug', [('Urgency', 'High')])])
+        with mock.patch.object(wf, 'gh_graphql', return_value=(True, page, '')):
+            facets = wf.load_issue_facets(cfg)
+        self.assertEqual(facets['priority'], {1: 'High'})
+
+
 class TestCandidatesCommand(unittest.TestCase):
     """`wf candidates` reads the pool and claims nothing.
 
@@ -457,6 +578,23 @@ class TestCandidatesCommand(unittest.TestCase):
         cfg = mock.patch.object(wf, 'load_config', return_value=(True, _cfg(), ''))
         cfg.start()
         self.addCleanup(cfg.stop)
+        facets = mock.patch.object(wf, 'load_issue_facets', return_value=_facets())
+        facets.start()
+        self.addCleanup(facets.stop)
+
+    def test_the_pool_is_ordered_by_the_org_priority_field(self):
+        """The field wins over the label, and the listing carries its value."""
+        pool = [_candidate(4, labels=('status-ready', 'priority-critical')),
+                _candidate(2, labels=('status-ready', 'priority-low'))]
+        with mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')),                 mock.patch.object(wf, 'load_issue_facets',
+                                  return_value=_facets(priority={2: 'Urgent'})):
+            code, payload = _capture(wf.cmd_candidates, _candidates_args())
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual([c['number'] for c in payload['candidates']], [2, 4])
+        self.assertEqual(payload['candidates'][0]['priority'], 'Urgent')
+        self.assertIsNone(payload['candidates'][1]['priority'])
+        # #4 had no field value, so its label ordered it -- and that is reported.
+        self.assertEqual(payload['label_ordered_count'], 1)
 
     def test_pool_is_returned_in_priority_order(self):
         pool = [_candidate(4, labels=('status-ready', 'priority-low')),
