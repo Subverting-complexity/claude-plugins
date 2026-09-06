@@ -36,6 +36,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from unittest import mock
 
 # ── Subject under test ───────────────────────────────────────────────────────
@@ -327,6 +328,118 @@ class TestBulkPickPaths(unittest.TestCase):
         self.assertEqual(code, wf.EXIT_ALL_BLOCKED)
         self.assertIn('#8', payload['side_effects'][0]['detail'])
         self.assertNotIn('#7', payload['side_effects'][0]['detail'])
+
+
+class TestStartDateStamp(unittest.TestCase):
+    """`set_start_date` writes a field, and everything about it is best-effort.
+
+    It is capability-gated, so an org with no `Start date` field returns early
+    and the mutation call is never reached. That is why unpacking two values
+    from `set_issue_fields` -- which answers (ok, node, err) -- survived: the
+    ValueError only fired on orgs that define the field, and only after the
+    claim, the label, the assignment and the board move had already landed.
+    The run then looked failed and was not.
+    """
+
+    def _caps(self, data_type='date'):
+        return (True, {'field_map': {'Start date': {'id': 'F_1',
+                                                    'data_type': data_type}}}, '')
+
+    def test_a_successful_write_reports_the_date(self):
+        with mock.patch.object(wf, 'resolve_org_capabilities',
+                               return_value=self._caps()),                 mock.patch.object(wf, 'gh_json',
+                                  return_value=(True, {'id': 'I_1'}, '')),                 mock.patch.object(wf, 'set_issue_fields',
+                                  return_value=(True, {'id': 'I_1'}, '')) as write:
+            done, msg = wf.set_start_date(_cfg(), 1)
+        self.assertTrue(done, msg)
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        self.assertIn(today, msg)
+        # The date reached the mutation as a date-typed field input.
+        self.assertEqual(write.call_args[0][1],
+                         [{'fieldId': 'F_1', 'dateValue': today}])
+
+    def test_a_rejected_write_reports_the_mutation_error(self):
+        with mock.patch.object(wf, 'resolve_org_capabilities',
+                               return_value=self._caps()),                 mock.patch.object(wf, 'gh_json',
+                                  return_value=(True, {'id': 'I_1'}, '')),                 mock.patch.object(wf, 'set_issue_fields',
+                                  return_value=(False, None, 'field is read-only')):
+            done, msg = wf.set_start_date(_cfg(), 1)
+        self.assertFalse(done)
+        self.assertEqual(msg, 'field is read-only')
+
+    def test_an_org_without_the_field_never_reaches_the_mutation(self):
+        with mock.patch.object(wf, 'resolve_org_capabilities',
+                               return_value=(True, {'field_map': {}}, '')),                 mock.patch.object(wf, 'set_issue_fields') as write:
+            done, msg = wf.set_start_date(_cfg(), 1)
+        self.assertFalse(done)
+        self.assertIn('does not define', msg)
+        write.assert_not_called()
+
+    def test_a_non_date_field_is_reported_not_crashed(self):
+        """A `Start date` the org typed as text still shapes a valid input."""
+        with mock.patch.object(wf, 'resolve_org_capabilities',
+                               return_value=self._caps('text')),                 mock.patch.object(wf, 'gh_json',
+                                  return_value=(True, {'id': 'I_1'}, '')),                 mock.patch.object(wf, 'set_issue_fields',
+                                  return_value=(True, {'id': 'I_1'}, '')):
+            done, msg = wf.set_start_date(_cfg(), 1)
+        self.assertTrue(done, msg)
+
+
+class TestBestEffortSteps(unittest.TestCase):
+    """A cosmetic side effect must never cost the run its branch.
+
+    The board move and the start-date stamp sit between the claim and the
+    branch. If one of them raises, `checkout_branch` never runs and the story
+    is left claimed with nowhere to work -- the one outcome the caller cannot
+    recover from on its own.
+    """
+
+    def setUp(self):
+        env = mock.patch.object(wf, 'check_environment', return_value=None)
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_the_wrapper_turns_a_raise_into_a_message(self):
+        def boom(cfg, number):
+            raise ValueError('too many values to unpack')
+
+        ok, msg = wf.best_effort(boom, _cfg(), 1)
+        self.assertFalse(ok)
+        self.assertIn('ValueError', msg)
+        self.assertIn('too many values to unpack', msg)
+
+    def _pick_with(self, **patches):
+        with mock.patch.object(wf, 'load_config',
+                               return_value=(True, _cfg(), '')),                 mock.patch.object(wf, 'assemble_candidates',
+                                  return_value=(True, [_candidate(1)], '')),                 mock.patch.object(wf, 'acquire_claim', return_value='won'),                 mock.patch.object(wf, 'apply_in_progress'),                 mock.patch.object(wf, 'release_claim'),                 mock.patch.object(wf, 'merged_pr_closing', return_value=None),                 mock.patch.object(wf, 'gh_json', return_value=(True, [], '')),                 mock.patch.object(wf, 'checkout_branch',
+                                  return_value=('feature/1/x', True, 'created')) as branch,                 contextlib.ExitStack() as stack:
+            for name, patch in patches.items():
+                # `__name__` so the wrapper can label the step it caught,
+                # which a bare Mock does not carry and a real function does.
+                stack.enter_context(
+                    mock.patch.object(wf, name, __name__=name, **patch))
+            code, payload = _capture(wf.cmd_pick, _pick_args('--checkout'))
+        return code, payload, branch
+
+    def test_a_raising_start_date_still_leaves_a_branch(self):
+        code, payload, branch = self._pick_with(
+            board_move_in_progress={'return_value': (True, 'moved')},
+            set_start_date={'side_effect': ValueError('boom')})
+        self.assertEqual(code, wf.EXIT_OK)
+        branch.assert_called_once()
+        self.assertEqual(payload['branch'], 'feature/1/x')
+        self.assertTrue(payload['checked_out'])
+        self.assertFalse(payload['start_date_set'])
+        self.assertIn('set start date', payload['start_date_message'])
+
+    def test_a_raising_board_move_still_leaves_a_branch(self):
+        code, payload, branch = self._pick_with(
+            board_move_in_progress={'side_effect': RuntimeError('board down')},
+            set_start_date={'return_value': (True, 'stamped')})
+        self.assertEqual(code, wf.EXIT_OK)
+        branch.assert_called_once()
+        self.assertFalse(payload['board_moved'])
+        self.assertIn('board move in progress', payload['board_message'])
 
 
 class TestCandidatesCommand(unittest.TestCase):

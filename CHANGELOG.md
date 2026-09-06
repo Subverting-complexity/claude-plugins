@@ -7,6 +7,30 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 6.4.1
+
+Claiming a story with `--checkout` crashed on any org that defines a
+`Start date` field, and the start-of-run cleanup could delete tracked
+files.
+
+- Fixed: `wf pick --checkout` raised `ValueError: too many values to
+  unpack` while stamping the start date, because `set_issue_fields`
+  answers three values and two were read. It fired after the claim, the
+  label, the assignment and the board move had all landed, so the run
+  exited non-zero with no JSON result and looked failed when it had
+  succeeded. Nothing showed it until an org defined the field, which is
+  what makes the mutation reachable at all.
+- Fixed: the board move and the start-date stamp are both best-effort,
+  but an exception in either stopped `checkout_branch` from running,
+  leaving a claimed story with no branch to work in. Both now report an
+  unexpected failure in their own result message and the branch is
+  created regardless.
+- Fixed: the `execute` and `bulk-execute` start-of-run blocks swept
+  `.claude/claim-*.sha` with a plain `rm -f`, which stages the deletion
+  of those markers in a project that commits them, and can delete a PR
+  claim held by a review session sharing the checkout. The sweep now
+  covers untracked `claim-issue-*.sha` only.
+
 ## github-workflow 6.4.0 · local-workflow 2.11.0
 
 Consolidation pass across both plugins. No behaviour changes to any

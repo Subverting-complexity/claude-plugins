@@ -71,8 +71,8 @@ would otherwise lose them (the same reason preflight writes a marker file).
 ```
 mkdir -p .claude
 rm -f .claude/no-merge.flag .claude/bypass-ci.flag \
-      .claude/gate-failed.flag .claude/self-review.flag \
-      .claude/claim-*.sha
+      .claude/gate-failed.flag .claude/self-review.flag
+git ls-files -z --others -- '.claude/claim-issue-*.sha' | xargs -0 -r rm -f
 touch .claude/no-merge.flag    # only when --no-merge was passed
 touch .claude/bypass-ci.flag   # only when --bypass-ci was passed
 ```
@@ -81,9 +81,12 @@ The unconditional `rm -f` comes first because a previous run that was hard
 killed before **Exit cleanup** would otherwise leave its flags behind, and an
 inherited `bypass-ci.flag` would quietly disarm the Phase 10 CI gate.
 
-Sweeping `claim-*.sha` is safe here and nowhere else: this run holds no
+Sweeping issue claim markers is safe here and nowhere else: this run holds no
 claim yet, so any such file is a leftover from a killed run, and leaving one
 could make a later phase's won-claim guard read a lock this run does not hold.
+The sweep stays narrow: `--others` spares markers a project committed rather
+than gitignored, which a plain `rm -f` glob would delete, and `claim-issue-*`
+spares a `claim-pr-*.sha` a review session in this checkout may still hold.
 
 **Run this block exactly once, here, at the start.** It is now destructive:
 re-running it later — after a compaction, say — would wipe the
