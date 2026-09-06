@@ -12,7 +12,7 @@ The text itself is written to `skills/_shared/body-standard.md`, which is the
 one standard behind every body: an issue, a pull request description or a
 comment. Its two entry points add only what differs —
 `skills/writing-github-issues/SKILL.md` for an issue,
-`skills/pr-description/SKILL.md` for a pull request.
+`skills/pr-body/SKILL.md` for a pull request.
 
 The rule that matters most here, because it is the one the file mechanics
 make easy to get wrong: **never hard-wrap**. Each paragraph is one single

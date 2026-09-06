@@ -51,7 +51,7 @@ light.
    gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}
    ```
 
-   The body has the fixed shape in `skills/pr-description/SKILL.md`. Do not
+   The body has the fixed shape in `skills/pr-body/SKILL.md`. Do not
    invent a different one per story:
 
    ```markdown

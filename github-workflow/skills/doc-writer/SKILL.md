@@ -1,6 +1,6 @@
 ---
 name: doc-writer
-description: "Write or update project documentation — README, API docs, architecture guides, migration guides, changelogs. Use when the user wants to write, generate, or update docs for a project or system. Do NOT use for code comments, PR descriptions (use pr-description), or user stories (use user-story)."
+description: "Write or update project documentation — README, API docs, architecture guides, migration guides, changelogs. Use when the user wants to write, generate, or update docs for a project or system. Do NOT use for code comments, pull request bodies, or user stories (use user-story)."
 allowed-tools:
   - Read
   - Edit

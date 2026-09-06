@@ -65,7 +65,7 @@ should be able to tell what changed without opening it.
 
 **Body.** A bulk pull request asks more of a reviewer than a single-story
 one, so it adds one section to the fixed shape in
-`skills/pr-description/SKILL.md` and keeps everything else the same. Use
+`skills/pr-body/SKILL.md` and keeps everything else the same. Use
 these headings, with these names, in this order, on every bulk pull
 request:
 

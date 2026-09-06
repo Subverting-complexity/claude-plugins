@@ -10,7 +10,7 @@ description: >-
 
 The entry point for **GitHub issue titles and bodies**. It is one of two entry points over `skills/_shared/body-standard.md`, which is the single standard for every body this plugin writes into GitHub. Read that file first. This one adds only what is specific to an issue.
 
-The counterpart entry point is `skills/pr-description/SKILL.md`, which does the same job for pull request descriptions. An issue and a pull request are written the same way on purpose: same wording, same section names, same no-wrapping rule.
+The counterpart entry point is `skills/pr-body/SKILL.md`, which does the same job for pull request descriptions. An issue and a pull request are written the same way on purpose: same wording, same section names, same no-wrapping rule.
 
 Write the shortest issue that still gives an implementer everything they need.
 

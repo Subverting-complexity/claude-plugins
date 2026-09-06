@@ -105,10 +105,7 @@ body is read by someone about to do or review the work, so it is shorter
 than this standard would otherwise produce, and it leaves out the
 investigation that found the problem.
 
-Two entry points sit on that standard and hold only what differs:
-`skills/pr-description/SKILL.md` for a pull request, and
-`writing-github-issues` for a GitHub issue, in whichever plugin ships it
-(github-workflow does).
+Entry points sit on that standard and hold only what differs. For a pull request: `skills/pr-body/SKILL.md` in github-workflow, `skills/pr-description/SKILL.md` in local-workflow. For a GitHub issue: `writing-github-issues`, which only github-workflow ships. Each has its own slash command, because the two pull request formats are deliberately different.
 
 Everything else you write still follows this standard, including what you
 tell the person about the issue you filed or the pull request you opened.

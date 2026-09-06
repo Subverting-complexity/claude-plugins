@@ -2,68 +2,91 @@
 name: pr-description
 description: "Write, format, or structure a Pull Request description from committed changes or rough notes. Works with any platform (GitHub, GitLab, Azure DevOps, Bitbucket). Use when the user wants to document a PR, summarize a branch, or turn change notes into a structured PR. Do NOT use for reviewing code quality (use code-review) or writing user stories (use user-story)."
 ---
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 
 # PR Description Skill
 
-The entry point for **pull request titles and bodies**. It is one of two entry points over `_shared/body-standard.md`, which is the single standard for every body this plugin writes into a tracker or forge. Read that file first. This one adds only what is specific to a pull request.
+Produces clean, structured Pull Request descriptions. The output is two separate, independently copyable markdown blocks: one for the **title** and one for the **description body**.
 
-The counterpart entry point is `writing-github-issues` (github-workflow only), which does the same job for issue bodies. An issue and a pull request are written the same way on purpose: same wording, same section names, same no-wrapping rule.
+This is local-workflow's own PR description skill, and it keeps the component-section format below. github-workflow ships a different one, built around a fixed `## Summary` / `## Changes` / `## Test plan` shape that its `execute` and `code-review` commands depend on. The two are deliberately separate: a local branch description is written for whoever is about to read the diff, not for an automated review-and-merge loop, so neither plugin's format leaks into the other.
 
-`_shared/banned-patterns.md` applies in full. `skills/user-facing-communication/SKILL.md` shapes what you say to the person **around** the description: lead with the outcome and the current state, keep it short, surface anything outstanding or assumed. It governs your reply, not the description.
+Read `_shared/banned-patterns.md` and `_shared/wording-standard.md` before writing. All banned patterns apply to PR descriptions, and the wording standard governs the prose: write so a reviewer who has not seen the diff or the originating conversation can understand what changed and why. Plain English first, with the per-component bullets as a scannable supplement, not a stripped list of identifiers in place of explanation.
+
+`_shared/body-standard.md` governs everything about the body except which sections it has: the no-wrapping rule below, the bullet rules, the title rules, the style, and what never appears. The section shape is this skill's own.
+
+`skills/user-facing-communication/SKILL.md` shapes what you say to the person **around** the pull request description: lead with the outcome and the current state, keep it short, and surface anything outstanding or assumed. It governs your reply, not the pull request description itself.
 
 ---
 
-## The body
+## Never hard-wrap the body
 
-Three sections, these names, this order, on every pull request:
+Write each paragraph as **one single line**, however long it runs. Do not break prose across lines at 72, 80 or any other column.
+
+GitHub, GitLab, Azure DevOps and Bitbucket all reflow markdown to the reader's own window. A hard-wrapped paragraph is not tidier: it fixes the line breaks at a width that suits nobody, it wraps a second time in a narrow pane, and it makes the description painful to edit afterwards.
+
+The only line breaks a body has are the ones markdown needs: between paragraphs, between list items, around headings, and inside fenced code blocks. A bullet that runs long stays on one line too.
+
+---
+
+## Output Structure
+
+### Block 1 — Title
+
+A single markdown code block containing only the PR title. This allows it to be copied cleanly into the PR title field.
+
+```
+<Concise, action-oriented title stating the purpose of the change>
+```
+
+### Block 2 — Description Body
+
+A second markdown code block containing the full PR description in markdown. This goes into the PR description field.
+
+The description body has two parts:
+
+1. **Summary** — A `## Summary` section at the top with 2-4 complete, plain-English sentences explaining the goal, the approach, and the impact of the change. Include this **by default**. A reviewer should be able to read the Summary alone and understand what the PR does and why before looking at a single line of the diff. Only omit it for a genuinely trivial, self-explanatory change, for example a one-line typo fix.
+2. **Component sections** — One `##` section per logical module or component, with bullets describing what changed. These support the Summary with scannable specifics; they do not replace the plain-English explanation.
+
+---
+
+## Description Body Format
+
+The description is made up of one or more **component/module sections**, each following this pattern:
 
 ```markdown
-## Summary
+## [Component/Module Name]
 
-## Changes
-
-## Test plan
+- Added `ClassName` to handle [specific responsibility]
+- Updated `MethodName` signature to include `newParameter`
+- Removed deprecated `OldService` and associated logic
+- Refactored `Processor` to centralize validation logic
+- Updated dependency from `PackageA` to `PackageB` (version X → Y)
+- Modified behavior of `Handler` to support [new condition/scenario]
+- Introduced new file `filename.ext`
+- Renamed `OldModel` to `NewModel`
+- Updated interface `IService` with additional method `ExecuteAsync`
+- Adjusted data mapping logic in `Mapper` for [specific field/structure]
+- Removed redundant null checks in `Utility`
 ```
 
-Do not rename them, reorder them, merge them, or add a top-level section in their place. A reviewer opening any pull request should find the same three headings in the same order every time.
+**Rules:**
 
-Two additions are allowed, and only when they carry information:
-
-| Extra section | Add it when |
-| ------------- | ----------- |
-| `## Manual step` | The change is not complete until a person does something the reviewer cannot do, such as granting access, running a migration or setting a secret. Say exactly what, and why it could not be automated. |
-| `## Quality gate failed` | The caller says the quality gate failed. It is the one section that goes **above** `## Summary`, and it carries the last error output. |
-
-Where the platform links issues, the closing keywords go at the very end of the body, under no heading, one line per issue:
-
-```
-Closes #42
-```
-
-### Summary
-
-Two to four plain-English sentences on the goal, the approach and the impact, written so a reviewer who has not seen the diff or the originating conversation can follow it. Include it always; on a one-line typo fix, one sentence is enough.
-
-### Changes
-
-Bullets, following the bullet rules in `_shared/body-standard.md`. Group them under `###` sub-headings named after the component, module, service or file group only when the change touches more than three separate areas.
-
-### Test plan
-
-How the change was verified, as bullets: the commands run, the tests added or updated, and anything checked by hand. Say plainly if part of it is unverified.
-
-Only leave this section out when there is genuinely nothing to run and nothing to check.
+- Each `## Heading` is a logical component, module, service, or file group
+- Bullets describe *what* changed and *why*, in clear phrases, with backticks for all code identifiers
+- Do **not** include a Notes section
+- Include the `## Summary` section by default (see above); only omit it for a genuinely trivial, self-explanatory change
+- Keep bullets factual and specific; avoid vague filler like "various improvements"
+- Repeat as many `## Component` sections as needed to cover all changes
 
 ---
 
-## Output structure
+## Writing Guidelines
 
-When the user asks for a description rather than having one posted for them, return two separate, independently copyable markdown blocks.
-
-**Block 1 — Title.** A code block containing only the title, so it copies cleanly into the title field. Title rules are in `_shared/body-standard.md`.
-
-**Block 2 — Description body.** A code block containing the full body in markdown.
+- **Title**: Start with a verb. Be specific. Example: `Add Configurable Discounts for Invoice Line Items`, not `Invoice changes`.
+- **Bullets**: Lead with a past-tense or gerund action verb: `Added`, `Removed`, `Refactored`, `Updated`, `Introduced`, `Renamed`, `Adjusted`, `Modified`, `Extracted`, `Simplified`.
+- **Code identifiers**: Always wrap class names, method names, file names, properties, and config keys in backticks.
+- **Component headings**: Use the specific name of the module, service, page, or file group. If the user hasn't provided a specific name, use the most descriptive name inferable from the context.
+- **Summary in prose**: The `## Summary` is written as complete plain-English sentences (see `_shared/wording-standard.md`). The component sections below it stay as bullets. Do not write prose paragraphs *inside* the component sections — the prose lives in the Summary, the specifics live in the bullets.
+- **Combining related bullets**: When multiple bullets share the same action or parent concept, combine them, either as an inline list (`Added tests: A, B, and C`) or with sub-bullets. Use sub-bullets when each item benefits from its own line for scannability.
 
 ---
 
@@ -71,105 +94,98 @@ When the user asks for a description rather than having one posted for them, ret
 
 Note the line breaks in these: each paragraph and each bullet is one line, however long.
 
-### Example 1: Standardizing service generation
+### Example 1: Standardizing Service Generation
 
 **Title block:**
 ```
-Standardize service generation return types and clean up strategies
+Standardize Service Generation Return Types and Clean Up Strategies
 ```
 
 **Description block:**
 ```markdown
 ## Summary
 
-Report generation had drifted into a mix of return types and a set of one-off strategy classes that were no longer used. This change makes every generation function return `void` or `Task` so callers handle them consistently, and removes the dead strategies and the `importantInformation` plumbing they relied on. The result is a smaller, more predictable report-generation surface, with no behavioural change for the reports that are still produced.
+Report generation had drifted into a mix of return types and a set of one-off strategy classes that were no longer used. This change makes every generation function return `void` or `Task` so callers handle them consistently, and removes the dead strategies and the `importantInformation` plumbing they relied on. The result is a smaller, more predictable report-generation surface with no behavioural change for the reports that are still produced.
 
-## Changes
-
-### Report generation service
+## Report Generation Service
 
 - All service generation functions now return `void` or `Task`
 - Removed `ExtravagantHoursReportStrategy`, `NoCommentReportStrategy`, `NonBillableReportStrategy`, and `ContractorPaymentReportStrategy`
-- Removed `importantInformation` from method signatures and the internal logic behind it
+- Removed `importantInformation` from method signatures and associated internal logic
 - Cleaned unused namespaces: `TimeSync.Strategies.AuditStrategies.Exceptions`, `TimeSync.Strategies.ReportStrategies.Contractor`
 
-### Client validation
+## Client Validation
 
 - Removed `CreateInformationMessage` and its RTF rendering logic
-- Refactored `ValidateClients`: removed `importantInformation`, converted to direct logging, adjusted the return type to `void`
-
-## Test plan
-
-- `dotnet test` passes, including the report-generation suite
-- Generated a weekly and a monthly report against sample data and diffed them against the previous build: identical output
-
-Closes #412
+- Refactored `ValidateClients`: removed `importantInformation`, converted to direct logging, adjusted return type to `void`
 ```
 
 ---
 
-### Example 2: Service provider discount support
+### Example 2: Service Provider Discount Support
 
 **Title block:**
 ```
-Add configurable service provider discounts for invoice line items
+Add Configurable Service Provider Discounts for Invoice Line Items
 ```
 
 **Description block:**
 ```markdown
 ## Summary
 
-Clients need to be able to give per-service-provider discounts on invoice line items, which the current invoice generation cannot express. This change adds configurable discount fields to the client config, applies them during invoice generation so that a service-provider-specific discount overrides a client-wide one, and adjusts audit generation so the new negative line items do not distort the hour totals.
+Clients need to be able to give per-service-provider discounts on invoice line items, which the current invoice generation can't express. This change adds configurable discount fields to the client config, applies them during invoice generation (a service-provider-specific discount overrides a client-wide one), and adjusts audit generation so the new negative line items don't distort the hour totals.
 
-## Changes
+## Configuration
 
-### Configuration
+- Added new client discount config fields: `DiscountFactor`, `DiscountLineItemDescription`, `ServiceProvider`
+- Validation rules: only one null entry allowed; `ServiceProvider` must match `Client.ServiceProviders.Name` or be null; no duplicate discounts per SP
 
-- Added client discount config fields: `DiscountFactor`, `DiscountLineItemDescription`, `ServiceProvider`
-- Added validation: only one null entry allowed, `ServiceProvider` must match `Client.ServiceProviders.Name` or be null, no duplicate discounts per service provider
+## Invoice Generation
 
-### Invoice generation
+- Applies discount logic conditionally: SP-specific discount overrides client-wide
+- Falls back to appending SP name if `DiscountLineItemDescription` is missing
 
-- Applied discount logic conditionally, so a service-provider-specific discount overrides a client-wide one
-- Falls back to appending the service provider name when `DiscountLineItemDescription` is missing
+## Audit Generation
 
-### Audit generation
-
-- Excluded negative line items from audit calculations, so the hour totals stay correct
-
-## Test plan
-
-- Added unit tests for the validation rules and for the precedence between service-provider and client-wide discounts
-- `dotnet test` passes
-- Generated an invoice and its audit for a client with both discount kinds configured, and confirmed the audit hours were unchanged
-
-Closes #388
+- Excludes negative line items from audit calculations to preserve hour integrity
 ```
 
 ---
 
-### Example 3: A small change
+### Example 3: Warning System Overhaul
 
 **Title block:**
 ```
-Fix accessibility labels on read-only Settings rows
+Refactor Logging and Introduce Warning Management System
 ```
 
 **Description block:**
 ```markdown
 ## Summary
 
-Read-only Settings rows with a value were read as two separate accessibility elements, so the Version row announced "Version" and then "1.0.0" instead of one label. `SettingsRow` was building the right label all along, but `ListRow` dropped it for non-interactive rows. This change keeps the supplied label on those rows and removes the local workaround that had been papering over it.
+Warnings and logging were scattered and hard to filter, with no single place to manage severity. This change introduces a warning management system (`WarningManager` and friends) with severity grouping and filtering, refactors logging onto `Serilog.ForContext` so output can be filtered and tuned at runtime, and tightens form handling and disposal along the way. The aim is consistent, filterable warnings and cleaner resource lifecycles, without changing what the application does.
 
-## Changes
+## Warning Management
 
-- Updated `ListRow` to use the supplied accessibility label on non-interactive rows
-- Removed the local workaround in `SubscriptionScreen`
+- Created `WarningManager`, `WarningCollectorSink`, and `WarningSeverity` enum
+- Added color coding, severity grouping, and timestamp formatting to `ShowWarnings`
+- Added configurable severity filtering via `appSettings`
 
-## Test plan
+## Logging Refactor
 
-- `npm test` passes
-- Checked the Settings screen with VoiceOver on an iPhone and TalkBack on a Pixel: each read-only row now reads as one element
+- Adopted `Serilog.ForContext` to improve filtering
+- Updated log severities to align with new `WarningSeverity`
+- Added conditional log output via `DevopsSyncService` for runtime tuning
 
-Closes #96
+## Form Handling
+
+- Updated `FormEmbedder` to return `RichTextMessageBox` with graceful handling of uncreated form handles
+- Introduced `_embeddedRichTextMessageBox` field to support proper disposal and resource lifecycle
+- Refactored `CleanDirectory` to instance method
+
+## Code Quality
+
+- Added null checks and input validations across affected modules
+- Improved error handling for misconfigured settings
+- Consolidated redundant logic
 ```

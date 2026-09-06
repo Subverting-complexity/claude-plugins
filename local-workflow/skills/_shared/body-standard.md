@@ -6,19 +6,27 @@ GitHub issue, a pull request description, a merge request description, a work
 item, and any comment posted on one. They are read the same way, by the same
 people, in the same views, so they are written the same way.
 
-Two entry points sit on top of this file and hold only what actually differs
-between them:
+Entry points sit on top of this file and hold only the part that actually
+differs, which is **which sections a body has**:
 
-| Entry point | Governs | Difference |
-| ----------- | ------- | ---------- |
-| `skills/pr-description/SKILL.md` | Pull request titles and bodies | Fixed sections `## Summary` → `## Changes` → `## Test plan`, and the `Closes #N` lines |
+| Entry point | Governs | Its own section shape |
+| ----------- | ------- | --------------------- |
+| `skills/pr-body/SKILL.md` (github-workflow) | GitHub pull request titles and bodies | Fixed: `## Summary` → `## Changes` → `## Test plan`, then the `Closes #N` lines |
+| `skills/pr-description/SKILL.md` (local-workflow) | Pull request titles and bodies on any platform | `## Summary`, then one `##` section per component |
 | `writing-github-issues` (github-workflow only) | GitHub issue titles and bodies | `## Summary` plus only the sections that carry information, the `[Manual]` convention, and the single write path |
+
+The two pull request entry points are deliberately different and neither is
+synced onto the other. github-workflow's is fixed because `execute`,
+`bulk-execute` and `code-review` read and extend those bodies, and a shape
+that varies per pull request cannot be extended reliably. local-workflow's
+description is written for whoever is about to read the diff, with no
+automated loop behind it, so it groups by component instead.
 
 Where a plugin does not ship the issue entry point, this file plus
 `references/story-template.md` is the whole standard for a work item.
 
-Everything below applies to both. Neither entry point restates it, and
-neither may contradict it.
+Everything below applies to all of them. No entry point restates it, and
+none may contradict it.
 
 ---
 
@@ -57,10 +65,12 @@ blocks. A bullet that runs long stays on one line too.
 
 Each entry point names the sections its bodies use. Use those names, that
 spelling, that order, every time. Do not rename a section, reorder them,
-merge two into one, or invent a top-level heading in place of one.
+merge two into one, or invent a top-level heading in place of one. Pick the
+shape from the entry point for what you are writing, not from the last body
+you happened to see.
 
-Every section a body may carry comes from this vocabulary, and means the
-same thing in an issue and in a pull request:
+Where an entry point uses the shared section names, they mean the same thing
+in an issue as in a pull request:
 
 | Section | What goes in it |
 | ------- | --------------- |
@@ -74,9 +84,11 @@ same thing in an issue and in a pull request:
 | `## Manual step` | The work cannot be finished until a person does something no agent can do. Say exactly what, and why. |
 | `## Out of scope` | Closely related work that must not be pulled in. |
 
-Never add a section outside that list. In particular, no Notes, no
-Background, no Context, no Risks, no Screenshots heading with nothing under
-it, and no closing paragraph that restates what the body already said.
+Never add a section outside that list, except the component headings
+local-workflow's pr-description calls for, which are named after the module,
+service or file group they cover. In particular, no Notes, no Background, no
+Context, no Risks, no Screenshots heading with nothing under it, and no
+closing paragraph that restates what the body already said.
 
 **Never create an empty section.** A heading with a placeholder under it, or
 with one line saying there is nothing to add, is worse than no heading.

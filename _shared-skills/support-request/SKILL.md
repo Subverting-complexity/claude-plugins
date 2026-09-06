@@ -1,6 +1,6 @@
 ---
 name: support-request
-description: Write, format, or polish support request documentation. Use when the user mentions support requests or incident reports, or wants to document a technical issue and its resolution. Also trigger when the user pastes raw notes, logs, or ticket content to clean up into a support format. Covers internal and client-facing summaries. Do NOT use for user stories or feature specs (use user-story) or PR descriptions (use pr-description).
+description: Write, format, or polish support request documentation. Use when the user mentions support requests or incident reports, or wants to document a technical issue and its resolution. Also trigger when the user pastes raw notes, logs, or ticket content to clean up into a support format. Covers internal and client-facing summaries. Do NOT use for user stories or feature specs (use user-story) or pull request bodies.
 ---
 
 # Support Request Documentation

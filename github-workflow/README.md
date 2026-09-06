@@ -264,7 +264,7 @@ them or directly.
 | `writing-github-issues` | Standard for every issue title and body         |
 | `user-facing-communication` | Standard for every reply the user reads    |
 | `acceptance-criteria` | Authors acceptance criteria                       |
-| `pr-description`      | Authors PR descriptions                           |
+| `pr-body`             | Authors PR bodies to the fixed shape              |
 | `doc-writer`          | Writes and updates documentation                  |
 | `ecosystem-setup`     | Sets up companion tools, writes `ecosystem.md`    |
 | `support-request`     | Support-request and incident write-ups            |

@@ -44,18 +44,30 @@ This repo contains multiple Claude Code plugins that share skills.
 
 ## Shared Skills
 
-Fifteen skills live in `_shared-skills/` and are deployed to both plugins,
+Fourteen skills live in `_shared-skills/` and are deployed to both plugins,
 alongside `_shared/` (wording standard, banned patterns and body standard)
 and `references/` (story template). The list, and what is deliberately *not*
 shared, are in `_shared-skills/MANIFEST.md`.
 
 `_shared/body-standard.md` is the single standard for every body written
-into a tracker or forge: an issue, a pull request description, a comment.
-`pr-description` and github-workflow's `writing-github-issues` are its two
-entry points and carry only what differs between a pull request and an
-issue. `lint-skills.sh` asserts that both of them, the wording standard and
-`templates/body-file-write.md` still cite it, so the two cannot drift apart
-again.
+into a tracker or forge: an issue, a pull request description, a comment. It
+holds the wording, the bullet and title rules, the style and the
+no-hard-wrapping rule. Its entry points carry only the part that differs,
+which is which sections a body has: `writing-github-issues` for a GitHub
+issue, `pr-body` in github-workflow and `pr-description` in local-workflow
+for a pull request.
+
+The two pull request skills are deliberately **not** shared, and they have
+separate slash commands (`/github-workflow:pr-body`,
+`/local-workflow:pr-description`) so neither format can be reached by
+mistake. github-workflow's is fixed (`## Summary` → `## Changes` →
+`## Test plan`, then `Closes #N`) because `execute`, `bulk-execute` and
+`code-review` read and extend those bodies. local-workflow's keeps the
+component-section format. Do not re-merge them into `_shared-skills/`.
+
+`lint-skills.sh` asserts that every entry point, the wording standard and
+`templates/body-file-write.md` still cite the body standard, so they cannot
+drift apart again.
 
 `user-facing-communication` is the standard for every reply either plugin
 writes to a person: what was done and the current state first, then

@@ -1,13 +1,15 @@
 ---
-name: pr-description
-description: "Write, format, or structure a Pull Request description from committed changes or rough notes. Works with any platform (GitHub, GitLab, Azure DevOps, Bitbucket). Use when the user wants to document a PR, summarize a branch, or turn change notes into a structured PR. Do NOT use for reviewing code quality (use code-review) or writing user stories (use user-story)."
+name: pr-body
+description: "Write, format, or structure a GitHub Pull Request description from committed changes or rough notes, to the fixed Summary / Changes / Test plan shape that execute, bulk-execute and code-review depend on. Use when the user wants to document a PR, summarize a branch, or turn change notes into a structured PR. Do NOT use for reviewing code quality (use code-review) or writing user stories (use user-story)."
 ---
 
 # PR Description Skill
 
-The entry point for **pull request titles and bodies**. It is one of two entry points over `_shared/body-standard.md`, which is the single standard for every body this plugin writes into a tracker or forge. Read that file first. This one adds only what is specific to a pull request.
+The entry point for **pull request titles and bodies** in github-workflow. It is one of two entry points over `_shared/body-standard.md`, which is the single standard for every body this plugin writes into GitHub. Read that file first. This one adds only what is specific to a pull request.
 
-The counterpart entry point is `writing-github-issues` (github-workflow only), which does the same job for issue bodies. An issue and a pull request are written the same way on purpose: same wording, same section names, same no-wrapping rule.
+The counterpart entry point is `writing-github-issues`, which does the same job for issue bodies. An issue and a pull request are written the same way on purpose: same wording, same section names, same no-wrapping rule.
+
+This skill is **not** shared with local-workflow, which keeps its own pr-description built around component sections. The fixed shape below exists because `execute`, `bulk-execute` and `code-review` read and extend these bodies, and a description that varies per pull request cannot be extended reliably. A local branch summary has no such loop behind it, so the two formats are deliberately separate and neither is synced onto the other.
 
 `_shared/banned-patterns.md` applies in full. `skills/user-facing-communication/SKILL.md` shapes what you say to the person **around** the description: lead with the outcome and the current state, keep it short, surface anything outstanding or assumed. It governs your reply, not the description.
 

@@ -7,15 +7,22 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
-## github-workflow 7.1.0 / local-workflow 2.13.0
+## github-workflow 8.0.0 / local-workflow 2.13.0
+
+**Breaking (github-workflow):** the `pr-description` skill is renamed
+`pr-body`. Call `/github-workflow:pr-body` instead. local-workflow's
+`pr-description` is unchanged and keeps its name, because the two now
+write genuinely different bodies and a shared name hid that.
 
 - **One standard behind every issue and pull request body.** The rules
   that were half-stated in `pr-description` and half in
   `writing-github-issues` now live once, in
   `skills/_shared/body-standard.md`: the section vocabulary, the Summary
   and bullet rules, the title rules, the style, and what never appears.
-  Those two skills are now entry points over it and hold only what
-  genuinely differs, so an issue and a pull request read the same way.
+  Those skills are now entry points over it and hold only what genuinely
+  differs, so an issue and a pull request read the same way. Each entry
+  point has its own slash command, so the two pull request formats cannot
+  be reached by mistake.
 
 - **Bodies are never hard-wrapped.** Each paragraph is one line, however
   long it runs. GitHub reflows markdown to whoever is reading it, so

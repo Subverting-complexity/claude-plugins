@@ -161,18 +161,18 @@ fi
 
 # Body-writing wiring: _shared/body-standard.md is the single standard behind
 # every body written into a tracker or forge — an issue, a pull request
-# description, a comment. Two entry points sit on it (pr-description for pull
-# requests, writing-github-issues for issues) and hold only what differs. That
-# split only holds if both entry points, the wording standard that defers to
-# it, and the write-mechanics template all point at it. Add a file whenever a
-# new path starts composing a body; do not delete an entry to make the gate
-# pass.
+# description, a comment. Entry points sit on it and hold only what differs:
+# pr-body in github-workflow and pr-description in local-workflow for pull
+# requests, writing-github-issues for issues. That split only holds if every
+# entry point, the wording standard that defers to it, and the write-mechanics
+# template all point at it. Add a file whenever a new path starts composing a
+# body; do not delete an entry to make the gate pass.
 declare -a body_standard_copies=(
     "github-workflow/skills/_shared/body-standard.md"
     "local-workflow/skills/_shared/body-standard.md"
 )
 declare -a body_authoring_files=(
-    "github-workflow/skills/pr-description/SKILL.md"
+    "github-workflow/skills/pr-body/SKILL.md"
     "local-workflow/skills/pr-description/SKILL.md"
     "github-workflow/skills/writing-github-issues/SKILL.md"
     "github-workflow/templates/body-file-write.md"     # the write mechanics
