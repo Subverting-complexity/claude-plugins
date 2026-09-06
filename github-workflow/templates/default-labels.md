@@ -92,12 +92,11 @@ already said.
 These control prioritization and agent gating. Resolved via the label
 map in `ClaudeProject.md`; defaults below.
 
-There is deliberately no `type-*` label here. What kind of work an issue is
-comes from GitHub's **native issue type** and the org's `Classification`
-field, and nothing reads a type label: `wf pick` filters on the native type,
-and `wf issue-apply` strips a `type-*` label and a `[BUG]`-style title prefix
-off every issue it writes. A project whose label map still carries a `type-*`
-row is told to delete it by `wf config-audit` (`type-label-deprecated`).
+There is deliberately no `type-*` label here: the **native issue type** and
+the org's `Classification` field say what kind of work an issue is. `wf pick`
+filters on the type, `wf issue-apply` strips a `type-*` label and a
+`[BUG]`-style title prefix off every issue it writes, and `wf config-audit`
+reports a label map that still maps one (`type-label-deprecated`).
 
 | Purpose key | Default Name | Color | Description |
 |-------------|-------------|-------|-------------|
@@ -116,10 +115,10 @@ classification and metadata.
 `pick` reads them too, not just writes them: the pool is ordered by the
 org's `Priority` field and a `Feature` counts as maintenance work only when
 its `Classification` says so. The `priority-*` labels are the fallback for
-issues the `Priority` field was never set on. The native **type** has no
-fallback: an issue the org has not typed is left out of a `feature` or
-`maintenance` pool and named, and an org with no native types at all cannot
-run those modes (`wf pick --mode story` still works).
+issues the `Priority` field was never set on. The **type** has no fallback:
+an untyped issue is left out of a `feature` or `maintenance` pool and named,
+and an org with no native types cannot run those modes (`--mode story` still
+works).
 
 **The purpose→value maps are not in this file.** They live as Python data
 in `scripts/wf_core.py`, and the tooling applies them directly:
@@ -135,12 +134,11 @@ in `scripts/wf_core.py`, and the tooling applies them directly:
 | Size estimate → `Effort` option | `EFFORT_FIELD_OPTIONS` |
 | Creating command → `Origin` option | `ORIGIN_FIELD_OPTIONS` |
 
-They were markdown tables here until the mechanism moved into `wf`. Data
-in prose could not be validated, and nothing noticed when it stopped
-matching the org — 82 issues in one consuming repo had 7 native types set
-between them and no field values at all. Restating any of these tables
-here would recreate exactly that: a second copy that drifts silently. Add
-a value by editing `wf_core.py`, where the tests cover it.
+They were tables here until the mechanism moved into `wf`. Data in prose
+could not be validated and drifted unnoticed — 82 issues in one consuming
+repo had 7 native types between them and no field values at all. Restating
+any of it here would recreate that. Add a value by editing `wf_core.py`,
+where the tests cover it.
 
 To see what a specific org actually has enabled, resolve it rather than
 assuming:
@@ -167,19 +165,18 @@ has that type, and fall back to the map's `Feature` on one that does not.
 type_map)` is the single place the choice is made, so the audit and the
 backfill cannot disagree about it.
 
-Adding a preference has one consequence outside the mapping, and it is easy
-to miss: `NATIVE_MAINTENANCE_TYPES` decides what `execute mode=maintenance`
-may pick. A type that is not in that set is invisible to the picker, so a
-backlog that starts typing its debt `Chore` empties its own maintenance pool
-unless `Chore` is there too. `architecture` deliberately has no preference —
-the one org measured had already typed every `[ARCH]` issue `Feature`, and
-moving them would have been a change nobody asked for.
+Adding a preference has one easily missed consequence:
+`NATIVE_MAINTENANCE_TYPES` decides what `execute mode=maintenance` may pick,
+and a type outside that set is invisible to the picker — so a backlog that
+starts typing its debt `Chore` empties its own maintenance pool unless
+`Chore` is there too. `architecture` has no preference on purpose: the one
+org measured had already typed every `[ARCH]` issue `Feature`.
 
 ### Choosing a `Classification`
 
-`NATIVE_TYPE_MAP` gives the default choice for each workflow kind. That
-default is the "by nature" answer, not the only valid one, and picking a
-better one is a judgement the map cannot make:
+`NATIVE_TYPE_MAP` gives each workflow kind a default. It is the "by nature"
+answer, not the only valid one, and a better one is a judgement the map
+cannot make:
 
 - For a bug, prefer **Regression** when something previously worked and
   broke, or **Performance** when the defect is speed or memory.

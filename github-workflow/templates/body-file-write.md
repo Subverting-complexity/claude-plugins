@@ -1,57 +1,33 @@
 # Body-file write + validation
 
-Canonical procedure for **every** multi-line body this plugin writes —
-an issue body, a pull request description, a comment. It exists once here
-so the write mechanics and the corruption test never drift between
-callers.
-
-Run it wherever a caller says "write the body following
-`templates/body-file-write.md`".
+Canonical procedure for **every** multi-line body this plugin writes — an
+issue body, a pull request description, a comment — so the write mechanics
+and the corruption test never drift between callers. Run it wherever a
+caller says "write the body following `templates/body-file-write.md`".
 
 ## The rule: a body always goes in a file
 
-**Never build a body as a shell argument, and never build one inside a
-JSON string.** A body is prose with fenced code, backticks, `$`, quotes,
-apostrophes and blank lines in it — every one of which is something a
-shell or a JSON encoder will eat, and the result is the corrupt
-one-character bodies the validation below exists to catch. Specifically:
+A body is prose — fenced code, backticks, `$`, quotes, blank lines — and a
+shell or a JSON encoder eats every one of those. So **never build a body as
+a shell argument or inside a JSON string**. Not `--body "..."`, and never
+`--body -`, which does not read stdin: it sets the body to the literal `-`.
+That is where the corrupt one-character bodies below come from.
 
-- **Never** `--body "..."`, and never `--body -` — the latter does not
-  read stdin, it sets the body to the literal string `-`.
-- **Never** paste a body into a spec's `"body"` key by hand. Write the
-  file and name it: `"body_file": ".claude/story-1-body.md"`.
+**Write the file with the Write tool**, not the shell: it takes the text
+exactly as you mean it, with no delimiter to collide with and nothing to
+escape. From the shell, use a *quoted* heredoc (`<<'BODY'`, never
+`<<BODY` — unquoted expands `$` and backticks before the file is written)
+with a delimiter that cannot appear in the text.
 
-## Write the file with the Write tool
+Then name the file rather than the text:
 
-Use the harness's file-writing tool, not the shell. It takes the text
-exactly as you mean it, so there is no delimiter to collide with, nothing
-to escape and no quoting to get wrong — which is where most body
-corruption actually comes from.
+- **Issues** — `wf issue-apply` with `"body_file"` on the entry. It is the
+  only path that creates or updates an issue body.
+- **PRs and comments** — the `gh` command with `--body-file {file}`, plus
+  whatever flags the caller specifies.
 
-Where a body must be written from the shell, use a **quoted** heredoc so
-nothing inside it is expanded, and pick a delimiter that cannot appear in
-the text:
-
-```bash
-cat > .claude/story-1-body.md <<'BODY'
-{body}
-BODY
-```
-
-`<<'BODY'` with the quotes, never `<<BODY` — unquoted, the shell expands
-`$` and backticks inside the body before the file is written.
-
-## Apply it
-
-1. Write the intended body to a file (`.claude/` for anything a later
-   step re-reads, a temp file otherwise).
-2. Name the file rather than the text:
-   - **Issues** — `wf issue-apply` with `"body_file"` on the entry. This
-     is the only path that creates or updates an issue body.
-   - **Pull requests and comments** — the `gh` command with
-     `--body-file {file}`, plus whatever flags the caller specifies.
-3. Delete a temp file after the command returns. Leave a `.claude/` file
-   in place: a re-run after a partial failure needs it.
+Put anything a later step re-reads in `.claude/` and leave it there for a
+re-run; delete a temp file once the command returns.
 
 ## Validate (read back, apply the corruption test)
 
