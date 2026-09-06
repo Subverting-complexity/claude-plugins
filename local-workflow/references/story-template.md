@@ -3,14 +3,9 @@
 
 Each story is a single-session unit of work for an autonomous agent.
 
-A story is an issue, so it is written the way every other issue is
-written: open with the actual point, and include only what someone needs
-to understand the work, make the change and verify it. Prefer a short
-story over a comprehensive record of the discovery session.
+A story is an issue, so it is written the way every other issue is written: open with the actual point, and include only what someone needs to understand the work, make the change and verify it. Prefer a short story over a comprehensive record of the discovery session.
 
-Where the plugin provides a `writing-github-issues` skill (github-workflow
-does), that skill is the full standard and this template is its story
-shape. Read it before writing stories destined for GitHub.
+Where the plugin provides a `writing-github-issues` skill (github-workflow does), that skill is the full standard and this template is its story shape. Read it before writing stories destined for GitHub.
 
 ## The usual shape
 
@@ -33,15 +28,11 @@ paths, identifiers and configuration values where they are needed.
 
 A very small story may be a Summary and acceptance criteria alone.
 
-Write each paragraph on **one single line**. Never hard-wrap prose at 72,
-80 or any other column: the tracker reflows markdown to the reader's own
-width, so wrapping only fixes the breaks where they suit nobody and makes
-the story painful to edit later.
+Write each paragraph on **one single line**. Never hard-wrap prose at 72, 80 or any other column: the tracker reflows markdown to the reader's own width, so wrapping only fixes the breaks where they suit nobody and makes the story painful to edit later.
 
 ## Sections to add only when they carry information
 
-Each of these is optional. An empty or obvious one is worse than none,
-and none of them may repeat what the Summary already said.
+Each of these is optional. An empty or obvious one is worse than none, and none of them may repeat what the Summary already said.
 
 | Section | Add it when |
 | ------- | ----------- |
@@ -55,29 +46,18 @@ and none of them may repeat what the Summary already said.
 | `## Out of scope` | There is a realistic risk the work expands into something that should stay separate. |
 | `## Manual step` | The story cannot be finished until a person does something no agent can do. Say exactly what, and why. A story with this section also takes the `[Manual]` title prefix and the `status-blocked` label, so it is visible in a list and never picked up by an agent that cannot finish it. Work a person must do that belongs to a *different* story goes under `## Dependencies` instead. |
 
-Do not reach for these out of habit, and do not add a "Definition of
-done" section: the acceptance criteria and the project's quality gate
-already cover it.
+Do not reach for these out of habit, and do not add a "Definition of done" section: the acceptance criteria and the project's quality gate already cover it.
 
 ## Two conventions the workflow reads
 
-- `**Size estimate:** {size}` sits in the Summary. The `Effort` field
-  mirrors it.
-- `## Dependencies` markers (`Depends on #N`, `Blocked by #N`,
-  `After #N`, `Requires #N`) are parsed. Story selection skips a story
-  whose dependency is still open, and the story workflow auto-unblocks
-  an issue when the blocking issue closes. Keep them exact.
+- `**Size estimate:** {size}` sits in the Summary. The `Effort` field mirrors it.
+- `## Dependencies` markers (`Depends on #N`, `Blocked by #N`, `After #N`, `Requires #N`) are parsed. Story selection skips a story whose dependency is still open, and the story workflow auto-unblocks an issue when the blocking issue closes. Keep them exact.
 
 ## What not to include
 
-- How the story was discovered, or which part of the interview produced
-  it.
+- How the story was discovered, or which part of the interview produced it.
 - Justification for something the Summary already makes obvious.
 - File-by-file narration of the intended implementation.
-- Alternatives, when the approach is already settled. Where it is not
-  settled, keep the uncertainty in the words the discovery used
-  ("this will likely need either...").
+- Alternatives, when the approach is already settled. Where it is not settled, keep the uncertainty in the words the discovery used ("this will likely need either...").
 
-A story too vague to implement gets refined or labelled
-`needs-refinement`. Never pad a thin story with invented detail to make
-it look complete.
+A story too vague to implement gets refined or labelled `needs-refinement`. Never pad a thin story with invented detail to make it look complete.

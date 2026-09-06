@@ -11,20 +11,9 @@ These patterns must never appear in output. Every skill and command that produce
 
 ## Vocabulary — never use
 
-delve, underscore, pivotal, realm, harness, illuminate, facilitate, refine, bolster,
-differentiate, streamline, enhance, empower, foster, navigate (metaphorical), insight, insights,
-landscape, nuance, nuances, intricate, tapestry, camaraderie, palpable, grapple, vibrant,
-solace, amidst, fleeting, unravel, cacophony, ignite, prioritize, robust, transformative,
-revolutionize, innovative, cutting-edge, game-changing, seamless, scalable, profound,
-versatile, meaningful, imperative, dynamic, impactful, optimize, elevate, enable, leverage,
-synergy, ecosystem, framework, paradigm, holistic, actionable
+delve, underscore, pivotal, realm, harness, illuminate, facilitate, refine, bolster, differentiate, streamline, enhance, empower, foster, navigate (metaphorical), insight, insights, landscape, nuance, nuances, intricate, tapestry, camaraderie, palpable, grapple, vibrant, solace, amidst, fleeting, unravel, cacophony, ignite, prioritize, robust, transformative, revolutionize, innovative, cutting-edge, game-changing, seamless, scalable, profound, versatile, meaningful, imperative, dynamic, impactful, optimize, elevate, enable, leverage, synergy, ecosystem, framework, paradigm, holistic, actionable
 
-**Names are exempt.** A banned word is banned as filler, not as a name. When
-a word is the actual name of the thing you are talking about, use it: the
-*harness* that runs agents and worktrees, the *ecosystem* file listing
-installed tools, a *framework* the project actually depends on, backlog
-*refinement*, story *prioritisation*. The ban is on reaching for the word
-when a plain one would do.
+**Names are exempt.** A banned word is banned as filler, not as a name. When a word is the actual name of the thing you are talking about, use it: the *harness* that runs agents and worktrees, the *ecosystem* file listing installed tools, a *framework* the project actually depends on, backlog *refinement*, story *prioritisation*. The ban is on reaching for the word when a plain one would do.
 
 ## Phrases — never use
 

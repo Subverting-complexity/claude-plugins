@@ -24,21 +24,11 @@ depends-on:
 
 # Feature Discovery
 
-Interview the user to resolve every open question about a feature, change,
-plan, or design. Get to the core as fast as possible. Be relentless: probe
-every vague answer, challenge weak reasoning, surface conflicts between
-decisions, and don't move on until each question has a concrete answer or a
-conscious deferral with a stated reason.
+Interview the user to resolve every open question about a feature, change, plan, or design. Get to the core as fast as possible. Be relentless: probe every vague answer, challenge weak reasoning, surface conflicts between decisions, and don't move on until each question has a concrete answer or a conscious deferral with a stated reason.
 
 ## Output standard
 
-Everything a person reads — plans, questions, findings, summaries, and
-anything posted or committed — follows `skills/_shared/wording-standard.md`
-for how it reads, `skills/user-facing-communication/SKILL.md` for what it
-contains and in what order (outcome and current state first, then anything
-outstanding, blocked or assumed, every work item named as well as numbered,
-no investigation history), and `skills/_shared/banned-patterns.md` for what
-must never appear. Every reply, not only the last one.
+Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
 ## Skills Used
 
@@ -48,20 +38,16 @@ Read each skill's SKILL.md when you reach the phase that needs it.
 
 ## Mode Detection
 
-Determine the mode before starting. This drives whether the interview
-produces stories or just resolves decisions.
+Determine the mode before starting. This drives whether the interview produces stories or just resolves decisions.
 
 | Mode | Signal | Output |
 |------|--------|--------|
 | **Discovery** | User wants to plan a feature, break work into stories, scope a change, decompose a requirement or ticket | Stories with acceptance criteria |
 | **Validation** | User wants to stress-test a plan, challenge a design, poke holes in an approach, validate thinking, or refine an existing story | Conversation only — no files, no documents |
 
-State the mode after detection: "I'll run this as a **discovery** session —
-we'll end with stories." or "I'll run this as a **validation** session —
-we'll work through every open question." The user can override.
+State the mode after detection: "I'll run this as a **discovery** session — we'll end with stories." or "I'll run this as a **validation** session — we'll work through every open question." The user can override.
 
-When called as a refinement skill for a `needs-refinement` story, default
-to **discovery** mode (the story needs fleshing out into actionable work).
+When called as a refinement skill for a `needs-refinement` story, default to **discovery** mode (the story needs fleshing out into actionable work).
 
 ## Scope Detection (discovery mode)
 
@@ -73,19 +59,15 @@ Determine scope before starting. This drives how deep the interview goes.
 | **Medium** | Multi-concern feature: touches 2-4 modules, new user journey, new data model | 8-15 questions. Scope, journeys, data, integration, architecture. |
 | **Large** | Major feature: new subsystem, significant rewrite, 5+ stories of work | Full interview. All sections. |
 
-State the tier after research: "This looks like a medium-scope feature, so
-I'll focus on scope, data model, and integration points." The user can
-override.
+State the tier after research: "This looks like a medium-scope feature, so I'll focus on scope, data model, and integration points." The user can override.
 
-In **validation** mode, skip scope detection — interview depth is driven
-by the number of open questions, not feature size.
+In **validation** mode, skip scope detection — interview depth is driven by the number of open questions, not feature size.
 
 ---
 
 ## Phase 1: Research
 
-Before asking the user anything, gather what you can. The more you learn
-here, the fewer questions you need to ask.
+Before asking the user anything, gather what you can. The more you learn here, the fewer questions you need to ask.
 
 **When a codebase is available:**
 
@@ -102,10 +84,7 @@ here, the fewer questions you need to ask.
 
 ### Codebase exploration discipline
 
-When the codebase can answer a question, explore it instead of asking. Use
-file reads, search, and bash. Show a brief summary of what you found (file
-name, relevant finding), state what you're recording based on that finding,
-and continue. Do not silently resolve. Always show the user what was found.
+When the codebase can answer a question, explore it instead of asking. Use file reads, search, and bash. Show a brief summary of what you found (file name, relevant finding), state what you're recording based on that finding, and continue. Do not silently resolve. Always show the user what was found.
 
 ### Research output
 
@@ -114,8 +93,7 @@ Present a brief summary of what you found:
 - Related existing stories or tasks
 - Potential integration points and constraints
 
-Then state the mode and (for discovery) the scope tier and which interview
-sections you plan to cover. Use `AskUserQuestion` to confirm:
+Then state the mode and (for discovery) the scope tier and which interview sections you plan to cover. Use `AskUserQuestion` to confirm:
 
 - "Agree with scope (Recommended)" — proceed with the detected mode/tier
 - "This is bigger than that" — bump up a tier
@@ -127,31 +105,17 @@ sections you plan to cover. Use `AskUserQuestion` to confirm:
 
 ### Interview posture
 
-Be relentless. The goal is shared understanding with every open question
-resolved. Don't accept hand-waving. If the user gives a surface-level
-answer, dig deeper. If they say "probably" or "it depends", that's your
-cue to probe until the answer is concrete or the user explicitly defers
-(with a reason). In discovery mode, every resolved question informs the
-stories. In validation mode, every resolved question strengthens the plan.
-Every deferred question becomes a noted open issue.
+Be relentless. The goal is shared understanding with every open question resolved. Don't accept hand-waving. If the user gives a surface-level answer, dig deeper. If they say "probably" or "it depends", that's your cue to probe until the answer is concrete or the user explicitly defers (with a reason). In discovery mode, every resolved question informs the stories. In validation mode, every resolved question strengthens the plan. Every deferred question becomes a noted open issue.
 
 ### Wording and Clarity
 
-Follow the shared `_shared/wording-standard.md` for every question,
-recommendation, and `AskUserQuestion` option you write. The person
-answering often has **no prior context** — the agent may be running
-autonomously, so they have not seen the reasoning that led to the
-question. The essentials:
+Follow the shared `_shared/wording-standard.md` for every question, recommendation, and `AskUserQuestion` option you write. The person answering often has **no prior context** — the agent may be running autonomously, so they have not seen the reasoning that led to the question. The essentials:
 
-- **State both the problem and the proposed solution.** Explain what is
-  being decided and what you recommend doing about it, not just "which
-  option?".
+- **State both the problem and the proposed solution.** Explain what is being decided and what you recommend doing about it, not just "which option?".
 - **Write in complete sentences** and avoid telegraphic fragments.
 - **Always include the why** in plain language.
-- **Avoid or define jargon**, but keep precision — identifiers stay in
-  backticks.
-- This applies to `AskUserQuestion` option **labels and descriptions**,
-  which are often all an autonomous reader sees.
+- **Avoid or define jargon**, but keep precision — identifiers stay in backticks.
+- This applies to `AskUserQuestion` option **labels and descriptions**, which are often all an autonomous reader sees.
 
 Terse and hard to parse without context:
 
@@ -159,17 +123,10 @@ Terse and hard to parse without context:
 
 Clear and easy to read:
 
-> - **The problem:** Product lookups hit the database on every request,
->   and the catalogue page issues dozens of them per load.
-> - **Recommendation:** Add a read-through cache in front of the
->   `ProductRepository`. I'd use the existing Redis instance rather than
->   an in-memory `LRU` cache, so the cache is shared across all server
->   instances. Entries would expire after 5 minutes by default, and we'd
->   clear an entry when its product is updated. Do you agree, or would
->   you prefer a different store or expiry?
+> - **The problem:** Product lookups hit the database on every request, and the catalogue page issues dozens of them per load.
+> - **Recommendation:** Add a read-through cache in front of the `ProductRepository`. I'd use the existing Redis instance rather than an in-memory `LRU` cache, so the cache is shared across all server instances. Entries would expire after 5 minutes by default, and we'd clear an entry when its product is updated. Do you agree, or would you prefer a different store or expiry?
 
-See `_shared/wording-standard.md` for the full standard and a second
-example.
+See `_shared/wording-standard.md` for the full standard and a second example.
 
 ### Interview mechanics
 
@@ -183,27 +140,17 @@ example.
 
 ### Using AskUserQuestion
 
-Use the `AskUserQuestion` tool for any question with a bounded answer
-set: binary choices, picking from discovered patterns, confirming
-recommendations, scope in/out decisions, phase-gate confirmations.
+Use the `AskUserQuestion` tool for any question with a bounded answer set: binary choices, picking from discovered patterns, confirming recommendations, scope in/out decisions, phase-gate confirmations.
 
 - 2-4 options per question, short labels.
-- Your recommended answer should be the first option with
-  "(Recommended)" appended to the label.
+- Your recommended answer should be the first option with "(Recommended)" appended to the label.
 - Batch up to 4 related questions in a single `AskUserQuestion` call.
-- The user can always select "Other" to type a custom answer. If you
-  find yourself wanting to add an "Other" option manually, just ask
-  in plain text instead.
-- Word the question and every option per the Wording and Clarity rules
-  above (`_shared/wording-standard.md`): each option label and
-  description should convey the problem and the proposed solution to a
-  reader with no prior context.
+- The user can always select "Other" to type a custom answer. If you find yourself wanting to add an "Other" option manually, just ask in plain text instead.
+- Word the question and every option per the Wording and Clarity rules above (`_shared/wording-standard.md`): each option label and description should convey the problem and the proposed solution to a reader with no prior context.
 
 ### Interview sections
 
-**Only cover sections relevant to the scope tier (discovery) or the plan
-being validated (validation).** Within each section, skip questions the
-codebase already answered.
+**Only cover sections relevant to the scope tier (discovery) or the plan being validated (validation).** Within each section, skip questions the codebase already answered.
 
 #### 1. Scope and boundaries (all tiers, both modes)
 - What is being built or changed? (the user's opening message often covers this, don't re-ask)
@@ -252,9 +199,7 @@ codebase already answered.
 - "Show me the breakdown (Recommended)"
 - "I have more to add"
 
-**Validation mode:** When all open questions have a resolved answer or
-conscious deferral, present a summary of all decisions in the
-conversation and propose closure. Do **not** write any files.
+**Validation mode:** When all open questions have a resolved answer or conscious deferral, present a summary of all decisions in the conversation and propose closure. Do **not** write any files.
 
 ---
 
@@ -283,16 +228,9 @@ For small and medium scope, skip epics. Just produce stories.
 
 ### Story structure
 
-Use the story template from `references/story-template.md`. It is short
-on purpose: a Summary, the changes, and acceptance criteria, plus only
-the sections that carry information the implementer would otherwise have
-to guess. Where the plugin provides a `writing-github-issues` skill
-(github-workflow does), read it before writing stories that become
-GitHub issues, and follow it for the title as well as the body.
+Use the story template from `references/story-template.md`. It is short on purpose: a Summary, the changes, and acceptance criteria, plus only the sections that carry information the implementer would otherwise have to guess. Where the plugin provides a `writing-github-issues` skill (github-workflow does), read it before writing stories that become GitHub issues, and follow it for the title as well as the body.
 
-A story the interview left genuinely open keeps that uncertainty in the
-words the interview used. Do not resolve an open question by writing a
-decision into the story.
+A story the interview left genuinely open keeps that uncertainty in the words the interview used. Do not resolve an open question by writing a decision into the story.
 
 ### Story sizing
 
@@ -302,37 +240,25 @@ decision into the story.
 - More than 5 files to create/modify means the story is too big.
 - More than 3 modules touched means the story is too big.
 - Dependencies must be explicit and acyclic.
-- Assign a size estimate to each story: `small` (< 50k tokens),
-  `medium` (50–100k), `large` (needs splitting). Include this in the
-  story's Summary section as `**Size estimate:** {size}`.
-- When a story is flagged as too large, automatically split it and
-  explain the split to the user before proceeding.
+- Assign a size estimate to each story: `small` (< 50k tokens), `medium` (50–100k), `large` (needs splitting). Include this in the story's Summary section as `**Size estimate:** {size}`.
+- When a story is flagged as too large, automatically split it and explain the split to the user before proceeding.
 
 ### Deferred speccing (large features)
 
 When a large-scope feature produces more than 4 stories:
 
-1. **Fully spec** the first 2–3 stories in the dependency chain (the
-   fundamentals that later stories depend on).
-2. **Defer speccing** for stories deeper in the dependency chain.
-   Create them with minimal spec: title, one-line Overview, dependency
-   markers, and a note: "This story needs refinement after its
-   dependencies are complete."
-3. Apply the `needs-refinement` label (from the project's label map)
-   to deferred stories. This excludes them from the execute pick pool
-   until their dependencies are resolved and a refinement session has
-   been run.
+1. **Fully spec** the first 2–3 stories in the dependency chain (the fundamentals that later stories depend on).
+2. **Defer speccing** for stories deeper in the dependency chain. Create them with minimal spec: title, one-line Overview, dependency markers, and a note: "This story needs refinement after its dependencies are complete."
+3. Apply the `needs-refinement` label (from the project's label map) to deferred stories. This excludes them from the execute pick pool until their dependencies are resolved and a refinement session has been run.
 
 ### Dependency chain enforcement
 
-Every story must declare its dependencies explicitly using the format:
-`Depends on #{number}` (or `Blocked by #{number}`, `After #{number}`).
+Every story must declare its dependencies explicitly using the format: `Depends on #{number}` (or `Blocked by #{number}`, `After #{number}`).
 
 After decomposition:
 
 1. Build a text-based dependency graph showing the ordering.
-2. Validate the graph is a DAG — no cycles allowed. If a cycle is
-   detected, surface it to the user and resolve before proceeding.
+2. Validate the graph is a DAG — no cycles allowed. If a cycle is detected, surface it to the user and resolve before proceeding.
 3. Include the dependency graph in the Phase 5 review output.
 
 ### Cross-referencing
@@ -368,55 +294,24 @@ Iterate until confirmed.
 
 ## Output
 
-**Discovery mode:** The final deliverable is stories (optionally grouped
-into epics) with acceptance criteria and dependency ordering. Do **not**
-write decision documents, design specs, or summary files to the
-filesystem. The conversation is the decision record; the stories are the
-actionable output.
+**Discovery mode:** The final deliverable is stories (optionally grouped into epics) with acceptance criteria and dependency ordering. Do **not** write decision documents, design specs, or summary files to the filesystem. The conversation is the decision record; the stories are the actionable output.
 
-**Validation mode:** The conversation is the entire deliverable. Present
-a summary of resolved decisions and open issues when the interview is
-complete. Do **not** write any files.
+**Validation mode:** The conversation is the entire deliverable. Present a summary of resolved decisions and open issues when the interview is complete. Do **not** write any files.
 
 ### Creating issues on GitHub (discovery mode only)
 
-When the user approves the plan, offer to create the stories as GitHub
-issues. If they accept:
+When the user approves the plan, offer to create the stories as GitHub issues. If they accept:
 
-0. Write each title and body to the plugin's `writing-github-issues`
-   standard (github-workflow provides it as a skill; its story shape is
-   `references/story-template.md`). The interview produces far more
-   material than a story needs, so this is where most of it gets left
-   behind: no discovery history, no restating the Summary under another
-   heading, and no section that would be empty. Write each paragraph on
-   one unwrapped line (`_shared/body-standard.md`).
+0. Write each title and body to the plugin's `writing-github-issues` standard (github-workflow provides it as a skill; its story shape is `references/story-template.md`). The interview produces far more material than a story needs, so this is where most of it gets left behind: no discovery history, no restating the Summary under another heading, and no section that would be empty. Write each paragraph on one unwrapped line (`_shared/body-standard.md`).
 
-   A story that cannot be finished without a person, because it needs a
-   permission or an approval no agent can give, is marked three ways
-   together: `[Manual]` at the front of the title, the `status-blocked`
-   label in place of the usual lifecycle label, and a `## Manual step`
-   section saying what has to be done and why.
+   A story that cannot be finished without a person, because it needs a permission or an approval no agent can give, is marked three ways together: `[Manual]` at the front of the title, the `status-blocked` label in place of the usual lifecycle label, and a `## Manual step` section saying what has to be done and why.
 
-   Check once, before the first issue, whether the repository publishes
-   an issue template, either its own or one inherited from the
-   organisation's `.github` repository. Where one applies, every story
-   uses its headings and order. github-workflow resolves this through
-   `templates/issue-template-resolution.md`; the result is cached, so
-   check once rather than per story.
-1. **One write for the whole set.** Under github-workflow every issue is
-   created by `wf issue-apply` from a single spec — title, body, native
-   issue type, field values, labels, parent and dependency edges together.
-   Not a `gh issue create` loop, and not create-then-upgrade: an issue that
-   exists for a few seconds carrying only labels is what put half-classified
-   stories on the board.
+   Check once, before the first issue, whether the repository publishes an issue template, either its own or one inherited from the organisation's `.github` repository. Where one applies, every story uses its headings and order. github-workflow resolves this through `templates/issue-template-resolution.md`; the result is cached, so check once rather than per story.
+1. **One write for the whole set.** Under github-workflow every issue is created by `wf issue-apply` from a single spec — title, body, native issue type, field values, labels, parent and dependency edges together. Not a `gh issue create` loop, and not create-then-upgrade: an issue that exists for a few seconds carrying only labels is what put half-classified stories on the board.
 
-   The command works in dependency order for you. Entries reference each
-   other by `key` before any of them has a number, parents are created
-   before children, and edges are written last, so the whole tree is one
-   command whatever its shape.
+   The command works in dependency order for you. Entries reference each other by `key` before any of them has a number, parents are created before children, and edges are written last, so the whole tree is one command whatever its shape.
 
-   Write each story's body to its own file in `.claude/` with the Write
-   tool, then the spec beside them:
+   Write each story's body to its own file in `.claude/` with the Write tool, then the spec beside them:
 
    ```bash
    mkdir -p .claude
@@ -443,63 +338,25 @@ issues. If they accept:
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/discovery-spec.json
    ```
 
-   - Each body goes in its own file and the entry names it (`body_file`)
-     rather than carrying the text, so fenced code, backticks, `$` and
-     quotes survive intact. github-workflow states the rule once in
-     `templates/body-file-write.md`.
-   - `kind` supplies the native type **and** the `Classification` value
-     together (a story → User Story / New Feature, an epic → Epic), so
-     neither is chosen by hand. Use `spike` for a research story.
-   - **No `type-*` label and no `[STORY]` title prefix.** The native type
-     classifies the issue; `issue-apply` strips both if a spec still names
-     them, and says that it did.
-   - `field-effort` comes from the story's size estimate: large → **High**,
-     medium → **Medium**, small → **Low**.
-   - `field-priority` is set only where the plan assigned one, and stays
-     dual-tracked with the `priority-*` label. The field is what orders
-     `pick`; the label is the fallback for issues without one.
-   - `blocked_by` writes a native edge **and** the body's `## Dependencies`
-     prose, so the markers from step 2 stay authoritative.
-   - Add `"milestone": "{title}"` to an entry in sprint mode. It must name
-     an open milestone.
-2. Include a `## Dependencies` section in each issue body listing
-   upstream dependencies by issue number (e.g., `Depends on #42`). Where a
-   dependency is another entry in the same spec and has no number yet, name
-   it in `blocked_by` by `key` and let `issue-apply` write the prose.
-3. Apply ready state based on dependency state, through each entry's
-   `labels`:
-   - Stories with no unresolved dependencies (DAG roots) → mark as
-     ready per the project's `ready-gate` setting: the `status-ready`
-     label and/or a move to the "Ready" board column.
-   - Stories whose dependencies are not yet closed →
-     do NOT mark as ready. The `## Dependencies` section in the body
-     is sufficient to communicate the dependency — no blocked label
-     is needed.
-   - Deferred stories (see "Deferred speccing") →
-     `needs-refinement` label.
-4. **Read the exit code.** **0** created them, and every issue number is
-   written back into the spec file, so a re-run after a partial failure
-   completes the remainder rather than filing duplicates. **21**
-   (`no-capabilities`) means the org defines no types or fields — report
-   that the stories could not be classified rather than filing them
-   unclassified by hand. **22** means the spec is wrong (an unknown label,
-   a milestone that is not open, a missing mandatory field), so fix it and
-   re-run. **23** and **24** mean the issues exist but some metadata did not
-   land, so name what failed and carry on.
+   - Each body goes in its own file and the entry names it (`body_file`) rather than carrying the text, so fenced code, backticks, `$` and quotes survive intact. github-workflow states the rule once in `templates/body-file-write.md`.
+   - `kind` supplies the native type **and** the `Classification` value together (a story → User Story / New Feature, an epic → Epic), so neither is chosen by hand. Use `spike` for a research story.
+   - **No `type-*` label and no `[STORY]` title prefix.** The native type classifies the issue; `issue-apply` strips both if a spec still names them, and says that it did.
+   - `field-effort` comes from the story's size estimate: large → **High**, medium → **Medium**, small → **Low**.
+   - `field-priority` is set only where the plan assigned one, and stays dual-tracked with the `priority-*` label. The field is what orders `pick`; the label is the fallback for issues without one.
+   - `blocked_by` writes a native edge **and** the body's `## Dependencies` prose, so the markers from step 2 stay authoritative.
+   - Add `"milestone": "{title}"` to an entry in sprint mode. It must name an open milestone.
+2. Include a `## Dependencies` section in each issue body listing upstream dependencies by issue number (e.g., `Depends on #42`). Where a dependency is another entry in the same spec and has no number yet, name it in `blocked_by` by `key` and let `issue-apply` write the prose.
+3. Apply ready state based on dependency state, through each entry's `labels`:
+   - Stories with no unresolved dependencies (DAG roots) → mark as ready per the project's `ready-gate` setting: the `status-ready` label and/or a move to the "Ready" board column.
+   - Stories whose dependencies are not yet closed → do NOT mark as ready. The `## Dependencies` section in the body is sufficient to communicate the dependency — no blocked label is needed.
+   - Deferred stories (see "Deferred speccing") → `needs-refinement` label.
+4. **Read the exit code.** **0** created them, and every issue number is written back into the spec file, so a re-run after a partial failure completes the remainder rather than filing duplicates. **21** (`no-capabilities`) means the org defines no types or fields — report that the stories could not be classified rather than filing them unclassified by hand. **22** means the spec is wrong (an unknown label, a milestone that is not open, a missing mandatory field), so fix it and re-run. **23** and **24** mean the issues exist but some metadata did not land, so name what failed and carry on.
 
-   Where the command is unavailable, say so and stop rather than
-   hand-writing the mutations.
-5. After creation, verify each issue body contains the correct
-   dependency references. Use the post-creation validation pattern
-   (see report-issue) to catch body corruption.
-6. Present a summary: issue numbers, titles, native type/labels, and the
-   dependency graph with issue numbers filled in.
+   Where the command is unavailable, say so and stop rather than hand-writing the mutations.
+5. After creation, verify each issue body contains the correct dependency references. Use the post-creation validation pattern (see report-issue) to catch body corruption.
+6. Present a summary: issue numbers, titles, native type/labels, and the dependency graph with issue numbers filled in.
 
-**Leave the assignee blank.** Do not assign created stories to anyone —
-not the creator, not an agent. Pass no `--assignee`/`--add-assignee` on
-creation and do not edit issues to assign them afterward. Backlog
-stories must enter the unassigned pool so `execute` can
-select them; assignment happens only at claim time, never at creation.
+**Leave the assignee blank.** Do not assign created stories to anyone — not the creator, not an agent. Pass no `--assignee`/`--add-assignee` on creation and do not edit issues to assign them afterward. Backlog stories must enter the unassigned pool so `execute` can select them; assignment happens only at claim time, never at creation.
 
 ---
 

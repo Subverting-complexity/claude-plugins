@@ -28,13 +28,7 @@ Design, audit, and document codebases using principles from Clean Architecture, 
 
 ## Output standard
 
-Everything a person reads — plans, questions, findings, summaries, and
-anything posted or committed — follows `skills/_shared/wording-standard.md`
-for how it reads, `skills/user-facing-communication/SKILL.md` for what it
-contains and in what order (outcome and current state first, then anything
-outstanding, blocked or assumed, every work item named as well as numbered,
-no investigation history), and `skills/_shared/banned-patterns.md` for what
-must never appear. Every reply, not only the last one.
+Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
 ## Project structure (auto-loaded)
 
@@ -54,10 +48,7 @@ find . -maxdepth 2 -type d ! -path '*/node_modules/*' ! -path '*/.git/*' ! -path
 ### Workflow 1: Design New Codebase
 When user asks to design, architect, or build a new system/codebase:
 
-1. **Establish shared understanding** - Call `feature-discovery` in
-   validation mode to clarify (skip this step when called from an
-   autonomous workflow like `/github-workflow:execute` that explicitly
-   says not to pause or call feature-discovery):
+1. **Establish shared understanding** - Call `feature-discovery` in validation mode to clarify (skip this step when called from an autonomous workflow like `/github-workflow:execute` that explicitly says not to pause or call feature-discovery):
    - What problem does this solve?
    - Who are the users/actors?
    - What are the core business rules?
@@ -113,9 +104,7 @@ This workflow produces structured, enforceable documents. The key distinction: t
 
 #### Document Types
 
-**1. Architecture Compliance Document**
-When to produce: When establishing or updating codebase guardrails.
-Save to: `.claude/architecture.md` or `docs/architecture/compliance.md`
+**1. Architecture Compliance Document** When to produce: When establishing or updating codebase guardrails. Save to: `.claude/architecture.md` or `docs/architecture/compliance.md`
 
 This is the primary document subagents read before writing code. It must be:
 - Specific enough that a subagent can check its own work against it
@@ -198,9 +187,7 @@ Template:
 - New API endpoints: api/
 ```
 
-**3. Boundary Map**
-When to produce: When the system has multiple modules, services, or contexts.
-Visual and textual representation of what talks to what.
+**3. Boundary Map** When to produce: When the system has multiple modules, services, or contexts. Visual and textual representation of what talks to what.
 
 Template:
 ```
@@ -222,9 +209,7 @@ Template:
 [Explicit list of dependency paths that must never exist]
 ```
 
-**4. Coding Standards Document**
-When to produce: When establishing team conventions or agent guardrails.
-Save to: `.claude/coding-standards.md`
+**4. Coding Standards Document** When to produce: When establishing team conventions or agent guardrails. Save to: `.claude/coding-standards.md`
 
 Focus on architecture-relevant standards (not formatting). This tells a subagent how to write code that fits this codebase.
 

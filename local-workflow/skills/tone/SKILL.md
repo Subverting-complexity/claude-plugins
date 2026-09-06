@@ -14,11 +14,7 @@ Read `_shared/banned-patterns.md` before writing. All banned patterns apply to c
 
 The examples file has two sections. The **Golden Reference Examples** at the top are polished writing the user produced themselves, with no dictation artefacts. They are the target output. If an edited message would not fit in that section, the edit has drifted too far from their voice. The **Standard Examples** show the typical shape of their correspondence across work, technical, and client-facing contexts. Study both.
 
-`skills/user-facing-communication/SKILL.md` shapes what you say to the
-person **around** the message: lead with the outcome and the current
-state, keep it short, and surface anything outstanding or assumed. It
-governs your own reply. The polished message keeps the user's voice as
-this skill defines it, and nothing here overrides that.
+`skills/user-facing-communication/SKILL.md` shapes what you say to the person **around** the message: lead with the outcome and the current state, keep it short, and surface anything outstanding or assumed. It governs your own reply. The polished message keeps the user's voice as this skill defines it, and nothing here overrides that.
 
 ---
 

@@ -38,6 +38,13 @@ write genuinely different bodies and a shared name hid that.
   `bulk-execute` now build their bodies from that shape rather than
   describing their own.
 
+- **The plugins' own instruction files are unwrapped too.** Every skill,
+  command, template, reference and doc in the repo is now one paragraph per
+  line. They were the examples the model copied when it wrapped a body, so
+  the rule and the files that teach it now agree. Content is unchanged: the
+  pass preserved every heading, table row, list item and fenced code block
+  byte for byte.
+
 - **Issues a person has to finish are marked uniformly** (github-workflow):
   `[Manual]` at the front of the title, the existing `status-blocked`
   label, and a `## Manual step` section saying what has to be done and

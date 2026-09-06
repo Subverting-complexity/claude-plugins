@@ -62,19 +62,11 @@ The title belongs in GitHub's title field. Do not repeat it in the body.
 
 ## Classification
 
-An issue says what kind of work it is **once**, through GitHub's native issue
-type (`Bug`, `User Story`, `Chore`, `Feature`, `Epic`, …) and the org's
-`Classification` field. Not through a title prefix, and not through a `type-*`
-label — neither is written any more, and `wf pick` reads neither. A spec that
-still names one has it stripped on the way in.
+An issue says what kind of work it is **once**, through GitHub's native issue type (`Bug`, `User Story`, `Chore`, `Feature`, `Epic`, …) and the org's `Classification` field. Not through a title prefix, and not through a `type-*` label — neither is written any more, and `wf pick` reads neither. A spec that still names one has it stripped on the way in.
 
-Lifecycle state (`status-ready`, `needs-refinement`, `status-blocked`) and
-priority stay on labels: GitHub has no native field for the first, and the
-second is dual-tracked with the org's `Priority` field.
+Lifecycle state (`status-ready`, `needs-refinement`, `status-blocked`) and priority stay on labels: GitHub has no native field for the first, and the second is dual-tracked with the org's `Priority` field.
 
-`[Manual]` is not a classification and is not covered by that rule. It says
-who has to do the work, not what kind of work it is, and nothing native
-records it. See **Issues that need a person** below.
+`[Manual]` is not a classification and is not covered by that rule. It says who has to do the work, not what kind of work it is, and nothing native records it. See **Issues that need a person** below.
 
 ## Issues that need a person
 
@@ -96,10 +88,7 @@ Those three go together. An issue has all of them or none of them.
 
 ## One write path
 
-Every issue this plugin files is created by `wf issue-apply` from a spec, so
-the title rules above, the native type and the field values are applied in one
-place rather than reinvented per command. Do not call `gh issue create`
-directly.
+Every issue this plugin files is created by `wf issue-apply` from a spec, so the title rules above, the native type and the field values are applied in one place rather than reinvented per command. Do not call `gh issue create` directly.
 
 ## Repository templates
 

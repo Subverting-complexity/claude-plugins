@@ -1,8 +1,6 @@
 # Shared Skills Manifest
 
-Canonical source for the 14 skills shared across multiple plugins.
-**Never edit plugin copies directly** — edit here, then sync. The edit
-procedure is in [`CLAUDE.md`](../CLAUDE.md#how-to-edit).
+Canonical source for the 14 skills shared across multiple plugins. **Never edit plugin copies directly** — edit here, then sync. The edit procedure is in [`CLAUDE.md`](../CLAUDE.md#how-to-edit).
 
 ## Shared skills
 
@@ -32,8 +30,7 @@ procedure is in [`CLAUDE.md`](../CLAUDE.md#how-to-edit).
 
 ## Not shared (and why)
 
-These exist in one or both plugins but are deliberately not canonicalized
-here. Do not "deduplicate" them into `_shared-skills/`.
+These exist in one or both plugins but are deliberately not canonicalized here. Do not "deduplicate" them into `_shared-skills/`.
 
 | Skill | Why not shared |
 |-------|----------------|
@@ -56,12 +53,7 @@ The sync script replaces these placeholders with plugin-specific values:
 | `{{PLUGIN_VERSION}}` | Plugin version from `plugin.json` (e.g., `1.7.0`) |
 | `{{EXECUTE_SKILL}}` | Name of that plugin's end-to-end orchestrator: `execute` in github-workflow, `build` in local-workflow |
 
-A shared skill points at "this plugin's end-to-end command" by writing
-`/{{PLUGIN_NAME}}:{{EXECUTE_SKILL}}`, which resolves to the right one.
-Without it the two orchestrators would share a name and the skill picker
-would choose between identical descriptions arbitrarily. The mapping lives
-in `get_execute_skill` (`sync-skills.sh`) and `Get-ExecuteSkill`
-(`sync-skills.ps1`) — add a case to both when a plugin joins.
+A shared skill points at "this plugin's end-to-end command" by writing `/{{PLUGIN_NAME}}:{{EXECUTE_SKILL}}`, which resolves to the right one. Without it the two orchestrators would share a name and the skill picker would choose between identical descriptions arbitrarily. The mapping lives in `get_execute_skill` (`sync-skills.sh`) and `Get-ExecuteSkill` (`sync-skills.ps1`) — add a case to both when a plugin joins.
 
 ## Sync commands
 
