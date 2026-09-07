@@ -276,12 +276,14 @@ def parse_claude_project(text):
         if len(cells) >= 2 and cells[0].lower() == 'agent-gating':
             cfg['agent_gating'] = cells[1].lower()
 
-    if re.search(r'is\*{0,2}\s*type-capable', text, re.IGNORECASE):
-        cfg['type_capable'] = True
+    type_fields_block = _section(text, 'Issue Types & Fields')
+    for cells in _rows(type_fields_block):
+        if len(cells) >= 2 and cells[0].lower() == 'type-capable':
+            cfg['type_capable'] = cells[1].lower() == 'yes'
 
     # Field-name overrides: a project that renamed an org field records the new
     # name here, and `wf_core.resolve_field_name` prefers it over the default.
-    for cells in _rows(_section(text, 'Issue Types & Fields')):
+    for cells in _rows(type_fields_block):
         if len(cells) >= 2 and cells[1] and re.match(r'^field-[a-z-]+$', cells[0]):
             cfg['fields'][cells[0]] = cells[1]
 

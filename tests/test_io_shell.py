@@ -1314,6 +1314,34 @@ class TestFieldNameOverrides(unittest.TestCase):
         self.assertEqual(wf.field_name(cfg, 'field-type'), 'Classification')
 
 
+class TestTypeCapableTableParsing(unittest.TestCase):
+    """`type_capable` is read from the Capability table's own cell, not guessed
+    from prose. `templates/ClaudeProject.md` documents the row as `| type-capable
+    | `yes` |` and describes it in a sentence that never contains the literal
+    phrase "is type-capable" -- a regex keyed on that phrase left every project
+    following the template mis-detected as not type-capable, which silently
+    emptied the feature/maintenance pool (`select_pool` -> `filter_by_native_type`
+    treats a missing type_map as "no native types" and drops every candidate).
+    """
+
+    def test_yes_row_is_type_capable(self):
+        cfg = wf.parse_claude_project(
+            '# P\n\n## Issue Types & Fields\n\n### Capability\n\n'
+            '| Setting | Value |\n| --- | --- |\n| type-capable | `yes` |\n\n'
+            'The owner is an org with native GitHub issue types enabled.\n')
+        self.assertTrue(cfg['type_capable'])
+
+    def test_no_row_is_not_type_capable(self):
+        cfg = wf.parse_claude_project(
+            '# P\n\n## Issue Types & Fields\n\n### Capability\n\n'
+            '| Setting | Value |\n| --- | --- |\n| type-capable | `no` |\n')
+        self.assertFalse(cfg['type_capable'])
+
+    def test_absent_section_defaults_to_not_type_capable(self):
+        cfg = wf.parse_claude_project('# P\n\n## Identity\n\n| org | acme |\n')
+        self.assertFalse(cfg['type_capable'])
+
+
 class TestDeniedCapability(unittest.TestCase):
     """A refused capability must not read as an absent one.
 
