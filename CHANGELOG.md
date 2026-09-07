@@ -7,6 +7,22 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 8.0.2
+
+**Fixed:** `board-move --column col-backlog` now finds the column. The purpose
+key resolved to a column named `Todo`, which is what GitHub calls the first
+column on a new Projects v2 board, while the purpose key itself and every other
+reference in the plugin call it `Backlog` — `templates/default-labels.md`, the
+`ClaudeProject.md` template and `commands/report-issue.md`. Any board renamed to
+match its own configuration therefore took every board move except the one to
+the backlog, and that one failed quietly, because a board mirrors the lifecycle
+labels and a failed move is deliberately never fatal.
+
+`setup` now renames a board's default `Todo` column to `Backlog` instead of
+adopting the name, passing the existing option id back so nothing sitting in the
+column moves. `BOARD_COLUMN_NAMES` has a test pinning its values, not only its
+keys, since the values are what `board_move` looks a column up by.
+
 ## github-workflow 8.0.0 / local-workflow 2.13.0
 
 **Breaking (github-workflow):** the `pr-description` skill is renamed

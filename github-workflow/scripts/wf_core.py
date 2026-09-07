@@ -635,8 +635,17 @@ def reap_summary(results):
 # Board column purpose key → the column's name on the board. `ClaudeProject.md`
 # records the purpose key and the option id; the live board is addressed by
 # name, and `wf board-move` accepts either.
+#
+# `col-backlog` is `Backlog`, which is what every other reference in this plugin
+# already calls it: the purpose key itself, `templates/default-labels.md`, the
+# `ClaudeProject.md` template, and `commands/report-issue.md`. It read `Todo`
+# for a long time, which is the name GitHub gives the column on a new Projects
+# v2 board rather than the name this plugin uses for it, so `board-move` failed
+# on every board that had been renamed to match its own configuration — and
+# failed quietly, because a board is a mirror and a failed move is never fatal.
+# `setup` now renames a default `Todo` rather than adopting it.
 BOARD_COLUMN_NAMES = {
-    'col-backlog':     'Todo',
+    'col-backlog':     'Backlog',
     'col-ready':       'Ready',
     'col-in-progress': 'In Progress',
     'col-in-review':   'In Review',

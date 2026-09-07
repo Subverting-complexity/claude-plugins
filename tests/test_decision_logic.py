@@ -2451,6 +2451,26 @@ class TestBoardColumnNames(unittest.TestCase):
                     'col-in-review', 'col-blocked', 'col-done'):
             self.assertIn(key, wf_core.BOARD_COLUMN_NAMES)
 
+    def test_each_key_resolves_to_the_name_the_rest_of_the_plugin_uses(self):
+        """The values are the contract, not just the keys.
+
+        `board_move` looks the column up on the live board by this name, so a
+        value no board uses fails every move to that column, and fails
+        quietly: a board mirrors the labels, so a failed move is never fatal.
+        `col-backlog` read `Todo` for a long time, which is what GitHub calls
+        the column on a new Projects v2 board rather than what
+        `templates/default-labels.md`, the `ClaudeProject.md` template,
+        `commands/report-issue.md` and the purpose key itself all call it.
+        """
+        self.assertEqual(wf_core.BOARD_COLUMN_NAMES, {
+            'col-backlog':     'Backlog',
+            'col-ready':       'Ready',
+            'col-in-progress': 'In Progress',
+            'col-in-review':   'In Review',
+            'col-blocked':     'Blocked',
+            'col-done':        'Done',
+        })
+
 
 class TestChoreIsMaintenance(unittest.TestCase):
     """A `Chore`-typed issue has to reach `execute mode=maintenance`.

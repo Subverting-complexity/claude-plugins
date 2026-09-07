@@ -124,9 +124,11 @@ The board must mirror the issue lifecycle (see `templates/default-labels.md` →
 
 - **Required when a board is selected:** In Progress (`col-in-progress`), In Review (`col-in-review`), Blocked (`col-blocked`) — the three active workflow columns.
 - **Also required only under a `board-column`/`both` ready-gate:** Ready (`col-ready`).
-- Backlog (`col-backlog`) and Done (`col-done`) usually already exist as the board's default Todo/Done options — map those purpose keys onto whatever the board already calls them; do not create duplicates.
+- Backlog (`col-backlog`) and Done (`col-done`) usually already exist, as the board's default Todo/Done options. Done is already named right; **Todo is not**, and it is renamed rather than adopted — see below. Never create a second column for either.
 
-Match case-insensitively and allow for the board's own naming (e.g. a default "Todo" satisfies `col-backlog`). For each **missing** column, ask the user what to name it, suggesting the default (`In Progress`, `In Review`, `Blocked`, `Ready`). If every required column already exists, skip creation.
+Match case-insensitively. For each **missing** column, ask the user what to name it, suggesting the default (`In Progress`, `In Review`, `Blocked`, `Ready`). If every required column already exists, skip creation.
+
+**Rename a default `Todo` to `Backlog`.** A new Projects v2 board names its first column `Todo`; this plugin calls that column `Backlog` everywhere else, including the `col-backlog` purpose key, and `board-move` resolves a purpose key to a column by name. A board left as `Todo` therefore takes every board move except the one to the backlog, and that one fails quietly. Rename it in the same mutation that creates the missing columns: pass the existing option back with its `id` and the new `name`, which preserves the option and every item sitting in it. Do the same for any other spelling the board happens to use for the same column.
 
 Then create the missing columns in **one** mutation.
 
@@ -141,7 +143,7 @@ gh api graphql -f query='mutation {
   updateProjectV2Field(input: {
     fieldId: "{status_field_id}"
     singleSelectOptions: [
-      { id: "<existing-id-1>", name: "Todo",        color: GRAY,   description: "" },
+      { id: "<existing-id-1>", name: "Backlog",     color: GRAY,   description: "" },
       { id: "<existing-id-2>", name: "In Progress", color: BLUE,   description: "" },
       { id: "<existing-id-3>", name: "Done",        color: GRAY,   description: "" },
       { name: "In Review", color: YELLOW, description: "PR open, awaiting review" },
@@ -153,7 +155,7 @@ gh api graphql -f query='mutation {
 }'
 ```
 
-(The example adds In Review and Blocked to a default Todo/In Progress/Done board; pass back **all** pre-existing options or they are deleted.) The mutation returns the full option list (existing + new) with their ids. Read the returned `options` to capture the option id for every canonical column — these become the Status Options values written to `ClaudeProject.md` in Step 5. This step is best-effort: if the mutation fails (non-zero exit, or a response with an `errors` array — GraphQL can return HTTP 200 with errors), warn the user that the columns must be created manually in the board UI, record the option ids that do exist, and continue.
+(The example works on a default Todo/In Progress/Done board: it adds In Review and Blocked, and renames `Todo` to `Backlog` by passing that option's existing `id` with the new name. Pass back **all** pre-existing options or they are deleted.) The mutation returns the full option list (existing + new) with their ids. Read the returned `options` to capture the option id for every canonical column — these become the Status Options values written to `ClaudeProject.md` in Step 5. This step is best-effort: if the mutation fails (non-zero exit, or a response with an `errors` array — GraphQL can return HTTP 200 with errors), warn the user that the columns must be created manually in the board UI, record the option ids that do exist, and continue.
 
 **Milestones:**
 
