@@ -148,18 +148,20 @@ Board: **claude-plugins** (org project #8) —
 
 ### Status Options
 
-The board now carries all three active workflow columns. Each column mirrors one or more issue lifecycle states — see `github-workflow/templates/default-labels.md` → Board Columns for the full label ⇄ column pairing. (`col-backlog` maps onto the board's default "Todo" option; `col-done` onto "Done".)
+The board now carries all three active workflow columns. Each column mirrors one or more issue lifecycle states — see `github-workflow/templates/default-labels.md` → Board Columns for the full label ⇄ column pairing.
+
+`col-backlog` used to map onto the board's default "Todo" option, which is why `BOARD_COLUMN_NAMES` said "Todo" for as long as it did. The column has since been renamed to "Backlog", keeping option id `f75ad846` so nothing in it moved, and the board and the plugin now use one name for it.
 
 | Status      | Purpose key       | Option ID            |
 | ----------- | ----------------- | -------------------- |
-| Backlog     | `col-backlog`     | `f75ad846` (Todo)    |
+| Backlog     | `col-backlog`     | `f75ad846`           |
 | Ready       | `col-ready`       | `n/a` (optional — label ready-gate) |
 | In Progress | `col-in-progress` | `47fc9ee4`           |
 | In Review   | `col-in-review`   | `9b47c867`           |
 | Blocked     | `col-blocked`     | `28e51b4e`           |
 | Done        | `col-done`        | `98236657`           |
 
-All board moves now resolve to a real column: `execute` → In Progress / In Review, `block-story` → Blocked, and `report-issue` places new issues in Todo/Backlog. The **issue lifecycle labels** (Status section above) remain the authoritative state; the board mirrors them. "Ready" stays optional because this repo's ready-gate is `label`, not `board-column`.
+All board moves now resolve to a real column: `execute` → In Progress / In Review, `block-story` → Blocked, and `report-issue` places new issues in Backlog. The **issue lifecycle labels** (Status section above) remain the authoritative state; the board mirrors them. "Ready" stays optional because this repo's ready-gate is `label`, not `board-column`.
 
 ## Reference Docs
 
