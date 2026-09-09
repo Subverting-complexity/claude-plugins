@@ -4,7 +4,7 @@
 
 ## Why purpose keys
 
-A label is identified by its **purpose key**, never by a hardcoded concrete name. Purpose keys are stable; concrete names are project-configurable. The bare names that appear in workflow prose (`reviewing`, `updating`, `approved`, `changes-requested`, `needs-discussion`, `claude-authored`, `status-ready`, …) **are purpose keys** — they are resolved to a concrete name through the resolution path, and are never applied literally. This means every workflow works correctly when a project renames a label (e.g. `reviewing` → `wip`), as long as the project config maps the purpose key to the new name.
+A label is identified by its **purpose key**, never by a hardcoded concrete name. Purpose keys are stable; concrete names are project-configurable. The bare names that appear in workflow prose (`reviewing`, `updating`, `approved`, `changes-requested`, `needs-discussion`, `claude-authored`, `status-blocked`, …) **are purpose keys** — they are resolved to a concrete name through the resolution path, and are never applied literally. This means every workflow works correctly when a project renames a label (e.g. `reviewing` → `wip`), as long as the project config maps the purpose key to the new name.
 
 ## Why the single resolution path (apply == filter invariant)
 
@@ -35,7 +35,7 @@ The lifecycle state labels are the **issue-side mirror** of the PR review-state 
 ```
                           ┌──────────────► needs-refinement ──┐
                           │                                    ▼
-(new issue) ─► status-ready ─► status-in-progress ─► status-in-review ─► (closed)
+(new issue) ─► (no label, in Backlog) ─► status-in-progress ─► status-in-review ─► (closed)
                   ▲   ▲              │   │
                   │   │              │   └─► status-needs-attention (run failed)
                   │   └──────────────┘        │
@@ -62,4 +62,4 @@ This extends the **apply == filter** invariant to the board — every producer a
 
 ### Required columns
 
-When a board is configured, the three active columns — In Progress, In Review, Blocked — must exist (preflight emits `CRITICAL board-columns-incomplete` if any is missing; setup creates them). The Ready column is additionally required only under a `board-column`/`both` ready-gate.
+A board is required, and `Backlog` is required on it: that column is the pick pool. Preflight emits `CRITICAL board-lane` for a missing board, an unresolvable `project-node-id`, or a missing Backlog column, and `WARNING board-lane` for any other missing lane; setup creates them all.

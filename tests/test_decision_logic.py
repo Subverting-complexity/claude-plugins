@@ -69,70 +69,63 @@ class TestStorySelection(unittest.TestCase):
     def test_higher_priority_beats_lower_issue_number(self):
         """A high-priority issue is selected over a medium-priority issue with a smaller number."""
         candidates = [
-            _issue(1, ['priority-medium', 'status-ready']),
-            _issue(10, ['priority-high', 'status-ready']),
+            _issue(1, ['priority-medium']),
+            _issue(10, ['priority-high']),
         ]
         self.assertEqual(select_story(candidates)['number'], 10)
 
     def test_same_priority_lower_number_wins(self):
         candidates = [
-            _issue(20, ['priority-medium', 'status-ready']),
-            _issue(5, ['priority-medium', 'status-ready']),
+            _issue(20, ['priority-medium']),
+            _issue(5, ['priority-medium']),
         ]
         self.assertEqual(select_story(candidates)['number'], 5)
 
     def test_full_priority_order_critical_high_medium_low(self):
         candidates = [
-            _issue(4, ['priority-low', 'status-ready']),
-            _issue(3, ['priority-medium', 'status-ready']),
-            _issue(2, ['priority-high', 'status-ready']),
-            _issue(1, ['priority-critical', 'status-ready']),
+            _issue(4, ['priority-low']),
+            _issue(3, ['priority-medium']),
+            _issue(2, ['priority-high']),
+            _issue(1, ['priority-critical']),
         ]
         self.assertEqual(select_story(candidates)['number'], 1)
 
     def test_unlabelled_priority_sorts_after_explicit_low(self):
         candidates = [
-            _issue(1, ['status-ready']),            # no priority label
-            _issue(2, ['priority-low', 'status-ready']),
+            _issue(1, []),                          # no priority label
+            _issue(2, ['priority-low']),
         ]
         self.assertEqual(select_story(candidates)['number'], 2)
 
     # Refinement filter
 
-    def test_needs_refinement_excluded_even_at_high_priority(self):
-        candidates = [
-            _issue(1, ['priority-high', 'needs-refinement', 'status-ready']),
-            _issue(2, ['priority-medium', 'status-ready']),
-        ]
-        self.assertEqual(select_story(candidates)['number'], 2)
-
-    def test_all_need_refinement_returns_none(self):
-        candidates = [_issue(1, ['priority-high', 'needs-refinement'])]
-        self.assertIsNone(select_story(candidates))
-
     def test_empty_pool_returns_none(self):
         self.assertIsNone(select_story([]))
 
-    # Lifecycle filter -- every state but status-ready is out of the pool
+    # Availability. The pool handed to `select_pool` is the board's Backlog
+    # column, and `Status` holds one value, so an issue that is parked, in
+    # progress, in review, blocked, done or awaiting refinement is in that
+    # column and never reaches here. There is nothing left to exclude by
+    # lifecycle label, and excluding by one would be reading a mirror.
 
-    def test_parked_is_out_of_the_pool(self):
-        """A human set it aside; the picker does not take it back."""
-        candidates = [
-            _issue(1, ['priority-critical', 'status-parked']),
-            _issue(2, ['priority-low', 'status-ready']),
-        ]
-        self.assertEqual(select_story(candidates)['number'], 2)
+    def test_a_lifecycle_label_no_longer_takes_an_issue_out_of_the_pool(self):
+        """The label is a mirror of the column, and the column already spoke.
 
-    def test_every_unavailable_lifecycle_state_is_out_of_the_pool(self):
+        This is the opt-in model going away. `status-ready` used to be the only
+        lifecycle label meaning "pick me", so an issue nobody had marked was
+        invisible — which is exactly what happened on this plugin's own
+        repository, where three workable issues sat in the backlog while the
+        picker reported an empty pool.
+        """
         for state in ('status-parked', 'status-blocked', 'status-in-progress',
                       'status-in-review', 'status-needs-attention',
                       'needs-refinement'):
             with self.subTest(state=state):
-                self.assertIsNone(
-                    select_story([_issue(1, ['priority-critical', state])]))
+                picked = select_story([_issue(1, ['priority-critical', state])])
+                self.assertEqual(picked['number'], 1)
 
-    def test_no_lifecycle_label_at_all_stays_eligible(self):
-        """`ready-gate: none` depends on this: unlabelled is not unavailable."""
+    def test_no_lifecycle_label_at_all_is_eligible(self):
+        """The ordinary case, and now the only one that needs stating."""
         self.assertEqual(select_story([_issue(7, ['priority-low'])])['number'], 7)
 
     # Mode filter
@@ -140,8 +133,8 @@ class TestStorySelection(unittest.TestCase):
     def test_story_mode_accepts_any_type(self):
         """In story mode there is no type filter — all issue kinds are eligible."""
         candidates = [
-            _issue(1, ['priority-medium', 'type-bug', 'status-ready']),
-            _issue(2, ['priority-medium', 'type-story', 'status-ready']),
+            _issue(1, ['priority-medium', 'type-bug']),
+            _issue(2, ['priority-medium', 'type-story']),
         ]
         # Both eligible; lowest number wins
         self.assertEqual(select_story(candidates, mode='story')['number'], 1)
@@ -153,13 +146,13 @@ class TestStorySelection(unittest.TestCase):
 
     def test_feature_mode_without_native_types_selects_nothing(self):
         candidates = [
-            _issue(1, ['priority-high', 'type-bug', 'status-ready']),
-            _issue(2, ['priority-medium', 'type-story', 'status-ready']),
+            _issue(1, ['priority-high', 'type-bug']),
+            _issue(2, ['priority-medium', 'type-story']),
         ]
         self.assertIsNone(select_story(candidates, mode='feature'))
 
     def test_maintenance_mode_without_native_types_selects_nothing(self):
-        candidates = [_issue(1, ['priority-medium', 'type-bug', 'status-ready'])]
+        candidates = [_issue(1, ['priority-medium', 'type-bug'])]
         self.assertIsNone(select_story(candidates, mode='maintenance'))
 
     def test_the_unanswerable_candidates_are_named_not_dropped(self):
@@ -172,29 +165,29 @@ class TestStorySelection(unittest.TestCase):
 
     def test_story_mode_still_needs_no_types_at_all(self):
         """Story mode asks no type question, so it is unaffected."""
-        candidates = [_issue(1, ['priority-high', 'status-ready'])]
+        candidates = [_issue(1, ['priority-high'])]
         self.assertEqual(select_story(candidates)['number'], 1)
 
     # Agent gating
 
     def test_gating_disabled_does_not_filter_on_claude_ready(self):
         candidates = [
-            _issue(1, ['priority-medium', 'status-ready']),           # no claude-ready
-            _issue(2, ['priority-medium', 'status-ready', 'claude-ready']),
+            _issue(1, ['priority-medium']),           # no claude-ready
+            _issue(2, ['priority-medium', 'claude-ready']),
         ]
         # Gating off: pick #1 (lower number, same priority)
         self.assertEqual(select_story(candidates, agent_gating='disabled')['number'], 1)
 
     def test_gating_enabled_requires_claude_ready(self):
         candidates = [
-            _issue(1, ['priority-high', 'status-ready']),             # not approved
-            _issue(2, ['priority-medium', 'status-ready', 'claude-ready']),
+            _issue(1, ['priority-high']),             # not approved
+            _issue(2, ['priority-medium', 'claude-ready']),
         ]
         # Gating on: #1 filtered out even though higher priority
         self.assertEqual(select_story(candidates, agent_gating='enabled')['number'], 2)
 
     def test_gating_enabled_nothing_approved_returns_none(self):
-        candidates = [_issue(1, ['priority-high', 'status-ready'])]
+        candidates = [_issue(1, ['priority-high'])]
         self.assertIsNone(select_story(candidates, agent_gating='enabled'))
 
 
@@ -223,22 +216,16 @@ class TestSelectionHonoursProjectLabelMap(unittest.TestCase):
         self.assertEqual(
             select_story(candidates, project_map=self.PROJECT_MAP)['number'], 10)
 
-    def test_parked_filter_uses_remapped_label(self):
+    def test_the_scope_filter_uses_remapped_labels(self):
+        """The one exclusion left that reads a label, so the one that can still
+        come up spuriously empty on a project that renamed its own."""
         candidates = [
-            _issue(1, ['P1', 'on-hold']),  # renamed status-parked -> excluded
-            _issue(2, ['P2', 'status-ready']),
-        ]
-        project_map = dict(self.PROJECT_MAP, **{'status-parked': 'on-hold'})
-        self.assertEqual(
-            select_story(candidates, project_map=project_map)['number'], 2)
-
-    def test_refinement_filter_uses_remapped_label(self):
-        candidates = [
-            _issue(1, ['P1', 'triage']),   # renamed needs-refinement → excluded
+            _issue(1, ['P1', 'needs-a-person']),   # renamed scope-human
             _issue(2, ['P2']),
         ]
+        project_map = dict(self.PROJECT_MAP, **{'scope-human': 'needs-a-person'})
         self.assertEqual(
-            select_story(candidates, project_map=self.PROJECT_MAP)['number'], 2)
+            select_story(candidates, project_map=project_map)['number'], 2)
 
     def test_agent_gating_uses_remapped_label(self):
         candidates = [
@@ -249,20 +236,23 @@ class TestSelectionHonoursProjectLabelMap(unittest.TestCase):
             select_story(candidates, agent_gating='enabled',
                          project_map=self.PROJECT_MAP)['number'], 2)
 
-    def test_remapped_project_does_not_come_up_empty(self):
-        """Regression: without map-aware filters this pool emptied to no-candidates."""
+    def test_a_remapped_lifecycle_label_no_longer_empties_the_pool(self):
+        """Regression, twice over. A lifecycle filter that did not know the
+        project's own names emptied this pool to no-candidates; then the
+        filter itself went, because the label is not what parks an issue —
+        the board column it sits in is."""
         candidates = [
             _issue(5, ['P1']),
-            _issue(6, ['P2', 'triage']),   # excluded by refinement
+            _issue(6, ['P2', 'triage']),   # renamed needs-refinement
         ]
         pool = select_pool(candidates, project_map=self.PROJECT_MAP)
-        self.assertEqual([c['number'] for c in pool], [5])
+        self.assertEqual([c['number'] for c in pool], [5, 6])
 
     def test_omitting_map_falls_back_to_default_names(self):
         """No project map → default literals still work (backwards compatible)."""
         candidates = [
-            _issue(1, ['priority-medium', 'status-ready']),
-            _issue(10, ['priority-high', 'status-ready']),
+            _issue(1, ['priority-medium']),
+            _issue(10, ['priority-high']),
         ]
         self.assertEqual(select_story(candidates)['number'], 10)
 
@@ -315,22 +305,22 @@ class TestBacklogMode(unittest.TestCase):
 
     def test_no_milestones_is_flat_mode(self):
         candidates = [
-            _issue(1, ['status-ready'], milestone=None),
-            _issue(2, ['status-ready'], milestone=None),
+            _issue(1, [], milestone=None),
+            _issue(2, [], milestone=None),
         ]
         self.assertEqual(detect_backlog_mode(candidates), 'flat')
 
     def test_any_milestone_triggers_sprint_mode(self):
         candidates = [
-            _issue(1, ['status-ready'], milestone='Sprint 3'),
-            _issue(2, ['status-ready'], milestone=None),
+            _issue(1, [], milestone='Sprint 3'),
+            _issue(2, [], milestone=None),
         ]
         self.assertEqual(detect_backlog_mode(candidates), 'sprint')
 
     def test_all_milestones_is_sprint_mode(self):
         candidates = [
-            _issue(1, ['status-ready'], milestone='Sprint 3'),
-            _issue(2, ['status-ready'], milestone='Sprint 3'),
+            _issue(1, [], milestone='Sprint 3'),
+            _issue(2, [], milestone='Sprint 3'),
         ]
         self.assertEqual(detect_backlog_mode(candidates), 'sprint')
 
@@ -339,9 +329,9 @@ class TestBacklogMode(unittest.TestCase):
 
     def test_sprint_filter_keeps_only_matching_milestone(self):
         candidates = [
-            _issue(1, ['status-ready'], milestone='Sprint 3'),
-            _issue(2, ['status-ready'], milestone='Sprint 4'),   # different sprint
-            _issue(3, ['status-ready'], milestone=None),
+            _issue(1, [], milestone='Sprint 3'),
+            _issue(2, [], milestone='Sprint 4'),   # different sprint
+            _issue(3, [], milestone=None),
         ]
         result = get_sprint_candidates(candidates, 'Sprint 3')
         self.assertEqual([c['number'] for c in result], [1])
@@ -349,9 +339,9 @@ class TestBacklogMode(unittest.TestCase):
     def test_sprint_selection_respects_priority_within_sprint(self):
         """After narrowing to a sprint, the priority sort still picks the best issue."""
         candidates = [
-            _issue(1, ['priority-low', 'status-ready'], milestone='Sprint 5'),
-            _issue(2, ['priority-high', 'status-ready'], milestone='Sprint 5'),
-            _issue(3, ['priority-critical', 'status-ready'], milestone='Sprint 6'),  # wrong sprint
+            _issue(1, ['priority-low'], milestone='Sprint 5'),
+            _issue(2, ['priority-high'], milestone='Sprint 5'),
+            _issue(3, ['priority-critical'], milestone='Sprint 6'),  # wrong sprint
         ]
         sprint_pool = get_sprint_candidates(candidates, 'Sprint 5')
         result = select_story(sprint_pool)
@@ -363,17 +353,17 @@ class TestSelectPool(unittest.TestCase):
 
     def test_pool_is_sorted_best_first(self):
         candidates = [
-            _issue(5, ['priority-low', 'status-ready']),
-            _issue(3, ['priority-critical', 'status-ready']),
-            _issue(4, ['priority-medium', 'status-ready']),
+            _issue(5, ['priority-low']),
+            _issue(3, ['priority-critical']),
+            _issue(4, ['priority-medium']),
         ]
         pool = select_pool(candidates)
         self.assertEqual([c['number'] for c in pool], [3, 4, 5])
 
     def test_pool_head_matches_select_story(self):
         candidates = [
-            _issue(2, ['priority-high', 'status-ready']),
-            _issue(1, ['priority-low', 'status-ready']),
+            _issue(2, ['priority-high']),
+            _issue(1, ['priority-low']),
         ]
         self.assertEqual(select_pool(candidates)[0]['number'], select_story(candidates)['number'])
 
@@ -429,7 +419,8 @@ def _audit_node(number, title='[STORY] Something', body='', parent=None,
     }
 
 
-_AUDIT_FIELDS = {'Priority': {}, 'Effort': {}, 'Classification': {}, 'Origin': {}}
+_AUDIT_FIELDS = {'Priority': {}, 'Effort': {}, 'Classification': {},
+                 'Origin': {}, 'Ownership': {}}
 
 
 def _gap_kinds(entry):
@@ -554,6 +545,7 @@ class TestMandatoryFieldCarryThrough(unittest.TestCase):
         {'field': {'name': 'Effort'}, 'name': 'M'},
         {'field': {'name': 'Classification'}, 'options': [{'name': 'New Feature'}]},
         {'field': {'name': 'Origin'}, 'name': 'Planned'},
+        {'field': {'name': 'Ownership'}, 'name': 'Code agent'},
     )
 
     def test_values_the_issue_already_holds_are_repeated_in_the_proposal(self):
@@ -619,13 +611,19 @@ class TestCurrentLifecycleLabel(unittest.TestCase):
     """Find the concrete lifecycle label to remove when claiming."""
 
     def test_finds_default_named_lifecycle_label(self):
-        labels = ['priority-high', 'status-ready', 'type-story']
-        self.assertEqual(current_lifecycle_label(labels, {}), 'status-ready')
+        labels = ['priority-high', 'status-blocked', 'type-story']
+        self.assertEqual(current_lifecycle_label(labels, {}), 'status-blocked')
 
     def test_respects_project_custom_name(self):
-        labels = ['custom-ready', 'priority-low']
-        project_map = {'status-ready': 'custom-ready'}
-        self.assertEqual(current_lifecycle_label(labels, project_map), 'custom-ready')
+        labels = ['on-hold', 'priority-low']
+        project_map = {'status-parked': 'on-hold'}
+        self.assertEqual(current_lifecycle_label(labels, project_map), 'on-hold')
+
+    def test_a_retired_ready_label_is_not_a_lifecycle_label(self):
+        """`status-ready` is gone. An issue still carrying one is carrying a
+        label nothing reads, and the claim path must not treat it as the state
+        to swap out — there is nothing to swap it for."""
+        self.assertIsNone(current_lifecycle_label(['status-ready'], {}))
 
     def test_returns_none_when_no_lifecycle_label_present(self):
         self.assertIsNone(current_lifecycle_label(['priority-high'], {}))
@@ -821,42 +819,30 @@ class TestProjectBoardParsing(unittest.TestCase):
         )
 
 
-class TestReadyGateParsing(unittest.TestCase):
-    """parse_claude_project must read `ready-gate` so the fast path queries the
-    right pool. A missed parse silently defaults to `label`, which on a `none`
-    or board gate fetches the wrong pool and reports a spurious no-candidates."""
+class TestReadyGateIsGone(unittest.TestCase):
+    """There is one pool now — the board's Backlog column — and no gate.
 
-    def _gate(self, value):
-        text = ("## Ready Gate\n\n"
-                "| Setting    | Value      |\n"
-                "| ---------- | ---------- |\n"
-                "| ready-gate | %s |\n" % value)
-        return parse_claude_project(text)['ready_gate']
+    A project that still carries a `## Ready Gate` section is out of date
+    rather than broken, so parsing ignores it entirely. Reading it would be
+    worse than ignoring it: the value would describe a pool that no longer
+    exists, and the most common value, `label`, described the opt-in model this
+    release removed.
+    """
 
-    def test_label_gate_parsed(self):
-        self.assertEqual(self._gate('`label`'), 'label')
+    GATE = '\n'.join([
+        '## Ready Gate',
+        '',
+        '| Setting    | Value   |',
+        '| ---------- | ------- |',
+        '| ready-gate | `label` |',
+    ])
 
-    def test_none_gate_parsed(self):
-        self.assertEqual(self._gate('`none`'), 'none')
+    def test_a_surviving_section_sets_nothing(self):
+        self.assertNotIn('ready_gate', parse_claude_project(self.GATE))
 
-    def test_board_column_gate_parsed(self):
-        self.assertEqual(self._gate('`board-column`'), 'board-column')
+    def test_a_project_without_the_section_is_no_different(self):
+        self.assertNotIn('ready_gate', parse_claude_project('## Identity\n'))
 
-    def test_value_without_backticks_parsed(self):
-        self.assertEqual(self._gate('none'), 'none')
-
-    def test_off_and_disabled_normalise_to_none(self):
-        """`off` / `disabled` are synonyms for "no gate"; they must normalise
-        to `none` so `wf pick` handles them on the fast path instead of
-        bouncing an unrecognised token to inline selection."""
-        self.assertEqual(self._gate('`off`'), 'none')
-        self.assertEqual(self._gate('off'), 'none')
-        self.assertEqual(self._gate('`disabled`'), 'none')
-        self.assertEqual(self._gate('disabled'), 'none')
-
-    def test_missing_section_defaults_to_label(self):
-        """No Ready Gate section → default `label`, never empty/None."""
-        self.assertEqual(parse_claude_project('## Identity\n')['ready_gate'], 'label')
 
     def test_label_map_resolves_purpose_keys(self):
         """The label map drives the purpose-key resolution the fast-path filters
@@ -918,35 +904,35 @@ class TestPriorityFieldOrdering(unittest.TestCase):
 
     def test_the_field_outranks_the_label(self):
         """#1 says low on its label and Urgent on its field: it goes first."""
-        candidates = [_issue(1, ['priority-low', 'status-ready']),
-                      _issue(2, ['priority-critical', 'status-ready'])]
+        candidates = [_issue(1, ['priority-low']),
+                      _issue(2, ['priority-critical'])]
         self.assertEqual(self._pool(candidates, {1: 'Urgent'}), [1, 2])
 
     def test_the_full_field_order_is_urgent_high_medium_low(self):
-        candidates = [_issue(n, ['status-ready']) for n in (1, 2, 3, 4)]
+        candidates = [_issue(n, []) for n in (1, 2, 3, 4)]
         order = {1: 'Low', 2: 'Medium', 3: 'High', 4: 'Urgent'}
         self.assertEqual(self._pool(candidates, order), [4, 3, 2, 1])
 
     def test_an_issue_with_no_field_value_falls_back_to_its_label(self):
         """Mixed backlogs are the normal case mid-migration, not an error."""
-        candidates = [_issue(1, ['status-ready']),                     # Urgent, field
-                      _issue(2, ['priority-critical', 'status-ready']),  # label only
-                      _issue(3, ['priority-low', 'status-ready'])]
+        candidates = [_issue(1, []),                                   # Urgent, field
+                      _issue(2, ['priority-critical']),  # label only
+                      _issue(3, ['priority-low'])]
         self.assertEqual(self._pool(candidates, {1: 'Medium'}), [2, 1, 3])
 
     def test_the_option_name_is_matched_case_insensitively(self):
-        candidates = [_issue(1, ['status-ready']), _issue(2, ['status-ready'])]
+        candidates = [_issue(1, []), _issue(2, [])]
         self.assertEqual(self._pool(candidates, {2: 'urgent'}), [2, 1])
 
     def test_an_unrecognised_option_falls_back_to_the_label(self):
         """An org that renamed its options is not silently unprioritised."""
-        candidates = [_issue(1, ['priority-low', 'status-ready']),
-                      _issue(2, ['priority-critical', 'status-ready'])]
+        candidates = [_issue(1, ['priority-low']),
+                      _issue(2, ['priority-critical'])]
         self.assertEqual(self._pool(candidates, {1: 'P0'}), [2, 1])
 
     def test_no_map_at_all_leaves_label_ordering_untouched(self):
-        candidates = [_issue(1, ['priority-low', 'status-ready']),
-                      _issue(2, ['priority-critical', 'status-ready'])]
+        candidates = [_issue(1, ['priority-low']),
+                      _issue(2, ['priority-critical'])]
         self.assertEqual(self._pool(candidates, None), [2, 1])
 
     def test_every_field_option_the_tooling_writes_has_a_rank(self):
@@ -1588,7 +1574,8 @@ class TestBatchEntries(unittest.TestCase):
 
 # ── issue audit ──────────────────────────────────────────────────────────────
 
-_AUDIT_FIELDS = {'Priority': {}, 'Effort': {}, 'Classification': {}, 'Origin': {}}
+_AUDIT_FIELDS = {'Priority': {}, 'Effort': {}, 'Classification': {},
+                 'Origin': {}, 'Ownership': {}}
 
 
 def _node(**over):
@@ -1637,7 +1624,8 @@ class TestAuditIssue(unittest.TestCase):
         issue = _node(issueFieldValues={'nodes': [
             _field_value('Priority', 'High'), _field_value('Effort', 'Medium'),
             _field_value('Classification', ['New Feature']),
-            _field_value('Origin', 'Development')]})
+            _field_value('Origin', 'Development'),
+            _field_value('Ownership', 'Code agent')]})
         self.assertEqual(_kinds(wf_core.audit_issue(issue, _AUDIT_FIELDS)), [])
 
     def test_an_untyped_issue_is_a_gap(self):
@@ -1646,7 +1634,19 @@ class TestAuditIssue(unittest.TestCase):
 
     def test_every_org_field_with_no_value_is_a_gap(self):
         result = wf_core.audit_issue(_node(), _AUDIT_FIELDS)
-        self.assertEqual(_kinds(result), ['missing-field'] * 4)
+        self.assertEqual(_kinds(result), ['missing-field'] * 5)
+
+    def test_ownership_is_backfilled_rather_than_left_to_a_person(self):
+        """Every other mandatory field can fall back to a placeholder. This
+        one cannot: it has an answer for every issue, and a backlog that gained
+        the field yesterday would otherwise need a person on every issue."""
+        code = wf_core.audit_issue(_node(), _AUDIT_FIELDS)
+        self.assertEqual(code['proposed']['fields']['field-ownership'], 'Code agent')
+        human = wf_core.audit_issue(
+            _node(title='[Manual] rotate the key',
+                  labels={'nodes': [{'name': 'human-required'}]}),
+            _AUDIT_FIELDS)
+        self.assertEqual(human['proposed']['fields']['field-ownership'], 'Human')
 
     def test_a_field_the_org_does_not_define_is_not_a_gap(self):
         """The audit reports against the org's real shape, not a wish list."""
@@ -1760,7 +1760,8 @@ class TestAuditIssue(unittest.TestCase):
                           _field_value('Priority', 'High'),
                           _field_value('Effort', 'Medium'),
                           _field_value('Classification', ['Bug Fix']),
-                          _field_value('Origin', 'Development')]})
+                          _field_value('Origin', 'Development'),
+                          _field_value('Ownership', 'Code agent')]})
         result = wf_core.audit_issue(issue, dict(_AUDIT_FIELDS, **{
             'Start date': {}, 'Target date': {}}))
         self.assertEqual(_kinds(result), [])
@@ -1934,18 +1935,23 @@ class TestLabelDriftFindings(unittest.TestCase):
         self.assertIn('priority:medium', findings[0]['detail'])
 
     def test_a_dropped_prefix_is_a_warning(self):
-        findings = wf_core.label_drift_findings(['ready', 'status-ready'])
+        findings = wf_core.label_drift_findings(['blocked', 'status-blocked'])
         self.assertEqual(_checks(findings), ['label-drift'])
-        self.assertIn('status-ready', findings[0]['fix'])
+        self.assertIn('status-blocked', findings[0]['fix'])
+
+    def test_a_retired_label_cannot_drift(self):
+        """`status-ready` left the map in 9.0.0, so the pair it used to form
+        with `ready` is now two labels the workflow has no opinion about."""
+        self.assertEqual(wf_core.label_drift_findings(['ready', 'status-ready']), [])
 
     def test_drift_never_fails_because_the_fix_deletes_data(self):
         findings = wf_core.label_drift_findings(
-            ['ready', 'status-ready', 'priority:high', 'priority-high'])
+            ['blocked', 'status-blocked', 'priority:high', 'priority-high'])
         self.assertEqual(set(_levels(findings)), {wf_core.WARNING})
 
     def test_two_labels_that_only_look_alike_are_left_alone(self):
         self.assertEqual(wf_core.label_drift_findings(
-            ['status-ready', 'status-parked', 'documentation']), [])
+            ['status-blocked', 'status-parked', 'documentation']), [])
 
 
 class TestPinnedFieldFindings(unittest.TestCase):
@@ -2028,8 +2034,8 @@ class TestTypedIssueWriteShape(unittest.TestCase):
 
     def test_a_type_label_is_dropped_and_the_rest_kept_in_order(self):
         kept, dropped = wf_core.strip_type_labels(
-            ['priority-high', 'type-bug', 'status-ready'])
-        self.assertEqual(kept, ['priority-high', 'status-ready'])
+            ['priority-high', 'type-bug', 'status-parked'])
+        self.assertEqual(kept, ['priority-high', 'status-parked'])
         self.assertEqual(dropped, ['type-bug'])
 
     def test_a_renamed_type_label_is_dropped_too(self):
@@ -2044,7 +2050,7 @@ class TestTypedIssueWriteShape(unittest.TestCase):
         self.assertEqual(kept, ['claude-authored'])
 
     def test_labels_with_no_type_among_them_are_untouched(self):
-        labels = ['priority-low', 'status-ready']
+        labels = ['priority-low', 'status-parked']
         kept, dropped = wf_core.strip_type_labels(labels)
         self.assertEqual(kept, labels)
         self.assertEqual(dropped, [])
@@ -2257,7 +2263,7 @@ class TestReapVerdict(unittest.TestCase):
         self.assertEqual(self._issue(state='CLOSED')[0], wf_core.REAP)
 
     def test_an_issue_whose_lifecycle_label_moved_on_frees_its_claim(self):
-        verdict, reason = self._issue(labels=['status-ready'])
+        verdict, reason = self._issue(labels=['status-parked'])
         self.assertEqual(verdict, wf_core.REAP)
         self.assertIn('in progress', reason)
 
@@ -2301,9 +2307,23 @@ class TestReapSummary(unittest.TestCase):
 class TestBoardColumnNames(unittest.TestCase):
 
     def test_every_lifecycle_state_has_a_column(self):
-        for key in ('col-backlog', 'col-ready', 'col-in-progress',
-                    'col-in-review', 'col-blocked', 'col-done'):
+        for key in ('col-backlog', 'col-in-progress', 'col-in-review',
+                    'col-blocked', 'col-non-code', 'col-refinement',
+                    'col-parked', 'col-attention', 'col-done'):
             self.assertIn(key, wf_core.BOARD_COLUMN_NAMES)
+
+    def test_every_parked_lane_pairs_with_a_lifecycle_label(self):
+        """The board is where state lives now, so a lane with no label to
+        mirror, or a label with no lane to sit in, is a gap the picker sees."""
+        for column, lifecycle in wf_core.COLUMN_LIFECYCLE_PAIRS.items():
+            self.assertIn(column, wf_core.BOARD_COLUMN_NAMES)
+            self.assertIn(lifecycle, wf_core.LIFECYCLE_KEYS)
+        self.assertEqual(sorted(wf_core.COLUMN_LIFECYCLE_PAIRS.values()),
+                         sorted(wf_core.LIFECYCLE_KEYS))
+
+    def test_the_pool_column_is_backlog(self):
+        self.assertEqual(wf_core.POOL_COLUMN, 'col-backlog')
+        self.assertNotIn('col-ready', wf_core.BOARD_COLUMN_NAMES)
 
     def test_each_key_resolves_to_the_name_the_rest_of_the_plugin_uses(self):
         """The values are the contract, not just the keys.
@@ -2318,11 +2338,13 @@ class TestBoardColumnNames(unittest.TestCase):
         """
         self.assertEqual(wf_core.BOARD_COLUMN_NAMES, {
             'col-backlog':     'Backlog',
-            'col-ready':       'Ready',
             'col-in-progress': 'In Progress',
             'col-in-review':   'In Review',
             'col-blocked':     'Blocked',
             'col-non-code':    'Non-code',
+            'col-refinement':  'Needs refinement',
+            'col-parked':      'Parked',
+            'col-attention':   'Needs attention',
             'col-done':        'Done',
         })
 
@@ -2476,11 +2498,27 @@ class TestWorkScope(unittest.TestCase):
         self.assertEqual(wf_core.board_column_for(wf_core.SCOPE_CODE, []),
                          'col-backlog')
 
-    def test_the_non_code_label_takes_an_issue_out_of_the_pool(self):
+    def test_a_scope_label_takes_an_issue_out_of_the_pool(self):
         """The teeth. Everything else here is bookkeeping if this does not hold."""
+        pool = select_pool([{'number': 1, 'title': 'a', 'labels': ['human-required']},
+                            {'number': 2, 'title': 'b', 'labels': ['browser-agent']},
+                            {'number': 3, 'title': 'c', 'labels': []}])
+        self.assertEqual([c['number'] for c in pool], [3])
+
+    def test_the_ownership_field_overrides_the_labels(self):
+        """The field is the structured answer, so an issue still carrying a
+        stale scope label but owned by the code agent is pickable."""
+        pool = select_pool([{'number': 1, 'title': 'a', 'labels': ['human-required']},
+                            {'number': 2, 'title': 'b', 'labels': []}],
+                           ownership_map={1: 'Code agent', 2: 'Human'})
+        self.assertEqual([c['number'] for c in pool], [1])
+
+    def test_the_lifecycle_label_alone_no_longer_excludes(self):
+        """`status-non-code` says which lane a person sees it in. It is not
+        what keeps a code agent off it — the owner is."""
         pool = select_pool([{'number': 1, 'title': 'a', 'labels': ['status-non-code']},
                             {'number': 2, 'title': 'b', 'labels': []}])
-        self.assertEqual([c['number'] for c in pool], [2])
+        self.assertEqual([c['number'] for c in pool], [1, 2])
 
     def test_the_board_has_a_column_for_it(self):
         self.assertEqual(wf_core.BOARD_COLUMN_NAMES['col-non-code'], 'Non-code')

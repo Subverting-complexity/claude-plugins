@@ -64,7 +64,7 @@ The title belongs in GitHub's title field. Do not repeat it in the body.
 
 An issue says what kind of work it is **once**, through GitHub's native issue type (`Bug`, `User Story`, `Chore`, `Feature`, `Epic`, …) and the org's `Classification` field. Not through a title prefix, and not through a `type-*` label — neither is written any more, and `wf pick` reads neither. A spec that still names one has it stripped on the way in.
 
-Lifecycle state (`status-ready`, `needs-refinement`, `status-blocked`, `status-non-code`) and priority stay on labels: GitHub has no native field for the first, and the second is dual-tracked with the org's `Priority` field.
+Lifecycle state (`needs-refinement`, `status-blocked`, `status-non-code`) and priority stay on labels: GitHub has no native field for the first, and the second is dual-tracked with the org's `Priority` field. The lifecycle label describes the state for a person; the board column and the structured fields are what anything reads.
 
 `[Manual]` and `[Browser]` are not classifications and are not covered by that rule. They say who has to do the work, not what kind of work it is, and nothing native records either. See **Scope: one issue, one party** below.
 
@@ -94,7 +94,7 @@ Both scoped parties take three things together, all of them or none:
 
 1. **The prefix**, exactly as spelled above, at the very start, followed by one space. `[Manual] Grant the Cloudflare GitHub App access to the org`. `[Browser] Set the authorised redirect URIs on the web OAuth client`.
 2. **The scope label**, `human-required` or `browser-agent`, resolved through the project's label map. The two are mutually exclusive.
-3. **The `status-non-code` lifecycle label**, in place of `status-ready` or `needs-refinement`. This is the one that does the work: selection reads lifecycle labels, so `status-non-code` is what keeps the issue out of the pool, and it puts the card in the board's Non-code column. The prefix and the scope label are for a person reading a list.
+3. **The `Ownership` field**, set to `Browser agent` or `Human`. This is the one that does the work: selection reads the field first and the scope label as its fallback, so between them they are what keeps the issue out of the code agent's pool. The `status-non-code` label and the board's Non-code column follow from it, and the prefix is for a person reading a list.
 
    **Not `status-blocked`.** That means one thing only — an open native blocked-by edge — and `wf unblock` releases anything carrying it once those edges close. Scoped work parked there is one sweep away from being handed to an agent that cannot do it, which is exactly what happened: both issues the first sweep would have released were `[Manual]` device passes whose blockers had closed.
 

@@ -30,7 +30,7 @@ This is opt-in and **off by default**. Merging a PR is otherwise forbidden (see 
 
 What differs is only naming. That caller records its own head SHA and posts its own consolidated review comment, so where this file says "the SHA you reviewed" or "the review comment from Step 9", its equivalents are the ones its own Phase 8 or Phase 9 produced. It carries that list of substitutions itself, and nothing here needs to read them, so the dependency runs one way only.
 
-When all conditions hold, drive the PR to a merged state. Conflicts and red CI are **blockers to clear, not reasons to give up** — fix them on the branch (the same auto-fix discipline as Step 7: fix concrete, objectively correct problems; never guess at changes that need product or design judgment), then merge. You are already on the PR branch from Step 3. Whenever a conflict or a failing check is genuinely **not yours to fix**, do not just pause for a human: file it to the board with `/github-workflow:report-issue` (autonomous, `status-ready`, correct type, referencing this PR) so the fix is picked up automatically, then leave `approved` and exit. The fallbacks below say where.
+When all conditions hold, drive the PR to a merged state. Conflicts and red CI are **blockers to clear, not reasons to give up** — fix them on the branch (the same auto-fix discipline as Step 7: fix concrete, objectively correct problems; never guess at changes that need product or design judgment), then merge. You are already on the PR branch from Step 3. Whenever a conflict or a failing check is genuinely **not yours to fix**, do not just pause for a human: file it to the board with `/github-workflow:report-issue` (autonomous, no lifecycle label, correct type, referencing this PR) so the fix is picked up automatically, then leave `approved` and exit. The fallbacks below say where.
 
 1. **Confirm the PR is still what you reviewed.** Re-read its state:
    ```bash
@@ -41,7 +41,7 @@ When all conditions hold, drive the PR to a merged state. Conflicts and red CI a
 
 2. **Resolve merge conflicts if there are any.** When `mergeable` is `CONFLICTING`, do not bail: load `references/conflict-resolution.md` and follow it, with the PR branch (already checked out) as the working branch and `<baseRef>` as the incoming branch. On success, update your recorded SHA to the new `HEAD` and append a line to the review comment noting the conflict resolution.
 
-   If the reference **escalates** (it aborted the merge because the resolution genuinely needs human judgment), file the rebase to the board with `/github-workflow:report-issue` (autonomous, `status-ready`, referencing this PR and the conflicting files) so it is picked up automatically — no human approval needed. Post a one-line comment naming the filed issue, leave the `approved` verdict, and exit. Do not guess at the merge.
+   If the reference **escalates** (it aborted the merge because the resolution genuinely needs human judgment), file the rebase to the board with `/github-workflow:report-issue` (autonomous, no lifecycle label, referencing this PR and the conflicting files) so it is picked up automatically — no human approval needed. Post a one-line comment naming the filed issue, leave the `approved` verdict, and exit. Do not guess at the merge.
 
 3. **Fix a failing pipeline if there is one.**
 
@@ -131,7 +131,7 @@ When all conditions hold, drive the PR to a merged state. Conflicts and red CI a
      **Fallback — only when the failure is not yours to fix** (flaky or
      infrastructure failures outside the diff, or a fix that needs design
      judgment): file the failing check to the board with
-     `/github-workflow:report-issue` (autonomous, `status-ready`,
+     `/github-workflow:report-issue` (autonomous, no lifecycle label,
      referencing this PR and naming the check) so the fix is picked up
      automatically — no human approval needed. Post a one-line comment
      naming the filed issue, leave `approved`, and exit. Never force a

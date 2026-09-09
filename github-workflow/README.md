@@ -102,8 +102,8 @@ The plugin supports two backlog styles, auto-detected from milestones:
 ### Flat backlog
 
 - No milestones (or milestones without due dates).
-- Issues are picked by priority label, then issue number.
-- A `status-ready` label gates what's eligible for pickup (configurable).
+- Issues are picked by priority, then effort, then issue number.
+- The board's **Backlog** column is the pool: an unassigned issue sitting in it is available.
 
 Both modes use the same commands and skill — the pick logic adapts.
 
@@ -115,7 +115,7 @@ Instead of hardcoding label names, the plugin maps **purposes** to your reposito
 | Purpose          | Label              |
 | ---------------- | ------------------ |
 | priority-high    | `P1`               |
-| status-ready     | `status:ready`     |
+| status-blocked   | `status:blocked`   |
 | claude-authored  | `claude:authored`  |
 ```
 
@@ -144,12 +144,18 @@ The board is the **board-side mirror** of the issue lifecycle labels. Every comm
 
 | Lifecycle label | Board column |
 | --------------- | ------------ |
-| `status-in-progress` (and `status-needs-attention`) | In Progress |
+| (none — available) | Backlog |
+| `status-in-progress` | In Progress |
 | `status-in-review` | In Review |
-| `status-blocked` (and `status-parked`) | Blocked |
-| `status-ready` | Ready |
+| `status-blocked` | Blocked |
+| `status-non-code` | Non-code |
+| `needs-refinement` | Needs refinement |
+| `status-parked` | Parked |
+| `status-needs-attention` | Needs attention |
 
-When a board is configured, the three active columns must exist: the setup wizard creates any that are missing (via `updateProjectV2Field`), and preflight raises a `board-columns-incomplete` error if one is absent. A project with no board configured skips all of this silently.
+**A board is required, and so is its Backlog column.** That column *is* the pick pool: `pick` and `candidates` read it and nothing else, so an issue with no card on the board cannot be selected — which is why every issue the plugin creates or updates is placed. The setup wizard creates any missing column (via `updateProjectV2Field`); preflight fails the run when the board or its Backlog column is absent, and warns for every other missing lane.
+
+The lifecycle labels mirror the column so a person reading the issues list can see the state. Nothing selects on them.
 
 ## Auto-merge
 

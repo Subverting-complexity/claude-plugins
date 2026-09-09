@@ -339,7 +339,7 @@ After pushing fixes, update the recorded commit SHA to the new `HEAD`.
 
 #### 7e — File anything you could not fix to the board
 
-For every problem you detected but did **not** fix on the branch, run `/github-workflow:report-issue` (autonomous — do not pause for confirmation). Apply the actual issue type (bug, security, architecture, or tech debt), set `status-ready`, and in the body name the source PR (`Detected during review of #<pr-number>`) and the `file:line` location.
+For every problem you detected but did **not** fix on the branch, run `/github-workflow:report-issue` (autonomous — do not pause for confirmation). Apply the actual issue type (bug, security, architecture, or tech debt), leave the lifecycle label off so it lands in Backlog available, and in the body name the source PR (`Detected during review of #<pr-number>`) and the `file:line` location.
 
 Record each created issue's number, title, and type — Step 9 lists them under "Issues remaining (filed to board)" and the **Final report format** names them. Filing a non-blocking issue does **not** force a "Changes Requested" verdict.
 
@@ -467,7 +467,7 @@ If anything goes wrong (gh commands fail, branch checkout fails, a changed file 
 2. Remove the `reviewing` state label.
 3. Apply the `failed` review-state label (purpose key `failed`, default name `review-failed`).
 4. Post a comment explaining what failed, including the review footer so the failure is tied to a specific commit and future runs will retry.
-5. **If the failure represents fixable work** rather than a transient infrastructure problem (for example the PR is too large to review in one pass and should be split, or a structural issue blocks review), file it to the board best-effort with `/github-workflow:report-issue` (autonomous, `status-ready`, referencing this PR) so it is picked up automatically — no human approval needed. Skip this for transient failures (auth, network, rate limit) where filing would also fail.
+5. **If the failure represents fixable work** rather than a transient infrastructure problem (for example the PR is too large to review in one pass and should be split, or a structural issue blocks review), file it to the board best-effort with `/github-workflow:report-issue` (autonomous, no lifecycle label, referencing this PR) so it is picked up automatically — no human approval needed. Skip this for transient failures (auth, network, rate limit) where filing would also fail.
 6. Exit immediately. Do not attempt to recover, retry, or continue.
 
 ---
@@ -495,6 +495,6 @@ Rationale files (maintainers only — not read at runtime): `docs/rationale/code
 - **Do not close a PR** except to reconcile duplicates in Step 2b, per `references/duplicate-reconciliation.md` — the one sanctioned close. Never close a PR for any other reason, and never in read-only mode.
 - Do not make discretionary refactors or stylistic changes.
 - Push fixes for all concrete, objectively wrong problems — both blocking and non-blocking — before approving or merging. Non-blocking cleanups are no longer deferred for budget.
-- File any problem you cannot fix in place — blocking, non-blocking, an unresolvable conflict, or a failing check that is not yours to fix — to the board with `/github-workflow:report-issue` (autonomous, `status-ready`, correct type) so it is picked up automatically. No human approval is needed, and no detected problem is ever silently dropped.
+- File any problem you cannot fix in place — blocking, non-blocking, an unresolvable conflict, or a failing check that is not yours to fix — to the board with `/github-workflow:report-issue` (autonomous, no lifecycle label, correct type) so it is picked up automatically. No human approval is needed, and no detected problem is ever silently dropped.
 - Report merged PRs as `Approved and merged PR #<number>: <title>` followed by the **Changed** and **Added to the board** outline.
 - Handle one PR per invocation (rework + re-review counts as one), then exit.

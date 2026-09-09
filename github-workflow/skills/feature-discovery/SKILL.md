@@ -347,7 +347,7 @@ When the user approves the plan, offer to create the stories as GitHub issues. I
    - Add `"milestone": "{title}"` to an entry in sprint mode. It must name an open milestone.
 2. Name every dependency in the entry's `blocked_by`. Where the dependency is another entry in the same spec and has no number yet, reference it by `key` and `issue-apply` resolves it once both exist.
 3. Apply ready state based on dependency state, through each entry's `labels`:
-   - Stories with no unresolved dependencies (DAG roots) → mark as ready per the project's `ready-gate` setting: the `status-ready` label and/or a move to the "Ready" board column.
+   - Stories with no unresolved dependencies (DAG roots) → leave them with no lifecycle label, in the Backlog column. That is what available means; `issue-apply` puts them there itself.
    - Stories whose dependencies are not yet closed → do NOT mark as ready. `issue-apply` applies `status-blocked` from the edges it just wrote, so there is nothing to add by hand.
    - Deferred stories (see "Deferred speccing") → `needs-refinement` label.
 4. **Read the exit code.** **0** created them, and every issue number is written back into the spec file, so a re-run after a partial failure completes the remainder rather than filing duplicates. **21** (`no-capabilities`) means the org defines no types or fields — report that the stories could not be classified rather than filing them unclassified by hand. **22** means the spec is wrong (an unknown label, a milestone that is not open, a missing mandatory field), so fix it and re-run. **23** and **24** mean the issues exist but some metadata did not land, so name what failed and carry on.

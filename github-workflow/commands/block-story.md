@@ -14,12 +14,12 @@ Requires: a story in progress with a known blocker.
 
 An issue is **blocked** when it cannot make progress because of something outside its own control: another unfinished issue, an external decision, missing access or credentials, or an upstream fix. Blocked is **not** "I gave up" and **not** "this needs more spec" — that second case is `needs-refinement`, a different state.
 
-A blocked issue carries the `status-blocked` lifecycle label (so it is visibly blocked in the issues list, not silently indistinguishable from the backlog) and is kept out of the pick pool by the absence of `status-ready`.
+A blocked issue sits in the board's **Blocked** column, which is what keeps it out of the pick pool — the pool is the Backlog column, and the issue is no longer in it. It also carries the `status-blocked` lifecycle label, so the state is visible to anyone reading the issues list rather than only on the board.
 
 **How it becomes unblocked:**
 
 - **Automatically** — when the blocker is another issue recorded as a native blocked-by edge, `wf unblock` detects that every one of them is closed, removes `status-blocked`, moves the card to Backlog, and comments. The issue re-enters the pick pool. An issue with no edge is never released this way, which is deliberate: most blocked issues are waiting on the world rather than on an issue.
-- **Manually** — for non-issue blockers (a decision, access granted), a human removes `status-blocked` and applies `status-ready`.
+- **Manually** — for non-issue blockers (a decision, access granted), a human removes `status-blocked` and moves the card back to Backlog. No label replaces it: an issue in Backlog with no lifecycle label is exactly what available means.
 
 ## Preflight
 
@@ -88,7 +88,7 @@ The claim-ref delete is idempotent — ignore an error if the ref is already gon
 
 ### 4. Move the issue to the blocked state
 
-Move the issue to the `status-blocked` lifecycle label, removing whatever lifecycle label it currently has (`status-in-progress`, `status-ready`, etc.) so exactly one state is present. Resolve both names by purpose key through `templates/default-labels.md`:
+Move the issue to the `status-blocked` lifecycle label, removing whatever lifecycle label it currently has (`status-in-progress`, `needs-refinement`, etc.) so at most one state is present. Resolve both names by purpose key through `templates/default-labels.md`:
 
 ```
 gh issue edit {number} --repo {org}/{repo} \
@@ -97,11 +97,11 @@ gh issue edit {number} --repo {org}/{repo} \
 
 After applying, verify per `templates/default-labels.md` (read back the labels; guarded create-if-missing without `--force` if the label is absent, then retry once).
 
-`status-blocked` keeps the issue out of the pick pool **and** makes the blocked state visible in the issues list. The blocker itself lives in the native blocked-by edge; the Step 2 comment says why in words.
+The label makes the blocked state visible in the issues list; the Step 5 board move is what takes the issue out of the pick pool. The blocker itself lives in the native blocked-by edge; the Step 2 comment says why in words.
 
 **Use `status-non-code` instead when the blocker is the work's own nature** — a browser console, or a person with a device. `status-blocked` means an open edge and `wf unblock` releases it when that edge closes, which for scoped work would hand it to an agent that cannot do it.
 
-If `ready-gate` is `board-column` or `both`, also move the issue out of the "Ready" board column — to the **Blocked** column (`col-blocked`), the column paired with `status-blocked` in `templates/default-labels.md` — so the board agrees with the label. (This is the same move as Step 5; under a board ready-gate it is required rather than best-effort.)
+The board move in Step 5 is the part that matters, and it is not optional: until the card leaves Backlog the issue is still in the pool, whatever label it carries.
 
 These commands are idempotent — a label remove no-ops if the label is not present.
 
@@ -111,7 +111,7 @@ These commands are idempotent — a label remove no-ops if the label is not pres
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-blocked
 ```
 
-`col-blocked` is the column paired with `status-blocked` per `templates/default-labels.md`. The command decides for itself whether a board is configured (silent no-op when not), verifies the board's identity before writing, and adds the issue if it is missing. It **always exits 0** — a board mirrors the labels and is never the source of truth — so read `moved` and `reason`, and report a failure rather than stopping for one.
+`col-blocked` is the column paired with `status-blocked` per `templates/default-labels.md`. The command verifies the board's identity and resolves the column **before** it adds the card, so a column the board does not have costs one query and writes nothing. It **always exits 0**, so read `moved` and `reason` — but a move that did not happen means the issue is still in the pool, so say so plainly rather than treating it as cosmetic.
 
 ### 6. Reconcile the working tree to clean
 

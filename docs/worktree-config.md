@@ -156,7 +156,7 @@ git fetch origin refs/claims/issue-42 && git log -1 FETCH_HEAD
 git push origin :refs/claims/issue-42
 ```
 
-Deleting a claim ref never touches the issue's assignment or labels — those remain the source of truth for who owns the work. If you also want to hand the item back to the pool, clear the human-visible markers too: remove the assignee and move the lifecycle label back to `status-ready` (or `status-blocked` if it is genuinely blocked).
+Deleting a claim ref never touches the issue's assignment or labels — those remain the source of truth for who owns the work. If you also want to hand the item back to the pool, remove the assignee, drop the `status-in-progress` label, and move the card back to the Backlog column — that last move is what actually returns it, because Backlog is the pool. Move it to Blocked instead if it is genuinely blocked.
 
 ---
 

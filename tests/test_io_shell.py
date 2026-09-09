@@ -27,6 +27,7 @@ Run standalone (`python3 tests/test_io_shell.py`) or via `run-tests.sh` /
 """
 
 import contextlib
+import copy
 import io
 import json
 import os
@@ -51,6 +52,9 @@ sys.path.insert(
 import wf  # noqa: E402
 import wf_core  # noqa: E402  (the batch-size cap)
 
+# Sentinel for a keyword whose default is a value, so `None` stays meaningful.
+_UNSET = object()
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -60,7 +64,13 @@ def _capture(func, *args, **kwargs):
     Every command ends in `emit()`, which writes a single JSON object to stdout
     and calls `sys.exit(code)`. Redirect stdout, catch the SystemExit, and parse
     the captured object so a test can assert on both the status and the code.
+
+    The board's Status field is cached for the life of a `wf` process, which in
+    production is one command. In here it is one test, so the cache is cleared
+    on the way in rather than letting one test's fake board answer the next
+    test's question.
     """
+    wf._BOARD_FIELD_CACHE.clear()
     buf = io.StringIO()
     code = None
     with contextlib.redirect_stdout(buf):
@@ -86,10 +96,14 @@ def _candidates_args(*argv):
 _BASE_CFG = {
     'org': 'acme', 'repo': 'widgets', 'default_branch': 'main',
     'branch_convention': 'feature/{number}/{short-desc}',
-    'labels': {}, 'review_labels': {}, 'ready_gate': 'label',
+    'labels': {}, 'review_labels': {}, 'fields': {},
     'agent_gating': 'disabled', 'type_capable': False,
-    'board': {'project_node_id': None, 'project_title': None,
-              'status_field_id': None, 'start_date_field_id': None, 'columns': {}},
+    # A board is no longer optional for selection: the pool *is* its Backlog
+    # column. The baseline carries one so every picker test exercises the real
+    # path; the tests that care about a board-less project override it.
+    'board': {'project_node_id': 'PVT_base', 'project_title': None,
+              'status_field_name': 'Status', 'status_field_id': None,
+              'start_date_field_id': None, 'columns': {}},
 }
 
 
@@ -100,12 +114,13 @@ def _cfg(**over):
     return cfg
 
 
-def _candidate(number, labels=('status-ready',), milestone=None):
+def _candidate(number, labels=(), milestone=None):
     return {'number': number, 'title': 'issue %d' % number,
             'labels': list(labels), 'body': '', 'milestone': milestone, 'url': ''}
 
 
-def _facets(types=None, priority=None, classification=None):
+def _facets(types=None, priority=None, classification=None, effort=None,
+            ownership=None):
     """The `load_issue_facets` return shape; every map empty by default.
 
     `cmd_pick` and `cmd_candidates` read the org's native types and field
@@ -114,7 +129,8 @@ def _facets(types=None, priority=None, classification=None):
     labels exactly as it always was.
     """
     return {'types': types or {}, 'priority': priority or {},
-            'classification': classification or {}}
+            'classification': classification or {}, 'effort': effort or {},
+            'ownership': ownership or {}}
 
 
 def _git_available():
@@ -165,20 +181,17 @@ class TestPickStatusContract(unittest.TestCase):
         # Each lost claim is reported as a side effect.
         self.assertEqual({s['issue'] for s in payload['side_effects']}, {1, 2})
 
-    def test_board_column_gate_without_board_emits_error(self):
-        """board-column gate with no project-node-id configured → error."""
-        self._use_cfg(_cfg(ready_gate='board-column'))
+    def test_a_project_with_no_board_cannot_pick(self):
+        """The pool is the board's Backlog column, so no board means no pool.
+
+        An error rather than `no-candidates`: those look identical to the
+        caller, and one of them is a project nobody finished configuring.
+        """
+        self._use_cfg(_cfg(board={}))
         code, payload = _capture(wf.cmd_pick, _pick_args())
         self.assertEqual(code, wf.EXIT_ENV)
         self.assertEqual(payload['status'], 'error')
-
-    def test_both_gate_without_board_emits_error(self):
-        """both gate with no project-node-id configured → error."""
-        self._use_cfg(_cfg(ready_gate='both'))
-        with mock.patch.object(wf, 'gh_json', return_value=(True, [], '')):
-            code, payload = _capture(wf.cmd_pick, _pick_args())
-        self.assertEqual(code, wf.EXIT_ENV)
-        self.assertEqual(payload['status'], 'error')
+        self.assertIn('project-node-id', payload['reason'])
 
     def test_type_capable_feature_mode_uses_native_types(self):
         """feature mode on a type-capable org filters by native issueType."""
@@ -560,7 +573,9 @@ class TestIssueFacets(unittest.TestCase):
         with mock.patch.object(wf, 'gh_graphql', return_value=(False, None, 'boom')):
             with contextlib.redirect_stderr(io.StringIO()) as errs:
                 facets = wf.load_issue_facets(_cfg())
-        self.assertEqual(facets, {'types': {}, 'priority': {}, 'classification': {}})
+        self.assertEqual(facets, {'types': {}, 'priority': {},
+                                  'classification': {}, 'effort': {},
+                                  'ownership': {}})
         self.assertIn('ordering and typing this pool by labels', errs.getvalue())
 
     def test_a_renamed_field_is_read_under_the_project_name(self):
@@ -572,7 +587,7 @@ class TestIssueFacets(unittest.TestCase):
         self.assertEqual(facets['priority'], {1: 'High'})
 
 
-def _board_item(number, status='Ready', labels=(), assignee=None, state='OPEN'):
+def _board_item(number, status='Backlog', labels=(), assignee=None, state='OPEN'):
     return {'fieldValueByName': {'name': status} if status else None,
             'content': {'number': number, 'title': 'story %d' % number,
                         'body': '', 'state': state, 'url': '',
@@ -582,10 +597,17 @@ def _board_item(number, status='Ready', labels=(), assignee=None, state='OPEN'):
                                                 if assignee else [])}}}
 
 
-def _board_page(items, has_next=False, cursor=None):
-    return {'node': {'items': {
-        'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
-        'nodes': list(items)}}}
+_BOARD_OPTIONS = ('Backlog', 'In Progress', 'In Review', 'Blocked',
+                  'Non-code', 'Needs refinement', 'Parked', 'Needs attention',
+                  'Done')
+
+
+def _board_page(items, has_next=False, cursor=None, options=_BOARD_OPTIONS):
+    return {'node': {
+        'field': {'options': [{'name': n} for n in options]},
+        'items': {
+            'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
+            'nodes': list(items)}}}
 
 
 class TestSpecBodyFile(unittest.TestCase):
@@ -635,7 +657,7 @@ class TestTypedCreateInput(unittest.TestCase):
     """
 
     CTX = {'repo_id': 'R_1', 'labels': {'type-bug': 'L_type', 'priority-high':
-                                        'L_pri', 'status-ready': 'L_ready'}}
+                                        'L_pri', 'status-parked': 'L_parked'}}
     CAPS = {'type_map': {'Bug': 'IT_bug'}}
 
     def _build(self, entry, native_type='Bug', cfg=None):
@@ -648,13 +670,13 @@ class TestTypedCreateInput(unittest.TestCase):
     def test_a_type_label_is_not_written_when_the_type_says_it(self):
         args, dropped = self._build(
             {'title': 'Crash on save',
-             'labels': ['type-bug', 'priority-high', 'status-ready']})
-        self.assertEqual(args['labelIds'], sorted(['L_pri', 'L_ready']))
+             'labels': ['type-bug', 'priority-high', 'status-parked']})
+        self.assertEqual(args['labelIds'], sorted(['L_pri', 'L_parked']))
         self.assertEqual(dropped, ['type-bug'])
 
     def test_a_kind_prefix_is_not_written_into_the_title(self):
         args, dropped = self._build({'title': '[BUG] Crash on save',
-                                     'labels': ['status-ready']})
+                                     'labels': ['status-parked']})
         self.assertEqual(args['title'], 'Crash on save')
         self.assertIn('[BUG]', dropped)
 
@@ -665,10 +687,10 @@ class TestTypedCreateInput(unittest.TestCase):
     def test_an_untyped_entry_is_stripped_the_same_way(self):
         """On every org: a classifier nothing reads is clutter, not a fallback."""
         args, dropped = self._build({'title': '[BUG] Crash on save',
-                                     'labels': ['type-bug', 'status-ready']},
+                                     'labels': ['type-bug', 'status-parked']},
                                     native_type=None)
         self.assertEqual(args['title'], 'Crash on save')
-        self.assertEqual(args['labelIds'], ['L_ready'])
+        self.assertEqual(args['labelIds'], ['L_parked'])
         self.assertEqual(dropped, ['type-bug', '[BUG]'])
         self.assertNotIn('issueTypeId', args)
 
@@ -686,16 +708,18 @@ class TestTypedCreateInput(unittest.TestCase):
 
     def test_nothing_is_reported_when_the_entry_was_already_clean(self):
         _, dropped = self._build({'title': 'Crash on save',
-                                  'labels': ['status-ready']})
+                                  'labels': ['status-parked']})
         self.assertEqual(dropped, [])
 
 
 class TestBoardColumnCandidates(unittest.TestCase):
-    """The `board-column` ready gate.
+    """The pool read: every open unassigned issue in the Backlog column.
 
-    It asked for 200 records on a connection GitHub caps at 100, which is a
-    hard error rather than a short answer -- so this gate did not degrade, it
-    failed the whole `pick` with `candidate fetch failed`.
+    Two ways this has failed for real. It asked for 200 records on a connection
+    GitHub caps at 100, which is a hard error rather than a short answer -- so
+    it did not degrade, it failed the whole `pick` with `candidate fetch
+    failed`. And it treated a column the board does not have as an empty
+    column, so a misconfigured board and a finished backlog looked identical.
     """
 
     CFG = None
@@ -710,7 +734,7 @@ class TestBoardColumnCandidates(unittest.TestCase):
         cfg = _cfg()
         cfg['board'] = {'project_node_id': 'PVT_x', 'status_field_name': 'Status'}
         with mock.patch.object(wf, 'gh_graphql', side_effect=fake):
-            ok, issues, err = wf._board_column_candidates(cfg, 'Ready')
+            ok, issues, err = wf._board_column_candidates(cfg, 'Backlog')
         return ok, issues, err, calls
 
     def test_the_page_size_is_within_githubs_connection_limit(self):
@@ -740,6 +764,29 @@ class TestBoardColumnCandidates(unittest.TestCase):
                  for n in range(1, 6)]
         _, _, _, calls = self._run(pages)
         self.assertEqual(len(calls), wf.BOARD_MAX_PAGES)
+
+    def test_a_column_the_board_does_not_have_is_an_error(self):
+        """Not an empty pool. The two are indistinguishable to the caller, and
+        the misconfiguration is by far the likelier of the two."""
+        pages = [_board_page([_board_item(1)],
+                             options=('Todo', 'Doing', 'Done'))]
+        ok, _, err, _ = self._run(pages)
+        self.assertFalse(ok)
+        self.assertIn("no 'Backlog' column", err)
+        self.assertIn('Todo, Doing, Done', err)
+
+    def test_a_board_with_no_status_field_is_an_error(self):
+        ok, _, err, _ = self._run([_board_page([], options=())])
+        self.assertFalse(ok)
+        self.assertIn("no 'Status' field", err)
+
+    def test_a_board_that_is_not_configured_is_an_error(self):
+        """Selection reads the board, so a project without one has no pool."""
+        cfg = _cfg()
+        cfg['board'] = {}
+        ok, _, err = wf._board_column_candidates(cfg, 'Backlog')
+        self.assertFalse(ok)
+        self.assertIn('project-node-id', err)
 
     def test_only_open_unassigned_items_in_the_named_column_are_returned(self):
         pages = [_board_page([
@@ -775,8 +822,8 @@ class TestCandidatesCommand(unittest.TestCase):
 
     def test_the_pool_is_ordered_by_the_org_priority_field(self):
         """The field wins over the label, and the listing carries its value."""
-        pool = [_candidate(4, labels=('status-ready', 'priority-critical')),
-                _candidate(2, labels=('status-ready', 'priority-low'))]
+        pool = [_candidate(4, labels=('priority-critical')),
+                _candidate(2, labels=('priority-low'))]
         with mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')),                 mock.patch.object(wf, 'load_issue_facets',
                                   return_value=_facets(priority={2: 'Urgent'})):
             code, payload = _capture(wf.cmd_candidates, _candidates_args())
@@ -788,8 +835,8 @@ class TestCandidatesCommand(unittest.TestCase):
         self.assertEqual(payload['label_ordered_count'], 1)
 
     def test_pool_is_returned_in_priority_order(self):
-        pool = [_candidate(4, labels=('status-ready', 'priority-low')),
-                _candidate(2, labels=('status-ready', 'priority-critical'))]
+        pool = [_candidate(4, labels=('priority-low')),
+                _candidate(2, labels=('priority-critical'))]
         with mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')):
             code, payload = _capture(wf.cmd_candidates, _candidates_args())
         self.assertEqual(code, wf.EXIT_OK)
@@ -837,15 +884,24 @@ class TestCandidatesCommand(unittest.TestCase):
         self.assertEqual(payload['candidates'][0]['dependencies'], [])
         self.assertFalse(payload['candidates'][0]['blocked'])
 
-    def test_the_listing_says_who_owns_each_candidate(self):
-        cand = _candidate(1)
-        cand['title'] = '[Browser] Turn on the API'
-        cand['labels'] = ['browser-agent']
+    def test_work_a_code_agent_cannot_do_is_not_listed(self):
+        """`bulk-execute` reads this to decide what goes in one pull request,
+        so an issue only a person or a browser agent can finish has no business
+        in the answer — whatever lane the board happens to have it in."""
+        browser = _candidate(1, labels=['browser-agent'])
+        browser['title'] = '[Browser] Turn on the API'
         with mock.patch.object(wf, 'assemble_candidates',
-                               return_value=(True, [cand], '')), \
+                               return_value=(True, [browser, _candidate(2)], '')), \
                 mock.patch.object(wf, 'issue_edges_map', return_value={}):
             _, payload = _capture(wf.cmd_candidates, _candidates_args())
-        self.assertEqual(payload['candidates'][0]['scope'], 'browser')
+        self.assertEqual([c['number'] for c in payload['candidates']], [2])
+
+    def test_the_listing_says_who_owns_each_candidate(self):
+        with mock.patch.object(wf, 'assemble_candidates',
+                               return_value=(True, [_candidate(1)], '')), \
+                mock.patch.object(wf, 'issue_edges_map', return_value={}):
+            _, payload = _capture(wf.cmd_candidates, _candidates_args())
+        self.assertEqual(payload['candidates'][0]['scope'], 'code')
 
     def test_bodies_are_truncated_and_flagged(self):
         cand = _candidate(1)
@@ -1550,6 +1606,10 @@ _APPLY_CAPS = {
                    'options': {'Medium': 'o_effmed'}},
         'Classification': {'id': 'F_cls', 'data_type': 'multi-select',
                            'options': {'New Feature': 'o_nf'}},
+        'Ownership': {'id': 'F_own', 'data_type': 'single-select',
+                      'options': {'Code agent': 'o_code',
+                                  'Browser agent': 'o_browser',
+                                  'Human': 'o_human'}},
     },
     'denied': [], 'errors': [], 'cached': False,
 }
@@ -1570,6 +1630,11 @@ class _FakeHub(object):
         # Blocker numbers this hub reports as CLOSED on the batched edge read.
         # Everything else reads OPEN, which is what a freshly written edge is.
         self.closed_edges = set(closed_edges)
+        # The board this hub serves. Every lane the plugin can move a card to,
+        # so a test that expects a column to exist finds it.
+        self.board_columns = list(wf_core.BOARD_COLUMN_NAMES.values())
+        self.board_placed = {}
+        self.board_writes = []
         self.issues = {i['number']: i for i in issues}
         self.next_number = max(self.issues, default=100) + 1
         self.labels = dict(labels if labels is not None
@@ -1626,10 +1691,38 @@ class _FakeHub(object):
                      'state': 'CLOSED' if n in self.closed_edges else 'OPEN'}
                     for n in issue['blocked_by']]}} if issue else None
             return True, {'repository': repository}, ''
+        if 'projectItems' in query:
+            repository = {}
+            for alias, number in re.findall(
+                    r'(b\d+): issue\(number:(\d+)\)', query):
+                issue = self.issues.get(int(number))
+                if not issue:
+                    repository[alias] = None
+                    continue
+                self.board_placed.setdefault(issue['number'], None)
+                repository[alias] = {'id': issue['id'],
+                                     'projectItems': {'nodes': []}}
+            return True, {'repository': repository}, ''
         if 'issue(number:$number)' in query:
             issue = self.issues.get(int(fields['number']))
             return True, {'repository': {'issue': self._readback(issue)
                                          if issue else None}}, ''
+        # The board. `issue-apply` places every issue it touches, so these are
+        # part of the command's real traffic rather than incidental.
+        if 'ProjectV2SingleSelectField' in query:
+            return True, {'node': {'title': None, 'field': {
+                'id': 'F_status',
+                'options': [{'id': 'o_%s' % n.lower().replace(' ', '_'),
+                             'name': n}
+                            for n in self.board_columns]}}}, ''
+        if 'addProjectV2ItemById' in query:
+            return True, {alias: {'item': {'id': 'ITEM_%s' % alias}}
+                          for alias in re.findall(r'(a\d+):', query)}, ''
+        if 'updateProjectV2ItemFieldValue' in query:
+            for alias in re.findall(r'm(\d+):', query):
+                self.board_writes.append(fields['o%s' % alias])
+            return True, {'m%s' % alias: {'projectV2Item': {'id': 'ITEM_x'}}
+                          for alias in re.findall(r'm(\d+):', query)}, ''
         raise AssertionError('unexpected query: %s' % query)
 
     def read_issue(self, cfg, number, repo=None):
@@ -1839,7 +1932,8 @@ class _ApplyCase(unittest.TestCase):
 
     def _full(self, **over):
         entry = {'key': 'a', 'title': 'A story', 'kind': 'story',
-                 'fields': {'field-priority': 'High', 'field-effort': 'Medium'}}
+                 'fields': {'field-priority': 'High', 'field-effort': 'Medium',
+                            'field-ownership': 'Code agent'}}
         entry.update(over)
         return entry
 
@@ -1855,7 +1949,7 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(hub.names_sent(), ['createIssue'])
         sent = hub.sent[0][1]
         self.assertEqual(sent['issueTypeId'], 'IT_story')
-        self.assertEqual(len(sent['issueFields']), 3)
+        self.assertEqual(len(sent['issueFields']), 4)
         self.assertEqual(payload['applied'][0]['action'], 'create')
 
     def test_the_created_number_is_written_back_to_the_spec(self):
@@ -1870,6 +1964,7 @@ class TestIssueApply(_ApplyCase):
         """Idempotence is what makes re-running a spec a safe recovery step."""
         hub = _FakeHub([_existing(42, type='User Story',
                                   fields={'Priority': 'High', 'Effort': 'Medium',
+                                          'Ownership': 'Code agent',
                                           'Classification': ['New Feature']})])
         code, payload, _, _ = self._run([self._full(number=42)], hub)
         self.assertEqual(code, wf.EXIT_OK)
@@ -1879,6 +1974,7 @@ class TestIssueApply(_ApplyCase):
     def test_an_update_sets_only_what_differs(self):
         hub = _FakeHub([_existing(42, type='User Story',
                                   fields={'Priority': 'Medium', 'Effort': 'Medium',
+                                          'Ownership': 'Code agent',
                                           'Classification': ['New Feature']})])
         _, payload, _, _ = self._run([self._full(number=42)], hub)
         self.assertEqual(hub.names_sent(), ['setIssueFieldValue'])
@@ -1916,7 +2012,7 @@ class TestIssueApply(_ApplyCase):
         """Once per issue would bury the errors that actually matter."""
         hub = _FakeHub()
         fields = {'field-priority': 'High', 'field-effort': 'Medium',
-                  'field-origin': 'Development'}
+                  'field-ownership': 'Code agent', 'field-origin': 'Development'}
         entries = [self._full(key='a', fields=fields),
                    self._full(key='b', fields=fields)]
         code, payload, stderr, _ = self._run(entries, hub)
@@ -2084,6 +2180,7 @@ class TestIssueApply(_ApplyCase):
         """An issue that already exists got its labels when it was filed."""
         hub = _FakeHub([_existing(42, type='User Story',
                                   fields={'Priority': 'High', 'Effort': 'Medium',
+                                          'Ownership': 'Code agent',
                                           'Classification': ['New Feature']})])
         _, _, stderr, _ = self._run([self._full(number=42)], hub)
         self.assertNotIn('name no labels', stderr)
@@ -2094,19 +2191,18 @@ class TestEpicTreeBatching(_ApplyCase):
 
     def _tree(self):
         """One epic, three features, nine stories — the shape from the story."""
+        fields = {'field-priority': 'High', 'field-effort': 'Medium',
+                  'field-ownership': 'Code agent'}
         entries = [{'key': 'epic', 'title': 'Epic', 'kind': 'epic',
-                    'fields': {'field-priority': 'High', 'field-effort': 'Medium'}}]
+                    'fields': dict(fields)}]
         for f in range(3):
             entries.append({'key': 'f%d' % f, 'title': 'Feature %d' % f,
                             'kind': 'story', 'parent': 'epic',
-                            'fields': {'field-priority': 'High',
-                                       'field-effort': 'Medium'}})
+                            'fields': dict(fields)})
             for st in range(3):
                 entries.append({'key': 's%d_%d' % (f, st),
                                 'title': 'Story %d.%d' % (f, st), 'kind': 'story',
-                                'parent': 'f%d' % f,
-                                'fields': {'field-priority': 'High',
-                                           'field-effort': 'Medium'}})
+                                'parent': 'f%d' % f, 'fields': dict(fields)})
         return entries
 
     def test_thirteen_issues_take_four_round_trips(self):
@@ -2119,10 +2215,13 @@ class TestEpicTreeBatching(_ApplyCase):
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(len(payload['applied']), 13)
         self.assertEqual(len(hub.mutations), 4)
-        # Two reads: the prerequisite lookup (repo id and label ids together),
-        # then one batched edge read so the lifecycle phase knows which of the
-        # edges it just wrote point at something still open.
-        self.assertEqual(len(hub.queries), 2)
+        # Six requests for thirteen issues, and the number does not move when
+        # the tree grows. Two reads -- the prerequisite lookup (repo id and
+        # label ids together) and one batched edge read, so the lifecycle phase
+        # knows which of the edges it just wrote point at something still open
+        # -- then the four the board costs: its Status field, the cards that
+        # already exist, the cards that have to be added, the column write.
+        self.assertEqual(len(hub.queries), 6)
 
     def test_children_are_created_after_their_parents(self):
         hub = _FakeHub()
@@ -2233,7 +2332,8 @@ class TestIssueAudit(_ApplyCase):
             {'field': {'name': 'Priority'}, 'name': 'High'},
             {'field': {'name': 'Effort'}, 'name': 'Medium'},
             {'field': {'name': 'Classification'},
-             'options': [{'name': 'New Feature'}]}]}, **over)
+             'options': [{'name': 'New Feature'}]},
+            {'field': {'name': 'Ownership'}, 'name': 'Code agent'}]}, **over)
 
     def test_a_clean_backlog_exits_zero_and_writes_no_spec(self):
         code, payload, _, spec = self._run([self._classified(1)])
@@ -2423,8 +2523,15 @@ class TestConfigAudit(unittest.TestCase):
     """Preflight's drift checks: what fails, what warns, and what it costs."""
 
     _SECTIONS = list(wf_core.REQUIRED_CONFIG_SECTIONS)
-    _PINNED = ['Priority', 'Effort', 'Classification', 'Origin']
-    _LABELS = ['status-ready', 'status-in-progress', 'type-bug']
+    _PINNED = ['Priority', 'Effort', 'Classification', 'Origin', 'Ownership']
+    _LABELS = ['status-blocked', 'status-in-progress', 'type-bug']
+    # A board carrying every lane the workflow writes to. Since 9.0.0 the pool
+    # *is* the Backlog column, so a project with no board, or a board missing
+    # that column, is a critical finding rather than a clean run — which makes
+    # a live board part of the baseline every other check is measured against.
+    _LIVE_BOARD = {'title': None, 'field': {'options': [
+        {'id': 'opt%d' % i, 'name': name}
+        for i, name in enumerate(sorted(wf_core.BOARD_COLUMN_NAMES.values()))]}}
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -2443,8 +2550,10 @@ class TestConfigAudit(unittest.TestCase):
         with open(os.path.join(self.scan, name), 'w', encoding='utf-8') as fh:
             fh.write(text)
 
-    def _run(self, sections=None, labels=None, types=None, board=None,
-             cfg_over=None, argv=(), caps=None, pins_ok=True):
+    def _run(self, sections=None, labels=None, types=None, board=_UNSET,
+             cfg_over=None, argv=(), caps=None, pins_ok=True, orphans=()):
+        if board is _UNSET:
+            board = copy.deepcopy(self._LIVE_BOARD)
         self._write_config(self._SECTIONS if sections is None else sections)
         cfg = _cfg(**(cfg_over or {}))
         args = wf.build_parser().parse_args(
@@ -2452,6 +2561,14 @@ class TestConfigAudit(unittest.TestCase):
         sent = []
 
         def gh_graphql(query, **fields):
+            if 'projectItems' in query:
+                sent.append('orphans')
+                return True, {'repository': {'issues': {
+                    'pageInfo': {'hasNextPage': False, 'endCursor': None},
+                    'nodes': [{'number': n, 'title': 'issue %d' % n,
+                               'assignees': {'totalCount': 0},
+                               'projectItems': {'nodes': []}}
+                              for n in orphans]}}}, ''
             sent.append('repo')
             return True, {'repository': {'labels': {
                 'pageInfo': {'hasNextPage': False, 'endCursor': None},
@@ -2529,7 +2646,19 @@ class TestConfigAudit(unittest.TestCase):
              'pinned': ['Priority', 'Effort', 'Classification']}])
         self.assertEqual(code, wf.EXIT_DRIFT)
         self.assertEqual(self._checks(payload), ['field-unpinned'])
-        self.assertIn('Origin', payload['findings'][0]['detail'])
+        self.assertIn('Ownership', payload['findings'][0]['detail'])
+
+    def test_a_mandatory_field_the_org_never_created_is_not_a_pin_problem(self):
+        """A field nobody has created cannot be pinned to anything. Reporting
+        every type as unpinned from it says nothing about the org, and buries
+        the findings that do."""
+        caps = dict(_APPLY_CAPS, field_map={
+            n: m for n, m in _APPLY_CAPS['field_map'].items() if n != 'Ownership'})
+        code, payload, _ = self._run(caps=caps, types=[
+            {'name': 'User Story', 'enabled': True,
+             'pinned': ['Priority', 'Effort', 'Classification', 'Origin']}])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(self._checks(payload), [])
 
     # ── the warnings ─────────────────────────────────────────────────────────
 
@@ -2560,13 +2689,13 @@ class TestConfigAudit(unittest.TestCase):
         """The silent one: `pick` then filters on a name no issue carries."""
         code, payload, _ = self._run(
             labels=self._LABELS + ['status:parked'],
-            cfg_over={'labels': {'status-ready': 'status-ready'}})
+            cfg_over={'labels': {'status-non-code': 'status-non-code'}})
         self.assertEqual(code, wf.EXIT_DRIFT)
         self.assertIn('label-unmapped', self._checks(payload))
 
     def test_label_drift_warns_without_failing_the_run(self):
         code, payload, _ = self._run(
-            labels=self._LABELS + ['priority-medium', 'priority:medium', 'ready'])
+            labels=self._LABELS + ['priority-medium', 'priority:medium', 'blocked'])
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(set(self._checks(payload)), {'label-drift'})
         self.assertEqual(payload['summary']['warning'], 2)
@@ -2579,8 +2708,9 @@ class TestConfigAudit(unittest.TestCase):
         self.assertIn('field-unmapped', self._checks(payload))
 
     def test_a_board_column_that_no_longer_resolves_warns(self):
-        board = {'title': 'widgets', 'field': {'options': [
-            {'id': 'live1234', 'name': 'In Progress'}]}}
+        board = copy.deepcopy(self._LIVE_BOARD)
+        board['title'] = 'widgets'
+        board['field']['options'].append({'id': 'live1234', 'name': 'In Progress'})
         code, payload, _ = self._run(
             board=board,
             cfg_over={'board': {'project_node_id': 'PVT_1',
@@ -2590,8 +2720,39 @@ class TestConfigAudit(unittest.TestCase):
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(self._checks(payload), ['board-column'])
 
+    def test_a_board_without_the_pool_column_fails_the_run(self):
+        """The pool is a board column, so this is not a display problem."""
+        board = copy.deepcopy(self._LIVE_BOARD)
+        board['field']['options'] = [
+            o for o in board['field']['options'] if o['name'] != 'Backlog']
+        code, payload, _ = self._run(board=board)
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(self._checks(payload), ['board-lane'])
+        self.assertEqual(payload['summary']['critical'], 1)
+
+    def test_a_missing_lane_that_is_not_the_pool_only_warns(self):
+        board = copy.deepcopy(self._LIVE_BOARD)
+        board['field']['options'] = [
+            o for o in board['field']['options'] if o['name'] != 'Parked']
+        code, payload, _ = self._run(board=board)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(self._checks(payload), ['board-lane'])
+
+    def test_a_project_with_no_board_cannot_pick_at_all(self):
+        code, payload, _ = self._run(cfg_over={'board': {}})
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(self._checks(payload), ['board-lane'])
+        self.assertIn('board-lane', payload['checked'])
+        self.assertIn('board-column', payload['skipped'])
+
+    def test_a_node_id_that_resolves_to_nothing_fails_the_run(self):
+        code, payload, _ = self._run(board=None)
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(self._checks(payload), ['board-lane'])
+
     def test_a_node_id_pointing_at_a_different_board_warns(self):
-        board = {'title': 'something else', 'field': {'options': []}}
+        board = copy.deepcopy(self._LIVE_BOARD)
+        board['title'] = 'something else'
         _, payload, _ = self._run(
             board=board,
             cfg_over={'board': {'project_node_id': 'PVT_1',
@@ -2608,13 +2769,32 @@ class TestConfigAudit(unittest.TestCase):
 
     # ── what it costs, and what it refuses ───────────────────────────────────
 
-    def test_the_api_checks_cost_two_round_trips(self):
-        """Preflight runs at the top of every session, so this is a budget."""
+    def test_the_api_checks_cost_three_round_trips(self):
+        """Preflight runs at the top of every session, so this is a budget.
+
+        Three, not two, since 9.0.0: labels and the board share one query, the
+        issue-type pins are a second, and reading which open issues have no
+        board card is the third. That last one is the price of the pool being a
+        board column, and it is paid once per audit rather than per issue.
+        """
         _, _, sent = self._run(
             cfg_over={'board': {'project_node_id': 'PVT_1', 'project_title': None,
                                 'status_field_name': 'Status', 'columns': {}}},
             board={'title': None, 'field': {'options': []}})
-        self.assertEqual(sent, ['repo', 'pins'])
+        self.assertEqual(sent, ['repo', 'orphans', 'pins'])
+
+    def test_an_open_issue_with_no_board_card_fails_the_run(self):
+        """The check that makes the Backlog pool safe to adopt: an issue with
+        no card is invisible to `pick`, and nothing else would say so."""
+        code, payload, _ = self._run(orphans=(164, 224))
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(self._checks(payload), ['board-orphan'])
+        self.assertIn('#164, #224', payload['findings'][0]['detail'])
+
+    def test_a_board_that_holds_every_open_issue_is_clean(self):
+        code, payload, _ = self._run()
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertIn('board-orphan', payload['checked'])
 
     def test_offline_runs_the_checks_that_need_no_network(self):
         def explode(*a, **k):
@@ -2682,15 +2862,15 @@ class TestBoardMoveOrdering(unittest.TestCase):
             if 'projectItems' in query:
                 items = [{'id': 'ITEM_1', 'project': {'id': 'PVT_1'}}] \
                     if on_board else []
-                return True, {'repository': {'issue': {
+                return True, {'repository': {'b3': {
                     'id': 'I_1', 'projectItems': {'nodes': items}}}}, ''
             if 'addProjectV2ItemById' in query:
-                return True, {'addProjectV2ItemById':
-                              {'item': {'id': 'ITEM_NEW'}}}, ''
+                return True, {'a3': {'item': {'id': 'ITEM_NEW'}}}, ''
             if 'updateProjectV2ItemFieldValue' in query:
-                return True, {'updateProjectV2ItemFieldValue': {}}, ''
+                return True, {'m3': {'projectV2Item': {'id': 'ITEM_1'}}}, ''
             raise AssertionError('unexpected query: %s' % query)
 
+        wf._BOARD_FIELD_CACHE.clear()
         with mock.patch.object(wf, 'gh_graphql', fake_graphql):
             moved, message = wf.board_move(self._cfg(), 3, column)
         return moved, message, sent
@@ -2728,6 +2908,7 @@ class TestBoardMoveOrdering(unittest.TestCase):
         def fake_graphql(query, **fields):
             return True, {'node': {'title': 'somebody else', 'field': None}}, ''
 
+        wf._BOARD_FIELD_CACHE.clear()
         with mock.patch.object(wf, 'gh_graphql', fake_graphql):
             moved, message = wf.board_move(self._cfg(), 3, 'Backlog')
         self.assertFalse(moved)

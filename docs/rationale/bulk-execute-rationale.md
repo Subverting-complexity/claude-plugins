@@ -22,7 +22,7 @@ The user naming issue numbers is the precise form of the same thing, which is wh
 
 `wf pick` deliberately collapses select, claim, board-move and branch into one call, because a single-story run wants exactly that and every seam between those steps is a race. A bulk run needs the pool **before** it can decide anything, so it needs the read without the write.
 
-Putting that read in `wf` rather than in prose keeps one encoding of the filters. Ready gate, sprint narrowing, refinement and agent-gating filters, mode filter and priority sort are all tested logic in `wf_core`; an inline `gh issue list` in the skill would have been a second, untested copy that drifts the first time a filter changes. An inline selection procedure was kept for a while as the fallback for a machine with no Python, on the argument that a drifting second copy beat no selection at all. That argument lost: the copy drifted, nothing tested it, and it has been deleted. `wf` is now a hard prerequisite here, and its absence is an error naming the missing prerequisite rather than a silent second implementation.
+Putting that read in `wf` rather than in prose keeps one encoding of the filters. Pool membership, sprint narrowing, refinement and ownership filters, mode filter and the priority/effort sort are all tested logic in `wf_core`; an inline `gh issue list` in the skill would have been a second, untested copy that drifts the first time a filter changes. An inline selection procedure was kept for a while as the fallback for a machine with no Python, on the argument that a drifting second copy beat no selection at all. That argument lost: the copy drifted, nothing tested it, and it has been deleted. `wf` is now a hard prerequisite here, and its absence is an error naming the missing prerequisite rather than a silent second implementation.
 
 ## Why a sibling dependency does not block
 
@@ -44,7 +44,7 @@ This is the invariant the whole finish phase is arranged around. A `Closes #N` l
 
 Hence `built` in `.claude/bulk-set.json`, flipped per story at commit time, and hence the body validation step counting `Closes` lines against it rather than reading them over. It is the one check in this workflow that fails silently and expensively if skipped.
 
-The mirror of the same rule is that a story which cannot be finished goes **back to the backlog properly** — claim released, `status-ready` restored, unassigned, board back to Backlog, and a comment saying what happened. A story left assigned and `status-in-progress` after the run ends is invisible to the picker and to the person who wrote it.
+The mirror of the same rule is that a story which cannot be finished goes **back to the backlog properly** — claim released, `status-in-progress` removed, unassigned, board back to Backlog, and a comment saying what happened. The board move is the part that returns it to the pool; the rest is bookkeeping. A story left assigned and `status-in-progress` after the run ends is invisible to the picker and to the person who wrote it.
 
 ## Why the build is serial and one commit per story
 

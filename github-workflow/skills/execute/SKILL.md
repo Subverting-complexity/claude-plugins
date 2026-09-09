@@ -71,7 +71,7 @@ If the file is absent and the block below did **not** print "ClaudeProject.md NO
 
 ## Project configuration (auto-loaded)
 
-This emits a **projection** of `ClaudeProject.md`: the hot-path config the pick/plan/build window needs (Identity, Branch Convention, Label Map, Ready Gate, Agent Gating, Quality Gate, Package Manager, Refinement), dropping the heavy sections needed only later and only sometimes (Issue Types & Fields, Project Board, Story Template, Session Budget, Reference Docs, Bundled Skills). When a later phase resolves the **board** (Phase 2, Phase 7) or **org issue fields**, read the omitted `## Project Board` / `## Issue Types & Fields` section straight from `ClaudeProject.md` then — the board/field templates already say they read it.
+This emits a **projection** of `ClaudeProject.md`: the hot-path config the pick/plan/build window needs (Identity, Branch Convention, Label Map, Agent Gating, Quality Gate, Package Manager, Refinement), dropping the heavy sections needed only later and only sometimes (Issue Types & Fields, Project Board, Story Template, Session Budget, Reference Docs, Bundled Skills). When a later phase resolves the **board** (Phase 2, Phase 7) or **org issue fields**, read the omitted `## Project Board` / `## Issue Types & Fields` section straight from `ClaudeProject.md` then — the board/field templates already say they read it.
 
 ```!
 if [ -f .claude/projected-config.md ] && [ .claude/projected-config.md -nt ClaudeProject.md ] 2>/dev/null; then
@@ -183,7 +183,7 @@ From the repo root:
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout --mode {mode}
 ```
 
-`{mode}` is `$ARGUMENTS.mode`, default `story` (`audit` never reaches this phase). The command detects backlog mode (sprint or flat), assembles the unassigned candidates the project's `ready-gate` allows, applies the agent-gating and mode filters, sorts by priority then issue number, **claims the top candidate before any side effect** and validates only that one — walking down the list on a lost claim, marking a genuinely blocked issue `status-blocked`, closing one a merged PR already resolved, and running the dependency auto-ready scan if the pool comes up empty. `agent-gating: disabled` (the default) means the `claude-ready` human-approval label is ignored entirely.
+`{mode}` is `$ARGUMENTS.mode`, default `story` (`audit` never reaches this phase). The command detects backlog mode (sprint or flat), reads the unassigned issues in the board's **Backlog** column, applies the agent-gating and mode filters, drops work a code agent cannot do, sorts by priority then effort then issue number, **claims the top candidate before any side effect** and validates only that one — walking down the list on a lost claim, marking a genuinely blocked issue `status-blocked`, closing one a merged PR already resolved, and running the dependency unblock scan if the pool comes up empty. `agent-gating: disabled` (the default) means the `claude-ready` human-approval label is ignored entirely.
 
 Read the result by its `status`; the exit code mirrors it:
 
@@ -214,7 +214,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
   ```
   gh pr list --repo {org}/{repo} --state closed --search "closes #{number}" --json number,title
   ```
-  If there is one the PR was abandoned — reset automatically: remove `status-in-review`, apply `status-ready`, unassign, run `wf board-move {number} --column col-backlog`, and comment `"Resetting — PR #{N} closed without merge."` The issue re-enters the pick pool. If there is no closed PR either, surface the inconsistency and stop.
+  If there is one the PR was abandoned — reset automatically: remove `status-in-review`, unassign, run `wf board-move {number} --column col-backlog` (that move is what returns it to the pool), and comment `"Resetting — PR #{N} closed without merge."` The issue re-enters the pick pool. If there is no closed PR either, surface the inconsistency and stop.
 - Otherwise claim it through the same engine, aimed at one issue:
   ```bash
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout
@@ -225,7 +225,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
 
 - Enough guidance (body, comments, linked docs) → proceed to Phase 2.
 - Carries `needs-refinement` (a configuration may surface such an issue) → offer refinement: "The next priority story (#{number}: {title}) needs refinement before it can be implemented. Would you like to refine it now?" Use `AskUserQuestion`:
-  - "Refine now (Recommended)" — run the refinement skill from `refinement-skill` (default `feature-discovery`). After refinement, remove `needs-refinement`, apply `status-ready`, and continue with Phase 2.
+  - "Refine now (Recommended)" — run the refinement skill from `refinement-skill` (default `feature-discovery`). After refinement, remove `needs-refinement` — nothing replaces it — and continue with Phase 2.
   - "Skip and pick next" — release the claim (`wf claim-release --issue {number}`) and re-run the selection.
 - Truly empty with no guidance anywhere → run `/github-workflow:block-story` (which releases the claim) and re-run the selection for the next story.
 
@@ -255,7 +255,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
    git checkout -b {branch} origin/{default-branch}
    ```
 
-**Claim–board consistency:** the claim from Phase 1 must never outlive the session's intent to build. If the board move fails and the run is abandoned rather than continued, release the claim (`wf claim-release --issue {number}`) and restore the prior lifecycle state — remove `status-in-progress` and the `@me` assignment, re-apply `status-ready` — so the claim does not leak.
+**Claim–board consistency:** the claim from Phase 1 must never outlive the session's intent to build. If the board move fails and the run is abandoned rather than continued, release the claim (`wf claim-release --issue {number}`), remove `status-in-progress` and the `@me` assignment, and move the card back to `col-backlog` — that last move is what actually returns the issue to the pool, so the claim does not leak and neither does the issue.
 
 ## Interactive discovery gate (before planning)
 

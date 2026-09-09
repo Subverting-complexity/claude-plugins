@@ -107,11 +107,10 @@ Adding a preference has one easily missed consequence: `NATIVE_MAINTENANCE_TYPES
 
 ## Issue Lifecycle State Labels
 
-Every issue always carries exactly one lifecycle state label — mutually exclusive; remove the old label when applying the new one. Resolved via the label map in `ClaudeProject.md`; defaults below.
+A lifecycle label says what state an issue is in, for a person reading the issues list. It decides nothing: selection reads the board's Backlog column and the structured fields, never a label. At most one is present at a time — remove the old one when applying the new one — and an issue in the pool carries **none**, because being in Backlog is what available means. Resolved via the label map in `ClaudeProject.md`; defaults below.
 
 | Purpose key | Default Name | Color | Description | Applied by |
 |-------------|-------------|-------|-------------|------------|
-| `status-ready` | `status-ready` | `0E8A16` | Eligible for pickup, no unresolved dependencies | setup / execute (unblock) |
 | `needs-refinement` | `needs-refinement` | `D4C5F9` | Needs a refinement session before pickup | feature-discovery / report-issue |
 | `status-in-progress` | `status-in-progress` | `1D76DB` | An agent is actively working this issue now | execute |
 | `status-parked` | `status-parked` | `C5DEF5` | Deliberately set aside by a human, will resume | human / update via park |
@@ -124,9 +123,7 @@ For the lifecycle transition diagram and dual-tracking rationale, see `docs/rati
 
 ### Work scope labels (not lifecycle states)
 
-Who owns an issue; `status-non-code` says what that costs it. `wf issue-audit`
-reports any issue whose prefix, scope label and lifecycle label disagree. See
-`skills/writing-github-issues/SKILL.md` → **Scope: one issue, one party**.
+Who owns an issue. This is what keeps work a code agent cannot do out of the pool — the `Ownership` field first, these labels as the fallback — while `status-non-code` and the Non-code column say the same thing to a person. `wf issue-audit` reports any issue whose prefix, scope label and lifecycle label disagree. See `skills/writing-github-issues/SKILL.md` → **Scope: one issue, one party**.
 
 | Purpose key | Default Name | Color | Title prefix | Description |
 |-------------|-------------|-------|--------------|-------------|
@@ -143,19 +140,23 @@ reports any issue whose prefix, scope label and lifecycle label disagree. See
 
 ## Board Columns
 
-The board-side mirror of the issue lifecycle. Columns are resolved by **purpose key** through the same path as labels: read from `ClaudeProject.md` → `## Project Board` → `### Status Options`; fall back to the default name below. Board moves are best-effort (no board → no-op; configured board + failed move → reported, never fatal — `wf board-move` writes them). Labels remain authoritative; the board mirrors them. Design rationale: `docs/rationale/default-labels-rationale.md`.
+Where an issue actually is. Columns are resolved by **purpose key** through the same path as labels: read from `ClaudeProject.md` → `## Project Board` → `### Status Options`; fall back to the default name below. The board is the authority on state — `Backlog` is the pick pool, and the lifecycle labels mirror the column for a person reading the issues list, not the other way round. A move to a column the board does not have is reported and skipped, never applied blind. Design rationale: `docs/rationale/default-labels-rationale.md`.
 
 | Purpose key      | Default Name  | Option color | Mirrors lifecycle label(s) |
 |------------------|---------------|--------------|----------------------------|
-| `col-backlog`    | `Backlog`     | GREEN        | `needs-refinement`, new issues |
-| `col-ready`      | `Ready`       | BLUE         | `status-ready` |
-| `col-in-progress`| `In Progress` | YELLOW       | `status-in-progress`, `status-needs-attention` |
+| `col-backlog`    | `Backlog`     | GREEN        | (none — the pool) |
+| `col-refinement` | `Needs refinement` | BLUE    | `needs-refinement` |
+| `col-in-progress`| `In Progress` | YELLOW       | `status-in-progress` |
 | `col-in-review`  | `In Review`   | ORANGE       | `status-in-review` |
-| `col-blocked`    | `Blocked`     | RED          | `status-blocked`, `status-parked` |
+| `col-attention`  | `Needs attention` | PURPLE   | `status-needs-attention` |
+| `col-blocked`    | `Blocked`     | RED          | `status-blocked` |
 | `col-non-code`   | `Non-code`    | PINK         | `status-non-code` |
-| `col-done`       | `Done`        | PURPLE       | (issue closed) |
+| `col-parked`     | `Parked`      | GRAY         | `status-parked` |
+| `col-done`       | `Done`        | GRAY         | (issue closed) |
 
 > Option `color` values come from the GitHub enum `ProjectV2SingleSelectFieldOptionColor`: `GRAY`, `BLUE`, `GREEN`, `YELLOW`, `ORANGE`, `RED`, `PINK`, `PURPLE`. These name the *board* option color and are distinct from the hex label colors above.
+
+> The enum has eight colours and the board has nine lanes, so exactly one pair shares one. `Parked` and `Done` take it: both mean nothing is happening here, both sit at the far end of the board, and neither is a lane work is picked from or moved through. Every lane an issue passes through on its way to being done is a different colour from its neighbours.
 
 
 **Label ⇄ column pairing (the single mapping every command follows):**
@@ -166,13 +167,15 @@ The board-side mirror of the issue lifecycle. Columns are resolved by **purpose 
 | `status-in-review`                       | In Review (`col-in-review`)  | execute |
 | `status-blocked`                         | Blocked (`col-blocked`)      | block-story, issue-apply, `wf pick` (returning a blocked issue) |
 | `status-non-code`                        | Non-code (`col-non-code`)    | issue-apply, `wf unblock` |
-| `status-ready` (unblock)                 | Ready (`col-ready`)          | execute |
-| `needs-refinement` / `status-ready` (new issue) | Backlog / Ready             | report-issue (best-effort placement) |
+| `needs-refinement`                       | Needs refinement (`col-refinement`) | feature-discovery, issue-apply |
+| `status-parked`                          | Parked (`col-parked`)        | human / update via park |
+| `status-needs-attention`                 | Needs attention (`col-attention`) | execute (error/timeout) |
+| no lifecycle label (available)           | Backlog (`col-backlog`)      | issue-apply (create and update), `wf unblock` |
 | issue **closed** (resolved / merged)     | Done (`col-done`)            | `wf pick` (already-resolved), `wf post-merge` (after merge), code-review auto-merge |
 
 The Done move has no lifecycle *label* (a closed issue carries none — the GitHub closed state is authoritative); the commands above mirror the board to `col-done` so a finished story leaves the In Review column. Best-effort, like every board move: a no-op when no board is configured.
 
-When a board is configured, the three active columns — In Progress, In Review, Blocked — must exist (preflight emits `CRITICAL board-columns-incomplete` if any is missing; setup creates them). The Ready column is additionally required only under a `board-column`/`both` ready-gate. `Non-code` is created by setup and never required.
+A board is now required, and **Backlog is required on it**: it is the pool `pick` and `candidates` read, so without it selection has nowhere to look. Preflight reports a missing Backlog column, an unrecorded board, or a `project-node-id` that resolves to nothing as `CRITICAL board-lane`. Every other column warns — a lane that does not exist costs one state's board move, which is visible on the board and which no command depends on. Setup creates them all.
 
 ## Review State Labels
 
