@@ -31,7 +31,7 @@ Apply it without being asked. There is no separate "concise mode".
 ## Precedence
 
 - `skills/_shared/body-standard.md` is the base. It carries the no-wrapping rule, the section vocabulary, the Summary and bullet rules, the title rules, and what never appears in a body. All of it applies to an issue.
-- **This skill decides which of those sections an issue uses**, how long the body runs, and the conventions GitHub itself needs: classification, the write path, templates, and `[Manual]`.
+- **This skill decides which of those sections an issue uses**, how long the body runs, and the conventions GitHub itself needs: classification, the write path, templates, and scope.
 - `skills/_shared/banned-patterns.md` applies in full. Its banned vocabulary, phrases and closing patterns are never acceptable in an issue.
 - `skills/_shared/wording-standard.md` governs how everything else a person reads is worded. Where it asks for more explanation than an issue needs, the body standard and this skill win **inside the issue body only**.
 - `skills/user-facing-communication/SKILL.md` governs the shape of what you say **about** the issue: what you filed, its current state, the issue named as well as numbered, and anything still outstanding. That is your reply, not the issue body, and it never reaches into the body.
@@ -42,7 +42,7 @@ The standards agree on the important part: explain the point in plain words. The
 
 Follow the title rules in `skills/_shared/body-standard.md`. The title is the work, said once, in the fewest words that still identify it: verb first, sentence case, roughly 70 characters, identifiers exact, no metadata prefix.
 
-The one prefix a title carries is `[Manual]`, written exactly like that, square brackets, capital M, one trailing space. See **Issues that need a person** below.
+The only prefixes a title carries are `[Manual] ` and `[Browser] `, written exactly like that, square brackets, capital letter, one trailing space. They say who does the work, never what kind of work it is. See **Scope: one issue, one party** below.
 
 Good:
 
@@ -66,25 +66,51 @@ An issue says what kind of work it is **once**, through GitHub's native issue ty
 
 Lifecycle state (`status-ready`, `needs-refinement`, `status-blocked`) and priority stay on labels: GitHub has no native field for the first, and the second is dual-tracked with the org's `Priority` field.
 
-`[Manual]` is not a classification and is not covered by that rule. It says who has to do the work, not what kind of work it is, and nothing native records it. See **Issues that need a person** below.
+`[Manual]` and `[Browser]` are not classifications and are not covered by that rule. They say who has to do the work, not what kind of work it is, and nothing native records either. See **Scope: one issue, one party** below.
 
-## Issues that need a person
+## Scope: one issue, one party
 
-Some issues cannot be finished by an agent. Granting an organisation owner's permission, adding a secret, buying a domain, approving a store submission, clicking through a third-party console: an agent can describe the step but cannot perform it.
+Three parties do work on a backlog, and they cannot substitute for each other.
 
-Mark those issues the same way every time, so they are obvious in a list and never get picked up by an agent that cannot finish them:
+| Party | What it is | Prefix | Label |
+| --- | --- | --- | --- |
+| **Code agent** | Changes the repository. Produces a commit. | none | none |
+| **Browser agent** | Drives a web console a person has already signed into. Produces a saved form. | `[Browser] ` | `browser-agent` |
+| **Human** | Everything neither of the others can reach. Produces neither. | `[Manual] ` | `human-required` |
 
-1. **Prefix the title with `[Manual]`.** Exactly that spelling, at the very start, followed by one space. The rest of the title follows the normal rules, so `[Manual] Grant the Cloudflare GitHub App access to the org`.
-2. **Apply the `status-blocked` lifecycle label**, in place of `status-ready` or `needs-refinement`, resolved through the project's label map like any other label. It is the existing lifecycle label for work that cannot proceed without something outside the agent's reach, it puts the issue in the Blocked column, and story selection already skips it.
-3. **Include a `## Manual step` section** saying exactly what a person must do and why an agent cannot do it.
+**Every issue is scoped to exactly one of them.** Not "mostly a code agent", not "an agent, then someone presses save". One. This is the rule that matters, and the rest of this section is what follows from it.
 
-Those three go together. An issue has all of them or none of them.
+### What each party can do
 
-**When it applies:** the issue cannot be closed until a person acts. That includes an issue whose work is mostly automatable but has one human prerequisite, because the issue is not done until that prerequisite is met.
+**Code agent.** The default, so it carries no prefix and no label. A backlog should not decorate its normal case.
 
-**When it does not:** work a person has to do that belongs to a *different* issue is not a manual step here. Record it under `## Dependencies` as `Blocked by #N`, or under `## Out of scope`, and leave this issue unprefixed.
+**Browser agent.** Filling non-credential fields, pressing save, reading identifiers back out of a console. It **cannot** sign in, clear two-factor, download a file, accept an agreement, or touch anything financial. When it meets one of those it stops and hands back rather than working around it. Because it needs a session a person opened, a `[Browser]` issue is not picked up on its own either.
 
-`[Manual]` is the only prefix `wf issue-apply` leaves on a title. It strips `[BUG]`, `[STORY]` and the rest, because the native issue type already says what kind of work an issue is. Nothing native says a person has to do it, which is why this one is carried in the title.
+**Human.** A physical device in someone's hand, money, a legal agreement, a credential being moved, a business decision. Signing in, downloading, accepting terms and making a declaration to a third party are human every time, even when the work around them is console clicking. A device pass is human, not browser: a browser agent has no phone, no speaker and no screen reader.
+
+### Marking a scoped issue
+
+Both scoped parties take three things together, all of them or none:
+
+1. **The prefix**, exactly as spelled above, at the very start, followed by one space. `[Manual] Grant the Cloudflare GitHub App access to the org`. `[Browser] Set the authorised redirect URIs on the web OAuth client`.
+2. **The scope label**, `human-required` or `browser-agent`, resolved through the project's label map. The two are mutually exclusive.
+3. **The `status-blocked` lifecycle label**, in place of `status-ready` or `needs-refinement`. This is the one that does the work: selection reads lifecycle labels, so `status-blocked` is what keeps the issue out of the pool. The prefix and the scope label are for a person reading a list.
+
+Include a `## Manual step` section saying what has to happen and why the other two parties cannot do it.
+
+### When an issue needs two parties, split it
+
+**This is the rule that replaces the old one.** An issue that is mostly automatable with one human prerequisite used to be marked `[Manual]` and left whole. Do not do that. Raise the other party's work as its own issue, scope it, and link the two with `Blocked by #N` in both directions.
+
+The old shape looks finished and is not. A code story that does its half and says "then a person sets the value" sits in Backlog, gets picked up, gets a merged pull request, and the console step is never done because it never had a card of its own.
+
+Ask what the issue produces: a commit, a saved console form, or neither. **Two answers means two issues.**
+
+Where the two halves interleave, say so in both, in order, rather than leaving it to whoever picks one up. Two issues that hand back and forth once is normal and fine; four issues for four alternating steps is not.
+
+**When none of this applies:** work a person has to do that belongs to a *different* issue is not a manual step here. Record it under `## Dependencies` as `Blocked by #N`, and leave this issue unprefixed.
+
+`[Manual]` and `[Browser]` are the only prefixes `wf issue-apply` leaves on a title. It strips `[BUG]`, `[STORY]` and the rest, because the native issue type already says what kind of work an issue is. Nothing native says **who** has to do it, which is why these two are carried in the title.
 
 ## One write path
 
@@ -132,7 +158,7 @@ The body standard says what each section is for. These are the issue-specific ca
 | `## Acceptance criteria` | Almost always. 2 to 5 testable statements, and never a restatement of `## Changes`. |
 | `## Verification` | Verifying needs something specific: a physical device, several environments, a regression check. |
 | `## Dependencies` | There is real sequencing. Keep the markers exact, because the workflow parses them: `Depends on #N`, `Blocked by #N`, `After #N`, `Requires #N`. |
-| `## Manual step` | The issue cannot be closed until a person acts. The title then takes `[Manual]` and the issue takes `status-blocked`. See **Issues that need a person** above. |
+| `## Manual step` | The issue cannot be closed by a code agent. The title then takes `[Manual] ` or `[Browser] `, and the issue takes that scope label plus `status-blocked`. See **Scope: one issue, one party** above. |
 | `## Out of scope` | Closely related work is likely to expand the issue unnecessarily. |
 
 ## Story issues
@@ -171,6 +197,7 @@ Apply the rewrite with a temp file and `--body-file`, following `templates/body-
 Run the checklist in `skills/_shared/body-standard.md` (**Before you post it**), plus these two, which only apply to an issue:
 
 - Are the repository template's headings intact, where one applied?
-- If there is a `## Manual step`, does the title start `[Manual] ` and does the issue carry `status-blocked`?
+- If there is a `## Manual step`, does the title start `[Manual] ` or `[Browser] `, and does the issue carry the matching scope label plus `status-blocked`?
+- Does this issue need only **one** party to close it? If a second party has to act before it is done, that half is its own issue with `Blocked by #N` in both.
 
 See `references/examples.md` for worked examples.
