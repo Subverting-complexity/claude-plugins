@@ -7,6 +7,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## local-workflow 2.13.2
+
+**`Ready` left the shared vocabulary.** `feature-discovery` suggested a `Ready` state alongside the github-workflow lifecycle it mirrors; that state no longer exists in either plugin. Wording only.
+
 ## github-workflow 9.0.0
 
 **Breaking: the pick pool is the board's Backlog column, and a board is now required.** Selection used to be opt-in — an issue was invisible until somebody applied `status-ready` — and the four `ready-gate` settings each described a different way of asking for that opt-in. On the repository this plugin is developed in, that produced `no-candidates` while three perfectly workable issues sat in the backlog, and `wf config-audit` reported nothing wrong. Selection is now opt-out: every unassigned open issue in the board's `Backlog` column is available, and an issue leaves the pool by being moved somewhere else. A project with no board, or a board with no Backlog column, is a configuration error rather than an empty backlog.
