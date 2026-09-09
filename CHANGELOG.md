@@ -7,6 +7,64 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 8.2.0
+
+**A merge now releases the work it freed.** Nothing did this before. `wf
+post-merge` settles only the issues a pull request *closes*, so a pull request
+that closes none reports `settled: []`, which reads as a finished run and is
+not: the issues waiting on that work keep their `status-blocked` label, and a
+blocked issue is invisible to the picker. On the project this was written for,
+a merge left two downstream issues sitting there until the user asked whether
+anything had been unblocked.
+
+**New command: `wf unblock`.** It reads every open issue carrying the blocked
+label and sorts them four ways.
+
+- **released** — every native blocked-by edge points at a closed issue. The
+  label is removed, the `## Dependencies` section is rewritten to name the
+  blockers that closed, the board card moves to Backlog, and a comment says
+  what happened and why.
+- **held** — at least one blocker is still open. Untouched.
+- **partials** — held, but a blocker has merged something in the last fourteen
+  days. Reported, never acted on: a story that ships half of itself stays open
+  with correct edges while whatever needed only that half is free, and no
+  edge-based rule can see it. The merge has to name the blocker in its **pull
+  request title** to count. A body mention is far too weak; tried against a
+  real backlog it flagged ten of the eleven held issues.
+- **no_edges** — labelled blocked with no dependency edge at all, so nothing
+  here can speak to them. Counted rather than listed.
+
+Nothing is released without at least one edge, and that rule is doing real
+work rather than being cautious. Two thirds of one real backlog's blocked
+issues have no edge, and they are waiting on a bank account, a device pass, a
+store upload. Reading "no open blockers" as "release" would put every one of
+them in front of an agent that cannot do any of them.
+
+`--dry-run` reports without writing. `--issue N` limits the sweep to one issue.
+
+**`wf post-merge` runs the sweep** and returns it as `unblocked`, whether or
+not it settled anything. `--no-unblock` opts out. `wf pick` runs it too when it
+finds nothing to pick — that hook already existed as `auto_ready_scan`, and it
+had never once worked: it read the body prose rather than the edges, and it
+swapped the blocked label for a `status-ready` label that projects on a `none`
+ready gate do not have, so its single `gh issue edit` failed and nothing
+changed. It now calls the same sweep as everything else.
+
+**Dependencies are read from the native `blockedBy` edges, and only from
+them.** `wf pick` used to parse the `## Dependencies` prose and then spend one
+call per reference looking each up; it now asks for the edges in a single
+query. The prose is generated *from* the edges rather than consulted, because
+the two had drifted apart on nine of the fourteen issues carrying both, and it
+was always the prose that was stale.
+
+This is a behaviour change worth knowing about: an issue whose body names a
+blocker that was never written as an edge is no longer treated as blocked.
+That was already true in effect — the prose parser could not see a `## Blocked
+by` heading with its references on the next line, so those dependencies were
+invisible anyway — but it is now explicit, and `wf pick` warns by name when a
+body names a dependency no edge records. Run `wf issue-audit` to backfill the
+missing edges.
+
 ## github-workflow 8.1.0
 
 **Every issue is now scoped to exactly one party**, and `writing-github-issues`

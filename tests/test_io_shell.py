@@ -272,19 +272,16 @@ class TestBulkPickPaths(unittest.TestCase):
         self.addCleanup(p.stop)
 
     @contextlib.contextmanager
-    def _claimable(self, candidate, open_issues=()):
+    def _claimable(self, candidate, open_issues=(), closed_issues=()):
         """Stub the claim path so one candidate can be claimed without network.
 
-        `open_issues` are the issue numbers `gh issue view --json state` should
-        report as OPEN -- the dependency probe `validate_issue` runs.
+        `open_issues` and `closed_issues` are the candidate's native blocked-by
+        edges and their states -- the graph `validate_issue` reads. It used to
+        read the body prose and look each reference up one call at a time; the
+        edge is the source of truth now, so this stubs the edge.
         """
-        open_set = {int(n) for n in open_issues}
-
-        def fake_gh_json(argv, *a, **kw):
-            if argv[:2] == ['issue', 'view']:
-                number = int(argv[2])
-                return True, {'state': 'OPEN' if number in open_set else 'CLOSED'}, ''
-            return True, [], ''
+        edges = ([{'number': int(n), 'state': 'OPEN'} for n in open_issues]
+                 + [{'number': int(n), 'state': 'CLOSED'} for n in closed_issues])
 
         with mock.patch.object(wf, 'assemble_candidates',
                                return_value=(True, [candidate], '')), \
@@ -293,7 +290,8 @@ class TestBulkPickPaths(unittest.TestCase):
                 mock.patch.object(wf, 'mark_blocked'), \
                 mock.patch.object(wf, 'release_claim'), \
                 mock.patch.object(wf, 'merged_pr_closing', return_value=None), \
-                mock.patch.object(wf, 'gh_json', side_effect=fake_gh_json), \
+                mock.patch.object(wf, 'issue_edges', return_value=edges), \
+                mock.patch.object(wf, 'gh_json', return_value=(True, [], '')), \
                 mock.patch.object(wf, 'board_move_in_progress',
                                   return_value=(True, 'moved')) as board, \
                 mock.patch.object(wf, 'checkout_branch',
@@ -443,7 +441,7 @@ class TestBestEffortSteps(unittest.TestCase):
     def _pick_with(self, **patches):
         with mock.patch.object(wf, 'load_config',
                                return_value=(True, _cfg(), '')),                 mock.patch.object(wf, 'assemble_candidates',
-                                  return_value=(True, [_candidate(1)], '')),                 mock.patch.object(wf, 'acquire_claim', return_value='won'),                 mock.patch.object(wf, 'apply_in_progress'),                 mock.patch.object(wf, 'release_claim'),                 mock.patch.object(wf, 'merged_pr_closing', return_value=None),                 mock.patch.object(wf, 'gh_json', return_value=(True, [], '')),                 mock.patch.object(wf, 'checkout_branch',
+                                  return_value=(True, [_candidate(1)], '')),                 mock.patch.object(wf, 'acquire_claim', return_value='won'),                 mock.patch.object(wf, 'apply_in_progress'),                 mock.patch.object(wf, 'release_claim'),                 mock.patch.object(wf, 'merged_pr_closing', return_value=None),                 mock.patch.object(wf, 'issue_edges', return_value=[]),                 mock.patch.object(wf, 'gh_json', return_value=(True, [], '')),                 mock.patch.object(wf, 'checkout_branch',
                                   return_value=('feature/1/x', True, 'created')) as branch,                 contextlib.ExitStack() as stack:
             for name, patch in patches.items():
                 # `__name__` so the wrapper can label the step it caught,
@@ -2546,6 +2544,114 @@ class TestDependencySection(unittest.TestCase):
 
     def test_no_dependencies_leaves_the_body_alone(self):
         self.assertEqual(wf.ensure_dependency_section('Intro', []), 'Intro')
+
+
+class TestUnblockSweep(unittest.TestCase):
+    """`wf unblock`: release what the edges say is free, report the rest."""
+
+    RELEASED = {'id': 'I_a', 'number': 1313, 'title': 'Device pass',
+                'body': 'Prose.\n\n## Dependencies\n\nBlocked by #1311\n',
+                'labels': {'nodes': [{'name': 'status-blocked'}]},
+                'blockedBy': {'nodes': [{'number': 1311, 'state': 'CLOSED'}]}}
+    HELD = {'id': 'I_b', 'number': 1124, 'title': 'Create the account at sign-in',
+            'body': '', 'labels': {'nodes': [{'name': 'status-blocked'}]},
+            'blockedBy': {'nodes': [{'number': 979, 'state': 'OPEN'},
+                                    {'number': 1311, 'state': 'CLOSED'}]}}
+    NO_EDGES = {'id': 'I_c', 'number': 1084, 'title': '[MANUAL] Open a bank account',
+                'body': '', 'labels': {'nodes': [{'name': 'status-blocked'}]},
+                'blockedBy': {'nodes': []}}
+
+    def _cfg(self):
+        return _cfg(board={'project_node_id': None, 'project_title': None,
+                           'status_field_name': 'Status', 'columns': {}})
+
+    def _sweep(self, nodes, calls, dry_run=False, deliveries=None):
+        """Drive `unblock_scan` over `nodes` with every network call stubbed."""
+        def fake_graphql(query, **fields):
+            if 'search(' in query:
+                return True, {'search': {'pageInfo': {'hasNextPage': False},
+                                         'nodes': list(nodes)}}, ''
+            return True, {'repository': {}}, ''
+
+        def fake_run(cmd, input_text=None):
+            calls.append(list(cmd))
+            return 0, '', ''
+
+        with mock.patch.object(wf, 'gh_graphql', fake_graphql), \
+                mock.patch.object(wf, 'run', fake_run), \
+                mock.patch.object(wf, 'update_issue_body',
+                                  lambda *a: (True, '')), \
+                mock.patch.object(wf, 'blocker_deliveries',
+                                  lambda *a, **k: deliveries or {}), \
+                mock.patch.object(wf, 'board_move',
+                                  lambda *a: (True, 'moved to Backlog')):
+            return wf.unblock_scan(self._cfg(), dry_run=dry_run)
+
+    def test_an_issue_whose_blockers_all_closed_is_released(self):
+        calls = []
+        report = self._sweep([self.RELEASED], calls)
+        self.assertEqual([r['issue'] for r in report['released']], [1313])
+        self.assertEqual(report['released'][0]['closed_blockers'], [1311])
+        self.assertTrue(report['released'][0]['label_removed'])
+        joined = [' '.join(c) for c in calls]
+        self.assertTrue(any('issue edit 1313' in c and 'status-blocked' in c
+                            and '--remove-label' in c for c in joined))
+
+    def test_a_release_says_on_the_issue_why_the_label_went(self):
+        """A bare removal reads to the next agent as damage to repair, and one
+        repaired it two minutes later. The comment is what stops that."""
+        calls = []
+        self._sweep([self.RELEASED], calls)
+        comments = [c for c in calls if 'comment' in c]
+        self.assertEqual(len(comments), 1)
+        body = comments[0][-1]
+        self.assertIn('#1311', body)
+        self.assertIn('removed on purpose', body)
+
+    def test_an_issue_with_one_open_blocker_is_held_and_untouched(self):
+        calls = []
+        report = self._sweep([self.HELD], calls)
+        self.assertEqual(report['released'], [])
+        self.assertEqual(report['held'][0]['open_blockers'], [979])
+        self.assertEqual(report['held'][0]['closed_blockers'], [1311])
+        self.assertFalse([c for c in calls if 'edit' in c or 'comment' in c])
+
+    def test_an_issue_with_no_edges_is_never_released(self):
+        """The safety rule, at the level that matters: the manual backlog is
+        blocked on bank accounts and device passes, not on issues."""
+        calls = []
+        report = self._sweep([self.NO_EDGES], calls)
+        self.assertEqual(report['released'], [])
+        self.assertEqual(report['held'], [])
+        self.assertEqual(report['no_edges'], {'count': 1, 'issues': [1084]})
+        self.assertEqual(calls, [])
+
+    def test_a_dry_run_reports_the_same_release_and_writes_nothing(self):
+        calls = []
+        report = self._sweep([self.RELEASED], calls, dry_run=True)
+        self.assertEqual([r['issue'] for r in report['released']], [1313])
+        self.assertTrue(report['released'][0]['dry_run'])
+        self.assertEqual(calls, [])
+
+    def test_a_held_issue_whose_blocker_just_shipped_is_reported_as_partial(self):
+        report = self._sweep(
+            [self.HELD], [],
+            deliveries={979: {'number': 1372, 'merged_at': '2026-09-09T09:31:43Z'}})
+        self.assertEqual(report['partials'],
+                         [{'issue': 1124, 'title': 'Create the account at sign-in',
+                           'deliveries': [{'blocker': 979, 'merged_pr': 1372,
+                                           'merged_at': '2026-09-09T09:31:43Z'}]}])
+
+    def test_a_held_issue_with_no_recent_delivery_is_not_a_partial(self):
+        report = self._sweep([self.HELD], [])
+        self.assertEqual(report['partials'], [])
+
+    def test_the_scan_reports_everything_it_looked_at(self):
+        report = self._sweep([self.RELEASED, self.HELD, self.NO_EDGES], [])
+        self.assertEqual(report['scanned'], 3)
+        self.assertEqual(len(report['released']), 1)
+        self.assertEqual(len(report['held']), 1)
+        self.assertEqual(report['no_edges']['count'], 1)
 
 
 if __name__ == '__main__':

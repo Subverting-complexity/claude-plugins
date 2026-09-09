@@ -10,6 +10,7 @@ Covers the three pure-logic areas described in the workflow templates:
 No GitHub API calls, no file I/O.  Feed fixture data in, assert outputs.
 Reference: github-workflow/templates/default-labels.md
 """
+import datetime
 import os
 import sys
 import unittest
@@ -2496,6 +2497,138 @@ class TestChoreIsMaintenance(unittest.TestCase):
         result = filter_by_native_type([_issue(1, [])], 'maintenance',
                                        self.TYPE_MAP, {1: 'New Feature'})
         self.assertEqual([c['number'] for c in result], [1])
+
+
+class TestNativeDependencyEdges(unittest.TestCase):
+    """The `blockedBy` edges, which now decide whether an issue is blocked."""
+
+    def test_edges_split_into_open_and_closed_keeping_order(self):
+        edges = [{'number': 979, 'state': 'OPEN'},
+                 {'number': 1311, 'state': 'CLOSED'},
+                 {'number': 980, 'state': 'OPEN'}]
+        self.assertEqual(wf_core.edge_states(edges), ([979, 980], [1311]))
+
+    def test_a_repeated_edge_is_counted_once(self):
+        edges = [{'number': 979, 'state': 'OPEN'}, {'number': 979, 'state': 'OPEN'}]
+        self.assertEqual(wf_core.edge_states(edges), ([979], []))
+
+    def test_an_edge_with_no_usable_number_is_dropped(self):
+        edges = [{'number': None, 'state': 'OPEN'}, {'number': 7, 'state': 'CLOSED'}]
+        self.assertEqual(wf_core.edge_states(edges), ([], [7]))
+
+    def test_every_blocker_closed_releases_the_issue(self):
+        verdict, open_numbers, closed = wf_core.unblock_verdict(
+            [{'number': 1311, 'state': 'CLOSED'}])
+        self.assertEqual(verdict, wf_core.UNBLOCK_RELEASE)
+        self.assertEqual((open_numbers, closed), ([], [1311]))
+
+    def test_one_open_blocker_holds_the_issue(self):
+        verdict, open_numbers, closed = wf_core.unblock_verdict(
+            [{'number': 979, 'state': 'OPEN'}, {'number': 1311, 'state': 'CLOSED'}])
+        self.assertEqual(verdict, wf_core.UNBLOCK_HOLD)
+        self.assertEqual((open_numbers, closed), ([979], [1311]))
+
+    def test_no_edges_is_its_own_verdict_and_never_a_release(self):
+        """The safety rule. Most issues labelled blocked with no edge are
+        waiting on the world, not on an issue, and releasing them would put
+        work no agent can do into the pool."""
+        self.assertEqual(wf_core.unblock_verdict([])[0], wf_core.UNBLOCK_NO_EDGES)
+        self.assertEqual(wf_core.unblock_verdict(None)[0], wf_core.UNBLOCK_NO_EDGES)
+
+    def test_prose_naming_a_blocker_with_no_edge_is_reported_as_a_gap(self):
+        gaps = wf_core.edge_gaps([979, 1032], [{'number': 979, 'state': 'CLOSED'}])
+        self.assertEqual(gaps, [1032])
+
+    def test_no_gap_when_every_named_dependency_has_an_edge(self):
+        gaps = wf_core.edge_gaps([979], [{'number': 979, 'state': 'OPEN'}])
+        self.assertEqual(gaps, [])
+
+
+class TestPartialDelivery(unittest.TestCase):
+    """The case no edge can describe: a blocker that shipped and stayed open."""
+
+    NOW = datetime.datetime(2026, 9, 9, 12, 0, 0)
+
+    def _pr(self, number, title, merged_at, state='MERGED'):
+        return {'number': number, 'title': title, 'state': state,
+                'mergedAt': merged_at}
+
+    def test_a_title_reference_counts_as_delivery(self):
+        prs = [self._pr(1372, 'Verify sign-in on the backend (#979, #980)',
+                        '2026-09-09T09:31:43Z')]
+        found = wf_core.recent_delivery(prs, 979, self.NOW)
+        self.assertEqual(found, {'number': 1372,
+                                 'merged_at': '2026-09-09T09:31:43Z'})
+
+    def test_a_body_only_mention_does_not_count(self):
+        """Tried against a real backlog this flagged ten of eleven held issues.
+        Only the title is somebody saying the PR is about that issue."""
+        prs = [self._pr(1375, 'Scope every issue to one party',
+                        '2026-09-09T09:00:00Z')]
+        self.assertIsNone(wf_core.recent_delivery(prs, 1176, self.NOW))
+
+    def test_a_shorter_number_does_not_answer_for_a_longer_one(self):
+        prs = [self._pr(1, 'Something (#97)', '2026-09-09T09:00:00Z')]
+        self.assertIsNone(wf_core.recent_delivery(prs, 979, self.NOW))
+
+    def test_a_longer_number_does_not_answer_for_a_shorter_one(self):
+        prs = [self._pr(1, 'Something (#1979)', '2026-09-09T09:00:00Z')]
+        self.assertIsNone(wf_core.recent_delivery(prs, 979, self.NOW))
+
+    def test_an_old_merge_falls_outside_the_window(self):
+        prs = [self._pr(900, 'Older work (#979)', '2026-07-01T09:00:00Z')]
+        self.assertIsNone(wf_core.recent_delivery(prs, 979, self.NOW))
+
+    def test_an_unmerged_pull_request_is_not_a_delivery(self):
+        prs = [self._pr(1400, 'In flight (#979)', None, state='OPEN')]
+        self.assertIsNone(wf_core.recent_delivery(prs, 979, self.NOW))
+
+    def test_the_newest_qualifying_merge_wins(self):
+        prs = [self._pr(1300, 'First half (#979)', '2026-09-02T09:00:00Z'),
+               self._pr(1372, 'Second half (#979)', '2026-09-09T09:00:00Z')]
+        self.assertEqual(wf_core.recent_delivery(prs, 979, self.NOW)['number'], 1372)
+
+
+class TestDependencySection(unittest.TestCase):
+    """The `## Dependencies` prose, now generated from the edges."""
+
+    BODY = ('Intro text.\n\n'
+            '## Dependencies\n\n'
+            'Blocked by #979\n\n'
+            '## Not this issue\n\n'
+            'Something else.\n')
+
+    def test_the_section_is_replaced_and_the_rest_of_the_body_survives(self):
+        result = wf_core.set_dependency_section(
+            self.BODY, wf_core.released_dependency_text([979]))
+        self.assertIn('Nothing. Every issue this waited on is closed: #979.', result)
+        self.assertNotIn('Blocked by #979', result)
+        self.assertTrue(result.startswith('Intro text.'))
+        self.assertIn('## Not this issue', result)
+        self.assertIn('Something else.', result)
+
+    def test_a_body_with_no_section_gets_one_appended(self):
+        result = wf_core.set_dependency_section('Just prose.',
+                                                wf_core.blocked_dependency_text([7, 8]))
+        self.assertTrue(result.startswith('Just prose.'))
+        self.assertIn('## Dependencies\n\nBlocked by #7\nBlocked by #8', result)
+
+    def test_an_empty_body_becomes_the_section_alone(self):
+        result = wf_core.set_dependency_section('', wf_core.blocked_dependency_text([7]))
+        self.assertEqual(result, '## Dependencies\n\nBlocked by #7\n')
+
+    def test_empty_text_leaves_the_body_untouched(self):
+        self.assertEqual(wf_core.set_dependency_section(self.BODY, ''), self.BODY)
+
+    def test_the_released_prose_names_what_it_used_to_wait_on(self):
+        """Whoever picks this up next needs to know what it waited on to judge
+        whether the work is really available."""
+        self.assertEqual(wf_core.released_dependency_text([979, 980]),
+                         'Nothing. Every issue this waited on is closed: '
+                         '#979, #980.')
+
+    def test_the_released_prose_survives_an_empty_list(self):
+        self.assertEqual(wf_core.released_dependency_text([]), 'Nothing.')
 
 
 if __name__ == '__main__':

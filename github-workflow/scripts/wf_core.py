@@ -17,6 +17,7 @@ Reference templates (the prose these functions encode):
   - github-workflow/skills/execute/SKILL.md  (branch convention)
 """
 
+import datetime
 import re
 
 # ── Story selection ──────────────────────────────────────────────────────────
@@ -2096,6 +2097,190 @@ def blocking_dependencies(deps, open_numbers, siblings=()):
     open_set = {int(n) for n in (open_numbers or ())}
     sib = {int(n) for n in (siblings or ())}
     return [d for d in deps if int(d) in open_set and int(d) not in sib]
+
+
+# ── native dependency edges ──────────────────────────────────────────────────
+# GitHub's own `blockedBy` edges — what the issue's own sidebar shows and what
+# `addBlockedBy` writes. They decide whether an issue is still waiting on
+# anything. The `## Dependencies` prose is a mirror kept for people to read,
+# and the two drift apart constantly because only one of them is enforced by
+# anything, so everything below reads the edge and rewrites the prose from it.
+
+UNBLOCK_RELEASE = 'release'
+UNBLOCK_HOLD = 'hold'
+UNBLOCK_NO_EDGES = 'no-edges'
+
+# How far back a merge still counts as "this blocker just delivered something".
+# Long enough to cover a story that merged over a weekend, short enough that
+# the report is about what has just happened rather than about every pull
+# request that ever mentioned the issue.
+PARTIAL_WINDOW_DAYS = 14
+
+
+def edge_states(edges):
+    """Split native blocked-by edges into (open_numbers, closed_numbers).
+
+    `edges` are `{'number': int, 'state': 'OPEN'|'CLOSED'}` nodes in the shape
+    GraphQL returns them. Order is kept and duplicates dropped, so a caller
+    can name the blockers in the order the issue itself lists them.
+    """
+    open_numbers, closed_numbers, seen = [], [], set()
+    for edge in edges or ():
+        try:
+            number = int(edge.get('number'))
+        except (TypeError, ValueError):
+            continue
+        if number in seen:
+            continue
+        seen.add(number)
+        if (edge.get('state') or '').upper() == 'OPEN':
+            open_numbers.append(number)
+        else:
+            closed_numbers.append(number)
+    return open_numbers, closed_numbers
+
+
+def unblock_verdict(edges):
+    """Decide whether an issue carrying `edges` has been released.
+
+    Returns (verdict, open_numbers, closed_numbers):
+
+      release   every edge points at a closed issue, and there is at least one
+      hold      at least one edge points at an open issue
+      no-edges  the issue records no native dependency at all
+
+    That "at least one" is the safety rule, and it does the real work here. An
+    issue labelled blocked with no edge is not a released issue, it is an issue
+    nobody ever wrote a dependency for, and on a real backlog most of those are
+    waiting on the world rather than on another issue: a bank account, a device
+    pass, a store upload. A sweep that read "no open blockers" as "release"
+    would put every one of them into the pool for an agent that cannot do any
+    of them.
+    """
+    open_numbers, closed_numbers = edge_states(edges)
+    if not open_numbers and not closed_numbers:
+        return UNBLOCK_NO_EDGES, [], []
+    if open_numbers:
+        return UNBLOCK_HOLD, open_numbers, closed_numbers
+    return UNBLOCK_RELEASE, [], closed_numbers
+
+
+def _merged_at(pull_request):
+    """The `mergedAt` of a merged pull request as a datetime, or None."""
+    if not isinstance(pull_request, dict):
+        return None
+    merged = pull_request.get('merged')
+    state = (pull_request.get('state') or '').upper()
+    if merged is False or (state and state != 'MERGED'):
+        return None
+    stamp = pull_request.get('mergedAt')
+    if not stamp:
+        return None
+    try:
+        return datetime.datetime.strptime(stamp, '%Y-%m-%dT%H:%M:%SZ')
+    except (TypeError, ValueError):
+        return None
+
+
+def title_names_issue(title, number):
+    """True when `title` cites issue `number` as a reference, not as a prefix.
+
+    The digit guards on both sides are the whole point: `#97` must not answer
+    for `#979`, and neither must `#1979`.
+    """
+    return bool(re.search(r'(?<!\d)#0*%d(?!\d)' % int(number), title or ''))
+
+
+def recent_delivery(pull_requests, number, now, window_days=PARTIAL_WINDOW_DAYS):
+    """The newest pull request that recently merged *for* issue `number`, or None.
+
+    This is the one case no edge can describe. A story split into a backend
+    half and an app half merges the backend, stays open, and its edges stay
+    correct — yet whatever only needed the backend's decided shape is free
+    now. Nothing here decides that. It reports the merge, with its number and
+    date, so a person can judge what the merge actually delivered.
+
+    The pull request has to name the issue **in its title**. A mention anywhere
+    in the body is far too weak a signal: tried against a real backlog it
+    flagged ten of the eleven held issues, because a pull request body
+    routinely lists everything nearby, and a report that fires on nearly
+    everything is one nobody reads. A title reference is somebody saying this
+    pull request is about that issue.
+
+    `now` is passed in rather than read, because this module does no I/O and a
+    test that cannot pin the clock is a test that fails on its own anniversary.
+    """
+    newest = None
+    for pull_request in pull_requests or ():
+        if not title_names_issue((pull_request or {}).get('title'), number):
+            continue
+        when = _merged_at(pull_request)
+        if when is None or (now - when).days > window_days:
+            continue
+        if newest is None or when > newest[0]:
+            newest = (when, pull_request)
+    if newest is None:
+        return None
+    return {'number': newest[1].get('number'),
+            'merged_at': newest[1].get('mergedAt')}
+
+
+# ── the `## Dependencies` prose ──────────────────────────────────────────────
+
+DEPENDENCY_HEADING = '## Dependencies'
+
+
+def blocked_dependency_text(blocked_by):
+    """The `## Dependencies` prose for an issue that is still waiting."""
+    return '\n'.join('Blocked by #%s' % number for number in blocked_by)
+
+
+def released_dependency_text(closed_numbers):
+    """The `## Dependencies` prose for an issue whose blockers have all closed.
+
+    It names them rather than saying "Nothing", because the next person to read
+    this issue needs to know what it used to wait on to judge whether the work
+    is really available.
+    """
+    named = ', '.join('#%s' % number for number in closed_numbers)
+    return ('Nothing. Every issue this waited on is closed: %s.' % named
+            if named else 'Nothing.')
+
+
+def set_dependency_section(body, text):
+    """Return `body` with its `## Dependencies` section replaced by `text`.
+
+    Appended when the body has no such section, and the rest of the body is
+    left alone in both cases: the section runs until the next `##` heading,
+    which is what everything written from a spec looks like.
+    """
+    text = (text or '').strip()
+    if not text:
+        return body or ''
+    section = '%s\n\n%s\n' % (DEPENDENCY_HEADING, text)
+    body = body or ''
+    if DEPENDENCY_HEADING not in body:
+        return (body.rstrip() + '\n\n' + section) if body.strip() else section
+    head, _, rest = body.partition(DEPENDENCY_HEADING)
+    tail = ''
+    following = re.search(r'^##\s', rest, re.MULTILINE)
+    if following:
+        tail = rest[following.start():]
+    return head.rstrip() + '\n\n' + section + ('\n' + tail if tail else '')
+
+
+def edge_gaps(deps, edges):
+    """Dependencies the prose names that no native edge records.
+
+    The edge decides whether an issue is blocked, so a body naming a blocker
+    that was never written as an edge is invisible to everything. That is a
+    data gap rather than a block, and it is worth saying out loud: it is
+    exactly how an issue ends up sitting blocked with nothing to notice it has
+    been freed.
+    """
+    open_numbers, closed_numbers = edge_states(edges)
+    recorded = {int(number) for number in open_numbers + closed_numbers}
+    return [int(dep) for dep in (deps or ()) if int(dep) not in recorded]
 
 
 def plan_bulk_order(stories, max_size=BULK_MAX):
