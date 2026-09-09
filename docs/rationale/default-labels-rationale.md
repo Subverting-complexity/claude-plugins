@@ -63,3 +63,9 @@ This extends the **apply == filter** invariant to the board — every producer a
 ### Required columns
 
 A board is required, and `Backlog` is required on it: that column is the pick pool. Preflight emits `CRITICAL board-lane` for a missing board, an unresolvable `project-node-id`, or a missing Backlog column, and `WARNING board-lane` for any other missing lane; setup creates them all.
+
+## Native issue types beyond GitHub's five defaults
+
+`NATIVE_TYPE_MAP` is written for GitHub's five defaults, where nothing can express tech debt and `Feature` is the least wrong answer. An org may add its own types, and `wf_core.NATIVE_TYPE_PREFERENCES` is where a better answer is recorded: `tech debt` and `chore` become `Chore` on an org that has that type, and fall back to the map's `Feature` on one that does not. `org-capabilities` reports the enabled types, and `native_type_for(kind, type_map)` is the single place the choice is made, so the audit and the backfill cannot disagree about it.
+
+Adding a preference has one easily missed consequence: `NATIVE_MAINTENANCE_TYPES` decides what `execute mode=maintenance` may pick, and a type outside that set is invisible to the picker — so a backlog that starts typing its debt `Chore` empties its own maintenance pool unless `Chore` is there too. `architecture` has no preference on purpose: the one org measured had already typed every `[ARCH]` issue `Feature`.

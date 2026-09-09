@@ -12,9 +12,9 @@ gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
 
 The comment should include: phase name, error summary, branch name, whether commits were pushed, what was completed, and what remains. Delete the temp file after.
 
-Then move the issue to the `status-needs-attention` lifecycle label (removing `status-in-progress` so exactly one state is present, resolved by purpose key) so the failure is visible in the issues list. Do **not** open a PR for failed/incomplete work.
+Then run `wf board-move {number} --column col-attention` so the failure is visible on the board — the column is the issue's state, so this is what stops the next run picking it up as available. Do **not** open a PR for failed/incomplete work.
 
-**Once the PR is open (Phase 8 onward), do not move the issue backwards.** Phase 7 already set `status-in-review` and moved the board to In Review, and the open, labelled PR is the visible record of the work. Comment the failure on the **PR** instead, leave the issue at `status-in-review`, and let the next `/github-workflow:code-review` run take it from there. Moving it to `status-needs-attention` would desynchronise the lifecycle label, the board, and the PR's review state.
+**Once the PR is open (Phase 8 onward), do not move the issue backwards.** Phase 7 already moved the card to In Review, and the open, labelled PR is the visible record of the work. Comment the failure on the **PR** instead, leave the card in In Review, and let the next `/github-workflow:code-review` run take it from there. Moving it to Needs attention would put the board and the PR's review state at odds.
 
 This ensures the next session (or human) can pick up exactly where this one failed without guessing what happened. After the comment is posted, run **Exit cleanup** (`references/exit-cleanup.md` — it releases the claim ref so the issue can be picked again) before exiting.
 
@@ -26,7 +26,7 @@ If any phase cannot proceed, run `/github-workflow:block-story` with details (it
 
 This hatch is for problems **outside** the change this run is making, and `SKILL.md`'s **Fix in scope, file out of scope** rule decides which those are before this hatch does: a problem in this story's own diff is fixed here on the branch, whether it surfaced during the build or in a review round, and never filed.
 
-What reaches this hatch is the rest: a pre-existing bug in code you did not touch, a security flaw, a layering or architecture violation, or tech debt belonging to other work. File it to the board so it is fixed automatically. Run `/github-workflow:report-issue` (autonomous — do not pause for confirmation). **No human approval is needed**: it classifies the problem, applies the **actual issue type** (bug, security, architecture, or tech debt) and priority, and places it in the board's Backlog column carrying no lifecycle label, which is what makes the normal pickup flow fix it. Do not fix it inline unless it is trivial and within the same scope — an unrelated fix widens the diff the reviewers have to judge. When you report what you did this session, name each filed item by its actual type and number (e.g. "Filed bug #45", "Filed tech-debt #46").
+What reaches this hatch is the rest: a pre-existing bug in code you did not touch, a security flaw, a layering or architecture violation, or tech debt belonging to other work. File it to the board so it is fixed automatically. Run `/github-workflow:report-issue` (autonomous — do not pause for confirmation). **No human approval is needed**: it classifies the problem, applies the **actual issue type** (bug, security, architecture, or tech debt), sets `Priority`, `Effort` and `Ownership`, and places it in the board's Backlog column, which is what makes the normal pickup flow fix it. Do not fix it inline unless it is trivial and within the same scope — an unrelated fix widens the diff the reviewers have to judge. When you report what you did this session, name each filed item by its actual type and number (e.g. "Filed bug #45", "Filed tech-debt #46").
 
 ## Dependency
 

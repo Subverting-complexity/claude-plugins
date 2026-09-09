@@ -12,14 +12,14 @@ Requires: a story in progress with a known blocker.
 
 ## What "blocked" means
 
-An issue is **blocked** when it cannot make progress because of something outside its own control: another unfinished issue, an external decision, missing access or credentials, or an upstream fix. Blocked is **not** "I gave up" and **not** "this needs more spec" — that second case is `needs-refinement`, a different state.
+An issue is **blocked** when it cannot make progress because of something outside its own control: another unfinished issue, an external decision, missing access or credentials, or an upstream fix. Blocked is **not** "I gave up" and **not** "this needs more spec" — that second case is the Needs refinement column, a different state.
 
-A blocked issue sits in the board's **Blocked** column, which is what keeps it out of the pick pool — the pool is the Backlog column, and the issue is no longer in it. It also carries the `status-blocked` lifecycle label, so the state is visible to anyone reading the issues list rather than only on the board.
+A blocked issue sits in the board's **Blocked** column, and that column is the whole of the state. The pool is the Backlog column, so a card that has left it is out of the pool; there is no second record to apply, and nothing that can disagree with the board about whether an issue is blocked.
 
 **How it becomes unblocked:**
 
-- **Automatically** — when the blocker is another issue recorded as a native blocked-by edge, `wf unblock` detects that every one of them is closed, removes `status-blocked`, moves the card to Backlog, and comments. The issue re-enters the pick pool. An issue with no edge is never released this way, which is deliberate: most blocked issues are waiting on the world rather than on an issue.
-- **Manually** — for non-issue blockers (a decision, access granted), a human removes `status-blocked` and moves the card back to Backlog. No label replaces it: an issue in Backlog with no lifecycle label is exactly what available means.
+- **Automatically** — when the blocker is another issue recorded as a native blocked-by edge, `wf unblock` reads the Blocked column, finds every one of that issue's edges closed, moves the card to Backlog, and comments. The move is the release. An issue with no edge is never released this way, which is deliberate: most blocked issues are waiting on the world rather than on an issue.
+- **Manually** — for non-issue blockers (a decision, access granted), a person drags the card back to Backlog. That is the entire act: being in Backlog is what available means.
 
 ## Preflight
 
@@ -32,10 +32,9 @@ Before doing anything else, invoke `/github-workflow:preflight` to verify projec
 Read `ClaudeProject.md` and extract:
 
 - `org`, `repo` from Identity
-- Project board settings (if configured)
-- Label map (for status labels)
+- Project board settings
 
-If `ClaudeProject.md` is missing or has no label map, use the default label names from `templates/default-labels.md`. When using defaults in an interactive session, warn the user: "Label map not configured — using default labels. Run `/github-workflow:setup` to configure labels for this project."
+The board is not optional here: the block **is** a board move, so a project with no recorded board has nowhere to put the issue. If the Project Board section is missing, say so and stop rather than commenting on an issue that stays in the pool.
 
 ### 2. Comment the blocker
 
@@ -51,19 +50,19 @@ If the blocker is another issue, record it as a **native blocked-by edge** (Step
 
 Add the marker and nothing else. The blocker narrative stays in the comment, so do not restate it in the body, and leave the rest of the body as it is. If you are editing the body for any other reason, the result has to satisfy `../skills/writing-github-issues/SKILL.md`.
 
-**Record the blocker where the tooling reads it.** The native blocked-by edge is the source of truth for auto-unblock and for selection, and the **`Status reason`** field carries a one-line "why" alongside the label. Write a one-entry spec and apply it:
+**Record the blocker where the tooling reads it.** The native blocked-by edge is the source of truth for auto-unblock and for selection. Nothing else records "why" in a structured field — the reason is prose, it belongs in the Step 2 comment, and a field holding a sentence is a field nothing can select on. Write a one-entry spec and apply it:
 
 ```bash
 mkdir -p .claude
 cat > .claude/block-spec.json <<'JSON'
-{"issues": [{"number": {number},
-             "fields": {"field-status-reason": "{one-line reason}"},
-             "blocked_by": [{blocking issue numbers}]}]}
+{"issues": [{"number": {number}, "blocked_by": [{blocking issue numbers}]}]}
 JSON
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/block-spec.json
 ```
 
-Drop `blocked_by` when the blocker is not another issue. Read the exit code: **0** applied it; **21** (`no-capabilities`) means the org defines no issue fields, so skip silently — the comment and the body marker remain the authoritative record; **22** (`spec-invalid`) means the spec is wrong, so fix it; **24** (`partial`) means some of it landed, so report what did not.
+`issue-apply` places the card as well as writing the edge, so Step 5's board move is a no-op after this — run it only when the blocker is **not** another issue and there is no spec to apply. Read the exit code: **0** applied it; **22** (`spec-invalid`) means the spec is wrong, so fix it; **24** (`partial`) means some of it landed, so report what did not.
+
+Skip this step entirely when the blocker is not an issue: there is no edge to write, and Step 5 moves the card on its own.
 
 ### 3. Release the claim and unassign
 
@@ -86,34 +85,19 @@ gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 
 The claim-ref delete is idempotent — ignore an error if the ref is already gone.
 
-### 4. Move the issue to the blocked state
+### 4. Move the card to the blocked lane
 
-Move the issue to the `status-blocked` lifecycle label, removing whatever lifecycle label it currently has (`status-in-progress`, `needs-refinement`, etc.) so at most one state is present. Resolve both names by purpose key through `templates/default-labels.md`:
-
-```
-gh issue edit {number} --repo {org}/{repo} \
-  --remove-label "{current_lifecycle_label}" --add-label "{status_blocked_label}"
-```
-
-After applying, verify per `templates/default-labels.md` (read back the labels; guarded create-if-missing without `--force` if the label is absent, then retry once).
-
-The label makes the blocked state visible in the issues list; the Step 5 board move is what takes the issue out of the pick pool. The blocker itself lives in the native blocked-by edge; the Step 2 comment says why in words.
-
-**Use `status-non-code` instead when the blocker is the work's own nature** — a browser console, or a person with a device. `status-blocked` means an open edge and `wf unblock` releases it when that edge closes, which for scoped work would hand it to an agent that cannot do it.
-
-The board move in Step 5 is the part that matters, and it is not optional: until the card leaves Backlog the issue is still in the pool, whatever label it carries.
-
-These commands are idempotent — a label remove no-ops if the label is not present.
-
-### 5. Update project board (if configured)
+This is the block. There is no label to apply alongside it: the column an issue's card sits in **is** its state, and until the card leaves Backlog the issue is still in the pick pool.
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-blocked
 ```
 
-`col-blocked` is the column paired with `status-blocked` per `templates/default-labels.md`. The command verifies the board's identity and resolves the column **before** it adds the card, so a column the board does not have costs one query and writes nothing. It **always exits 0**, so read `moved` and `reason` — but a move that did not happen means the issue is still in the pool, so say so plainly rather than treating it as cosmetic.
+The command verifies the board's identity and resolves the column **before** it adds the card, so a column the board does not have costs one query and writes nothing. It **always exits 0** so a board problem never costs the run its work — but read `moved` and `reason`, and if the move did not happen say so plainly: the issue is still available and the next `pick` will offer it.
 
-### 6. Reconcile the working tree to clean
+**Use `col-non-code` instead when the blocker is the work's own nature** — a browser console, or a person with a device. Blocked means an open edge and `wf unblock` releases it when that edge closes, which for non-code work would hand it to an agent that cannot do it. Set `Ownership` to `Browser agent` or `Human` at the same time, which is what keeps it out of the pool for good.
+
+### 5. Reconcile the working tree to clean
 
 Do **not** leave uncommitted work sitting in the worktree. There is no cross-session resume, so a worktree left dirty "for a later session to inspect" is never inspected — the work is stranded **and** the dirty tree blocks the harness from ever reaping the worktree (`docs/worktree-config.md`).
 
@@ -124,6 +108,6 @@ Run the **End clean** procedure in `templates/worktree-hygiene.md`:
 
 Do **not** `git stash` — the stash is shared across every worktree on this clone, so shelving here can collide with another agent's work. End with `git status --porcelain` empty. Releasing the claim (above) returns the story to the backlog; reconciling the tree lets the worktree be reaped.
 
-### 7. Report
+### 6. Report
 
-Display what was blocked — naming the story by number **and** title together (e.g. `#42 Add login button`, never the number alone) — why, and that the story has been blocked and returned to the backlog. Suggest running `/github-workflow:execute` to continue with the next story.
+Display what was blocked — naming the story by number **and** title together (e.g. `#42 Add login button`, never the number alone) — why, and which lane its card is now in. Suggest running `/github-workflow:execute` to continue with the next story.

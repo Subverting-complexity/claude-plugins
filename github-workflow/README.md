@@ -109,17 +109,15 @@ Both modes use the same commands and skill — the pick logic adapts.
 
 ## Label map
 
-Instead of hardcoding label names, the plugin maps **purposes** to your repository's actual labels via `ClaudeProject.md`:
+**Labels decide nothing.** State is the board column, and priority, effort and ownership are org-level issue fields — so there is one issue label left, the `claude-authored` provenance marker, plus the review-state labels a pull request carries. The map exists so a repository can call that marker whatever it already calls it:
 
 ```markdown
 | Purpose          | Label              |
 | ---------------- | ------------------ |
-| priority-high    | `P1`               |
-| status-blocked   | `status:blocked`   |
 | claude-authored  | `claude:authored`  |
 ```
 
-This lets the same plugin work across repos with different label schemes.
+A map row naming a label the workflow retired (`status-*`, `priority-*`, `needs-refinement`, `claude-ready`) is reported by `wf config-audit` as `label-deprecated`. Delete the row; the labels themselves can stay on old issues.
 
 ## Project board
 
@@ -138,24 +136,25 @@ When configured, the setup wizard auto-fetches:
 - Field IDs for Status, Start Date, End Date
 - Option IDs for each status column (see the canonical set below)
 
-### Board columns mirror the lifecycle
+### The board column *is* the state
 
-The board is the **board-side mirror** of the issue lifecycle labels. Every command that moves an issue to a new lifecycle *label* also moves its board item to the paired *column*, so the board never drifts from the labels. The canonical six-column set — the three **active workflow columns** (In Progress, In Review, Blocked) plus Backlog, Ready, and Done — and the full label ⇄ column pairing live in one place, `templates/default-labels.md` → Board Columns. Columns resolve by purpose key (`col-in-progress`, `col-in-review`, `col-blocked`, …) exactly like labels, so "apply == filter" holds for the board too.
+An issue's state is which column its card sits in, and nowhere else. There is no label to keep in step, so there is nothing for the board to drift from. The nine columns — Backlog, In Progress, In Review, Blocked, Non-code, Needs refinement, Parked, Needs attention, Done — and what each one means are in one place, `templates/default-labels.md` → Board Columns. Columns resolve by purpose key (`col-backlog`, `col-in-progress`, `col-in-review`, …) exactly as labels do, so a project that renamed a lane only edits `ClaudeProject.md`.
 
-| Lifecycle label | Board column |
-| --------------- | ------------ |
-| (none — available) | Backlog |
-| `status-in-progress` | In Progress |
-| `status-in-review` | In Review |
-| `status-blocked` | Blocked |
-| `status-non-code` | Non-code |
-| `needs-refinement` | Needs refinement |
-| `status-parked` | Parked |
-| `status-needs-attention` | Needs attention |
+| The issue is | Column |
+| ------------ | ------ |
+| available to pick | Backlog |
+| claimed by an agent | In Progress |
+| waiting on a pull request | In Review |
+| pointing at an open blocked-by edge | Blocked |
+| owned by a person or a browser agent | Non-code |
+| specced too thinly to start | Needs refinement |
+| deliberately set aside | Parked |
+| stopped part-way and needing a person | Needs attention |
+| closed | Done |
 
 **A board is required, and so is its Backlog column.** That column *is* the pick pool: `pick` and `candidates` read it and nothing else, so an issue with no card on the board cannot be selected — which is why every issue the plugin creates or updates is placed. The setup wizard creates any missing column (via `updateProjectV2Field`); preflight fails the run when the board or its Backlog column is absent, and warns for every other missing lane.
 
-The lifecycle labels mirror the column so a person reading the issues list can see the state. Nothing selects on them.
+Approval is structural too. A person approves work by moving its card into Backlog and withholds approval by leaving it in Needs refinement or Parked — there is no `claude-ready` label and no gate setting to turn on.
 
 ## Auto-merge
 

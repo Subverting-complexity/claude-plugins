@@ -26,7 +26,7 @@ Before spending a full review on the claimed PR, check whether **another open PR
         --comment "Closing as a duplicate of #W, which resolves the same issue (#N) and is the better-implemented of the two (<one-line reason>). Work here is preserved on branch \`<headRefName>\` if anything needs salvaging into #W."
       ```
       Do not delete the branch — leave it so the work is recoverable.
-   c. Release the claim you took on `L` (`wf claim-release --pr L` **Release**, target `pr-L`). Do **not** touch the linked issue's assignee or lifecycle label — the surviving PR `W` still drives it.
+   c. Release the claim you took on `L` (`wf claim-release --pr L` **Release**, target `pr-L`). Do **not** touch the linked issue's assignee or move its card — the surviving PR `W` still drives it.
 6. Resolve where the PR you hold sits:
    - **You hold the winner `W`:** continue to Step 3 and review it.
    - **You hold a loser:** you just closed it in 5b. Remove its `reviewing` label, release your claim (`wf claim-release --pr <number>`), and **exit** — never review a closed PR. The winner keeps its current review-state label and is reviewed on this or a later run.

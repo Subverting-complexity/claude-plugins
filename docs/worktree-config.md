@@ -139,7 +139,7 @@ If `git worktree remove` still fails after killing lock-holders, delete the dire
 
 ## Reaping stale claim refs
 
-The github-workflow plugin locks each in-flight issue/PR with a ref under `refs/claims/`, taken and freed by `wf claim` / `wf claim-release`. The lock is only a race-protector for the brief select-to-claim window; **durable ownership is the assignment + the issue's lifecycle label**, not the ref.
+The github-workflow plugin locks each in-flight issue/PR with a ref under `refs/claims/`, taken and freed by `wf claim` / `wf claim-release`. The lock is only a race-protector for the brief select-to-claim window; **durable ownership is the assignment plus the card's column**, not the ref.
 
 **Automated reaper.** Run `/github-workflow:setup reap` to scan all active claim refs, cross-check each one against the corresponding issue or PR's current state, and free any that no longer back live work. It applies a staleness threshold (default 4 hours) before touching any ref, so a normally running session is never interrupted. Use this whenever a story is stuck and no agent will pick it, or run it as a scheduled routine via `/schedule`.
 
@@ -156,7 +156,7 @@ git fetch origin refs/claims/issue-42 && git log -1 FETCH_HEAD
 git push origin :refs/claims/issue-42
 ```
 
-Deleting a claim ref never touches the issue's assignment or labels — those remain the source of truth for who owns the work. If you also want to hand the item back to the pool, remove the assignee, drop the `status-in-progress` label, and move the card back to the Backlog column — that last move is what actually returns it, because Backlog is the pool. Move it to Blocked instead if it is genuinely blocked.
+Deleting a claim ref never touches the issue's assignment or its card — those remain the source of truth for who owns the work and what state it is in. If you also want to hand the item back to the pool, remove the assignee and move the card back to the Backlog column — that move is what actually returns it, because Backlog is the pool. Move it to Blocked instead if it is genuinely blocked.
 
 ---
 

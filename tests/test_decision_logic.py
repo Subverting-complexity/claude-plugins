@@ -33,7 +33,7 @@ from wf_core import (  # noqa: E402
     branch_name,
     branch_slug,
     closing_issue_numbers,
-    current_lifecycle_label,
+    retired_labels_on,
     detect_backlog_mode,
     filter_by_native_type,
     get_sprint_candidates,
@@ -57,87 +57,149 @@ import wf_core  # noqa: E402  (module handle for the value-map tables)
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 
-def _issue(number, labels, body='', milestone=None):
-    return {'number': number, 'labels': labels, 'body': body, 'milestone': milestone}
+# The picker reads structured fields, so a fixture issue carries them. The two
+# that decide anything are `Priority` (the whole of the sort) and `Ownership`
+# (the whole of the availability filter); `owner` defaults to code work because
+# that is what the overwhelming majority of a backlog is, and the tests that
+# care about the other two owners say so.
+def _issue(number, labels=(), body='', milestone=None,
+           priority=None, owner='Code agent'):
+    return {'number': number, 'labels': list(labels), 'body': body,
+            'milestone': milestone, '_priority': priority, '_owner': owner}
+
+
+def _maps(candidates):
+    """The `Priority` and `Ownership` maps a real run reads from the org."""
+    return (
+        {c['number']: c['_priority'] for c in candidates
+         if c.get('_priority')},
+        {c['number']: c['_owner'] for c in candidates if c.get('_owner')},
+    )
+
+
+def _pool(candidates, **kw):
+    priority, ownership = _maps(candidates)
+    kw.setdefault('priority_map', priority)
+    kw.setdefault('ownership_map', ownership)
+    return select_pool(candidates, **kw)
+
+
+def _story(candidates, **kw):
+    priority, ownership = _maps(candidates)
+    kw.setdefault('priority_map', priority)
+    kw.setdefault('ownership_map', ownership)
+    return select_story(candidates, **kw)
 
 
 class TestStorySelection(unittest.TestCase):
-    """Priority sort, mode filter, refinement filter, and agent-gating."""
+    """Priority sort, mode filter, ownership filter, and agent-gating."""
 
-    # Priority sort
+    # Priority sort. The org's `Priority` field is the only input: the
+    # `priority-*` label fallback went in 10.0.0 because two answers to "how
+    # urgent is this" drift, and the drift silently reorders a backlog.
 
     def test_higher_priority_beats_lower_issue_number(self):
-        """A high-priority issue is selected over a medium-priority issue with a smaller number."""
         candidates = [
-            _issue(1, ['priority-medium']),
-            _issue(10, ['priority-high']),
+            _issue(1, priority='Medium'),
+            _issue(10, priority='High'),
         ]
-        self.assertEqual(select_story(candidates)['number'], 10)
+        self.assertEqual(_story(candidates)['number'], 10)
 
     def test_same_priority_lower_number_wins(self):
         candidates = [
-            _issue(20, ['priority-medium']),
-            _issue(5, ['priority-medium']),
+            _issue(20, priority='Medium'),
+            _issue(5, priority='Medium'),
         ]
-        self.assertEqual(select_story(candidates)['number'], 5)
+        self.assertEqual(_story(candidates)['number'], 5)
 
-    def test_full_priority_order_critical_high_medium_low(self):
+    def test_full_priority_order_urgent_high_medium_low(self):
         candidates = [
-            _issue(4, ['priority-low']),
-            _issue(3, ['priority-medium']),
-            _issue(2, ['priority-high']),
+            _issue(4, priority='Low'),
+            _issue(3, priority='Medium'),
+            _issue(2, priority='High'),
+            _issue(1, priority='Urgent'),
+        ]
+        self.assertEqual(_story(candidates)['number'], 1)
+
+    def test_an_issue_with_no_priority_value_sorts_after_explicit_low(self):
+        candidates = [
+            _issue(1),                       # no Priority value at all
+            _issue(2, priority='Low'),
+        ]
+        self.assertEqual(_story(candidates)['number'], 2)
+
+    def test_a_priority_label_no_longer_orders_anything(self):
+        """The label used to be the fallback. It is now inert.
+
+        An issue carrying `priority-critical` and no `Priority` value sorts
+        last, behind an issue whose field says `Low`. That is the intended
+        behaviour and not a regression: `config-audit` fails when the org has
+        no `Priority` field, and `issue-audit` names every issue missing a
+        value, so an unranked issue is a reported gap rather than a quiet
+        reordering on the strength of a label nobody maintains.
+        """
+        candidates = [
             _issue(1, ['priority-critical']),
+            _issue(2, priority='Low'),
         ]
-        self.assertEqual(select_story(candidates)['number'], 1)
-
-    def test_unlabelled_priority_sorts_after_explicit_low(self):
-        candidates = [
-            _issue(1, []),                          # no priority label
-            _issue(2, ['priority-low']),
-        ]
-        self.assertEqual(select_story(candidates)['number'], 2)
-
-    # Refinement filter
+        self.assertEqual(_story(candidates)['number'], 2)
 
     def test_empty_pool_returns_none(self):
-        self.assertIsNone(select_story([]))
+        self.assertIsNone(_story([]))
 
     # Availability. The pool handed to `select_pool` is the board's Backlog
     # column, and `Status` holds one value, so an issue that is parked, in
     # progress, in review, blocked, done or awaiting refinement is in that
-    # column and never reaches here. There is nothing left to exclude by
-    # lifecycle label, and excluding by one would be reading a mirror.
+    # column and never reaches here. What is left to exclude is the one thing
+    # a column cannot express: who can actually do the work.
 
-    def test_a_lifecycle_label_no_longer_takes_an_issue_out_of_the_pool(self):
-        """The label is a mirror of the column, and the column already spoke.
+    def test_a_status_label_no_longer_takes_an_issue_out_of_the_pool(self):
+        """There is no such label any more, and a leftover one decides nothing.
 
         This is the opt-in model going away. `status-ready` used to be the only
         lifecycle label meaning "pick me", so an issue nobody had marked was
         invisible — which is exactly what happened on this plugin's own
         repository, where three workable issues sat in the backlog while the
-        picker reported an empty pool.
+        picker reported an empty pool. An issue still carrying one of the
+        retired labels is picked on its fields like any other, and the write
+        path takes the label off when it touches it.
         """
-        for state in ('status-parked', 'status-blocked', 'status-in-progress',
+        for stale in ('status-parked', 'status-blocked', 'status-in-progress',
                       'status-in-review', 'status-needs-attention',
-                      'needs-refinement'):
-            with self.subTest(state=state):
-                picked = select_story([_issue(1, ['priority-critical', state])])
+                      'status-ready', 'needs-refinement'):
+            with self.subTest(stale=stale):
+                picked = _story([_issue(1, [stale], priority='Urgent')])
                 self.assertEqual(picked['number'], 1)
 
-    def test_no_lifecycle_label_at_all_is_eligible(self):
-        """The ordinary case, and now the only one that needs stating."""
-        self.assertEqual(select_story([_issue(7, ['priority-low'])])['number'], 7)
+    def test_work_a_code_agent_cannot_do_is_excluded(self):
+        for owner in ('Browser agent', 'Human'):
+            with self.subTest(owner=owner):
+                self.assertIsNone(_story([_issue(1, priority='Urgent',
+                                                 owner=owner)]))
+
+    def test_an_issue_with_no_ownership_value_is_excluded(self):
+        """Not "probably code". The blank is a gap, and guessing at it is what
+        handed a `[Manual]` device-pass job to a code agent."""
+        self.assertIsNone(_story([_issue(1, priority='Urgent', owner=None)]))
+
+    def test_an_unrecognised_ownership_option_is_excluded(self):
+        """An org that renamed its options gets nothing rather than a guess."""
+        self.assertIsNone(_story([_issue(1, priority='High', owner='Robot')]))
+
+    def test_a_scope_label_no_longer_excludes_anything(self):
+        """`browser-agent` was the fallback until 10.0.0. `Ownership` decides."""
+        picked = _story([_issue(1, ['browser-agent'], priority='High')])
+        self.assertEqual(picked['number'], 1)
 
     # Mode filter
 
     def test_story_mode_accepts_any_type(self):
         """In story mode there is no type filter — all issue kinds are eligible."""
         candidates = [
-            _issue(1, ['priority-medium', 'type-bug']),
-            _issue(2, ['priority-medium', 'type-story']),
+            _issue(1, priority='Medium'),
+            _issue(2, priority='Medium'),
         ]
-        # Both eligible; lowest number wins
-        self.assertEqual(select_story(candidates, mode='story')['number'], 1)
+        self.assertEqual(_story(candidates, mode='story')['number'], 1)
 
     # A `type-*` label classifies nothing any more, on any org. An org that
     # has not enabled native issue types cannot answer a feature/maintenance
@@ -146,115 +208,92 @@ class TestStorySelection(unittest.TestCase):
 
     def test_feature_mode_without_native_types_selects_nothing(self):
         candidates = [
-            _issue(1, ['priority-high', 'type-bug']),
-            _issue(2, ['priority-medium', 'type-story']),
+            _issue(1, ['type-bug'], priority='High'),
+            _issue(2, ['type-story'], priority='Medium'),
         ]
-        self.assertIsNone(select_story(candidates, mode='feature'))
+        self.assertIsNone(_story(candidates, mode='feature'))
 
     def test_maintenance_mode_without_native_types_selects_nothing(self):
-        candidates = [_issue(1, ['priority-medium', 'type-bug'])]
-        self.assertIsNone(select_story(candidates, mode='maintenance'))
+        candidates = [_issue(1, ['type-bug'], priority='Medium')]
+        self.assertIsNone(_story(candidates, mode='maintenance'))
 
     def test_the_unanswerable_candidates_are_named_not_dropped(self):
         unclassified = []
         candidates = [_issue(1, ['type-bug']), _issue(2, ['type-story'])]
-        pool = select_pool(candidates, mode='maintenance',
-                           unclassified=unclassified)
+        pool = _pool(candidates, mode='maintenance', unclassified=unclassified)
         self.assertEqual(pool, [])
         self.assertEqual(unclassified, [1, 2])
 
     def test_story_mode_still_needs_no_types_at_all(self):
         """Story mode asks no type question, so it is unaffected."""
-        candidates = [_issue(1, ['priority-high'])]
-        self.assertEqual(select_story(candidates)['number'], 1)
+        self.assertEqual(_story([_issue(1, priority='High')])['number'], 1)
 
-    # Agent gating
+    def test_no_label_on_an_issue_changes_whether_it_is_picked(self):
+        """The whole of the 10.0.0 selection change, stated once.
 
-    def test_gating_disabled_does_not_filter_on_claude_ready(self):
+        `claude-ready` was the human-approval gate and the last label the
+        picker read. Approval is the card's column now: a person approves an
+        issue by moving it into Backlog and withholds approval by leaving it
+        elsewhere. Every label below used to decide something here and none of
+        them decides anything now.
+        """
         candidates = [
-            _issue(1, ['priority-medium']),           # no claude-ready
-            _issue(2, ['priority-medium', 'claude-ready']),
+            _issue(1, ['status-parked', 'human-required', 'priority-low'],
+                   priority='High'),
+            _issue(2, ['claude-ready', 'priority-critical'], priority='Low'),
         ]
-        # Gating off: pick #1 (lower number, same priority)
-        self.assertEqual(select_story(candidates, agent_gating='disabled')['number'], 1)
-
-    def test_gating_enabled_requires_claude_ready(self):
-        candidates = [
-            _issue(1, ['priority-high']),             # not approved
-            _issue(2, ['priority-medium', 'claude-ready']),
-        ]
-        # Gating on: #1 filtered out even though higher priority
-        self.assertEqual(select_story(candidates, agent_gating='enabled')['number'], 2)
-
-    def test_gating_enabled_nothing_approved_returns_none(self):
-        candidates = [_issue(1, ['priority-high'])]
-        self.assertIsNone(select_story(candidates, agent_gating='enabled'))
+        self.assertEqual([c['number'] for c in _pool(candidates)], [1, 2])
 
 
 class TestSelectionHonoursProjectLabelMap(unittest.TestCase):
-    """The fast path must resolve every label it filters/sorts on through the
-    project map — otherwise a project that renames labels comes
-    up spuriously empty (the `no-candidates` / ready-gate-mismatch symptom)."""
+    """No label is left in the fast path, whatever the project calls it.
 
-    # A project that renames the defaults.
-    PROJECT_MAP = {
-        'priority-high': 'P1',
-        'priority-medium': 'P2',
-        'needs-refinement': 'triage',
-        'claude-ready': 'bot-ok',
-        'type-story': 'kind-story',
-        'type-bug': 'kind-bug',
-    }
+    This class used to cover four filters: the priority sort, the scope filter,
+    the refinement filter and agent gating. Every one of them read a label, and
+    every one of them could be silently defeated by a project that renamed it
+    -- a filter matching a default name that no issue carried, returning a pool
+    of nothing and reporting a finished backlog. All four read a structured
+    field now, and a field has no per-project name to get wrong.
 
-    def test_priority_sort_uses_remapped_labels(self):
-        """A renamed priority label still outranks a lower-priority issue with a
-        smaller number — without the map it would sort as 'no priority'."""
-        candidates = [
-            _issue(1, ['P2']),
-            _issue(10, ['P1']),
-        ]
-        self.assertEqual(
-            select_story(candidates, project_map=self.PROJECT_MAP)['number'], 10)
+    The tests stay, inverted: each one hands the selector a project map that
+    renames the label it used to depend on, and proves the pool is unmoved.
+    """
 
-    def test_the_scope_filter_uses_remapped_labels(self):
-        """The one exclusion left that reads a label, so the one that can still
-        come up spuriously empty on a project that renamed its own."""
-        candidates = [
-            _issue(1, ['P1', 'needs-a-person']),   # renamed scope-human
-            _issue(2, ['P2']),
-        ]
-        project_map = dict(self.PROJECT_MAP, **{'scope-human': 'needs-a-person'})
-        self.assertEqual(
-            select_story(candidates, project_map=project_map)['number'], 2)
-
-    def test_agent_gating_uses_remapped_label(self):
-        candidates = [
-            _issue(1, ['P1']),             # not approved
-            _issue(2, ['P2', 'bot-ok']),   # renamed claude-ready
-        ]
-        self.assertEqual(
-            select_story(candidates, agent_gating='enabled',
-                         project_map=self.PROJECT_MAP)['number'], 2)
-
-    def test_a_remapped_lifecycle_label_no_longer_empties_the_pool(self):
+    def test_a_renamed_status_label_no_longer_empties_the_pool(self):
         """Regression, twice over. A lifecycle filter that did not know the
-        project's own names emptied this pool to no-candidates; then the
-        filter itself went, because the label is not what parks an issue —
-        the board column it sits in is."""
+        project's own names emptied this pool to no-candidates; then the filter
+        itself went, because the label was never what parked an issue -- the
+        board column it sits in is, and a column has one value."""
         candidates = [
-            _issue(5, ['P1']),
-            _issue(6, ['P2', 'triage']),   # renamed needs-refinement
+            _issue(5, priority='High'),
+            _issue(6, ['triage'], priority='Medium'),   # renamed needs-refinement
         ]
-        pool = select_pool(candidates, project_map=self.PROJECT_MAP)
+        pool = _pool(candidates, project_map={'needs-refinement': 'triage'})
         self.assertEqual([c['number'] for c in pool], [5, 6])
 
-    def test_omitting_map_falls_back_to_default_names(self):
-        """No project map → default literals still work (backwards compatible)."""
+    def test_a_renamed_approval_label_no_longer_gates_anything(self):
+        """There is no gate. A project that still maps `claude-ready` to its own
+        name gets the same pool as one that never had the label."""
         candidates = [
-            _issue(1, ['priority-medium']),
-            _issue(10, ['priority-high']),
+            _issue(1, priority='High'),
+            _issue(2, ['bot-ok'], priority='Medium'),
         ]
-        self.assertEqual(select_story(candidates)['number'], 10)
+        self.assertEqual(
+            [c['number'] for c in
+             _pool(candidates, project_map={'claude-ready': 'bot-ok'})],
+            [1, 2])
+
+    def test_a_renamed_priority_label_no_longer_orders_anything(self):
+        """The sort reads the field, so a project's own label names cannot
+        reorder it and cannot silently fail to."""
+        candidates = [
+            _issue(1, ['P2'], priority='Medium'),
+            _issue(10, ['P1'], priority='High'),
+        ]
+        self.assertEqual(
+            _story(candidates, project_map={'priority-high': 'P1',
+                                            'priority-medium': 'P2'})['number'],
+            10)
 
 
 class TestLabelResolution(unittest.TestCase):
@@ -339,12 +378,12 @@ class TestBacklogMode(unittest.TestCase):
     def test_sprint_selection_respects_priority_within_sprint(self):
         """After narrowing to a sprint, the priority sort still picks the best issue."""
         candidates = [
-            _issue(1, ['priority-low'], milestone='Sprint 5'),
-            _issue(2, ['priority-high'], milestone='Sprint 5'),
-            _issue(3, ['priority-critical'], milestone='Sprint 6'),  # wrong sprint
+            _issue(1, priority='Low', milestone='Sprint 5'),
+            _issue(2, priority='High', milestone='Sprint 5'),
+            _issue(3, priority='Urgent', milestone='Sprint 6'),  # wrong sprint
         ]
         sprint_pool = get_sprint_candidates(candidates, 'Sprint 5')
-        result = select_story(sprint_pool)
+        result = _story(sprint_pool)
         self.assertEqual(result['number'], 2)
 
 
@@ -357,7 +396,7 @@ class TestSelectPool(unittest.TestCase):
             _issue(3, ['priority-critical']),
             _issue(4, ['priority-medium']),
         ]
-        pool = select_pool(candidates)
+        pool = _pool(candidates)
         self.assertEqual([c['number'] for c in pool], [3, 4, 5])
 
     def test_pool_head_matches_select_story(self):
@@ -365,10 +404,10 @@ class TestSelectPool(unittest.TestCase):
             _issue(2, ['priority-high']),
             _issue(1, ['priority-low']),
         ]
-        self.assertEqual(select_pool(candidates)[0]['number'], select_story(candidates)['number'])
+        self.assertEqual(_pool(candidates)[0]['number'], _story(candidates)['number'])
 
     def test_empty_pool_is_empty_list(self):
-        self.assertEqual(select_pool([]), [])
+        self.assertEqual(_pool([]), [])
 
 
 class TestParentParsing(unittest.TestCase):
@@ -607,26 +646,38 @@ class TestBranchNaming(unittest.TestCase):
             self.assertNotIn('{', branch_name('feat/{number}/%s' % token, 5, 'Do a thing'))
 
 
-class TestCurrentLifecycleLabel(unittest.TestCase):
-    """Find the concrete lifecycle label to remove when claiming."""
+class TestRetiredLabelsOn(unittest.TestCase):
+    """The labels a command strips off whatever issue it touches.
 
-    def test_finds_default_named_lifecycle_label(self):
+    There is no "current lifecycle label" to find any more: state lives in the
+    board column. What is left is a migration sweep -- an issue written under
+    the label workflow carries names nothing reads, and the write path takes
+    them off as it goes so the backlog cleans itself without a bulk edit.
+    """
+
+    def test_finds_the_retired_status_labels(self):
         labels = ['priority-high', 'status-blocked', 'type-story']
-        self.assertEqual(current_lifecycle_label(labels, {}), 'status-blocked')
+        self.assertEqual(retired_labels_on(labels, {}),
+                         ['status-blocked', 'priority-high'])
 
-    def test_respects_project_custom_name(self):
-        labels = ['on-hold', 'priority-low']
-        project_map = {'status-parked': 'on-hold'}
-        self.assertEqual(current_lifecycle_label(labels, project_map), 'on-hold')
+    def test_finds_a_retired_ready_label(self):
+        self.assertEqual(retired_labels_on(['status-ready'], {}), ['status-ready'])
 
-    def test_a_retired_ready_label_is_not_a_lifecycle_label(self):
-        """`status-ready` is gone. An issue still carrying one is carrying a
-        label nothing reads, and the claim path must not treat it as the state
-        to swap out — there is nothing to swap it for."""
-        self.assertIsNone(current_lifecycle_label(['status-ready'], {}))
+    def test_respects_a_project_custom_name(self):
+        self.assertEqual(
+            retired_labels_on(['on-hold'], {'status-parked': 'on-hold'}),
+            ['on-hold'])
 
-    def test_returns_none_when_no_lifecycle_label_present(self):
-        self.assertIsNone(current_lifecycle_label(['priority-high'], {}))
+    def test_the_scope_labels_are_retired_too(self):
+        self.assertEqual(retired_labels_on(['browser-agent'], {}),
+                         ['browser-agent'])
+
+    def test_a_label_the_workflow_still_uses_is_left_alone(self):
+        """`claude-authored` and the review labels are not workflow state."""
+        self.assertEqual(retired_labels_on(['claude-authored'], {}), [])
+
+    def test_returns_nothing_for_an_issue_carrying_none(self):
+        self.assertEqual(retired_labels_on(['type-story'], {}), [])
 
 
 def _pr(number, labels):
@@ -890,50 +941,50 @@ class TestBoardConfigParsing(unittest.TestCase):
 
 
 class TestPriorityFieldOrdering(unittest.TestCase):
-    """The org's `Priority` field orders the pool; the label is the fallback.
+    """The org's `Priority` field orders the pool, and nothing else does.
 
     Priority used to be dual-tracked -- the label decided pick order, the field
     decided what the portal showed -- so setting Priority in the portal, which
     is where a person actually sets it, changed the views and left the picker
-    reading a label nobody had touched. The field is the source of truth now.
+    reading a label nobody had touched. The field became the source of truth in
+    9.0.0 with the label as a fallback; the fallback went in 10.0.0, because a
+    fallback is still a second answer and it still disagreed.
     """
 
-    def _pool(self, candidates, priority_map):
+    def _order(self, candidates, priority_map):
         return [c['number'] for c in
-                select_pool(candidates, priority_map=priority_map)]
+                select_pool(candidates, priority_map=priority_map,
+                            ownership_map={c['number']: 'Code agent'
+                                           for c in candidates})]
 
-    def test_the_field_outranks_the_label(self):
-        """#1 says low on its label and Urgent on its field: it goes first."""
-        candidates = [_issue(1, ['priority-low']),
-                      _issue(2, ['priority-critical'])]
-        self.assertEqual(self._pool(candidates, {1: 'Urgent'}), [1, 2])
+    def test_the_field_is_what_orders(self):
+        candidates = [_issue(1), _issue(2)]
+        self.assertEqual(self._order(candidates, {1: 'Urgent', 2: 'Low'}), [1, 2])
 
     def test_the_full_field_order_is_urgent_high_medium_low(self):
-        candidates = [_issue(n, []) for n in (1, 2, 3, 4)]
+        candidates = [_issue(n) for n in (1, 2, 3, 4)]
         order = {1: 'Low', 2: 'Medium', 3: 'High', 4: 'Urgent'}
-        self.assertEqual(self._pool(candidates, order), [4, 3, 2, 1])
+        self.assertEqual(self._order(candidates, order), [4, 3, 2, 1])
 
-    def test_an_issue_with_no_field_value_falls_back_to_its_label(self):
-        """Mixed backlogs are the normal case mid-migration, not an error."""
-        candidates = [_issue(1, []),                                   # Urgent, field
-                      _issue(2, ['priority-critical']),  # label only
-                      _issue(3, ['priority-low'])]
-        self.assertEqual(self._pool(candidates, {1: 'Medium'}), [2, 1, 3])
+    def test_an_issue_with_no_field_value_sorts_last(self):
+        """Not "probably medium". An issue nobody has ranked is a gap the audit
+        reports, and ranking it from a label is the drift this removed."""
+        candidates = [_issue(1, ['priority-critical']), _issue(2), _issue(3)]
+        self.assertEqual(self._order(candidates, {3: 'Low'}), [3, 1, 2])
 
     def test_the_option_name_is_matched_case_insensitively(self):
-        candidates = [_issue(1, []), _issue(2, [])]
-        self.assertEqual(self._pool(candidates, {2: 'urgent'}), [2, 1])
+        candidates = [_issue(1), _issue(2)]
+        self.assertEqual(self._order(candidates, {2: 'urgent'}), [2, 1])
 
-    def test_an_unrecognised_option_falls_back_to_the_label(self):
-        """An org that renamed its options is not silently unprioritised."""
+    def test_an_unrecognised_option_sorts_last(self):
+        """An org that renamed its options gets a reported gap, not a guess."""
+        candidates = [_issue(1), _issue(2)]
+        self.assertEqual(self._order(candidates, {1: 'P0', 2: 'Low'}), [2, 1])
+
+    def test_a_priority_label_orders_nothing(self):
         candidates = [_issue(1, ['priority-low']),
                       _issue(2, ['priority-critical'])]
-        self.assertEqual(self._pool(candidates, {1: 'P0'}), [2, 1])
-
-    def test_no_map_at_all_leaves_label_ordering_untouched(self):
-        candidates = [_issue(1, ['priority-low']),
-                      _issue(2, ['priority-critical'])]
-        self.assertEqual(self._pool(candidates, None), [2, 1])
+        self.assertEqual(self._order(candidates, None), [1, 2])
 
     def test_every_field_option_the_tooling_writes_has_a_rank(self):
         """The value `issue-apply` writes must be one the picker can order."""
@@ -1090,7 +1141,7 @@ class TestNativeTypeFiltering(unittest.TestCase):
     def test_select_pool_reports_what_it_left_out(self):
         unclassified = []
         candidates = [_issue(2, []), _issue(99, ['type-bug'])]
-        pool = select_pool(candidates, mode='maintenance', type_map=self.TYPE_MAP,
+        pool = _pool(candidates, mode='maintenance', type_map=self.TYPE_MAP,
                            unclassified=unclassified)
         self.assertEqual({c['number'] for c in pool}, {2})
         self.assertEqual(unclassified, [99])
@@ -1102,14 +1153,14 @@ class TestNativeTypeFiltering(unittest.TestCase):
             _issue(2, ['priority-medium']),
             _issue(3, ['priority-low']),
         ]
-        pool = select_pool(candidates, mode='feature', type_map=self.TYPE_MAP)
+        pool = _pool(candidates, mode='feature', type_map=self.TYPE_MAP)
         numbers = [c['number'] for c in pool]
         self.assertEqual(numbers, [1])
 
     def test_select_pool_ignores_type_map_for_story_mode(self):
         """story mode never filters by type, even when type_map is provided."""
         candidates = [_issue(1, []), _issue(2, []), _issue(3, [])]
-        pool = select_pool(candidates, mode='story', type_map=self.TYPE_MAP)
+        pool = _pool(candidates, mode='story', type_map=self.TYPE_MAP)
         self.assertEqual(len(pool), 3)
 
     def test_select_pool_without_a_type_map_classifies_nothing(self):
@@ -1119,7 +1170,7 @@ class TestNativeTypeFiltering(unittest.TestCase):
             _issue(2, ['priority-medium', 'type-bug']),
         ]
         unclassified = []
-        pool = select_pool(candidates, mode='feature', unclassified=unclassified)
+        pool = _pool(candidates, mode='feature', unclassified=unclassified)
         self.assertEqual(pool, [])
         self.assertEqual(unclassified, [1, 2])
 
@@ -1377,6 +1428,9 @@ class TestIssueValueMaps(unittest.TestCase):
 # the full inventory: it omits `Origin`, which is how an org with fewer fields
 # than the defaults is exercised.
 
+# Every mandatory field, because since 10.0.0 an org that does not define one
+# cannot have an issue filed against it at all: the picker reads these five and
+# nothing else, so a missing one is a decision with no input.
 _FIELD_MAP = {
     'Priority': {'id': 'F_pri', 'data_type': 'single-select',
                  'options': {'High': 'o_hi', 'Medium': 'o_med'}},
@@ -1384,13 +1438,19 @@ _FIELD_MAP = {
                'options': {'Medium': 'o_effmed'}},
     'Classification': {'id': 'F_cls', 'data_type': 'multi-select',
                        'options': {'New Feature': 'o_nf', 'Bug Fix': 'o_bf'}},
+    'Origin': {'id': 'F_org', 'data_type': 'single-select',
+               'options': {'Development': 'o_dev'}},
+    'Ownership': {'id': 'F_own', 'data_type': 'single-select',
+                  'options': {'Code agent': 'o_code', 'Human': 'o_human'}},
 }
 _TYPE_MAP = {'User Story': 'IT_story', 'Epic': 'IT_epic', 'Bug': 'IT_bug'}
 
 
 def _entry(**over):
     entry = {'key': 'a', 'title': 'A story', 'kind': 'story',
-             'fields': {'field-priority': 'High', 'field-effort': 'Medium'}}
+             'fields': {'field-priority': 'High', 'field-effort': 'Medium',
+                        'field-origin': 'Development',
+                        'field-ownership': 'Code agent'}}
     entry.update(over)
     return entry
 
@@ -1413,7 +1473,8 @@ class TestValidateSpec(unittest.TestCase):
                          {'fieldId': 'F_cls', 'multiSelectOptionIds': ['o_nf']})
 
     def test_a_missing_mandatory_field_names_the_issue_and_the_field(self):
-        entry = _entry(fields={'field-effort': 'Medium'})
+        entry = _entry(fields=dict(_entry()['fields']))
+        del entry['fields']['field-priority']
         errors, _, _ = wf_core.validate_spec([entry], _FIELD_MAP, _TYPE_MAP)
         self.assertEqual(len(errors), 1)
         self.assertIn('a', errors[0])
@@ -1421,22 +1482,58 @@ class TestValidateSpec(unittest.TestCase):
 
     def test_a_placeholder_counts_as_missing(self):
         """`TODO` is what an audit writes; it must not be able to pass as a value."""
-        entry = _entry(fields={'field-priority': wf_core.SPEC_PLACEHOLDER,
-                               'field-effort': 'Medium'})
+        entry = _entry(fields=dict(_entry()['fields'],
+                                   **{'field-priority': wf_core.SPEC_PLACEHOLDER}))
         errors, _, _ = wf_core.validate_spec([entry], _FIELD_MAP, _TYPE_MAP)
         self.assertEqual(len(errors), 1)
         self.assertIn('Priority', errors[0])
 
-    def test_a_field_this_org_does_not_define_is_skipped_not_an_error(self):
-        """An org is allowed fewer fields than the default inventory."""
-        entry = _entry(fields=dict(_entry()['fields'], **{'field-origin': 'Development'}))
+    def test_a_required_field_the_org_never_created_is_refused(self):
+        """Not skipped. This is the 10.0.0 change, and it is the point.
+
+        Skipping is what let a repository run for weeks with no `Ownership`
+        field while `config-audit` reported a clean configuration and the
+        picker had no way to tell a device-pass job from code work.
+        """
+        without = {k: v for k, v in _FIELD_MAP.items() if k != 'Ownership'}
+        errors, _, _ = wf_core.validate_spec([_entry()], without, _TYPE_MAP)
+        self.assertEqual(len(errors), 1)
+        self.assertIn('Ownership', errors[0])
+        self.assertIn('create it', errors[0])
+
+    def test_an_optional_field_the_org_never_created_is_not_refused(self):
+        """`Classification` and `Origin` are worth having and not worth
+        refusing an issue over. Nothing selects on either."""
+        without = {k: v for k, v in _FIELD_MAP.items() if k != 'Origin'}
+        errors, _, plans = wf_core.validate_spec([_entry()], without, _TYPE_MAP)
+        self.assertEqual(errors, [])
+        self.assertEqual(plans[0]['unset_optional'], [])
+
+    def test_an_optional_field_left_empty_is_recorded_for_a_comment(self):
+        """The writer turns this into a comment on the issue, so the gap is
+        visible to whoever opens it rather than only to whoever ran the
+        command."""
+        entry = _entry(kind=None,
+                       fields={'field-priority': 'High',
+                               'field-effort': 'Medium',
+                               'field-ownership': 'Code agent'})
+        _, _, plans = wf_core.validate_spec([entry], _FIELD_MAP, _TYPE_MAP)
+        self.assertEqual(plans[0]['unset_optional'],
+                         ['Classification', 'Origin'])
+
+    def test_a_situational_field_the_org_does_not_define_is_still_skipped(self):
+        """An org is allowed fewer fields than the default inventory; it is the
+        mandatory five it may not be missing."""
+        entry = _entry(fields=dict(_entry()['fields'],
+                                   **{'field-target': '2026-01-01'}))
         errors, skipped, plans = wf_core.validate_spec([entry], _FIELD_MAP, _TYPE_MAP)
         self.assertEqual(errors, [])
-        self.assertEqual(skipped, {'Origin'})
-        self.assertNotIn('Origin', plans[0]['fields'])
+        self.assertEqual(skipped, {'Target date'})
+        self.assertNotIn('Target date', plans[0]['fields'])
 
     def test_an_option_the_field_does_not_offer_is_an_error(self):
-        entry = _entry(fields={'field-priority': 'Blocker', 'field-effort': 'Medium'})
+        entry = _entry(fields=dict(_entry()['fields'],
+                                   **{'field-priority': 'Blocker'}))
         errors, _, _ = wf_core.validate_spec([entry], _FIELD_MAP, _TYPE_MAP)
         self.assertEqual(len(errors), 1)
         self.assertIn('Blocker', errors[0])
@@ -1633,8 +1730,12 @@ class TestAuditIssue(unittest.TestCase):
         self.assertEqual(_kinds(result), ['missing-type'])
 
     def test_every_org_field_with_no_value_is_a_gap(self):
+        """Five gaps, in two kinds: the three the picker reads are
+        `missing-field`, and the two nothing selects on are
+        `missing-optional-field` so a report can tell them apart."""
         result = wf_core.audit_issue(_node(), _AUDIT_FIELDS)
-        self.assertEqual(_kinds(result), ['missing-field'] * 5)
+        self.assertEqual(_kinds(result),
+                         ['missing-field'] * 3 + ['missing-optional-field'] * 2)
 
     def test_ownership_is_backfilled_rather_than_left_to_a_person(self):
         """Every other mandatory field can fall back to a placeholder. This
@@ -1781,6 +1882,8 @@ class TestAuditIssue(unittest.TestCase):
                                'options': {'Bug Fix': 'o3'}},
             'Origin': {'id': 'o', 'data_type': 'single-select',
                        'options': {'Development': 'o4'}},
+            'Ownership': {'id': 'w', 'data_type': 'single-select',
+                          'options': {'Code agent': 'o5'}},
         }
         errors, _, _ = wf_core.validate_spec([entry], field_map, {'Bug': 'IT_bug'})
         self.assertEqual(errors, [])
@@ -1939,10 +2042,14 @@ class TestLabelDriftFindings(unittest.TestCase):
         self.assertEqual(_checks(findings), ['label-drift'])
         self.assertIn('status-blocked', findings[0]['fix'])
 
-    def test_a_retired_label_cannot_drift(self):
-        """`status-ready` left the map in 9.0.0, so the pair it used to form
-        with `ready` is now two labels the workflow has no opinion about."""
-        self.assertEqual(wf_core.label_drift_findings(['ready', 'status-ready']), [])
+    def test_a_retired_label_still_drifts_while_it_is_on_real_issues(self):
+        """`status-ready` left the map in 9.0.0 and every other status label
+        followed in 10.0.0, but a project part-way through the migration still
+        carries them. Nothing reads either name, so this decides nothing — it
+        is a warning because a person filtering the issues list by hand sees
+        one of the pair and thinks they are seeing all of it."""
+        findings = wf_core.label_drift_findings(['ready', 'status-ready'])
+        self.assertEqual(_checks(findings), ['label-drift'])
 
     def test_drift_never_fails_because_the_fix_deletes_data(self):
         findings = wf_core.label_drift_findings(
@@ -2089,63 +2196,57 @@ class TestTypedIssueWriteShape(unittest.TestCase):
 
 
 class TestDeprecatedLabelFindings(unittest.TestCase):
-    """The `type-*` rows that outlived what read them."""
+    """Label-map rows for labels that outlived whatever read them.
+
+    `TestUnmappedLabelFindings` used to sit beside this one, checking that a
+    project whose repo carried `status:parked` while its map had no
+    `status-parked` row was reported -- because the picker would resolve the
+    purpose key to a default that matched nothing and quietly keep a parked
+    issue in the pool. No label resolves into a filter any more, so there is no
+    silent failure left to catch and the check went with it.
+    """
 
     def test_a_mapped_type_label_is_reported_once(self):
         findings = wf_core.deprecated_label_findings(
-            {'type-bug': 'bug', 'type-story': 'story', 'status-ready': 'ready'},
-            ['bug', 'story', 'ready'])
+            {'type-bug': 'bug', 'type-story': 'story'}, ['bug', 'story'])
         self.assertEqual(_levels(findings), [wf_core.WARNING])
-        self.assertEqual(findings[0]['check'], 'type-label-deprecated')
+        self.assertEqual(findings[0]['check'], 'label-deprecated')
         self.assertIn('type-bug', findings[0]['detail'])
         self.assertIn('type-story', findings[0]['detail'])
 
-    def test_a_label_map_without_type_rows_is_clean(self):
-        self.assertEqual(wf_core.deprecated_label_findings(
-            {'status-ready': 'status:ready'}, ['status:ready']), [])
+    def test_a_mapped_status_label_is_reported_too(self):
+        """The 10.0.0 addition: `status-*` joined `type-*` in being read by
+        nothing, because the board column is the state."""
+        findings = wf_core.deprecated_label_findings(
+            {'status-blocked': 'blocked'}, ['blocked'])
+        self.assertEqual(_levels(findings), [wf_core.WARNING])
+        self.assertIn('status-blocked', findings[0]['detail'])
 
-    def test_a_stray_type_label_nobody_maps_is_not_a_finding(self):
+    def test_the_scope_and_priority_rows_are_reported(self):
+        for purpose in ('scope-human', 'priority-high', 'needs-refinement',
+                        'status-ready'):
+            with self.subTest(purpose=purpose):
+                findings = wf_core.deprecated_label_findings(
+                    {purpose: 'whatever'}, ['whatever'])
+                self.assertEqual(len(findings), 1)
+                self.assertIn(purpose, findings[0]['detail'])
+
+    def test_the_fix_does_not_ask_anyone_to_delete_a_live_label(self):
+        """Deleting a label removes it from every issue carrying it, which is a
+        data loss no config check should ask for."""
+        findings = wf_core.deprecated_label_findings(
+            {'status-blocked': 'blocked'}, ['blocked'])
+        self.assertIn('label map', findings[0]['fix'])
+        self.assertIn('every issue that carries it', findings[0]['fix'])
+
+    def test_a_label_map_with_only_live_rows_is_clean(self):
+        self.assertEqual(wf_core.deprecated_label_findings(
+            {'claude-authored': 'by-claude'}, ['by-claude']), [])
+
+    def test_a_stray_retired_label_nobody_maps_is_not_a_finding(self):
         """Nothing reads it, so it is clutter rather than a trap."""
         self.assertEqual(wf_core.deprecated_label_findings(
-            {}, ['type-bug', 'type-story']), [])
-
-
-class TestUnmappedLabelFindings(unittest.TestCase):
-    """A purpose key the repo carries under a name nothing maps it to.
-
-    This is the silent one: the label exists, the config validates, and the
-    picker resolves the purpose key to a default that matches no issue -- so a
-    parked issue stays in the pool and nothing anywhere says why.
-    """
-
-    LIVE = ['status:ready', 'status:parked', 'needs-refinement', 'bug']
-
-    def test_a_near_miss_with_no_map_row_fails(self):
-        findings = wf_core.unmapped_label_findings(
-            {'status-ready': 'status:ready'}, self.LIVE)
-        self.assertEqual(_levels(findings), [wf_core.CRITICAL])
-        self.assertEqual(findings[0]['check'], 'label-unmapped')
-        self.assertIn('status:parked', findings[0]['detail'])
-        self.assertIn('status-parked', findings[0]['fix'])
-
-    def test_a_mapped_key_is_not_reported(self):
-        self.assertEqual(wf_core.unmapped_label_findings(
-            {'status-ready': 'status:ready',
-             'status-parked': 'status:parked'}, self.LIVE), [])
-
-    def test_a_key_the_repo_carries_under_its_default_name_is_fine(self):
-        """No row needed when the default is what the repo actually uses."""
-        self.assertEqual(wf_core.unmapped_label_findings(
-            {}, ['status-ready', 'status-parked', 'needs-refinement']), [])
-
-    def test_a_key_the_project_simply_does_not_use_is_not_reported(self):
-        """Absence is not drift. Only a near miss means the filter will fail."""
-        self.assertEqual(wf_core.unmapped_label_findings({}, ['bug', 'chore']), [])
-
-    def test_underscores_and_slashes_count_as_the_same_near_miss(self):
-        findings = wf_core.unmapped_label_findings({}, ['status_blocked'])
-        self.assertEqual(len(findings), 1)
-        self.assertIn('status_blocked', findings[0]['detail'])
+            {}, ['type-bug', 'status-blocked']), [])
 
 
 class TestUnmappedFieldFindings(unittest.TestCase):
@@ -2312,14 +2413,14 @@ class TestBoardColumnNames(unittest.TestCase):
                     'col-parked', 'col-attention', 'col-done'):
             self.assertIn(key, wf_core.BOARD_COLUMN_NAMES)
 
-    def test_every_parked_lane_pairs_with_a_lifecycle_label(self):
-        """The board is where state lives now, so a lane with no label to
-        mirror, or a label with no lane to sit in, is a gap the picker sees."""
-        for column, lifecycle in wf_core.COLUMN_LIFECYCLE_PAIRS.items():
-            self.assertIn(column, wf_core.BOARD_COLUMN_NAMES)
-            self.assertIn(lifecycle, wf_core.LIFECYCLE_KEYS)
-        self.assertEqual(sorted(wf_core.COLUMN_LIFECYCLE_PAIRS.values()),
-                         sorted(wf_core.LIFECYCLE_KEYS))
+    def test_every_lane_but_done_is_one_setup_creates(self):
+        """The board is the whole record of state, so a state with no lane is a
+        state an issue cannot be put into. `Done` is excluded because a new
+        board already has it."""
+        self.assertEqual(sorted(wf_core.LANE_COLUMNS),
+                         sorted(k for k in wf_core.BOARD_COLUMN_NAMES
+                                if k != 'col-done'))
+        self.assertNotIn('col-done', wf_core.LANE_COLUMNS)
 
     def test_the_pool_column_is_backlog(self):
         self.assertEqual(wf_core.POOL_COLUMN, 'col-backlog')
@@ -2459,65 +2560,75 @@ class TestPartialDelivery(unittest.TestCase):
 class TestWorkScope(unittest.TestCase):
     """Which of the three parties owns an issue, and what that costs it."""
 
-    def test_the_label_names_the_owner(self):
-        self.assertEqual(
-            wf_core.issue_scope('[Browser] Turn on the API', ['browser-agent']),
-            wf_core.SCOPE_BROWSER)
-        self.assertEqual(
-            wf_core.issue_scope('[Manual] Device pass', ['human-required']),
-            wf_core.SCOPE_HUMAN)
-
-    def test_an_unlabelled_issue_is_code_work(self):
-        self.assertEqual(wf_core.issue_scope('Add a setting', ['priority-high']),
+    def test_the_ownership_field_names_the_owner(self):
+        self.assertEqual(wf_core.issue_scope('Turn on the API', 'Browser agent'),
+                         wf_core.SCOPE_BROWSER)
+        self.assertEqual(wf_core.issue_scope('Device pass', 'Human'),
+                         wf_core.SCOPE_HUMAN)
+        self.assertEqual(wf_core.issue_scope('Add a setting', 'Code agent'),
                          wf_core.SCOPE_CODE)
 
-    def test_a_renamed_scope_label_still_resolves(self):
-        """Purpose keys, not concrete names — the same rule every label follows."""
+    def test_the_title_prefix_answers_when_the_field_has_no_value(self):
+        """Only then. It is the human-readable echo of the field, and reading
+        it here is what lets `issue-audit` backfill a backlog written before
+        the field existed."""
+        self.assertEqual(wf_core.issue_scope('[Browser] Turn on the API'),
+                         wf_core.SCOPE_BROWSER)
+        self.assertEqual(wf_core.issue_scope('[Manual] Device pass'),
+                         wf_core.SCOPE_HUMAN)
+
+    def test_the_field_wins_over_the_prefix(self):
         self.assertEqual(
-            wf_core.issue_scope('x', ['needs-a-person'],
-                                {'scope-human': 'needs-a-person'}),
-            wf_core.SCOPE_HUMAN)
+            wf_core.issue_scope('[Manual] Device pass', 'Code agent'),
+            wf_core.SCOPE_CODE)
+
+    def test_an_issue_with_neither_is_code_work(self):
+        self.assertEqual(wf_core.issue_scope('Add a setting'),
+                         wf_core.SCOPE_CODE)
+
+    def test_a_scope_label_names_nothing_any_more(self):
+        """`browser-agent` was the fallback until 10.0.0. It is inert."""
+        self.assertEqual(wf_core.issue_scope('Turn on the API'),
+                         wf_core.SCOPE_CODE)
 
     def test_non_code_wins_over_blocked(self):
         """A blocker closing never makes browser work pickable, so the lane it
         ends up in must be the one no sweep releases."""
-        self.assertEqual(wf_core.lifecycle_for(wf_core.SCOPE_BROWSER, [979]),
-                         'status-non-code')
         self.assertEqual(wf_core.board_column_for(wf_core.SCOPE_BROWSER, [979]),
                          'col-non-code')
 
     def test_code_work_with_an_open_edge_is_blocked(self):
-        self.assertEqual(wf_core.lifecycle_for(wf_core.SCOPE_CODE, [979]),
-                         'status-blocked')
         self.assertEqual(wf_core.board_column_for(wf_core.SCOPE_CODE, [979]),
                          'col-blocked')
 
-    def test_code_work_with_nothing_open_carries_no_label(self):
-        """Under a `none` ready gate that is exactly what pickable means."""
-        self.assertIsNone(wf_core.lifecycle_for(wf_core.SCOPE_CODE, []))
+    def test_code_work_with_nothing_open_goes_to_backlog(self):
+        """Which is exactly what pickable means: the pool is that column."""
         self.assertEqual(wf_core.board_column_for(wf_core.SCOPE_CODE, []),
                          'col-backlog')
 
-    def test_a_scope_label_takes_an_issue_out_of_the_pool(self):
+    def test_ownership_takes_an_issue_out_of_the_pool(self):
         """The teeth. Everything else here is bookkeeping if this does not hold."""
-        pool = select_pool([{'number': 1, 'title': 'a', 'labels': ['human-required']},
-                            {'number': 2, 'title': 'b', 'labels': ['browser-agent']},
-                            {'number': 3, 'title': 'c', 'labels': []}])
+        pool = select_pool([{'number': 1, 'title': 'a', 'labels': []},
+                            {'number': 2, 'title': 'b', 'labels': []},
+                            {'number': 3, 'title': 'c', 'labels': []}],
+                           ownership_map={1: 'Human', 2: 'Browser agent',
+                                          3: 'Code agent'})
         self.assertEqual([c['number'] for c in pool], [3])
 
-    def test_the_ownership_field_overrides_the_labels(self):
-        """The field is the structured answer, so an issue still carrying a
-        stale scope label but owned by the code agent is pickable."""
+    def test_a_stale_scope_label_does_not_override_the_field(self):
+        """An issue still carrying `human-required` but owned by the code agent
+        is pickable: the field is the answer and the label reads nothing."""
         pool = select_pool([{'number': 1, 'title': 'a', 'labels': ['human-required']},
                             {'number': 2, 'title': 'b', 'labels': []}],
                            ownership_map={1: 'Code agent', 2: 'Human'})
         self.assertEqual([c['number'] for c in pool], [1])
 
-    def test_the_lifecycle_label_alone_no_longer_excludes(self):
-        """`status-non-code` says which lane a person sees it in. It is not
-        what keeps a code agent off it — the owner is."""
+    def test_a_status_label_alone_no_longer_excludes(self):
+        """`status-non-code` used to be what kept a code agent off an issue.
+        The owner is."""
         pool = select_pool([{'number': 1, 'title': 'a', 'labels': ['status-non-code']},
-                            {'number': 2, 'title': 'b', 'labels': []}])
+                            {'number': 2, 'title': 'b', 'labels': []}],
+                           ownership_map={1: 'Code agent', 2: 'Code agent'})
         self.assertEqual([c['number'] for c in pool], [1, 2])
 
     def test_the_board_has_a_column_for_it(self):
@@ -2525,76 +2636,92 @@ class TestWorkScope(unittest.TestCase):
 
 
 class TestScopeFindings(unittest.TestCase):
-    """The check that stops the three scope signals drifting apart.
+    """The check that stops the ownership field and the title prefix drifting.
 
-    Until this existed the rule lived in a skill document, so a scoped issue
-    that lost its lifecycle label sat in the code agent's pool and only a person
-    reading the title would ever have noticed.
+    It used to police four signals against each other -- the field, the prefix,
+    a scope label and a `status-non-code` lifecycle label. Two of those are
+    gone, and most of this check went with them: what is left is whether the
+    structured answer exists, whether it names a party, and whether the title a
+    person reads agrees with it.
     """
 
     @staticmethod
-    def _kinds(issues):
-        return [f['kind'] for f in wf_core.scope_findings(issues)]
+    def _kinds(issues, ownership=None):
+        return [f['kind'] for f in wf_core.scope_findings(issues, ownership)]
 
-    def _issue(self, title, *labels):
-        return {'number': 1, 'title': title, 'labels': list(labels)}
+    def _issue(self, title):
+        return {'number': 1, 'title': title}
 
     def test_a_clean_scoped_issue_reports_nothing(self):
-        self.assertEqual(self._kinds([self._issue(
-            '[Manual] Open the bank account', 'human-required',
-            'status-non-code')]), [])
+        self.assertEqual(self._kinds([self._issue('[Manual] Open the account')],
+                                     {1: 'Human'}), [])
 
     def test_a_clean_code_issue_reports_nothing(self):
-        self.assertEqual(self._kinds([self._issue('Add a setting')]), [])
+        self.assertEqual(self._kinds([self._issue('Add a setting')],
+                                     {1: 'Code agent'}), [])
 
     def test_a_shouted_prefix_is_not_a_scope_error(self):
         """Real backlogs carry `[MANUAL]` as often as `[Manual]`."""
-        self.assertEqual(self._kinds([self._issue(
-            '[MANUAL] Open the bank account', 'human-required',
-            'status-non-code')]), [])
+        self.assertEqual(self._kinds([self._issue('[MANUAL] Open the account')],
+                                     {1: 'Human'}), [])
 
-    def test_both_scope_labels_is_a_conflict(self):
-        kinds = self._kinds([self._issue('[Manual] x', 'human-required',
-                                         'browser-agent', 'status-non-code')])
-        self.assertIn('scope-conflict', kinds)
+    def test_no_ownership_value_is_the_dangerous_one(self):
+        """This is the state that puts a device pass in front of a code agent —
+        or, since the picker refuses to guess, keeps it out of every pool with
+        nothing saying why."""
+        findings = wf_core.scope_findings(
+            [self._issue('[Manual] Device pass')], {})
+        self.assertEqual([f['kind'] for f in findings], ['scope-unowned'])
+        self.assertIn('Code agent', findings[0]['detail'])
 
-    def test_a_label_with_no_prefix_is_reported(self):
-        self.assertIn('scope-prefix',
-                      self._kinds([self._issue('Open the bank account',
-                                               'human-required',
-                                               'status-non-code')]))
+    def test_an_option_naming_no_party_is_reported(self):
+        findings = wf_core.scope_findings(
+            [self._issue('Add a setting')], {1: 'Platform team'})
+        self.assertEqual([f['kind'] for f in findings], ['scope-option'])
+        self.assertIn('Platform team', findings[0]['detail'])
 
-    def test_a_prefix_with_no_label_is_reported(self):
-        self.assertIn('scope-prefix',
-                      self._kinds([self._issue('[Browser] Turn on the API')]))
+    def test_non_code_work_with_no_prefix_is_reported(self):
+        findings = wf_core.scope_findings(
+            [self._issue('Open the bank account')], {1: 'Human'})
+        self.assertEqual([f['kind'] for f in findings], ['scope-prefix'])
+        self.assertIn('[Manual]', findings[0]['detail'])
+
+    def test_a_prefix_on_code_work_is_reported(self):
+        findings = wf_core.scope_findings(
+            [self._issue('[Browser] Add a setting')], {1: 'Code agent'})
+        self.assertEqual([f['kind'] for f in findings], ['scope-prefix'])
 
     def test_a_prefix_that_names_the_other_party_is_reported(self):
-        self.assertIn('scope-prefix',
-                      self._kinds([self._issue('[Browser] Device pass',
-                                               'human-required',
-                                               'status-non-code')]))
-
-    def test_scoped_work_without_the_lifecycle_label_is_the_dangerous_one(self):
-        """This is the state that puts a device pass in front of a code agent."""
         findings = wf_core.scope_findings(
-            [self._issue('[Manual] Device pass', 'human-required')])
-        self.assertEqual([f['kind'] for f in findings], ['scope-lifecycle'])
-        self.assertIn('status-non-code', findings[0]['detail'])
-
-    def test_the_lifecycle_label_without_a_scope_label_is_also_a_gap(self):
-        findings = wf_core.scope_findings(
-            [self._issue('Add a setting', 'status-non-code')])
-        self.assertEqual([f['kind'] for f in findings], ['scope-lifecycle'])
+            [self._issue('[Browser] Device pass')], {1: 'Human'})
+        self.assertEqual([f['kind'] for f in findings], ['scope-prefix'])
+        self.assertIn('[Manual]', findings[0]['detail'])
 
 
 class TestScopeIsAudited(unittest.TestCase):
     """`wf issue-audit` reports scope drift where it used to report prose edges."""
 
-    def test_a_scoped_issue_missing_its_lifecycle_label_is_a_gap(self):
+    def test_a_backfilled_owner_is_not_also_reported_as_unowned(self):
+        """The audit proposes `Human` from the title prefix in the same pass,
+        so an issue it is about to own must not come back as ownerless."""
         node = _audit_node(1313, title='[Manual] Device pass')
-        node['labels'] = {'nodes': [{'name': 'human-required'}]}
         entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1313})
-        self.assertIn('scope-lifecycle', _gap_kinds(entry))
+        self.assertNotIn('scope-unowned', _gap_kinds(entry))
+        self.assertEqual(entry['proposed']['fields']['field-ownership'], 'Human')
+
+    def test_an_issue_whose_title_disagrees_with_its_owner_is_a_gap(self):
+        node = _audit_node(1313, title='Device pass',
+                           field_values=[{'field': {'name': 'Ownership'},
+                                          'name': 'Human'}])
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1313})
+        self.assertIn('scope-prefix', _gap_kinds(entry))
+
+    def test_an_org_with_no_ownership_field_is_not_reported_per_issue(self):
+        """The field is missing, not the value. `config-audit` says that once
+        for the org; saying it on every issue buries what it means."""
+        node = _audit_node(1313, title='[Manual] Device pass')
+        entry = wf_core.audit_issue(node, {'Priority': {}}, open_numbers={1313})
+        self.assertNotIn('scope-unowned', _gap_kinds(entry))
 
     def test_nothing_proposes_a_dependency_edge_any_more(self):
         """The body cannot claim a dependency: only an edge records one."""

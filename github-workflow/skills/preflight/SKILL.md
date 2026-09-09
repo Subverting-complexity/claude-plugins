@@ -147,7 +147,7 @@ Read this by hand — board identity needs a `gh` API call plus value extraction
 
 - **No board** — the `## Project Board` section is missing, or `project-node-id` is absent, `n/a`, or still a `{placeholder}`: emit `CRITICAL board-lane: no project board is configured, and the pick pool is a board column, so pick and candidates have nothing to read`.
 - **Backlog column missing** — the `### Status Options` table has no `col-backlog` row, or its Option ID is `n/a`, absent, or a `{placeholder}`: emit `CRITICAL board-lane: the board has no Backlog column, and that column is the pick pool`.
-- **Other lanes missing** — any of `col-in-progress`, `col-in-review`, `col-blocked`, `col-non-code`, `col-refinement`, `col-parked`, `col-attention`, `col-done` has no recorded id: emit `WARNING board-lane: the board has no '{name}' column, so an issue that reaches that state stays in whichever lane it was already in`. A missing lane costs one state's board move and nothing else, which is why it warns where Backlog fails. The label ⇄ column pairing is in `templates/default-labels.md` → Board Columns.
+- **Other lanes missing** — any of `col-in-progress`, `col-in-review`, `col-blocked`, `col-non-code`, `col-refinement`, `col-parked`, `col-attention`, `col-done` has no recorded id: emit `WARNING board-lane: the board has no '{name}' column, so an issue that reaches that state stays in whichever lane it was already in`. A missing lane costs one state's board move and nothing else, which is why it warns where Backlog fails. What each lane means is in `templates/default-labels.md` → Board Columns.
 - **Board identity + snapshot freshness** — one query resolves the title **and** the live Status options, so both checks share a single round-trip:
 
   ```
@@ -165,6 +165,8 @@ Read this by hand — board identity needs a `gh` API call plus value extraction
 
 ### Label-map completeness
 
+One purpose, because one label. `claude-authored` is the only label the issue workflow applies; state, priority, effort and ownership are the board column and the org fields, and `wf config-audit` reports a map row that still claims a retired label (`label-deprecated`).
+
 ```!
 if [ -f ClaudeProject.md ]; then
   labelmap=$(f=0; while IFS= read -r line || [ -n "$line" ]; do
@@ -174,21 +176,10 @@ if [ -f ClaudeProject.md ]; then
   if printf '%s\n' "$labelmap" | grep -q 'default-labels\.md'; then
     echo "OK label-map: all purposes covered (defaults declared via default-labels.md)"
   else
-    missing=0
-    for purpose in priority-critical priority-high priority-medium priority-low \
-                   needs-refinement status-in-progress status-parked \
-                   status-blocked status-non-code status-in-review \
-                   status-needs-attention scope-browser scope-human \
-                   claude-authored; do
-      if printf '%s\n' "$labelmap" | grep -q "$purpose"; then
-        :
-      else
-        echo "WARNING label-map: no label mapped for purpose '$purpose'"
-        missing=1
-      fi
-    done
-    if [ "$missing" -eq 0 ]; then
+    if printf '%s\n' "$labelmap" | grep -q 'claude-authored'; then
       echo "OK label-map: all expected purposes mapped"
+    else
+      echo "WARNING label-map: no label mapped for purpose 'claude-authored'"
     fi
   fi
 fi
@@ -239,7 +230,7 @@ If the block above printed `AUTO_MERGE_ENABLED`, the opt-in auto-merge feature i
 Read all output from the checks above. Categorize:
 
 - **CRITICAL** — the workflow **cannot proceed and has no usable default**: gh not authenticated, ClaudeProject.md missing, a required section absent, no board configured, a `project-node-id` that does not resolve, or a board with no `Backlog` column (`board-lane`). Only these trigger the wizard. Every `board-lane` critical is one fact wearing different clothes: the pick pool is the board's Backlog column, so without it `pick` and `candidates` return nothing and the whole workflow stops. A missing lane *other* than Backlog is a warning, because it costs one state's move and no selection. `config-audit` reporting `"status": "drift"` is also CRITICAL: a call site applying a label the repo does not have, or an issue type not pinned to a field the tooling writes, produces a *wrong* result rather than a defaulted one — the command runs, GitHub accepts it, and the value is never seen.
-- **WARNING** — something is missing **but a default covers it**, so the workflow proceeds: an unmapped label purpose (resolves to its default name via `templates/default-labels.md`), unreplaced placeholders, CLAUDE.md missing, quality gate not set, a referenced `review.config.md` missing, a **required** board whose recorded column option-ids no longer match the live board (`board-snapshot-stale` — write-time live resolution keeps moves correct; the warning just prompts a snapshot refresh), `auto-merge-on-approval` enabled while the repo's "Allow auto-merge" setting is off (reviews still run; only the queued-merge step is affected), or `auto-merge-on-approval` enabled with **no CI gate** — neither GitHub required status checks nor `require-ci-before-merge` (an approved PR could merge with no CI guarantee; `/github-workflow:setup harden` wires up the gate). or any `config-audit` finding at `warning` level (label drift, an org field no purpose key maps, a stale board column, issue-type pinning that could not be read — each degrades the workflow without breaking it). **Defaults are not a failure** — every label, the issue lifecycle states, and the review-state labels all have defaults, so a missing mapping is never critical on its own. (Best-effort board identity is **not** checked here — `wf board-move` verifies it at write time.)
+- **WARNING** — something is missing **but a default covers it**, so the workflow proceeds: an unmapped label purpose (resolves to its default name via `templates/default-labels.md`), unreplaced placeholders, CLAUDE.md missing, quality gate not set, a referenced `review.config.md` missing, a **required** board whose recorded column option-ids no longer match the live board (`board-snapshot-stale` — write-time live resolution keeps moves correct; the warning just prompts a snapshot refresh), `auto-merge-on-approval` enabled while the repo's "Allow auto-merge" setting is off (reviews still run; only the queued-merge step is affected), or `auto-merge-on-approval` enabled with **no CI gate** — neither GitHub required status checks nor `require-ci-before-merge` (an approved PR could merge with no CI guarantee; `/github-workflow:setup harden` wires up the gate). or any `config-audit` finding at `warning` level (label drift, an org field no purpose key maps, a stale board column, issue-type pinning that could not be read — each degrades the workflow without breaking it). **Defaults are not a failure** — the `claude-authored` marker and the review-state labels all have defaults, so a missing mapping is never critical on its own. A missing *field* is a different matter: an org that defines no `Priority`, `Effort` or `Ownership` is `CRITICAL field-absent`, because the picker reads all three and nothing supplies a default for them. (Best-effort board identity is **not** checked here — `wf board-move` verifies it at write time.)
 - **OK** — check passed.
 
 **Defaults-first principle.** Everything that *can* default *does* default at runtime. The wizard exists only for the few things that genuinely have no default (identity, auth, required board). Never escalate a default-covered gap to the wizard.

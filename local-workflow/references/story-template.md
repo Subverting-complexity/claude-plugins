@@ -44,7 +44,7 @@ Each of these is optional. An empty or obvious one is worse than none, and none 
 | `## Verification` | Verification needs more than the acceptance criteria convey: a physical device, several environments, a regression check, specific commands. |
 | `## Dependencies` | Rarely. A dependency between two issues is a native blocked-by edge, not a sentence; use this section for the *reason*, or for a dependency on something outside GitHub. |
 | `## Out of scope` | There is a realistic risk the work expands into something that should stay separate. |
-| `## Manual step` | The story cannot be finished until a person does something no agent can do. Say exactly what, and why. A story with this section also takes the `[Manual]` title prefix and the `status-non-code` label, so it is visible in a list and never picked up by an agent that cannot finish it. Work a person must do that belongs to a *different* story is that story, linked by a native blocked-by edge. |
+| `## Manual step` | The story cannot be finished until a person does something no agent can do. Say exactly what, and why. A story with this section also takes the `[Manual]` title prefix and `Ownership` set to `Human`, so it is visible in a list and never picked up by an agent that cannot finish it. Work a person must do that belongs to a *different* story is that story, linked by a native blocked-by edge. |
 
 Do not reach for these out of habit, and do not add a "Definition of done" section: the acceptance criteria and the project's quality gate already cover it.
 
@@ -60,4 +60,4 @@ Do not reach for these out of habit, and do not add a "Definition of done" secti
 - File-by-file narration of the intended implementation.
 - Alternatives, when the approach is already settled. Where it is not settled, keep the uncertainty in the words the discovery used ("this will likely need either...").
 
-A story too vague to implement gets refined or labelled `needs-refinement`. Never pad a thin story with invented detail to make it look complete.
+A story too vague to implement gets refined, or its card moved to the board's Needs refinement column so nothing picks it up. Never pad a thin story with invented detail to make it look complete.

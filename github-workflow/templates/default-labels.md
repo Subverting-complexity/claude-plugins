@@ -2,27 +2,17 @@
 
 This file is the **single source of truth** for how every skill and command resolves a label name, and the default inventory created at setup. For design rationale, see `docs/rationale/default-labels-rationale.md` (not read at runtime).
 
-## Purpose keys
-
-A label is identified by its **purpose key**, never by a hardcoded concrete name. Purpose keys are stable; concrete names are project-configurable.
-
 ## The single resolution path
 
 > **You usually do not need to open this file.** Every workflow command auto-loads the full `ClaudeProject.md` (label map included) before it runs. When that map is in context — the normal case — resolve purpose keys directly from it and do **not** read this file. Open it only as a fallback: a purpose key is missing from the project map, or you need the default inventory / colours / native-type / board-column tables below.
 
-When any skill needs the concrete name for a purpose key:
+A label is identified by its **purpose key**, never by a hardcoded concrete name. Purpose keys are stable; concrete names are project-configurable. To get the concrete name for one: look it up in the `ClaudeProject.md` label map (or, for a **review-state purpose**, the `review.config.md` Labels table, matched by the Purpose column and never by guessing a prefix); use that name if it is configured; use the default from the inventory below if it is not.
 
-1. **Workflow purposes** (typing, priority, status, claude markers) — look up the purpose in the `ClaudeProject.md` label map. **Review-state purposes** (the PR review mutex) — the `review.config.md` Labels table, matched **by purpose** (the Purpose column), never by guessing a prefix.
-2. If the project config defines a name for that purpose, use it.
-3. If not configured, use the default name from the inventory below.
+**Invariant — apply == filter.** Because producers and consumers both start from the same purpose key and run the same steps, a label written by one skill is the identical string another skill filters on. Do not re-derive names independently, do not hardcode a concrete name in prose or a filter, and do not assume a prefix.
 
-**Invariant — apply == filter.** Because producers and consumers both start from the same purpose key and run the same three steps, a claim label written by one skill is the identical string another skill filters on. Do not re-derive names independently, do not hardcode a concrete name in prose or a filter, and do not assume a prefix — always resolve the purpose key through this path.
+## Creating and applying a label
 
-## Pre-creation contract
-
-The complete inventory below is created once at setup (`/github-workflow:setup`, step 5b). Skills must **not** `--force`-overwrite labels at runtime — that causes colour/description churn. A skill may only **create a missing label as a guarded fallback**: check existence, create without `--force` if absent, warn that setup should have created it, then proceed.
-
-Guarded create-if-missing pattern. Never suppress the create's errors with `|| true` (it swallows permission failures); capture stderr and ignore only "already exists" (a benign race with another agent):
+The complete inventory below is created once at setup (`/github-workflow:setup`, step 5b). At runtime a skill may only **create a missing label as a guarded fallback** — never `--force`-overwrite one, which churns its colour and description. Never suppress the create's errors with `|| true`; capture stderr and ignore only "already exists" (a benign race with another agent):
 
 ```
 # resolve <name> from the purpose key via the path above, then:
@@ -38,36 +28,30 @@ case "$existing" in
 esac
 ```
 
-Surface any other failure — especially a permission denial — with the real stderr, never swallowed: an explicitly best-effort caller warns and continues; every other caller stops.
+Surface any other failure — especially a permission denial — with the real stderr: an explicitly best-effort caller warns and continues; every other caller stops.
 
-## Label read-back policy
+**Do not read a label back after applying it.** `gh ... edit --add-label X` fails loudly when `X` does not exist and never drops one silently, so the exit status *is* the presence signal. The one exception is a non-zero exit citing an unknown label: create it with the guarded pattern above, retry the edit once, and then read back to confirm.
 
-`gh ... edit --add-label X` fails loudly — non-zero exit, "could not add label" — when `X` does not exist. It never drops a label silently. So the edit's own exit status *is* the presence signal, and this is the policy every command that applies a label follows:
+## What labels decide: nothing
 
-- **Exit 0** → the label is set. Done. **Do not read back.**
-- **Non-zero, citing an unknown or missing label** → the label was never created at setup. Create it with the guarded pattern above (no `--force`), retry the edit once, and *then* read the labels back to confirm (`gh issue view {number} --json labels --jq '[.labels[].name]'`, or `gh pr view` for a PR).
+An issue's state, priority, size and owner are **structured fields and the board column**, and a label is none of those things. Two records of one fact drift the moment anyone edits either, and the drift is silent — the picker preferring one issue over another on a `priority-high` somebody set months ago, while the `Priority` field said Low.
 
-That retried case is the **only** one that reads. A read-back after a clean apply is a round trip that can only ever confirm what the exit code already said.
+So there is no `status-*` label, no `priority-*` label, no `scope-*` label and no `type-*` label in this inventory. The four questions they used to answer are answered once each:
 
-## Workflow Labels
+| Question | Where the answer lives | Who reads it |
+|----------|------------------------|--------------|
+| What state is this in? | the board's `Status` column | `pick`, `candidates`, `unblock`, every board move |
+| How urgent is it? | the org's `Priority` field | the pool's sort order |
+| How big is it? | the org's `Effort` field | `--max-effort`, and the tie-break inside a priority band |
+| Who has to do it? | the org's `Ownership` field | whether a code agent may pick it up at all |
 
-These control prioritization and agent gating. Resolved via the label map in `ClaudeProject.md`; defaults below.
-
-There is deliberately no `type-*` label here: the **native issue type** and the org's `Classification` field say what kind of work an issue is. `wf pick` filters on the type, `wf issue-apply` strips a `type-*` label and a `[BUG]`-style title prefix off every issue it writes, and `wf config-audit` reports a label map that still maps one (`type-label-deprecated`).
-
-| Purpose key | Default Name | Color | Description |
-|-------------|-------------|-------|-------------|
-| `priority-critical` | `priority-critical` | `B60205` | Critical priority |
-| `priority-high` | `priority-high` | `D93F0B` | High priority |
-| `priority-medium` | `priority-medium` | `FBCA04` | Medium priority |
-| `priority-low` | `priority-low` | `0E8A16` | Low priority |
-| `claude-ready` | `claude-ready` | `1D76DB` | Approved for agent work |
+Removing the label is the migration, not a cleanup after it: `wf issue-apply` strips any retired label off every issue it writes, `wf config-audit` reports a label map that still claims one (`label-deprecated`), and `wf issue-audit --apply` backfills the field values from whatever labels an old issue still carries. The labels themselves are left alone in the repository — deleting one removes it from every issue that ever carried it, which is history nobody asked to lose.
 
 ## Issue Types & Field Values
 
 When the target org has **native GitHub issue types** and **org issue fields** configured, the workflow uses them as the first-class classification and metadata.
 
-`pick` reads them too, not just writes them: the pool is ordered by the org's `Priority` field and a `Feature` counts as maintenance work only when its `Classification` says so. The `priority-*` labels are the fallback for issues the `Priority` field was never set on. The **type** has no fallback: an untyped issue is left out of a `feature` or `maintenance` pool and named, and an org with no native types cannot run those modes (`--mode story` still works).
+`pick` reads them too, not just writes them: the pool is ordered by the org's `Priority` field, sized by its `Effort` field, routed by its `Ownership` field, and a `Feature` counts as maintenance work only when its `Classification` says so. None of them has a label fallback. An issue with no `Priority` sorts last and is named; an issue with no `Ownership` is not offered to a code agent at all; an untyped issue is left out of a `feature` or `maintenance` pool and named, and an org with no native types cannot run those modes (`--mode story` still works).
 
 **The purpose→value maps are not in this file.** They live as Python data in `scripts/wf_core.py`, and the tooling applies them directly:
 
@@ -76,8 +60,10 @@ When the target org has **native GitHub issue types** and **org issue fields** c
 | Workflow kind → native type and `Classification` | `NATIVE_TYPE_MAP` |
 | Every valid `Classification` option | `CLASSIFICATION_OPTIONS` |
 | Purpose key → field name, and its data type | `FIELD_NAME_DEFAULTS`, `FIELD_DATA_TYPES` |
-| The four fields set on every issue | `MANDATORY_FIELD_KEYS` |
-| `priority-*` label → `Priority` option | `PRIORITY_FIELD_OPTIONS` |
+| The three fields every issue must carry | `MANDATORY_FIELD_KEYS` |
+| The two the workflow fills in and does not require | `OPTIONAL_FIELD_KEYS` |
+| Scope → `Ownership` option | `OWNERSHIP_FIELD_OPTIONS` |
+| Legacy `priority-*` label → `Priority` option (backfill only) | `PRIORITY_FIELD_OPTIONS` |
 | `Priority` option → pick order | `PRIORITY_FIELD_RANK` |
 | Size estimate → `Effort` option | `EFFORT_FIELD_OPTIONS` |
 | Creating command → `Origin` option | `ORIGIN_FIELD_OPTIONS` |
@@ -92,11 +78,11 @@ That reports the enabled native types, every issue field with its option ids, wh
 
 A project overrides any **field name** in `ClaudeProject.md` → `## Issue Types & Fields`, resolved through `wf_core.resolve_field_name()` — the same project-map-then-default path labels use. A project does not override the value maps; those are the workflow's own vocabulary.
 
+**Three of these fields are required and two are not**, and the line between them is whether a decision reads the value. `Priority`, `Effort` and `Ownership` are the picker's whole input, so an org that has not defined one is a `CRITICAL field-absent` finding and a spec that leaves one empty is refused before anything is written. `Classification` and `Origin` are worth having and not worth refusing an issue over: a create that leaves one unset gets a comment on the issue naming it, and the run carries on.
+
 ### When the org has more than the five default types
 
-`NATIVE_TYPE_MAP` is written for GitHub's five defaults, where nothing can express tech debt and `Feature` is the least wrong answer. An org may add its own types, and `wf_core.NATIVE_TYPE_PREFERENCES` is where a better answer is recorded: `tech debt` and `chore` become `Chore` on an org that has that type, and fall back to the map's `Feature` on one that does not. `org-capabilities` reports the enabled types, and `native_type_for(kind, type_map)` is the single place the choice is made, so the audit and the backfill cannot disagree about it.
-
-Adding a preference has one easily missed consequence: `NATIVE_MAINTENANCE_TYPES` decides what `execute mode=maintenance` may pick, and a type outside that set is invisible to the picker — so a backlog that starts typing its debt `Chore` empties its own maintenance pool unless `Chore` is there too. `architecture` has no preference on purpose: the one org measured had already typed every `[ARCH]` issue `Feature`.
+`NATIVE_TYPE_MAP` is written for GitHub's five defaults, where nothing expresses tech debt. An org that adds its own types records the better answer in `wf_core.NATIVE_TYPE_PREFERENCES`, and `native_type_for(kind, type_map)` is the single place the choice is made. Adding one has a consequence worth knowing: `NATIVE_MAINTENANCE_TYPES` decides what `execute mode=maintenance` may pick, so a type outside that set is invisible to the picker. Both are covered in `docs/rationale/default-labels-rationale.md`.
 
 ### Choosing a `Classification`
 
@@ -105,34 +91,9 @@ Adding a preference has one easily missed consequence: `NATIVE_MAINTENANCE_TYPES
 - For a bug, prefer **Regression** when something previously worked and broke, or **Performance** when the defect is speed or memory.
 - For a feature, prefer **Enhancement** when it improves something that already exists, **Integration** when the work is connecting to an external system or third-party service, **Documentation** when it tracks docs only, or **Performance** when speed is the point.
 
-## Issue Lifecycle State Labels
+## Provenance marker
 
-A lifecycle label says what state an issue is in, for a person reading the issues list. It decides nothing: selection reads the board's Backlog column and the structured fields, never a label. At most one is present at a time — remove the old one when applying the new one — and an issue in the pool carries **none**, because being in Backlog is what available means. Resolved via the label map in `ClaudeProject.md`; defaults below.
-
-| Purpose key | Default Name | Color | Description | Applied by |
-|-------------|-------------|-------|-------------|------------|
-| `needs-refinement` | `needs-refinement` | `D4C5F9` | Needs a refinement session before pickup | feature-discovery / report-issue |
-| `status-in-progress` | `status-in-progress` | `1D76DB` | An agent is actively working this issue now | execute |
-| `status-parked` | `status-parked` | `C5DEF5` | Deliberately set aside by a human, will resume | human / update via park |
-| `status-blocked` | `status-blocked` | `B60205` | Cannot proceed — an open dependency edge | block-story / issue-apply / any command filing a blocked issue |
-| `status-non-code` | `status-non-code` | `A2734C` | Work no code agent can do — a browser agent or a person owns it | issue-apply / unblock / writing-github-issues |
-| `status-in-review` | `status-in-review` | `FBCA04` | PR is open, awaiting review / merge | execute |
-| `status-needs-attention` | `status-needs-attention` | `D93F0B` | A run failed or errored — needs human intervention | execute (error/timeout) |
-
-For the lifecycle transition diagram and dual-tracking rationale, see `docs/rationale/default-labels-rationale.md`.
-
-### Work scope labels (not lifecycle states)
-
-Who owns an issue. This is what keeps work a code agent cannot do out of the pool — the `Ownership` field first, these labels as the fallback — while `status-non-code` and the Non-code column say the same thing to a person. `wf issue-audit` reports any issue whose prefix, scope label and lifecycle label disagree. See `skills/writing-github-issues/SKILL.md` → **Scope: one issue, one party**.
-
-| Purpose key | Default Name | Color | Title prefix | Description |
-|-------------|-------------|-------|--------------|-------------|
-| `scope-browser` | `browser-agent` | `0052CC` | `[Browser] ` | A browser agent owns this issue |
-| `scope-human` | `human-required` | `7057FF` | `[Manual] ` | A person owns this issue |
-
-### Provenance marker (not a lifecycle state)
-
-`claude-authored` marks who built it, not what state it is in — it coexists with any lifecycle state.
+`claude-authored` marks who built it, not what state it is in. It is the only label the issue workflow applies, and it decides nothing.
 
 | Purpose key | Default Name | Color | Description |
 |-------------|-------------|-------|-------------|
@@ -140,42 +101,43 @@ Who owns an issue. This is what keeps work a code agent cannot do out of the poo
 
 ## Board Columns
 
-Where an issue actually is. Columns are resolved by **purpose key** through the same path as labels: read from `ClaudeProject.md` → `## Project Board` → `### Status Options`; fall back to the default name below. The board is the authority on state — `Backlog` is the pick pool, and the lifecycle labels mirror the column for a person reading the issues list, not the other way round. A move to a column the board does not have is reported and skipped, never applied blind. Design rationale: `docs/rationale/default-labels-rationale.md`.
+**Where an issue is *is* its state.** There is no second record to keep in step: the column is the answer, and every command that touches an issue leaves its card in the lane its own state names.
 
-| Purpose key      | Default Name  | Option color | Mirrors lifecycle label(s) |
-|------------------|---------------|--------------|----------------------------|
-| `col-backlog`    | `Backlog`     | GREEN        | (none — the pool) |
-| `col-refinement` | `Needs refinement` | BLUE    | `needs-refinement` |
-| `col-in-progress`| `In Progress` | YELLOW       | `status-in-progress` |
-| `col-in-review`  | `In Review`   | ORANGE       | `status-in-review` |
-| `col-attention`  | `Needs attention` | PURPLE   | `status-needs-attention` |
-| `col-blocked`    | `Blocked`     | RED          | `status-blocked` |
-| `col-non-code`   | `Non-code`    | PINK         | `status-non-code` |
-| `col-parked`     | `Parked`      | GRAY         | `status-parked` |
-| `col-done`       | `Done`        | GRAY         | (issue closed) |
+Columns are resolved by **purpose key** through the same path as labels: read from `ClaudeProject.md` → `## Project Board` → `### Status Options`; fall back to the default name below. A move to a column the board does not have is reported and skipped, never applied blind. Design rationale: `docs/rationale/default-labels-rationale.md`.
+
+| Purpose key      | Default Name  | Option color | What being here means |
+|------------------|---------------|--------------|-----------------------|
+| `col-backlog`    | `Backlog`     | GREEN        | available — this is the pick pool |
+| `col-refinement` | `Needs refinement` | BLUE    | not ready to start; needs a refinement session |
+| `col-in-progress`| `In Progress` | YELLOW       | an agent is working it now |
+| `col-in-review`  | `In Review`   | ORANGE       | a pull request is open against it |
+| `col-attention`  | `Needs attention` | PURPLE   | a run failed or timed out; a person has to look |
+| `col-blocked`    | `Blocked`     | RED          | an open dependency edge; a sweep releases it when that closes |
+| `col-non-code`   | `Non-code`    | PINK         | a browser agent or a person owns it; no sweep ever releases it |
+| `col-parked`     | `Parked`      | GRAY         | deliberately set aside; will resume |
+| `col-done`       | `Done`        | GRAY         | the issue is closed |
 
 > Option `color` values come from the GitHub enum `ProjectV2SingleSelectFieldOptionColor`: `GRAY`, `BLUE`, `GREEN`, `YELLOW`, `ORANGE`, `RED`, `PINK`, `PURPLE`. These name the *board* option color and are distinct from the hex label colors above.
 
 > The enum has eight colours and the board has nine lanes, so exactly one pair shares one. `Parked` and `Done` take it: both mean nothing is happening here, both sit at the far end of the board, and neither is a lane work is picked from or moved through. Every lane an issue passes through on its way to being done is a different colour from its neighbours.
 
+**Which command moves a card where (the single mapping every command follows):**
 
-**Label ⇄ column pairing (the single mapping every command follows):**
+| Move to | Command(s) |
+|---------|------------|
+| In Progress (`col-in-progress`) | `wf pick`, execute |
+| In Review (`col-in-review`)  | execute |
+| Blocked (`col-blocked`)      | block-story, `wf issue-apply` (an open dependency edge), `wf pick` (returning a blocked issue) |
+| Non-code (`col-non-code`)    | `wf issue-apply`, `wf unblock` (`Ownership` is not `Code agent`) |
+| Needs refinement (`col-refinement`) | feature-discovery, `wf issue-apply` |
+| Parked (`col-parked`)        | a person, or update via park |
+| Needs attention (`col-attention`) | execute (error / timeout) |
+| Backlog (`col-backlog`)      | `wf issue-apply` (create and update, nothing open), `wf unblock` (every blocker closed) |
+| Done (`col-done`)            | `wf pick` (already-resolved), `wf post-merge` (after merge), code-review auto-merge |
 
-| Lifecycle transition (label set)         | Board column moved to        | Command(s) |
-|------------------------------------------|------------------------------|------------|
-| `status-in-progress`                     | In Progress (`col-in-progress`) | execute |
-| `status-in-review`                       | In Review (`col-in-review`)  | execute |
-| `status-blocked`                         | Blocked (`col-blocked`)      | block-story, issue-apply, `wf pick` (returning a blocked issue) |
-| `status-non-code`                        | Non-code (`col-non-code`)    | issue-apply, `wf unblock` |
-| `needs-refinement`                       | Needs refinement (`col-refinement`) | feature-discovery, issue-apply |
-| `status-parked`                          | Parked (`col-parked`)        | human / update via park |
-| `status-needs-attention`                 | Needs attention (`col-attention`) | execute (error/timeout) |
-| no lifecycle label (available)           | Backlog (`col-backlog`)      | issue-apply (create and update), `wf unblock` |
-| issue **closed** (resolved / merged)     | Done (`col-done`)            | `wf pick` (already-resolved), `wf post-merge` (after merge), code-review auto-merge |
+Done is the one move with no decision behind it: the GitHub closed state is authoritative, and the commands above mirror the board so a finished story leaves the In Review column. Best-effort, like every board move — a no-op when no board is configured.
 
-The Done move has no lifecycle *label* (a closed issue carries none — the GitHub closed state is authoritative); the commands above mirror the board to `col-done` so a finished story leaves the In Review column. Best-effort, like every board move: a no-op when no board is configured.
-
-A board is now required, and **Backlog is required on it**: it is the pool `pick` and `candidates` read, so without it selection has nowhere to look. Preflight reports a missing Backlog column, an unrecorded board, or a `project-node-id` that resolves to nothing as `CRITICAL board-lane`. Every other column warns — a lane that does not exist costs one state's board move, which is visible on the board and which no command depends on. Setup creates them all.
+**A board is required, and Backlog is required on it.** It is the pool `pick` and `candidates` read, so without it selection has nowhere to look. Preflight reports a missing Backlog column, an unrecorded board, or a `project-node-id` that resolves to nothing as `CRITICAL board-lane`; an open issue with no card at all as `CRITICAL board-orphan`; and a card sitting in no lane as `CRITICAL board-unset`. Every other column warns — a lane that does not exist costs one state's board move, which is visible on the board and which no command depends on. Setup creates them all.
 
 ## Review State Labels
 

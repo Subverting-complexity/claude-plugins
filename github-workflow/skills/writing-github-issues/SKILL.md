@@ -64,7 +64,7 @@ The title belongs in GitHub's title field. Do not repeat it in the body.
 
 An issue says what kind of work it is **once**, through GitHub's native issue type (`Bug`, `User Story`, `Chore`, `Feature`, `Epic`, …) and the org's `Classification` field. Not through a title prefix, and not through a `type-*` label — neither is written any more, and `wf pick` reads neither. A spec that still names one has it stripped on the way in.
 
-Lifecycle state (`needs-refinement`, `status-blocked`, `status-non-code`) and priority stay on labels: GitHub has no native field for the first, and the second is dual-tracked with the org's `Priority` field. The lifecycle label describes the state for a person; the board column and the structured fields are what anything reads.
+**Nor through any other label.** An issue's state is the board column its card is in; how urgent, how big and whose it is are the org's `Priority`, `Effort` and `Ownership` fields. You do not write any of those four when filing: `wf issue-apply` sets the three fields from the spec and places the card from the issue's own state. The only label an issue gets is `claude-authored`.
 
 `[Manual]` and `[Browser]` are not classifications and are not covered by that rule. They say who has to do the work, not what kind of work it is, and nothing native records either. See **Scope: one issue, one party** below.
 
@@ -72,17 +72,17 @@ Lifecycle state (`needs-refinement`, `status-blocked`, `status-non-code`) and pr
 
 Three parties do work on a backlog, and they cannot substitute for each other.
 
-| Party | What it is | Prefix | Label |
+| Party | What it is | `Ownership` | Prefix |
 | --- | --- | --- | --- |
-| **Code agent** | Changes the repository. Produces a commit. | none | none |
-| **Browser agent** | Drives a web console a person has already signed into. Produces a saved form. | `[Browser] ` | `browser-agent` |
-| **Human** | Everything neither of the others can reach. Produces neither. | `[Manual] ` | `human-required` |
+| **Code agent** | Changes the repository. Produces a commit. | `Code agent` | none |
+| **Browser agent** | Drives a web console a person has already signed into. Produces a saved form. | `Browser agent` | `[Browser] ` |
+| **Human** | Everything neither of the others can reach. Produces neither. | `Human` | `[Manual] ` |
 
 **Every issue is scoped to exactly one of them.** Not "mostly a code agent", not "an agent, then someone presses save". One. This is the rule that matters, and the rest of this section is what follows from it.
 
 ### What each party can do
 
-**Code agent.** The default, so it carries no prefix and no label. A backlog should not decorate its normal case.
+**Code agent.** The common case, so it carries no prefix. It still carries the field: `Ownership` is required on every issue, and an issue that does not say who owns it is not offered to a code agent at all.
 
 **Browser agent.** Filling non-credential fields, pressing save, reading identifiers back out of a console. It **cannot** sign in, clear two-factor, download a file, accept an agreement, or touch anything financial. When it meets one of those it stops and hands back rather than working around it. Because it needs a session a person opened, a `[Browser]` issue is not picked up on its own either.
 
@@ -90,13 +90,12 @@ Three parties do work on a backlog, and they cannot substitute for each other.
 
 ### Marking a scoped issue
 
-Both scoped parties take three things together, all of them or none:
+Both scoped parties take two things together, both or neither:
 
-1. **The prefix**, exactly as spelled above, at the very start, followed by one space. `[Manual] Grant the Cloudflare GitHub App access to the org`. `[Browser] Set the authorised redirect URIs on the web OAuth client`.
-2. **The scope label**, `human-required` or `browser-agent`, resolved through the project's label map. The two are mutually exclusive.
-3. **The `Ownership` field**, set to `Browser agent` or `Human`. This is the one that does the work: selection reads the field first and the scope label as its fallback, so between them they are what keeps the issue out of the code agent's pool. The `status-non-code` label and the board's Non-code column follow from it, and the prefix is for a person reading a list.
+1. **The `Ownership` field**, set to `Browser agent` or `Human`. This is the one that does the work: it is the only thing selection reads, so it is what keeps the issue out of the code agent's pool. `wf issue-apply` puts the card in the board's **Non-code** column from it, without being asked.
+2. **The prefix**, exactly as spelled above, at the very start, followed by one space. `[Manual] Grant the Cloudflare GitHub App access to the org`. `[Browser] Set the authorised redirect URIs on the web OAuth client`. This is for a person reading a list; nothing selects on it.
 
-   **Not `status-blocked`.** That means one thing only — an open native blocked-by edge — and `wf unblock` releases anything carrying it once those edges close. Scoped work parked there is one sweep away from being handed to an agent that cannot do it, which is exactly what happened: both issues the first sweep would have released were `[Manual]` device passes whose blockers had closed.
+**Non-code is not Blocked.** Blocked means one thing only — an open native blocked-by edge — and `wf unblock` releases anything sitting there once those edges close. Non-code work parked in Blocked is one sweep away from being handed to an agent that cannot do it, which is exactly what happened: both issues the first sweep would have released were `[Manual]` device passes whose blockers had closed.
 
 Include a `## Manual step` section saying what has to happen and why the other two parties cannot do it.
 
@@ -160,7 +159,7 @@ The body standard says what each section is for. These are the issue-specific ca
 | `## Acceptance criteria` | Almost always. 2 to 5 testable statements, and never a restatement of `## Changes`. |
 | `## Verification` | Verifying needs something specific: a physical device, several environments, a regression check. |
 | `## Dependencies` | Rarely. A dependency is a native blocked-by edge, written by `wf issue-apply` from the spec's `blocked_by` and read by everything; prose is not parsed and does not block anything. Use the section only to explain *why* the sequencing exists. |
-| `## Manual step` | The issue cannot be closed by a code agent. The title then takes `[Manual] ` or `[Browser] `, and the issue takes that scope label plus `status-non-code`. See **Scope: one issue, one party** above. |
+| `## Manual step` | The issue cannot be closed by a code agent. The title then takes `[Manual] ` or `[Browser] `, and `Ownership` says which. See **Scope: one issue, one party** above. |
 | `## Out of scope` | Closely related work is likely to expand the issue unnecessarily. |
 
 ## Story issues
@@ -199,7 +198,7 @@ Apply the rewrite with a temp file and `--body-file`, following `templates/body-
 Run the checklist in `skills/_shared/body-standard.md` (**Before you post it**), plus these two, which only apply to an issue:
 
 - Are the repository template's headings intact, where one applied?
-- If there is a `## Manual step`, does the title start `[Manual] ` or `[Browser] `, and does the issue carry the matching scope label plus `status-non-code`?
+- If there is a `## Manual step`, does the title start `[Manual] ` or `[Browser] `, and does `Ownership` say `Human` or `Browser agent` to match?
 - Does this issue need only **one** party to close it? If a second party has to act before it is done, that half is its own issue, and the dependency between them is a native blocked-by edge.
 
 See `references/examples.md` for worked examples.

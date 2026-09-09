@@ -120,7 +120,7 @@ Record the Status single-select field's `id` as `status-field-id`, and keep the 
 
 **Ensure the board's lifecycle columns exist:**
 
-The board must mirror the issue lifecycle (see `templates/default-labels.md` → Board Columns). Compare the Status field's existing option names against the canonical set and decide what is missing:
+The board's `Status` field **is** the issue's state, so every lane the workflow moves a card into has to exist (see `templates/default-labels.md` → Board Columns). Compare the Status field's existing option names against the canonical set and decide what is missing:
 
 - **Required, and the one nothing works without:** Backlog (`col-backlog`). It is the pick pool — `pick` and `candidates` read that column and nothing else — so a board without it can select no work at all, and preflight reports it as critical.
 - **Required:** In Progress (`col-in-progress`), In Review (`col-in-review`), Blocked (`col-blocked`) — the three active workflow columns.
@@ -171,21 +171,14 @@ If milestones with due dates exist, note that sprint mode is available.
 For anything not auto-detected, ask the user interactively:
 
 - **Branch convention** — suggest `feature/{number}/{short-desc}` as default
-- **Priority labels** — what label names for critical/high/medium/low
-- **Type labels** — what label names for story/bug/security/debt/arch. Explain that type labels control mode filtering: `/github-workflow:execute` (default) picks the highest priority issue regardless of type; `--mode feature` picks feature stories only; `--mode maintenance` picks from bug/security/debt/arch issues. All five types should be configured for full mode support.
-- **Issue lifecycle (status) labels** — what state an issue is in, for a person reading the issues list. Nothing selects on them: the pool is the board's Backlog column, and an issue in it carries no lifecycle label at all. Confirm names for the set (suggest the defaults from `templates/default-labels.md` → Issue Lifecycle State Labels):
-  - `needs-refinement` — created with minimal spec, needs a refinement session (feature-discovery) before pickup (`#D4C5F9` purple).
-  - `status-in-progress` — an agent is actively working it (`#1D76DB`).
-  - `status-parked` — a human deliberately set it aside and will resume; keeps it out of the pick pool without losing ownership (`#C5DEF5`).
-  - `status-blocked` — an open native blocked-by edge; auto-cleared by `wf unblock` when every one of those edges closes (`#B60205`).
-  - `status-non-code` — work no code agent can do, owned by a browser agent or a person (`#A2734C`). Separate from `status-blocked` on purpose: blocked is temporary and a sweep releases it, non-code never is. Pairs with the scope labels `browser-agent` (`#0052CC`) and `human-required` (`#7057FF`).
-  - `status-in-review` — a PR is open, awaiting review/merge (`#FBCA04`).
-  - `status-needs-attention` — a run failed/errored; needs human intervention (`#D93F0B`). These replace any need for an ad-hoc "blocked" marker — `status-blocked` is now a first-class state.
-- **Claude labels** — simple workflow markers. Suggest `claude:authored`. These are separate from the review state labels (including `{prefix}-approved`) set up in Step 7.
-- **Agent gating** — ask "Require human approval before Claude picks up stories?" If yes, set `agent-gating` to `enabled` in ClaudeProject.md and ask for the approval label name (suggest `claude:ready`). Store as `claude-ready` in the Claude label map. If no, set `agent-gating` to `disabled` — the `claude-ready` row can be removed from the label map.
-- **Custom labels** — ask if the user has any additional labels they want workflow commands to apply or respect. For each custom label, ask the name and when it should be applied. Examples: `breaking-change`, `docs-needed`, `frontend`, `backend`. Store these in the Custom section of the label map in ClaudeProject.md. (The code-review skill also supports its own custom labels — those are configured separately in `review.config.md` during Step 7.)
+- **Claude label** — the provenance marker on Claude-authored PRs and issues. Suggest `claude-authored`. It is the only label the issue workflow applies, and it is separate from the review-state labels set up in Step 7.
+- **Custom labels** — ask if the user has any additional labels they want workflow commands to apply or respect. For each, ask the name and when it should be applied. Examples: `breaking-change`, `docs-needed`, `frontend`, `backend`. Store these in the Custom section of the label map. (The code-review skill supports its own custom labels — configured separately in `review.config.md` during Step 7.)
 - **Quality gate command** — if not auto-detected
-- **Refinement skill** — which skill to use when a `needs-refinement` story is next in the queue. Default: `feature-discovery` (runs in validation mode for lightweight Q&A, or discovery mode for full spec+AC). Store as `refinement-skill` in ClaudeProject.md.
+- **Refinement skill** — which skill to use when a story is too thin to implement. Default: `feature-discovery` (runs in validation mode for lightweight Q&A, or discovery mode for full spec+AC). Store as `refinement-skill` in ClaudeProject.md.
+
+**Do not ask about priority, type, status or scope labels, and do not create any.** None of them decides anything: an issue's state is the board column its card is in, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields Step 6 configures. A repository that already has such labels keeps them — deleting a label strips it from every issue that ever carried it — but they stay out of the label map, and `wf issue-apply` takes one off any issue it writes.
+
+**Do not ask about agent gating.** There is no approval label. A person approves an issue for autonomous pickup by moving its card into Backlog, and withholds approval by leaving it in Needs refinement or Parked.
 
 For each setting, show the detected or suggested default and let the user confirm or override. For labels, also list any existing labels found on the repo (`gh label list`) so the user can incorporate them.
 
@@ -199,7 +192,7 @@ If enhancing an existing file, merge new sections into the existing content with
 
 Setup is the **only** place the full label inventory is created. Skills at runtime rely on these already existing and only create-if-missing as a guarded fallback (see the pre-creation contract in `templates/default-labels.md`). Create the **complete** inventory now — both the workflow labels and the review-state mutex labels — so no skill has to lazily create labels mid-workflow.
 
-1. **Workflow labels** — every label configured in ClaudeProject.md (Priority, Type, Status, Claude, and Custom). "Status" covers the issue lifecycle set (`needs-refinement`, `status-in-progress`, `status-parked`, `status-blocked`, `status-non-code`, `status-in-review`, `status-needs-attention`) and the two scope labels (`browser-agent`, `human-required`). Resolve each name through the label map per `templates/default-labels.md`.
+1. **Workflow labels** — the `claude-authored` marker, plus any Custom labels configured in ClaudeProject.md. That is the whole issue-side inventory: there are no priority, type, status or scope labels to create, because none of them decides anything.
 2. **Review-state labels** — the nine review-state labels (including the `needs-review` entry state and `failed`). If the user set up `docs/review.config.md` (step 7) or chose a label prefix, resolve each name from its Purpose row there; otherwise use the `review-` defaults from `templates/default-labels.md`. Create these even if the user defers full review-config setup, so the code-review skill never has to create them at runtime.
 
 First fetch existing labels, then create only the missing ones — **without `--force`**, so existing labels keep their colour and description (no churn):
@@ -210,7 +203,7 @@ existing=$(gh label list --repo {org}/{repo} --json name --jq '.[].name')
 gh label create "<name>" --repo {org}/{repo} --description "<description>" --color "<color>"
 ```
 
-Use the colours from the inventory tables in `templates/default-labels.md` (review-state labels there; needs-refinement `#D4C5F9` light purple). The user may override any colour during setup.
+Use the colours from the inventory tables in `templates/default-labels.md`. The user may override any colour during setup.
 
 This step is best-effort. If label creation fails (permissions, etc.), log a warning and continue.
 

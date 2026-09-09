@@ -120,11 +120,11 @@ Stay under ~150k tokens for the whole set, and treat that as the constraint that
 - **The pull request only ever closes stories it actually implements.** If the budget runs out with stories unbuilt, release those claims back to the backlog and open the PR for what was built. Never write `Closes #N` for a story this run did not finish.
 - **One set, one session.** Do not pick a second set after finishing.
 - **Leave room for the review phases, and size the set so they fit.** Phases 8 and 9 hand the diff to a separate context, so here they cost the review reference, the merge mechanics, the findings returned and the fixes you apply — plus, when no agent can be spawned, the whole code-review hot path inline. One reviewer rather than two, and a re-review only when the rework earns one, is what keeps that affordable; stop short of the cap anyway when the stories are not small, because running out of budget before the review strands every story in the set at once.
-- **60-minute timeout.** Record the start time (`date +%s`); before each story and each phase, check the elapsed time. Past 60 minutes: commit and push, release the claims of the unbuilt stories, then run Phase 7 for a **real** pull request (never a draft) covering the built ones and carry on into Phases 8 to 10. If nothing is shippable, leave the branch pushed, move every claimed issue to `status-needs-attention` with a comment listing what remains, file follow-ups, and run **Exit cleanup**.
+- **60-minute timeout.** Record the start time (`date +%s`); before each story and each phase, check the elapsed time. Past 60 minutes: commit and push, release the claims of the unbuilt stories, then run Phase 7 for a **real** pull request (never a draft) covering the built ones and carry on into Phases 8 to 10. If nothing is shippable, leave the branch pushed, move every claimed issue to `col-attention` with a comment listing what remains, file follow-ups, and run **Exit cleanup**.
 
 ## API rate limiting
 
-Before a batch of `gh` calls, check the remaining quota (`gh api rate_limit --jq '.rate.remaining'`). If it is below **100**, pause: commit and push current work, move every claimed issue to `status-needs-attention` (removing `status-in-progress`) with a comment noting the pause, run **Exit cleanup**, then exit. **Once the pull request is open (Phase 8 onward)** leave the issues at `status-in-review` and note the pause on the PR instead, so the labels, the board and the PR's review state stay in agreement. Do not retry rate-limited requests in a loop.
+Before a batch of `gh` calls, check the remaining quota (`gh api rate_limit --jq '.rate.remaining'`). If it is below **100**, pause: commit and push current work, move every claimed issue to `col-attention` with a comment noting the pause, run **Exit cleanup**, then exit. **Once the pull request is open (Phase 8 onward)** leave the cards in In Review and note the pause on the PR instead, so the board and the PR's review state stay in agreement. Do not retry rate-limited requests in a loop.
 
 ## Mode selection
 
@@ -160,7 +160,7 @@ The set is **chosen**, never taken off the top of the backlog. Priority order de
 - **Named stories** (`$ARGUMENTS.story_numbers` given, e.g. `/github-workflow:bulk-execute 41 43 47`) — the user has already made the choice. Validate each named story, check none is already in flight, and claim them all. Relatedness is not re-litigated; a named story is only ever dropped when it cannot be worked at all.
 - **No numbers given** — read the ready pool with `wf candidates --mode {mode}`, which returns the same filtered, priority-sorted pool `execute` would pick from and claims nothing. Group it into genuinely related stories, choose one group against the relatedness rules, and only then claim.
 
-Either way, **every story in the set gets a real atomic claim** before any code is written — the `refs/claims/issue-{number}` ref, plus `status-in-progress`, the `@me` assignment and the board move. A story built without its own claim is a story another agent can pick up underneath you.
+Either way, **every story in the set gets a real atomic claim** before any code is written — the `refs/claims/issue-{number}` ref, plus the `@me` assignment and the board move to In Progress. A story built without its own claim is a story another agent can pick up underneath you.
 
 Phase 1 ends in one of three states:
 
@@ -170,7 +170,7 @@ Phase 1 ends in one of three states:
 
 ## Phase 2 — Start
 
-1. **Confirm the claims.** Every story in the set was claimed in Phase 1, with `status-in-progress` applied, `@me` assigned, and the board moved to In Progress. Re-run the claim (`wf claim --issue {number}`) for a story only if Phase 1's claim state was lost to compaction — its re-entry check makes a still-held claim a no-op. Do not issue a bare `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
+1. **Confirm the claims.** Every story in the set was claimed in Phase 1, with `@me` assigned and the card moved to In Progress. Re-run the claim (`wf claim --issue {number}`) for a story only if Phase 1's claim state was lost to compaction — its re-entry check makes a still-held claim a no-op. Do not issue a bare `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
 
 2. **Start clean.** Run the **Start clean** check in `templates/worktree-hygiene.md` before branching. A worktree provisioned dirty is inherited junk: reset it to a pristine baseline and report it, so it is never mistaken for this session's work.
 
@@ -282,4 +282,4 @@ Read `skills/execute/references/escape-hatches.md` when a run leaves the happy p
 - **Blocked.** One story blocking does not block the run. Drop that story from the set (`references/set-selection.md`, **Dropping a story**, then `/github-workflow:block-story` for it) and carry on with the rest. Block the whole run only when the set drops below one buildable story and no code exists yet.
 - **Dependency.** A dependency *inside* the set is the ordinary case here and needs no hatch: the dependency is built first, which Phase 1 already ordered. A dependency on an open issue *outside* the set drops that story from the set. Never chain a bulk branch off another feature branch: the pull request would then close several stories against a base that may never merge.
 - **Too large.** Shrink the set, do not slice a story. Drop stories until what remains fits, and leave the dropped ones ready in the backlog for their own run.
-- **Failure reporting.** Comment the failure on **every** claimed issue before exiting, and move each to `status-needs-attention`. Once the pull request is open, comment on the PR instead and leave the issues at `status-in-review`.
+- **Failure reporting.** Comment the failure on **every** claimed issue before exiting, and move each card to Needs attention. Once the pull request is open, comment on the PR instead and leave the cards in In Review.
