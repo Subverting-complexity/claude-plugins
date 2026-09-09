@@ -126,25 +126,25 @@ Board: **claude-plugins** (org project #8) —
 
 ### Status Options
 
-The board now carries all three active workflow columns. Each column mirrors one or more issue lifecycle states — see `github-workflow/templates/default-labels.md` → Board Columns for the full label ⇄ column pairing.
+The board carries all nine lanes. A card's column *is* the issue's state — there is no label mirroring it — and what each lane means is in `github-workflow/templates/default-labels.md` → Board Columns.
 
 `col-backlog` used to map onto the board's default "Todo" option, which is why `BOARD_COLUMN_NAMES` said "Todo" for as long as it did. The column has since been renamed to "Backlog", keeping option id `f75ad846` so nothing in it moved, and the board and the plugin now use one name for it.
 
-| Status            | Purpose key       | Option ID  |
-| ----------------- | ----------------- | ---------- |
-| Backlog           | `col-backlog`     | `f75ad846` |
-| In Progress       | `col-in-progress` | `47fc9ee4` |
-| In Review         | `col-in-review`   | `9b47c867` |
-| Blocked           | `col-blocked`     | `28e51b4e` |
-| Non-code          | `col-non-code`    | `1803d9dc` |
-| Done              | `col-done`        | `98236657` |
-| Needs refinement  | `col-refinement`  | `n/a`      |
-| Parked            | `col-parked`      | `n/a`      |
-| Needs attention   | `col-attention`   | `n/a`      |
+| Column | Purpose Key | Option ID |
+| ------ | ----------- | --------- |
+| Backlog | `col-backlog` | `f75ad846` |
+| In Progress | `col-in-progress` | `47fc9ee4` |
+| In Review | `col-in-review` | `9b47c867` |
+| Blocked | `col-blocked` | `28e51b4e` |
+| Non-code | `col-non-code` | `1803d9dc` |
+| Needs refinement | `col-refinement` | `027ccf11` |
+| Parked | `col-parked` | `b4303d05` |
+| Needs attention | `col-attention` | `0976940f` |
+| Done | `col-done` | `98236657` |
 
 **Backlog is the pool.** `pick` and `candidates` read that column and nothing else, so an issue with no card on this board cannot be selected at all — which is why `issue-apply` places every issue it touches. Everything outside Backlog is out of the pool by virtue of being somewhere else, and no label is consulted to decide it.
 
-The last three rows are lanes the plugin can move an issue into that this board does not have yet. `/github-workflow:preflight` warns about each one until they are added; nothing breaks in the meantime, because a move to a column that does not exist is reported and skipped rather than silently landing the card in `No Status`.
+This table is a snapshot, and `wf preflight --fix` rewrites it from the live board. A recorded id the board no longer has, and a lane the board has that this table records as `n/a`, are both warnings: `board-move` resolves a column by name at write time, so a stale snapshot costs a lookup rather than the move.
 
 ## Reference Docs
 

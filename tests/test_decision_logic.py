@@ -2926,6 +2926,40 @@ class TestStripLabelMapRows(unittest.TestCase):
                          ('# x\n', []))
 
 
+class TestBoardColumnFindings(unittest.TestCase):
+    """The snapshot and the board can disagree in either direction."""
+
+    LIVE = {'o1': 'Backlog', 'o2': 'In Progress'}
+
+    def _checks(self, columns):
+        return [f['detail'] for f in
+                wf_core.board_column_findings(columns, self.LIVE)]
+
+    def test_an_agreeing_snapshot_is_clean(self):
+        columns = {'col-backlog': 'o1', 'col-in-progress': 'o2'}
+        self.assertEqual(wf_core.board_column_findings(columns, self.LIVE), [])
+
+    def test_a_recorded_id_the_board_no_longer_has_is_reported(self):
+        details = self._checks({'col-backlog': 'gone'})
+        self.assertTrue(any('no longer has' in d for d in details))
+
+    def test_a_live_column_the_file_does_not_record_is_reported(self):
+        """The direction a repair creates: adding a lane leaves the file
+        recording it as `n/a`, and nothing said so until this checked."""
+        details = self._checks({'col-backlog': 'o1'})
+        self.assertTrue(any('In Progress' in d and 'no option id' in d
+                            for d in details))
+
+    def test_a_lane_the_board_does_not_have_is_not_reported_here(self):
+        """That is `board_lane_findings`, and for `Backlog` it is critical."""
+        details = self._checks({'col-backlog': 'o1', 'col-in-progress': 'o2'})
+        self.assertFalse(any('Blocked' in d for d in details))
+
+    def test_both_directions_warn_rather_than_failing(self):
+        found = wf_core.board_column_findings({'col-backlog': 'gone'}, self.LIVE)
+        self.assertEqual({f['level'] for f in found}, {wf_core.WARNING})
+
+
 class TestStatusOptionsTable(unittest.TestCase):
 
     def test_every_canonical_column_gets_a_row_in_canonical_order(self):
@@ -2961,6 +2995,26 @@ class TestStatusOptionsTable(unittest.TestCase):
                 + wf_core.render_status_options({'col-backlog': 'a'}) + '\n')
         self.assertEqual(wf_core.replace_status_options(text,
                                                         {'col-backlog': 'a'}),
+                         (text, False))
+
+    def test_the_prose_around_the_table_survives_the_rewrite(self):
+        """The first version replaced the whole section and ate four paragraphs
+        of this repository's own writing. Only the table's lines may move."""
+        text = ('### Status Options\n\nWhy this board is shaped this way.\n\n'
+                '| Column | Purpose Key | Option ID |\n| --- | --- | --- |\n'
+                '| Backlog | `col-backlog` | `old` |\n\n'
+                '**Backlog is the pool.** Nothing else is read.\n')
+        out, changed = wf_core.replace_status_options(text,
+                                                      {'col-backlog': 'new'})
+        self.assertTrue(changed)
+        self.assertIn('Why this board is shaped this way.', out)
+        self.assertIn('**Backlog is the pool.**', out)
+        self.assertIn('`new`', out)
+        self.assertNotIn('`old`', out)
+
+    def test_a_section_with_prose_but_no_table_is_left_alone(self):
+        text = '### Status Options\n\nNot configured yet.\n'
+        self.assertEqual(wf_core.replace_status_options(text, {'a': 'b'}),
                          (text, False))
 
     def test_a_file_with_no_table_is_left_alone_rather_than_given_one(self):

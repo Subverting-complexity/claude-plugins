@@ -96,7 +96,7 @@ _BASE_CFG = {
     'org': 'acme', 'repo': 'widgets', 'default_branch': 'main',
     'branch_convention': 'feature/{number}/{short-desc}',
     'labels': {}, 'review_labels': {}, 'fields': {},
-    'agent_gating': 'disabled', 'type_capable': False,
+    'type_capable': False,
     # A board is no longer optional for selection: the pool *is* its Backlog
     # column. The baseline carries one so every picker test exercises the real
     # path; the tests that care about a board-less project override it.
@@ -2642,6 +2642,15 @@ class TestConfigAudit(unittest.TestCase):
             for name in sections:
                 fh.write('## %s\n\nbody\n\n' % name)
 
+    @staticmethod
+    def _snapshot(board):
+        """The `### Status Options` a project would record for this board."""
+        live = {(o.get('name') or '').strip().lower(): o['id']
+                for o in ((board or {}).get('field') or {}).get('options') or ()}
+        return {purpose: live[name.strip().lower()]
+                for purpose, name in wf_core.BOARD_COLUMN_NAMES.items()
+                if name.strip().lower() in live}
+
     def _write_instruction(self, name, text):
         with open(os.path.join(self.scan, name), 'w', encoding='utf-8') as fh:
             fh.write(text)
@@ -2652,6 +2661,13 @@ class TestConfigAudit(unittest.TestCase):
             board = copy.deepcopy(self._LIVE_BOARD)
         self._write_config(self._SECTIONS if sections is None else sections)
         cfg = _cfg(**(cfg_over or {}))
+        if not (cfg_over or {}).get('board'):
+            # Record exactly what the live board has. A recorded id the board
+            # dropped and a live column the file never recorded are both
+            # `board-column` warnings, so a baseline that records nothing --
+            # or records a lane the test just deleted -- would put nine of them
+            # under every other assertion.
+            cfg['board']['columns'] = self._snapshot(board)
         args = wf.build_parser().parse_args(
             ['config-audit', '--scan', self.scan, *argv])
         sent = []
@@ -2834,12 +2850,13 @@ class TestConfigAudit(unittest.TestCase):
         board = copy.deepcopy(self._LIVE_BOARD)
         board['title'] = 'widgets'
         board['field']['options'].append({'id': 'live1234', 'name': 'In Progress'})
+        columns = dict(self._snapshot(board), **{'col-in-progress': 'dead1234'})
         code, payload, _ = self._run(
             board=board,
             cfg_over={'board': {'project_node_id': 'PVT_1',
                                 'project_title': 'widgets',
                                 'status_field_name': 'Status',
-                                'columns': {'col-in-progress': 'dead1234'}}})
+                                'columns': columns}})
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(self._checks(payload), ['board-column'])
 
@@ -2880,7 +2897,8 @@ class TestConfigAudit(unittest.TestCase):
             board=board,
             cfg_over={'board': {'project_node_id': 'PVT_1',
                                 'project_title': 'widgets',
-                                'status_field_name': 'Status', 'columns': {}}})
+                                'status_field_name': 'Status',
+                                'columns': self._snapshot(board)}})
         self.assertEqual(self._checks(payload), ['board-title'])
 
     def test_unreadable_pinning_is_reported_rather_than_assumed_correct(self):

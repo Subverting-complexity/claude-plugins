@@ -45,7 +45,7 @@ So there is no `status-*` label, no `priority-*` label, no `scope-*` label and n
 | How big is it? | the org's `Effort` field | `--max-effort`, and the tie-break inside a priority band |
 | Who has to do it? | the org's `Ownership` field | whether a code agent may pick it up at all |
 
-Removing the label is the migration, not a cleanup after it: `wf issue-apply` strips any retired label off every issue it writes, `wf config-audit` reports a label map that still claims one (`label-deprecated`), and `wf issue-audit --apply` backfills the field values from whatever labels an old issue still carries. The labels themselves are left alone in the repository — deleting one removes it from every issue that ever carried it, which is history nobody asked to lose.
+Removing the label is the migration, not a cleanup after it: `wf issue-apply` strips any retired label off every issue it writes, `wf config-audit` reports a label map that still claims one (`label-deprecated`), and `wf issue-audit` proposes the field values an old issue is missing, which `wf issue-apply` then writes. The labels themselves are left alone in the repository — deleting one removes it from every issue that ever carried it, which is history nobody asked to lose.
 
 ## Issue Types & Field Values
 
