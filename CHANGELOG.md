@@ -7,6 +7,42 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 8.1.0
+
+**Every issue is now scoped to exactly one party**, and `writing-github-issues`
+says which three: a code agent that changes the repository, a **browser agent**
+that drives a web console someone has already signed into, and a human for
+everything neither can reach.
+
+The browser agent is new. It fills non-credential fields, presses save and reads
+identifiers back out. It cannot sign in, clear two-factor, download a file,
+accept an agreement or touch anything financial, and it hands back rather than
+working around any of those. Because it needs a session a person opened, a
+`[Browser]` issue stays out of the pickup pool like a `[Manual]` one.
+
+- New title prefix `[Browser] ` and new scope label `browser-agent`, alongside
+  the existing `[Manual] ` and `human-required`. The two scope labels are
+  mutually exclusive, and either one is accompanied by `status-blocked`, which
+  is what actually removes an issue from selection.
+- `strip_title_prefix` already leaves any prefix outside `TITLE_PREFIX_KINDS`
+  alone, so `[Browser]` survives with no code change. Its docstring now says so
+  rather than naming only `[Manual]`.
+
+**Behaviour change worth reading before upgrading.** The old rule said an issue
+that is mostly automatable with one human prerequisite keeps its `[Manual]`
+prefix and stays whole. That is reversed: **split it**. Raise the other party's
+work as its own issue and link the two with `Blocked by #N` in both directions.
+
+The old shape looks finished and is not. A code story that does its half and
+says "then a person sets the value" sits in the backlog, gets picked up, gets a
+merged pull request, and the console step is never done because it never had a
+card of its own. The test is what the issue produces: a commit, a saved console
+form, or neither. Two answers means two issues.
+
+Issues already written under the old rule keep working. Nothing rewrites them,
+and a `[Manual]` issue with a mixed body is still a valid `[Manual]` issue; it
+is just no longer what this skill will write.
+
 ## github-workflow 8.0.2
 
 **Fixed:** `board-move --column col-backlog` now finds the column. The purpose
