@@ -1461,50 +1461,83 @@ def lifecycle_phase(cfg, plans, results):
                  dependency closing will change it.
       blocked    at least one native edge points at an open issue, so it
                  carries `status-blocked` and sits in Blocked.
-      pickable   neither, so nothing is applied. Under a `none` ready gate an
-                 issue with no lifecycle label is exactly what "ready" means.
+      pickable   neither, so no lifecycle label belongs on it — and whichever
+                 one it was carrying is removed. An issue with no lifecycle
+                 label, sitting in Backlog, is exactly what "available" means.
 
     Nothing did this before, in either direction. A spec could write a
     dependency edge and leave the issue with no lifecycle label at all, which
     meant `pick` offered work whose dependency had not been built yet, and the
     board showed it in Backlog while GitHub showed it blocked.
+
+    Two things this phase used to skip, both on the "nothing is wrong" path,
+    and both of which the Backlog pool depends on:
+
+    **The card is placed every time, not only when a label changed.** A created
+    code issue with no blockers resolves to pickable, so the old early return
+    left it with no board item at all — an issue that exists in the repository
+    and nowhere on the board. That was survivable while the pool was a label
+    query. It is not survivable now the pool *is* the Backlog column: an issue
+    with no card is an issue nothing can pick.
+
+    **A stale label is cleared.** An update whose last blocker closed resolves
+    to pickable, and the old early return left `status-blocked` on it and its
+    card in Blocked. Only the separate `wf unblock` sweep repaired that, and
+    only for issues it happened to scan.
+
+    Labels are read live where the run has them (`result['issue']`, which
+    `update_entry` fills from its own read-back) and from the spec otherwise,
+    which is what a create just applied. Reading the spec alone was wrong for
+    updates: an entry that does not restate its labels looked unlabelled, so
+    no stale label was ever found on the one path that needed to find one.
     """
     project_map = cfg.get('labels') or {}
     numbers = [r['number'] for r in results
                if r.get('number') and not r.get('errors')]
-    edge_map = issue_edges_map(cfg, [r['number'] for r in results
-                                     if r.get('number') and r.get('blocked_by')])
+    # Every issue this phase decides about, not only the ones whose spec entry
+    # restated a dependency. Reading only the latter was survivable while a
+    # pickable verdict did nothing; now that it *clears* a stale label, an
+    # update that did not restate `blocked_by` would look dependency-free and
+    # have a legitimate `status-blocked` removed. The edges are the record, so
+    # they are read for every issue whose lane is about to be decided.
+    edge_map = issue_edges_map(cfg, numbers)
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     for plan, result in zip(plans, results):
         number = result.get('number')
         if number not in numbers:
             continue
         entry = plan['entry']
-        names = [label(cfg, l) for l in (entry.get('labels') or [])]
-        scope = wf_core.issue_scope(entry.get('title') or '', names, project_map)
+        live = result.get('issue') or {}
+        live_labels = (live.get('labels') or {}).get('nodes')
+        if live_labels is not None:
+            names = [n['name'] for n in live_labels]
+        else:
+            names = [label(cfg, l) for l in (entry.get('labels') or [])]
+        title = live.get('title') or entry.get('title') or ''
+        scope = wf_core.issue_scope(title, names, project_map)
         open_blockers, _closed = wf_core.edge_states(edge_map.get(number) or [])
         wanted_key = wf_core.lifecycle_for(scope, open_blockers)
-        if not wanted_key:
-            continue
-        wanted = label(cfg, wanted_key)
+        wanted = label(cfg, wanted_key) if wanted_key else None
         stale = wf_core.current_lifecycle_label(names, project_map)
-        if stale == wanted:
-            continue
-        args = ['gh', 'issue', 'edit', str(number), '--repo', repo,
-                '--add-label', wanted]
-        if stale:
-            args.extend(['--remove-label', stale])
-        code, _, err = run(args)
-        if code != 0:
-            result['errors'].append('lifecycle label %s failed: %s'
-                                    % (wanted, err.strip()))
-            continue
-        result['changed'].append('label %s' % wanted)
+        if wanted != stale:
+            args = ['gh', 'issue', 'edit', str(number), '--repo', repo]
+            if wanted:
+                args.extend(['--add-label', wanted])
+            if stale:
+                args.extend(['--remove-label', stale])
+            code, _, err = run(args)
+            if code != 0:
+                result['errors'].append(
+                    'lifecycle label %s failed: %s'
+                    % (wanted or 'removal', err.strip()))
+                continue
+            result['changed'].append(
+                'label %s' % wanted if wanted else 'cleared label %s' % stale)
         result['lifecycle'] = wanted
-        column = wf_core.board_column_for(scope, open_blockers)
-        moved, message = board_move(cfg, number,
-                                    wf_core.BOARD_COLUMN_NAMES[column])
-        result['board_column'] = wf_core.BOARD_COLUMN_NAMES[column]
+        column = wf_core.BOARD_COLUMN_NAMES[
+            wf_core.board_column_for(scope, open_blockers)]
+        moved, message = board_move(cfg, number, column)
+        result['board_column'] = column
         result['board_moved'] = moved
         if not moved:
             result['board_message'] = message
@@ -2549,19 +2582,43 @@ def board_move(cfg, number, column_name):
     the board is simply not in use, so this is a silent no-op. The column is
     resolved by name (case-insensitive) against the live Status field options,
     so the same code moves an issue to In Progress, In Review, or Done.
+
+    **The column is resolved before the card is added, and that order is the
+    point.** The other way round, an issue destined for a column the board does
+    not have was added to the board and *then* found to have nowhere to go: the
+    add succeeded, the status write did not, and the card landed in the board's
+    `No Status` bucket while the caller was told `moved: false`. A report that
+    says nothing happened, next to a card that appeared out of nowhere, is
+    worse than either. Resolving first means a bad column name costs one query
+    and writes nothing.
+
+    Identity and column resolution share that query, so the safer order is also
+    one round trip cheaper than the order it replaces.
     """
     board = cfg.get('board', {})
     node = board.get('project_node_id')
     if not node:
         return False, 'no board configured'
     title_cfg = board.get('project_title')
+    field_name = board.get('status_field_name', 'Status')
     ok, data, err = gh_graphql(
-        'query($id:ID!){ node(id:$id){ ... on ProjectV2 { title } } }', id=node)
+        'query($id:ID!,$fname:String!){ node(id:$id){ ... on ProjectV2 { title'
+        ' field(name:$fname){ ... on ProjectV2SingleSelectField { id options { id name } } } } } }',
+        id=node, fname=field_name)
     if not ok or not data or not data.get('node'):
         return False, 'board identity check failed (%s)' % err
     live_title = data['node'].get('title')
     if title_cfg and live_title != title_cfg:
         return False, "board node resolves to '%s' but config says '%s' — skipping" % (live_title, title_cfg)
+
+    field = data['node'].get('field')
+    if not field:
+        return False, 'could not resolve %s field (%s)' % (field_name, err)
+    option_id = next((o['id'] for o in field['options']
+                      if o['name'].strip().lower() == column_name.strip().lower()), None)
+    if not option_id:
+        return False, "no '%s' column on the board (it has: %s)" % (
+            column_name, ', '.join(o['name'] for o in field['options']) or 'none')
 
     ok, data, err = gh_graphql(
         'query($owner:String!,$repo:String!,$number:Int!){'
@@ -2581,19 +2638,6 @@ def board_move(cfg, number, column_name):
         if not ok or not data:
             return False, 'could not add issue to board (%s)' % err
         item_id = data['addProjectV2ItemById']['item']['id']
-
-    field_name = board.get('status_field_name', 'Status')
-    ok, data, err = gh_graphql(
-        'query($id:ID!,$fname:String!){ node(id:$id){ ... on ProjectV2 {'
-        ' field(name:$fname){ ... on ProjectV2SingleSelectField { id options { id name } } } } } }',
-        id=node, fname=field_name)
-    if not ok or not data or not data.get('node', {}).get('field'):
-        return False, 'could not resolve %s field (%s)' % (field_name, err)
-    field = data['node']['field']
-    option_id = next((o['id'] for o in field['options']
-                      if o['name'].strip().lower() == column_name.strip().lower()), None)
-    if not option_id:
-        return False, "no '%s' column on the board" % column_name
 
     ok, _, err = gh_graphql(
         'mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){ updateProjectV2ItemFieldValue('
