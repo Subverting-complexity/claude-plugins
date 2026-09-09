@@ -23,7 +23,7 @@ This is the standard for **every GitHub issue title and body** this plugin write
 - `/github-workflow:report-issue`, including every autonomous filing that routes through it (`execute` finding a problem outside its own diff, `code-review` filing what it cannot fix, an audit run, a story sliced down to fit a session).
 - Story issues created by `/github-workflow:feature-discovery` and `/github-workflow:repo-scaffolding`.
 - A single story written by `/github-workflow:user-story` when it is destined for a GitHub issue.
-- Any edit to an existing issue body, including the `## Dependencies` marker `/github-workflow:block-story` writes.
+- Any edit to an existing issue body.
 - Rewriting or tidying an issue a person asks you to simplify.
 
 Apply it without being asked. There is no separate "concise mode".
@@ -64,7 +64,7 @@ The title belongs in GitHub's title field. Do not repeat it in the body.
 
 An issue says what kind of work it is **once**, through GitHub's native issue type (`Bug`, `User Story`, `Chore`, `Feature`, `Epic`, …) and the org's `Classification` field. Not through a title prefix, and not through a `type-*` label — neither is written any more, and `wf pick` reads neither. A spec that still names one has it stripped on the way in.
 
-Lifecycle state (`status-ready`, `needs-refinement`, `status-blocked`) and priority stay on labels: GitHub has no native field for the first, and the second is dual-tracked with the org's `Priority` field.
+Lifecycle state (`status-ready`, `needs-refinement`, `status-blocked`, `status-non-code`) and priority stay on labels: GitHub has no native field for the first, and the second is dual-tracked with the org's `Priority` field.
 
 `[Manual]` and `[Browser]` are not classifications and are not covered by that rule. They say who has to do the work, not what kind of work it is, and nothing native records either. See **Scope: one issue, one party** below.
 
@@ -94,13 +94,15 @@ Both scoped parties take three things together, all of them or none:
 
 1. **The prefix**, exactly as spelled above, at the very start, followed by one space. `[Manual] Grant the Cloudflare GitHub App access to the org`. `[Browser] Set the authorised redirect URIs on the web OAuth client`.
 2. **The scope label**, `human-required` or `browser-agent`, resolved through the project's label map. The two are mutually exclusive.
-3. **The `status-blocked` lifecycle label**, in place of `status-ready` or `needs-refinement`. This is the one that does the work: selection reads lifecycle labels, so `status-blocked` is what keeps the issue out of the pool. The prefix and the scope label are for a person reading a list.
+3. **The `status-non-code` lifecycle label**, in place of `status-ready` or `needs-refinement`. This is the one that does the work: selection reads lifecycle labels, so `status-non-code` is what keeps the issue out of the pool, and it puts the card in the board's Non-code column. The prefix and the scope label are for a person reading a list.
+
+   **Not `status-blocked`.** That means one thing only — an open native blocked-by edge — and `wf unblock` releases anything carrying it once those edges close. Scoped work parked there is one sweep away from being handed to an agent that cannot do it, which is exactly what happened: both issues the first sweep would have released were `[Manual]` device passes whose blockers had closed.
 
 Include a `## Manual step` section saying what has to happen and why the other two parties cannot do it.
 
 ### When an issue needs two parties, split it
 
-**This is the rule that replaces the old one.** An issue that is mostly automatable with one human prerequisite used to be marked `[Manual]` and left whole. Do not do that. Raise the other party's work as its own issue, scope it, and link the two with `Blocked by #N` in both directions.
+**This is the rule that replaces the old one.** An issue that is mostly automatable with one human prerequisite used to be marked `[Manual]` and left whole. Do not do that. Raise the other party's work as its own issue, scope it, and link the two with a native blocked-by edge.
 
 The old shape looks finished and is not. A code story that does its half and says "then a person sets the value" sits in Backlog, gets picked up, gets a merged pull request, and the console step is never done because it never had a card of its own.
 
@@ -108,7 +110,7 @@ Ask what the issue produces: a commit, a saved console form, or neither. **Two a
 
 Where the two halves interleave, say so in both, in order, rather than leaving it to whoever picks one up. Two issues that hand back and forth once is normal and fine; four issues for four alternating steps is not.
 
-**When none of this applies:** work a person has to do that belongs to a *different* issue is not a manual step here. Record it under `## Dependencies` as `Blocked by #N`, and leave this issue unprefixed.
+**When none of this applies:** work a person has to do that belongs to a *different* issue is not a manual step here. Record it as a native blocked-by edge, and leave this issue unprefixed.
 
 `[Manual]` and `[Browser]` are the only prefixes `wf issue-apply` leaves on a title. It strips `[BUG]`, `[STORY]` and the rest, because the native issue type already says what kind of work an issue is. Nothing native says **who** has to do it, which is why these two are carried in the title.
 
@@ -157,8 +159,8 @@ The body standard says what each section is for. These are the issue-specific ca
 | `## Changes` | The required change is not already obvious from the Summary. |
 | `## Acceptance criteria` | Almost always. 2 to 5 testable statements, and never a restatement of `## Changes`. |
 | `## Verification` | Verifying needs something specific: a physical device, several environments, a regression check. |
-| `## Dependencies` | There is real sequencing. Keep the markers exact, because the workflow parses them: `Depends on #N`, `Blocked by #N`, `After #N`, `Requires #N`. |
-| `## Manual step` | The issue cannot be closed by a code agent. The title then takes `[Manual] ` or `[Browser] `, and the issue takes that scope label plus `status-blocked`. See **Scope: one issue, one party** above. |
+| `## Dependencies` | Rarely. A dependency is a native blocked-by edge, written by `wf issue-apply` from the spec's `blocked_by` and read by everything; prose is not parsed and does not block anything. Use the section only to explain *why* the sequencing exists. |
+| `## Manual step` | The issue cannot be closed by a code agent. The title then takes `[Manual] ` or `[Browser] `, and the issue takes that scope label plus `status-non-code`. See **Scope: one issue, one party** above. |
 | `## Out of scope` | Closely related work is likely to expand the issue unnecessarily. |
 
 ## Story issues
@@ -197,7 +199,7 @@ Apply the rewrite with a temp file and `--body-file`, following `templates/body-
 Run the checklist in `skills/_shared/body-standard.md` (**Before you post it**), plus these two, which only apply to an issue:
 
 - Are the repository template's headings intact, where one applied?
-- If there is a `## Manual step`, does the title start `[Manual] ` or `[Browser] `, and does the issue carry the matching scope label plus `status-blocked`?
-- Does this issue need only **one** party to close it? If a second party has to act before it is done, that half is its own issue with `Blocked by #N` in both.
+- If there is a `## Manual step`, does the title start `[Manual] ` or `[Browser] `, and does the issue carry the matching scope label plus `status-non-code`?
+- Does this issue need only **one** party to close it? If a second party has to act before it is done, that half is its own issue, and the dependency between them is a native blocked-by edge.
 
 See `references/examples.md` for worked examples.

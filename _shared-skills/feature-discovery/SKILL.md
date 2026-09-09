@@ -252,7 +252,7 @@ When a large-scope feature produces more than 4 stories:
 
 ### Dependency chain enforcement
 
-Every story must declare its dependencies explicitly using the format: `Depends on #{number}` (or `Blocked by #{number}`, `After #{number}`).
+Every story must declare its dependencies in its spec entry's `blocked_by`, which `wf issue-apply` writes as a native blocked-by edge. That edge is the dependency; a sentence in the body is not read by anything.
 
 After decomposition:
 
@@ -342,12 +342,12 @@ When the user approves the plan, offer to create the stories as GitHub issues. I
    - **No `type-*` label and no `[STORY]` title prefix.** The native type classifies the issue; `issue-apply` strips both if a spec still names them, and says that it did.
    - `field-effort` comes from the story's size estimate: large → **High**, medium → **Medium**, small → **Low**.
    - `field-priority` is set only where the plan assigned one, and stays dual-tracked with the `priority-*` label. The field is what orders `pick`; the label is the fallback for issues without one.
-   - `blocked_by` writes a native edge **and** the body's `## Dependencies` prose, so the markers from step 2 stay authoritative.
+   - `blocked_by` writes a native edge, and `issue-apply` then applies `status-blocked` and moves the card to Blocked for any entry whose edges point at something still open.
    - Add `"milestone": "{title}"` to an entry in sprint mode. It must name an open milestone.
-2. Include a `## Dependencies` section in each issue body listing upstream dependencies by issue number (e.g., `Depends on #42`). Where a dependency is another entry in the same spec and has no number yet, name it in `blocked_by` by `key` and let `issue-apply` write the prose.
+2. Name every dependency in the entry's `blocked_by`. Where the dependency is another entry in the same spec and has no number yet, reference it by `key` and `issue-apply` resolves it once both exist.
 3. Apply ready state based on dependency state, through each entry's `labels`:
    - Stories with no unresolved dependencies (DAG roots) → mark as ready per the project's `ready-gate` setting: the `status-ready` label and/or a move to the "Ready" board column.
-   - Stories whose dependencies are not yet closed → do NOT mark as ready. The `## Dependencies` section in the body is sufficient to communicate the dependency — no blocked label is needed.
+   - Stories whose dependencies are not yet closed → do NOT mark as ready. `issue-apply` applies `status-blocked` from the edges it just wrote, so there is nothing to add by hand.
    - Deferred stories (see "Deferred speccing") → `needs-refinement` label.
 4. **Read the exit code.** **0** created them, and every issue number is written back into the spec file, so a re-run after a partial failure completes the remainder rather than filing duplicates. **21** (`no-capabilities`) means the org defines no types or fields — report that the stories could not be classified rather than filing them unclassified by hand. **22** means the spec is wrong (an unknown label, a milestone that is not open, a missing mandatory field), so fix it and re-run. **23** and **24** mean the issues exist but some metadata did not land, so name what failed and carry on.
 

@@ -56,7 +56,7 @@ Where an entry point uses the shared section names, they mean the same thing in 
 | `## Acceptance criteria` | Short, testable statements. Usually 2 to 5. |
 | `## Test plan` | How the change was verified: commands run, tests added, anything checked by hand. |
 | `## Verification` | What verifying needs beyond the obvious: a physical device, several environments, a regression check. |
-| `## Dependencies` | Real ordering constraints only, as exact markers (`Depends on #N`, `Blocked by #N`). |
+| `## Dependencies` | Rarely. The dependency itself is a native blocked-by edge; this section is for the reason, or for something outside GitHub. |
 | `## Manual step` | The work cannot be finished until a person does something no agent can do. Say exactly what, and why. |
 | `## Out of scope` | Closely related work that must not be pulled in. |
 
@@ -152,7 +152,7 @@ Use plain English and British spelling. Avoid filler openers such as:
 - Is anything said twice?
 - Has uncertainty survived?
 - Is every paragraph on a single line, with no hard wrapping?
-- Are machine-read markers intact and exact (`Closes #N`, `Depends on #N`, `Blocked by #N`, `**Size estimate:**`)?
+- Are machine-read markers intact and exact (`Closes #N`, `**Size estimate:**`)?
 - Can anything else go without making the work harder to do or to verify?
 
 If yes, remove it.

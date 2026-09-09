@@ -18,12 +18,15 @@ a merge left two downstream issues sitting there until the user asked whether
 anything had been unblocked.
 
 **New command: `wf unblock`.** It reads every open issue carrying the blocked
-label and sorts them four ways.
+label and sorts them five ways.
 
 - **released** — every native blocked-by edge points at a closed issue. The
-  label is removed, the `## Dependencies` section is rewritten to name the
-  blockers that closed, the board card moves to Backlog, and a comment says
-  what happened and why.
+  label is removed, the board card moves to Backlog, and a comment says what
+  happened and why.
+- **rescoped** — browser or human work sitting in the blocked lane. The label
+  is swapped for `status-non-code`, the card moves to Non-code, and a comment
+  says nothing about the work itself has changed. Never released: see the
+  non-code lane below.
 - **held** — at least one blocker is still open. Untouched.
 - **partials** — held, but a blocker has merged something in the last fourteen
   days. Reported, never acted on: a story that ships half of itself stays open
@@ -50,20 +53,59 @@ swapped the blocked label for a `status-ready` label that projects on a `none`
 ready gate do not have, so its single `gh issue edit` failed and nothing
 changed. It now calls the same sweep as everything else.
 
-**Dependencies are read from the native `blockedBy` edges, and only from
-them.** `wf pick` used to parse the `## Dependencies` prose and then spend one
-call per reference looking each up; it now asks for the edges in a single
-query. The prose is generated *from* the edges rather than consulted, because
-the two had drifted apart on nine of the fourteen issues carrying both, and it
-was always the prose that was stale.
+**A new lane for work no code agent can do.** Browser-agent and human-required
+issues used to be parked under `status-blocked`, which was the only label that
+kept them out of the pool. That was a hazard rather than a convention: the
+sweep above releases anything whose edges have all closed, and both issues its
+first real run would have released were `[Manual]` device passes whose blockers
+happened to close. They would have gone straight into the code agent's pool.
 
-This is a behaviour change worth knowing about: an issue whose body names a
-blocker that was never written as an edge is no longer treated as blocked.
-That was already true in effect — the prose parser could not see a `## Blocked
-by` heading with its references on the next line, so those dependencies were
-invisible anyway — but it is now explicit, and `wf pick` warns by name when a
-body names a dependency no edge records. Run `wf issue-audit` to backfill the
-missing edges.
+- New lifecycle label **`status-non-code`** and new board column **`Non-code`**
+  (`col-non-code`). Setup creates both; the column is never required, and on a
+  board that lacks it the failed move is reported while the label still keeps
+  the issue out of the pool.
+- New scope label purpose keys `scope-browser` (`browser-agent`) and
+  `scope-human` (`human-required`), so the ownership rule is now mechanical
+  rather than a sentence in a skill document.
+- `status-blocked` goes back to meaning one thing: an open dependency edge.
+- `wf issue-audit` reports scope drift — both scope labels on one issue, a
+  title prefix that disagrees with the label, scoped work with no
+  `status-non-code`, or that label on an issue nothing scopes.
+- Scope wins over a dependency. An issue that is both ends up in the lane no
+  sweep will release it from, because the scope is a property of the work and
+  survives every blocker closing.
+
+**Every issue `wf issue-apply` writes now lands in the lane its own state
+names**, and its board card moves to match. Nothing did this in either
+direction before: a spec could write a dependency edge and leave the issue with
+no lifecycle label at all, so `pick` offered work whose dependency had not been
+built yet, and the board showed it in Backlog while GitHub showed it blocked.
+`mark_blocked` moves the card too, so an issue returned to blocked mid-run no
+longer leaves its card in In Progress.
+
+**The `## Dependencies` prose is gone, not fixed.** A dependency was written
+twice, as a native edge and as body prose, and a parser read the prose back. It
+was wrong in both directions on one real backlog: it missed a `## Blocked by`
+heading whose references sat on the next line, and it read "Nothing. This
+**was** blocked by #980" as a live dependency. The two graphs disagreed on nine
+of the fourteen issues carrying both, with the prose stale every time.
+
+A sentence is not structured data, so nothing parses one now. `wf issue-apply`
+writes the edge and only the edge, `wf pick` and `wf candidates` read the edges
+in a single query instead of one call per reference, and `wf candidates`
+reports each candidate's `dependencies`, `dependencies_open`, `blocked` and
+`scope`. **A body naming a blocker with no edge behind it is not blocked** —
+which was already true in effect, since the parser could not see it either.
+`wf issue-audit` no longer proposes an edge from prose; there is nothing to
+propose from. Where a real dependency exists only as a sentence, add the edge.
+
+## local-workflow 2.13.1
+
+Shared-skill sync only. `body-standard.md`, `story-template.md` and
+`feature-discovery` stop telling a writer that `Depends on #N` prose in an
+issue body is parsed and holds work back. It is not, in either plugin: the
+dependency is the native blocked-by edge, and `github-workflow` 8.2.0 removed
+the parser that read the prose. Nothing in this plugin's own behaviour changed.
 
 ## github-workflow 8.1.0
 

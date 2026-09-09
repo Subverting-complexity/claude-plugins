@@ -96,9 +96,14 @@ jobs:
             --exclude github-workflow/skills/code-review/references/auto-merge.md \
             --budget 20100
 
+      # Raised in the non-code lane change: `default-labels.md` is the
+      # inventory every one of these windows loads, and it gained a
+      # lifecycle label (`status-non-code`), two scope labels and a board
+      # column. A run has to know they exist to put an issue in the right
+      # lane, so this is a decision the run carries rather than prose.
       - name: Check execute whole-run footprint
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 33980
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 34160
 
       - name: Check bulk-execute build-window footprint
         shell: bash
@@ -106,11 +111,11 @@ jobs:
           bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md \
             --exclude github-workflow/skills/execute/references/review-and-merge.md \
             --exclude github-workflow/skills/code-review/references/auto-merge.md \
-            --budget 22830
+            --budget 23140
 
       - name: Check bulk-execute whole-run footprint
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 37160
+        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 37270
 
       - name: Check code-review skill footprint
         shell: bash

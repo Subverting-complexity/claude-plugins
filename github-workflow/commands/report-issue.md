@@ -133,7 +133,7 @@ With no template, a reported problem usually lands as:
 
 Do not narrate how you found the problem, and do not add a section that would be empty. Most filings are a Summary and acceptance criteria.
 
-**Does not go in the body:** whether it blocks the current story. That is a routing decision for the caller (Step 3) and belongs in what you report back, not in the issue. A genuine ordering constraint between two issues goes in `## Dependencies` as `Blocked by #N`.
+**Does not go in the body:** whether it blocks the current story. That is a routing decision for the caller (Step 3) and belongs in what you report back, not in the issue. A genuine ordering constraint between two issues is a native blocked-by edge, not a sentence in the body.
 
 ### 6. Validate issue body
 

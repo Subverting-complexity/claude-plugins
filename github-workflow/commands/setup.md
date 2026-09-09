@@ -124,6 +124,7 @@ The board must mirror the issue lifecycle (see `templates/default-labels.md` →
 
 - **Required when a board is selected:** In Progress (`col-in-progress`), In Review (`col-in-review`), Blocked (`col-blocked`) — the three active workflow columns.
 - **Also required only under a `board-column`/`both` ready-gate:** Ready (`col-ready`).
+- **Created but not required:** Non-code (`col-non-code`) — where browser-agent and human-required work sits, so it is visibly not in the code agent's pool.
 - Backlog (`col-backlog`) and Done (`col-done`) usually already exist, as the board's default Todo/Done options. Done is already named right; **Todo is not**, and it is renamed rather than adopted — see below. Never create a second column for either.
 
 Match case-insensitively. For each **missing** column, ask the user what to name it, suggesting the default (`In Progress`, `In Review`, `Blocked`, `Ready`). If every required column already exists, skip creation.
@@ -134,7 +135,7 @@ Then create the missing columns in **one** mutation.
 
 > **Critical:** `updateProjectV2Field`'s `singleSelectOptions` is a **full replace**, not additive — whatever list you pass becomes the complete option set. You **must** pass back every existing option with its `id` (preserving it) plus each new option **without** an `id`. Omit an existing option and it is **deleted** (along with any items in that column). Each option needs `name`, `color` (`GRAY`/`BLUE`/`GREEN`/`YELLOW`/`ORANGE`/`RED`/`PINK`/`PURPLE`), and a `description` (all required).
 
-Build the `singleSelectOptions` list as: the existing options (each `{id, name, color, description}` exactly as fetched) followed by the new ones (no `id`). Suggested colors for new columns: Ready `GREEN`, In Progress `BLUE`, In Review `YELLOW`, Blocked `RED`.
+Build the `singleSelectOptions` list as: the existing options (each `{id, name, color, description}` exactly as fetched) followed by the new ones (no `id`). Suggested colors for new columns: Ready `GREEN`, In Progress `BLUE`, In Review `YELLOW`, Blocked `RED`, Non-code `ORANGE`.
 
 `gh api graphql` only binds **scalar** variables (`-f`/`-F`), so the option-list input cannot be passed as a variable — **inline the full `singleSelectOptions` array directly into the query text**. The `color` values are enum literals (unquoted); `name`/`description` are quoted strings. Existing options keep their `id`; new ones omit it:
 
@@ -182,7 +183,8 @@ For anything not auto-detected, ask the user interactively:
   - `needs-refinement` — created with minimal spec, needs a refinement session (feature-discovery) before pickup (`#D4C5F9` purple).
   - `status-in-progress` — an agent is actively working it (`#1D76DB`).
   - `status-parked` — a human deliberately set it aside and will resume; keeps it out of the pick pool without losing ownership (`#C5DEF5`).
-  - `status-blocked` — cannot proceed (external/dependency blocker); auto-cleared when its `Blocked by #N` issues close (`#B60205`).
+  - `status-blocked` — an open native blocked-by edge; auto-cleared by `wf unblock` when every one of those edges closes (`#B60205`).
+  - `status-non-code` — work no code agent can do, owned by a browser agent or a person (`#A2734C`). Separate from `status-blocked` on purpose: blocked is temporary and a sweep releases it, non-code never is. Pairs with the scope labels `browser-agent` (`#0052CC`) and `human-required` (`#7057FF`).
   - `status-in-review` — a PR is open, awaiting review/merge (`#FBCA04`).
   - `status-needs-attention` — a run failed/errored; needs human intervention (`#D93F0B`). These replace any need for an ad-hoc "blocked" marker — `status-blocked` is now a first-class state.
 - **Claude labels** — simple workflow markers. Suggest `claude:authored`. These are separate from the review state labels (including `{prefix}-approved`) set up in Step 7.

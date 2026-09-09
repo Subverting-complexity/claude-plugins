@@ -810,13 +810,42 @@ class TestCandidatesCommand(unittest.TestCase):
         marker.assert_not_called()
         board.assert_not_called()
 
-    def test_dependencies_are_parsed_for_the_caller(self):
-        """The set chooser groups on declared linkage, so it needs the deps."""
+    def test_dependencies_come_from_the_native_edges(self):
+        """The set chooser groups on real linkage, and it needs to know which
+        of those dependencies are still open. The body says nothing here on
+        purpose: prose naming a blocker is not a dependency."""
         cand = _candidate(1)
         cand['body'] = 'Part of the epic.\n\nBlocked by #7'
-        with mock.patch.object(wf, 'assemble_candidates', return_value=(True, [cand], '')):
+        edges = {1: [{'number': 7, 'state': 'OPEN'},
+                     {'number': 8, 'state': 'CLOSED'}]}
+        with mock.patch.object(wf, 'assemble_candidates',
+                               return_value=(True, [cand], '')), \
+                mock.patch.object(wf, 'issue_edges_map', return_value=edges):
             _, payload = _capture(wf.cmd_candidates, _candidates_args())
-        self.assertEqual(payload['candidates'][0]['dependencies'], [7])
+        entry = payload['candidates'][0]
+        self.assertEqual(entry['dependencies'], [7, 8])
+        self.assertEqual(entry['dependencies_open'], [7])
+        self.assertTrue(entry['blocked'])
+
+    def test_an_issue_with_no_edges_is_not_blocked_whatever_its_body_says(self):
+        cand = _candidate(1)
+        cand['body'] = '## Blocked by\n\n#979\n'
+        with mock.patch.object(wf, 'assemble_candidates',
+                               return_value=(True, [cand], '')), \
+                mock.patch.object(wf, 'issue_edges_map', return_value={}):
+            _, payload = _capture(wf.cmd_candidates, _candidates_args())
+        self.assertEqual(payload['candidates'][0]['dependencies'], [])
+        self.assertFalse(payload['candidates'][0]['blocked'])
+
+    def test_the_listing_says_who_owns_each_candidate(self):
+        cand = _candidate(1)
+        cand['title'] = '[Browser] Turn on the API'
+        cand['labels'] = ['browser-agent']
+        with mock.patch.object(wf, 'assemble_candidates',
+                               return_value=(True, [cand], '')), \
+                mock.patch.object(wf, 'issue_edges_map', return_value={}):
+            _, payload = _capture(wf.cmd_candidates, _candidates_args())
+        self.assertEqual(payload['candidates'][0]['scope'], 'browser')
 
     def test_bodies_are_truncated_and_flagged(self):
         cand = _candidate(1)
@@ -1584,6 +1613,15 @@ class _FakeHub(object):
                 repository[alias] = ({'id': issue['id'], 'number': issue['number']}
                                      if issue else None)
             return True, {'repository': repository}, ''
+        if 'blockedBy(first:50)' in query and ': issue(number:' in query:
+            repository = {}
+            for alias, number in re.findall(
+                    r'(e\d+): issue\(number:(\d+)\)', query):
+                issue = self.issues.get(int(number))
+                repository[alias] = {'blockedBy': {'nodes': [
+                    {'number': n, 'state': 'OPEN'}
+                    for n in issue['blocked_by']]}} if issue else None
+            return True, {'repository': repository}, ''
         if 'issue(number:$number)' in query:
             issue = self.issues.get(int(fields['number']))
             return True, {'repository': {'issue': self._readback(issue)
@@ -1885,14 +1923,56 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(payload['status'], 'verify-failed')
         self.assertTrue(any('Priority' in m for m in payload['mismatches']))
 
-    def test_a_dependency_is_written_as_an_edge_and_in_the_body(self):
-        """Both, deliberately: the edge drives the portal, the prose drives unblocking."""
+    def test_a_dependency_is_written_as_an_edge_and_only_as_an_edge(self):
+        """It used to be written twice, as the edge and as `## Dependencies`
+        prose, and on one real backlog the two disagreed on nine of the fourteen
+        issues carrying both."""
         hub = _FakeHub([_existing(7)])
         code, payload, _, _ = self._run([self._full(blocked_by=[7])], hub)
         self.assertEqual(code, wf.EXIT_OK)
         self.assertIn('addBlockedBy', hub.names_sent())
         created = hub.issues[payload['applied'][0]['number']]
-        self.assertIn('Blocked by #7', created['body'])
+        self.assertEqual(created['blocked_by'], [7])
+        self.assertNotIn('Dependencies', created['body'])
+
+    def test_an_issue_created_with_an_open_dependency_is_marked_blocked(self):
+        """Nothing did this before: a spec could write the edge and leave the
+        issue with no lifecycle label, so `pick` offered work whose dependency
+        had not been built yet."""
+        hub = _FakeHub([_existing(7)])
+        code, payload, _, _ = self._run([self._full(blocked_by=[7])], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        applied = payload['applied'][0]
+        self.assertEqual(applied['lifecycle'], 'status-blocked')
+        self.assertEqual(applied['board_column'], 'Blocked')
+        self.assertIn('label status-blocked', applied['changed'])
+
+    def test_browser_work_goes_to_the_non_code_lane_not_the_blocked_one(self):
+        """The lane a sweep never releases from. `status-blocked` means a
+        dependency is open, and no dependency closing will make a code agent
+        able to click through a console."""
+        hub = _FakeHub(labels={'browser-agent': 'L_br'})
+        entry = self._full(title='[Browser] Turn on the API',
+                           labels=['browser-agent'])
+        code, payload, _, _ = self._run([entry], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['applied'][0]['lifecycle'], 'status-non-code')
+        self.assertEqual(payload['applied'][0]['board_column'], 'Non-code')
+
+    def test_scope_wins_over_a_dependency(self):
+        hub = _FakeHub([_existing(7)], labels={'human-required': 'L_hu'})
+        entry = self._full(title='[Manual] Device pass', blocked_by=[7],
+                           labels=['human-required'])
+        code, payload, _, _ = self._run([entry], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['applied'][0]['lifecycle'], 'status-non-code')
+
+    def test_code_work_with_nothing_open_gets_no_lifecycle_label(self):
+        """Under a `none` ready gate that is exactly what pickable means."""
+        hub = _FakeHub()
+        code, payload, _, _ = self._run([self._full()], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertNotIn('lifecycle', payload['applied'][0])
 
     def test_a_spec_local_reference_resolves_to_the_number_just_created(self):
         hub = _FakeHub()
@@ -1992,8 +2072,10 @@ class TestEpicTreeBatching(_ApplyCase):
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(len(payload['applied']), 13)
         self.assertEqual(len(hub.mutations), 4)
-        # Plus the single prerequisite lookup: repo id and label ids together.
-        self.assertEqual(len(hub.queries), 1)
+        # Two reads: the prerequisite lookup (repo id and label ids together),
+        # then one batched edge read so the lifecycle phase knows which of the
+        # edges it just wrote point at something still open.
+        self.assertEqual(len(hub.queries), 2)
 
     def test_children_are_created_after_their_parents(self):
         hub = _FakeHub()
@@ -2026,7 +2108,6 @@ class TestEpicTreeBatching(_ApplyCase):
         by_key = {r['key']: r['number'] for r in payload['applied']}
         epic = hub.issues[by_key['epic']]
         self.assertEqual(epic['blocked_by'], [by_key['s2_2']])
-        self.assertIn('Blocked by #%d' % by_key['s2_2'], epic['body'])
 
     def test_one_failed_entry_does_not_stop_the_others_in_its_batch(self):
         hub = _FakeHub(fail_create={'Story 1'})
@@ -2133,13 +2214,13 @@ class TestIssueAudit(_ApplyCase):
         self.assertEqual(code, wf.EXIT_GAPS)
         self.assertEqual([kind for kind, _ in sent], ['query'])
 
-    def test_an_inferred_edge_is_proposed_not_applied(self):
-        """Body prose is not reliable enough to build a graph from unattended."""
+    def test_a_body_dependency_is_no_longer_an_edge_the_audit_can_propose(self):
+        """There is nothing to propose from: only an edge records a dependency."""
         issue = self._issue(1, body='## Dependencies\n\nBlocked by #2\n')
         _, payload, _, spec = self._run([issue, self._classified(2)])
-        self.assertEqual(spec['issues'][0]['blocked_by'], [2])
+        self.assertNotIn('blocked_by', spec['issues'][0])
         kinds = [g['kind'] for g in payload['issues'][0]['gaps']]
-        self.assertIn('missing-edge', kinds)
+        self.assertNotIn('missing-edge', kinds)
 
     def test_quiet_keeps_the_exit_code_and_drops_the_detail(self):
         code, payload, _, _ = self._run([self._issue(1)], ['--quiet'])
@@ -2520,32 +2601,6 @@ class TestConfigAudit(unittest.TestCase):
         self.assertEqual(self._checks(payload), [])
 
 
-class TestDependencySection(unittest.TestCase):
-    """The body prose `wf_core.parse_dependencies()` reads back."""
-
-    def test_a_section_is_added_to_a_body_that_has_none(self):
-        body = wf.ensure_dependency_section('Some context.', [7, 9])
-        self.assertIn('## Dependencies', body)
-        self.assertIn('Blocked by #7', body)
-        self.assertIn('Some context.', body)
-
-    def test_an_existing_section_is_replaced_not_appended(self):
-        body = wf.ensure_dependency_section(
-            'Intro\n\n## Dependencies\n\nBlocked by #1\n', [7])
-        self.assertEqual(body.count('## Dependencies'), 1)
-        self.assertNotIn('#1', body)
-
-    def test_a_following_section_survives(self):
-        body = wf.ensure_dependency_section(
-            'Intro\n\n## Dependencies\n\nBlocked by #1\n\n## Acceptance\n\nA thing.\n',
-            [7])
-        self.assertIn('## Acceptance', body)
-        self.assertIn('A thing.', body)
-
-    def test_no_dependencies_leaves_the_body_alone(self):
-        self.assertEqual(wf.ensure_dependency_section('Intro', []), 'Intro')
-
-
 class TestUnblockSweep(unittest.TestCase):
     """`wf unblock`: release what the edges say is free, report the rest."""
 
@@ -2557,9 +2612,17 @@ class TestUnblockSweep(unittest.TestCase):
             'body': '', 'labels': {'nodes': [{'name': 'status-blocked'}]},
             'blockedBy': {'nodes': [{'number': 979, 'state': 'OPEN'},
                                     {'number': 1311, 'state': 'CLOSED'}]}}
-    NO_EDGES = {'id': 'I_c', 'number': 1084, 'title': '[MANUAL] Open a bank account',
+    NO_EDGES = {'id': 'I_c', 'number': 1084, 'title': 'Open a bank account',
                 'body': '', 'labels': {'nodes': [{'name': 'status-blocked'}]},
                 'blockedBy': {'nodes': []}}
+    # Human work whose only blocker has closed. Under the old rule this was
+    # released into the code agent's pool; it is a device pass, so no agent can
+    # do it whatever its edges say.
+    SCOPED = {'id': 'I_d', 'number': 1368, 'title': '[Manual] Device pass on iOS',
+              'body': '',
+              'labels': {'nodes': [{'name': 'status-blocked'},
+                                   {'name': 'human-required'}]},
+              'blockedBy': {'nodes': [{'number': 1362, 'state': 'CLOSED'}]}}
 
     def _cfg(self):
         return _cfg(board={'project_node_id': None, 'project_title': None,
@@ -2579,8 +2642,6 @@ class TestUnblockSweep(unittest.TestCase):
 
         with mock.patch.object(wf, 'gh_graphql', fake_graphql), \
                 mock.patch.object(wf, 'run', fake_run), \
-                mock.patch.object(wf, 'update_issue_body',
-                                  lambda *a: (True, '')), \
                 mock.patch.object(wf, 'blocker_deliveries',
                                   lambda *a, **k: deliveries or {}), \
                 mock.patch.object(wf, 'board_move',
@@ -2626,6 +2687,33 @@ class TestUnblockSweep(unittest.TestCase):
         self.assertEqual(report['no_edges'], {'count': 1, 'issues': [1084]})
         self.assertEqual(calls, [])
 
+    def test_scoped_work_is_moved_to_the_non_code_lane_not_released(self):
+        """The bug this lane exists to close. Both issues the first real sweep
+        would have released were `[Manual]` device-pass work whose blockers
+        happened to close."""
+        calls = []
+        report = self._sweep([self.SCOPED], calls)
+        self.assertEqual(report['released'], [])
+        self.assertEqual([r['issue'] for r in report['rescoped']], [1368])
+        self.assertEqual(report['rescoped'][0]['scope'], 'human')
+        self.assertEqual(report['rescoped'][0]['label'], 'status-non-code')
+        joined = ' '.join(' '.join(c) for c in calls)
+        self.assertIn('--add-label status-non-code', joined)
+        self.assertIn('--remove-label status-blocked', joined)
+
+    def test_a_rescope_says_on_the_issue_what_changed_and_what_did_not(self):
+        calls = []
+        self._sweep([self.SCOPED], calls)
+        body = [c for c in calls if 'comment' in c][0][-1]
+        self.assertIn('status-non-code', body)
+        self.assertIn('Nothing about the work has changed', body)
+
+    def test_a_dry_run_reports_a_rescope_without_writing_it(self):
+        calls = []
+        report = self._sweep([self.SCOPED], calls, dry_run=True)
+        self.assertTrue(report['rescoped'][0]['dry_run'])
+        self.assertEqual(calls, [])
+
     def test_a_dry_run_reports_the_same_release_and_writes_nothing(self):
         calls = []
         report = self._sweep([self.RELEASED], calls, dry_run=True)
@@ -2647,11 +2735,35 @@ class TestUnblockSweep(unittest.TestCase):
         self.assertEqual(report['partials'], [])
 
     def test_the_scan_reports_everything_it_looked_at(self):
-        report = self._sweep([self.RELEASED, self.HELD, self.NO_EDGES], [])
-        self.assertEqual(report['scanned'], 3)
+        report = self._sweep(
+            [self.RELEASED, self.HELD, self.NO_EDGES, self.SCOPED], [])
+        self.assertEqual(report['scanned'], 4)
         self.assertEqual(len(report['released']), 1)
         self.assertEqual(len(report['held']), 1)
+        self.assertEqual(len(report['rescoped']), 1)
         self.assertEqual(report['no_edges']['count'], 1)
+
+
+class TestMarkBlocked(unittest.TestCase):
+    """Returning an issue to blocked moves its card as well as its label.
+
+    The board is how a person sees the state of the work. An issue labelled
+    blocked whose card still sits in In Progress is two answers, and the one a
+    human reads is the wrong one.
+    """
+
+    def test_the_card_follows_the_label(self):
+        calls, moves = [], []
+        with mock.patch.object(wf, 'run',
+                               lambda c, input_text=None:
+                               (calls.append(list(c)), (0, '', ''))[1]), \
+                mock.patch.object(wf, 'board_move',
+                                  lambda cfg, number, column:
+                                  (moves.append((number, column)), (True, ''))[1]):
+            wf.mark_blocked(_cfg(), {'number': 7}, '#9')
+        self.assertEqual(moves, [(7, 'Blocked')])
+        joined = ' '.join(' '.join(c) for c in calls)
+        self.assertIn('--add-label status-blocked', joined)
 
 
 if __name__ == '__main__':

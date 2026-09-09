@@ -65,7 +65,7 @@ Ask for a bigger read only if you need it: `--limit 0` for the whole pool, `--bo
 
 **Strong — one is enough:**
 
-- **Declared linkage.** The two name each other, or both name the same parent or epic: `Part of #N`, `Depends on #N`, `Blocked by #N`, a shared reference in a `## Dependencies` section, or sub-issues of one parent. A dependency chain is the single best bulk set there is, because building the dependency and its dependent together is what removes the wait.
+- **Declared linkage.** A native blocked-by edge between the two (`wf candidates` reports each candidate's `dependencies` and `dependencies_open`), a shared parent or epic, or sub-issues of one parent. A dependency chain is the single best bulk set there is, because building the dependency and its dependent together is what removes the wait.
 - **Same deliverable surface.** Both bodies point at the same files, module, command, screen, endpoint or table. This is where the saving actually comes from: the second story costs a fraction of the first because the code is already open and the design decision is already made.
 
 **Weak — both are needed:**

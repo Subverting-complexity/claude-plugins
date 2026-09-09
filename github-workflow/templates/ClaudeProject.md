@@ -179,7 +179,7 @@ Remove this entire section if you don't use a GitHub project board. `project-tit
 
 ### Status Options
 
-The canonical six columns. The three active workflow columns (In Progress, In Review, Blocked) must exist when a board is configured; setup creates them, preflight flags any missing. Label ⇄ column pairing: `templates/default-labels.md` → Board Columns.
+The canonical seven columns. The three active workflow columns (In Progress, In Review, Blocked) must exist when a board is configured; setup creates them, preflight flags any missing. Label ⇄ column pairing: `templates/default-labels.md` → Board Columns.
 
 | Status      | Purpose key       | Option ID |
 | ----------- | ----------------- | --------- |
@@ -188,6 +188,7 @@ The canonical six columns. The three active workflow columns (In Progress, In Re
 | In Progress | `col-in-progress` | `{id}`    |
 | In Review   | `col-in-review`   | `{id}`    |
 | Blocked     | `col-blocked`     | `{id}`    |
+| Non-code    | `col-non-code`    | `{id}`    |
 | Done        | `col-done`        | `{id}`    |
 
 ## Reference Docs (optional)

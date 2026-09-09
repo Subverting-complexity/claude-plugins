@@ -115,11 +115,23 @@ Every issue always carries exactly one lifecycle state label — mutually exclus
 | `needs-refinement` | `needs-refinement` | `D4C5F9` | Needs a refinement session before pickup | feature-discovery / report-issue |
 | `status-in-progress` | `status-in-progress` | `1D76DB` | An agent is actively working this issue now | execute |
 | `status-parked` | `status-parked` | `C5DEF5` | Deliberately set aside by a human, will resume | human / update via park |
-| `status-blocked` | `status-blocked` | `B60205` | Cannot proceed — external or dependency blocker, including a step only a person can do | block-story / any command filing a `[Manual]` issue |
+| `status-blocked` | `status-blocked` | `B60205` | Cannot proceed — an open dependency edge | block-story / issue-apply / any command filing a blocked issue |
+| `status-non-code` | `status-non-code` | `A2734C` | Work no code agent can do — a browser agent or a person owns it | issue-apply / unblock / writing-github-issues |
 | `status-in-review` | `status-in-review` | `FBCA04` | PR is open, awaiting review / merge | execute |
 | `status-needs-attention` | `status-needs-attention` | `D93F0B` | A run failed or errored — needs human intervention | execute (error/timeout) |
 
 For the lifecycle transition diagram and dual-tracking rationale, see `docs/rationale/default-labels-rationale.md`.
+
+### Work scope labels (not lifecycle states)
+
+Who owns an issue; `status-non-code` says what that costs it. `wf issue-audit`
+reports any issue whose prefix, scope label and lifecycle label disagree. See
+`skills/writing-github-issues/SKILL.md` → **Scope: one issue, one party**.
+
+| Purpose key | Default Name | Color | Title prefix | Description |
+|-------------|-------------|-------|--------------|-------------|
+| `scope-browser` | `browser-agent` | `0052CC` | `[Browser] ` | A browser agent owns this issue |
+| `scope-human` | `human-required` | `7057FF` | `[Manual] ` | A person owns this issue |
 
 ### Provenance marker (not a lifecycle state)
 
@@ -140,6 +152,7 @@ The board-side mirror of the issue lifecycle. Columns are resolved by **purpose 
 | `col-in-progress`| `In Progress` | BLUE         | `status-in-progress`, `status-needs-attention` |
 | `col-in-review`  | `In Review`   | YELLOW       | `status-in-review` |
 | `col-blocked`    | `Blocked`     | RED          | `status-blocked`, `status-parked` |
+| `col-non-code`   | `Non-code`    | ORANGE       | `status-non-code` |
 | `col-done`       | `Done`        | GRAY         | (issue closed) |
 
 > Option `color` values come from the GitHub enum `ProjectV2SingleSelectFieldOptionColor`: `GRAY`, `BLUE`, `GREEN`, `YELLOW`, `ORANGE`, `RED`, `PINK`, `PURPLE`. These name the *board* option color and are distinct from the hex label colors above.
@@ -150,14 +163,15 @@ The board-side mirror of the issue lifecycle. Columns are resolved by **purpose 
 |------------------------------------------|------------------------------|------------|
 | `status-in-progress`                     | In Progress (`col-in-progress`) | execute |
 | `status-in-review`                       | In Review (`col-in-review`)  | execute |
-| `status-blocked`                         | Blocked (`col-blocked`)      | block-story |
+| `status-blocked`                         | Blocked (`col-blocked`)      | block-story, issue-apply, `wf pick` (returning a blocked issue) |
+| `status-non-code`                        | Non-code (`col-non-code`)    | issue-apply, `wf unblock` |
 | `status-ready` (unblock)                 | Ready (`col-ready`)          | execute |
 | `needs-refinement` / `status-ready` (new issue) | Backlog / Ready             | report-issue (best-effort placement) |
 | issue **closed** (resolved / merged)     | Done (`col-done`)            | `wf pick` (already-resolved), `wf post-merge` (after merge), code-review auto-merge |
 
 The Done move has no lifecycle *label* (a closed issue carries none — the GitHub closed state is authoritative); the commands above mirror the board to `col-done` so a finished story leaves the In Review column. Best-effort, like every board move: a no-op when no board is configured.
 
-When a board is configured, the three active columns — In Progress, In Review, Blocked — must exist (preflight emits `CRITICAL board-columns-incomplete` if any is missing; setup creates them). The Ready column is additionally required only under a `board-column`/`both` ready-gate.
+When a board is configured, the three active columns — In Progress, In Review, Blocked — must exist (preflight emits `CRITICAL board-columns-incomplete` if any is missing; setup creates them). The Ready column is additionally required only under a `board-column`/`both` ready-gate. `Non-code` is created by setup and never required.
 
 ## Review State Labels
 

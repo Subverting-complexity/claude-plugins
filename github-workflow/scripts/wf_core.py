@@ -285,15 +285,30 @@ _DEFAULT_LABELS = {
     'status-in-progress': 'status-in-progress',
     'status-parked': 'status-parked',
     'status-blocked': 'status-blocked',
+    'status-non-code': 'status-non-code',
     'status-in-review': 'status-in-review',
     'status-needs-attention': 'status-needs-attention',
+    'scope-browser': 'browser-agent',
+    'scope-human': 'human-required',
 }
 
 # Lifecycle labels are mutually exclusive — exactly one is present at a time.
 # The claim marker removes whichever of these the issue currently carries.
+#
+# `status-non-code` is the lane for work a code agent cannot do: a browser
+# agent's console clicking, a human's device pass or bank account. It is a
+# lifecycle label rather than a scope label so that `_filter_unavailable`
+# keeps it out of the pool for free, and it is separate from `status-blocked`
+# because the two mean different things. Blocked is temporary and answered by
+# an edge closing; non-code is a property of the work itself and no edge will
+# ever release it. Overloading `status-blocked` for both — which is what this
+# plugin used to tell projects to do — made every unblock sweep a hazard, since
+# a sweep that reads "no open blockers" as "release" hands a bank account task
+# to an agent that cannot open one.
 LIFECYCLE_KEYS = [
     'status-ready', 'needs-refinement', 'status-in-progress',
-    'status-parked', 'status-blocked', 'status-in-review', 'status-needs-attention',
+    'status-parked', 'status-blocked', 'status-non-code', 'status-in-review',
+    'status-needs-attention',
 ]
 
 
@@ -651,8 +666,153 @@ BOARD_COLUMN_NAMES = {
     'col-in-progress': 'In Progress',
     'col-in-review':   'In Review',
     'col-blocked':     'Blocked',
+    'col-non-code':    'Non-code',
     'col-done':        'Done',
 }
+
+
+# ── work scope: who can actually do this issue ───────────────────────────────
+# Three parties touch a backlog and only one of them writes code. An issue that
+# needs a browser console, or a person with a device in their hand, is not work
+# a code agent can pick up, and an issue body must belong to exactly one of the
+# three — a body that mixes them cannot be finished by anyone.
+#
+# The three signals are meant to agree: a title prefix so a human scanning the
+# board can see it, a scope label so a query can find it, and the
+# `status-non-code` lifecycle label so the picker skips it. `scope_findings`
+# below is what stops them drifting apart, because until it existed the rule
+# lived only in a skill document and nothing checked it.
+
+SCOPE_CODE = 'code'
+SCOPE_BROWSER = 'browser'
+SCOPE_HUMAN = 'human'
+
+# Scope → the label purpose key that marks it. `SCOPE_CODE` has none: a code
+# issue is the unmarked default, so adding a label for it would put one on
+# every issue in the backlog to say nothing.
+SCOPE_LABEL_KEYS = {SCOPE_BROWSER: 'scope-browser', SCOPE_HUMAN: 'scope-human'}
+
+# Scope → the title prefix. Fixed strings rather than a pattern: the prefix is
+# written by this plugin and read by people, and a loose match would claim any
+# title that happened to open with a bracket.
+SCOPE_PREFIXES = {SCOPE_BROWSER: '[Browser] ', SCOPE_HUMAN: '[Manual] '}
+
+
+def scopes_from_labels(labels, project_map=None):
+    """Every non-code scope the labels claim, in a stable order."""
+    project_map = project_map or {}
+    names = set(labels or ())
+    return [scope for scope in (SCOPE_BROWSER, SCOPE_HUMAN)
+            if resolve_label(SCOPE_LABEL_KEYS[scope], project_map) in names]
+
+
+def scope_from_title(title):
+    """The scope a title prefix claims, or None when it carries no prefix.
+
+    Case-insensitive, because real backlogs carry `[MANUAL]` as often as
+    `[Manual]` and shouting is not a scope error. The spelling above is what
+    new issues are written with; either is read.
+    """
+    title = (title or '').lower()
+    for scope, prefix in SCOPE_PREFIXES.items():
+        if title.startswith(prefix.lower()):
+            return scope
+    return None
+
+
+def issue_scope(title, labels, project_map=None):
+    """The one party that owns this issue: browser, human, or code.
+
+    The label decides, because the label is what queries and filters read; the
+    prefix is for people. A title that disagrees is a finding rather than a
+    second opinion — see `scope_findings`.
+    """
+    scopes = scopes_from_labels(labels, project_map)
+    if len(scopes) == 1:
+        return scopes[0]
+    if scopes:
+        return scopes[0]  # conflicting; reported separately, first wins
+    return SCOPE_CODE
+
+
+def scope_findings(issues, project_map=None):
+    """Every place the three scope signals disagree. One finding per problem.
+
+    `issues` are dicts carrying `number`, `title` and `labels`. Returns a list
+    of {'number', 'title', 'kind', 'detail'} with these kinds:
+
+      scope-conflict   — both scope labels on one issue. Nobody owns it.
+      scope-prefix     — prefix and label name different parties, or one is
+                         present without the other.
+      scope-lifecycle  — a scoped issue not carrying `status-non-code`, so the
+                         picker will select work a code agent cannot do; or
+                         `status-non-code` on an issue with no scope label, so
+                         work that *is* pickable has been parked invisibly.
+    """
+    project_map = project_map or {}
+    non_code = resolve_label('status-non-code', project_map)
+    findings = []
+    for issue in issues or ():
+        number, title = issue.get('number'), issue.get('title') or ''
+        labels = issue.get('labels') or []
+        scopes = scopes_from_labels(labels, project_map)
+        prefixed = scope_from_title(title)
+
+        def add(kind, detail):
+            findings.append({'number': number, 'title': title,
+                             'kind': kind, 'detail': detail})
+
+        if len(scopes) > 1:
+            add('scope-conflict',
+                'carries both %s and %s, so no single party owns it; split the '
+                'issue so each half has one owner'
+                % (resolve_label(SCOPE_LABEL_KEYS[scopes[0]], project_map),
+                   resolve_label(SCOPE_LABEL_KEYS[scopes[1]], project_map)))
+        labelled = scopes[0] if scopes else None
+        if prefixed != labelled:
+            if labelled and not prefixed:
+                add('scope-prefix', 'labelled %s with no "%s" title prefix'
+                    % (resolve_label(SCOPE_LABEL_KEYS[labelled], project_map),
+                       SCOPE_PREFIXES[labelled].strip()))
+            elif prefixed and not labelled:
+                add('scope-prefix', 'titled "%s" with no %s label'
+                    % (SCOPE_PREFIXES[prefixed].strip(),
+                       resolve_label(SCOPE_LABEL_KEYS[prefixed], project_map)))
+            elif len(scopes) == 1:
+                add('scope-prefix', 'titled "%s" but labelled %s'
+                    % (SCOPE_PREFIXES[prefixed].strip(),
+                       resolve_label(SCOPE_LABEL_KEYS[labelled], project_map)))
+        has_non_code = non_code in set(labels)
+        if labelled and not has_non_code:
+            add('scope-lifecycle',
+                'is %s work with no %s label, so the picker will offer it to a '
+                'code agent' % (labelled, non_code))
+        elif has_non_code and not labelled:
+            add('scope-lifecycle',
+                'carries %s with no scope label, so it is out of the pool and '
+                'nothing says who should do it' % non_code)
+    return findings
+
+
+def lifecycle_for(scope, open_blockers):
+    """The lifecycle label purpose key an issue in this state should carry.
+
+    Non-code wins over blocked, and deliberately: the scope is a property of
+    the work and survives every blocker closing, so an issue that is both must
+    end up in the lane no sweep will release it from. Returns None for code
+    work with nothing open, which is the pickable state and has no label at
+    all under a `none` ready gate.
+    """
+    if scope in (SCOPE_BROWSER, SCOPE_HUMAN):
+        return 'status-non-code'
+    return 'status-blocked' if open_blockers else None
+
+
+def board_column_for(scope, open_blockers):
+    """The board column purpose key that mirrors `lifecycle_for`."""
+    if scope in (SCOPE_BROWSER, SCOPE_HUMAN):
+        return 'col-non-code'
+    return 'col-blocked' if open_blockers else 'col-backlog'
 
 
 # ── issue spec: validation and value shaping ─────────────────────────────────
@@ -1048,9 +1208,11 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
     `validate_spec()` refuses the spec until a person fills them in — silence
     must not pass for a value.
 
-    Dependency edges are **proposed, never written**. Body prose is not
-    reliable enough to build a dependency graph from unattended, so a missing
-    edge lands in the spec for review rather than in a mutation.
+    Dependency edges are not audited, because there is nothing to audit them
+    against: the native `blockedBy` edge is the only record of a dependency, so
+    it cannot disagree with anything. What is audited in its place is **scope**
+    — whether the title prefix, the scope label and the `status-non-code`
+    lifecycle label agree about which of the three parties owns the issue.
 
     `parents` is off by default, and that is a statement about where parents
     come from rather than about how well the parsing works. A story created
@@ -1144,27 +1306,13 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
         else:
             proposed_fields[purpose] = SPEC_PLACEHOLDER
 
-    # Dependency edges the body claims and the graph does not have.
-    deps, overflow = parse_dependencies(issue.get('body'))
-    native_edges = {n['number'] for n
-                    in (issue.get('blockedBy') or {}).get('nodes') or []}
-    proposed_edges = []
-    for dep in deps:
-        if dep == number or dep in native_edges:
-            continue
-        if open_numbers is not None and dep not in open_numbers:
-            # Worth saying, not worth proposing: an edge to a closed issue
-            # would be applied and then immediately be inert.
-            gaps.append({'kind': 'dependency-closed',
-                         'detail': 'the body depends on #%s, which is not open' % dep})
-            continue
-        gaps.append({'kind': 'missing-edge',
-                     'detail': 'the body depends on #%s with no native edge' % dep})
-        proposed_edges.append(dep)
-    if overflow:
-        gaps.append({'kind': 'dependency-overflow',
-                     'detail': 'more than %d dependencies in the body; not '
-                               'proposed automatically' % DEP_LIMIT})
+    # Who owns this issue. Three signals that are meant to agree, and until
+    # this check existed nothing compared them: the rule lived in a skill
+    # document, so a scoped issue missing its lifecycle label sat in the code
+    # agent's pool and only a person reading the title would ever notice.
+    for finding in scope_findings(
+            [{'number': number, 'title': title, 'labels': labels}], project_map):
+        gaps.append({'kind': finding['kind'], 'detail': finding['detail']})
 
     # The parent the body claims and the hierarchy does not have. An issue
     # whose first line says "Part of the X epic (#N)" and which GitHub shows
@@ -1206,51 +1354,7 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
         proposed['fields'] = proposed_fields
     if proposed_parent:
         proposed['parent'] = proposed_parent
-    if proposed_edges:
-        proposed['blocked_by'] = sorted(proposed_edges)
     return {'number': number, 'title': title, 'gaps': gaps, 'proposed': proposed}
-
-
-def fold_reverse_edges(audited, issues, open_numbers=None):
-    """Add the edges that `Blocks #N` states, to the issues they belong to.
-
-    `audit_issue` sees one issue at a time, which is enough for every marker
-    that points away from the issue being read and no use at all for the one
-    that points back. "#1032 blocks #979" is an edge on #979, and #979's own
-    body need never mention it — in practice the provisioning task is the one
-    that knows what it holds up. Before this, half the dependency graph a
-    backlog had written down was simply invisible to the audit.
-
-    Mutates and returns `audited` so the caller keeps one list.
-    """
-    by_number = {a['number']: a for a in audited}
-    have_edges = {}
-    for issue in issues:
-        have_edges[issue.get('number')] = {
-            n['number'] for n in (issue.get('blockedBy') or {}).get('nodes') or []}
-
-    for issue in issues:
-        blocker = issue.get('number')
-        for blocked in parse_blocks(issue.get('body')):
-            if blocked == blocker:
-                continue
-            entry = by_number.get(blocked)
-            if entry is None:
-                continue  # outside this scan, or closed
-            if open_numbers is not None and blocker not in open_numbers:
-                continue
-            if blocker in (have_edges.get(blocked) or set()):
-                continue
-            proposed = entry['proposed'].setdefault('blocked_by', [])
-            if blocker in proposed:
-                continue
-            proposed.append(blocker)
-            entry['proposed']['blocked_by'] = sorted(proposed)
-            entry['gaps'].append(
-                {'kind': 'missing-edge',
-                 'detail': '#%s says it blocks this, with no native edge'
-                           % blocker})
-    return audited
 
 
 def audit_summary(audited):
@@ -1812,64 +1916,28 @@ def get_sprint_candidates(candidates, sprint_title):
     return [c for c in candidates if c.get('milestone') == sprint_title]
 
 
-# ── Dependency parsing ───────────────────────────────────────────────────
-# Story validation — fixed markers, no judgment.
+# ── Dependency edges ───────────────────────────────────────────
+# What an issue is waiting for is read from GitHub's own `blockedBy` edges and
+# from nothing else. There is no second answer to compare it against.
 #
-# The one rule here is that a reference only counts when a marker says what it
-# means. An earlier version swept every bare `#N` inside a `## Dependencies`
-# section, on the reasoning that a reference under that heading is a
-# dependency. It is not. Real backlogs put all of this under that heading:
+# There used to be. Dependencies were also written in the body as prose under a
+# `## Dependencies` heading, and a parser here turned that prose back into
+# issue numbers. Two graphs meant two chances to be wrong, and both were taken:
+# on one 70-issue backlog the parser missed a `## Blocked by` heading whose
+# references sat on the next line, and read "Nothing. This **was** blocked by
+# #980" as a live dependency. The prose and the edges disagreed on nine of the
+# fourteen issues carrying both, and the prose was the stale one every time.
 #
-#     Depends on #977 and #1032.
-#     Scope changed by #1124.
-#     None of the epic's three manual tasks — #1002, #1003 or #1004 — block it.
-#     Depends on nothing. #863 does not have to land first.
-#     Changes the scope of #982, #1000, #1030 and #1097.
-#     Supersedes #981.  /  Splits #1032.  /  Blocked by #980. Splits #1032.
-#
-# Sweeping those produced edges pointing the wrong way, edges to work the body
-# explicitly says is *not* required, and mutual blocks between issues that
-# merely reference each other. Measured against one 70-issue backlog the sweep
-# proposed 44 edges of which seven formed cycles, and the whole set had to be
-# thrown away by hand. So the marker now has to sit immediately before the
-# reference, and an unmarked `#N` is prose.
+# So the prose is gone rather than fixed. An edge is structured data GitHub
+# renders, validates and lets you query; a sentence is not, and no amount of
+# regex makes it one. `wf issue-apply` writes edges, `wf pick` and `wf unblock`
+# read them, and a dependency that was never written as an edge does not exist.
 
-# Forward markers: "this issue cannot start until N". Each is matched
-# immediately before the reference run it introduces.
-_DEP_MARKERS = r'depends\s+on|depends\s+upon|blocked\s+by|blocked\s+on|requires'
-
-# Reverse markers: "N cannot start until this issue". The edge belongs to the
-# *other* issue, which is why these are returned separately — see
-# `parse_blocks` and `fold_reverse_edges`.
-_BLOCKS_MARKERS = r'blocks|blocking'
-
-# A run of references a single marker introduces: `#977 and #1032`,
-# `#981, #991, #979 and #980`, `**#1003** and **#1004**`. Without this a
-# marker only ever captured the first number and every "and #N" was silently
-# dropped, which is the quieter half of the same bug.
-_REF_RUN = r'(?:[\s,;&]|and\b|\*\*|`)*#(\d+)'
-
-_DEP_MARKER_RE = re.compile(
-    r'\b(?:%s)\b((?:%s)+)' % (_DEP_MARKERS, _REF_RUN), re.IGNORECASE)
-_BLOCKS_MARKER_RE = re.compile(
-    r'\b(?:%s)\b((?:%s)+)' % (_BLOCKS_MARKERS, _REF_RUN), re.IGNORECASE)
-_REF_RE = re.compile(r'#(\d+)')
-
-# `After #N` is a dependency in a list item under `## Dependencies` and
-# narrative anywhere else — "after #431 and #682 merged" is a note about work
-# that already landed, and "Easier after #1204" says the opposite of blocking.
-# So it counts only at the start of a line or bullet inside that section.
-_AFTER_LINE_RE = re.compile(r'^\s*(?:[-*+]\s*)?after\b((?:%s)+)' % _REF_RUN,
-                            re.IGNORECASE | re.MULTILINE)
-
-_DEP_SECTION_RE = re.compile(
-    r'^#{1,6}\s*dependencies\s*$(.*?)(?=^#{1,6}\s|\Z)',
-    re.IGNORECASE | re.MULTILINE | re.DOTALL,
-)
-
-# Fixed phrasings that name an issue's parent. Anything looser invents a
-# hierarchy out of cross-references, which is the same mistake the dependency
-# sweep made.
+# Fixed phrasings that name an issue's parent. The hierarchy is the one thing
+# still read out of the body, because GitHub's sub-issue link is not written by
+# every path that creates an issue and a body that says "Part of the X epic
+# (#N)" is often the only record. Anything looser than these invents a
+# hierarchy out of cross-references.
 _PARENT_PATTERNS = [
     re.compile(r'\bpart\s+of\s+the\b[^#\n]{0,80}?\bepic\b[^#\n]{0,20}#(\d+)',
                re.IGNORECASE),
@@ -1882,93 +1950,6 @@ _PARENT_PATTERNS = [
 ]
 
 DEP_LIMIT = 5
-
-
-# A marker is read inside one clause, not one line, because two unrelated
-# statements share a line constantly: "Part of the Cadence Plus epic (#959).
-# Depends on #1097 and #1098." is a parent statement followed by a dependency
-# statement, and only the second one is about waiting for anything.
-_CLAUSE_SPLIT_RE = re.compile(r'(?<=[.!?:])\s+|\n')
-
-# A reference *earlier in the same clause* means the clause is about that
-# issue rather than about the body's own. This is what an epic's status list
-# looks like — "- Sign in with Apple (#979) — *blocked on #1032*" says #979 is
-# blocked, not the epic. Reading those as the epic's own dependencies made an
-# epic depend on its own children.
-_NEGATION_RE = re.compile(r"(?:\bno\s+longer|\bnot\b|\bnever\b|n't|\bwithout\b)"
-                          r'[^#]{0,20}$', re.IGNORECASE)
-
-
-def _refs(run):
-    """Every issue number in a matched reference run, in order."""
-    return [int(m.group(1)) for m in _REF_RE.finditer(run or '')]
-
-
-def _marked_refs(text, pattern):
-    """References introduced by a marker, clause by clause.
-
-    Two things disqualify a match, and both come from real bodies rather than
-    from caution: an *unmarked* reference before the marker in the same clause
-    (the clause is about that issue), and a negator before the marker ("No
-    longer blocked on #1004" is a note that something stopped being a
-    dependency).
-
-    "Unmarked" is what `consumed` tracks. Only the text since the previous
-    accepted match is examined, because a clause may carry two markers in a
-    row — "Depends on #7 and requires #8" — and the first marker's own
-    reference must not disqualify the second. A match that is rejected does
-    not advance `consumed`, so the reference that rejected it goes on
-    rejecting whatever follows it in the same clause.
-    """
-    found = []
-    for clause in _CLAUSE_SPLIT_RE.split(text or ''):
-        consumed = 0
-        for m in pattern.finditer(clause):
-            before = clause[consumed:m.start()]
-            if _REF_RE.search(before):
-                continue
-            if _NEGATION_RE.search(before):
-                continue
-            found.extend(_refs(m.group(1)))
-            consumed = m.end()
-    return found
-
-
-def parse_dependencies(body):
-    """Extract the issues an issue is waiting on. Returns (deps, overflow).
-
-    Recognises `Depends on #N`, `Depends upon #N`, `Blocked by #N`,
-    `Blocked on #N` and `Requires #N` anywhere in the body, and `After #N` at
-    the start of a line or bullet inside a `## Dependencies` section. Each
-    marker takes the whole run of references that follows it, so
-    `Depends on #977 and #1032` is two dependencies rather than one.
-
-    A reference with no marker in front of it is prose and is ignored, however
-    prominently it is placed. Self-references and duplicates are dropped.
-
-      deps     — sorted unique issue numbers.
-      overflow — True when more than DEP_LIMIT distinct dependencies were
-                 found. Per the template that many references means a meta or
-                 epic issue whose dependencies cannot be cheaply validated, so
-                 the caller treats it as unresolved rather than checking each.
-    """
-    body = body or ''
-    found = set(_marked_refs(body, _DEP_MARKER_RE))
-    section = _DEP_SECTION_RE.search(body)
-    if section:
-        found.update(_marked_refs(section.group(1), _AFTER_LINE_RE))
-    deps = sorted(found)
-    return deps, len(deps) > DEP_LIMIT
-
-
-def parse_blocks(body):
-    """Extract the issues an issue says it blocks, from `Blocks #N`.
-
-    Returned separately from `parse_dependencies` because the edge belongs to
-    the other issue: "#1032 blocks #979" is an edge on #979. Only a whole-repo
-    pass can place it, which `fold_reverse_edges` does.
-    """
-    return sorted(set(_marked_refs(body or '', _BLOCKS_MARKER_RE)))
 
 
 def parse_parent(body):
@@ -2101,10 +2082,8 @@ def blocking_dependencies(deps, open_numbers, siblings=()):
 
 # ── native dependency edges ──────────────────────────────────────────────────
 # GitHub's own `blockedBy` edges — what the issue's own sidebar shows and what
-# `addBlockedBy` writes. They decide whether an issue is still waiting on
-# anything. The `## Dependencies` prose is a mirror kept for people to read,
-# and the two drift apart constantly because only one of them is enforced by
-# anything, so everything below reads the edge and rewrites the prose from it.
+# `addBlockedBy` writes. They are the only record of a dependency, so nothing
+# below has a second opinion to reconcile against.
 
 UNBLOCK_RELEASE = 'release'
 UNBLOCK_HOLD = 'hold'
@@ -2225,69 +2204,12 @@ def recent_delivery(pull_requests, number, now, window_days=PARTIAL_WINDOW_DAYS)
             'merged_at': newest[1].get('mergedAt')}
 
 
-# ── the `## Dependencies` prose ──────────────────────────────────────────────
-
-DEPENDENCY_HEADING = '## Dependencies'
-
-
-def blocked_dependency_text(blocked_by):
-    """The `## Dependencies` prose for an issue that is still waiting."""
-    return '\n'.join('Blocked by #%s' % number for number in blocked_by)
-
-
-def released_dependency_text(closed_numbers):
-    """The `## Dependencies` prose for an issue whose blockers have all closed.
-
-    It names them rather than saying "Nothing", because the next person to read
-    this issue needs to know what it used to wait on to judge whether the work
-    is really available.
-    """
-    named = ', '.join('#%s' % number for number in closed_numbers)
-    return ('Nothing. Every issue this waited on is closed: %s.' % named
-            if named else 'Nothing.')
-
-
-def set_dependency_section(body, text):
-    """Return `body` with its `## Dependencies` section replaced by `text`.
-
-    Appended when the body has no such section, and the rest of the body is
-    left alone in both cases: the section runs until the next `##` heading,
-    which is what everything written from a spec looks like.
-    """
-    text = (text or '').strip()
-    if not text:
-        return body or ''
-    section = '%s\n\n%s\n' % (DEPENDENCY_HEADING, text)
-    body = body or ''
-    if DEPENDENCY_HEADING not in body:
-        return (body.rstrip() + '\n\n' + section) if body.strip() else section
-    head, _, rest = body.partition(DEPENDENCY_HEADING)
-    tail = ''
-    following = re.search(r'^##\s', rest, re.MULTILINE)
-    if following:
-        tail = rest[following.start():]
-    return head.rstrip() + '\n\n' + section + ('\n' + tail if tail else '')
-
-
-def edge_gaps(deps, edges):
-    """Dependencies the prose names that no native edge records.
-
-    The edge decides whether an issue is blocked, so a body naming a blocker
-    that was never written as an edge is invisible to everything. That is a
-    data gap rather than a block, and it is worth saying out loud: it is
-    exactly how an issue ends up sitting blocked with nothing to notice it has
-    been freed.
-    """
-    open_numbers, closed_numbers = edge_states(edges)
-    recorded = {int(number) for number in open_numbers + closed_numbers}
-    return [int(dep) for dep in (deps or ()) if int(dep) not in recorded]
-
-
 def plan_bulk_order(stories, max_size=BULK_MAX):
     """Trim a proposed bulk set to size and put it in build order.
 
     `stories` is the proposed set in preference order, **lead first** — dicts
-    carrying `number` and `body`. Two passes:
+    carrying `number`, and `blocked_by` when the story has native dependency
+    edges (a list of issue numbers). Two passes:
 
       1. **Trim** to `max_size`, keeping input order, so the lead and the
          highest-preference siblings are the ones that survive.
@@ -2316,8 +2238,8 @@ def plan_bulk_order(stories, max_size=BULK_MAX):
     present = {s['number'] for s in stories}
     deps_in_set = {}
     for story in stories:
-        parsed, _overflow = parse_dependencies(story.get('body'))
-        deps_in_set[story['number']] = {d for d in parsed
+        edges = [int(d) for d in (story.get('blocked_by') or ())]
+        deps_in_set[story['number']] = {d for d in edges
                                         if d in present and d != story['number']}
 
     ordered, placed, remaining = [], set(), list(stories)
