@@ -31,7 +31,7 @@ Drop a named story, with a one-line reason in your report, when it is:
 - **empty** — no Context and no Requirements anywhere in the body, comments or linked docs, so any implementation would be a guess;
 - **carrying `needs-refinement`** — say it needs refinement first.
 
-If a named story carries `status-in-review` but **no** open PR is found, check for a **closed, unmerged** PR (`closingIssuesReferences`, `states: CLOSED`). If there is one, the PR was abandoned: reset the issue automatically — remove `status-in-review`, apply `status-ready`, unassign, move the board to Backlog, comment `"Resetting — PR #{N} closed without merge."` — and keep it in the set. If there is no closed PR either, surface the inconsistency and drop it.
+If a named story carries `status-in-review` but **no** open PR is found, check for a **closed, unmerged** PR (`closingIssuesReferences`, `states: CLOSED`). If there is one, the PR was abandoned: reset the issue automatically — remove `status-in-review`, unassign, move the board to Backlog, comment `"Resetting — PR #{N} closed without merge."` — and keep it in the set. If there is no closed PR either, surface the inconsistency and drop it.
 
 **2. Cap the size.** More than `--size` stories (default 5, which is also the maximum) were named. Keep the first `--size` in the order the user gave them, and say which were left out and that they stay ready in the backlog. Do not silently build more than the cap: the cap is what keeps the pull request reviewable.
 
@@ -51,7 +51,7 @@ Then go to **Claiming the set**.
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --mode {mode}
 ```
 
-This returns the same pool `execute` picks from — ready gate applied, sprint narrowed, refinement and agent-gating filters applied, mode filter applied, sorted by priority then issue number — and claims nothing. Each entry carries `number`, `title`, `labels`, `milestone`, a truncated `body`, and the `dependencies` parsed out of that body. `total` is the unclipped pool size; `listed` is how many came back.
+This returns the same pool `execute` picks from — the board's Backlog column, sprint narrowed, agent-gating and mode filters applied, work no code agent can do removed, sorted by priority then effort then issue number — and claims nothing. Each entry carries `number`, `title`, `labels`, `milestone`, a truncated `body`, and the `dependencies` parsed out of that body. `total` is the unclipped pool size; `listed` is how many came back.
 
 Interpret the result by its `status`:
 
@@ -148,13 +148,13 @@ If it **was claimed**, return it to the backlog properly, in this order:
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
    ```
-2. Restore the pool state, so the picker can select it again. Resolve both names through `## Label Map` in ClaudeProject.md rather than typing the purpose keys: a project that renamed `status-in-progress` gets a `gh` failure and an issue left assigned, and a project on the `none` ready-gate has no ready label at all, so `--add-label` names one that does not exist and the whole edit is refused, the unassign with it.
+2. Clear the in-progress state. Resolve the name through `## Label Map` in ClaudeProject.md rather than typing the purpose key — a project that renamed `status-in-progress` gets a `gh` failure and an issue left assigned.
    ```
    gh issue edit {number} --repo {org}/{repo} --remove-assignee @me \
-     --remove-label {in-progress-label} --add-label {ready-label}
+     --remove-label {in-progress-label}
    ```
-   Drop the `--add-label` clause entirely when `ready-gate` is `none`. There is nothing to restore there: unassigning is what returns the issue to the pool.
-3. Move the board back to Backlog:
+   Nothing is applied in its place. An available issue carries no lifecycle label at all; Step 3 is what actually returns it to the pool.
+3. Move the board back to Backlog — **this is the step that returns it to the pool**, because the pool is that column:
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-backlog
    ```

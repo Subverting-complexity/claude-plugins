@@ -122,12 +122,12 @@ Record the Status single-select field's `id` as `status-field-id`, and keep the 
 
 The board must mirror the issue lifecycle (see `templates/default-labels.md` → Board Columns). Compare the Status field's existing option names against the canonical set and decide what is missing:
 
-- **Required when a board is selected:** In Progress (`col-in-progress`), In Review (`col-in-review`), Blocked (`col-blocked`) — the three active workflow columns.
-- **Also required only under a `board-column`/`both` ready-gate:** Ready (`col-ready`).
-- **Created but not required:** Non-code (`col-non-code`) — where browser-agent and human-required work sits, so it is visibly not in the code agent's pool.
+- **Required, and the one nothing works without:** Backlog (`col-backlog`). It is the pick pool — `pick` and `candidates` read that column and nothing else — so a board without it can select no work at all, and preflight reports it as critical.
+- **Required:** In Progress (`col-in-progress`), In Review (`col-in-review`), Blocked (`col-blocked`) — the three active workflow columns.
+- **Created, and warned about when missing:** Non-code (`col-non-code`), Needs refinement (`col-refinement`), Parked (`col-parked`), Needs attention (`col-attention`). Each is a lane an issue is moved into; a board without one loses that state's move and nothing else.
 - Backlog (`col-backlog`) and Done (`col-done`) usually already exist, as the board's default Todo/Done options. Done is already named right; **Todo is not**, and it is renamed rather than adopted — see below. Never create a second column for either.
 
-Match case-insensitively. For each **missing** column, ask the user what to name it, suggesting the default (`In Progress`, `In Review`, `Blocked`, `Ready`). If every required column already exists, skip creation.
+Match case-insensitively. For each **missing** column, ask the user what to name it, suggesting the default (`In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention`). If every column already exists, skip creation.
 
 **Rename a default `Todo` to `Backlog`.** A new Projects v2 board names its first column `Todo`; this plugin calls that column `Backlog` everywhere else, including the `col-backlog` purpose key, and `board-move` resolves a purpose key to a column by name. A board left as `Todo` therefore takes every board move except the one to the backlog, and that one fails quietly. Rename it in the same mutation that creates the missing columns: pass the existing option back with its `id` and the new `name`, which preserves the option and every item sitting in it. Do the same for any other spelling the board happens to use for the same column.
 
@@ -135,7 +135,7 @@ Then create the missing columns in **one** mutation.
 
 > **Critical:** `updateProjectV2Field`'s `singleSelectOptions` is a **full replace**, not additive — whatever list you pass becomes the complete option set. You **must** pass back every existing option with its `id` (preserving it) plus each new option **without** an `id`. Omit an existing option and it is **deleted** (along with any items in that column). Each option needs `name`, `color` (`GRAY`/`BLUE`/`GREEN`/`YELLOW`/`ORANGE`/`RED`/`PINK`/`PURPLE`), and a `description` (all required).
 
-Build the `singleSelectOptions` list as: the existing options (each `{id, name, color, description}` exactly as fetched) followed by the new ones (no `id`). Suggested colors, all distinct: Backlog `GREEN`, Ready `BLUE`, In Progress `YELLOW`, In Review `ORANGE`, Blocked `RED`, Non-code `PINK`, Done `PURPLE`.
+Build the `singleSelectOptions` list as: the existing options (each `{id, name, color, description}` exactly as fetched) followed by the new ones (no `id`). Suggested colors: Backlog `GREEN`, Needs refinement `BLUE`, In Progress `YELLOW`, In Review `ORANGE`, Needs attention `PURPLE`, Blocked `RED`, Non-code `PINK`, Parked `GRAY`, Done `GRAY`. The enum has eight colours and the board has nine lanes, so `Parked` and `Done` share the spare one; every lane an issue passes through on its way to being done differs from its neighbours.
 
 `gh api graphql` only binds **scalar** variables (`-f`/`-F`), so the option-list input cannot be passed as a variable — **inline the full `singleSelectOptions` array directly into the query text**. The `color` values are enum literals (unquoted); `name`/`description` are quoted strings. Existing options keep their `id`; new ones omit it:
 
@@ -173,13 +173,7 @@ For anything not auto-detected, ask the user interactively:
 - **Branch convention** — suggest `feature/{number}/{short-desc}` as default
 - **Priority labels** — what label names for critical/high/medium/low
 - **Type labels** — what label names for story/bug/security/debt/arch. Explain that type labels control mode filtering: `/github-workflow:execute` (default) picks the highest priority issue regardless of type; `--mode feature` picks feature stories only; `--mode maintenance` picks from bug/security/debt/arch issues. All five types should be configured for full mode support.
-- **Ready gate** — ask "How do you signal that a story is ready for pickup?" Options:
-  - `label` (default) — a `status-ready` label on the issue.
-  - `board-column` — a "Ready" column on the project board.
-  - `both` — requires the label AND the board column.
-  - `none` — no readiness gate; any open unassigned issue is eligible for autonomous pickup. (Pair with `agent-gating: disabled` for fully unattended pickup of the whole open backlog.) Store the choice as `ready-gate` in ClaudeProject.md. If `board-column` or `both` is chosen, a project board must be configured and must have a "Ready" status option; `label` and `none` need no board.
-- **Issue lifecycle (status) labels** — the issue-side mirror of the PR review-state machine: every issue always carries exactly one. Confirm names for the full set (suggest the defaults from `templates/default-labels.md` → Issue Lifecycle State Labels):
-  - `status-ready` — eligible for pickup, no unresolved dependencies (`#0E8A16` green). If `ready-gate` is `label` or `both` this is the pickup signal; under `board-column` it is optional.
+- **Issue lifecycle (status) labels** — what state an issue is in, for a person reading the issues list. Nothing selects on them: the pool is the board's Backlog column, and an issue in it carries no lifecycle label at all. Confirm names for the set (suggest the defaults from `templates/default-labels.md` → Issue Lifecycle State Labels):
   - `needs-refinement` — created with minimal spec, needs a refinement session (feature-discovery) before pickup (`#D4C5F9` purple).
   - `status-in-progress` — an agent is actively working it (`#1D76DB`).
   - `status-parked` — a human deliberately set it aside and will resume; keeps it out of the pick pool without losing ownership (`#C5DEF5`).
@@ -205,7 +199,7 @@ If enhancing an existing file, merge new sections into the existing content with
 
 Setup is the **only** place the full label inventory is created. Skills at runtime rely on these already existing and only create-if-missing as a guarded fallback (see the pre-creation contract in `templates/default-labels.md`). Create the **complete** inventory now — both the workflow labels and the review-state mutex labels — so no skill has to lazily create labels mid-workflow.
 
-1. **Workflow labels** — every label configured in ClaudeProject.md (Priority, Type, Status, Claude, and Custom). "Status" now covers the full issue lifecycle set (`status-ready`, `needs-refinement`, `status-in-progress`, `status-parked`, `status-blocked`, `status-in-review`, `status-needs-attention`). Resolve each name through the label map per `templates/default-labels.md`.
+1. **Workflow labels** — every label configured in ClaudeProject.md (Priority, Type, Status, Claude, and Custom). "Status" covers the issue lifecycle set (`needs-refinement`, `status-in-progress`, `status-parked`, `status-blocked`, `status-non-code`, `status-in-review`, `status-needs-attention`) and the two scope labels (`browser-agent`, `human-required`). Resolve each name through the label map per `templates/default-labels.md`.
 2. **Review-state labels** — the nine review-state labels (including the `needs-review` entry state and `failed`). If the user set up `docs/review.config.md` (step 7) or chose a label prefix, resolve each name from its Purpose row there; otherwise use the `review-` defaults from `templates/default-labels.md`. Create these even if the user defers full review-config setup, so the code-review skill never has to create them at runtime.
 
 First fetch existing labels, then create only the missing ones — **without `--force`**, so existing labels keep their colour and description (no churn):

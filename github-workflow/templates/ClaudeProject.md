@@ -50,11 +50,10 @@ Map workflow purposes to your repository's actual label names. Only include labe
 
 ### Status (issue lifecycle)
 
-Every issue carries exactly one of these lifecycle labels (the issue-side mirror of the PR review-state machine).
+A lifecycle label says, for a person reading the issues list, what state an issue is in. It does **not** decide anything: selection reads the board's Backlog column and the structured fields, never a label. An issue in the pool carries no lifecycle label at all — being in Backlog is what available means.
 
 | Purpose                | Label    |
 | ---------------------- | -------- |
-| status-ready           | `{name}` |
 | needs-refinement       | `{name}` |
 | status-in-progress     | `{name}` |
 | status-parked          | `{name}` |
@@ -105,12 +104,13 @@ Every purpose key the workflow writes, mapped to the field name **this** owner u
 | field-effort         | `Effort`         |
 | field-type           | `Classification` |
 | field-origin         | `Origin`         |
+| field-ownership      | `Ownership`      |
 | field-start          | `Start date`     |
 | field-target         | `Target date`    |
 | field-parent         | `Parent`         |
 | field-status-reason  | `Status reason`  |
 
-Four of these are **mandatory** on every issue the workflow creates — `field-priority`, `field-effort`, `field-type` and `field-origin` (`wf_core.MANDATORY_FIELD_KEYS`). `wf issue-apply` refuses a spec that leaves one blank rather than creating an issue with empty metadata. The other four are set where they apply.
+Five of these are **mandatory** on every issue the workflow creates — `field-priority`, `field-effort`, `field-type`, `field-origin` and `field-ownership` (`wf_core.MANDATORY_FIELD_KEYS`). `wf issue-apply` refuses a spec that leaves one blank rather than creating an issue with empty metadata. The other four are set where they apply.
 
 ### Missing
 
@@ -120,24 +120,9 @@ Fields the owner does not define, and what the workflow does instead:
 | ----- | ----------- |
 | _(none)_ | — |
 
-A missing field is skipped at runtime, not an error. But if one of the four mandatory fields is missing, `wf issue-apply` cannot classify an issue at all — create the field in the owner's *Issue fields* settings. `Origin` is the one the workflow populates that GitHub does not create by default (single-select: Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request).
+A missing field is skipped at runtime, not an error. But if one of the five mandatory fields is missing, `wf issue-apply` cannot classify an issue at all — create the field in the owner's *Issue fields* settings. `Origin` is the one the workflow populates that GitHub does not create by default (single-select: Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request).
 
 The purpose→value maps — which native type each kind of work becomes, and the Priority, Effort and Origin option names — are Python data in `github-workflow/scripts/wf_core.py`, not prose here. Run `wf org-capabilities` for the live option ids rather than copying them into this file, where they would go stale.
-
-## Ready Gate
-
-| Setting    | Value   |
-| ---------- | ------- |
-| ready-gate | `label` |
-
-How stories signal eligibility for pickup:
-
-- `label` (default) — the `status-ready` label.
-- `board-column` — the "Ready" column on the project board.
-- `both` — label AND board column.
-- `none` — no gate; any open unassigned issue is eligible (fully unattended pickup; pair with `agent-gating: disabled`). `off` / `disabled` are accepted synonyms and normalise to `none`.
-
-`board-column`/`both` require a configured board with a "Ready" option; `label`/`none` need no board.
 
 ## Agent Gating
 
@@ -145,7 +130,7 @@ How stories signal eligibility for pickup:
 | ------------- | ---------- |
 | agent-gating  | `disabled` |
 
-When `enabled`, only issues carrying `claude-ready` are picked (human approval gate). When `disabled` (default), any eligible unassigned issue can be picked.
+When `enabled`, only issues carrying `claude-ready` are picked (human approval gate). When `disabled` (default), any unassigned issue in the Backlog column can be picked.
 
 ## Refinement
 
@@ -179,17 +164,19 @@ Remove this entire section if you don't use a GitHub project board. `project-tit
 
 ### Status Options
 
-The canonical seven columns. The three active workflow columns (In Progress, In Review, Blocked) must exist when a board is configured; setup creates them, preflight flags any missing. Label ⇄ column pairing: `templates/default-labels.md` → Board Columns.
+The canonical nine columns. **Backlog is not optional**: it is the pool `pick` and `candidates` read, so a board without it can select nothing and preflight fails the run. The rest are lanes an issue is moved into and out of; a missing one warns. Setup creates them all, preflight flags any missing. Label ⇄ column pairing: `templates/default-labels.md` → Board Columns.
 
-| Status      | Purpose key       | Option ID |
-| ----------- | ----------------- | --------- |
-| Backlog     | `col-backlog`     | `{id}`    |
-| Ready       | `col-ready`       | `{id}`    |
-| In Progress | `col-in-progress` | `{id}`    |
-| In Review   | `col-in-review`   | `{id}`    |
-| Blocked     | `col-blocked`     | `{id}`    |
-| Non-code    | `col-non-code`    | `{id}`    |
-| Done        | `col-done`        | `{id}`    |
+| Status           | Purpose key       | Option ID |
+| ---------------- | ----------------- | --------- |
+| Backlog          | `col-backlog`     | `{id}`    |
+| In Progress      | `col-in-progress` | `{id}`    |
+| In Review        | `col-in-review`   | `{id}`    |
+| Blocked          | `col-blocked`     | `{id}`    |
+| Non-code         | `col-non-code`    | `{id}`    |
+| Needs refinement | `col-refinement`  | `{id}`    |
+| Parked           | `col-parked`      | `{id}`    |
+| Needs attention  | `col-attention`   | `{id}`    |
+| Done             | `col-done`        | `{id}`    |
 
 ## Reference Docs (optional)
 

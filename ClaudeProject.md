@@ -40,7 +40,7 @@ Example: `feature/27/fix-wrong-board`
 
 ## Label Map
 
-All priority, type, and status labels use their default purpose-key names (e.g., `priority-critical`, `status-ready`). See `github-workflow/templates/default-labels.md` for the full list and the lifecycle state machine.
+All priority, type, and status labels use their default purpose-key names (e.g., `priority-critical`, `status-blocked`). See `github-workflow/templates/default-labels.md` for the full list and the lifecycle state machine.
 
 ### Claude
 
@@ -89,27 +89,13 @@ All eight resolve to their default names.
 
 The purpose→value maps are Python data in `github-workflow/scripts/wf_core.py`. Run `wf org-capabilities` for the live option ids rather than copying them here, where they would go stale.
 
-## Ready Gate
-
-| Setting    | Value   |
-| ---------- | ------- |
-| ready-gate | `label` |
-
-How stories signal they are eligible for pickup:
-
-- `label` (default) — the `status-ready` label in the label map.
-- `board-column` — the "Ready" column on the project board.
-- `both` — story must have the label AND be in the board column.
-
-Using `label` because the board has the active workflow columns (In Progress / In Review / Blocked) but no "Ready" column — pickup is label-driven here. Add a "Ready" option to the board and switch this to `board-column` or `both` if you prefer board-driven pickup.
-
 ## Agent Gating
 
 | Setting       | Value      |
 | ------------- | ---------- |
 | agent-gating  | `disabled` |
 
-When `disabled` (current), any eligible unassigned issue with the `status-ready` label can be picked. Set to `enabled` and add a `claude-ready` row to the Claude label map to require human approval before autonomous pickup.
+When `disabled` (current), any unassigned issue in the board's Backlog column can be picked. Set to `enabled` and add a `claude-ready` row to the Claude label map to require human approval before autonomous pickup.
 
 ## Refinement
 
@@ -152,16 +138,21 @@ The board now carries all three active workflow columns. Each column mirrors one
 
 `col-backlog` used to map onto the board's default "Todo" option, which is why `BOARD_COLUMN_NAMES` said "Todo" for as long as it did. The column has since been renamed to "Backlog", keeping option id `f75ad846` so nothing in it moved, and the board and the plugin now use one name for it.
 
-| Status      | Purpose key       | Option ID            |
-| ----------- | ----------------- | -------------------- |
-| Backlog     | `col-backlog`     | `f75ad846`           |
-| Ready       | `col-ready`       | `n/a` (optional — label ready-gate) |
-| In Progress | `col-in-progress` | `47fc9ee4`           |
-| In Review   | `col-in-review`   | `9b47c867`           |
-| Blocked     | `col-blocked`     | `28e51b4e`           |
-| Done        | `col-done`        | `98236657`           |
+| Status            | Purpose key       | Option ID  |
+| ----------------- | ----------------- | ---------- |
+| Backlog           | `col-backlog`     | `f75ad846` |
+| In Progress       | `col-in-progress` | `47fc9ee4` |
+| In Review         | `col-in-review`   | `9b47c867` |
+| Blocked           | `col-blocked`     | `28e51b4e` |
+| Non-code          | `col-non-code`    | `1803d9dc` |
+| Done              | `col-done`        | `98236657` |
+| Needs refinement  | `col-refinement`  | `n/a`      |
+| Parked            | `col-parked`      | `n/a`      |
+| Needs attention   | `col-attention`   | `n/a`      |
 
-All board moves now resolve to a real column: `execute` → In Progress / In Review, `block-story` → Blocked, and `report-issue` places new issues in Backlog. The **issue lifecycle labels** (Status section above) remain the authoritative state; the board mirrors them. "Ready" stays optional because this repo's ready-gate is `label`, not `board-column`.
+**Backlog is the pool.** `pick` and `candidates` read that column and nothing else, so an issue with no card on this board cannot be selected at all — which is why `issue-apply` places every issue it touches. Everything outside Backlog is out of the pool by virtue of being somewhere else, and no label is consulted to decide it.
+
+The last three rows are lanes the plugin can move an issue into that this board does not have yet. `/github-workflow:preflight` warns about each one until they are added; nothing breaks in the meantime, because a move to a column that does not exist is reported and skipped rather than silently landing the card in `No Status`.
 
 ## Reference Docs
 

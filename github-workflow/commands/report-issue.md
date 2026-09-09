@@ -53,7 +53,7 @@ Do **not** select a type label. What kind of work this is comes from the native 
 
 Also include:
 
-- **Lifecycle state** — exactly one, so the new issue is never unlabelled: `status-ready` when the report is actionable as written (it includes where and a suggested fix — the usual case), `needs-refinement` when the report is too vague to implement without a refinement session, or `status-blocked` when the issue cannot be closed until a person does something no agent can do (grant a permission, add a secret, approve a submission). In that last case the title also takes the `[Manual]` prefix and the body gets a `## Manual step` section — the three go together, and the rule is in `../skills/writing-github-issues/SKILL.md` under **Issues that need a person**.
+- **Lifecycle state** — at most one, and usually **none**. An actionable report (it includes where and a suggested fix — the usual case) carries no lifecycle label: `issue-apply` places it in Backlog, and an issue in Backlog with no lifecycle label is exactly what available means. Use `needs-refinement` when the report is too vague to implement without a refinement session. When the issue cannot be closed until a person does something no agent can do (grant a permission, add a secret, approve a submission), the label is `status-non-code` and it goes with the `human-required` scope label, the `[Manual]` title prefix and a `## Manual step` section in the body — the four go together, and the rule is in `../skills/writing-github-issues/SKILL.md` under **Issues that need a person**.
 - **Provenance** — `claude-authored`, since this issue is Claude-created.
 
 Build the label list from whichever of these the project actually defines in its label map. Skip any purpose that has no label configured — never pass a placeholder or an empty label name to `gh`. Resolve every name by purpose key through `templates/default-labels.md`.
@@ -89,9 +89,10 @@ cat > .claude/report-spec.json <<'JSON'
              "body_file": ".claude/report-body.md",
              "kind": "{bug|security|architecture|tech debt}",
              "milestone": "{current_milestone}",
-             "labels": ["{priority_label}", "{lifecycle_label}", "claude-authored"],
+             "labels": ["{priority_label}", "claude-authored"],
              "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                         "field-effort": "{Low|Medium|High}",
+                        "field-ownership": "{Code agent|Browser agent|Human}",
                         "field-origin": "Development"}}]}
 JSON
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/report-spec.json
@@ -105,7 +106,9 @@ Drop the `milestone` key entirely in flat-backlog mode, or whenever Step 4 found
 
 The exception is `[Manual]`, for an issue a person has to do (Step 3). It is kept, because nothing native says an issue needs a human.
 
-**The labels carry no type.** `kind` supplies the native issue type and the `Classification` value together. A `type-*` label in the list is dropped for the same reason. Pass the priority label, the lifecycle label and `claude-authored`, omitting any the project does not define — an issue with no lifecycle label is never picked up by `execute`, and it is the one easiest to leave out.
+**The labels carry no type.** `kind` supplies the native issue type and the `Classification` value together. A `type-*` label in the list is dropped for the same reason. Pass the priority label, `claude-authored`, and a lifecycle or scope label only where Step 3 called for one, omitting any the project does not define.
+
+**The lifecycle label is not the state.** `issue-apply` decides the lane from the issue's own state — scope, then open dependency edges — and writes both the label and the board column itself. Anything you pass that contradicts that is replaced.
 
 **Leave the assignee blank.** The spec has no assignee key, and you must not follow up with `gh issue edit --add-assignee`. Creating an issue is never an act of claiming it: new issues must enter the unassigned pool so `execute` (which queries `--assignee ""`) can select them. Assignment happens only at claim time (`execute` Acquire).
 
@@ -114,6 +117,7 @@ The exception is `[Manual]`, for an issue a person has to do (Step 3). It is kep
 - `kind` is the Step 2 classification in lower case.
 - `field-priority` is the Step 3 priority as the field names it: Critical becomes **Urgent**, the rest keep their names. **Keep** the `priority-*` label as well — priority is dual-tracked: the field orders selection and drives the portal's views, and the label is the fallback for issues the field was never set on.
 - `field-effort` is your scope assessment: **Low** for a targeted fix in a few files, **Medium** for moderate scope with some investigation, **High** for broad impact, architectural change or significant unknowns.
+- `field-ownership` is who has to do this work: **Code agent** unless the fix needs a browser (**Browser agent**) or a person (**Human**). It is what keeps non-code work out of the pick pool, so it goes on every issue — see `../skills/writing-github-issues/SKILL.md` → **Scope: one issue, one party**, including when to split a report into two issues rather than pick one owner for both halves.
 - `field-origin` is **Development**, or **Security Audit** if this report came out of a security audit session.
 
 **The issue number** comes back in the command's JSON as `applied[0].number`, and is written into the spec file too. Later steps need it.

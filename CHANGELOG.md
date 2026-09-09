@@ -7,6 +7,26 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 9.0.0
+
+**Breaking: the pick pool is the board's Backlog column, and a board is now required.** Selection used to be opt-in — an issue was invisible until somebody applied `status-ready` — and the four `ready-gate` settings each described a different way of asking for that opt-in. On the repository this plugin is developed in, that produced `no-candidates` while three perfectly workable issues sat in the backlog, and `wf config-audit` reported nothing wrong. Selection is now opt-out: every unassigned open issue in the board's `Backlog` column is available, and an issue leaves the pool by being moved somewhere else. A project with no board, or a board with no Backlog column, is a configuration error rather than an empty backlog.
+
+**`Ready` is gone everywhere.** The `status-ready` label, the `col-ready` board column, the `## Ready Gate` section and the `ready-gate` setting have all been removed — from the picker, the label map, the board columns, the templates, the commands, the skills and the docs. A `## Ready Gate` section left in an existing `ClaudeProject.md` is read and ignored, so no project has to be edited before this version works; nothing consults it.
+
+**A lifecycle label no longer decides anything.** It says what state an issue is in, for a person reading the issues list. The board column and the structured fields are what commands read. An available issue therefore carries **no** lifecycle label at all, which is why `report-issue`, `code-review` and `execute` no longer apply one when they file work.
+
+**Ownership is a structured field.** `Ownership` (Code agent / Browser agent / Human) joins `Priority`, `Effort`, `Classification` and `Origin` in the mandatory set, so an org that defines it must carry a value on every issue the workflow creates, and the picker reads it first — the `browser-agent` and `human-required` labels remain the fallback for issues written before the field existed. `wf issue-audit` backfills it from an issue's scope rather than leaving a placeholder, because unlike the other mandatory fields this one has an answer for every issue.
+
+**Effort orders the pool, and `--max-effort` narrows it.** Within a priority band, `Low` comes before `Medium` before `High`, and an issue with no estimate sorts as Medium rather than dropping to the end. `wf pick --max-effort low` and `wf candidates --max-effort low` exclude anything bigger, so a short session can ask for work that fits in it.
+
+**`config-audit` fails on a board that cannot be picked from.** A new `board-lane` check reports a missing board, a `project-node-id` that resolves to nothing, and a missing `Backlog` column as critical, and every other missing lane as a warning. Three lanes were added for states that previously had nowhere to go — `Needs refinement`, `Parked` and `Needs attention` — so every lifecycle state now pairs with a column. That takes the board to nine lanes against the enum's eight colours, so 8.2.1's rule that no two share one is kept where it matters and relaxed once: `Parked` and `Done` both take the spare `GRAY`, and every lane an issue passes through on its way to being done still differs from its neighbours.
+
+**Board placement is batched.** Placing thirteen issues used to cost four round trips each; it now costs four in total, whatever the size of the spec, because the Status field is read once per run and the card lookups, adds and column writes are each one aliased request.
+
+### Upgrading
+
+Run `/github-workflow:preflight` (or `wf config-audit`) first — it names everything that has to change. In summary: the project needs a board with a `Backlog` column, the org needs an `Ownership` issue field, and any issue still carrying `status-ready` should have the label removed and its card moved to Backlog. The `status:ready` label itself can then be deleted.
+
 ## github-workflow 8.3.0
 
 **Every issue reaches the board, including the ordinary ones.** `issue-apply`

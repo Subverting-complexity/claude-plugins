@@ -160,28 +160,45 @@ def filter_by_native_type(candidates, mode, type_map, classification_map=None,
     return result
 
 
-def _filter_unavailable(candidates, project_map=None):
-    """Exclude issues whose lifecycle label says they are not up for pickup.
+def _filter_unavailable(candidates, project_map=None, ownership_map=None):
+    """Exclude backlog issues that a code agent must not be handed.
 
-    Exactly one lifecycle label is on an issue at a time and `status-ready` is
-    the only one that means "pick me", so every other one takes the issue out
-    of the pool: parked, blocked, in progress, in review, needs attention and
-    needs refinement alike. An issue carrying no lifecycle label at all stays
-    eligible, which is what `ready-gate: none` depends on.
+    The pool is the board's Backlog column, so the board's own `Status` field
+    has already excluded everything in another lane: an issue that is in
+    progress, in review, blocked, parked or done is in that column and not this
+    one. `Status` is single-valued, which is what makes the pool an exclusion
+    in its own right.
 
-    This is here, in the shared pool filter, rather than in each gate's query,
-    because the gates disagreed about it and only one of them was right. The
-    `label` gate excludes all six by asking for `status-ready`; `none` asked
-    about `status-blocked` alone and let a parked issue straight through; and
-    `board-column` deferred to a board that the labels are meant to be
-    authoritative over. One filter over the assembled pool means a gate cannot
-    quietly have its own answer.
+    What remains is the one thing a column cannot express, because it is a
+    property of the work rather than a position in a workflow: **who can do
+    it**. An issue scoped to a person or a browser agent is not work a code
+    agent can finish, and one can sit in Backlog perfectly legitimately — a
+    person filed it there, or it was moved back when its dependency closed.
+
+    `ownership_map` is ``{issue_number: Ownership option name}`` from the org's
+    own field and is consulted first. The scope labels are the fallback, and
+    they stay one for the same reason the `priority-*` labels do: an org that
+    has not defined the field, or an issue nobody has set it on, still has to
+    be routed somewhere sensible rather than into a code agent's pool.
+
+    This used to read six lifecycle labels and treat `status-ready` as the only
+    one meaning "pick me". That was the opt-in model: an issue was invisible
+    until somebody remembered to mark it. The board column is the opt-out
+    replacement, and it cannot be forgotten, because putting the card somewhere
+    is how an issue gets onto the board at all.
     """
     project_map = project_map or {}
-    excluded = {resolve_label(key, project_map)
-                for key in LIFECYCLE_KEYS if key != 'status-ready'}
-    return [c for c in candidates
-            if not any(lbl in excluded for lbl in c.get('labels', []))]
+    ownership_map = ownership_map or {}
+    keep = []
+    for c in candidates:
+        owner = ownership_map.get(c['number'])
+        if owner:
+            if ownership_scope(owner) == SCOPE_CODE:
+                keep.append(c)
+            continue
+        if not scopes_from_labels(c.get('labels', []), project_map):
+            keep.append(c)
+    return keep
 
 
 def _filter_agent_gating(candidates, agent_gating, project_map=None):
@@ -192,21 +209,57 @@ def _filter_agent_gating(candidates, agent_gating, project_map=None):
     return [c for c in candidates if ready in c.get('labels', [])]
 
 
-def _sort_candidates(candidates, project_map=None, priority_map=None):
-    """Sort by priority descending (critical first), then ascending issue number.
+def _filter_effort(candidates, effort_map, max_effort, oversized=None):
+    """Drop anything estimated larger than the session can finish.
+
+    Off unless a caller asks for it, because a ceiling nobody set should not
+    quietly shrink a backlog. An issue with no estimate is always kept: a
+    ceiling is a statement about known size, and refusing to consider
+    unestimated work would hide most of a young backlog behind a flag.
+    """
+    if not max_effort:
+        return list(candidates)
+    ceiling = EFFORT_RANK.get(str(max_effort).strip().lower())
+    if ceiling is None:
+        return list(candidates)
+    effort_map = effort_map or {}
+    keep = []
+    for c in candidates:
+        rank = EFFORT_RANK.get(str(effort_map.get(c['number']) or '').strip().lower())
+        if rank is None or rank <= ceiling:
+            keep.append(c)
+        elif oversized is not None:
+            oversized.append(c['number'])
+    return keep
+
+
+def _sort_candidates(candidates, project_map=None, priority_map=None,
+                     effort_map=None):
+    """Sort by priority, then by effort, then by issue number.
 
     `priority_map` is ``{issue_number: Priority option name}`` read from the
     org's own field; an issue missing from it falls back to its label.
+
+    `effort_map` is ``{issue_number: Effort option name}``, and it breaks the
+    tie *within* a priority band rather than across bands: a Low-effort issue
+    never overtakes a more urgent one. Smaller first, so a band is cleared from
+    the cheap end and a session that can only fit one item gets the one most
+    likely to finish. An issue with no Effort value sorts as if it were Medium
+    — the middle rather than the back, because an unestimated issue is unknown,
+    not large, and pushing every unestimated issue behind every estimated one
+    would reorder a backlog on the strength of missing data.
     """
     priority_map = priority_map or {}
+    effort_map = effort_map or {}
     return sorted(candidates,
                   key=lambda c: (_priority_rank(c.get('labels', []), project_map,
                                                 priority_map.get(c['number'])),
+                                 _effort_rank(effort_map.get(c['number'])),
                                  c['number']))
 
 
 def select_story(candidates, mode='story', agent_gating='disabled', project_map=None,
-                 priority_map=None):
+                 priority_map=None, **kwargs):
     """Full selection pipeline: filter → sort → top candidate (or None).
 
     Returns the single best candidate, never a list — the caller claims it.
@@ -215,13 +268,14 @@ def select_story(candidates, mode='story', agent_gating='disabled', project_map=
     survivors via `select_pool`; `select_story` is the convenience head.
     """
     pool = select_pool(candidates, mode, agent_gating, project_map,
-                       priority_map=priority_map)
+                       priority_map=priority_map, **kwargs)
     return pool[0] if pool else None
 
 
 def select_pool(candidates, mode='story', agent_gating='disabled', project_map=None,
                 type_map=None, classification_map=None, unclassified=None,
-                priority_map=None):
+                priority_map=None, effort_map=None, ownership_map=None,
+                max_effort=None, oversized=None):
     """The ordered, filtered candidate list (best first). Empty list if none.
 
     `project_map` is the ClaudeProject.md label map; every label the filters and
@@ -246,6 +300,17 @@ def select_pool(candidates, mode='story', agent_gating='disabled', project_map=N
     own field. It orders the pool; an issue absent from it is ordered by its
     `priority-*` label instead. Defaults to `{}` for the same reason
     `project_map` does.
+
+    `effort_map` is the same shape for the org's `Effort` field. It breaks ties
+    inside a priority band, and with `max_effort` it also excludes: a session
+    that cannot fit a High-effort story should not be handed one and then have
+    to give it back. Every issue excluded that way is appended to `oversized`
+    when a list is passed, so the run can say the pool was trimmed rather than
+    report a backlog that looks empty.
+
+    `ownership_map` is ``{issue_number: Ownership option name}``. Anything the
+    field marks as not-code work is out of the pool; the scope labels answer
+    for issues the field does not cover.
     """
     if mode == 'story':
         pool = list(candidates)
@@ -260,9 +325,10 @@ def select_pool(candidates, mode='story', agent_gating='disabled', project_map=N
         if unclassified is not None:
             unclassified.extend(c['number'] for c in candidates)
         pool = []
-    pool = _filter_unavailable(pool, project_map)
+    pool = _filter_unavailable(pool, project_map, ownership_map)
     pool = _filter_agent_gating(pool, agent_gating, project_map)
-    return _sort_candidates(pool, project_map, priority_map)
+    pool = _filter_effort(pool, effort_map, max_effort, oversized)
+    return _sort_candidates(pool, project_map, priority_map, effort_map)
 
 
 # ── Label resolution ─────────────────────────────────────────────────────────
@@ -280,7 +346,6 @@ _DEFAULT_LABELS = {
     'priority-low': 'priority-low',
     'claude-ready': 'claude-ready',
     'claude-authored': 'claude-authored',
-    'status-ready': 'status-ready',
     'needs-refinement': 'needs-refinement',
     'status-in-progress': 'status-in-progress',
     'status-parked': 'status-parked',
@@ -305,8 +370,20 @@ _DEFAULT_LABELS = {
 # plugin used to tell projects to do — made every unblock sweep a hazard, since
 # a sweep that reads "no open blockers" as "release" hands a bank account task
 # to an agent that cannot open one.
+# `status-ready` is deliberately absent, and its absence is the 9.0.0 change.
+# It was the opt-in marker: an issue was invisible to the picker until somebody
+# remembered to apply it, and on this very repository three workable issues sat
+# in the backlog while `wf pick` reported an empty pool, because nobody had.
+# The board's Backlog column is the opt-out replacement. It cannot be
+# forgotten, because putting the card somewhere is how an issue reaches the
+# board at all, and it cannot drift from the other states, because `Status`
+# holds one value.
+#
+# What is left here is the set of lanes an issue can be *parked in*, which is
+# still worth naming: `current_lifecycle_label` uses it to strip whichever one
+# an issue was carrying when its state changes.
 LIFECYCLE_KEYS = [
-    'status-ready', 'needs-refinement', 'status-in-progress',
+    'needs-refinement', 'status-in-progress',
     'status-parked', 'status-blocked', 'status-non-code', 'status-in-review',
     'status-needs-attention',
 ]
@@ -466,6 +543,7 @@ def classification_conflicts(kind, values):
 FIELD_NAME_DEFAULTS = {
     'field-priority':      'Priority',
     'field-effort':        'Effort',
+    'field-ownership':     'Ownership',
     'field-type':          'Classification',
     'field-origin':        'Origin',
     'field-start':         'Start date',
@@ -477,6 +555,7 @@ FIELD_NAME_DEFAULTS = {
 FIELD_DATA_TYPES = {
     'field-priority':      'single-select',
     'field-effort':        'single-select',
+    'field-ownership':     'single-select',
     'field-type':          'multi-select',
     'field-origin':        'single-select',
     'field-start':         'date',
@@ -488,7 +567,13 @@ FIELD_DATA_TYPES = {
 # The four fields the tooling sets on every issue it creates. Preflight checks
 # that every enabled issue type is pinned to all of them, because a value
 # written to an unpinned field is stored and then never shown.
-MANDATORY_FIELD_KEYS = ('field-priority', 'field-effort', 'field-type', 'field-origin')
+# `field-ownership` is here because every issue belongs to exactly one party,
+# and an issue that does not say which is one a code agent may pick up and be
+# unable to finish. It is the same class of omission as a missing Priority,
+# and it is caught the same way: the spec is refused rather than the issue
+# being created with the question unanswered.
+MANDATORY_FIELD_KEYS = ('field-priority', 'field-effort', 'field-type',
+                        'field-origin', 'field-ownership')
 
 # `priority-*` label purpose → `Priority` field option. The field is what the
 # picker orders by (`_priority_rank`) and what the portal's views show; this map
@@ -515,6 +600,25 @@ EFFORT_FIELD_OPTIONS = {
     'medium': 'Medium',
     'small':  'Low',
 }
+
+# `Effort` option → sort rank, smallest first. The picker orders on this inside
+# a priority band and `--max-effort` compares against it, so the two cannot
+# disagree about which of two estimates is the bigger. Keyed lower-case, like
+# `PRIORITY_FIELD_RANK`, because the value read back from the org is whatever
+# case it was stored in.
+EFFORT_RANK = {'low': 0, 'medium': 1, 'high': 2}
+
+# What an issue with no estimate sorts as. The middle, not the back: an
+# unestimated issue is unknown rather than large, and sorting every one of them
+# behind every estimated one would reorder a backlog on missing data.
+EFFORT_RANK_DEFAULT = EFFORT_RANK['medium']
+
+
+def _effort_rank(field_value):
+    """Sort key for an `Effort` value: 0=Low, 1=Medium, 2=High, 1 when unset."""
+    if not field_value:
+        return EFFORT_RANK_DEFAULT
+    return EFFORT_RANK.get(str(field_value).strip().lower(), EFFORT_RANK_DEFAULT)
 
 # Creating command or session → `Origin` field option.
 ORIGIN_FIELD_OPTIONS = {
@@ -662,12 +766,33 @@ def reap_summary(results):
 # `setup` now renames a default `Todo` rather than adopting it.
 BOARD_COLUMN_NAMES = {
     'col-backlog':     'Backlog',
-    'col-ready':       'Ready',
     'col-in-progress': 'In Progress',
     'col-in-review':   'In Review',
     'col-blocked':     'Blocked',
     'col-non-code':    'Non-code',
+    'col-refinement':  'Needs refinement',
+    'col-parked':       'Parked',
+    'col-attention':   'Needs attention',
     'col-done':        'Done',
+}
+
+# The one column the picker selects from. Everything else on the board is a
+# lane an issue is *not* available from, which is why the pool needs no
+# exclusion list of its own: `Status` holds one value, so a card in any other
+# column is already out.
+POOL_COLUMN = 'col-backlog'
+
+# Every lane an issue can sit in, paired with the lifecycle label that mirrors
+# it. Preflight creates any of these the board is missing; `board_column_for`
+# picks between them.
+COLUMN_LIFECYCLE_PAIRS = {
+    'col-in-progress': 'status-in-progress',
+    'col-in-review':   'status-in-review',
+    'col-blocked':     'status-blocked',
+    'col-non-code':    'status-non-code',
+    'col-refinement':  'needs-refinement',
+    'col-parked':      'status-parked',
+    'col-attention':   'status-needs-attention',
 }
 
 
@@ -696,6 +821,32 @@ SCOPE_LABEL_KEYS = {SCOPE_BROWSER: 'scope-browser', SCOPE_HUMAN: 'scope-human'}
 # written by this plugin and read by people, and a loose match would claim any
 # title that happened to open with a bracket.
 SCOPE_PREFIXES = {SCOPE_BROWSER: '[Browser] ', SCOPE_HUMAN: '[Manual] '}
+
+
+# Scope → the `Ownership` field option that records it. The field is the
+# structured answer to "who has to do this", and the picker reads it first.
+# Until 9.0.0 there was no field at all: the scope label and the title prefix
+# were the only record, so a query could find non-code work but no *view* could
+# group by it, and nothing stopped an issue claiming two owners at once.
+OWNERSHIP_FIELD_OPTIONS = {
+    SCOPE_CODE:    'Code agent',
+    SCOPE_BROWSER: 'Browser agent',
+    SCOPE_HUMAN:   'Human',
+}
+
+OWNERSHIP_BY_OPTION = {v.lower(): k for k, v in OWNERSHIP_FIELD_OPTIONS.items()}
+
+
+def ownership_scope(field_value):
+    """The scope an `Ownership` option names, or None when it names nothing.
+
+    An unrecognised value is None rather than `code`: an org that renamed its
+    options should have its issues fall through to the scope labels, not be
+    handed to a code agent because the string did not match.
+    """
+    if not field_value:
+        return None
+    return OWNERSHIP_BY_OPTION.get(str(field_value).strip().lower())
 
 
 def scopes_from_labels(labels, project_map=None):
@@ -744,10 +895,12 @@ def scope_findings(issues, project_map=None):
       scope-conflict   — both scope labels on one issue. Nobody owns it.
       scope-prefix     — prefix and label name different parties, or one is
                          present without the other.
-      scope-lifecycle  — a scoped issue not carrying `status-non-code`, so the
-                         picker will select work a code agent cannot do; or
-                         `status-non-code` on an issue with no scope label, so
-                         work that *is* pickable has been parked invisibly.
+      scope-lifecycle  — a scoped issue not carrying `status-non-code`, so it
+                         sits in the wrong board lane and reads as ordinary
+                         code work; or `status-non-code` on an issue with no
+                         scope label and no `Ownership`, so nothing structural
+                         says who owns it and the picker will offer it to a
+                         code agent.
     """
     project_map = project_map or {}
     non_code = resolve_label('status-non-code', project_map)
@@ -785,12 +938,13 @@ def scope_findings(issues, project_map=None):
         has_non_code = non_code in set(labels)
         if labelled and not has_non_code:
             add('scope-lifecycle',
-                'is %s work with no %s label, so the picker will offer it to a '
-                'code agent' % (labelled, non_code))
+                'is %s work with no %s label, so it sits in the wrong board '
+                'lane and reads as ordinary code work' % (labelled, non_code))
         elif has_non_code and not labelled:
             add('scope-lifecycle',
-                'carries %s with no scope label, so it is out of the pool and '
-                'nothing says who should do it' % non_code)
+                'carries %s with no scope label, so nothing structural says '
+                'who owns it and the picker will offer it to a code agent'
+                % non_code)
     return findings
 
 
@@ -800,8 +954,8 @@ def lifecycle_for(scope, open_blockers):
     Non-code wins over blocked, and deliberately: the scope is a property of
     the work and survives every blocker closing, so an issue that is both must
     end up in the lane no sweep will release it from. Returns None for code
-    work with nothing open, which is the pickable state and has no label at
-    all under a `none` ready gate.
+    work with nothing open, which is the pickable state. That state has no
+    label at all: the card sitting in Backlog is what says it.
     """
     if scope in (SCOPE_BROWSER, SCOPE_HUMAN):
         return 'status-non-code'
@@ -1303,6 +1457,13 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
         elif purpose == 'field-priority':
             proposed_fields[purpose] = (infer_priority(labels, project_map)
                                         or SPEC_PLACEHOLDER)
+        elif purpose == 'field-ownership':
+            # Never a placeholder. Ownership has an answer for every issue —
+            # the scope labels name it, and code is the default when none do —
+            # so a backfill that stopped to ask a person would stop on every
+            # issue in the backlog the day the field was added.
+            proposed_fields[purpose] = OWNERSHIP_FIELD_OPTIONS[
+                issue_scope(title, labels, project_map)]
         else:
             proposed_fields[purpose] = SPEC_PLACEHOLDER
 
@@ -1597,7 +1758,7 @@ def label_drift_findings(live_labels, project_map=None):
 
     Two shapes, both seen in the wild: a separator that drifted
     (`priority:medium` beside `priority-medium`), and a prefix that was dropped
-    (`ready` beside `status-ready`). Neither breaks a command, so both warn — but each
+    (`blocked` beside `status-blocked`). Neither breaks a command, so both warn — but each
     one silently splits a backlog in half, because selection matches one name
     and some of the issues carry the other.
     """
@@ -1720,8 +1881,9 @@ def board_column_findings(columns, live_options, path='ClaudeProject.md'):
     """Board columns recorded in config that no longer resolve on the board.
 
     `columns` is `{purpose key: option id}`, `live_options` is
-    `{option id: name}`. A stale id means the move is skipped, not that the
-    issue is lost — the lifecycle labels stay authoritative — so this warns.
+    `{option id: name}`. A stale id costs the recorded shortcut, not the move:
+    the mover falls back to resolving the column by name, so this warns.
+    Whether the column exists at all is `board_lane_findings`.
     """
     live = live_options or {}
     out = []
@@ -1735,6 +1897,64 @@ def board_column_findings(columns, live_options, path='ClaudeProject.md'):
             'refresh the `### Status Options` table from the live board',
             path))
     return out
+
+
+def board_lane_findings(live_option_names, path='ClaudeProject.md'):
+    """Lanes the workflow moves issues into that the live board does not have.
+
+    The pool column is the severe one, and it is severe because selection reads
+    it: a board with no `Backlog` column gives `pick` nowhere to look. Until
+    9.0.0 that came back as an empty pool rather than an error, so a board
+    nobody had configured and a backlog nobody had filled produced the same
+    answer — and the misconfiguration was the likelier of the two. The rest
+    warn: a missing lane loses one state's board move, which a person notices
+    on the board and no command depends on.
+    """
+    live = {(name or '').strip().lower() for name in live_option_names or ()}
+    out = []
+    for purpose, name in sorted(BOARD_COLUMN_NAMES.items()):
+        if name.strip().lower() in live:
+            continue
+        if purpose == POOL_COLUMN:
+            out.append(finding(
+                CRITICAL, 'board-lane',
+                'the board has no `%s` column, and that column *is* the pick '
+                'pool, so selection has nothing to read' % name,
+                "add a `%s` option to the board's status field" % name, path))
+        else:
+            out.append(finding(
+                WARNING, 'board-lane',
+                'the board has no `%s` column, so an issue that reaches that '
+                'state stays in whichever lane it was already in' % name,
+                "add a `%s` option to the board's status field" % name, path))
+    return out
+
+
+def board_orphan_findings(numbers, path='ClaudeProject.md'):
+    """Open unassigned issues with no card on the board.
+
+    Critical, and this is the check that makes the 9.0.0 pool safe to adopt.
+    The pool is the board's `Backlog` column, so an issue with no card is
+    invisible to `pick` whatever it carries — and an upgrade silently shrinks
+    the backlog to whatever happened to be on the board already. New issues
+    cannot land in this state (`issue-apply` places every issue it touches);
+    every issue filed before that did can.
+    """
+    numbers = sorted(set(numbers or ()))
+    if not numbers:
+        return []
+    shown = ', '.join('#%d' % n for n in numbers[:10])
+    if len(numbers) > 10:
+        shown += ' and %d more' % (len(numbers) - 10)
+    return [finding(
+        CRITICAL, 'board-orphan',
+        '%d open unassigned issue%s no card on the board (%s), and the pick '
+        'pool is a board column, so nothing can select %s'
+        % (len(numbers), ' has' if len(numbers) == 1 else 's have', shown,
+           'it' if len(numbers) == 1 else 'them'),
+        'run `wf board-move <number> --column col-backlog` for each, which '
+        'adds the card as well as setting the column',
+        path)]
 
 
 def preflight_summary(findings):
