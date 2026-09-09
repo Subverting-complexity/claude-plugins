@@ -7,6 +7,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 10.1.2
+
+**The listing describes the workflow it actually has.** The marketplace entry and the plugin's own description still said the plugin picks an issue "from your backlog" and supports "configurable label mappings", which 10.0.0 removed: the pool is a board column and there is one issue label left, deciding nothing. Both now say what a run reads — the board column is the status, and Priority, Effort and Ownership are org issue fields — and both carry `project-board` and `issue-fields` keywords. Metadata only; no behaviour changed.
+
 ## github-workflow 10.1.1
 
 Everything here came out of running 10.1.0 against a live board for the first time.

@@ -11,7 +11,7 @@
     {
       "name": "github-workflow",
       "source": "./github-workflow",
-      "description": "Takes a GitHub story end to end: picks it off the backlog, plans, builds, runs the quality gate, opens a pull request, has that pull request reviewed by agents in a fresh context, and merges it where auto-merge is enabled.",
+      "description": "Takes a GitHub story end to end: picks it off the board, plans, builds, runs the quality gate, opens a pull request, has that pull request reviewed by agents in a fresh context, and merges it where auto-merge is enabled. Every decision reads structured GitHub state — the card's board column is the status, and Priority, Effort and Ownership are org issue fields — so no label and no line of an issue body changes what gets picked.",
       "author": {
         "name": "Subverting Complexity"
       },
@@ -25,6 +25,8 @@
         "automation",
         "code-review",
         "backlog",
+        "project-board",
+        "issue-fields",
         "sprint",
         "story",
         "pr"
@@ -33,7 +35,7 @@
     {
       "name": "local-workflow",
       "source": "./local-workflow",
-      "description": "Plans, writes, verifies and commits a task on your machine. No issue tracker and no pull request, plus architecture design and audit, feature discovery, debugging, security audit and documentation.",
+      "description": "Plans, writes, verifies and commits a task on your machine. No issue tracker, no pull request and no platform to configure, plus architecture design and audit, feature discovery and plan validation, debugging, security audit, user stories, PR descriptions, documentation and tone-matched correspondence.",
       "author": {
         "name": "Subverting Complexity"
       },
