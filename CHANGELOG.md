@@ -7,6 +7,19 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 8.2.1
+
+**No two board columns share a colour.** The suggested palette gave Backlog and
+Done both GRAY, and Non-code the same ORANGE as In Review, so a board built from
+it had two pairs that are indistinguishable in a column header and in every view
+grouped by Status. It reached six of ten boards on the org this was written for
+before anyone looked. Seven columns now take seven colours, with GRAY spare:
+Backlog GREEN, Ready BLUE, In Progress YELLOW, In Review ORANGE, Blocked RED,
+Non-code PINK, Done PURPLE.
+
+Documentation only. Nothing reads these values at runtime; `setup` suggests them
+when it creates a column, and `wf board-move` resolves a column by name.
+
 ## github-workflow 8.2.0
 
 **A merge now releases the work it freed.** Nothing did this before. `wf
