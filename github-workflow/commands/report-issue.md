@@ -139,19 +139,11 @@ Do not narrate how you found the problem, and do not add a section that would be
 
 `issue-apply` reads the created issue back in the same request and reports any mismatch, so there is nothing to check by hand when it exits 0. Only if it reported a mismatch on the body, apply the corruption test and retry in `templates/body-file-write.md` (**Validate** + **Retry**). The `Closes #N` clause is PR-only and does not apply to an issue body.
 
-### 6b. Place the issue on the board (best-effort, if configured)
+### 6b. The board placement is already done
 
-So the new issue mirrors its lifecycle label on the board from the moment it is created, place it in the column paired with the lifecycle state chosen in Step 3 (see `templates/default-labels.md` → Board Columns):
+`issue-apply` places every issue it touches on the board itself, in the column its own state names — Blocked when a native edge points at something open, Non-code when the issue is scoped to a person or a browser agent, Backlog otherwise. There is no board step to run by hand, and no column to choose: the state decides it, in one place, for created and updated issues alike.
 
-- `status-ready` → **Ready** (`col-ready`)
-- `needs-refinement` → **Backlog** (`col-backlog`)
-- `status-blocked` → **Blocked** (`col-blocked`)
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column {col-ready|col-backlog|col-blocked}
-```
-
-The command adds the issue to the board (a new issue is never on it yet), decides for itself whether a board is configured — a silent no-op when it is not — and verifies the board's identity before writing. It **always exits 0**, because a board mirrors the labels and is never the source of truth, so read `moved` and `reason` and report a failure rather than stopping for one.
+Read `board_column` and `board_moved` from the command's output and report them. A `board_moved` of `false` carries a `board_message` saying why; it is never fatal, because the board mirrors the issue and is never the source of truth.
 
 ### 7. Report
 

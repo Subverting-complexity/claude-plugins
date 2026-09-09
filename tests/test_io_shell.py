@@ -1566,7 +1566,10 @@ class _FakeHub(object):
     """
 
     def __init__(self, issues=(), labels=None, swallow_fields=False,
-                 fail_create=(), fail_link=False):
+                 fail_create=(), fail_link=False, closed_edges=()):
+        # Blocker numbers this hub reports as CLOSED on the batched edge read.
+        # Everything else reads OPEN, which is what a freshly written edge is.
+        self.closed_edges = set(closed_edges)
         self.issues = {i['number']: i for i in issues}
         self.next_number = max(self.issues, default=100) + 1
         self.labels = dict(labels if labels is not None
@@ -1619,7 +1622,8 @@ class _FakeHub(object):
                     r'(e\d+): issue\(number:(\d+)\)', query):
                 issue = self.issues.get(int(number))
                 repository[alias] = {'blockedBy': {'nodes': [
-                    {'number': n, 'state': 'OPEN'}
+                    {'number': n,
+                     'state': 'CLOSED' if n in self.closed_edges else 'OPEN'}
                     for n in issue['blocked_by']]}} if issue else None
             return True, {'repository': repository}, ''
         if 'issue(number:$number)' in query:
@@ -1810,18 +1814,23 @@ class _ApplyCase(unittest.TestCase):
             json.dump({'issues': entries}, fh)
         return path
 
-    def _run(self, entries, hub, extra_argv=()):
+    def _run(self, entries, hub, extra_argv=(), calls=None):
         path = self._spec_file(entries)
         args = wf.build_parser().parse_args(['issue-apply', path, *extra_argv])
         stderr = io.StringIO()
+
+        def fake_run(cmd, input_text=None):
+            if calls is not None:
+                calls.append(list(cmd))
+            return 0, '', ''
+
         with mock.patch.object(wf, 'load_config', lambda: (True, _cfg(), '')), \
                 mock.patch.object(wf, 'resolve_org_capabilities',
                                   lambda cfg, refresh=False, root=None:
                                   (True, _APPLY_CAPS, '')), \
                 mock.patch.object(wf, 'gh_graphql', hub.gh_graphql), \
                 mock.patch.object(wf, '_graphql_json', hub.graphql_json), \
-                mock.patch.object(wf, 'run',
-                                  lambda a, input_text=None: (0, '', '')), \
+                mock.patch.object(wf, 'run', fake_run), \
                 contextlib.redirect_stderr(stderr):
             code, payload = _capture(wf.cmd_issue_apply, args)
         with open(path, encoding='utf-8') as fh:
@@ -1968,11 +1977,49 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(payload['applied'][0]['lifecycle'], 'status-non-code')
 
     def test_code_work_with_nothing_open_gets_no_lifecycle_label(self):
-        """Under a `none` ready gate that is exactly what pickable means."""
+        """No lifecycle label is exactly what pickable means."""
         hub = _FakeHub()
         code, payload, _, _ = self._run([self._full()], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertNotIn('lifecycle', payload['applied'][0])
+        self.assertIsNone(payload['applied'][0]['lifecycle'])
+
+    def test_a_pickable_issue_is_still_placed_in_backlog(self):
+        """The gap the Backlog pool cannot survive. This phase used to return
+        early for pickable work, so a created code issue got no board item at
+        all — and an issue with no card is an issue the picker cannot see."""
+        hub = _FakeHub()
+        code, payload, _, _ = self._run([self._full()], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['applied'][0]['board_column'], 'Backlog')
+
+    def test_an_update_whose_blockers_closed_loses_its_blocked_label(self):
+        """The other half of the early return: an issue whose last dependency
+        closed resolved to pickable, so `status-blocked` stayed on it and its
+        card stayed in Blocked until a separate sweep happened to scan it."""
+        hub = _FakeHub([_existing(7, labels=['status-blocked'],
+                                  blocked_by=[6]),
+                        _existing(6)], closed_edges={6})
+        calls = []
+        code, payload, _, _ = self._run([self._full(number=7)], hub,
+                                        calls=calls)
+        self.assertEqual(code, wf.EXIT_OK)
+        applied = payload['applied'][0]
+        self.assertIsNone(applied['lifecycle'])
+        self.assertEqual(applied['board_column'], 'Backlog')
+        self.assertIn('cleared label status-blocked', applied['changed'])
+        joined = [' '.join(c) for c in calls]
+        self.assertTrue(any('issue edit 7' in c and '--remove-label' in c
+                            and 'status-blocked' in c and '--add-label' not in c
+                            for c in joined), joined)
+
+    def test_an_update_reads_its_stale_label_from_the_issue_not_the_spec(self):
+        """An update entry that does not restate its labels looked unlabelled,
+        so the one path that had to find a stale label never found one."""
+        hub = _FakeHub([_existing(7, labels=['status-blocked'], blocked_by=[6]),
+                        _existing(6)], closed_edges={6})
+        _, payload, _, _ = self._run([self._full(number=7)], hub)
+        self.assertIn('cleared label status-blocked',
+                      payload['applied'][0]['changed'])
 
     def test_a_spec_local_reference_resolves_to_the_number_just_created(self):
         hub = _FakeHub()
@@ -2599,6 +2646,92 @@ class TestConfigAudit(unittest.TestCase):
         code, payload, _ = self._run(labels=[])
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(self._checks(payload), [])
+
+
+class TestBoardMoveOrdering(unittest.TestCase):
+    """The column is resolved before the card is added, and that order matters.
+
+    The other way round, an issue destined for a column the board does not have
+    was added to the board and *then* found to have nowhere to go: the add
+    succeeded, the status write did not, and the card landed in the board's
+    `No Status` bucket while the caller was told `moved: false`. That is how a
+    `report-issue` run aimed at a `Ready` column no board had put issues on the
+    board with no status at all.
+    """
+
+    OPTIONS = [{'id': 'O_back', 'name': 'Backlog'},
+               {'id': 'O_done', 'name': 'Done'}]
+
+    def _cfg(self):
+        return _cfg(board={'project_node_id': 'PVT_1',
+                           'project_title': 'board', 'columns': {},
+                           'status_field_name': 'Status'})
+
+    def _move(self, column, on_board=True, options=None):
+        """Drive `board_move`, recording every query and mutation it sends."""
+        sent = []
+
+        def fake_graphql(query, **fields):
+            sent.append(query)
+            if 'ProjectV2SingleSelectField' in query:
+                return True, {'node': {
+                    'title': 'board',
+                    'field': {'id': 'F_1',
+                              'options': self.OPTIONS if options is None
+                              else options}}}, ''
+            if 'projectItems' in query:
+                items = [{'id': 'ITEM_1', 'project': {'id': 'PVT_1'}}] \
+                    if on_board else []
+                return True, {'repository': {'issue': {
+                    'id': 'I_1', 'projectItems': {'nodes': items}}}}, ''
+            if 'addProjectV2ItemById' in query:
+                return True, {'addProjectV2ItemById':
+                              {'item': {'id': 'ITEM_NEW'}}}, ''
+            if 'updateProjectV2ItemFieldValue' in query:
+                return True, {'updateProjectV2ItemFieldValue': {}}, ''
+            raise AssertionError('unexpected query: %s' % query)
+
+        with mock.patch.object(wf, 'gh_graphql', fake_graphql):
+            moved, message = wf.board_move(self._cfg(), 3, column)
+        return moved, message, sent
+
+    def test_an_unknown_column_never_touches_the_board(self):
+        moved, message, sent = self._move('Ready', on_board=False)
+        self.assertFalse(moved)
+        self.assertIn("no 'Ready' column", message)
+        self.assertFalse([q for q in sent if 'addProjectV2ItemById' in q])
+        self.assertFalse([q for q in sent if 'updateProjectV2ItemFieldValue' in q])
+
+    def test_an_unknown_column_names_the_ones_that_exist(self):
+        """A report that only says no is a report someone has to go and check."""
+        _, message, _ = self._move('Ready')
+        self.assertIn('Backlog, Done', message)
+
+    def test_an_unknown_column_costs_one_query(self):
+        """Resolving first is also cheaper: the item lookup never happens."""
+        _, _, sent = self._move('Ready')
+        self.assertEqual(len(sent), 1)
+
+    def test_a_known_column_still_adds_a_missing_card(self):
+        moved, _, sent = self._move('Backlog', on_board=False)
+        self.assertTrue(moved)
+        self.assertTrue([q for q in sent if 'addProjectV2ItemById' in q])
+        self.assertTrue([q for q in sent if 'updateProjectV2ItemFieldValue' in q])
+
+    def test_identity_and_column_share_one_query(self):
+        """The safer order is a round trip cheaper than the one it replaced."""
+        moved, _, sent = self._move('Done')
+        self.assertTrue(moved)
+        self.assertEqual(len(sent), 3)
+
+    def test_a_board_that_resolves_to_another_project_is_skipped(self):
+        def fake_graphql(query, **fields):
+            return True, {'node': {'title': 'somebody else', 'field': None}}, ''
+
+        with mock.patch.object(wf, 'gh_graphql', fake_graphql):
+            moved, message = wf.board_move(self._cfg(), 3, 'Backlog')
+        self.assertFalse(moved)
+        self.assertIn('somebody else', message)
 
 
 class TestUnblockSweep(unittest.TestCase):

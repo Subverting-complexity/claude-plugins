@@ -7,6 +7,41 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 8.3.0
+
+**Every issue reaches the board, including the ordinary ones.** `issue-apply`
+decided a lifecycle lane for each issue it touched and then returned early
+whenever the answer was "nothing is wrong", which meant a created code issue
+with no blockers got no board card at all — it existed in the repository and
+nowhere on the board. That was survivable while the pick pool was a label
+query. It is not survivable once the pool is a board column, so the pickable
+case now places the card in Backlog like every other case places its own.
+
+**An update that is no longer blocked stops saying it is.** The same early
+return left `status-blocked` on an issue whose last dependency had closed, and
+its card in Blocked, until the separate `wf unblock` sweep happened to scan it.
+The phase now clears the stale label and moves the card. It also reads the
+issue's live labels rather than the spec's: an update entry that did not
+restate its labels looked unlabelled, so the one path that had to find a stale
+label never found one. Dependencies are read for every issue whose lane is
+being decided, not only those whose entry restated `blocked_by`, so a
+legitimate `status-blocked` is never cleared on the strength of a spec that
+simply did not mention it.
+
+**`wf board-move` resolves the column before it adds the card.** The other way
+round, an issue destined for a column the board does not have was added to the
+board and *then* found to have nowhere to go: the add succeeded, the status
+write did not, and the card landed in the board's `No Status` bucket while the
+caller was told `moved: false`. A report saying nothing happened, beside a card
+that appeared from nowhere, is worse than either. A bad column name now costs
+one query and writes nothing, and the failure names the columns the board does
+have. Identity and column resolution share that query, so the safer order is
+also one round trip cheaper than the one it replaces.
+
+**`report-issue` no longer moves the board by hand.** `issue-apply` does it,
+from the issue's own state, so the command's separate board step — which aimed
+`status-ready` issues at a `Ready` column many boards do not have — is gone.
+
 ## github-workflow 8.2.1
 
 **No two board columns share a colour.** The suggested palette gave Backlog and
