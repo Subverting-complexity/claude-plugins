@@ -20,8 +20,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout
 # auto-closes it + moves it to Done if a merged PR already resolved it)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue 42 --checkout
 
-# After merging a PR: close any still-open linked issue and move it to Done
+# After merging a PR: close any still-open linked issue and move it to Done,
+# then release whatever that merge freed
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr 123
+
+# Release the blocked issues whose dependencies have all closed (--dry-run reports)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" unblock --dry-run
 
 # Claim the next PR of mine that needs review feedback addressed (code-review)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" update-next --checkout
@@ -198,7 +202,7 @@ Aliased multi-mutations let many issues be created in one request, but an alias 
 | ----- | -------- | ------------ |
 | Prerequisite | 1 query | The repository id, every label id, and the node id of every issue the spec references but does not create — one lookup, not three. |
 | Per level | 1 mutation per `wf_core.BATCH_MAX_NODES` entries | Every issue at that level is created in one aliased `createIssue`. |
-| Link | 1 mutation per `BATCH_MAX_NODES` operations | Every `blocked_by` edge, plus any body whose `## Dependencies` section could not be written at create time. |
+| Link | 1 mutation per `BATCH_MAX_NODES` operations | Every `blocked_by` edge. |
 
 Edges come last so an edge may point at **any** issue in the tree regardless of level, including one created in the final batch.
 
@@ -219,9 +223,21 @@ Everything decidable offline is decided before the first mutation, because a hal
 - **A field this org does not define** is skipped, not an error — an org is allowed fewer fields than the default inventory. It is reported once for the run on stderr, not once per issue.
 - **A refused capability read** exits 21 rather than falling back to labels, for the reason `org-capabilities` gives above.
 
-### Dependencies are written twice, on purpose
+### A dependency is an edge and nothing else
 
-A `blocked_by` becomes both a native `addBlockedBy` edge and a `## Dependencies` section in the issue body. The edge is what GitHub's UI and the audit read; the body prose is what `wf_core.parse_dependencies()` reads to decide when an issue unblocks, so dropping it would silently break auto-unblocking.
+A `blocked_by` becomes a native `addBlockedBy` edge. It used to become a `## Dependencies` section in the body as well, and the two drifted apart on nine of the fourteen issues carrying both on one real backlog — the prose stale every time. Prose is not parsed now, in any command: a body naming a blocker with no edge behind it is not blocked.
+
+### Every issue lands in the lane its own state names
+
+After the edges are written, `issue-apply` puts each issue where it belongs and moves its board card to match. Nothing did this before, so a spec could write an edge and leave the issue with no lifecycle label at all, which put work whose dependency had not been built yet straight into `pick`'s pool.
+
+| The issue is | Label | Board column |
+| --- | --- | --- |
+| labelled `browser-agent` or `human-required` | `status-non-code` | Non-code |
+| pointing at least one open edge | `status-blocked` | Blocked |
+| neither | nothing | (unchanged) |
+
+Scope wins over a dependency. The scope is a property of the work and survives every blocker closing, so an issue that is both has to end up in the lane no sweep releases it from.
 
 ### Every write is read back
 
@@ -245,9 +261,9 @@ It **never writes**. Both write transports are stubbed out in its tests to prove
 | `missing-field` | One of the four mandatory fields (`wf_core.MANDATORY_FIELD_KEYS`) this issue holds no value for. |
 | `type-contradiction` | The native type disagrees with a legacy `type-*` label or `[BUG]`-style title prefix the issue still carries. Reported so the stale one can be removed; neither is written any more. |
 | `classification-contradiction` | The `Classification` value cannot be true of the declared kind — a story classified `Bug Fix`, a bug classified `New Feature`. |
-| `missing-edge` | The body names a blocker, either way round, with no native edge. |
-| `dependency-closed` | The body depends on an issue that is not open. |
-| `dependency-overflow` | More than `wf_core.DEP_LIMIT` dependencies — an epic, not a story. |
+| `scope-conflict` | Both scope labels on one issue, so no single party owns it. |
+| `scope-prefix` | The `[Manual] `/`[Browser] ` title prefix and the scope label disagree, or one is present without the other. |
+| `scope-lifecycle` | Scoped work with no `status-non-code` label, so the picker will offer it to a code agent — or that label with no scope label, so nothing says who should do it. |
 | `missing-parent` | `--parents` only. The body says it is part of an issue and GitHub shows it as free-standing. |
 | `parent-closed` | `--parents` only. The parent the body names is not open. |
 | `parent-differs` | `--parents` only. The body names one parent and the hierarchy has another. Reported, never changed. |
@@ -258,33 +274,13 @@ A `[DEBT]` issue typed `Feature` is **not** a type contradiction on an org whose
 
 ### Relationships
 
-Two of the gaps above come from body prose that no earlier version read, and both are worth understanding before trusting a proposal.
+One gap above comes from body prose, and it is worth understanding before trusting a proposal.
 
 **A parent is a native relationship, not the `Parent` field.** An issue whose first line says `Part of the Cadence Plus epic (#959)` and which GitHub renders as free-standing is invisible as a child: the epic shows no sub-issues and nothing reports that the two disagree. `wf_core.parse_parent` reads a fixed set of phrasings in precedence order, and an issue that **already has** a parent is left alone even when the body names a different one, because a deeper parent is usually the more specific truth and reparenting would flatten a hierarchy somebody built on purpose.
 
-This one is **opt-in**, and the reason is worth stating rather than treating as caution. A story created through `feature-discovery` carries `"parent"` in the spec that creates it, so on a repo whose issues all arrive that way, parsing the sentence back out of the body only re-derives what the pipeline already knew, and every issue that politely repeats its epic in the first line shows up as a gap. Where the prose is the only record — a backlog written before any of this existed, or an issue typed into the GitHub UI — pass `--parents` and the three gaps above come back. The dependency half is **not** opt-in: it is not a backfill at all, because `parse_dependencies` is what `wf pick`, `wf candidates` and the unblock sweep read on every run.
+This one is **opt-in**, and the reason is worth stating rather than treating as caution. A story created through `feature-discovery` carries `"parent"` in the spec that creates it, so on a repo whose issues all arrive that way, parsing the sentence back out of the body only re-derives what the pipeline already knew, and every issue that politely repeats its epic in the first line shows up as a gap. Where the prose is the only record — a backlog written before any of this existed, or an issue typed into the GitHub UI — pass `--parents` and the three gaps above come back.
 
-**A marker has to sit in front of the reference.** An earlier version swept every bare `#N` under a `## Dependencies` heading. Real bodies put all of this under that heading — `Changes the scope of #982 and #1000`, `Supersedes #981`, `None of the three manual tasks block it`, `Depends on nothing. #863 does not have to land first` — and against one 70-issue backlog the sweep proposed 44 edges of which seven formed cycles. So `Depends on`, `Depends upon`, `Blocked by`, `Blocked on` and `Requires` are read where they introduce a reference run, `After #N` only as a list item inside the `## Dependencies` section, and anything else is prose. A negated marker (`No longer blocked on #1004`) and a clause that is about some other issue (`Sign in with Apple (#979) — blocked on #1032`, in an epic's status list) are both excluded.
-
-`Blocks #N` is read too, and folded onto the issue it names rather than the one that wrote it: the provisioning task is usually the only one that knows what it holds up, so half a backlog's dependency graph was written down in a direction nothing looked at.
-
-### The spec it writes
-
-Every issue with a gap becomes an `issue-apply` entry in `.claude/issue-audit-spec.json` (override with `--out`). Two rules govern it:
-
-- **Inferred edges and parents are proposed, never written.** Body prose is not reliable enough to build a graph from unattended, so a proposed edge or parent sits in the spec for a person or an agent to review.
-- **A mandatory field the issue already carries is repeated in the entry.** `issue-apply` refuses a spec that leaves one blank and does not first check the issue, so without this an entry proposed purely to add a parent or an edge was rejected for "missing" a value that was already there. Repeating it makes the write a no-op and lets the spec round-trip.
-- **What cannot be inferred becomes `TODO`.** `issue-apply`'s mandatory-field check treats a placeholder as missing, so the spec is refused until someone fills it in. Silence must not pass for a value.
-
-Priority is inferred from the issue's own `priority-*` label and Classification from its declared kind. Effort and Origin are not guessable from an existing issue, so they come out as placeholders.
-
-Only the four mandatory fields are checked. Situational fields — Start date, Target date, Parent, Status reason — are not reported at all: a start date nobody set is not a gap, and reporting them turned one 69-issue backlog into 275 findings that no amount of work could clear, which made the audit useless as a check.
-
-### Running it as a check
-
-The command exits 25 when gaps exist, so it works as a gate. `--quiet` drops the per-issue detail and keeps the exit code and the counts. `--limit` and `--since` narrow the scan so a large backlog can be worked through in slices, and `--repo owner/name` points it at another repo in the org without reconfiguring anything — issue types and fields are org-scoped, so adoption can proceed one repo at a time from a single working copy.
-
-> Deleting an org issue field permanently destroys every value set on it, in every repo. Before any such change, run this audit with `--repo` against each repo that matters and read the values first.
+The parent is the **only** thing read out of a body. Dependencies used to be read the same way, and it went badly enough to be worth recording: the parser missed a `## Blocked by` heading whose references sat on the next line, and read "Nothing. This **was** blocked by #980" as a live dependency — wrong in both directions on the same backlog, and each fault silently invisible. A sentence is not structured data and no amount of regex makes it so, so the audit no longer proposes an edge from one. What it checks in that slot instead is **scope**, where the three signals genuinely can be compared against each other.
 
 ## Configuration drift — `config-audit`
 
@@ -325,6 +321,28 @@ Two round trips: one repo query carrying the labels and the board together, and 
 ## Settling a merged PR — `post-merge`
 
 `post-merge --pr <n>` makes "the story is closed and off the board" a deterministic step instead of trusting GitHub. It reads the PR's own `closingIssuesReferences`, **force-closes** any of those issues still open (GitHub only auto-closes on a default-branch merge of a recognised keyword — a chained-story PR or an unparsed reference leaves it open), **clears any open-state lifecycle label** the issue still carries (e.g. a `status-ready` or `status-in-review` left behind when GitHub auto-closed it), and moves every linked issue to the **Done** column. Each settled issue is reported with `closed_now`, `lifecycle_label_cleared`, and `board_moved_done`. It refuses (`status: not-merged`, exit 11) on a PR that has not actually merged, so it is safe to call on the queued `--auto` path. Add `--issue <N>` (repeatable) to settle a reference GitHub did not parse. `code-review`'s auto-merge step calls this after a successful immediate merge.
+
+## Releasing what a merge freed — `unblock`
+
+Nothing did this. `post-merge` settles only the issues a pull request *closes*, so one that closes none returns `settled: []` — which reads as a finished run and is not: whatever was waiting keeps `status-blocked`, and a blocked issue is invisible to the picker.
+
+`unblock` reads every open issue carrying the blocked label and sorts it five ways. Only the first two write anything.
+
+| Bucket | What it means | What it does |
+| --- | --- | --- |
+| `released` | every native blocked-by edge points at a closed issue | removes the label, moves the card to Backlog, comments |
+| `rescoped` | browser or human work sitting in the blocked lane | swaps the label for `status-non-code`, moves the card to Non-code, comments |
+| `held` | at least one blocker is still open | nothing |
+| `partials` | held, but a blocker merged something in the last 14 days | reports it, never acts |
+| `no_edges` | labelled blocked with no dependency edge at all | counts them |
+
+**The scope check runs before the edge check, and that order is the safety property.** Both issues the first real run would have released were `[Manual]` device passes whose blockers happened to close; releasing them would have put a job needing a phone in someone's hand into the code agent's pool.
+
+**Nothing is released without at least one edge.** Two thirds of one real backlog's blocked issues have none, and they are waiting on a bank account, a device pass, a store upload. Reading "no open blockers" as "release" would put every one of them in front of an agent that cannot do any of them.
+
+**The comment is load-bearing.** A bare label removal reads to the next agent as damage to repair, and one repaired exactly this: three issues released by hand were re-blocked two minutes later by a concurrent session that took the removal for automation stripping labels.
+
+`--dry-run` reports without writing; `--issue N` (repeatable) narrows it. `post-merge` runs the sweep and returns it as `unblocked` whether or not it settled anything (`--no-unblock` opts out), and `pick` runs it when it finds nothing to pick.
 
 ## The three pickers
 

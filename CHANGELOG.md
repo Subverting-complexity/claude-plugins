@@ -7,6 +7,106 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 8.2.0
+
+**A merge now releases the work it freed.** Nothing did this before. `wf
+post-merge` settles only the issues a pull request *closes*, so a pull request
+that closes none reports `settled: []`, which reads as a finished run and is
+not: the issues waiting on that work keep their `status-blocked` label, and a
+blocked issue is invisible to the picker. On the project this was written for,
+a merge left two downstream issues sitting there until the user asked whether
+anything had been unblocked.
+
+**New command: `wf unblock`.** It reads every open issue carrying the blocked
+label and sorts them five ways.
+
+- **released** — every native blocked-by edge points at a closed issue. The
+  label is removed, the board card moves to Backlog, and a comment says what
+  happened and why.
+- **rescoped** — browser or human work sitting in the blocked lane. The label
+  is swapped for `status-non-code`, the card moves to Non-code, and a comment
+  says nothing about the work itself has changed. Never released: see the
+  non-code lane below.
+- **held** — at least one blocker is still open. Untouched.
+- **partials** — held, but a blocker has merged something in the last fourteen
+  days. Reported, never acted on: a story that ships half of itself stays open
+  with correct edges while whatever needed only that half is free, and no
+  edge-based rule can see it. The merge has to name the blocker in its **pull
+  request title** to count. A body mention is far too weak; tried against a
+  real backlog it flagged ten of the eleven held issues.
+- **no_edges** — labelled blocked with no dependency edge at all, so nothing
+  here can speak to them. Counted rather than listed.
+
+Nothing is released without at least one edge, and that rule is doing real
+work rather than being cautious. Two thirds of one real backlog's blocked
+issues have no edge, and they are waiting on a bank account, a device pass, a
+store upload. Reading "no open blockers" as "release" would put every one of
+them in front of an agent that cannot do any of them.
+
+`--dry-run` reports without writing. `--issue N` limits the sweep to one issue.
+
+**`wf post-merge` runs the sweep** and returns it as `unblocked`, whether or
+not it settled anything. `--no-unblock` opts out. `wf pick` runs it too when it
+finds nothing to pick — that hook already existed as `auto_ready_scan`, and it
+had never once worked: it read the body prose rather than the edges, and it
+swapped the blocked label for a `status-ready` label that projects on a `none`
+ready gate do not have, so its single `gh issue edit` failed and nothing
+changed. It now calls the same sweep as everything else.
+
+**A new lane for work no code agent can do.** Browser-agent and human-required
+issues used to be parked under `status-blocked`, which was the only label that
+kept them out of the pool. That was a hazard rather than a convention: the
+sweep above releases anything whose edges have all closed, and both issues its
+first real run would have released were `[Manual]` device passes whose blockers
+happened to close. They would have gone straight into the code agent's pool.
+
+- New lifecycle label **`status-non-code`** and new board column **`Non-code`**
+  (`col-non-code`). Setup creates both; the column is never required, and on a
+  board that lacks it the failed move is reported while the label still keeps
+  the issue out of the pool.
+- New scope label purpose keys `scope-browser` (`browser-agent`) and
+  `scope-human` (`human-required`), so the ownership rule is now mechanical
+  rather than a sentence in a skill document.
+- `status-blocked` goes back to meaning one thing: an open dependency edge.
+- `wf issue-audit` reports scope drift — both scope labels on one issue, a
+  title prefix that disagrees with the label, scoped work with no
+  `status-non-code`, or that label on an issue nothing scopes.
+- Scope wins over a dependency. An issue that is both ends up in the lane no
+  sweep will release it from, because the scope is a property of the work and
+  survives every blocker closing.
+
+**Every issue `wf issue-apply` writes now lands in the lane its own state
+names**, and its board card moves to match. Nothing did this in either
+direction before: a spec could write a dependency edge and leave the issue with
+no lifecycle label at all, so `pick` offered work whose dependency had not been
+built yet, and the board showed it in Backlog while GitHub showed it blocked.
+`mark_blocked` moves the card too, so an issue returned to blocked mid-run no
+longer leaves its card in In Progress.
+
+**The `## Dependencies` prose is gone, not fixed.** A dependency was written
+twice, as a native edge and as body prose, and a parser read the prose back. It
+was wrong in both directions on one real backlog: it missed a `## Blocked by`
+heading whose references sat on the next line, and it read "Nothing. This
+**was** blocked by #980" as a live dependency. The two graphs disagreed on nine
+of the fourteen issues carrying both, with the prose stale every time.
+
+A sentence is not structured data, so nothing parses one now. `wf issue-apply`
+writes the edge and only the edge, `wf pick` and `wf candidates` read the edges
+in a single query instead of one call per reference, and `wf candidates`
+reports each candidate's `dependencies`, `dependencies_open`, `blocked` and
+`scope`. **A body naming a blocker with no edge behind it is not blocked** —
+which was already true in effect, since the parser could not see it either.
+`wf issue-audit` no longer proposes an edge from prose; there is nothing to
+propose from. Where a real dependency exists only as a sentence, add the edge.
+
+## local-workflow 2.13.1
+
+Shared-skill sync only. `body-standard.md`, `story-template.md` and
+`feature-discovery` stop telling a writer that `Depends on #N` prose in an
+issue body is parsed and holds work back. It is not, in either plugin: the
+dependency is the native blocked-by edge, and `github-workflow` 8.2.0 removed
+the parser that read the prose. Nothing in this plugin's own behaviour changed.
+
 ## github-workflow 8.1.0
 
 **Every issue is now scoped to exactly one party**, and `writing-github-issues`

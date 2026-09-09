@@ -41,16 +41,16 @@ Each of these is optional. An empty or obvious one is worse than none, and none 
 | `## UI/UX` | Where it appears, the user flow, and the loading, empty, error and success states. |
 | `## Edge cases` | Scenarios whose expected behaviour is not obvious. Scenario, then expected behaviour. |
 | `## Verification` | Verification needs more than the acceptance criteria convey: a physical device, several environments, a regression check, specific commands. |
-| `## Dependencies` | Real ordering constraints only. `Depends on #N` / `Blocked by #N`, plus external dependencies. |
+| `## Dependencies` | Rarely. A dependency between two issues is a native blocked-by edge, not a sentence; use this section for the *reason*, or for a dependency on something outside GitHub. |
 | `## Out of scope` | There is a realistic risk the work expands into something that should stay separate. |
-| `## Manual step` | The story cannot be finished until a person does something no agent can do. Say exactly what, and why. A story with this section also takes the `[Manual]` title prefix and the `status-blocked` label, so it is visible in a list and never picked up by an agent that cannot finish it. Work a person must do that belongs to a *different* story goes under `## Dependencies` instead. |
+| `## Manual step` | The story cannot be finished until a person does something no agent can do. Say exactly what, and why. A story with this section also takes the `[Manual]` title prefix and the `status-non-code` label, so it is visible in a list and never picked up by an agent that cannot finish it. Work a person must do that belongs to a *different* story is that story, linked by a native blocked-by edge. |
 
 Do not reach for these out of habit, and do not add a "Definition of done" section: the acceptance criteria and the project's quality gate already cover it.
 
 ## Two conventions the workflow reads
 
 - `**Size estimate:** {size}` sits in the Summary. The `Effort` field mirrors it.
-- `## Dependencies` markers (`Depends on #N`, `Blocked by #N`, `After #N`, `Requires #N`) are parsed. Story selection skips a story whose dependency is still open, and the story workflow auto-unblocks an issue when the blocking issue closes. Keep them exact.
+- A dependency is a **native blocked-by edge**, written from a spec's `blocked_by` by `wf issue-apply`. Selection skips a story with an open edge, and `wf unblock` releases it when every edge closes. Prose is not parsed, so a `Blocked by #N` sentence with no edge behind it holds nothing back.
 
 ## What not to include
 

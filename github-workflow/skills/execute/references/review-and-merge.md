@@ -134,4 +134,6 @@ If `git status --porcelain --untracked-files=no` is not empty, run **End clean**
 
 Its step 6 runs `wf post-merge --pr {pr_number}`, which closes every issue the PR closes, clears the stale lifecycle label, and moves each one to the board's **Done** column. Report each settled issue by number and title.
 
+It then runs the unblock sweep and returns it as `unblocked`, because settling this PR's own issues is only half of a merge. Report `released` (blocked issues whose dependency edges have all closed — name each by number and title, they are back in the pool) and `partials` (still held, but a blocker just merged something, so a person must judge whether that freed them). For `no_edges` report the count only. An empty `settled` is not a finished run: a PR that closes nothing still frees work.
+
 Then run **Exit cleanup** (`references/exit-cleanup.md`) as the final step, which releases the `pr-{pr_number}` claim, and report the run in full: the story implemented, the PR merged, what the review found and what you changed in response, anything filed to the board, and the issues now closed. Keep those last two apart in the report and say why each filed item was filed — unrelated to this PR, or an open question for a person. A run that fixed its review findings here and filed nothing is the ordinary outcome, not a gap in the report.

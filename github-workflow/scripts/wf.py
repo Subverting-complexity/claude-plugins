@@ -11,9 +11,16 @@ hands back one already-claimed work item as JSON. The decision rules live in
 First cut implements the story picker:
 
     wf pick [--mode story] [--checkout]   # claim the next story, optionally branch
+    wf unblock [--dry-run]                # release what the closed edges freed
     wf config                             # emit .claude/wf-config.json from ClaudeProject.md
     wf org-capabilities [--refresh]       # resolve the org's issue types + issue fields
     wf issue-apply <spec.json>            # create/update fully classified issues
+
+Dependencies are read from GitHub's native `blockedBy` edges and written as
+the same. Prose in an issue body is never parsed: a body naming a blocker with
+no edge behind it is not blocked. The two used to be kept in step and were
+not, disagreeing on most of the issues carrying both, with the prose stale
+every time.
 
 Contract:
   - A single JSON object is written to **stdout**; all human diagnostics go to
@@ -987,29 +994,24 @@ def send_create_batch(inputs):
 
 
 def send_link_batch(ops):
-    """Apply dependency edges and body rewrites in one request.
+    """Apply every dependency edge in one request.
 
-    `ops` are (alias, kind, variables) with kind `'blocked-by'` or `'body'`.
-    Both kinds ride together because they are the same phase: the last one,
-    once every issue in the spec exists and every reference resolves.
+    `ops` are (alias, kind, variables) with kind `'blocked-by'`. This is the
+    last phase, run once every issue in the spec exists and every reference
+    resolves. It used to carry body rewrites too, for the `## Dependencies`
+    prose that mirrored these edges; the prose is gone and the edge is the
+    whole record.
     """
     decls, body, aliases = [], [], []
     variables = {}
     for alias, kind, args in ops:
         aliases.append(alias)
-        if kind == 'blocked-by':
-            decls.append('$%s_i:ID!,$%s_b:ID!' % (alias, alias))
-            body.append('%s: addBlockedBy(input:{issueId:$%s_i,blockingIssueId:$%s_b})'
-                        '{ issue { id blockedBy(first:50){ nodes { number } } } }'
-                        % (alias, alias, alias))
-            variables['%s_i' % alias] = args['issue_id']
-            variables['%s_b' % alias] = args['blocking_id']
-        else:
-            decls.append('$%s_i:ID!,$%s_t:String!' % (alias, alias))
-            body.append('%s: updateIssue(input:{id:$%s_i,body:$%s_t})'
-                        '{ issue { id body } }' % (alias, alias, alias))
-            variables['%s_i' % alias] = args['issue_id']
-            variables['%s_t' % alias] = args['body']
+        decls.append('$%s_i:ID!,$%s_b:ID!' % (alias, alias))
+        body.append('%s: addBlockedBy(input:{issueId:$%s_i,blockingIssueId:$%s_b})'
+                    '{ issue { id blockedBy(first:50){ nodes { number } } } }'
+                    % (alias, alias, alias))
+        variables['%s_i' % alias] = args['issue_id']
+        variables['%s_b' % alias] = args['blocking_id']
     code, out, err = _graphql_json('mutation(%s){ %s }' % (','.join(decls),
                                                            ' '.join(body)),
                                    variables)
@@ -1100,32 +1102,6 @@ def verify_issue(cfg, number, plan, expect_type=None, expect_parent=None,
     mismatches = issue_mismatches(number, issue, plan, expect_type,
                                   expect_parent, expect_blocked_by)
     return not mismatches, mismatches
-
-
-DEPENDENCY_HEADING = '## Dependencies'
-
-
-def ensure_dependency_section(body, blocked_by):
-    """Keep the body `## Dependencies` markers in step with the native edges.
-
-    Both are written, deliberately. The native edge is what the portal and the
-    audit read; the body prose is what `wf_core.parse_dependencies()` reads to
-    decide when an issue unblocks. Dropping the prose would silently break
-    auto-unblocking, so this is duplication with a reason.
-    """
-    if not blocked_by:
-        return body or ''
-    lines = ['Blocked by #%s' % n for n in blocked_by]
-    section = '%s\n\n%s\n' % (DEPENDENCY_HEADING, '\n'.join(lines))
-    body = body or ''
-    if DEPENDENCY_HEADING not in body:
-        return (body.rstrip() + '\n\n' + section) if body.strip() else section
-    head, _, rest = body.partition(DEPENDENCY_HEADING)
-    tail = ''
-    nxt = re.search(r'^##\s', rest, re.MULTILINE)
-    if nxt:
-        tail = rest[nxt.start():]
-    return head.rstrip() + '\n\n' + section + ('\n' + tail if tail else '')
 
 
 def load_spec(path):
@@ -1290,11 +1266,7 @@ def create_level(cfg, ctx, caps, plans, resolved, node_ids):
             continue
         result['parent_number'] = parent_number
 
-        numbers, _unresolved = _blockers(entry, resolved)
-        # Only the blockers that already have numbers can go in the body now.
-        # The rest are patched in the link phase, once every issue exists.
-        raw_body, _ = entry_body(entry)
-        body = ensure_dependency_section(raw_body, numbers)
+        body, _ = entry_body(entry)
         result['sent_body'] = body
         dropped = []
         ready.append(_create_input(cfg, ctx, caps, entry, plan, parent_id, body,
@@ -1416,10 +1388,10 @@ def link_phase(cfg, plans, results, resolved, node_ids):
     alias's output. Waiting until everything exists is what makes a reference
     to any level legal.
 
-    Edges are written twice on purpose — a native `addBlockedBy`, which is what
-    GitHub's UI and the audit read, and a `## Dependencies` body section, which
-    is what `wf_core.parse_dependencies()` reads to decide when an issue
-    unblocks. Dropping the prose would silently break auto-unblocking.
+    The edge is the whole record. A dependency used to be written twice, once
+    as the edge and once as `## Dependencies` prose in the body, and the two
+    drifted apart on most of the issues carrying both. Only the edge is written
+    now, and only the edge is read.
     """
     ops, owners = [], []
     for plan, result in zip(plans, results):
@@ -1449,32 +1421,21 @@ def link_phase(cfg, plans, results, resolved, node_ids):
             ops.append(('blocked-by', {'issue_id': result['issue_id'],
                                        'blocking_id': blocking_id}))
 
-        raw_body, _ = entry_body(entry)
-        wanted_body = ensure_dependency_section(raw_body, numbers)
-        current_body = result.get('sent_body', issue.get('body'))
-        if wanted_body != current_body:
-            owners.append((result, 'body', None))
-            ops.append(('body', {'issue_id': result['issue_id'],
-                                 'body': wanted_body}))
 
     for chunk_start in range(0, len(ops), wf_core.BATCH_MAX_NODES):
         window = slice(chunk_start, chunk_start + wf_core.BATCH_MAX_NODES)
         batch = [('b%d' % n, kind, args)
                  for n, (kind, args) in enumerate(ops[window])]
         outcomes = send_link_batch(batch)
-        for offset, (result, kind, blocker) in enumerate(owners[window]):
+        for offset, (result, _kind, blocker) in enumerate(owners[window]):
             ok, node, err = outcomes['b%d' % offset]
             if not ok:
-                result['errors'].append(
-                    '%s failed: %s' % ('blocked-by #%s' % blocker
-                                       if kind == 'blocked-by' else 'body update',
-                                       err))
+                result['errors'].append('blocked-by #%s failed: %s'
+                                        % (blocker, err))
                 continue
-            result['changed'].append('blocked-by #%s' % blocker
-                                     if kind == 'blocked-by' else 'body')
-            if kind == 'blocked-by':
-                result['issue'] = dict(result.get('issue') or {},
-                                       blockedBy=node.get('blockedBy') or {})
+            result['changed'].append('blocked-by #%s' % blocker)
+            result['issue'] = dict(result.get('issue') or {},
+                                   blockedBy=node.get('blockedBy') or {})
 
     # The edge mutations returned the issue's blockers, so the check is free.
     for result in results:
@@ -1485,6 +1446,68 @@ def link_phase(cfg, plans, results, resolved, node_ids):
             if want not in have:
                 result['mismatches'].append('#%s: missing blocked-by edge to #%s'
                                             % (result['number'], want))
+    return results
+
+
+def lifecycle_phase(cfg, plans, results):
+    """Put every issue the spec touched in the lane its own state names.
+
+    Three states and one rule each, applied after the edges exist because two
+    of the three depend on them:
+
+      non-code   the issue is labelled browser or human work, so it carries
+                 `status-non-code` and sits in the Non-code column. This wins
+                 over blocked: the scope is a property of the work and no
+                 dependency closing will change it.
+      blocked    at least one native edge points at an open issue, so it
+                 carries `status-blocked` and sits in Blocked.
+      pickable   neither, so nothing is applied. Under a `none` ready gate an
+                 issue with no lifecycle label is exactly what "ready" means.
+
+    Nothing did this before, in either direction. A spec could write a
+    dependency edge and leave the issue with no lifecycle label at all, which
+    meant `pick` offered work whose dependency had not been built yet, and the
+    board showed it in Backlog while GitHub showed it blocked.
+    """
+    project_map = cfg.get('labels') or {}
+    numbers = [r['number'] for r in results
+               if r.get('number') and not r.get('errors')]
+    edge_map = issue_edges_map(cfg, [r['number'] for r in results
+                                     if r.get('number') and r.get('blocked_by')])
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    for plan, result in zip(plans, results):
+        number = result.get('number')
+        if number not in numbers:
+            continue
+        entry = plan['entry']
+        names = [label(cfg, l) for l in (entry.get('labels') or [])]
+        scope = wf_core.issue_scope(entry.get('title') or '', names, project_map)
+        open_blockers, _closed = wf_core.edge_states(edge_map.get(number) or [])
+        wanted_key = wf_core.lifecycle_for(scope, open_blockers)
+        if not wanted_key:
+            continue
+        wanted = label(cfg, wanted_key)
+        stale = wf_core.current_lifecycle_label(names, project_map)
+        if stale == wanted:
+            continue
+        args = ['gh', 'issue', 'edit', str(number), '--repo', repo,
+                '--add-label', wanted]
+        if stale:
+            args.extend(['--remove-label', stale])
+        code, _, err = run(args)
+        if code != 0:
+            result['errors'].append('lifecycle label %s failed: %s'
+                                    % (wanted, err.strip()))
+            continue
+        result['changed'].append('label %s' % wanted)
+        result['lifecycle'] = wanted
+        column = wf_core.board_column_for(scope, open_blockers)
+        moved, message = board_move(cfg, number,
+                                    wf_core.BOARD_COLUMN_NAMES[column])
+        result['board_column'] = wf_core.BOARD_COLUMN_NAMES[column]
+        result['board_moved'] = moved
+        if not moved:
+            result['board_message'] = message
     return results
 
 
@@ -1611,6 +1634,7 @@ def cmd_issue_apply(args):
             results.append(update_entry(cfg, ctx, caps, plan, resolved, node_ids))
 
     link_phase(cfg, ordered_plans, results, resolved, node_ids)
+    lifecycle_phase(cfg, ordered_plans, results)
 
     wrote_back, wb_err = write_back_numbers(args.spec, raw, entries)
 
@@ -1734,9 +1758,6 @@ def cmd_issue_audit(args):
                                    type_map=caps.get('type_map') or {},
                                    parents=args.parents)
                for issue in issues]
-    # `Blocks #N` names an edge on the *other* issue, so it can only be placed
-    # once every issue has been audited.
-    audited = wf_core.fold_reverse_edges(audited, issues, open_numbers)
     with_gaps = [a for a in audited if a['gaps']]
     summary = wf_core.audit_summary(audited)
 
@@ -2327,6 +2348,57 @@ def apply_in_progress(cfg, issue):
 
 # ── dependency validation ────────────────────────────────────────────────────
 
+def issue_edges(cfg, number):
+    """The issue's native blocked-by edges, with each blocker's state.
+
+    One query, and it answers the whole question: which issues this one waits
+    on, and which of those are still open. The old shape read the body prose
+    and then spent a call per reference to look each one up.
+    """
+    ok, data, _ = gh_graphql(
+        'query($o:String!,$r:String!,$n:Int!){ repository(owner:$o,name:$r){'
+        ' issue(number:$n){ blockedBy(first:50){ nodes { number state } } } } }',
+        o=cfg['org'], r=cfg['repo'], n=int(number))
+    if not ok or not data:
+        return None
+    try:
+        return data['repository']['issue']['blockedBy']['nodes'] or []
+    except (KeyError, TypeError):
+        return None
+
+
+EDGE_BATCH = 20
+
+
+def issue_edges_map(cfg, numbers):
+    """The native blocked-by edges of many issues at once. {number: [edge]}.
+
+    One aliased query per twenty issues rather than one query per issue. A
+    number absent from the result is a lookup that failed, which reads the same
+    as "no edges" at every call site here — deliberately, because a listing
+    that loses its dependency column is better than a listing that refuses to
+    print.
+    """
+    found = {}
+    ordered = sorted({int(n) for n in (numbers or ())})
+    for start in range(0, len(ordered), EDGE_BATCH):
+        batch = ordered[start:start + EDGE_BATCH]
+        parts = ['e%d: issue(number:%d){ blockedBy(first:50){'
+                 ' nodes { number state title } } }' % (n, n) for n in batch]
+        ok, data, _ = gh_graphql(
+            'query($o:String!,$r:String!){ repository(owner:$o,name:$r){ %s } }'
+            % ' '.join(parts), o=cfg['org'], r=cfg['repo'])
+        if not ok or not data:
+            continue
+        repo = data.get('repository') or {}
+        for number in batch:
+            node = repo.get('e%d' % number)
+            if node is None:
+                continue
+            found[number] = (node.get('blockedBy') or {}).get('nodes') or []
+    return found
+
+
 def validate_issue(cfg, issue, siblings=()):
     """Validate a claimed issue. Returns (verdict, detail).
 
@@ -2335,23 +2407,25 @@ def validate_issue(cfg, issue, siblings=()):
       resolved → already closed by a merged PR (detail = pr number)
       valid    → ready to work
 
+    The dependencies come from the native `blockedBy` edges, not from the body
+    prose. The prose is still parsed, but only to notice when it names a
+    blocker no edge records: that is a data gap rather than a block, and it is
+    exactly how an issue ends up sitting blocked with nothing able to see it
+    has been freed. It is warned about and does not hold the pick.
+
     `siblings` are the other issues in a bulk set — stories being built in the
     same commit series on the same branch. A dependency on one of those does
     not block, because it is not unmerged work you cannot see; it is work this
     same run is about to write. Everything else is unchanged, so a single-story
     pick (no siblings) behaves exactly as before.
     """
-    repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    deps, overflow = wf_core.parse_dependencies(issue['body'])
-    if overflow:
+    edges = issue_edges(cfg, issue['number'])
+    if edges is None:
+        return 'blocked', 'could not read the blocked-by edges'
+    open_numbers, closed_numbers = wf_core.edge_states(edges)
+    deps = open_numbers + closed_numbers
+    if len(deps) > wf_core.DEP_LIMIT:
         return 'blocked', 'meta-issue (> %d dependencies)' % wf_core.DEP_LIMIT
-    open_numbers = []
-    for dep in deps:
-        if int(dep) in {int(s) for s in (siblings or ())}:
-            continue  # built alongside — no need to spend a call on its state
-        ok, data, _ = gh_json(['issue', 'view', str(dep), '--repo', repo, '--json', 'state'])
-        if ok and data and data.get('state', '').upper() == 'OPEN':
-            open_numbers.append(dep)
     open_deps = wf_core.blocking_dependencies(deps, open_numbers, siblings)
     if open_deps:
         return 'blocked', ', '.join('#%d' % d for d in open_deps)
@@ -2395,6 +2469,13 @@ def merged_pr_closing(cfg, number):
 
 
 def mark_blocked(cfg, issue, detail):
+    """Return an issue to blocked: label, comment, and the board column.
+
+    The board move is not decoration. The board is how a person sees the state
+    of the work, and an issue whose label says blocked while its card sits in
+    In Progress is worse than either on its own — it is two answers, and the
+    one a human reads is the wrong one.
+    """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     run(['gh', 'issue', 'edit', str(issue['number']), '--repo', repo,
          '--remove-assignee', '@me',
@@ -2402,6 +2483,7 @@ def mark_blocked(cfg, issue, detail):
          '--add-label', label(cfg, 'status-blocked')])
     run(['gh', 'issue', 'comment', str(issue['number']), '--repo', repo,
          '--body', 'Blocked — open dependency(ies): %s. Returned to blocked until they close.' % detail])
+    board_move(cfg, issue['number'], wf_core.BOARD_COLUMN_NAMES['col-blocked'])
 
 
 def clear_lifecycle_label(cfg, number, labels):
@@ -2692,45 +2774,261 @@ def prepare_cfg():
     return cfg
 
 
-def auto_ready_scan(cfg):
-    """Scan blocked issues and restore any whose dependencies are all closed.
+# ── the unblock sweep ────────────────────────────────────────────────────────
+# Nothing here used to release an issue when the thing it waited on landed.
+# `post-merge` settles only the issues a pull request *closes*, so a story that
+# merges and stays open reports nothing, and the work it freed sits there
+# labelled blocked and invisible to the picker until somebody notices by hand.
+# On this project somebody had to ask. This is the part that notices.
+#
+# It reads the native `blockedBy` edges and nothing else, and it checks scope
+# before it checks edges: browser and human work is moved into the non-code
+# lane rather than released, because no edge closing will ever make a code
+# agent able to do it.
 
-    The auto-ready sweep: fetch issues with the
-    status-blocked label, parse their dependency markers, check whether all
-    referenced issues are now closed, and if so swap their label to
-    status-ready so the next selection round can pick them.
+UNBLOCK_PAGE = 50
+UNBLOCK_BLOCKER_BATCH = 20
 
-    Returns the count of issues restored (0 means nothing was unblocked).
+_UNBLOCK_SEARCH = (
+    'query($q:String!,$c:String){'
+    ' search(query:$q, type:ISSUE, first:%d, after:$c){'
+    '  pageInfo { hasNextPage endCursor }'
+    '  nodes { ... on Issue { id number title body'
+    '   labels(first:30){ nodes { name } }'
+    '   blockedBy(first:20){ nodes { number state title } } } } } }' % UNBLOCK_PAGE
+)
+
+
+def blocked_issues(cfg, blocked_label):
+    """Every open issue carrying the blocked label, with its native edges.
+
+    Returns (issues, error). A partial page plus an error is returned rather
+    than discarded: a sweep that read thirty issues and then lost the
+    connection has still learnt something about those thirty.
+    """
+    query = 'repo:%s/%s is:issue is:open label:"%s"' % (
+        cfg['org'], cfg['repo'], blocked_label)
+    issues, cursor = [], None
+    while True:
+        fields = {'q': query}
+        if cursor:
+            fields['c'] = cursor
+        ok, data, err = gh_graphql(_UNBLOCK_SEARCH, **fields)
+        if not ok or not data:
+            return issues, err or 'issue search failed'
+        search = data.get('search') or {}
+        issues.extend(node for node in (search.get('nodes') or []) if node)
+        page = search.get('pageInfo') or {}
+        if not page.get('hasNextPage') or not page.get('endCursor'):
+            return issues, None
+        cursor = page['endCursor']
+
+
+def blocker_deliveries(cfg, numbers, now=None):
+    """The newest pull request that merged mentioning each open blocker.
+
+    Keyed by issue number, and absent for a blocker nothing has merged against
+    recently. Cross-references rather than closing references, because the case
+    this exists to catch is precisely the pull request that deliberately closed
+    nothing: it delivered one half of a story and left the issue open for the
+    other half, so GitHub records no closing reference to read. Which reference
+    counts is `wf_core.recent_delivery`'s decision, and it is a strict one.
+    """
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    found = {}
+    ordered = sorted({int(n) for n in (numbers or ())})
+    for start in range(0, len(ordered), UNBLOCK_BLOCKER_BATCH):
+        batch = ordered[start:start + UNBLOCK_BLOCKER_BATCH]
+        parts = [
+            'b%d: issue(number:%d){ timelineItems(last:30,'
+            ' itemTypes:[CROSS_REFERENCED_EVENT]){ nodes {'
+            ' ... on CrossReferencedEvent { source {'
+            ' ... on PullRequest { number title state mergedAt } } } } } }'
+            % (number, number) for number in batch]
+        ok, data, _ = gh_graphql(
+            'query($o:String!,$r:String!){ repository(owner:$o,name:$r){ %s } }'
+            % ' '.join(parts), o=cfg['org'], r=cfg['repo'])
+        if not ok or not data:
+            continue
+        repo = data.get('repository') or {}
+        for number in batch:
+            node = repo.get('b%d' % number) or {}
+            sources = [(item or {}).get('source') or {}
+                       for item in ((node.get('timelineItems') or {}).get('nodes') or [])]
+            delivery = wf_core.recent_delivery(sources, number, now)
+            if delivery:
+                found[number] = delivery
+    return found
+
+
+UNBLOCK_COMMENT = (
+    'Unblocked by `wf unblock`. Every issue this waited on is now closed: %s.\n\n'
+    'The `status-blocked` label was removed on purpose, and the card has moved '
+    'to Backlog. The native blocked-by edges are what decide this, so if '
+    'something still blocks this issue, add the edge for it rather than putting '
+    'the label back on its own: a label with no edge behind it is invisible to '
+    'the sweep, and the issue will be released again on the next run.'
+)
+
+RESCOPE_COMMENT = (
+    'Moved to `%s` by `wf unblock`. This is %s work, which no code agent can '
+    'pick up, so it belongs in the non-code lane rather than in the blocked '
+    'one. `status-blocked` means a dependency is open and a sweep will release '
+    'it when that dependency closes; this issue would have been released into '
+    'a pool that cannot do it. Nothing about the work has changed.'
+)
+
+
+def release_issue(cfg, issue, closed_numbers, blocked_label):
+    """Release one issue: label, comment, board column. Returns a result dict.
+
+    The comment is not decoration. A bare label removal reads to the next agent
+    like damage to be repaired, and on this project one promptly repaired it:
+    three issues were released by hand and re-blocked two minutes later by a
+    concurrent session that took the removal for automation stripping labels.
+    Saying who removed it and why is what stops that.
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    number = issue['number']
+    result = {'issue': number, 'title': issue.get('title'),
+              'closed_blockers': closed_numbers}
+    code, _, err = run(['gh', 'issue', 'edit', str(number), '--repo', repo,
+                        '--remove-label', blocked_label])
+    result['label_removed'] = code == 0
+    if code != 0:
+        result['label_error'] = err.strip()
+        return result
+
+    named = ', '.join('#%d' % n for n in closed_numbers)
+    run(['gh', 'issue', 'comment', str(number), '--repo', repo,
+         '--body', UNBLOCK_COMMENT % named])
+    moved, message = board_move(
+        cfg, number, wf_core.BOARD_COLUMN_NAMES['col-backlog'])
+    result['board_moved'] = moved
+    result['board_message'] = message
+    return result
+
+
+def rescope_issue(cfg, issue, scope, blocked_label, dry_run=False):
+    """Move one scoped issue out of the blocked lane into the non-code lane.
+
+    A swap rather than a release, and the distinction is the point: browser and
+    human work is never pickable by a code agent, so it must leave
+    `status-blocked` without ever passing through the pool. The card moves with
+    the label, because a board that still shows it under Blocked is telling a
+    person the wrong thing about why it is not moving.
+    """
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    number = issue['number']
+    non_code = label(cfg, 'status-non-code')
+    result = {'issue': number, 'title': issue.get('title'), 'scope': scope,
+              'label': non_code}
+    if dry_run:
+        result['dry_run'] = True
+        return result
+    code, _, err = run(['gh', 'issue', 'edit', str(number), '--repo', repo,
+                        '--remove-label', blocked_label,
+                        '--add-label', non_code])
+    result['label_applied'] = code == 0
+    if code != 0:
+        result['label_error'] = err.strip()
+        return result
+    run(['gh', 'issue', 'comment', str(number), '--repo', repo,
+         '--body', RESCOPE_COMMENT % (non_code, scope)])
+    moved, message = board_move(
+        cfg, number, wf_core.BOARD_COLUMN_NAMES['col-non-code'])
+    result['board_moved'] = moved
+    result['board_message'] = message
+    return result
+
+
+def unblock_scan(cfg, dry_run=False, only=None, now=None):
+    """Release every blocked issue whose native dependencies have all closed.
+
+    Returns a report with five parts, and only the first two write anything:
+
+      released  every edge points at a closed issue, so the label is gone
+      rescoped  browser or human work that was sitting in the blocked lane,
+                moved to the non-code lane instead. Never released: no edge
+                closing will ever make a code agent able to do it.
+      held      at least one blocker is still open, so it stays
+      partials  held, but a blocker has just merged something. This is the case
+                no edge can describe, reported rather than acted on.
+      no_edges  labelled blocked with no edge at all, so this cannot speak to
+                it either way. Most of those are waiting on the world rather
+                than on an issue, which is exactly why the rule needs an edge
+                before it will release anything.
+
+    The scope check comes before the edge check and that order is the whole
+    safety property. Both issues this sweep would have released on its first
+    real backlog were `[Manual]` device-pass work whose blockers happened to
+    close: releasing them would have put a job needing a phone in someone's
+    hand into the code agent's pool.
+    """
     blocked_label = label(cfg, 'status-blocked')
-    ready_label = label(cfg, 'status-ready')
-    ok, data, _ = gh_json(['issue', 'list', '--repo', repo, '--state', 'open',
-                            '--label', blocked_label,
-                            '--json', 'number,body', '--limit', '100'])
-    if not ok or not data:
-        return 0
-    restored = 0
-    for raw in data:
-        deps, overflow = wf_core.parse_dependencies(raw.get('body', ''))
-        if overflow or not deps:
+    project_map = cfg.get('labels') or {}
+    issues, error = blocked_issues(cfg, blocked_label)
+    wanted = {int(n) for n in (only or ())} or None
+
+    released, rescoped, held, no_edges = [], [], [], []
+    for issue in issues:
+        if wanted is not None and issue['number'] not in wanted:
             continue
-        all_closed = True
-        for dep in deps:
-            dep_ok, dep_data, _ = gh_json(
-                ['issue', 'view', str(dep), '--repo', repo, '--json', 'state'])
-            if not dep_ok or not dep_data or dep_data.get('state', '').upper() != 'CLOSED':
-                all_closed = False
-                break
-        if all_closed:
-            code, _, _ = run(['gh', 'issue', 'edit', str(raw['number']), '--repo', repo,
-                              '--remove-label', blocked_label,
-                              '--add-label', ready_label])
-            if code == 0:
-                run(['gh', 'issue', 'comment', str(raw['number']), '--repo', repo,
-                     '--body', 'Dependencies resolved — restored to ready.'])
-                restored += 1
-    return restored
+        names = [n['name'] for n in (issue.get('labels') or {}).get('nodes') or []]
+        scopes = wf_core.scopes_from_labels(names, project_map)
+        if scopes:
+            rescoped.append(rescope_issue(cfg, issue, scopes[0], blocked_label,
+                                          dry_run=dry_run))
+            continue
+        edges = (issue.get('blockedBy') or {}).get('nodes') or []
+        verdict, open_numbers, closed_numbers = wf_core.unblock_verdict(edges)
+        if verdict == wf_core.UNBLOCK_NO_EDGES:
+            no_edges.append(issue['number'])
+        elif verdict == wf_core.UNBLOCK_HOLD:
+            held.append({'issue': issue['number'], 'title': issue.get('title'),
+                         'open_blockers': open_numbers,
+                         'closed_blockers': closed_numbers})
+        elif dry_run:
+            released.append({'issue': issue['number'], 'title': issue.get('title'),
+                             'closed_blockers': closed_numbers, 'dry_run': True})
+        else:
+            released.append(release_issue(cfg, issue, closed_numbers, blocked_label))
+
+    deliveries = blocker_deliveries(
+        cfg, {n for entry in held for n in entry['open_blockers']}, now)
+    partials = []
+    for entry in held:
+        recent = [{'blocker': n, 'merged_pr': deliveries[n]['number'],
+                   'merged_at': deliveries[n]['merged_at']}
+                  for n in entry['open_blockers'] if n in deliveries]
+        if recent:
+            partials.append({'issue': entry['issue'], 'title': entry['title'],
+                             'deliveries': recent})
+
+    report = {'scanned': len(issues), 'released': released,
+              'rescoped': rescoped, 'held': held, 'partials': partials,
+              'no_edges': {'count': len(no_edges), 'issues': no_edges}}
+    if error:
+        report['error'] = error
+    return report
+
+
+def cmd_unblock(args):
+    """Release every blocked issue whose native dependencies have all closed."""
+    cfg = prepare_cfg()
+    report = unblock_scan(cfg, dry_run=args.dry_run, only=args.issue)
+    emit('ok', EXIT_OK, dry_run=bool(args.dry_run), **report)
+
+
+def auto_ready_scan(cfg):
+    """Release any blocked issue whose dependencies have all closed.
+
+    The last-resort sweep: `pick` calls this when it found nothing to pick, on
+    the theory that the pool may only look empty. It is the same sweep
+    `wf unblock` and `post-merge` run, so all three agree on what "released"
+    means. Returns the number of issues released.
+    """
+    return len(unblock_scan(cfg).get('released') or [])
 
 
 def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
@@ -2879,7 +3177,7 @@ def cmd_pick(args):
     if not selected:
         restored = auto_ready_scan(cfg)
         if restored:
-            eprint('wf: auto-ready scan restored %d issue(s) — retrying' % restored)
+            eprint('wf: unblock sweep released %d issue(s) — retrying' % restored)
             ok, issues, err = assemble_candidates(cfg)
             if ok and issues:
                 backlog_mode, issues = narrow_to_sprint(cfg, issues)
@@ -3021,13 +3319,15 @@ def cmd_candidates(args):
     if args.limit and args.limit > 0:
         pool = pool[:args.limit]
 
+    edge_map = issue_edges_map(cfg, [c['number'] for c in pool])
     listed = []
     for cand in pool:
         body = cand.get('body') or ''
         truncated = False
         if args.body_chars and args.body_chars > 0 and len(body) > args.body_chars:
             body, truncated = body[:args.body_chars], True
-        deps, dep_overflow = wf_core.parse_dependencies(cand.get('body'))
+        open_deps, closed_deps = wf_core.edge_states(
+            edge_map.get(cand['number']) or [])
         entry = {
             'number': cand['number'],
             'title': cand['title'],
@@ -3036,8 +3336,18 @@ def cmd_candidates(args):
             'milestone': cand.get('milestone'),
             'body': body,
             'body_truncated': truncated,
-            'dependencies': deps,
-            'dependency_overflow': dep_overflow,
+            # Straight from the native blocked-by edges: every issue this one
+            # waits on, and which of them are still open. A candidate with an
+            # open dependency is listed and marked rather than hidden, because
+            # this command answers "what is there" and `pick` answers "what can
+            # I start".
+            'dependencies': sorted(open_deps + closed_deps),
+            'dependencies_open': sorted(open_deps),
+            'blocked': bool(open_deps),
+            'scope': wf_core.issue_scope(cand['title'], cand.get('labels'),
+                                         cfg.get('labels') or {}),
+            'dependency_overflow':
+                len(open_deps) + len(closed_deps) > wf_core.DEP_LIMIT,
             # The org's own Priority, which is what this listing is ordered by.
             # None means the issue has none and its label ordered it instead.
             'priority': priority_map.get(cand['number']),
@@ -3243,7 +3553,15 @@ def cmd_post_merge(args):
                         'lifecycle_label_cleared': cleared,
                         'board_moved_done': board_moved, 'board_message': board_msg})
 
-    emit('ok', EXIT_OK, pr=args.pr, base=data.get('baseRefName'), settled=settled)
+    # Settling the issues the PR closed is only half of a merge. The other half
+    # is releasing whatever was waiting on them, and nothing used to do it: a
+    # PR that closes nothing reports `settled: []`, which reads as "finished"
+    # and is not. The sweep runs whether or not anything settled, because the
+    # merge may have closed a blocker through a reference this never saw.
+    unblocked = unblock_scan(cfg) if not args.no_unblock else None
+
+    emit('ok', EXIT_OK, pr=args.pr, base=data.get('baseRefName'), settled=settled,
+         unblocked=unblocked)
 
 
 # ── board-move and claim-release ─────────────────────────────────────────────
@@ -3601,7 +3919,21 @@ def build_parser():
     pm.add_argument('--issue', type=int, action='append', default=None,
                     help='also settle this issue (repeatable) — for a reference GitHub did '
                          'not parse into closingIssuesReferences')
+    pm.add_argument('--no-unblock', action='store_true',
+                    help='settle the linked issues without running the unblock sweep '
+                         'afterwards (the sweep is the half that releases whatever was '
+                         'waiting on them, so skip it only when running it separately)')
     pm.set_defaults(func=cmd_post_merge)
+
+    ub = sub.add_parser('unblock',
+                        help='release every blocked issue whose native blocked-by '
+                             'edges have all closed, and report the rest')
+    ub.add_argument('--issue', type=int, action='append', default=None,
+                    help='consider only this issue (repeatable); the default is every '
+                         'open issue carrying the blocked label')
+    ub.add_argument('--dry-run', action='store_true',
+                    help='report what would be released without writing anything')
+    ub.set_defaults(func=cmd_unblock)
 
     upd = sub.add_parser('update-next',
                          help='claim the next PR of mine that needs review feedback addressed')

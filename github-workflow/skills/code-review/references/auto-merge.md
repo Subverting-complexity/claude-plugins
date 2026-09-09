@@ -253,6 +253,8 @@ When all conditions hold, drive the PR to a merged state. Conflicts and red CI a
 
    It reads the PR's own `closingIssuesReferences`, force-closes any of those issues still open, and moves every one of them to the **Done** board column (best-effort — a no-op when no board is configured). Report each entry in the returned `settled` array (`closed_now`, `board_moved_done`). If the PR body used a closing keyword GitHub did not parse, pass the issue explicitly: `... post-merge --pr <number> --issue <N>`.
 
+   It then runs the **unblock sweep** and returns it as `unblocked`, because closing this PR's own issues is only half of a merge. Report all three of its parts: `released` (blocked issues whose native blocked-by edges have all closed — name each by number and title, they are back in the pool), `partials` (still held, but a blocker just merged something, so a person has to judge whether that freed them), and the `no_edges` count (labelled blocked with no dependency edge, so the sweep cannot speak to them either way — the number only, never the list). A `settled` array that came back empty does **not** mean there was nothing to do: a PR that deliberately closes nothing can still release work, and the sweep is what finds it. Use `--no-unblock` only when running `wf unblock` separately.
+
    **Fallback** when `wf` cannot run (Python missing, or it returns `error`): read the linked issues yourself and settle them by hand —
    ```bash
    gh pr view <number> --repo <org>/<repo> --json closingIssuesReferences \

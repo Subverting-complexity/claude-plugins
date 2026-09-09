@@ -10,6 +10,7 @@ Covers the three pure-logic areas described in the workflow templates:
 No GitHub API calls, no file I/O.  Feed fixture data in, assert outputs.
 Reference: github-workflow/templates/default-labels.md
 """
+import datetime
 import os
 import sys
 import unittest
@@ -37,7 +38,6 @@ from wf_core import (  # noqa: E402
     filter_by_native_type,
     get_sprint_candidates,
     is_maintenance_classification,
-    parse_dependencies,
     plan_bulk_order,
     reconcile_review_labels,
     resolve_label,
@@ -381,104 +381,6 @@ class TestSelectPool(unittest.TestCase):
         self.assertEqual(select_pool([]), [])
 
 
-class TestDependencyParsing(unittest.TestCase):
-    """Fixed dependency markers.
-
-    Every "prose is not a dependency" case below is a real body from a
-    70-issue backlog that the previous bare-`#N` sweep read as an edge.
-    """
-
-    def test_extracts_each_marker_form(self):
-        body = ("Depends on #1. Blocked by #2. Blocked on #3. Requires #4. "
-                "Depends upon #5.")
-        deps, overflow = parse_dependencies(body)
-        self.assertEqual(deps, [1, 2, 3, 4, 5])
-        self.assertFalse(overflow)
-
-    def test_is_case_insensitive(self):
-        deps, _ = parse_dependencies("DEPENDS ON #7 and Requires #8")
-        self.assertEqual(deps, [7, 8])
-
-    def test_a_marker_takes_the_whole_reference_run(self):
-        """`and #N` used to be dropped silently, halving real edges."""
-        deps, _ = parse_dependencies("Depends on #977 and #1032.")
-        self.assertEqual(deps, [977, 1032])
-        deps, _ = parse_dependencies("Blocked by #981, #991, #979 and #980.")
-        self.assertEqual(deps, [979, 980, 981, 991])
-        deps, _ = parse_dependencies("Blocked by **#1003** and **#1004**.")
-        self.assertEqual(deps, [1003, 1004])
-
-    def test_after_counts_only_as_a_list_item_under_dependencies(self):
-        body = "## Dependencies\n\n- After #1126\n"
-        self.assertEqual(parse_dependencies(body)[0], [1126])
-
-    def test_after_in_narrative_is_not_a_dependency(self):
-        """An `after` in a sentence is a note that they already landed."""
-        body = "## Dependencies\n\nThe scope narrowed after #431 and #682 merged.\n"
-        self.assertEqual(parse_dependencies(body)[0], [])
-        self.assertEqual(parse_dependencies("Easier after #1204.")[0], [])
-
-    def test_bare_refs_under_dependencies_are_not_dependencies(self):
-        """The heading is not a marker. Bodies put all of this under it."""
-        for line in (
-            "Changes the scope of #982, #1000, #1030 and #1097.",
-            "None of the epic's manual tasks - #1002, #1003 or #1004 - block it.",
-            "Supersedes #981.",
-            "Splits #1032.",
-        ):
-            body = "## Dependencies\n\n%s\n" % line
-            self.assertEqual(parse_dependencies(body)[0], [], line)
-
-    def test_a_reference_before_the_marker_owns_the_clause(self):
-        """An epic's status list describes its children, not itself."""
-        body = "- Sign in with Apple, verified on the backend (#979) - *blocked on #1032*"
-        self.assertEqual(parse_dependencies(body)[0], [])
-
-    def test_a_negated_marker_is_not_a_dependency(self):
-        self.assertEqual(parse_dependencies("No longer blocked on #1004.")[0], [])
-        self.assertEqual(parse_dependencies("This is not blocked by #863.")[0], [])
-
-    def test_a_denial_next_to_a_bare_reference(self):
-        body = "Depends on nothing. #863 does not have to land first."
-        self.assertEqual(parse_dependencies(body)[0], [])
-
-    def test_bare_hash_outside_section_is_ignored(self):
-        deps, _ = parse_dependencies("Fixes the thing in #50 area generally")
-        self.assertEqual(deps, [])
-
-    def test_dedupes_and_sorts(self):
-        deps, _ = parse_dependencies("Depends on #5. Blocked by #5. Requires #2.")
-        self.assertEqual(deps, [2, 5])
-
-    def test_overflow_flag_set_above_limit(self):
-        body = " ".join("Depends on #%d." % n for n in range(1, 8))
-        deps, overflow = parse_dependencies(body)
-        self.assertTrue(overflow)
-        self.assertGreater(len(deps), 5)
-
-    def test_empty_or_none_body(self):
-        self.assertEqual(parse_dependencies('')[0], [])
-        self.assertEqual(parse_dependencies(None)[0], [])
-
-
-class TestBlocksParsing(unittest.TestCase):
-    """`Blocks #N` - the marker that names an edge on the *other* issue."""
-
-    def test_reads_both_markers_and_the_whole_run(self):
-        self.assertEqual(wf_core.parse_blocks("Blocks #979 and #980."),
-                         [979, 980])
-        self.assertEqual(wf_core.parse_blocks("Blocking #1123."), [1123])
-
-    def test_forward_and_reverse_markers_do_not_cross(self):
-        body = "Blocked by #980. Blocks #1123."
-        self.assertEqual(parse_dependencies(body)[0], [980])
-        self.assertEqual(wf_core.parse_blocks(body), [1123])
-
-    def test_empty_body(self):
-        self.assertEqual(wf_core.parse_blocks(''), [])
-        self.assertEqual(wf_core.parse_blocks(None), [])
-
-
 class TestParentParsing(unittest.TestCase):
     """The phrasings that name an issue's parent."""
 
@@ -590,52 +492,6 @@ class TestParentsAreOptIn(unittest.TestCase):
         node = _audit_node(1131, body=self.BODY)
         entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1131, 959})
         self.assertNotIn('parent', entry['proposed'])
-
-    def test_the_dependency_half_is_not_gated(self):
-        """`parse_dependencies` is picker logic, not backfill: always on."""
-        node = _audit_node(1131, body="Blocked by #1124.")
-        entry = wf_core.audit_issue(node, _AUDIT_FIELDS,
-                                    open_numbers={1131, 1124})
-        self.assertIn('missing-edge', _gap_kinds(entry))
-        self.assertEqual(entry['proposed']['blocked_by'], [1124])
-
-
-class TestReverseEdgeFolding(unittest.TestCase):
-    """`Blocks #N` placed on the issue it actually belongs to."""
-
-    def _run(self, nodes, open_numbers=None):
-        audited = [wf_core.audit_issue(n, _AUDIT_FIELDS,
-                                       open_numbers=open_numbers)
-                   for n in nodes]
-        return {a['number']: a
-                for a in wf_core.fold_reverse_edges(audited, nodes, open_numbers)}
-
-    def test_the_edge_lands_on_the_blocked_issue(self):
-        nodes = [_audit_node(1032, body="Blocks #979 and #980."),
-                 _audit_node(979), _audit_node(980)]
-        by = self._run(nodes, {1032, 979, 980})
-        self.assertEqual(by[979]['proposed']['blocked_by'], [1032])
-        self.assertEqual(by[980]['proposed']['blocked_by'], [1032])
-        self.assertNotIn('blocked_by', by[1032]['proposed'])
-        self.assertIn('missing-edge', _gap_kinds(by[979]))
-
-    def test_an_edge_the_graph_already_has_is_not_proposed(self):
-        nodes = [_audit_node(1032, body="Blocks #979."),
-                 _audit_node(979, blocked_by=[1032])]
-        by = self._run(nodes, {1032, 979})
-        self.assertNotIn('blocked_by', by[979]['proposed'])
-
-    def test_a_blocked_issue_outside_the_scan_is_skipped(self):
-        nodes = [_audit_node(1032, body="Blocks #979.")]
-        by = self._run(nodes, {1032})
-        self.assertNotIn('blocked_by', by[1032]['proposed'])
-
-    def test_the_reverse_edge_merges_with_a_forward_one(self):
-        nodes = [_audit_node(1032, body="Blocks #979."),
-                 _audit_node(979, body="Blocked by #977.")]
-        by = self._run(nodes, {1032, 979, 977})
-        self.assertEqual(by[979]['proposed']['blocked_by'], [977, 1032])
-
 
 class TestNativeTypePreference(unittest.TestCase):
     """`tech debt` is `Chore` on an org that has one, `Feature` otherwise."""
@@ -1397,8 +1253,8 @@ class TestBulkSetOrdering(unittest.TestCase):
     """`plan_bulk_order` — trim to size, then build dependencies first."""
 
     @staticmethod
-    def _story(number, body=''):
-        return {'number': number, 'body': body}
+    def _story(number, *blocked_by):
+        return {'number': number, 'blocked_by': list(blocked_by)}
 
     def _numbers(self, ordered):
         return [s['number'] for s in ordered]
@@ -1410,19 +1266,19 @@ class TestBulkSetOrdering(unittest.TestCase):
         self.assertEqual(notes, [])
 
     def test_dependency_inside_the_set_is_built_first(self):
-        stories = [self._story(1), self._story(2, 'Blocked by #3'), self._story(3)]
+        stories = [self._story(1), self._story(2, 3), self._story(3)]
         ordered, _ = plan_bulk_order(stories)
         self.assertEqual(self._numbers(ordered), [1, 3, 2])
 
     def test_chain_is_ordered_end_to_end(self):
-        stories = [self._story(1, 'Depends on #2'),
-                   self._story(2, 'Depends on #3'),
+        stories = [self._story(1, 2),
+                   self._story(2, 3),
                    self._story(3)]
         self.assertEqual(self._numbers(plan_bulk_order(stories)[0]), [3, 2, 1])
 
     def test_dependency_outside_the_set_does_not_reorder(self):
         """A dep on an issue not in the set is the claim step's problem, not ours."""
-        stories = [self._story(1, 'Depends on #99'), self._story(2)]
+        stories = [self._story(1, 99), self._story(2)]
         ordered, notes = plan_bulk_order(stories)
         self.assertEqual(self._numbers(ordered), [1, 2])
         self.assertEqual(notes, [])
@@ -1443,20 +1299,20 @@ class TestBulkSetOrdering(unittest.TestCase):
 
     def test_trimming_happens_before_ordering(self):
         """A dep cut by the trim must not drag its dependent out of order."""
-        stories = [self._story(1, 'Depends on #4'), self._story(2), self._story(3),
+        stories = [self._story(1, 4), self._story(2), self._story(3),
                    self._story(4)]
         ordered, notes = plan_bulk_order(stories, max_size=3)
         self.assertEqual(self._numbers(ordered), [1, 2, 3])
         self.assertEqual([n['number'] for n in notes], [4])
 
     def test_cycle_is_reported_and_still_returns_every_story(self):
-        stories = [self._story(1, 'Depends on #2'), self._story(2, 'Depends on #1')]
+        stories = [self._story(1, 2), self._story(2, 1)]
         ordered, notes = plan_bulk_order(stories)
         self.assertEqual(sorted(self._numbers(ordered)), [1, 2])
         self.assertEqual({n['reason'] for n in notes}, {'dependency-cycle'})
 
     def test_self_reference_is_not_a_cycle(self):
-        stories = [self._story(1, 'Depends on #1'), self._story(2)]
+        stories = [self._story(1, 1), self._story(2)]
         ordered, notes = plan_bulk_order(stories)
         self.assertEqual(self._numbers(ordered), [1, 2])
         self.assertEqual(notes, [])
@@ -1857,23 +1713,21 @@ class TestAuditIssue(unittest.TestCase):
         result = wf_core.audit_issue(issue, {'Classification': {}})
         self.assertEqual(_kinds(result), ['classification-contradiction'])
 
-    def test_a_body_dependency_with_no_edge_is_proposed(self):
+    def test_the_body_cannot_claim_a_dependency(self):
+        """Prose is not a dependency. The audit used to read it and propose an
+        edge from it, and on one real backlog it both missed a heading-style
+        section and read "this **was** blocked by #980" as a live blocker. The
+        edge is the only record now, so there is nothing here to disagree with
+        it."""
         issue = _node(body='## Dependencies\n\nBlocked by #3\n')
         result = wf_core.audit_issue(issue, {}, open_numbers={3, 5})
-        self.assertEqual(_kinds(result), ['missing-edge'])
-        self.assertEqual(result['proposed']['blocked_by'], [3])
+        self.assertEqual(_kinds(result), [])
+        self.assertNotIn('blocked_by', result['proposed'])
 
     def test_an_edge_that_already_exists_is_not_reported(self):
         issue = _node(body='Blocked by #3', blockedBy={'nodes': [{'number': 3}]})
         result = wf_core.audit_issue(issue, {}, open_numbers={3, 5})
         self.assertEqual(_kinds(result), [])
-
-    def test_a_dependency_on_a_closed_issue_is_reported_not_proposed(self):
-        """An edge to a closed issue would be applied and then sit there inert."""
-        issue = _node(body='Blocked by #3')
-        result = wf_core.audit_issue(issue, {}, open_numbers={5})
-        self.assertEqual(_kinds(result), ['dependency-closed'])
-        self.assertNotIn('blocked_by', result['proposed'])
 
     def test_priority_is_inferred_from_the_issue_own_label(self):
         issue = _node(labels={'nodes': [{'name': 'priority-high'}]})
@@ -2468,6 +2322,7 @@ class TestBoardColumnNames(unittest.TestCase):
             'col-in-progress': 'In Progress',
             'col-in-review':   'In Review',
             'col-blocked':     'Blocked',
+            'col-non-code':    'Non-code',
             'col-done':        'Done',
         })
 
@@ -2496,6 +2351,220 @@ class TestChoreIsMaintenance(unittest.TestCase):
         result = filter_by_native_type([_issue(1, [])], 'maintenance',
                                        self.TYPE_MAP, {1: 'New Feature'})
         self.assertEqual([c['number'] for c in result], [1])
+
+
+class TestNativeDependencyEdges(unittest.TestCase):
+    """The `blockedBy` edges, which now decide whether an issue is blocked."""
+
+    def test_edges_split_into_open_and_closed_keeping_order(self):
+        edges = [{'number': 979, 'state': 'OPEN'},
+                 {'number': 1311, 'state': 'CLOSED'},
+                 {'number': 980, 'state': 'OPEN'}]
+        self.assertEqual(wf_core.edge_states(edges), ([979, 980], [1311]))
+
+    def test_a_repeated_edge_is_counted_once(self):
+        edges = [{'number': 979, 'state': 'OPEN'}, {'number': 979, 'state': 'OPEN'}]
+        self.assertEqual(wf_core.edge_states(edges), ([979], []))
+
+    def test_an_edge_with_no_usable_number_is_dropped(self):
+        edges = [{'number': None, 'state': 'OPEN'}, {'number': 7, 'state': 'CLOSED'}]
+        self.assertEqual(wf_core.edge_states(edges), ([], [7]))
+
+    def test_every_blocker_closed_releases_the_issue(self):
+        verdict, open_numbers, closed = wf_core.unblock_verdict(
+            [{'number': 1311, 'state': 'CLOSED'}])
+        self.assertEqual(verdict, wf_core.UNBLOCK_RELEASE)
+        self.assertEqual((open_numbers, closed), ([], [1311]))
+
+    def test_one_open_blocker_holds_the_issue(self):
+        verdict, open_numbers, closed = wf_core.unblock_verdict(
+            [{'number': 979, 'state': 'OPEN'}, {'number': 1311, 'state': 'CLOSED'}])
+        self.assertEqual(verdict, wf_core.UNBLOCK_HOLD)
+        self.assertEqual((open_numbers, closed), ([979], [1311]))
+
+    def test_no_edges_is_its_own_verdict_and_never_a_release(self):
+        """The safety rule. Most issues labelled blocked with no edge are
+        waiting on the world, not on an issue, and releasing them would put
+        work no agent can do into the pool."""
+        self.assertEqual(wf_core.unblock_verdict([])[0], wf_core.UNBLOCK_NO_EDGES)
+        self.assertEqual(wf_core.unblock_verdict(None)[0], wf_core.UNBLOCK_NO_EDGES)
+
+class TestPartialDelivery(unittest.TestCase):
+    """The case no edge can describe: a blocker that shipped and stayed open."""
+
+    NOW = datetime.datetime(2026, 9, 9, 12, 0, 0)
+
+    def _pr(self, number, title, merged_at, state='MERGED'):
+        return {'number': number, 'title': title, 'state': state,
+                'mergedAt': merged_at}
+
+    def test_a_title_reference_counts_as_delivery(self):
+        prs = [self._pr(1372, 'Verify sign-in on the backend (#979, #980)',
+                        '2026-09-09T09:31:43Z')]
+        found = wf_core.recent_delivery(prs, 979, self.NOW)
+        self.assertEqual(found, {'number': 1372,
+                                 'merged_at': '2026-09-09T09:31:43Z'})
+
+    def test_a_body_only_mention_does_not_count(self):
+        """Tried against a real backlog this flagged ten of eleven held issues.
+        Only the title is somebody saying the PR is about that issue."""
+        prs = [self._pr(1375, 'Scope every issue to one party',
+                        '2026-09-09T09:00:00Z')]
+        self.assertIsNone(wf_core.recent_delivery(prs, 1176, self.NOW))
+
+    def test_a_shorter_number_does_not_answer_for_a_longer_one(self):
+        prs = [self._pr(1, 'Something (#97)', '2026-09-09T09:00:00Z')]
+        self.assertIsNone(wf_core.recent_delivery(prs, 979, self.NOW))
+
+    def test_a_longer_number_does_not_answer_for_a_shorter_one(self):
+        prs = [self._pr(1, 'Something (#1979)', '2026-09-09T09:00:00Z')]
+        self.assertIsNone(wf_core.recent_delivery(prs, 979, self.NOW))
+
+    def test_an_old_merge_falls_outside_the_window(self):
+        prs = [self._pr(900, 'Older work (#979)', '2026-07-01T09:00:00Z')]
+        self.assertIsNone(wf_core.recent_delivery(prs, 979, self.NOW))
+
+    def test_an_unmerged_pull_request_is_not_a_delivery(self):
+        prs = [self._pr(1400, 'In flight (#979)', None, state='OPEN')]
+        self.assertIsNone(wf_core.recent_delivery(prs, 979, self.NOW))
+
+    def test_the_newest_qualifying_merge_wins(self):
+        prs = [self._pr(1300, 'First half (#979)', '2026-09-02T09:00:00Z'),
+               self._pr(1372, 'Second half (#979)', '2026-09-09T09:00:00Z')]
+        self.assertEqual(wf_core.recent_delivery(prs, 979, self.NOW)['number'], 1372)
+
+
+class TestWorkScope(unittest.TestCase):
+    """Which of the three parties owns an issue, and what that costs it."""
+
+    def test_the_label_names_the_owner(self):
+        self.assertEqual(
+            wf_core.issue_scope('[Browser] Turn on the API', ['browser-agent']),
+            wf_core.SCOPE_BROWSER)
+        self.assertEqual(
+            wf_core.issue_scope('[Manual] Device pass', ['human-required']),
+            wf_core.SCOPE_HUMAN)
+
+    def test_an_unlabelled_issue_is_code_work(self):
+        self.assertEqual(wf_core.issue_scope('Add a setting', ['priority-high']),
+                         wf_core.SCOPE_CODE)
+
+    def test_a_renamed_scope_label_still_resolves(self):
+        """Purpose keys, not concrete names — the same rule every label follows."""
+        self.assertEqual(
+            wf_core.issue_scope('x', ['needs-a-person'],
+                                {'scope-human': 'needs-a-person'}),
+            wf_core.SCOPE_HUMAN)
+
+    def test_non_code_wins_over_blocked(self):
+        """A blocker closing never makes browser work pickable, so the lane it
+        ends up in must be the one no sweep releases."""
+        self.assertEqual(wf_core.lifecycle_for(wf_core.SCOPE_BROWSER, [979]),
+                         'status-non-code')
+        self.assertEqual(wf_core.board_column_for(wf_core.SCOPE_BROWSER, [979]),
+                         'col-non-code')
+
+    def test_code_work_with_an_open_edge_is_blocked(self):
+        self.assertEqual(wf_core.lifecycle_for(wf_core.SCOPE_CODE, [979]),
+                         'status-blocked')
+        self.assertEqual(wf_core.board_column_for(wf_core.SCOPE_CODE, [979]),
+                         'col-blocked')
+
+    def test_code_work_with_nothing_open_carries_no_label(self):
+        """Under a `none` ready gate that is exactly what pickable means."""
+        self.assertIsNone(wf_core.lifecycle_for(wf_core.SCOPE_CODE, []))
+        self.assertEqual(wf_core.board_column_for(wf_core.SCOPE_CODE, []),
+                         'col-backlog')
+
+    def test_the_non_code_label_takes_an_issue_out_of_the_pool(self):
+        """The teeth. Everything else here is bookkeeping if this does not hold."""
+        pool = select_pool([{'number': 1, 'title': 'a', 'labels': ['status-non-code']},
+                            {'number': 2, 'title': 'b', 'labels': []}])
+        self.assertEqual([c['number'] for c in pool], [2])
+
+    def test_the_board_has_a_column_for_it(self):
+        self.assertEqual(wf_core.BOARD_COLUMN_NAMES['col-non-code'], 'Non-code')
+
+
+class TestScopeFindings(unittest.TestCase):
+    """The check that stops the three scope signals drifting apart.
+
+    Until this existed the rule lived in a skill document, so a scoped issue
+    that lost its lifecycle label sat in the code agent's pool and only a person
+    reading the title would ever have noticed.
+    """
+
+    @staticmethod
+    def _kinds(issues):
+        return [f['kind'] for f in wf_core.scope_findings(issues)]
+
+    def _issue(self, title, *labels):
+        return {'number': 1, 'title': title, 'labels': list(labels)}
+
+    def test_a_clean_scoped_issue_reports_nothing(self):
+        self.assertEqual(self._kinds([self._issue(
+            '[Manual] Open the bank account', 'human-required',
+            'status-non-code')]), [])
+
+    def test_a_clean_code_issue_reports_nothing(self):
+        self.assertEqual(self._kinds([self._issue('Add a setting')]), [])
+
+    def test_a_shouted_prefix_is_not_a_scope_error(self):
+        """Real backlogs carry `[MANUAL]` as often as `[Manual]`."""
+        self.assertEqual(self._kinds([self._issue(
+            '[MANUAL] Open the bank account', 'human-required',
+            'status-non-code')]), [])
+
+    def test_both_scope_labels_is_a_conflict(self):
+        kinds = self._kinds([self._issue('[Manual] x', 'human-required',
+                                         'browser-agent', 'status-non-code')])
+        self.assertIn('scope-conflict', kinds)
+
+    def test_a_label_with_no_prefix_is_reported(self):
+        self.assertIn('scope-prefix',
+                      self._kinds([self._issue('Open the bank account',
+                                               'human-required',
+                                               'status-non-code')]))
+
+    def test_a_prefix_with_no_label_is_reported(self):
+        self.assertIn('scope-prefix',
+                      self._kinds([self._issue('[Browser] Turn on the API')]))
+
+    def test_a_prefix_that_names_the_other_party_is_reported(self):
+        self.assertIn('scope-prefix',
+                      self._kinds([self._issue('[Browser] Device pass',
+                                               'human-required',
+                                               'status-non-code')]))
+
+    def test_scoped_work_without_the_lifecycle_label_is_the_dangerous_one(self):
+        """This is the state that puts a device pass in front of a code agent."""
+        findings = wf_core.scope_findings(
+            [self._issue('[Manual] Device pass', 'human-required')])
+        self.assertEqual([f['kind'] for f in findings], ['scope-lifecycle'])
+        self.assertIn('status-non-code', findings[0]['detail'])
+
+    def test_the_lifecycle_label_without_a_scope_label_is_also_a_gap(self):
+        findings = wf_core.scope_findings(
+            [self._issue('Add a setting', 'status-non-code')])
+        self.assertEqual([f['kind'] for f in findings], ['scope-lifecycle'])
+
+
+class TestScopeIsAudited(unittest.TestCase):
+    """`wf issue-audit` reports scope drift where it used to report prose edges."""
+
+    def test_a_scoped_issue_missing_its_lifecycle_label_is_a_gap(self):
+        node = _audit_node(1313, title='[Manual] Device pass')
+        node['labels'] = {'nodes': [{'name': 'human-required'}]}
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers={1313})
+        self.assertIn('scope-lifecycle', _gap_kinds(entry))
+
+    def test_nothing_proposes_a_dependency_edge_any_more(self):
+        """The body cannot claim a dependency: only an edge records one."""
+        node = _audit_node(1131, body='Blocked by #1124.')
+        entry = wf_core.audit_issue(node, _AUDIT_FIELDS,
+                                    open_numbers={1131, 1124})
+        self.assertNotIn('blocked_by', entry['proposed'])
+        self.assertNotIn('missing-edge', _gap_kinds(entry))
 
 
 if __name__ == '__main__':

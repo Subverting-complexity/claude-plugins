@@ -18,7 +18,7 @@ A blocked issue carries the `status-blocked` lifecycle label (so it is visibly b
 
 **How it becomes unblocked:**
 
-- **Automatically** — when the blocker is another issue recorded as `Blocked by #N`, `execute`'s dependency-resolution step detects that all `#N` are closed, removes `status-blocked`, restores `status-ready`, and comments. The issue re-enters the pick pool.
+- **Automatically** — when the blocker is another issue recorded as a native blocked-by edge, `wf unblock` detects that every one of them is closed, removes `status-blocked`, moves the card to Backlog, and comments. The issue re-enters the pick pool. An issue with no edge is never released this way, which is deliberate: most blocked issues are waiting on the world rather than on an issue.
 - **Manually** — for non-issue blockers (a decision, access granted), a human removes `status-blocked` and applies `status-ready`.
 
 ## Preflight
@@ -47,11 +47,11 @@ gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
 
 The comment should include: the blocker reason, what was attempted, what failed or is missing, and a suggested resolution if known.
 
-If the blocker is another issue, also record it in the issue body under a `## Dependencies` section as `Blocked by #N` (edit the body via `--body-file`). This is what lets `execute` auto-unblock the issue when `#N` closes. If the `## Dependencies` section already lists it, skip.
+If the blocker is another issue, record it as a **native blocked-by edge** (Step 3 below). That edge is the only thing that lets `wf unblock` release the issue when `#N` closes; a sentence in the body does nothing.
 
 Add the marker and nothing else. The blocker narrative stays in the comment, so do not restate it in the body, and leave the rest of the body as it is. If you are editing the body for any other reason, the result has to satisfy `../skills/writing-github-issues/SKILL.md`.
 
-**Structured blocker metadata (best-effort, capability-gated).** Record the blocker where the org can read it as well as a person: the **`Status reason`** field carries a one-line "why" alongside the label, and a native blocked-by edge makes the dependency visible in the GitHub UI. The `## Dependencies` marker stays the source of truth for auto-unblock; this adds to it. Write a one-entry spec and apply it:
+**Record the blocker where the tooling reads it.** The native blocked-by edge is the source of truth for auto-unblock and for selection, and the **`Status reason`** field carries a one-line "why" alongside the label. Write a one-entry spec and apply it:
 
 ```bash
 mkdir -p .claude
@@ -97,7 +97,9 @@ gh issue edit {number} --repo {org}/{repo} \
 
 After applying, verify per `templates/default-labels.md` (read back the labels; guarded create-if-missing without `--force` if the label is absent, then retry once).
 
-`status-blocked` keeps the issue out of the pick pool (it lacks `status-ready`) **and** makes the blocked state visible in the issues list. The blocker detail lives in the issue body (`## Dependencies`) and the Step 2 comment.
+`status-blocked` keeps the issue out of the pick pool **and** makes the blocked state visible in the issues list. The blocker itself lives in the native blocked-by edge; the Step 2 comment says why in words.
+
+**Use `status-non-code` instead when the blocker is the work's own nature** — a browser console, or a person with a device. `status-blocked` means an open edge and `wf unblock` releases it when that edge closes, which for scoped work would hand it to an agent that cannot do it.
 
 If `ready-gate` is `board-column` or `both`, also move the issue out of the "Ready" board column — to the **Blocked** column (`col-blocked`), the column paired with `status-blocked` in `templates/default-labels.md` — so the board agrees with the label. (This is the same move as Step 5; under a board ready-gate it is required rather than best-effort.)
 
