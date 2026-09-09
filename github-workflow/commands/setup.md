@@ -135,7 +135,7 @@ Then create the missing columns in **one** mutation.
 
 > **Critical:** `updateProjectV2Field`'s `singleSelectOptions` is a **full replace**, not additive — whatever list you pass becomes the complete option set. You **must** pass back every existing option with its `id` (preserving it) plus each new option **without** an `id`. Omit an existing option and it is **deleted** (along with any items in that column). Each option needs `name`, `color` (`GRAY`/`BLUE`/`GREEN`/`YELLOW`/`ORANGE`/`RED`/`PINK`/`PURPLE`), and a `description` (all required).
 
-Build the `singleSelectOptions` list as: the existing options (each `{id, name, color, description}` exactly as fetched) followed by the new ones (no `id`). Suggested colors for new columns: Ready `GREEN`, In Progress `BLUE`, In Review `YELLOW`, Blocked `RED`, Non-code `ORANGE`.
+Build the `singleSelectOptions` list as: the existing options (each `{id, name, color, description}` exactly as fetched) followed by the new ones (no `id`). Suggested colors, all distinct: Backlog `GREEN`, Ready `BLUE`, In Progress `YELLOW`, In Review `ORANGE`, Blocked `RED`, Non-code `PINK`, Done `PURPLE`.
 
 `gh api graphql` only binds **scalar** variables (`-f`/`-F`), so the option-list input cannot be passed as a variable — **inline the full `singleSelectOptions` array directly into the query text**. The `color` values are enum literals (unquoted); `name`/`description` are quoted strings. Existing options keep their `id`; new ones omit it:
 

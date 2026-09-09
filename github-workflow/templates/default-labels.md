@@ -147,15 +147,16 @@ The board-side mirror of the issue lifecycle. Columns are resolved by **purpose 
 
 | Purpose key      | Default Name  | Option color | Mirrors lifecycle label(s) |
 |------------------|---------------|--------------|----------------------------|
-| `col-backlog`    | `Backlog`     | GRAY         | `needs-refinement`, new issues |
-| `col-ready`      | `Ready`       | GREEN        | `status-ready` |
-| `col-in-progress`| `In Progress` | BLUE         | `status-in-progress`, `status-needs-attention` |
-| `col-in-review`  | `In Review`   | YELLOW       | `status-in-review` |
+| `col-backlog`    | `Backlog`     | GREEN        | `needs-refinement`, new issues |
+| `col-ready`      | `Ready`       | BLUE         | `status-ready` |
+| `col-in-progress`| `In Progress` | YELLOW       | `status-in-progress`, `status-needs-attention` |
+| `col-in-review`  | `In Review`   | ORANGE       | `status-in-review` |
 | `col-blocked`    | `Blocked`     | RED          | `status-blocked`, `status-parked` |
-| `col-non-code`   | `Non-code`    | ORANGE       | `status-non-code` |
-| `col-done`       | `Done`        | GRAY         | (issue closed) |
+| `col-non-code`   | `Non-code`    | PINK         | `status-non-code` |
+| `col-done`       | `Done`        | PURPLE       | (issue closed) |
 
 > Option `color` values come from the GitHub enum `ProjectV2SingleSelectFieldOptionColor`: `GRAY`, `BLUE`, `GREEN`, `YELLOW`, `ORANGE`, `RED`, `PINK`, `PURPLE`. These name the *board* option color and are distinct from the hex label colors above.
+
 
 **Label ⇄ column pairing (the single mapping every command follows):**
 
