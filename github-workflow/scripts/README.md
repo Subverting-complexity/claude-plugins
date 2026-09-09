@@ -70,7 +70,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue 42 --pr 123
 # Free every claim ref whose work has demonstrably moved on
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-reap --threshold 4 --dry-run
 
-# Mirror an issue's lifecycle onto the board (best-effort, always exit 0)
+# Put an issue's card in a column (best-effort, always exit 0)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move 42 --column col-in-review
 
 # The open PRs that close an issue (duplicate detection)
@@ -111,7 +111,7 @@ A single JSON object goes to **stdout**; diagnostics go to **stderr**. Every run
 | 27   | `lost`          | `claim` — another agent holds this issue or PR. Change nothing.  |
 | 30   | `unsupported`   | Path not in the CLI yet — caller falls back to the skill.      |
 
-Mutations to the **winning** issue (claim, assign, `status-in-progress`) are silent; mutations to **other** issues (returning a dependency-blocked one to `status-blocked`, closing one already resolved by a merged PR — which also moves it to the **Done** board column) are always reported in the `side_effects` array.
+Mutations to the **winning** issue (claim, assign, the move to In Progress) are silent; mutations to **other** issues (returning a dependency-blocked one to the Blocked lane, closing one already resolved by a merged PR — which also moves it to the **Done** column) are always reported in the `side_effects` array.
 
 ## Org capabilities — `org-capabilities`
 
@@ -161,7 +161,6 @@ A JSON object with an `issues` list (a bare list is accepted too). An entry with
       "title": "Ship the classifier",
       "body": "Why this matters.",
       "kind": "epic",
-      "labels": ["priority-high"],
       "fields": {"field-priority": "High", "field-effort": "Medium",
                  "field-origin": "Development"}
     },
@@ -216,7 +215,9 @@ Updates are not batched. An update has to read the issue first to decide what di
 
 Everything decidable offline is decided before the first mutation, because a half-applied epic tree is far harder to reason about than a refused spec:
 
-- **A missing mandatory field** — Priority, Effort, Classification or Origin — exits 22 naming the issue and the field. That is the blank-metadata failure this command exists to stop. The rule is scoped to those four rather than every field the org defines: requiring Start date, Target date, Parent and Status reason on every issue would be wrong. `wf_core.MANDATORY_FIELD_KEYS` is the list.
+- **A missing required field** — Priority, Effort or Ownership — exits 22 naming the issue and the field. That is the blank-metadata failure this command exists to stop, and the three are exactly what a decision reads: the pool's order, its size ceiling, and whether a code agent may take the issue at all. `wf_core.MANDATORY_FIELD_KEYS` is the list.
+- **An org that defines no such field** exits 22 as well, naming the field and saying to create it. Skipping is what let a repository run for weeks with no `Ownership` field while `config-audit` reported a clean configuration.
+- **A missing optional field** — Classification or Origin — is not refused. `wf_core.OPTIONAL_FIELD_KEYS` is that list, nothing selects on either, and a create that leaves one unset gets a comment on the issue naming it.
 - **A placeholder** (`TODO`) counts as missing, so an audit's proposal cannot quietly pass as a value.
 - **A dependency cycle** within the spec exits 22 before anything is written, and so does a **parent cycle** — a different fault, and equally unresolvable.
 - **A label or referenced issue that does not exist** in the repo exits 22, named, before the first mutation.
@@ -229,15 +230,19 @@ A `blocked_by` becomes a native `addBlockedBy` edge. It used to become a `## Dep
 
 ### Every issue lands in the lane its own state names
 
-After the edges are written, `issue-apply` puts each issue where it belongs and moves its board card to match. Nothing did this before, so a spec could write an edge and leave the issue with no lifecycle label at all, which put work whose dependency had not been built yet straight into `pick`'s pool.
+After the edges are written, `issue-apply` places each issue's card. Nothing did this before, so a spec could write an edge and leave the issue sitting in the pool, which put work whose dependency had not been built yet straight into `pick`'s reach.
 
-| The issue is | Label | Board column |
-| --- | --- | --- |
-| labelled `browser-agent` or `human-required` | `status-non-code` | Non-code |
-| pointing at least one open edge | `status-blocked` | Blocked |
-| neither | nothing | (unchanged) |
+| The issue is | Board column |
+| --- | --- |
+| owned by a browser agent or a person (`Ownership`) | Non-code |
+| pointing at least one open edge | Blocked |
+| neither | Backlog |
 
-Scope wins over a dependency. The scope is a property of the work and survives every blocker closing, so an issue that is both has to end up in the lane no sweep releases it from.
+**Every issue gets a card, every time.** An earlier version returned early on the third row, leaving a created code issue on no board at all — an issue that existed in the repository and nowhere in the pool. That is what makes the column trustworthy as the only record of state.
+
+Ownership wins over a dependency. It is a property of the work and survives every blocker closing, so an issue that is both ends up in the lane no sweep releases it from.
+
+**A retired label is taken off.** Whatever `status-*`, `priority-*`, scope or `needs-refinement` label an issue still carries from the label workflow is removed here, which is how an existing backlog migrates without anyone sweeping it. The removal is best-effort: the board move is the part that decides anything.
 
 ### Every write is read back
 
@@ -258,12 +263,13 @@ It **never writes**. Both write transports are stubbed out in its tests to prove
 | Gap | Meaning |
 | --- | ------- |
 | `missing-type` | The org has issue types enabled and this issue has none. |
-| `missing-field` | One of the four mandatory fields (`wf_core.MANDATORY_FIELD_KEYS`) this issue holds no value for. |
+| `missing-field` | One of the three required fields (`wf_core.MANDATORY_FIELD_KEYS`) this issue holds no value for. |
+| `missing-optional-field` | `Classification` or `Origin` unset. Worth filling in, never worth refusing an issue over. |
 | `type-contradiction` | The native type disagrees with a legacy `type-*` label or `[BUG]`-style title prefix the issue still carries. Reported so the stale one can be removed; neither is written any more. |
 | `classification-contradiction` | The `Classification` value cannot be true of the declared kind — a story classified `Bug Fix`, a bug classified `New Feature`. |
-| `scope-conflict` | Both scope labels on one issue, so no single party owns it. |
-| `scope-prefix` | The `[Manual] `/`[Browser] ` title prefix and the scope label disagree, or one is present without the other. |
-| `scope-lifecycle` | Scoped work with no `status-non-code` label, so the picker will offer it to a code agent — or that label with no scope label, so nothing says who should do it. |
+| `scope-unowned` | No `Ownership` value, so nothing says who has to do the work and no code agent will be offered it. |
+| `scope-option` | An `Ownership` value the workflow does not recognise, usually a renamed option. |
+| `scope-prefix` | The `[Manual] `/`[Browser] ` title prefix and the `Ownership` value disagree. |
 | `missing-parent` | `--parents` only. The body says it is part of an issue and GitHub shows it as free-standing. |
 | `parent-closed` | `--parents` only. The parent the body names is not open. |
 | `parent-differs` | `--parents` only. The body names one parent and the hierarchy has another. Reported, never changed. |
@@ -296,6 +302,11 @@ Three things describe how a project works, and they drift apart quietly: `Claude
 | `label-missing` | critical | An instruction file tells an agent to apply a label the repo does not have. |
 | `config-label` | critical | The project's own label map names a label the repo does not have. |
 | `field-unpinned` | critical | An enabled issue type is not pinned to a field the tooling writes. |
+| `field-absent` | critical | The org defines no `Priority`, `Effort` or `Ownership` field, and the picker reads all three. |
+| `board-orphan` | critical | An open, unassigned issue with no card, so the pool cannot see it. |
+| `board-unset` | critical | A card sitting in no lane, so the issue has no state. |
+| `label-deprecated` | warning | The label map still names a label nothing reads. |
+| `field-absent-optional` | warning | The org defines no `Classification` or `Origin`, so issues are filed with less on them. |
 | `label-drift` | warning | Two live labels mean the same thing (`priority:medium` beside `priority-medium`, `bug` beside `type-bug`). |
 | `pin-asymmetry` | warning | A field some enabled types pin and others do not. |
 | `field-unmapped` | warning | An org field no purpose key resolves to, so nothing ever sets it. |
@@ -320,18 +331,18 @@ Two round trips: one repo query carrying the labels and the board together, and 
 
 ## Settling a merged PR — `post-merge`
 
-`post-merge --pr <n>` makes "the story is closed and off the board" a deterministic step instead of trusting GitHub. It reads the PR's own `closingIssuesReferences`, **force-closes** any of those issues still open (GitHub only auto-closes on a default-branch merge of a recognised keyword — a chained-story PR or an unparsed reference leaves it open), **clears any open-state lifecycle label** the issue still carries (e.g. a `status-in-progress` or `status-in-review` left behind when GitHub auto-closed it), and moves every linked issue to the **Done** column. Each settled issue is reported with `closed_now`, `lifecycle_label_cleared`, and `board_moved_done`. It refuses (`status: not-merged`, exit 11) on a PR that has not actually merged, so it is safe to call on the queued `--auto` path. Add `--issue <N>` (repeatable) to settle a reference GitHub did not parse. `code-review`'s auto-merge step calls this after a successful immediate merge.
+`post-merge --pr <n>` makes "the story is closed and off the board" a deterministic step instead of trusting GitHub. It reads the PR's own `closingIssuesReferences`, **force-closes** any of those issues still open (GitHub only auto-closes on a default-branch merge of a recognised keyword — a chained-story PR or an unparsed reference leaves it open), and moves every linked issue to the **Done** column. Each settled issue is reported with `closed_now` and `board_moved_done`. It refuses (`status: not-merged`, exit 11) on a PR that has not actually merged, so it is safe to call on the queued `--auto` path. Add `--issue <N>` (repeatable) to settle a reference GitHub did not parse. `code-review`'s auto-merge step calls this after a successful immediate merge.
 
 ## Releasing what a merge freed — `unblock`
 
-Nothing did this. `post-merge` settles only the issues a pull request *closes*, so one that closes none returns `settled: []` — which reads as a finished run and is not: whatever was waiting keeps `status-blocked`, and a blocked issue is invisible to the picker.
+Nothing did this. `post-merge` settles only the issues a pull request *closes*, so one that closes none returns `settled: []` — which reads as a finished run and is not: whatever was waiting stays in the Blocked lane, and an issue in Blocked is invisible to the picker.
 
-`unblock` reads every open issue carrying the blocked label and sorts it five ways. Only the first two write anything.
+`unblock` reads every open issue in the board's Blocked column and sorts it five ways. Only the first two write anything.
 
 | Bucket | What it means | What it does |
 | --- | --- | --- |
 | `released` | every native blocked-by edge points at a closed issue | removes the label, moves the card to Backlog, comments |
-| `rescoped` | browser or human work sitting in the blocked lane | swaps the label for `status-non-code`, moves the card to Non-code, comments |
+| `rescoped` | browser or human work sitting in the blocked lane | moves the card to Non-code, comments |
 | `held` | at least one blocker is still open | nothing |
 | `partials` | held, but a blocker merged something in the last 14 days | reports it, never acts |
 | `no_edges` | labelled blocked with no dependency edge at all | counts them |
@@ -348,7 +359,7 @@ Nothing did this. `post-merge` settles only the issues a pull request *closes*, 
 
 | Subcommand     | Pool                                              | Claims          | Marker applied        | Used by      |
 | -------------- | ------------------------------------------------- | --------------- | --------------------- | ------------ |
-| `pick`         | Ready, unassigned issues                          | `issue-{n}` ref | `status-in-progress`  | execute |
+| `pick`         | Unassigned issues in Backlog                      | `issue-{n}` ref | card in In Progress   | execute |
 | `update-next`  | My open PRs with actionable review feedback       | `pr-{n}` ref    | `updating` (keeps the feedback label) | code-review |
 | `review-next`  | Open PRs labelled `needs-review` / `needs-re-review` | `pr-{n}` ref | `reviewing` (removes prior) | code-review |
 
@@ -356,7 +367,7 @@ All share the same atomic claim/checkout core and JSON contract. `--checkout` cr
 
 ## Scope / deferrals
 
-- **`pick`** — `--mode story` / `feature` / `maintenance`, reading the board's Backlog column as the pool. One GraphQL query (`fetch_issue_facets`) reads the native type, the `Priority` field and the `Classification` field for the open backlog, and the pool is ordered by `Priority` — `Urgent` → `High` → `Medium` → `Low`, then lowest issue number. An issue with no `Priority` value is ordered by its `priority-*` label, which is the only surviving label fallback. **Type has none**: `feature` and `maintenance` filter on the native `issueType` alone, so an issue the org has not typed — or a `Feature` it left unclassified — is out of the pool and named on stderr rather than guessed at from a `type-*` label or a `[PREFIX]` title. An org whose backlog carries no native type at all cannot answer those modes and `pick` exits `no-capabilities` (21) saying so; `--mode story` is unaffected. Membership of the pool is the board's answer rather than a label's: an issue is in it because its card sits in `Backlog` and nobody is assigned. Every other state has a column of its own, so an issue in one is already out of the pool and no label has to say so. `needs-refinement` is the one label still filtered, for a project that applies it without moving the card.
+- **`pick`** — `--mode story` / `feature` / `maintenance`, reading the board's Backlog column as the pool. One GraphQL query (`fetch_issue_facets`) reads the native type, the `Priority` field and the `Classification` field for the open backlog, and the pool is ordered by `Priority` — `Urgent` → `High` → `Medium` → `Low`, then lowest issue number. An issue with no `Priority` value sorts last and is named on stderr; there is no label fallback, on purpose. **Type has none**: `feature` and `maintenance` filter on the native `issueType` alone, so an issue the org has not typed — or a `Feature` it left unclassified — is out of the pool and named on stderr rather than guessed at from a `type-*` label or a `[PREFIX]` title. An org whose backlog carries no native type at all cannot answer those modes and `pick` exits `no-capabilities` (21) saying so; `--mode story` is unaffected. Membership of the pool is the board's answer and only the board's: an issue is in it because its card sits in `Backlog` and nobody is assigned. Every other state has a column of its own, so an issue in one is already out of the pool. No label is read at any point in the selection.
 - **`review-next`** — the *label-driven* subset. A PR whose head SHA changed since its last review (needing review without a label) is **not** detected here, so `code-review` treats `no-candidates` as non-conclusive and falls back to its inline SHA check. Pass `--no-claim` for a read-only review (no push access): it selects the next PR without writing a claim ref or applying the `reviewing` marker, and the JSON reports `claimed: false`.
 
 ## Locks, board and handoff
@@ -367,7 +378,7 @@ These five commands replaced the markdown procedures the skills used to follow s
 
 `claim --issue N` or `claim --pr N` takes `refs/claims/{issue,pr}-N` — a server-side compare-and-swap, which is what makes it safe between two agents running under the same GitHub identity, where a shared label cannot exclude a rival.
 
-The ref is the lock but it is ephemeral, so on success the command also advertises ownership where a later picker will look: an issue is assigned to `@me` and moved to `status-in-progress`; a PR swaps `needs-review` for `reviewing`. Pass `--no-marker` to take the lock silently. The marker is best-effort — the lock is already held, and failing to advertise it is worth a warning, not giving the item back.
+The ref is the lock but it is ephemeral, so on success the command also advertises ownership where a later picker will look: an issue is assigned to `@me` and its card moved to In Progress; a PR swaps `needs-review` for `reviewing`. Pass `--no-marker` to take the lock silently. The marker is best-effort — the lock is already held, and failing to advertise it is worth a warning, not giving the item back.
 
 | Exit | Meaning |
 | ---- | ------- |
@@ -381,7 +392,7 @@ The ref is the lock but it is ephemeral, so on success the command also advertis
 
 ### `board-move`
 
-`board-move N --column col-in-review` mirrors an issue's lifecycle onto the board. It takes a column **purpose key** (`col-backlog`, `col-in-progress`, `col-in-review`, `col-blocked`, `col-non-code`, `col-refinement`, `col-parked`, `col-attention`, `col-done`), resolves the option id live by column name so a stale snapshot self-heals, verifies the board's identity **and the column's existence before it adds the card**, and adds the issue if it is not on the board yet. Resolving first is what stops an issue destined for a column the board does not have being added and then stranded in `No Status`.
+`board-move N --column col-in-review` puts an issue's card in a column, which is the only place its state is recorded. It takes a column **purpose key** (`col-backlog`, `col-in-progress`, `col-in-review`, `col-blocked`, `col-non-code`, `col-refinement`, `col-parked`, `col-attention`, `col-done`), resolves the option id live by column name so a stale snapshot self-heals, verifies the board's identity **and the column's existence before it adds the card**, and adds the issue if it is not on the board yet. Resolving first is what stops an issue destined for a column the board does not have being added and then stranded in `No Status`.
 
 It **always exits 0**, including when no board is configured. A board mirrors the labels and is never the source of truth, so a failed move is something to report, never something to stop for: read `moved` and `reason`.
 
@@ -391,7 +402,7 @@ It **always exits 0**, including when no board is configured. A board mirrors th
 
 ### `handoff`
 
-`handoff --pr P --issue N [--issue M …]` ends a build: it labels the PR `claude-authored` plus the review-state entry label, then for each issue swaps `status-in-progress` for `status-in-review`, moves its board item to In Review, and releases its claim ref. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`. `--gate-failed` enters review as changes-requested rather than needs-review.
+`handoff --pr P --issue N [--issue M …]` ends a build: it labels the PR `claude-authored` plus the review-state entry label, then for each issue moves its board item to In Review and releases its claim ref. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`. `--gate-failed` enters review as changes-requested rather than needs-review.
 
 It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read `pr_labelled` and the per-issue `relabelled`, `board_moved` and `board` reason instead. A failure on one issue does not affect the others.
 

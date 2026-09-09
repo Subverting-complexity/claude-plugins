@@ -57,7 +57,7 @@ gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --bod
 3. **`## Changes`** — a `###` sub-section per story, in build order, saying what was implemented and which acceptance criteria it answers.
 4. **`## Test plan`** — how to verify the change, with the per-story steps kept distinguishable so a tester can check each story separately.
 5. **`Closes #N` lines** — at the very end of the body, one per built story, each on its own line and under no heading. This is what settles the issues on merge, so it must be exact:
-   - Every built story gets one. A missing line leaves that issue open after the merge, assigned and labelled `status-in-review`, with nothing left to pick it up.
+   - Every built story gets one. A missing line leaves that issue open after the merge, assigned and sitting in In Review, with nothing left to pick it up.
    - **No story that was not built gets one.** A `Closes` line for a dropped or unfinished story closes it on merge with no code behind it, which is the worst outcome this workflow can produce. Read `.claude/bulk-set.json` rather than trusting memory here.
 6. **`## Quality gate failed`** — only when `.claude/gate-failed.flag` exists (`test -f .claude/gate-failed.flag`, written in Phase 5). It is the one section that goes **above** `## Summary`. Give the last error output, and say which stories were built and which were released back to the backlog because of it.
 
@@ -78,7 +78,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" handoff --pr {pr_number} \
 
 Add `--gate-failed` when `.claude/gate-failed.flag` exists, which enters review as changes-requested rather than needs-review.
 
-It labels the pull request `claude-authored` plus the review-state entry label once, then for **each** issue moves it from `status-in-progress` to `status-in-review`, moves its board item to In Review, and releases its claim ref — so the per-story release that used to be its own step is done here. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`.
+It labels the pull request `claude-authored` plus the review-state entry label once, then for **each** issue moves its board item to In Review and releases its claim ref — so the per-story release that used to be its own step is done here. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`.
 
 It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read the payload instead — `pr_labelled`, and per issue `relabelled`, `board_moved` and a `board` reason. A failure on one issue does not affect the others; report what failed by issue number **and** title and carry on. The review matters more than a label.
 

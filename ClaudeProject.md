@@ -40,17 +40,15 @@ Example: `feature/27/fix-wrong-board`
 
 ## Label Map
 
-All priority, type, and status labels use their default purpose-key names (e.g., `priority-critical`, `status-blocked`). See `github-workflow/templates/default-labels.md` for the full list and the lifecycle state machine.
+No label decides anything here. An issue's state is the board column its card is in; its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. The repository still carries `status-*`, `priority-*` and scope labels from before 10.0.0 and they are deliberately absent from this map: `wf issue-apply` takes one off any issue it writes, and deleting them outright would strip them from every issue that ever carried them. Defaults and the resolution path: `github-workflow/templates/default-labels.md`.
 
 ### Claude
 
-`claude-authored` is a provenance marker (not a lifecycle state) applied by workflow commands to Claude-authored PRs and Claude-created issues. It is **not** part of the PR review-state machine. Review-state labels are defined in [`docs/review.config.md`](docs/review.config.md), which keeps the plugin's own `review-` prefix, so they resolve to the same names the defaults in `github-workflow/templates/default-labels.md` produce.
+`claude-authored` is a provenance marker applied by workflow commands to Claude-authored PRs and Claude-created issues. It is the only label the issue workflow applies. It is **not** part of the PR review-state machine. Review-state labels are defined in [`docs/review.config.md`](docs/review.config.md), which keeps the plugin's own `review-` prefix, so they resolve to the same names the defaults in `github-workflow/templates/default-labels.md` produce.
 
 | Purpose          | Label             | Applied by                    |
 | ---------------- | ----------------- | ----------------------------- |
 | claude-authored  | `claude-authored` | execute, report-issue         |
-
-Agent gating is disabled, so no `claude-ready` label is configured.
 
 ## Issue Types & Fields
 
@@ -62,7 +60,7 @@ Written from `wf org-capabilities` against `Subverting-complexity`. Re-run `/git
 | ------- | ----- |
 | type-capable | `yes` |
 
-An organisation with native issue types enabled: **Bug**, **Chore**, **Epic**, **Feature**, **User Story**. The native type is the first-class classification here, so the `type-*` label is dropped from an issue once the type is set. Priority stays dual-tracked with its label — the label orders selection, the field drives the board's own views.
+An organisation with native issue types enabled: **Bug**, **Chore**, **Epic**, **Feature**, **User Story**. The native type is the classification here, so `wf issue-apply` strips any `type-*` label off an issue it writes.
 
 ### Field names
 
@@ -72,14 +70,16 @@ All eight resolve to their default names.
 | -------------------- | ---------------- |
 | field-priority       | `Priority`       |
 | field-effort         | `Effort`         |
+| field-ownership      | `Ownership`      |
 | field-type           | `Classification` |
 | field-origin         | `Origin`         |
 | field-start          | `Start date`     |
 | field-target         | `Target date`    |
 | field-parent         | `Parent`         |
-| field-status-reason  | `Status reason`  |
 
-`Classification` is a **multi-select**; the rest are single-select, date or text as `wf_core.FIELD_DATA_TYPES` records. `field-priority`, `field-effort`, `field-type` and `field-origin` are mandatory on every issue the workflow creates — `wf issue-apply` refuses a spec that leaves one blank.
+`Classification` is a **multi-select**; the rest are single-select, date or text as `wf_core.FIELD_DATA_TYPES` records.
+
+`field-priority`, `field-effort` and `field-ownership` are **required** on every issue: they are the pool's order, its size ceiling and whether a code agent may take the issue at all, so `wf issue-apply` refuses a spec that leaves one blank. `field-type` and `field-origin` are optional — nothing selects on them, and a create that leaves one unset gets a comment on the issue saying so.
 
 ### Missing
 
@@ -88,14 +88,6 @@ All eight resolve to their default names.
 | _(none)_ | — |
 
 The purpose→value maps are Python data in `github-workflow/scripts/wf_core.py`. Run `wf org-capabilities` for the live option ids rather than copying them here, where they would go stale.
-
-## Agent Gating
-
-| Setting       | Value      |
-| ------------- | ---------- |
-| agent-gating  | `disabled` |
-
-When `disabled` (current), any unassigned issue in the board's Backlog column can be picked. Set to `enabled` and add a `claude-ready` row to the Claude label map to require human approval before autonomous pickup.
 
 ## Refinement
 

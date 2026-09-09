@@ -22,16 +22,16 @@ gh issue view {number} --repo {org}/{repo} --json state,labels,assignees,title,b
 Drop a named story, with a one-line reason in your report, when it is:
 
 - **closed** — nothing to build;
-- **already in flight** — it carries `status-in-review`, or an open pull request already closes it. Ask once per number:
+- **already in flight** — its card is in the In Review column, or an open pull request already closes it. Ask once per number:
   ```bash
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
   ```
   Exit 0 with `found: 0` means nothing closes it; exit 20 means the lookup failed, so say so rather than assuming it is free. Report any PR found by number and title and say `/github-workflow:code-review` handles it;
 - **assigned to someone else** — another agent or person owns it;
 - **empty** — no Context and no Requirements anywhere in the body, comments or linked docs, so any implementation would be a guess;
-- **carrying `needs-refinement`** — say it needs refinement first.
+- **not in Backlog** — its card is in Needs refinement, Parked, Blocked or Non-code, so the board already says it is not available. Name the lane in your reason.
 
-If a named story carries `status-in-review` but **no** open PR is found, check for a **closed, unmerged** PR (`closingIssuesReferences`, `states: CLOSED`). If there is one, the PR was abandoned: reset the issue automatically — remove `status-in-review`, unassign, move the board to Backlog, comment `"Resetting — PR #{N} closed without merge."` — and keep it in the set. If there is no closed PR either, surface the inconsistency and drop it.
+If a named story sits in In Review but **no** open PR is found, check for a **closed, unmerged** PR (`closingIssuesReferences`, `states: CLOSED`). If there is one, the PR was abandoned: reset the issue automatically — unassign, move the card to Backlog, comment `"Resetting — PR #{N} closed without merge."` — and keep it in the set. If there is no closed PR either, surface the inconsistency and drop it.
 
 **2. Cap the size.** More than `--size` stories (default 5, which is also the maximum) were named. Keep the first `--size` in the order the user gave them, and say which were left out and that they stay ready in the backlog. Do not silently build more than the cap: the cap is what keeps the pull request reviewable.
 
@@ -51,7 +51,7 @@ Then go to **Claiming the set**.
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --mode {mode}
 ```
 
-This returns the same pool `execute` picks from — the board's Backlog column, sprint narrowed, agent-gating and mode filters applied, work no code agent can do removed, sorted by priority then effort then issue number — and claims nothing. Each entry carries `number`, `title`, `labels`, `milestone`, a truncated `body`, and the `dependencies` parsed out of that body. `total` is the unclipped pool size; `listed` is how many came back.
+This returns the same pool `execute` picks from — the board's Backlog column, sprint narrowed, the mode filter applied, anything `Ownership` does not mark `Code agent` removed, sorted by `Priority` then `Effort` then issue number — and claims nothing. Each entry carries `number`, `title`, `priority`, `scope`, `milestone`, a truncated `body`, and the `dependencies` read from the native blocked-by edges. `total` is the unclipped pool size, `listed` is how many came back, and `unprioritised_count` is how many carry no `Priority` and therefore sort last.
 
 Interpret the result by its `status`:
 
@@ -108,7 +108,7 @@ Pass `--sibling` once for **every other story in the set**. That is what lets a 
 
 Interpret each result by `status`:
 
-- **`ok`** — claimed. `status-in-progress` and the `@me` assignment are applied and the claim ref is held. Surface any `side_effects`.
+- **`ok`** — claimed. The card is in In Progress, the `@me` assignment is applied and the claim ref is held. Surface any `side_effects`.
 - **`all-blocked`** — this story could not be claimed: taken by another agent, blocked by an open dependency outside the set, or already resolved by a merged PR. Drop it from the set, say which and why, and carry on with the rest. It is not a reason to abandon the run.
 - **`error`**, or Python is missing — `wf` cannot run here. Stop the run and name the prerequisite; every story already claimed is released by the dropping procedure below.
 
@@ -148,13 +148,11 @@ If it **was claimed**, return it to the backlog properly, in this order:
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
    ```
-2. Clear the in-progress state. Resolve the name through `## Label Map` in ClaudeProject.md rather than typing the purpose key — a project that renamed `status-in-progress` gets a `gh` failure and an issue left assigned.
+2. Give the issue back:
    ```
-   gh issue edit {number} --repo {org}/{repo} --remove-assignee @me \
-     --remove-label {in-progress-label}
+   gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
    ```
-   Nothing is applied in its place. An available issue carries no lifecycle label at all; Step 3 is what actually returns it to the pool.
-3. Move the board back to Backlog — **this is the step that returns it to the pool**, because the pool is that column:
+3. Move the card back to Backlog — **this is the step that returns the issue to the pool**, because the pool is that column:
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-backlog
    ```

@@ -61,7 +61,7 @@ Read this at Phase 7 of the `execute` workflow (quality gate passed, work commit
 
    Repeat `--issue N` for every issue the PR closes. Add `--gate-failed` when `.claude/gate-failed.flag` exists, which enters review as changes-requested rather than needs-review — the PR is real work, but it is not ready to approve and the label has to say so.
 
-   The command labels the PR `claude-authored` plus the review-state entry label, moves each issue from `status-in-progress` to `status-in-review`, moves its board item to In Review, releases the issue's claim ref, and deletes the session scratch files (`.claude/plan.md`, `preflight-passed.txt`, `label-cache.json`).
+   The command labels the PR `claude-authored` plus the review-state entry label, moves each issue's board item to In Review, releases the issue's claim ref, and deletes the session scratch files (`.claude/plan.md`, `preflight-passed.txt`, `label-cache.json`).
 
    It **always exits 0**, because none of these is a reason to stop once the PR exists. Read the payload instead: `pr_labelled`, and per issue `relabelled` and `board_moved` with a `board` reason. Report anything false — a board that did not move is worth a line, not a halt.
 

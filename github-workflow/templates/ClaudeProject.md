@@ -37,38 +37,17 @@ Example: `feature/{number}/{short-desc}`
 
 ## Label Map
 
-Map workflow purposes to your repository's actual label names. Only include labels your project uses — remove unused rows. State machine, transitions, and defaults: `templates/default-labels.md`.
+Map workflow purposes to your repository's actual label names. Only include labels your project uses — remove unused rows. Defaults and the resolution path: `templates/default-labels.md`.
 
-### Priority
-
-| Purpose           | Label    |
-| ----------------- | -------- |
-| priority-critical | `{name}` |
-| priority-high     | `{name}` |
-| priority-medium   | `{name}` |
-| priority-low      | `{name}` |
-
-### Status (issue lifecycle)
-
-A lifecycle label says, for a person reading the issues list, what state an issue is in. It does **not** decide anything: selection reads the board's Backlog column and the structured fields, never a label. An issue in the pool carries no lifecycle label at all — being in Backlog is what available means.
-
-| Purpose                | Label    |
-| ---------------------- | -------- |
-| needs-refinement       | `{name}` |
-| status-in-progress     | `{name}` |
-| status-parked          | `{name}` |
-| status-blocked         | `{name}` |
-| status-in-review       | `{name}` |
-| status-needs-attention | `{name}` |
+**No label decides anything.** An issue's state is the board column its card is in; its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. If your project still has `status-*`, `priority-*`, `browser-agent`, `human-required`, `needs-refinement` or `claude-ready` labels, leave them out of this map: `wf config-audit` reports a map row for one (`label-deprecated`), and `wf issue-apply` takes the label off any issue it writes. The labels themselves can stay in the repository — deleting one strips it from every issue that ever carried it.
 
 ### Claude
 
-`claude-authored` is a provenance marker (not a lifecycle state) applied to Claude-authored PRs and Claude-created issues. `claude-ready` is used only when Agent Gating is enabled — a human applies it during triage to approve a story for autonomous pickup. (PR review-state labels are separate — see `docs/review.config.md`.)
+`claude-authored` is a provenance marker applied to Claude-authored PRs and Claude-created issues. It is the only label this workflow puts on an issue, and it decides nothing. (PR review-state labels are separate — see `docs/review.config.md`.)
 
 | Purpose          | Label    | Applied by                     |
 | ---------------- | -------- | ------------------------------ |
 | claude-authored  | `{name}` | execute (PRs), report-issue / execute (issues) |
-| claude-ready     | `{name}` | human triage                   |
 
 ### Custom (optional)
 
@@ -90,9 +69,9 @@ Additional labels your project uses. Remove if not needed.
 | ------- | ----- |
 | type-capable | `yes` |
 
-`yes` — the owner is an org with **native GitHub issue types** enabled (Bug, Feature, User Story, Epic). The native type is then the first-class classification and the `type-*` label is dropped from an issue once the type is set.
+`yes` — the owner is an org with **native GitHub issue types** enabled (Bug, Feature, User Story, Epic). The native type is the classification, and `wf issue-apply` strips any `type-*` label off an issue it writes.
 
-`no` — no native types (a user account, or an org that has not enabled them). The Label Map's `type-*` labels stay the classification. Say so here rather than deleting the section.
+`no` — no native types (a user account, or an org that has not enabled them). `--mode feature` and `--mode maintenance` cannot run, because nothing classifies an issue; `--mode story` is unaffected. Say so here rather than deleting the section.
 
 ### Field names
 
@@ -108,9 +87,12 @@ Every purpose key the workflow writes, mapped to the field name **this** owner u
 | field-start          | `Start date`     |
 | field-target         | `Target date`    |
 | field-parent         | `Parent`         |
-| field-status-reason  | `Status reason`  |
 
-Five of these are **mandatory** on every issue the workflow creates — `field-priority`, `field-effort`, `field-type`, `field-origin` and `field-ownership` (`wf_core.MANDATORY_FIELD_KEYS`). `wf issue-apply` refuses a spec that leaves one blank rather than creating an issue with empty metadata. The other four are set where they apply.
+**Three of these are required**, and the line is whether a decision reads the value: `field-priority` is the pool's order, `field-effort` its size ceiling, `field-ownership` whether a code agent may take the issue at all (`wf_core.MANDATORY_FIELD_KEYS`). An org that has not defined one is a critical preflight finding, and `wf issue-apply` refuses a spec that leaves one blank rather than creating an issue nothing can rank, size or route.
+
+`field-type` (`Classification`) and `field-origin` are **optional**: nothing selects on them, so a create that leaves one unset gets a comment on the issue naming it and carries on. The rest are set where they apply.
+
+There is a fourth required answer and it is not a field: **state**, which is the board column the card sits in. Every write places the card, and preflight fails on an open issue with no card or a card in no lane.
 
 ### Missing
 
@@ -120,17 +102,9 @@ Fields the owner does not define, and what the workflow does instead:
 | ----- | ----------- |
 | _(none)_ | — |
 
-A missing field is skipped at runtime, not an error. But if one of the five mandatory fields is missing, `wf issue-apply` cannot classify an issue at all — create the field in the owner's *Issue fields* settings. `Origin` is the one the workflow populates that GitHub does not create by default (single-select: Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request).
+A missing optional field is skipped at runtime, not an error. A missing **required** field is refused: `wf issue-apply` will not create an issue the picker cannot rank, size or route, and `wf config-audit` reports it as `CRITICAL field-absent`. Create it in the owner's *Issue fields* settings and pin it to every enabled issue type. `Ownership` (single-select: Code agent, Browser agent, Human) and `Origin` (single-select: Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request) are the two GitHub does not create by default.
 
 The purpose→value maps — which native type each kind of work becomes, and the Priority, Effort and Origin option names — are Python data in `github-workflow/scripts/wf_core.py`, not prose here. Run `wf org-capabilities` for the live option ids rather than copying them into this file, where they would go stale.
-
-## Agent Gating
-
-| Setting       | Value      |
-| ------------- | ---------- |
-| agent-gating  | `disabled` |
-
-When `enabled`, only issues carrying `claude-ready` are picked (human approval gate). When `disabled` (default), any unassigned issue in the Backlog column can be picked.
 
 ## Refinement
 
@@ -138,7 +112,7 @@ When `enabled`, only issues carrying `claude-ready` are picked (human approval g
 | ---------------- | ------------------- |
 | refinement-skill | `feature-discovery` |
 
-Skill the execute flow offers when a `needs-refinement` story is next: `feature-discovery` (default). Runs in validation mode for lightweight Q&A or discovery mode for full spec+AC.
+Skill the execute flow offers when a story is too thin to implement: `feature-discovery` (default). Runs in validation mode for lightweight Q&A or discovery mode for full spec+AC. A story a person has not approved yet belongs in the board's Needs refinement column, which keeps it out of the pool without needing a label.
 
 ## Session Budget
 

@@ -32,7 +32,7 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 | `## Branch Convention` | Branch pattern containing `{number}` in a fenced block. |
 | `## Label Map` | Purpose → label tables (may use `###` sub-tables). |
 
-**Recommended** — read by commands, default-covered when absent: `## Story Template`, `## Session Budget`, `## Agent Gating`, `## Refinement`, `## Issue Types & Fields`.
+**Recommended** — read by commands, default-covered when absent: `## Story Template`, `## Session Budget`, `## Refinement`, `## Issue Types & Fields`.
 
 **Optional** — remove if unused: `## Project Board` (with `### Status Options`), `## Reference Docs`, `## Bundled Skills`, the `### Custom` label table.
 
@@ -46,9 +46,8 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 - **Tables** are 2+ column markdown tables: first cell is a lowercase kebab-case key, second is the value. Backticks around cells are stripped. `n/a` or an empty cell means "unset" for board/field ids.
 - **Quality gate**: the command inside the section's fenced code block. Empty or still `{quality_gate_command}` → preflight WARNING.
 - **Branch convention**: the first whitespace-delimited token containing `{number}` anywhere in the section (the fenced block, or the backtick-wrapped `Example:` line if the block was left unfilled).
-- **Label map rows**: kept only when the purpose key matches `^[a-z]+-[a-z-]+$` (e.g. `priority-high`, `status-blocked`). Unmapped purposes resolve to defaults in `templates/default-labels.md` (WARNING, never blocking).
-- **Ready gate**: gone as of 9.0.0. A `## Ready Gate` section left in a file is read and ignored; the pool is the board's `Backlog` column, which no setting turns off.
-- **Agent gating**: `agent-gating` row — `enabled` or `disabled`.
+- **Label map rows**: kept only when the purpose key matches `^[a-z]+-[a-z-]+$` (e.g. `claude-authored`). Unmapped purposes resolve to defaults in `templates/default-labels.md` (WARNING, never blocking). There is one issue label left to map, so a row naming a retired one is reported as `label-deprecated` and should be deleted.
+- **Ready gate and agent gating**: both gone — the gate as of 9.0.0, the gating as of 10.0.0. A `## Ready Gate` or `## Agent Gating` section left in a file is read and ignored. The pool is the board's `Backlog` column, which no setting turns off, and human approval is the card being in that column rather than a label anyone applies.
 - **Type capability**: the literal phrase `is type-capable` (bold tolerated) anywhere in the file switches on native issue-type handling.
 - **Project board**: `project-number`, `project-title`, `project-node-id`, `status-field-name` (default `Status`), `status-field-id`, `start-date-field-id`, `end-date-field-id`. In `### Status Options`, each row needs a cell starting `col-` (the purpose key) and an option id — the first cell matching lowercase hex of 6+ chars (`^[0-9a-f]{6,}`).
 - **Placeholders**: unreplaced `{org}`-style tokens anywhere trigger a preflight WARNING listing the offending lines.
@@ -56,6 +55,6 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 ## Behaviour on deviation
 
 - **Missing file, missing required section, or `gh` unauthenticated** — preflight CRITICAL: the calling command stops and offers the setup wizard (or "continue anyway" / "don't remind me").
-- **Missing recommended/optional content** — WARNING at most; commands proceed on defaults (`templates/default-labels.md` for labels and columns, `main` for the default branch, `feature/{number}/{short-desc}` for branches, agent-gating `disabled`).
+- **Missing recommended/optional content** — WARNING at most; commands proceed on defaults (`templates/default-labels.md` for labels and columns, `main` for the default branch, `feature/{number}/{short-desc}` for branches).
 - **Board section absent or unparseable** — CRITICAL `board-lane`. The board is where the pick pool lives, so a project without one selects nothing. A board that **is** configured but has no `Backlog` column, or whose `project-node-id` no longer resolves to the recorded `project-title` is CRITICAL too.
 - **`wf.py` parse failures** are never fatal — the picker returns a non-`ok` status and callers fall back to the inline (slower) procedure, so a malformed file degrades performance, not correctness.

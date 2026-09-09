@@ -59,7 +59,7 @@ When a bug, security issue, architecture violation, or tech debt is found during
 
 Every issue and pull request body this project writes follows one standard, `_shared/body-standard.md`, through the entry point for the thing being written: `writing-github-issues` for an issue, `pr-body` for a pull request. Both mean the same body: open with the actual problem or the actual change, use the standard section names and only the sections that carry information, leave out the investigation that found it, keep any uncertainty the source had, and write each paragraph on **one unwrapped line**.
 
-An issue that a person has to finish, because it needs a permission or an approval no agent can give, is marked three ways together: `[Manual]` at the front of the title, the `status-blocked` label, and a `## Manual step` section saying what has to be done and why.
+An issue that a person has to finish, because it needs a permission or an approval no agent can give, is marked three ways together: `[Manual]` at the front of the title, `Ownership` set to `Human`, and a `## Manual step` section saying what has to be done and why. The field is the part that decides anything — it keeps the issue out of the code agent's pool and puts its card in the Non-code column.
 
 `/github-workflow:report-issue` and `/github-workflow:execute` apply all of this for you. Ask for `writing-github-issues` or `pr-body` directly when you want an existing issue or pull request rewritten.
 

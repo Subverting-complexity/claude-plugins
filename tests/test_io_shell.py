@@ -53,7 +53,6 @@ import wf  # noqa: E402
 import wf_core  # noqa: E402  (the batch-size cap)
 
 # Sentinel for a keyword whose default is a value, so `None` stays meaningful.
-_UNSET = object()
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -107,6 +106,9 @@ _BASE_CFG = {
 }
 
 
+_UNSET = object()
+
+
 def _cfg(**over):
     """A deep copy of the baseline config with top-level overrides applied."""
     cfg = json.loads(json.dumps(_BASE_CFG))
@@ -119,18 +121,41 @@ def _candidate(number, labels=(), milestone=None):
             'labels': list(labels), 'body': '', 'milestone': milestone, 'url': ''}
 
 
+class _CodeOwned(dict):
+    """An `Ownership` map answering `Code agent` for any issue not named in it.
+
+    Truthy even when empty, because the picker treats a falsy ownership map as
+    "the org told us nothing" and empties the pool.
+
+    The picker excludes anything it cannot confirm is code work, so a fixture
+    saying nothing about ownership would empty every pool and every test would
+    be asserting that filter rather than what it meant to assert. This is the
+    ordinary state of a configured backlog: most issues are code work and the
+    org has said so. Tests about ownership pass a real map.
+    """
+
+    def get(self, key, default=None):
+        return dict.get(self, key, 'Code agent')
+
+    def __bool__(self):
+        return True
+
+
 def _facets(types=None, priority=None, classification=None, effort=None,
-            ownership=None):
-    """The `load_issue_facets` return shape; every map empty by default.
+            ownership=_UNSET):
+    """The `load_issue_facets` return shape.
 
     `cmd_pick` and `cmd_candidates` read the org's native types and field
-    values before selecting, so every test that drives them stubs this. Empty
-    maps are the no-org-metadata case, where the pool is typed and ordered by
-    labels exactly as it always was.
+    values before selecting, so every test that drives them stubs this. The
+    type, priority and classification maps are empty by default — that is the
+    org-has-not-typed-this case, and it is a case the picker has to handle.
+    Ownership is not: pass `ownership={}` for the org that defines no such
+    field, which is a pool of nothing.
     """
     return {'types': types or {}, 'priority': priority or {},
             'classification': classification or {}, 'effort': effort or {},
-            'ownership': ownership or {}}
+            'ownership': _CodeOwned() if ownership is _UNSET
+            else (ownership or {})}
 
 
 def _git_available():
@@ -821,9 +846,14 @@ class TestCandidatesCommand(unittest.TestCase):
         self.addCleanup(facets.stop)
 
     def test_the_pool_is_ordered_by_the_org_priority_field(self):
-        """The field wins over the label, and the listing carries its value."""
-        pool = [_candidate(4, labels=('priority-critical')),
-                _candidate(2, labels=('priority-low'))]
+        """The field is the whole order, and the listing carries its value.
+
+        The labels here are the ones that used to decide it, and they now
+        decide nothing: `priority-critical` on #4 loses to an `Urgent` field
+        value on #2, and #4 -- carrying no field value at all -- sorts last.
+        """
+        pool = [_candidate(4, labels=('priority-critical',)),
+                _candidate(2, labels=('priority-low',))]
         with mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')),                 mock.patch.object(wf, 'load_issue_facets',
                                   return_value=_facets(priority={2: 'Urgent'})):
             code, payload = _capture(wf.cmd_candidates, _candidates_args())
@@ -831,18 +861,20 @@ class TestCandidatesCommand(unittest.TestCase):
         self.assertEqual([c['number'] for c in payload['candidates']], [2, 4])
         self.assertEqual(payload['candidates'][0]['priority'], 'Urgent')
         self.assertIsNone(payload['candidates'][1]['priority'])
-        # #4 had no field value, so its label ordered it -- and that is reported.
-        self.assertEqual(payload['label_ordered_count'], 1)
+        # #4 has no field value, so nothing ranks it -- and that is reported.
+        self.assertEqual(payload['unprioritised_count'], 1)
 
     def test_pool_is_returned_in_priority_order(self):
-        pool = [_candidate(4, labels=('priority-low')),
-                _candidate(2, labels=('priority-critical'))]
-        with mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')):
+        pool = [_candidate(4), _candidate(2)]
+        with mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')),                 mock.patch.object(wf, 'load_issue_facets',
+                                  return_value=_facets(priority={4: 'Low',
+                                                                2: 'Urgent'})):
             code, payload = _capture(wf.cmd_candidates, _candidates_args())
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(payload['status'], 'ok')
         self.assertEqual([c['number'] for c in payload['candidates']], [2, 4])
         self.assertEqual(payload['total'], 2)
+        self.assertEqual(payload['unprioritised_count'], 0)
 
     def test_nothing_is_claimed_or_labelled(self):
         """The whole point of the command: a read with no side effects."""
@@ -887,14 +919,34 @@ class TestCandidatesCommand(unittest.TestCase):
     def test_work_a_code_agent_cannot_do_is_not_listed(self):
         """`bulk-execute` reads this to decide what goes in one pull request,
         so an issue only a person or a browser agent can finish has no business
-        in the answer — whatever lane the board happens to have it in."""
+        in the answer — whatever lane the board happens to have it in.
+
+        `Ownership` decides it, not the `[Browser]` title and not a label. Both
+        are on this issue and neither is read.
+        """
         browser = _candidate(1, labels=['browser-agent'])
         browser['title'] = '[Browser] Turn on the API'
         with mock.patch.object(wf, 'assemble_candidates',
                                return_value=(True, [browser, _candidate(2)], '')), \
+                mock.patch.object(wf, 'load_issue_facets',
+                                  return_value=_facets(ownership={
+                                      1: 'Browser agent', 2: 'Code agent'})), \
                 mock.patch.object(wf, 'issue_edges_map', return_value={}):
             _, payload = _capture(wf.cmd_candidates, _candidates_args())
         self.assertEqual([c['number'] for c in payload['candidates']], [2])
+
+    def test_an_issue_nobody_owns_is_not_listed(self):
+        """Opt-out has one exception and this is it. A backlog issue is
+        available unless a field says otherwise -- but `Ownership` unset is not
+        a field saying "code agent", it is a question nobody has answered, and
+        the picker will not answer it on the org's behalf."""
+        with mock.patch.object(wf, 'assemble_candidates',
+                               return_value=(True, [_candidate(1)], '')), \
+                mock.patch.object(wf, 'load_issue_facets',
+                                  return_value=_facets(ownership={})), \
+                mock.patch.object(wf, 'issue_edges_map', return_value={}):
+            code, payload = _capture(wf.cmd_candidates, _candidates_args())
+        self.assertEqual(code, wf.EXIT_NO_CANDIDATES)
 
     def test_the_listing_says_who_owns_each_candidate(self):
         with mock.patch.object(wf, 'assemble_candidates',
@@ -1610,6 +1662,12 @@ _APPLY_CAPS = {
                       'options': {'Code agent': 'o_code',
                                   'Browser agent': 'o_browser',
                                   'Human': 'o_human'}},
+        # `Classification` and `Origin` are the optional pair: an org may
+        # define them or not, and a spec may fill them or not. The three the
+        # picker reads -- Priority, Effort, Ownership -- are above, and an org
+        # missing one of those cannot have an issue filed against it at all.
+        'Origin': {'id': 'F_org', 'data_type': 'single-select',
+                   'options': {'Development': 'o_dev'}},
     },
     'denied': [], 'errors': [], 'cached': False,
 }
@@ -1907,7 +1965,7 @@ class _ApplyCase(unittest.TestCase):
             json.dump({'issues': entries}, fh)
         return path
 
-    def _run(self, entries, hub, extra_argv=(), calls=None):
+    def _run(self, entries, hub, extra_argv=(), calls=None, caps=None):
         path = self._spec_file(entries)
         args = wf.build_parser().parse_args(['issue-apply', path, *extra_argv])
         stderr = io.StringIO()
@@ -1920,7 +1978,7 @@ class _ApplyCase(unittest.TestCase):
         with mock.patch.object(wf, 'load_config', lambda: (True, _cfg(), '')), \
                 mock.patch.object(wf, 'resolve_org_capabilities',
                                   lambda cfg, refresh=False, root=None:
-                                  (True, _APPLY_CAPS, '')), \
+                                  (True, caps or _APPLY_CAPS, '')), \
                 mock.patch.object(wf, 'gh_graphql', hub.gh_graphql), \
                 mock.patch.object(wf, '_graphql_json', hub.graphql_json), \
                 mock.patch.object(wf, 'run', fake_run), \
@@ -2009,13 +2067,21 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(hub.mutations, [])
 
     def test_an_undefined_field_is_reported_once_for_the_run(self):
-        """Once per issue would bury the errors that actually matter."""
+        """Once per issue would bury the errors that actually matter.
+
+        `Origin` is the field to skip here because it is optional: an org that
+        has never created it still files issues, so the spec asking for it is
+        a note rather than a failure. Asking for a field the picker reads is
+        the other case entirely, and `validate_spec` refuses the whole run.
+        """
         hub = _FakeHub()
+        caps = dict(_APPLY_CAPS, field_map={
+            n: m for n, m in _APPLY_CAPS['field_map'].items() if n != 'Origin'})
         fields = {'field-priority': 'High', 'field-effort': 'Medium',
                   'field-ownership': 'Code agent', 'field-origin': 'Development'}
         entries = [self._full(key='a', fields=fields),
                    self._full(key='b', fields=fields)]
-        code, payload, stderr, _ = self._run(entries, hub)
+        code, payload, stderr, _ = self._run(entries, hub, caps=caps)
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(payload['skipped_fields'], ['Origin'])
         self.assertEqual(stderr.count('Origin'), 1)
@@ -2040,44 +2106,43 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(created['blocked_by'], [7])
         self.assertNotIn('Dependencies', created['body'])
 
-    def test_an_issue_created_with_an_open_dependency_is_marked_blocked(self):
+    def test_an_issue_created_with_an_open_dependency_is_placed_in_blocked(self):
         """Nothing did this before: a spec could write the edge and leave the
-        issue with no lifecycle label, so `pick` offered work whose dependency
-        had not been built yet."""
+        issue sitting in the pool, so `pick` offered work whose dependency had
+        not been built yet."""
         hub = _FakeHub([_existing(7)])
         code, payload, _, _ = self._run([self._full(blocked_by=[7])], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        applied = payload['applied'][0]
-        self.assertEqual(applied['lifecycle'], 'status-blocked')
-        self.assertEqual(applied['board_column'], 'Blocked')
-        self.assertIn('label status-blocked', applied['changed'])
+        self.assertEqual(payload['applied'][0]['board_column'], 'Blocked')
 
     def test_browser_work_goes_to_the_non_code_lane_not_the_blocked_one(self):
-        """The lane a sweep never releases from. `status-blocked` means a
-        dependency is open, and no dependency closing will make a code agent
-        able to click through a console."""
-        hub = _FakeHub(labels={'browser-agent': 'L_br'})
+        """The lane a sweep never releases from. Blocked means a dependency is
+        open, and no dependency closing will make a code agent able to click
+        through a console.
+
+        `Ownership` decides it. The `[Browser]` title prefix is a fallback for
+        an issue the org has not answered for, and it is not what is read here.
+        """
+        hub = _FakeHub()
         entry = self._full(title='[Browser] Turn on the API',
-                           labels=['browser-agent'])
+                           fields={'field-priority': 'High',
+                                   'field-effort': 'Medium',
+                                   'field-ownership': 'Browser agent'})
         code, payload, _, _ = self._run([entry], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['applied'][0]['lifecycle'], 'status-non-code')
         self.assertEqual(payload['applied'][0]['board_column'], 'Non-code')
 
-    def test_scope_wins_over_a_dependency(self):
-        hub = _FakeHub([_existing(7)], labels={'human-required': 'L_hu'})
+    def test_ownership_wins_over_a_dependency(self):
+        """Both are true at once and only one can name a lane. The owner is a
+        property of the work, and no dependency closing changes it."""
+        hub = _FakeHub([_existing(7)])
         entry = self._full(title='[Manual] Device pass', blocked_by=[7],
-                           labels=['human-required'])
+                           fields={'field-priority': 'High',
+                                   'field-effort': 'Medium',
+                                   'field-ownership': 'Human'})
         code, payload, _, _ = self._run([entry], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['applied'][0]['lifecycle'], 'status-non-code')
-
-    def test_code_work_with_nothing_open_gets_no_lifecycle_label(self):
-        """No lifecycle label is exactly what pickable means."""
-        hub = _FakeHub()
-        code, payload, _, _ = self._run([self._full()], hub)
-        self.assertEqual(code, wf.EXIT_OK)
-        self.assertIsNone(payload['applied'][0]['lifecycle'])
+        self.assertEqual(payload['applied'][0]['board_column'], 'Non-code')
 
     def test_a_pickable_issue_is_still_placed_in_backlog(self):
         """The gap the Backlog pool cannot survive. This phase used to return
@@ -2088,34 +2153,62 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(payload['applied'][0]['board_column'], 'Backlog')
 
-    def test_an_update_whose_blockers_closed_loses_its_blocked_label(self):
+    def test_an_update_whose_blockers_closed_returns_to_the_pool(self):
         """The other half of the early return: an issue whose last dependency
-        closed resolved to pickable, so `status-blocked` stayed on it and its
-        card stayed in Blocked until a separate sweep happened to scan it."""
-        hub = _FakeHub([_existing(7, labels=['status-blocked'],
+        closed resolved to pickable, so its card stayed in Blocked until a
+        separate sweep happened to scan it."""
+        hub = _FakeHub([_existing(7, blocked_by=[6]), _existing(6)],
+                       closed_edges={6})
+        code, payload, _, _ = self._run([self._full(number=7)], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['applied'][0]['board_column'], 'Backlog')
+
+    def test_a_retired_label_is_taken_off_whatever_the_spec_said(self):
+        """How an existing backlog migrates: an issue still carrying a label
+        from the label workflow is cleaned the next time a command touches it.
+
+        The labels are read from the issue, not the spec, because an update
+        entry does not restate them — which is why the one path that had to
+        find a stale label never found one.
+        """
+        hub = _FakeHub([_existing(7, labels=['status-blocked', 'priority-high'],
                                   blocked_by=[6]),
                         _existing(6)], closed_edges={6})
         calls = []
-        code, payload, _, _ = self._run([self._full(number=7)], hub,
-                                        calls=calls)
-        self.assertEqual(code, wf.EXIT_OK)
-        applied = payload['applied'][0]
-        self.assertIsNone(applied['lifecycle'])
-        self.assertEqual(applied['board_column'], 'Backlog')
-        self.assertIn('cleared label status-blocked', applied['changed'])
+        _, payload, _, _ = self._run([self._full(number=7)], hub, calls=calls)
+        self.assertIn('cleared retired label(s) status-blocked, priority-high',
+                      payload['applied'][0]['changed'])
         joined = [' '.join(c) for c in calls]
         self.assertTrue(any('issue edit 7' in c and '--remove-label' in c
                             and 'status-blocked' in c and '--add-label' not in c
                             for c in joined), joined)
 
-    def test_an_update_reads_its_stale_label_from_the_issue_not_the_spec(self):
-        """An update entry that does not restate its labels looked unlabelled,
-        so the one path that had to find a stale label never found one."""
-        hub = _FakeHub([_existing(7, labels=['status-blocked'], blocked_by=[6]),
-                        _existing(6)], closed_edges={6})
-        _, payload, _, _ = self._run([self._full(number=7)], hub)
-        self.assertIn('cleared label status-blocked',
+    def test_a_created_issue_is_told_what_was_left_unset(self):
+        """`Classification` and `Origin` are not worth refusing an issue over
+        and are worth saying out loud. A stderr line reaches whoever ran the
+        command; a comment reaches whoever opens the issue, who is the person
+        who can fill the field in."""
+        hub = _FakeHub()
+        calls = []
+        _, payload, _, _ = self._run(
+            [self._full(kind=None, fields={'field-priority': 'High',
+                                           'field-effort': 'Medium',
+                                           'field-ownership': 'Code agent'})],
+            hub, calls=calls)
+        self.assertIn('commented on unset optional field(s)',
                       payload['applied'][0]['changed'])
+        body = [c for c in calls if 'comment' in c][0][-1]
+        self.assertIn('Classification', body)
+        self.assertIn('Origin', body)
+
+    def test_an_update_is_not_commented_on_for_a_field_it_never_mentioned(self):
+        """An update about something else is not a report on the fields it did
+        not restate, and commenting on every one would make the issue unusable
+        within a week."""
+        hub = _FakeHub([_existing(7)])
+        calls = []
+        self._run([self._full(number=7)], hub, calls=calls)
+        self.assertEqual([c for c in calls if 'comment' in c], [])
 
     def test_a_spec_local_reference_resolves_to_the_number_just_created(self):
         hub = _FakeHub()
@@ -2333,6 +2426,7 @@ class TestIssueAudit(_ApplyCase):
             {'field': {'name': 'Effort'}, 'name': 'Medium'},
             {'field': {'name': 'Classification'},
              'options': [{'name': 'New Feature'}]},
+            {'field': {'name': 'Origin'}, 'name': 'Development'},
             {'field': {'name': 'Ownership'}, 'name': 'Code agent'}]}, **over)
 
     def test_a_clean_backlog_exits_zero_and_writes_no_spec(self):
@@ -2648,17 +2742,24 @@ class TestConfigAudit(unittest.TestCase):
         self.assertEqual(self._checks(payload), ['field-unpinned'])
         self.assertIn('Ownership', payload['findings'][0]['detail'])
 
-    def test_a_mandatory_field_the_org_never_created_is_not_a_pin_problem(self):
-        """A field nobody has created cannot be pinned to anything. Reporting
-        every type as unpinned from it says nothing about the org, and buries
-        the findings that do."""
+    def test_a_mandatory_field_the_org_never_created_is_reported_once(self):
+        """A field nobody has created cannot be pinned to anything, so the
+        answer is one `field-absent` naming the field rather than one
+        `field-unpinned` per issue type saying nothing about the org.
+
+        This used to be a clean run. It is critical since 10.0.0, because the
+        picker reads the five mandatory fields and nothing else: an org missing
+        one cannot rank, size, classify or route an issue, and staying silent
+        about it is how this repository ran for weeks with no `Ownership`.
+        """
         caps = dict(_APPLY_CAPS, field_map={
             n: m for n, m in _APPLY_CAPS['field_map'].items() if n != 'Ownership'})
         code, payload, _ = self._run(caps=caps, types=[
             {'name': 'User Story', 'enabled': True,
              'pinned': ['Priority', 'Effort', 'Classification', 'Origin']}])
-        self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(self._checks(payload), [])
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(self._checks(payload), ['field-absent'])
+        self.assertIn('Ownership', payload['findings'][0]['detail'])
 
     # ── the warnings ─────────────────────────────────────────────────────────
 
@@ -2685,13 +2786,33 @@ class TestConfigAudit(unittest.TestCase):
         self.assertEqual(self._checks(payload), [])
         self.assertEqual(payload['summary']['warning'], 0)
 
-    def test_a_lifecycle_label_the_map_never_claims_fails(self):
-        """The silent one: `pick` then filters on a name no issue carries."""
+    def test_a_status_label_the_map_still_claims_is_deprecated(self):
+        """`label-unmapped` used to fail the run here, because a purpose key
+        the repo carried under another name left `pick` filtering on a default
+        that matched nothing.
+
+        No label reaches a filter since 10.0.0, so a map row for a retired
+        label costs nothing but confusion: it is a warning naming the row, and
+        the run passes. The repo carries the label too, so this is the map
+        being stale rather than the label being missing.
+        """
         code, payload, _ = self._run(
-            labels=self._LABELS + ['status:parked'],
+            labels=self._LABELS + ['status-non-code'],
             cfg_over={'labels': {'status-non-code': 'status-non-code'}})
-        self.assertEqual(code, wf.EXIT_DRIFT)
-        self.assertIn('label-unmapped', self._checks(payload))
+        self.assertEqual(self._checks(payload), ['label-deprecated'])
+        self.assertIn('status-non-code', payload['findings'][0]['detail'])
+        self.assertEqual(code, wf.EXIT_OK)
+
+    def test_a_deprecation_never_asks_anyone_to_delete_a_live_label(self):
+        """Deleting a label removes it from every issue that carries it, which
+        is history nobody asked to lose. The fix text says to drop the map
+        row."""
+        _, payload, _ = self._run(
+            labels=self._LABELS + ['status-non-code'],
+            cfg_over={'labels': {'status-non-code': 'status-non-code'}})
+        fix = payload['findings'][0]['fix'].lower()
+        self.assertIn('label map', fix)
+        self.assertIn('the labels themselves can stay', fix)
 
     def test_label_drift_warns_without_failing_the_run(self):
         code, payload, _ = self._run(
@@ -2918,62 +3039,103 @@ class TestBoardMoveOrdering(unittest.TestCase):
 class TestUnblockSweep(unittest.TestCase):
     """`wf unblock`: release what the edges say is free, report the rest."""
 
-    RELEASED = {'id': 'I_a', 'number': 1313, 'title': 'Device pass',
-                'body': 'Prose.\n\n## Dependencies\n\nBlocked by #1311\n',
-                'labels': {'nodes': [{'name': 'status-blocked'}]},
-                'blockedBy': {'nodes': [{'number': 1311, 'state': 'CLOSED'}]}}
-    HELD = {'id': 'I_b', 'number': 1124, 'title': 'Create the account at sign-in',
-            'body': '', 'labels': {'nodes': [{'name': 'status-blocked'}]},
-            'blockedBy': {'nodes': [{'number': 979, 'state': 'OPEN'},
-                                    {'number': 1311, 'state': 'CLOSED'}]}}
-    NO_EDGES = {'id': 'I_c', 'number': 1084, 'title': 'Open a bank account',
-                'body': '', 'labels': {'nodes': [{'name': 'status-blocked'}]},
-                'blockedBy': {'nodes': []}}
+    RELEASED = (1313, 'Device pass', [{'number': 1311, 'state': 'CLOSED'}])
+    HELD = (1124, 'Create the account at sign-in',
+            [{'number': 979, 'state': 'OPEN'},
+             {'number': 1311, 'state': 'CLOSED'}])
+    NO_EDGES = (1084, 'Open a bank account', [])
     # Human work whose only blocker has closed. Under the old rule this was
     # released into the code agent's pool; it is a device pass, so no agent can
     # do it whatever its edges say.
-    SCOPED = {'id': 'I_d', 'number': 1368, 'title': '[Manual] Device pass on iOS',
-              'body': '',
-              'labels': {'nodes': [{'name': 'status-blocked'},
-                                   {'name': 'human-required'}]},
-              'blockedBy': {'nodes': [{'number': 1362, 'state': 'CLOSED'}]}}
+    SCOPED = (1368, '[Manual] Device pass on iOS',
+              [{'number': 1362, 'state': 'CLOSED'}])
 
     def _cfg(self):
-        return _cfg(board={'project_node_id': None, 'project_title': None,
+        return _cfg(board={'project_node_id': 'PVT_1', 'project_title': 'Board',
                            'status_field_name': 'Status', 'columns': {}})
 
-    def _sweep(self, nodes, calls, dry_run=False, deliveries=None):
-        """Drive `unblock_scan` over `nodes` with every network call stubbed."""
+    def _sweep(self, issues, calls, dry_run=False, deliveries=None,
+               ownership=None, moves=None, queries=None):
+        """Drive `unblock_scan` over `issues` with every network call stubbed.
+
+        Each entry is `(number, title, blocked_by)`, laid out the way the board
+        query returns it: the sweep reads the Blocked column, so a fixture that
+        hands it a search result would be testing a path that no longer exists.
+        """
+        nodes = [{'fieldValueByName': {'name': 'Blocked'},
+                  'content': {'number': n, 'title': t, 'body': '',
+                              'state': 'OPEN', 'url': '',
+                              'labels': {'nodes': []}, 'milestone': None,
+                              'assignees': {'nodes': []},
+                              'blockedBy': {'nodes': list(edges)}}}
+                 for n, t, edges in issues]
+        owned = {n: 'Code agent' for n, _t, _e in issues}
+        owned.update(ownership or {})
+
         def fake_graphql(query, **fields):
-            if 'search(' in query:
-                return True, {'search': {'pageInfo': {'hasNextPage': False},
-                                         'nodes': list(nodes)}}, ''
-            return True, {'repository': {}}, ''
+            if queries is not None:
+                queries.append(query)
+            return True, {'node': {
+                'field': {'options': [{'name': 'Backlog'}, {'name': 'Blocked'},
+                                      {'name': 'Non-code'}]},
+                'items': {'pageInfo': {'hasNextPage': False},
+                          'nodes': nodes}}}, ''
 
         def fake_run(cmd, input_text=None):
             calls.append(list(cmd))
             return 0, '', ''
 
+        def fake_move(cfg, number, column):
+            (moves if moves is not None else []).append((number, column))
+            return True, 'moved to %s' % column
+
         with mock.patch.object(wf, 'gh_graphql', fake_graphql), \
                 mock.patch.object(wf, 'run', fake_run), \
+                mock.patch.object(wf, 'fetch_issue_facets',
+                                  lambda *a, **k: (True, _facets(
+                                      ownership=owned), '')), \
                 mock.patch.object(wf, 'blocker_deliveries',
                                   lambda *a, **k: deliveries or {}), \
-                mock.patch.object(wf, 'board_move',
-                                  lambda *a: (True, 'moved to Backlog')):
+                mock.patch.object(wf, 'board_move', fake_move):
             return wf.unblock_scan(self._cfg(), dry_run=dry_run)
 
+    def test_the_sweep_reads_the_blocked_column_not_a_label(self):
+        """The 10.0.0 change, and the reason the sweep can be trusted at all.
+
+        It searched for `status-blocked` until then, so an issue whose card sat
+        in Blocked with no such label was invisible to it and stayed blocked
+        for good -- and an issue carrying the label whose card had already
+        moved on was swept anyway. One question, one answer, and the board is
+        where it lives.
+        """
+        queries = []
+        self._sweep([self.RELEASED], [], queries=queries)
+        self.assertTrue(queries)
+        self.assertFalse([q for q in queries if 'search(' in q])
+        self.assertIn('ProjectV2', queries[0])
+
     def test_an_issue_whose_blockers_all_closed_is_released(self):
-        calls = []
-        report = self._sweep([self.RELEASED], calls)
+        moves = []
+        report = self._sweep([self.RELEASED], [], moves=moves)
         self.assertEqual([r['issue'] for r in report['released']], [1313])
         self.assertEqual(report['released'][0]['closed_blockers'], [1311])
-        self.assertTrue(report['released'][0]['label_removed'])
-        joined = [' '.join(c) for c in calls]
-        self.assertTrue(any('issue edit 1313' in c and 'status-blocked' in c
-                            and '--remove-label' in c for c in joined))
+        self.assertTrue(report['released'][0]['board_moved'])
+        self.assertEqual(moves, [(1313, 'Backlog')])
 
-    def test_a_release_says_on_the_issue_why_the_label_went(self):
-        """A bare removal reads to the next agent as damage to repair, and one
+    def test_the_release_is_the_move_into_the_pool(self):
+        """Backlog is the pick pool, so arriving there *is* being released.
+
+        There is no second write for the two to disagree about, which is what
+        the label version could never promise: an issue could carry no
+        `status-blocked` label and still sit in the Blocked lane, out of the
+        pool, with nothing to notice it.
+        """
+        moves = []
+        self._sweep([self.RELEASED], [], moves=moves)
+        self.assertEqual(moves, [(1313, 'Backlog')])
+
+    def test_a_release_says_on_the_issue_why_the_card_moved(self):
+        """A bare move reads to the next agent as damage to repair, and one
         repaired it two minutes later. The comment is what stops that."""
         calls = []
         self._sweep([self.RELEASED], calls)
@@ -2981,59 +3143,79 @@ class TestUnblockSweep(unittest.TestCase):
         self.assertEqual(len(comments), 1)
         body = comments[0][-1]
         self.assertIn('#1311', body)
-        self.assertIn('removed on purpose', body)
+        self.assertIn('on purpose', body)
 
     def test_an_issue_with_one_open_blocker_is_held_and_untouched(self):
-        calls = []
-        report = self._sweep([self.HELD], calls)
+        calls, moves = [], []
+        report = self._sweep([self.HELD], calls, moves=moves)
         self.assertEqual(report['released'], [])
         self.assertEqual(report['held'][0]['open_blockers'], [979])
         self.assertEqual(report['held'][0]['closed_blockers'], [1311])
+        self.assertEqual(moves, [])
         self.assertFalse([c for c in calls if 'edit' in c or 'comment' in c])
 
     def test_an_issue_with_no_edges_is_never_released(self):
         """The safety rule, at the level that matters: the manual backlog is
         blocked on bank accounts and device passes, not on issues."""
-        calls = []
-        report = self._sweep([self.NO_EDGES], calls)
+        calls, moves = [], []
+        report = self._sweep([self.NO_EDGES], calls, moves=moves)
         self.assertEqual(report['released'], [])
         self.assertEqual(report['held'], [])
         self.assertEqual(report['no_edges'], {'count': 1, 'issues': [1084]})
         self.assertEqual(calls, [])
+        self.assertEqual(moves, [])
+
+    def test_an_issue_nobody_owns_is_held_and_named(self):
+        """The sweep will not decide an unowned issue is safe for a code agent.
+
+        Same rule the picker follows, and the same reason: `Ownership` is the
+        only thing that says whether a job needs a phone in someone's hand.
+        Held rather than dropped, because a repository with unowned issues has
+        a configuration problem the report should name.
+        """
+        moves = []
+        report = self._sweep([self.RELEASED], [], ownership={1313: None},
+                             moves=moves)
+        self.assertEqual(report['released'], [])
+        self.assertEqual(report['unowned'],
+                         [{'issue': 1313, 'title': 'Device pass'}])
+        self.assertEqual(moves, [])
 
     def test_scoped_work_is_moved_to_the_non_code_lane_not_released(self):
         """The bug this lane exists to close. Both issues the first real sweep
         would have released were `[Manual]` device-pass work whose blockers
         happened to close."""
-        calls = []
-        report = self._sweep([self.SCOPED], calls)
+        moves = []
+        report = self._sweep([self.SCOPED], [], ownership={1368: 'Human'},
+                             moves=moves)
         self.assertEqual(report['released'], [])
         self.assertEqual([r['issue'] for r in report['rescoped']], [1368])
         self.assertEqual(report['rescoped'][0]['scope'], 'human')
-        self.assertEqual(report['rescoped'][0]['label'], 'status-non-code')
-        joined = ' '.join(' '.join(c) for c in calls)
-        self.assertIn('--add-label status-non-code', joined)
-        self.assertIn('--remove-label status-blocked', joined)
+        self.assertEqual(report['rescoped'][0]['column'], 'Non-code')
+        self.assertEqual(moves, [(1368, 'Non-code')])
 
     def test_a_rescope_says_on_the_issue_what_changed_and_what_did_not(self):
         calls = []
-        self._sweep([self.SCOPED], calls)
+        self._sweep([self.SCOPED], calls, ownership={1368: 'Human'})
         body = [c for c in calls if 'comment' in c][0][-1]
-        self.assertIn('status-non-code', body)
+        self.assertIn('Non-code', body)
         self.assertIn('Nothing about the work has changed', body)
 
     def test_a_dry_run_reports_a_rescope_without_writing_it(self):
-        calls = []
-        report = self._sweep([self.SCOPED], calls, dry_run=True)
+        calls, moves = [], []
+        report = self._sweep([self.SCOPED], calls, dry_run=True,
+                             ownership={1368: 'Human'}, moves=moves)
         self.assertTrue(report['rescoped'][0]['dry_run'])
         self.assertEqual(calls, [])
+        self.assertEqual(moves, [])
 
     def test_a_dry_run_reports_the_same_release_and_writes_nothing(self):
-        calls = []
-        report = self._sweep([self.RELEASED], calls, dry_run=True)
+        calls, moves = [], []
+        report = self._sweep([self.RELEASED], calls, dry_run=True, moves=moves)
         self.assertEqual([r['issue'] for r in report['released']], [1313])
         self.assertTrue(report['released'][0]['dry_run'])
         self.assertEqual(calls, [])
+        self.assertEqual(moves, [])
 
     def test_a_held_issue_whose_blocker_just_shipped_is_reported_as_partial(self):
         report = self._sweep(
@@ -3050,7 +3232,8 @@ class TestUnblockSweep(unittest.TestCase):
 
     def test_the_scan_reports_everything_it_looked_at(self):
         report = self._sweep(
-            [self.RELEASED, self.HELD, self.NO_EDGES, self.SCOPED], [])
+            [self.RELEASED, self.HELD, self.NO_EDGES, self.SCOPED], [],
+            ownership={1368: 'Human'})
         self.assertEqual(report['scanned'], 4)
         self.assertEqual(len(report['released']), 1)
         self.assertEqual(len(report['held']), 1)
@@ -3059,14 +3242,15 @@ class TestUnblockSweep(unittest.TestCase):
 
 
 class TestMarkBlocked(unittest.TestCase):
-    """Returning an issue to blocked moves its card as well as its label.
+    """Returning an issue to blocked moves its card, and that is the whole act.
 
-    The board is how a person sees the state of the work. An issue labelled
-    blocked whose card still sits in In Progress is two answers, and the one a
-    human reads is the wrong one.
+    The board is how a person sees the state of the work, and until 10.0.0 it
+    was also given a `status-blocked` label to agree with. Two records of one
+    fact is one record too many: a card in In Progress carrying a blocked label
+    is two answers, and the one a human reads is the wrong one.
     """
 
-    def test_the_card_follows_the_label(self):
+    def _mark(self):
         calls, moves = [], []
         with mock.patch.object(wf, 'run',
                                lambda c, input_text=None:
@@ -3075,9 +3259,28 @@ class TestMarkBlocked(unittest.TestCase):
                                   lambda cfg, number, column:
                                   (moves.append((number, column)), (True, ''))[1]):
             wf.mark_blocked(_cfg(), {'number': 7}, '#9')
+        return calls, moves
+
+    def test_the_card_moves_to_the_blocked_lane(self):
+        _calls, moves = self._mark()
         self.assertEqual(moves, [(7, 'Blocked')])
+
+    def test_the_claim_is_given_back(self):
+        """The issue is nobody's again, which is what puts it back in reach of
+        the sweep that releases it when its dependency closes."""
+        calls, _moves = self._mark()
         joined = ' '.join(' '.join(c) for c in calls)
-        self.assertIn('--add-label status-blocked', joined)
+        self.assertIn('--remove-assignee @me', joined)
+
+    def test_no_label_is_written(self):
+        calls, _moves = self._mark()
+        joined = ' '.join(' '.join(c) for c in calls)
+        self.assertNotIn('--add-label', joined)
+
+    def test_the_issue_says_what_it_is_waiting_for(self):
+        calls, _moves = self._mark()
+        body = [c for c in calls if 'comment' in c][0][-1]
+        self.assertIn('#9', body)
 
 
 if __name__ == '__main__':

@@ -7,6 +7,28 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 10.0.0
+
+**Breaking: no label decides anything, anywhere.** The issue-side labels are retired outright — every `status-*`, every `priority-*`, the two scope labels, `needs-refinement` and `claude-ready`. What replaced them was already there: an issue's state is the board column its card sits in, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. 9.0.0 kept the labels as a human-readable mirror; a mirror that nothing reads is a second answer to every question the board already answers, and the two drift. The only issue label left is the `claude-authored` provenance marker. Pull request review-state labels (`needs-review`, `reviewing`, `approved`, `changes-requested`) are untouched — they describe a pull request, which has no board card.
+
+**Human approval is a column, not a label.** `agent-gating` and the `claude-ready` label are gone. A person approves work by moving its card into `Backlog` and withholds approval by leaving it in `Needs refinement` or `Parked`. That was the last label driving a picker decision, so selection now reads structured state end to end: the column decides eligibility, native blocked-by edges exclude, `Priority` orders, `Effort` bounds, `Ownership` decides suitability. A `## Agent Gating` section left in an existing `ClaudeProject.md` is read and ignored, and `wf config-audit` reports it so it gets deleted rather than believed.
+
+**Four fields are required; two are optional and comment instead of failing.** `Ownership`, `Status` (the board column), `Effort` and `Priority` must be set — `wf issue-apply` refuses a spec that leaves one blank, **and refuses one naming a field the org has never defined**, which is what let a repository run for weeks with no `Ownership` field while `config-audit` reported a clean configuration. `Classification` and `Origin` are optional: an issue created without one gets a comment naming it, never a refusal. `Status reason` has been removed from the plugin entirely — it was never read.
+
+**A missing `Priority` sorts last and says so.** The `priority-*` label fallback is gone, so an issue with no `Priority` value sorts behind every issue that has one and is named on stderr with the command to backfill it. `wf candidates` reports `unprioritised_count` where it used to report `label_ordered_count`.
+
+**`unblock` reads the board.** The sweep used to list every open issue carrying the blocked label. It now reads the `Blocked` column, which is where `issue-apply` puts blocked work, so the sweep and the writer agree by construction.
+
+**`config-audit` catches two new ways a board can lie.** `board-orphan` is an open, unassigned issue with no card — invisible to the pool. `board-unset` is a card sitting in no lane — an issue with no state. Both are critical, because both silently shrink the pool. `field-absent` (the org defines no `Priority`, `Effort` or `Ownership`) is critical too; `field-absent-optional` warns.
+
+### Upgrading
+
+Run `/github-workflow:preflight` (or `wf config-audit`) first — it names everything that has to change. In summary: delete every retired row from `## Label Map` (keep `claude-authored`), delete any `## Agent Gating` and `## Ready Gate` section, and make sure the org defines `Ownership`, `Effort` and `Priority` as issue fields. Existing issues need no edit: `wf issue-apply` strips a retired label from any issue it writes, and `wf issue-audit --apply` backfills a missing field value. The retired labels can stay in the repository — deleting one strips it from every issue that ever carried it, which loses history for nothing.
+
+## local-workflow 2.13.3
+
+**The shared story template stopped naming labels.** `feature-discovery` and the story template described a manual story as carrying the `status-non-code` label and a thin one as carrying `needs-refinement`; neither label exists in github-workflow any more. Wording only — local-workflow has no board and no fields, so nothing behavioural changed.
+
 ## local-workflow 2.13.2
 
 **`Ready` left the shared vocabulary.** `feature-discovery` suggested a `Ready` state alongside the github-workflow lifecycle it mirrors; that state no longer exists in either plugin. Wording only.

@@ -161,9 +161,9 @@ The deploy itself is automatable, so this issue takes no `[Manual]` prefix. The 
 
 [Manual] Grant the Cloudflare GitHub App access to the organisation
 
-### Labels
+### Fields
 
-`status-blocked`, plus the usual priority label.
+`Ownership` is `Human`. `Priority` and `Effort` as the work warrants.
 
 ### Body
 
@@ -182,7 +182,7 @@ An organisation owner must install the Cloudflare GitHub App on the `Subverting-
 - A push to `main` triggers a Cloudflare deployment.
 ```
 
-The three markers go together: `[Manual]` in the title, `status-blocked` on the issue, and a `## Manual step` section saying what a person must do and why.
+The three go together: `[Manual]` in the title, `Ownership` set to `Human`, and a `## Manual step` section saying what a person must do and why. `issue-apply` puts the card in the Non-code column from the field.
 
 ---
 

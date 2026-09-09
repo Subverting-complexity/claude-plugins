@@ -46,7 +46,7 @@ Determine the mode before starting. This drives whether the interview produces s
 
 State the mode after detection: "I'll run this as a **discovery** session — we'll end with stories." or "I'll run this as a **validation** session — we'll work through every open question." The user can override.
 
-When called as a refinement skill for a `needs-refinement` story, default to **discovery** mode (the story needs fleshing out into actionable work).
+When called as a refinement skill for a story too thin to implement, default to **discovery** mode (the story needs fleshing out into actionable work).
 
 ## Scope Detection (discovery mode)
 
@@ -248,7 +248,7 @@ When a large-scope feature produces more than 4 stories:
 
 1. **Fully spec** the first 2–3 stories in the dependency chain (the fundamentals that later stories depend on).
 2. **Defer speccing** for stories deeper in the dependency chain. Create them with minimal spec: title, one-line Overview, dependency markers, and a note: "This story needs refinement after its dependencies are complete."
-3. Apply the `needs-refinement` label (from the project's label map) to deferred stories. This excludes them from the execute pick pool until their dependencies are resolved and a refinement session has been run.
+3. Put each deferred story's card in the board's **Needs refinement** column rather than Backlog. The pool is the Backlog column, so that is what keeps a half-specced story out of it until its dependencies are resolved and a refinement session has been run.
 
 ### Dependency chain enforcement
 
@@ -303,7 +303,7 @@ When the user approves the plan, offer to create the stories as GitHub issues. I
 
 0. Write each title and body to the plugin's `writing-github-issues` standard (github-workflow provides it as a skill; its story shape is `references/story-template.md`). The interview produces far more material than a story needs, so this is where most of it gets left behind: no discovery history, no restating the Summary under another heading, and no section that would be empty. Write each paragraph on one unwrapped line (`_shared/body-standard.md`).
 
-   A story that cannot be finished without a person, because it needs a permission or an approval no agent can give, is marked three ways together: `[Manual]` at the front of the title, the `status-blocked` label in place of the usual lifecycle label, and a `## Manual step` section saying what has to be done and why.
+   A story that cannot be finished without a person, because it needs a permission or an approval no agent can give, is marked three ways together: `[Manual]` at the front of the title, `Ownership` set to `Human`, and a `## Manual step` section saying what has to be done and why. The field is the one that matters — it is what keeps the story out of the code agent's pool, and `issue-apply` puts the card in the Non-code column from it.
 
    Check once, before the first issue, whether the repository publishes an issue template, either its own or one inherited from the organisation's `.github` repository. Where one applies, every story uses its headings and order. github-workflow resolves this through `templates/issue-template-resolution.md`; the result is cached, so check once rather than per story.
 1. **One write for the whole set.** Under github-workflow every issue is created by `wf issue-apply` from a single spec — title, body, native issue type, field values, labels, parent and dependency edges together. Not a `gh issue create` loop, and not create-then-upgrade: an issue that exists for a few seconds carrying only labels is what put half-classified stories on the board.
@@ -319,9 +319,9 @@ When the user approves the plan, offer to create the stories as GitHub issues. I
                 "title": "{epic title}",
                 "body_file": ".claude/epic-body.md",
                 "kind": "epic",
-                "labels": ["{priority_label}", "{lifecycle_label}"],
                 "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                            "field-effort": "{Low|Medium|High}",
+                           "field-ownership": "Code agent",
                            "field-origin": "Feature Discovery"}},
                {"key": "story-1",
                 "title": "{story title}",
@@ -329,9 +329,9 @@ When the user approves the plan, offer to create the stories as GitHub issues. I
                 "kind": "story",
                 "parent": "epic",
                 "blocked_by": ["{other key or issue number}"],
-                "labels": ["{priority_label}", "{lifecycle_label}"],
                 "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                            "field-effort": "{Low|Medium|High}",
+                           "field-ownership": "Code agent",
                            "field-origin": "Feature Discovery"}}]}
    JSON
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/discovery-spec.json
@@ -339,21 +339,18 @@ When the user approves the plan, offer to create the stories as GitHub issues. I
 
    - Each body goes in its own file and the entry names it (`body_file`) rather than carrying the text, so fenced code, backticks, `$` and quotes survive intact. github-workflow states the rule once in `templates/body-file-write.md`.
    - `kind` supplies the native type **and** the `Classification` value together (a story → User Story / New Feature, an epic → Epic), so neither is chosen by hand. Use `spike` for a research story.
-   - **No `type-*` label and no `[STORY]` title prefix.** The native type classifies the issue; `issue-apply` strips both if a spec still names them, and says that it did.
+   - **No labels at all**, and no `[STORY]` title prefix. The native type classifies the issue and the fields carry everything a decision reads; `issue-apply` strips a retired label or a type prefix if a spec still names one, and says that it did.
    - `field-effort` comes from the story's size estimate: large → **High**, medium → **Medium**, small → **Low**.
-   - `field-priority` is set only where the plan assigned one, and stays dual-tracked with the `priority-*` label. The field is what orders `pick`; the label is the fallback for issues without one.
-   - `blocked_by` writes a native edge, and `issue-apply` then applies `status-blocked` and moves the card to Blocked for any entry whose edges point at something still open.
+   - `field-priority`, `field-effort` and `field-ownership` are **required on every entry** — they are the pool's order, its size ceiling and whether a code agent may take the story at all, and `issue-apply` refuses a spec that leaves one blank. `field-ownership` is `Code agent` for a story a code agent will build, and `Browser agent` or `Human` for one it cannot.
+   - `blocked_by` writes a native edge, and `issue-apply` then moves the card to Blocked for any entry whose edges point at something still open.
    - Add `"milestone": "{title}"` to an entry in sprint mode. It must name an open milestone.
 2. Name every dependency in the entry's `blocked_by`. Where the dependency is another entry in the same spec and has no number yet, reference it by `key` and `issue-apply` resolves it once both exist.
-3. Apply ready state based on dependency state, through each entry's `labels`:
-   - Stories with no unresolved dependencies (DAG roots) → leave them with no lifecycle label, in the Backlog column. That is what available means; `issue-apply` puts them there itself.
-   - Stories whose dependencies are not yet closed → do NOT mark as ready. `issue-apply` applies `status-blocked` from the edges it just wrote, so there is nothing to add by hand.
-   - Deferred stories (see "Deferred speccing") → `needs-refinement` label.
-4. **Read the exit code.** **0** created them, and every issue number is written back into the spec file, so a re-run after a partial failure completes the remainder rather than filing duplicates. **21** (`no-capabilities`) means the org defines no types or fields — report that the stories could not be classified rather than filing them unclassified by hand. **22** means the spec is wrong (an unknown label, a milestone that is not open, a missing mandatory field), so fix it and re-run. **23** and **24** mean the issues exist but some metadata did not land, so name what failed and carry on.
+3. **Do not set state by hand.** `issue-apply` places every card from the issue's own state: a story with no unresolved dependency goes to Backlog, which is what available means; one whose dependencies are still open goes to Blocked, from the edges it just wrote; one owned by a person or a browser agent goes to Non-code. The single exception is a **deferred** story (see "Deferred speccing") — move its card to Needs refinement afterwards with `wf board-move {number} --column col-refinement`, because nothing on the issue itself says that its spec is thin.
+4. **Read the exit code.** **0** created them, and every issue number is written back into the spec file, so a re-run after a partial failure completes the remainder rather than filing duplicates. **21** (`no-capabilities`) means the org defines no types or fields — report that the stories could not be classified rather than filing them unclassified by hand. **22** means the spec is wrong (an unknown label, a milestone that is not open, a missing required field, or an org that defines no `Priority`, `Effort` or `Ownership` field at all), so fix it and re-run. **23** and **24** mean the issues exist but some metadata did not land, so name what failed and carry on.
 
    Where the command is unavailable, say so and stop rather than hand-writing the mutations.
 5. After creation, verify each issue body contains the correct dependency references. Use the post-creation validation pattern (see report-issue) to catch body corruption.
-6. Present a summary: issue numbers, titles, native type/labels, and the dependency graph with issue numbers filled in.
+6. Present a summary: issue numbers, titles, native type, priority and effort, and the dependency graph with issue numbers filled in.
 
 **Leave the assignee blank.** Do not assign created stories to anyone — not the creator, not an agent. Pass no `--assignee`/`--add-assignee` on creation and do not edit issues to assign them afterward. Backlog stories must enter the unassigned pool so `execute` can select them; assignment happens only at claim time, never at creation.
 

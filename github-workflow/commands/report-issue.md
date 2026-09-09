@@ -21,9 +21,7 @@ Before doing anything else, invoke `/github-workflow:preflight` to verify projec
 Read `ClaudeProject.md` and extract:
 
 - `org`, `repo` from Identity
-- Label map (for priority and lifecycle labels)
-
-If `ClaudeProject.md` is missing or has no label map, use the default label names from `templates/default-labels.md`. When using defaults in an interactive session, warn the user: "Label map not configured — using default labels. Run `/github-workflow:setup` to configure labels for this project."
+- The field names under Issue Types & Fields
 
 ### 2. Classify the issue
 
@@ -34,7 +32,7 @@ Determine the type:
 - **Architecture** — Layer violation, coupling, design problem
 - **Tech Debt** — Working but needs improvement
 
-### 3. Assess severity and select labels
+### 3. Assess severity, size and owner
 
 First decide what happens to the issue:
 
@@ -42,21 +40,15 @@ First decide what happens to the issue:
 - **Same scope and trivial** → Fix inline in current PR
 - **Everything else** → Create issue for later
 
-Then map the severity to a **priority label** from the label map in `ClaudeProject.md`:
+Then settle the three field values every issue must carry. They are written in Step 5; decide them here.
 
-- **Critical** — security hole, data loss, or a crash on a core path → `priority-critical` label
-- **High** — broken feature, blocks other work, or a clear regression → `priority-high` label
-- **Medium** — incorrect behaviour with a workaround, or notable debt → `priority-medium` label
-- **Low** — cosmetic, minor cleanup, or nice-to-have → `priority-low` label
+- **`Priority`** — **Urgent** for a security hole, data loss or a crash on a core path; **High** for a broken feature, work this blocks, or a clear regression; **Medium** for incorrect behaviour with a workaround, or notable debt; **Low** for cosmetic work, minor cleanup or a nice-to-have. This is the whole of the pool's order, so an issue without it sorts to the back and is never picked.
+- **`Effort`** — **Low** for a targeted fix in a few files, **Medium** for moderate scope with some investigation, **High** for broad impact, architectural change or significant unknowns.
+- **`Ownership`** — **Code agent** unless the fix needs a browser (**Browser agent**) or a person (**Human**). This is what keeps work a code agent cannot finish out of the pool. When the report covers both kinds of work, file two issues rather than choosing one owner for both halves: `../skills/writing-github-issues/SKILL.md` → **Scope: one issue, one party**.
 
-Do **not** select a type label. What kind of work this is comes from the native issue type in Step 5, and `type-*` labels are no longer part of the label map on any project.
+**No label carries any of this.** There is no priority label, no type label and no state label to choose — `wf issue-apply` writes the fields, sets the native issue type from `kind`, and places the card. The only label to pass is `claude-authored`, the provenance marker.
 
-Also include:
-
-- **Lifecycle state** — at most one, and usually **none**. An actionable report (it includes where and a suggested fix — the usual case) carries no lifecycle label: `issue-apply` places it in Backlog, and an issue in Backlog with no lifecycle label is exactly what available means. Use `needs-refinement` when the report is too vague to implement without a refinement session. When the issue cannot be closed until a person does something no agent can do (grant a permission, add a secret, approve a submission), the label is `status-non-code` and it goes with the `human-required` scope label, the `[Manual]` title prefix and a `## Manual step` section in the body — the four go together, and the rule is in `../skills/writing-github-issues/SKILL.md` under **Issues that need a person**.
-- **Provenance** — `claude-authored`, since this issue is Claude-created.
-
-Build the label list from whichever of these the project actually defines in its label map. Skip any purpose that has no label configured — never pass a placeholder or an empty label name to `gh`. Resolve every name by purpose key through `templates/default-labels.md`.
+An issue too vague to implement without a refinement session is not filed into the pool: file it and move its card to `col-refinement`, which is what keeps it out.
 
 ### 4. Detect current milestone
 
@@ -106,23 +98,21 @@ Drop the `milestone` key entirely in flat-backlog mode, or whenever Step 4 found
 
 The exception is `[Manual]`, for an issue a person has to do (Step 3). It is kept, because nothing native says an issue needs a human.
 
-**The labels carry no type.** `kind` supplies the native issue type and the `Classification` value together. A `type-*` label in the list is dropped for the same reason. Pass the priority label, `claude-authored`, and a lifecycle or scope label only where Step 3 called for one, omitting any the project does not define.
+**The labels carry no type, no priority and no state.** `kind` supplies the native issue type and the `Classification` value together, and the three required fields carry the rest. `wf issue-apply` drops any retired label in the list. Pass `claude-authored` and nothing else.
 
-**The lifecycle label is not the state.** `issue-apply` decides the lane from the issue's own state — scope, then open dependency edges — and writes both the label and the board column itself. Anything you pass that contradicts that is replaced.
+**You do not choose the lane.** `issue-apply` decides it from the issue's own state — `Ownership` first, then open dependency edges — and places the card itself. Non-code work goes to Non-code, an issue with an open edge to Blocked, everything else to Backlog.
 
 **Leave the assignee blank.** The spec has no assignee key, and you must not follow up with `gh issue edit --add-assignee`. Creating an issue is never an act of claiming it: new issues must enter the unassigned pool so `execute` (which queries `--assignee ""`) can select them. Assignment happens only at claim time (`execute` Acquire).
 
 **Field values.**
 
 - `kind` is the Step 2 classification in lower case.
-- `field-priority` is the Step 3 priority as the field names it: Critical becomes **Urgent**, the rest keep their names. **Keep** the `priority-*` label as well — priority is dual-tracked: the field orders selection and drives the portal's views, and the label is the fallback for issues the field was never set on.
-- `field-effort` is your scope assessment: **Low** for a targeted fix in a few files, **Medium** for moderate scope with some investigation, **High** for broad impact, architectural change or significant unknowns.
-- `field-ownership` is who has to do this work: **Code agent** unless the fix needs a browser (**Browser agent**) or a person (**Human**). It is what keeps non-code work out of the pick pool, so it goes on every issue — see `../skills/writing-github-issues/SKILL.md` → **Scope: one issue, one party**, including when to split a report into two issues rather than pick one owner for both halves.
-- `field-origin` is **Development**, or **Security Audit** if this report came out of a security audit session.
+- `field-priority`, `field-effort` and `field-ownership` are the three values Step 3 settled. All three are **required**: `issue-apply` refuses a spec that leaves one blank rather than filing work nothing can rank, size or route.
+- `field-origin` is **Development**, or **Security Audit** if this report came out of a security audit session. It is optional — leave it out and the created issue gets a comment saying it was filed without one.
 
 **The issue number** comes back in the command's JSON as `applied[0].number`, and is written into the spec file too. Later steps need it.
 
-**Read the exit code.** **0** created it. **21** (`no-capabilities`) means the org defines no issue types or fields — report that the issue could not be classified rather than filing an unclassified one by hand. **22** (`spec-invalid`) means the spec is wrong (an unknown label, a milestone that is not open, a missing mandatory field): fix it and re-run. **23** and **24** mean the issue exists but some metadata did not land — report which, by number and title, and carry on. Re-running the same spec after a partial failure completes the remainder rather than filing a duplicate.
+**Read the exit code.** **0** created it. **21** (`no-capabilities`) means the org defines no issue types or fields — report that the issue could not be classified rather than filing an unclassified one by hand. **22** (`spec-invalid`) means the spec is wrong (an unknown label, a milestone that is not open, a missing required field, or an org that defines no `Priority`, `Effort` or `Ownership` field at all): fix it and re-run. **23** and **24** mean the issue exists but some metadata did not land — report which, by number and title, and carry on. Re-running the same spec after a partial failure completes the remainder rather than filing a duplicate.
 
 **Body shape.** Follow `../skills/writing-github-issues/SKILL.md`.
 
