@@ -10,6 +10,12 @@ The selection rules are **not** duplicated here: the pure decision logic lives i
 # One-time bootstrap: pin a dedicated Python virtualenv (reused thereafter)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" setup
 
+# Can this project be worked on at all? (0 = nothing blocks, 26 = something does)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" preflight
+
+# …and repair what can be repaired without guessing, then re-check
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" preflight --fix
+
 # Claim the next story (Priority field → lowest number → atomic claim), print it
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick
 
@@ -292,7 +298,7 @@ The parent is the **only** thing read out of a body. Dependencies used to be rea
 
 Three things describe how a project works, and they drift apart quietly: `ClaudeProject.md`, the labels the repo actually carries, and the org's issue types and fields. Nothing errors when they disagree. A label gets renamed and a call site keeps applying the old name — `gh` refuses the edit and the issue stays where it was. An issue type stops being pinned to a field and every value written to it is stored correctly and shown nowhere.
 
-`config-audit` compares all three. It is what `skills/preflight` runs, and it never writes.
+`config-audit` compares all three, and it never writes. `preflight` below runs every one of these checks plus the file-level ones, and is what `skills/preflight` calls; reach for `config-audit` directly when only the drift half is wanted, or as a CI gate.
 
 ### What it reports
 
@@ -328,6 +334,55 @@ The label scan reads `--add-label`, `--remove-label` and `--label` out of every 
 ### Cost
 
 Two round trips: one repo query carrying the labels and the board together, and one org query for the pinning. Org capabilities come from the cache. `--offline` runs only the checks that need no network, `--quiet` drops the per-finding detail and keeps the exit code, and exit 26 makes it usable as a CI gate.
+
+## Can this project be worked on at all — `preflight`
+
+`config-audit` answers "does `ClaudeProject.md` agree with the live repo, board and org?". `preflight` answers the question a command actually has before it runs: **can this project be worked on at all?** That is every `config-audit` check, plus the ones that read the two markdown files themselves, plus a `--fix` that repairs the subset a run can repair without guessing.
+
+```
+# Before a command. Exit 0 means nothing blocks; 26 means something does.
+wf preflight
+
+# Repair what can be repaired, then re-run and report what is left.
+wf preflight --fix
+```
+
+The file-level checks used to be shell blocks inside `skills/preflight/SKILL.md`: `gh auth status`, the required-section `grep`, the placeholder scan, the quality-gate read, the `CLAUDE.md` check. Two implementations of one gate is one too many. The shell one could not be tested, could not be reused by `bulk-execute`, and disagreed with this one about what counted as critical — a board with no `Backlog` column was fatal here and absent there.
+
+### What it adds over `config-audit`
+
+| Finding | Level | Meaning |
+| ------- | ----- | ------- |
+| `gh-auth` | critical | The GitHub CLI cannot act for this repository. Nothing else runs. |
+| `file-config` | critical | There is no `ClaudeProject.md`. Reported alone: with no file there is nothing to compare anything against, and the network is never touched. |
+| `config-retired` | warning | A `## Ready Gate` or `## Agent Gating` section survives. Nothing reads it, which is exactly why it has to go — left there, the next person to read the file believes it. |
+| `placeholders` | warning | Template placeholders nobody replaced, named by line. |
+| `quality-gate` | warning | No pre-commit command, or the placeholder is still there. |
+| `file-claude-md` / `claude-md-ref` | warning | No `CLAUDE.md`, or one that never mentions `ClaudeProject.md` — so a session that runs no workflow command never finds the configuration. |
+| `review-config` | warning | `ClaudeProject.md` names a review-state label file that is not there, so every review label falls back to its default name. |
+
+### Every finding says whether `--fix` would touch it
+
+Each finding comes back with `auto` and `fixable`. `auto: true` means a run can repair it and `fixable` says how; `auto: false` means it must not, and `fixable` says why. The split is decided offline, in `wf_core.FIXABLE_CHECKS` and `wf_core.UNFIXABLE_REASONS`, which is what makes "would running `--fix` change anything?" answerable without a network call.
+
+`--fix` repairs seven things, all idempotent:
+
+| It does | Because |
+| ------- | ------- |
+| creates a missing board column | The lane is named in `BOARD_COLUMN_NAMES` and its colour and description in `BOARD_COLUMN_COLOURS`/`_DESCRIPTIONS`, so every creator writes the same board. |
+| rewrites `### Status Options` from the live board | The recorded ids are a snapshot; the board is the fact. |
+| deletes a retired section | Nothing reads it. |
+| deletes a deprecated label-map row | Nothing applies the label. The label itself stays in the repo — deleting one strips it from every issue that ever carried it. |
+| adds the `ClaudeProject.md` pointer to an existing `CLAUDE.md` | One sentence, and it is idempotent on the filename rather than the wording, so a project that worded its own pointer keeps it. |
+| puts an orphaned issue or an unset card in `Backlog` | Nothing on the issue says where it belongs, and `Backlog` is the one lane that means "nobody has decided anything about this yet". Somebody moving it straight back out is a decision; leaving it invisible is not. |
+
+It will not create a `CLAUDE.md`, invent an `## Identity` section, create an org-level issue field, pin a field to an issue type, choose between two disagreeing values, or write a quality gate. Each is either a decision only the project can make or a change that happens in the org settings rather than through the API this runs on.
+
+**Adding a column is the most destructive thing this file can do**, and it is worth knowing why. `updateProjectV2Field` replaces the whole option list rather than adding to it: omit an existing option and GitHub deletes it, along with every card sitting in that column. So `board_column_options` makes a second, uncached read that asks for each option's `color` and `description` as well as its id — the cached `board_status_field` a move uses asks only for id and name, and passing an option back without its colour silently recolours the board.
+
+### It reports the state it leaves, not the state it found
+
+`--fix` re-runs every check after repairing, and the `findings` it prints are the ones still true. Anything else would make the second run of an idempotent command look like it had done nothing — and it is the second run that tells you whether the first one worked.
 
 ## Settling a merged PR — `post-merge`
 

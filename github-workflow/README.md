@@ -192,7 +192,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | `code-architect`      | Architecture design and audit (SOLID + Clean)     |
 | `structured-coding`   | Structured coding methodology                     |
 | `code-review`         | Deep PR review, labels, optional auto-merge       |
-| `preflight`           | Checks project-config health before a run         |
+| `preflight`           | Checks project-config health before a run; `wf preflight --fix` repairs what it safely can |
 | `feature-discovery`   | Breaks features into stories + stress-tests plans |
 | `verify-feature`      | Verifies a change against its story in context    |
 | `security-audit`      | Security-focused codebase audit                   |

@@ -2519,15 +2519,16 @@ class TestHandoffAndClaims(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()):
             return _capture(args.func, args)
 
-    def test_handoff_labels_the_pr_moves_the_issue_and_frees_the_claim(self):
+    def test_handoff_labels_the_pr_moves_the_card_and_frees_the_claim(self):
         calls = []
         code, payload = self._run(['handoff', '--pr', '7', '--issue', '3'], calls)
         self.assertEqual(code, wf.EXIT_OK)
         joined = [' '.join(c) for c in calls]
         self.assertTrue(any('pr edit 7' in c and 'claude-authored' in c
                             and 'review-needs-review' in c for c in joined))
-        self.assertTrue(any('issue edit 3' in c and 'status-in-review' in c
-                            and 'status-in-progress' in c for c in joined))
+        # No `issue edit` at all: the column is the state, so the move is
+        # the whole hand-off and there is no label to swap.
+        self.assertFalse(any('issue edit' in c for c in joined))
         self.assertTrue(any('refs/claims/issue-3' in c for c in joined))
         self.assertEqual(payload['issues'][0]['board_moved'], True)
 
@@ -2539,7 +2540,8 @@ class TestHandoffAndClaims(unittest.TestCase):
         self.assertEqual(payload['review_label'], 'review-changes-requested')
 
     def test_handoff_reports_an_unmoved_board_without_failing(self):
-        """A board is a mirror of the labels, never the source of truth."""
+        """A failed move leaves the card where it was; the PR still exists and
+        the claim is still freed, so the run reports it rather than dying."""
         code, payload = self._run(['handoff', '--pr', '7', '--issue', '3'], [],
                                   moved=(False, 'no board configured'))
         self.assertEqual(code, wf.EXIT_OK)
@@ -2591,8 +2593,8 @@ class TestClaimReap(unittest.TestCase):
 
     def test_a_stale_ref_is_freed_and_a_live_one_is_left_alone(self):
         refs = [('aaa', 'issue-3'), ('bbb', 'issue-4')]
-        states = {'issue-3': ('issue', 3, 'CLOSED', [], False),
-                  'issue-4': ('issue', 4, 'OPEN', ['status-in-progress'], False)}
+        states = {'issue-3': ('issue', 3, 'CLOSED', [], False, True),
+                  'issue-4': ('issue', 4, 'OPEN', [], False, True)}
         code, payload, released = self._reap(refs, states)
         self.assertEqual(released, ['issue-3'])
         self.assertEqual(payload['summary'], {'reaped': 1, 'suspect': 1, 'skipped': 0})
@@ -2600,14 +2602,14 @@ class TestClaimReap(unittest.TestCase):
 
     def test_dry_run_reports_the_verdicts_without_deleting_anything(self):
         refs = [('aaa', 'issue-3')]
-        states = {'issue-3': ('issue', 3, 'CLOSED', [], False)}
+        states = {'issue-3': ('issue', 3, 'CLOSED', [], False, True)}
         _, payload, released = self._reap(refs, states, ['--dry-run'])
         self.assertEqual(released, [])
         self.assertEqual(payload['summary']['reaped'], 1)
 
     def test_a_ref_that_names_neither_an_issue_nor_a_pr_is_never_deleted(self):
         refs = [('aaa', 'sprint-lock')]
-        states = {'sprint-lock': (None, None, None, [], False)}
+        states = {'sprint-lock': (None, None, None, [], False, False)}
         _, payload, released = self._reap(refs, states)
         self.assertEqual(released, [])
         self.assertEqual(payload['summary']['suspect'], 1)
@@ -3282,6 +3284,302 @@ class TestMarkBlocked(unittest.TestCase):
         body = [c for c in calls if 'comment' in c][0][-1]
         self.assertIn('#9', body)
 
+
+class TestPreflight(unittest.TestCase):
+    """The one gate every workflow command runs first.
+
+    It used to be shell blocks inside `skills/preflight/SKILL.md` plus a
+    separate `config-audit`, which is two implementations of one question and
+    they disagreed about what counted as critical. These tests pin the answer.
+    """
+
+    _LIVE_BOARD = {'title': 'Board', 'field': {'options': [
+        {'id': 'opt%d' % i, 'name': name}
+        for i, name in enumerate(sorted(wf_core.BOARD_COLUMN_NAMES.values()))]}}
+
+    _CONFIG = '\n'.join([
+        '# Project', '',
+        '## Identity', '', '| org | acme |', '| repo | widgets |', '',
+        '## Package Manager', '', 'pnpm', '',
+        '## Quality Gate', '', '```bash', 'pnpm test', '```', '',
+        '## Branch Convention', '', '```', 'feature/{number}/{short-desc}', '```', '',
+        '## Label Map', '', '| Purpose | Label |', '| --- | --- |',
+        '| claude-authored | `claude-authored` |', '',
+        '## Issue Types & Fields', '', '| type-capable | yes |', '',
+        '## Project Board', '', '| project-node-id | PVT_1 |',
+        '| project-title | Board |', '',
+        '### Status Options', '',
+        '| Column | Purpose Key | Option ID |', '| ------ | ----------- | --------- |',
+    ] + ['| %s | `%s` | `opt%d` |'
+         % (name, purpose,
+            sorted(wf_core.BOARD_COLUMN_NAMES.values()).index(name))
+         for purpose, name in wf_core.BOARD_COLUMN_NAMES.items()] + [''])
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.scan = os.path.join(self.dir, 'plugin')
+        os.makedirs(self.scan)
+        self._write('ClaudeProject.md', self._CONFIG)
+        self._write('CLAUDE.md', '# Repo\n\nSee ClaudeProject.md.\n')
+
+    def _write(self, name, text):
+        path = os.path.join(self.dir, name)
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write(text)
+        return path
+
+    def _read(self, name):
+        with open(os.path.join(self.dir, name), encoding='utf-8') as fh:
+            return fh.read()
+
+    def _run(self, argv=(), board=_UNSET, orphans=(), unset=(), env_err=None,
+             mutation=None, moves=None):
+        if board is _UNSET:
+            board = copy.deepcopy(self._LIVE_BOARD)
+        args = wf.build_parser().parse_args(
+            ['preflight', '--scan', self.scan, *argv])
+        cfg = _cfg(board={'project_node_id': 'PVT_1', 'project_title': 'Board',
+                          'status_field_name': 'Status',
+                          'status_field_id': 'FIELD_1',
+                          'columns': {p: 'opt%d' % i for i, p
+                                      in enumerate(wf_core.BOARD_COLUMN_NAMES)}})
+
+        def gh_graphql(query, **fields):
+            if 'projectItems' in query:
+                nodes = ([{'number': n, 'title': 't', 'assignees': {'totalCount': 0},
+                           'projectItems': {'nodes': []}} for n in orphans]
+                         + [{'number': n, 'title': 't', 'assignees': {'totalCount': 1},
+                             'projectItems': {'nodes': [
+                                 {'project': {'id': 'PVT_1'},
+                                  'fieldValueByName': None}]}} for n in unset])
+                return True, {'repository': {'issues': {
+                    'pageInfo': {'hasNextPage': False, 'endCursor': None},
+                    'nodes': nodes}}}, ''
+            if 'labels(' in query:
+                return True, {'repository': {'labels': {
+                    'pageInfo': {'hasNextPage': False, 'endCursor': None},
+                    'nodes': [{'name': 'claude-authored'}]}}, 'board': board}, ''
+            if not board:
+                return False, None, 'no board'
+            return True, {'node': {'title': board.get('title'),
+                                   'field': dict(board['field'],
+                                                 id='FIELD_1')}}, ''
+
+        def gh_graphql_partial(query, **fields):
+            return {'organization': {'issueTypes': {'nodes': [
+                {'name': 'User Story', 'isEnabled': True,
+                 'pinnedFields': [{'name': n} for n
+                                  in ('Priority', 'Effort', 'Ownership')]}]}}}, [], ''
+
+        calls = []
+
+        def fake_run(cmd, input_text=None):
+            calls.append(list(cmd))
+            if mutation is not None and 'graphql' in cmd:
+                return mutation
+            return 0, '{}', ''
+
+        with mock.patch.object(wf, 'load_config',
+                               lambda: (True, copy.deepcopy(cfg), '')), \
+                mock.patch.object(wf, 'repo_root', lambda: self.dir), \
+                mock.patch.object(wf, 'check_environment', lambda: env_err), \
+                mock.patch.object(wf, 'resolve_org_capabilities',
+                                  lambda cfg, refresh=False, root=None:
+                                  (True, _APPLY_CAPS, '')), \
+                mock.patch.object(wf, 'gh_graphql', gh_graphql), \
+                mock.patch.object(wf, 'gh_graphql_partial', gh_graphql_partial), \
+                mock.patch.object(wf, 'run', fake_run), \
+                mock.patch.object(wf, 'board_move',
+                                  lambda c, n, col: (moves if moves is not None
+                                                     else (True, 'moved'))), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code, payload = _capture(wf.cmd_preflight, args)
+        return code, payload, calls
+
+    def _checks(self, payload):
+        return [f['check'] for f in payload['findings']]
+
+    # ── the clean case ───────────────────────────────────────────────────────
+
+    def test_a_healthy_project_reports_nothing_and_exits_zero(self):
+        code, payload, _ = self._run()
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['status'], 'ok')
+        self.assertEqual(payload['summary']['critical'], 0)
+        self.assertEqual(payload['findings'], [])
+
+    def test_the_checks_that_ran_are_named_so_silence_can_be_read(self):
+        _, payload, _ = self._run()
+        for check in ('gh-auth', 'file-config', 'config-section', 'board-lane',
+                      'quality-gate', 'claude-md-ref'):
+            self.assertIn(check, payload['checked'], check)
+
+    # ── the critical cases ───────────────────────────────────────────────────
+
+    def test_an_unauthenticated_cli_is_critical(self):
+        code, payload, _ = self._run(env_err='gh not available')
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(payload['status'], 'blocked')
+        self.assertIn('gh-auth', self._checks(payload))
+
+    def test_a_missing_config_file_stops_before_the_network(self):
+        os.remove(os.path.join(self.dir, 'ClaudeProject.md'))
+        code, payload, calls = self._run()
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(self._checks(payload), ['file-config'])
+        self.assertEqual(calls, [])
+
+    def test_an_orphaned_issue_is_critical_because_nothing_can_select_it(self):
+        code, payload, _ = self._run(orphans=[41])
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertIn('board-orphan', self._checks(payload))
+
+    # ── the warning cases ────────────────────────────────────────────────────
+
+    def test_a_surviving_ready_gate_warns_without_blocking(self):
+        self._write('ClaudeProject.md',
+                    self._CONFIG + '\n## Ready Gate\n\nmode: strict\n')
+        code, payload, _ = self._run()
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertIn('config-retired', self._checks(payload))
+
+    def test_an_unfilled_quality_gate_warns(self):
+        self._write('ClaudeProject.md',
+                    self._CONFIG.replace('pnpm test', '{quality_gate_command}'))
+        code, payload, _ = self._run()
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertIn('quality-gate', self._checks(payload))
+
+    def test_a_claude_md_that_never_mentions_the_config_warns(self):
+        self._write('CLAUDE.md', '# Repo\n\nNothing here.\n')
+        _, payload, _ = self._run()
+        self.assertIn('claude-md-ref', self._checks(payload))
+
+    def test_a_named_review_config_that_is_missing_warns(self):
+        self._write('ClaudeProject.md',
+                    self._CONFIG + '\nSee docs/review.config.md.\n')
+        _, payload, _ = self._run()
+        self.assertIn('review-config', self._checks(payload))
+
+    # ── every finding says whether --fix would touch it ──────────────────────
+
+    def test_each_finding_says_whether_it_can_be_repaired_automatically(self):
+        self._write('CLAUDE.md', '# Repo\n')
+        _, payload, _ = self._run()
+        found = {f['check']: f for f in payload['findings']}
+        self.assertTrue(found['claude-md-ref']['auto'])
+        self.assertIn('CLAUDE.md', found['claude-md-ref']['fixable'])
+
+    def test_something_no_run_should_decide_says_why_not(self):
+        self._write('ClaudeProject.md',
+                    self._CONFIG.replace('pnpm test', '{quality_gate_command}'))
+        _, payload, _ = self._run()
+        gate = [f for f in payload['findings'] if f['check'] == 'quality-gate'][0]
+        self.assertFalse(gate['auto'])
+        self.assertIn('project', gate['fixable'])
+
+    # ── --fix ────────────────────────────────────────────────────────────────
+
+    def test_fix_deletes_a_retired_section_and_says_so(self):
+        self._write('ClaudeProject.md',
+                    self._CONFIG + '\n## Agent Gating\n\n| agent-gating | on |\n')
+        code, payload, _ = self._run(['--fix'])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertNotIn('Agent Gating', self._read('ClaudeProject.md'))
+        self.assertTrue(any('Agent Gating' in line for line in payload['fixed']))
+
+    def test_fix_reports_the_state_it_leaves_not_the_state_it_found(self):
+        """A second run of an idempotent command must look like a clean run."""
+        self._write('ClaudeProject.md', self._CONFIG + '\n## Ready Gate\n\nx\n')
+        _, first, _ = self._run(['--fix'])
+        self.assertNotIn('config-retired', self._checks(first))
+        _, second, _ = self._run(['--fix'])
+        self.assertEqual(second['fixed'], [])
+        self.assertEqual(second['findings'], [])
+
+    def test_fix_adds_the_config_pointer_to_an_existing_claude_md(self):
+        self._write('CLAUDE.md', '# Repo\n')
+        _, payload, _ = self._run(['--fix'])
+        self.assertIn('ClaudeProject.md', self._read('CLAUDE.md'))
+        self.assertTrue(any('CLAUDE.md' in line for line in payload['fixed']))
+
+    def test_fix_never_writes_a_claude_md_that_does_not_exist(self):
+        os.remove(os.path.join(self.dir, 'CLAUDE.md'))
+        _, payload, _ = self._run(['--fix'])
+        self.assertFalse(os.path.exists(os.path.join(self.dir, 'CLAUDE.md')))
+        self.assertIn('file-claude-md', self._checks(payload))
+
+    def test_fix_places_an_orphaned_issue_in_the_backlog(self):
+        _, payload, _ = self._run(['--fix'], orphans=[41, 42])
+        self.assertTrue(any('#41' in line and '#42' in line
+                            for line in payload['fixed']))
+
+    def test_a_card_in_no_lane_is_placed_too(self):
+        _, payload, _ = self._run(['--fix'], unset=[7])
+        self.assertTrue(any('#7' in line for line in payload['fixed']))
+
+    def test_a_placement_that_fails_is_reported_rather_than_claimed(self):
+        _, payload, _ = self._run(['--fix'], orphans=[41],
+                                  moves=(False, 'no board'))
+        self.assertEqual(payload['fixed'], [])
+        self.assertTrue(any('#41' in line for line in payload['unfixed']))
+
+    def test_fix_creates_a_missing_lane_and_records_its_id(self):
+        board = {'title': 'Board', 'field': {'options': [
+            {'id': 'o1', 'name': 'Backlog'}, {'id': 'o2', 'name': 'Done'}]}}
+        created = json.dumps({'data': {'updateProjectV2Field': {
+            'projectV2Field': {'options': [
+                {'id': 'o1', 'name': 'Backlog'}, {'id': 'o2', 'name': 'Done'},
+                {'id': 'o3', 'name': 'In Progress'}]}}}})
+        _, payload, calls = self._run(['--fix'], board=board,
+                                      mutation=(0, created, ''))
+        mutations = [c for c in calls if 'graphql' in c]
+        self.assertTrue(mutations)
+        self.assertIn('In Progress', ' '.join(mutations[0]))
+        self.assertIn('`o3`', self._read('ClaudeProject.md'))
+
+    def test_creating_a_lane_passes_back_every_existing_option(self):
+        """`updateProjectV2Field` replaces the option list. Omit one and the
+        column is deleted along with every card sitting in it."""
+        board = {'title': 'Board', 'field': {'options': [
+            {'id': 'o1', 'name': 'Backlog'}, {'id': 'o2', 'name': 'Done'}]}}
+        _, _, calls = self._run(
+            ['--fix'], board=board,
+            mutation=(0, json.dumps({'data': {'updateProjectV2Field': {
+                'projectV2Field': {'options': []}}}}), ''))
+        sent = ' '.join([c for c in calls if 'graphql' in c][0])
+        self.assertIn('"o1"', sent)
+        self.assertIn('"o2"', sent)
+
+    def test_a_failed_mutation_is_reported_and_nothing_is_recorded(self):
+        board = {'title': 'Board', 'field': {'options': [
+            {'id': 'o1', 'name': 'Backlog'}]}}
+        before = self._read('ClaudeProject.md')
+        code, payload, _ = self._run(['--fix'], board=board,
+                                     mutation=(1, '', 'insufficient scope'))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertTrue(any('insufficient scope' in line
+                            for line in payload['unfixed']))
+        self.assertEqual(self._read('ClaudeProject.md'), before)
+
+    def test_a_graphql_error_body_is_a_failure_even_with_exit_zero(self):
+        """GraphQL returns HTTP 200 with an `errors` array."""
+        board = {'title': 'Board', 'field': {'options': [
+            {'id': 'o1', 'name': 'Backlog'}]}}
+        _, payload, _ = self._run(
+            ['--fix'], board=board,
+            mutation=(0, json.dumps({'errors': [{'message': 'nope'}]}), ''))
+        self.assertTrue(any('nope' in line for line in payload['unfixed']))
+
+    def test_fix_leaves_a_critical_it_must_not_decide_alone(self):
+        """A missing `## Identity` is a project nobody configured, not drift."""
+        self._write('ClaudeProject.md',
+                    self._CONFIG.replace('## Identity', '## Who We Are'))
+        code, payload, _ = self._run(['--fix'])
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertIn('config-section', self._checks(payload))
+        self.assertEqual(payload['fixed'], [])
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

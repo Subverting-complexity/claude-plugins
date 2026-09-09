@@ -2336,13 +2336,11 @@ class TestReapVerdict(unittest.TestCase):
     """Reaping frees a lock. Getting it wrong lets two agents build one story,
     so the asymmetry between `reap` and `suspect` is the whole point."""
 
-    IN_PROGRESS = 'status-in-progress'
     REVIEWING = ('review-reviewing', 'review-updating')
 
-    def _issue(self, state='OPEN', labels=(IN_PROGRESS,), age=9, **kw):
-        return wf_core.reap_verdict(
-            'issue', age, state, list(labels),
-            in_progress_label=self.IN_PROGRESS, **kw)
+    def _issue(self, state='OPEN', labels=(), age=9, **kw):
+        kw.setdefault('assigned', True)
+        return wf_core.reap_verdict('issue', age, state, list(labels), **kw)
 
     def _pr(self, state='OPEN', labels=(), age=9, **kw):
         return wf_core.reap_verdict(
@@ -2363,17 +2361,31 @@ class TestReapVerdict(unittest.TestCase):
     def test_a_closed_issue_frees_its_claim(self):
         self.assertEqual(self._issue(state='CLOSED')[0], wf_core.REAP)
 
-    def test_an_issue_whose_lifecycle_label_moved_on_frees_its_claim(self):
-        verdict, reason = self._issue(labels=['status-parked'])
+    def test_an_unassigned_issue_frees_its_claim(self):
+        """`pick` assigns `@me`, so an unassigned issue is one nobody holds.
+
+        This read a `status-in-progress` label until 10.0.0. The label stopped
+        being applied when the state moved to the board, which would have made
+        every healthy in-flight claim look abandoned."""
+        verdict, reason = self._issue(assigned=False)
         self.assertEqual(verdict, wf_core.REAP)
-        self.assertIn('in progress', reason)
+        self.assertIn('assigned', reason)
+
+    def test_no_label_on_an_issue_changes_its_reap_verdict(self):
+        """Whatever an issue still carries from the label workflow, the claim
+        is decided by the state, the assignment and the PR."""
+        for stale in ('status-parked', 'status-blocked', 'status-in-progress',
+                      'needs-refinement', 'claude-ready'):
+            self.assertEqual(self._issue(labels=[stale])[0], wf_core.SUSPECT)
+            self.assertEqual(self._issue(labels=[stale], assigned=False)[0],
+                             wf_core.REAP)
 
     def test_an_issue_with_a_pr_already_open_frees_its_claim(self):
         """The PR is the ownership marker; the post-create release just
         did not run."""
         self.assertEqual(self._issue(has_open_pr=True)[0], wf_core.REAP)
 
-    def test_an_in_progress_issue_with_no_pr_is_suspect_not_reaped(self):
+    def test_an_assigned_issue_with_no_pr_is_suspect_not_reaped(self):
         """Indistinguishable from a slow but healthy session."""
         verdict, reason = self._issue()
         self.assertEqual(verdict, wf_core.SUSPECT)
@@ -2731,6 +2743,268 @@ class TestScopeIsAudited(unittest.TestCase):
         self.assertNotIn('blocked_by', entry['proposed'])
         self.assertNotIn('missing-edge', _gap_kinds(entry))
 
+
+# -- preflight: the file-level checks -----------------------------------------
+
+class TestPlaceholderFindings(unittest.TestCase):
+    """A file copied from the template and not filled in."""
+
+    def test_a_filled_in_file_is_clean(self):
+        self.assertEqual(
+            wf_core.placeholder_findings('| org | Subverting-complexity |'), [])
+
+    def test_every_offending_line_is_named(self):
+        text = '| org | {org} |\n| repo | ok |\n| repo | {repo} |'
+        found = wf_core.placeholder_findings(text)
+        self.assertEqual(found[0]['level'], wf_core.WARNING)
+        self.assertIn('1, 3', found[0]['detail'])
+
+    def test_a_long_run_is_summarised_rather_than_listed(self):
+        text = '\n'.join(['{org}'] * 9)
+        detail = wf_core.placeholder_findings(text)[0]['detail']
+        self.assertIn('and 4 more', detail)
+
+
+class TestRetiredSectionFindings(unittest.TestCase):
+    """Sections this version reads and ignores. Left in place they mislead."""
+
+    def test_a_surviving_ready_gate_is_reported(self):
+        found = wf_core.retired_section_findings(['Identity', 'Ready Gate'])
+        self.assertEqual([f['check'] for f in found], ['config-retired'])
+        self.assertIn('Ready Gate', found[0]['detail'])
+
+    def test_a_surviving_agent_gating_section_is_reported(self):
+        found = wf_core.retired_section_findings(['Agent Gating'])
+        self.assertIn('Backlog', found[0]['detail'])
+
+    def test_it_warns_rather_than_failing(self):
+        """Nothing reads the section, so nothing behaves wrongly because of it."""
+        found = wf_core.retired_section_findings(['Ready Gate', 'Agent Gating'])
+        self.assertEqual({f['level'] for f in found}, {wf_core.WARNING})
+
+    def test_a_qualified_heading_is_still_matched(self):
+        self.assertTrue(wf_core.retired_section_findings(['Ready Gate (optional)']))
+
+    def test_a_file_without_either_is_clean(self):
+        self.assertEqual(wf_core.retired_section_findings(['Identity']), [])
+
+
+class TestQualityGateFindings(unittest.TestCase):
+
+    def test_a_real_command_passes(self):
+        self.assertEqual(wf_core.quality_gate_findings('pnpm test'), [])
+
+    def test_an_empty_gate_warns(self):
+        self.assertEqual(wf_core.quality_gate_findings('')[0]['check'],
+                         'quality-gate')
+
+    def test_the_template_placeholder_is_named_as_such(self):
+        detail = wf_core.quality_gate_findings(
+            '{quality_gate_command}')[0]['detail']
+        self.assertIn('placeholder', detail)
+
+
+class TestClaudeMdFindings(unittest.TestCase):
+
+    def test_a_file_that_points_at_the_config_is_clean(self):
+        self.assertEqual(wf_core.claude_md_findings(True, True), [])
+
+    def test_a_missing_file_is_reported_separately_from_a_silent_one(self):
+        self.assertEqual(wf_core.claude_md_findings(False, False)[0]['check'],
+                         'file-claude-md')
+        self.assertEqual(wf_core.claude_md_findings(True, False)[0]['check'],
+                         'claude-md-ref')
+
+    def test_only_the_pointer_is_repaired_automatically(self):
+        """Writing a project's CLAUDE.md from nothing is the project's call."""
+        self.assertIn('claude-md-ref', wf_core.FIXABLE_CHECKS)
+        self.assertNotIn('file-claude-md', wf_core.FIXABLE_CHECKS)
+
+
+class TestReviewConfigFindings(unittest.TestCase):
+
+    def test_a_config_that_names_no_review_file_is_clean(self):
+        self.assertEqual(wf_core.review_config_findings(None, False), [])
+
+    def test_a_named_file_that_exists_is_clean(self):
+        self.assertEqual(
+            wf_core.review_config_findings('docs/review.config.md', True), [])
+
+    def test_a_named_file_that_is_missing_warns(self):
+        found = wf_core.review_config_findings('docs/review.config.md', False)
+        self.assertIn('default name', found[0]['detail'])
+
+
+class TestFixPlan(unittest.TestCase):
+    """What `--fix` may touch, decided offline so it is the same every run."""
+
+    def test_a_repairable_finding_is_separated_from_one_that_is_not(self):
+        fixable, blocked = wf_core.fix_plan(
+            [{'check': 'board-lane'}, {'check': 'gh-auth'}])
+        self.assertEqual(fixable, [{'check': 'board-lane'}])
+        self.assertEqual(blocked, [{'check': 'gh-auth'}])
+
+    def test_nothing_that_needs_a_judgement_call_is_repairable(self):
+        """Each of these has two defensible answers, so a run must not pick."""
+        for check in ('board-title', 'label-drift', 'config-section',
+                      'field-absent', 'quality-gate', 'placeholders'):
+            self.assertNotIn(check, wf_core.FIXABLE_CHECKS, check)
+
+    def test_every_unrepairable_check_says_why(self):
+        for check in wf_core.UNFIXABLE_REASONS:
+            self.assertNotIn(check, wf_core.FIXABLE_CHECKS, check)
+            self.assertTrue(wf_core.unfixable_reason(check))
+
+    def test_an_unknown_check_still_gets_a_truthful_answer(self):
+        self.assertIn('no automatic repair',
+                      wf_core.unfixable_reason('something-new'))
+
+
+class TestStripSections(unittest.TestCase):
+
+    TEXT = ('# Project\n\n## Identity\n\nrows\n\n## Ready Gate\n\nprose\n'
+            'more prose\n\n## Label Map\n\nrows\n')
+
+    def test_the_named_section_and_nothing_else_goes(self):
+        out, removed = wf_core.strip_sections(self.TEXT, ['Ready Gate'])
+        self.assertEqual(removed, ['Ready Gate'])
+        self.assertNotIn('Ready Gate', out)
+        self.assertIn('## Identity', out)
+        self.assertIn('## Label Map', out)
+
+    def test_a_deeper_heading_inside_the_section_goes_with_it(self):
+        text = '## Ready Gate\n\n### Detail\n\nx\n\n## Keep\n\ny\n'
+        out, _ = wf_core.strip_sections(text, ['Ready Gate'])
+        self.assertNotIn('### Detail', out)
+        self.assertIn('## Keep', out)
+
+    def test_removing_a_section_twice_changes_nothing_the_second_time(self):
+        once, _ = wf_core.strip_sections(self.TEXT, ['Ready Gate'])
+        twice, removed = wf_core.strip_sections(once, ['Ready Gate'])
+        self.assertEqual(removed, [])
+        self.assertEqual(once, twice)
+
+    def test_a_section_that_is_not_there_is_not_an_error(self):
+        out, removed = wf_core.strip_sections(self.TEXT, ['Agent Gating'])
+        self.assertEqual((out, removed), (self.TEXT, []))
+
+    def test_a_trailing_section_runs_to_the_end_of_the_file(self):
+        out, _ = wf_core.strip_sections('## Keep\n\nx\n\n## Ready Gate\n\ny\n',
+                                        ['Ready Gate'])
+        self.assertNotIn('Ready Gate', out)
+        self.assertIn('## Keep', out)
+
+
+class TestStripLabelMapRows(unittest.TestCase):
+
+    TEXT = ('## Label Map\n\n| Purpose | Label |\n| --- | --- |\n'
+            '| status-blocked | `blocked` |\n| claude-authored | `authored` |\n'
+            '\n## Project Board\n\n| status-blocked | not a label map row |\n')
+
+    def test_only_rows_inside_the_label_map_are_touched(self):
+        out, removed = wf_core.strip_label_map_rows(self.TEXT, ['status-blocked'])
+        self.assertEqual(removed, ['status-blocked'])
+        self.assertNotIn('| status-blocked | `blocked` |', out)
+        self.assertIn('not a label map row', out)
+
+    def test_the_surviving_label_is_left_alone(self):
+        out, _ = wf_core.strip_label_map_rows(self.TEXT, ['status-blocked'])
+        self.assertIn('claude-authored', out)
+
+    def test_prose_naming_a_retired_label_is_not_a_row(self):
+        text = '## Label Map\n\nWe used to apply status-blocked here.\n'
+        self.assertEqual(wf_core.strip_label_map_rows(text, ['status-blocked']),
+                         (text, []))
+
+    def test_running_it_twice_changes_nothing_the_second_time(self):
+        once, _ = wf_core.strip_label_map_rows(self.TEXT, ['status-blocked'])
+        twice, removed = wf_core.strip_label_map_rows(once, ['status-blocked'])
+        self.assertEqual((twice, removed), (once, []))
+
+    def test_a_file_with_no_label_map_is_left_alone(self):
+        self.assertEqual(wf_core.strip_label_map_rows('# x\n', ['status-blocked']),
+                         ('# x\n', []))
+
+
+class TestStatusOptionsTable(unittest.TestCase):
+
+    def test_every_canonical_column_gets_a_row_in_canonical_order(self):
+        rendered = wf_core.render_status_options({'col-backlog': 'abc123'})
+        rows = [l for l in rendered.splitlines() if l.startswith('| ')][2:]
+        self.assertEqual(len(rows), len(wf_core.BOARD_COLUMN_NAMES))
+        self.assertIn('| Backlog | `col-backlog` | `abc123` |', rows[0])
+
+    def test_a_column_the_board_does_not_have_is_recorded_as_absent(self):
+        self.assertIn('| `col-done` | n/a |', wf_core.render_status_options({}))
+
+    def test_the_same_board_always_produces_the_same_table(self):
+        columns = {'col-done': 'z', 'col-backlog': 'a'}
+        self.assertEqual(wf_core.render_status_options(columns),
+                         wf_core.render_status_options(dict(reversed(
+                             list(columns.items())))))
+
+    def test_replacing_the_table_leaves_the_rest_of_the_section_alone(self):
+        text = ('## Project Board\n\n| project-node-id | PVT_1 |\n\n'
+                '### Status Options\n\n| Column | Purpose Key | Option ID |\n'
+                '| --- | --- | --- |\n| Backlog | `col-backlog` | `old` |\n\n'
+                '## Reference Docs\n\nx\n')
+        out, changed = wf_core.replace_status_options(text,
+                                                      {'col-backlog': 'new'})
+        self.assertTrue(changed)
+        self.assertIn('| project-node-id | PVT_1 |', out)
+        self.assertIn('## Reference Docs', out)
+        self.assertIn('`new`', out)
+        self.assertNotIn('`old`', out)
+
+    def test_writing_the_same_table_twice_reports_no_change(self):
+        text = ('### Status Options\n\n'
+                + wf_core.render_status_options({'col-backlog': 'a'}) + '\n')
+        self.assertEqual(wf_core.replace_status_options(text,
+                                                        {'col-backlog': 'a'}),
+                         (text, False))
+
+    def test_a_file_with_no_table_is_left_alone_rather_than_given_one(self):
+        self.assertEqual(wf_core.replace_status_options('# x\n', {'a': 'b'}),
+                         ('# x\n', False))
+
+
+class TestBoardColumnCreationValues(unittest.TestCase):
+    """A created column needs a colour and a description, and GitHub requires
+    both. They live beside the names so every creator writes the same board."""
+
+    def test_every_column_has_a_colour_and_a_description(self):
+        for name in wf_core.BOARD_COLUMN_NAMES.values():
+            self.assertIn(name, wf_core.BOARD_COLUMN_COLOURS)
+            self.assertTrue(wf_core.BOARD_COLUMN_DESCRIPTIONS.get(name))
+
+    def test_no_lane_an_issue_passes_through_shares_a_colour(self):
+        """The enum has eight colours to nine lanes, so `Parked` and `Done`
+        share the spare one and nothing on the way to done looks alike."""
+        working = [n for n in wf_core.BOARD_COLUMN_NAMES.values()
+                   if n not in ('Parked', 'Done')]
+        colours = [wf_core.BOARD_COLUMN_COLOURS[n] for n in working]
+        self.assertEqual(len(colours), len(set(colours)))
+
+
+class TestAddConfigPointer(unittest.TestCase):
+
+    def test_a_file_that_already_points_at_the_config_is_untouched(self):
+        text = '# Repo\n\nSee ClaudeProject.md.\n'
+        self.assertEqual(wf_core.add_config_pointer(text), (text, False))
+
+    def test_the_pointer_is_appended_to_a_file_that_lacks_one(self):
+        out, changed = wf_core.add_config_pointer('# Repo\n')
+        self.assertTrue(changed)
+        self.assertIn('ClaudeProject.md', out)
+        self.assertTrue(out.startswith('# Repo\n'))
+
+    def test_a_project_that_worded_its_own_pointer_keeps_it(self):
+        text = '# Repo\n\nConfig: [here](ClaudeProject.md)\n'
+        self.assertEqual(wf_core.add_config_pointer(text), (text, False))
+
+    def test_running_it_twice_appends_once(self):
+        once, _ = wf_core.add_config_pointer('# Repo\n')
+        self.assertEqual(wf_core.add_config_pointer(once), (once, False))
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

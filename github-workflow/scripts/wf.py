@@ -38,7 +38,7 @@ Contract:
       24 status=partial       some entries landed and some did not
       30 status=unsupported   this path isn't in the CLI yet — caller should
                               fall back to the inline skill procedure
-  - Mutations to the *winning* issue (claim, assign, status-in-progress) are
+  - Mutations to the *winning* issue (claim, assign, the In Progress move) are
     silent; mutations to *other* issues (marking blocked, closing resolved) are
     always reported back in the `side_effects` array.
 
@@ -2120,11 +2120,27 @@ def cmd_config_audit(args):
     ok, cfg, err = load_config()
     if not ok:
         emit('error', EXIT_ENV, reason=err)
-    root = repo_root() or '.'
+    findings, checked, skipped, _ = collect_config_findings(
+        cfg, args, repo_root() or '.')
+    return _emit_audit(findings, checked, skipped, cfg, args)
+
+
+def collect_config_findings(cfg, args, root):
+    """Every drift finding, plus the live state a `--fix` would need.
+
+    Split out of `cmd_config_audit` so that `preflight` runs exactly the same
+    checks rather than a second implementation of them. Returns
+    `(findings, checked, skipped, context)`; `context` carries the board
+    placement lists so a repair does not have to re-read them.
+
+    Error paths still `emit()` and exit, because a run that cannot read the org
+    has not found a clean configuration -- it has found nothing.
+    """
     source = config_paths(root)[1]
     source_rel = os.path.basename(source)
 
     findings, checked, skipped = [], [], []
+    context = {'orphans': [], 'unset': [], 'board': None}
 
     # ── offline ──────────────────────────────────────────────────────────────
     headings = []
@@ -2142,8 +2158,7 @@ def cmd_config_audit(args):
         skipped = ['label-reference', 'config-label', 'label-drift',
                    'field-unpinned', 'field-unmapped', 'field-absent',
                    'board-column', 'board-lane', 'board-orphan', 'board-unset']
-        checked = ['config-section']
-        return _emit_audit(findings, checked, skipped, cfg, args)
+        return findings, ['config-section'], skipped, context
 
     # ── the repo: labels and the board, in one round trip ────────────────────
     ok, state, err = fetch_repo_state(cfg, args.repo)
@@ -2162,6 +2177,7 @@ def cmd_config_audit(args):
     checked.extend(['config-label', 'label-drift', 'label-deprecated'])
 
     board_cfg = cfg.get('board') or {}
+    context['board'] = state['board']
     if board_cfg.get('project_node_id'):
         findings.extend(_board_findings(board_cfg, state['board'], source_rel))
         checked.extend(['board-column', 'board-lane'])
@@ -2177,6 +2193,7 @@ def cmd_config_audit(args):
             findings.extend(wf_core.board_orphan_findings(orphans, source_rel))
             findings.extend(wf_core.board_unset_findings(unset, source_rel))
             checked.extend(['board-orphan', 'board-unset'])
+            context['orphans'], context['unset'] = orphans, unset
     else:
         # Not a skip. Selection reads the board's Backlog column, so a project
         # without a board cannot pick anything at all, and reporting that as
@@ -2238,7 +2255,7 @@ def cmd_config_audit(args):
     else:
         skipped.append('field-unpinned')
 
-    return _emit_audit(findings, checked, skipped, cfg, args)
+    return findings, checked, skipped, context
 
 
 def _board_findings(board_cfg, live_board, path):
@@ -2303,6 +2320,383 @@ def _emit_audit(findings, checked, skipped, cfg, args):
          reason='ClaudeProject.md, the repo\'s labels and the org\'s issue '
                 'configuration agree', **payload)
 
+
+# ── preflight ────────────────────────────────────────────────────────────────
+# `config-audit` answers "does ClaudeProject.md agree with the live repo, board
+# and org?". `preflight` answers the question a command actually has before it
+# runs: "can this project be worked on at all?" -- which is that, plus the
+# file-level checks, plus a `--fix` that repairs the subset a run can repair
+# without guessing.
+#
+# Those file-level checks used to be shell blocks inside
+# `skills/preflight/SKILL.md`. Two implementations of one gate is one too many:
+# the shell one could not be tested, could not be reused by `bulk-execute`, and
+# quietly disagreed with this one about what counted as critical.
+
+_FENCE_RE = re.compile(r'```[a-zA-Z0-9_+-]*\n(.*?)```', re.DOTALL)
+
+
+def quality_gate_command(text):
+    """The command inside the `## Quality Gate` fenced block, or ''."""
+    match = _FENCE_RE.search(_section(text, 'Quality Gate'))
+    if not match:
+        return ''
+    for line in match.group(1).splitlines():
+        line = line.strip()
+        if line and not line.startswith('#'):
+            return line
+    return ''
+
+
+_REVIEW_CONFIG_RE = re.compile(r'[A-Za-z0-9._/-]*review\.config\.md')
+
+
+def review_config_reference(text):
+    """The review-state label file `ClaudeProject.md` points at, or None."""
+    match = _REVIEW_CONFIG_RE.search(text or '')
+    return match.group(0) if match else None
+
+
+def create_board_columns(field_id, existing, wanted):
+    """Add the named options to a single-select field. (ok, options, err).
+
+    `updateProjectV2Field` replaces the whole option list rather than adding to
+    it, so every existing option is passed back with its `id` -- omit one and
+    GitHub deletes it along with every card sitting in it. That is the single
+    most destructive thing this file can do, which is why the existing list is
+    read from the same response that told us a column was missing rather than
+    from the recorded snapshot.
+
+    `gh api graphql` binds scalars only, so the option list is inlined into the
+    query text. Every value written here is either an id GitHub gave us or a
+    name from `BOARD_COLUMN_NAMES`, so nothing user-supplied reaches it.
+    """
+    def literal(value):
+        return json.dumps(value or '')
+
+    options = []
+    for option in existing or ():
+        options.append('{id: %s, name: %s, color: %s, description: %s}'
+                       % (literal(option.get('id')), literal(option.get('name')),
+                          option.get('color') or 'GRAY',
+                          literal(option.get('description'))))
+    for name in wanted:
+        options.append('{name: %s, color: %s, description: %s}'
+                       % (literal(name), wf_core.BOARD_COLUMN_COLOURS.get(name, 'GRAY'),
+                          literal(wf_core.BOARD_COLUMN_DESCRIPTIONS.get(name, ''))))
+    query = ('mutation { updateProjectV2Field(input: { fieldId: %s'
+             ' singleSelectOptions: [%s] }) { projectV2Field {'
+             ' ... on ProjectV2SingleSelectField { options { id name } } } } }'
+             % (literal(field_id), ', '.join(options)))
+    code, out, err = run(['gh', 'api', 'graphql', '-f', 'query=%s' % query])
+    if code != 0:
+        return False, None, (err.strip() or 'the mutation failed')
+    try:
+        body = json.loads(out)
+    except json.JSONDecodeError as exc:
+        return False, None, 'unreadable response (%s)' % exc
+    if body.get('errors'):
+        return False, None, json.dumps(body['errors'])
+    try:
+        live = body['data']['updateProjectV2Field']['projectV2Field']['options']
+    except (KeyError, TypeError):
+        return False, None, 'the response carried no option list'
+    return True, live, ''
+
+
+def board_column_options(cfg):
+    """The board's Status field with every option's colour. (ok, field, err).
+
+    `board_status_field` further down answers the same question for a move and
+    is cached, but it asks only for `id` and `name`. That is not enough to add
+    a column: `updateProjectV2Field` replaces the whole option list, and an
+    existing option passed back without its colour and description is silently
+    recoloured. So this is a second, uncached read, made only on the repair
+    path, and it asks for everything it has to give back.
+    """
+    board = cfg.get('board') or {}
+    node_id = board.get('project_node_id')
+    if not node_id:
+        return False, None, 'no project-node-id is recorded'
+    name = board.get('status_field_name') or 'Status'
+    ok, data, err = gh_graphql(
+        'query($id:ID!,$field:String!){ node(id:$id){ ... on ProjectV2 { title'
+        ' field(name:$field){ ... on ProjectV2SingleSelectField { id'
+        '  options { id name color description } } } } } }',
+        id=node_id, field=name)
+    if not ok or not data:
+        return False, None, err or 'the board did not resolve'
+    node = data.get('node') or {}
+    field = node.get('field') or {}
+    if not field.get('id'):
+        return False, None, "the board has no `%s` single-select field" % name
+    return True, {'id': field['id'], 'title': node.get('title'),
+                  'options': field.get('options') or []}, ''
+
+
+def _config_file_findings(root, source_rel, text):
+    """Everything preflight reads out of the two markdown files themselves."""
+    findings = []
+    headings = re.findall(r'^#{1,3}\s+(.+?)\s*$', text, re.MULTILINE)
+    findings.extend(wf_core.retired_section_findings(headings, source_rel))
+    findings.extend(wf_core.placeholder_findings(text, source_rel))
+    findings.extend(wf_core.quality_gate_findings(quality_gate_command(text),
+                                                  source_rel))
+
+    claude_md = os.path.join(root, 'CLAUDE.md')
+    exists = os.path.isfile(claude_md)
+    references = False
+    if exists:
+        with open(claude_md, encoding='utf-8') as fh:
+            references = 'ClaudeProject.md' in fh.read()
+    findings.extend(wf_core.claude_md_findings(exists, references))
+
+    referenced = review_config_reference(text)
+    if referenced:
+        findings.extend(wf_core.review_config_findings(
+            referenced, os.path.isfile(os.path.join(root, referenced)),
+            source_rel))
+    return findings
+
+
+def _fix_config_file(root, source, findings):
+    """Repairs that rewrite `ClaudeProject.md`. Returns a list of descriptions."""
+    with open(source, encoding='utf-8') as fh:
+        original = fh.read()
+    text, done = original, []
+
+    retired = [f for f in findings if f['check'] == 'config-retired']
+    if retired:
+        text, removed = wf_core.strip_sections(
+            text, sorted(wf_core.RETIRED_CONFIG_SECTIONS))
+        for name in removed:
+            done.append('deleted the `## %s` section from ClaudeProject.md' % name)
+
+    deprecated = [f for f in findings if f['check'] == 'label-deprecated']
+    if deprecated:
+        purposes = sorted(wf_core.RETIRED_LABELS)
+        text, removed = wf_core.strip_label_map_rows(text, purposes)
+        for name in removed:
+            done.append('deleted the `%s` row from the label map' % name)
+
+    if text != original:
+        with open(source, 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(text)
+    return done
+
+
+def _fix_claude_md(root):
+    """Point an existing CLAUDE.md at ClaudeProject.md. Never creates one."""
+    path = os.path.join(root, 'CLAUDE.md')
+    if not os.path.isfile(path):
+        return []
+    with open(path, encoding='utf-8') as fh:
+        text = fh.read()
+    updated, changed = wf_core.add_config_pointer(text)
+    if not changed:
+        return []
+    with open(path, 'w', encoding='utf-8', newline='\n') as fh:
+        fh.write(updated)
+    return ['added a ClaudeProject.md pointer to CLAUDE.md']
+
+
+def _fix_board_columns(cfg, source, findings):
+    """Create missing lanes, then rewrite the recorded option ids.
+
+    Both halves run off one live read of the Status field, and the second half
+    runs whether or not the first had anything to do: a snapshot that no longer
+    matches the board is the `board-column` finding, and it is repaired by
+    writing what the board actually says.
+    """
+    wants_lane = any(f['check'] == 'board-lane' for f in findings)
+    wants_snapshot = any(f['check'] == 'board-column' for f in findings)
+    if not (wants_lane or wants_snapshot):
+        return [], []
+
+    ok, field, err = board_column_options(cfg)
+    if not ok:
+        return [], ['could not read the board (%s), so no column was created '
+                    'or recorded' % err]
+
+    live_names = {(o.get('name') or '').strip().lower() for o in field['options']}
+    missing = [name for purpose, name in wf_core.BOARD_COLUMN_NAMES.items()
+               if name.strip().lower() not in live_names]
+    done, blocked = [], []
+    options = field['options']
+    if missing:
+        ok, options, err = create_board_columns(field['id'], field['options'],
+                                                missing)
+        if not ok:
+            return [], ['could not create %s on the board (%s)'
+                        % (wf_core._names(missing), err)]
+        done.append('created %s on the board' % wf_core._names(missing))
+
+    by_name = {(o.get('name') or '').strip().lower(): o.get('id')
+               for o in options or ()}
+    columns = {}
+    for purpose, name in wf_core.BOARD_COLUMN_NAMES.items():
+        option_id = by_name.get(name.strip().lower())
+        if option_id:
+            columns[purpose] = option_id
+    with open(source, encoding='utf-8') as fh:
+        text = fh.read()
+    updated, changed = wf_core.replace_status_options(text, columns)
+    if changed:
+        with open(source, 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(updated)
+        done.append('rewrote the `### Status Options` table from the live board')
+    elif wants_snapshot:
+        blocked.append('ClaudeProject.md has no `### Status Options` table to '
+                       'refresh — run `/github-workflow:setup board`')
+    return done, blocked
+
+
+def _fix_board_placement(cfg, orphans, unset):
+    """Put every issue the board does not account for into `Backlog`.
+
+    `Backlog` and not "wherever it belongs": nothing on an orphaned issue says
+    where it belongs, and the pool is the one lane whose meaning is "nobody has
+    decided anything about this yet". Somebody moving it straight back out is a
+    decision; leaving it invisible is not.
+    """
+    numbers = sorted(set(orphans or ()) | set(unset or ()))
+    if not numbers:
+        return [], []
+    column = wf_core.BOARD_COLUMN_NAMES[wf_core.POOL_COLUMN]
+    placed, failed = [], []
+    for number in numbers:
+        moved, message = board_move(cfg, number, column)
+        (placed if moved else failed).append(
+            number if moved else '#%d (%s)' % (number, message))
+    done, blocked = [], []
+    if placed:
+        done.append('put %d issue%s in %s: %s'
+                    % (len(placed), '' if len(placed) == 1 else 's', column,
+                       ', '.join('#%d' % n for n in placed)))
+    if failed:
+        blocked.append('could not place %s' % ', '.join(failed))
+    return done, blocked
+
+
+def cmd_preflight(args):
+    """Is this project in a state a workflow command can run against?
+
+    One command, one JSON object, one exit code — 0 when nothing critical is
+    wrong, 26 when something is. `--fix` repairs the subset that can be
+    repaired without guessing (`wf_core.FIXABLE_CHECKS`) and re-runs the checks
+    afterwards, so what it reports is the state it leaves behind rather than
+    the state it found.
+    """
+    root = repo_root() or '.'
+    source = config_paths(root)[1]
+    source_rel = os.path.basename(source)
+
+    findings, checked, skipped = [], [], []
+
+    err = check_environment()
+    if err:
+        findings.append(wf_core.finding(
+            wf_core.CRITICAL, 'gh-auth',
+            'the GitHub CLI cannot act for this repository (%s)' % err,
+            'run `gh auth login`, and run this from inside the repository'))
+    checked.append('gh-auth')
+
+    if not os.path.isfile(source):
+        findings.append(wf_core.finding(
+            wf_core.CRITICAL, 'file-config',
+            'there is no %s at %s, so every value the workflow reads is a '
+            'default nobody chose' % (source_rel, root),
+            'run `/github-workflow:setup`', source_rel))
+        return _emit_preflight(findings, checked + ['file-config'],
+                               ['config-section'], None, args, [], [])
+
+    checked.append('file-config')
+    with open(source, encoding='utf-8') as fh:
+        text = fh.read()
+    findings.extend(_config_file_findings(root, source_rel, text))
+    checked.extend(['config-retired', 'placeholders', 'quality-gate',
+                    'claude-md-ref', 'review-config'])
+
+    ok, cfg, cerr = load_config()
+    if not ok:
+        emit('error', EXIT_ENV, reason=cerr)
+
+    audit, audit_checked, audit_skipped, context = collect_config_findings(
+        cfg, args, root)
+    findings.extend(audit)
+    checked.extend(audit_checked)
+    skipped.extend(audit_skipped)
+
+    if not args.fix:
+        return _emit_preflight(findings, checked, skipped, cfg, args, [], [])
+
+    fixable, _ = wf_core.fix_plan(findings)
+    if not fixable:
+        return _emit_preflight(findings, checked, skipped, cfg, args, [], [])
+
+    done, blocked = [], []
+    done.extend(_fix_config_file(root, source, fixable))
+    done.extend(_fix_claude_md(root))
+    if not args.offline:
+        board_done, board_blocked = _fix_board_columns(cfg, source, fixable)
+        done.extend(board_done)
+        blocked.extend(board_blocked)
+        place_done, place_blocked = _fix_board_placement(
+            cfg, context.get('orphans'), context.get('unset'))
+        done.extend(place_done)
+        blocked.extend(place_blocked)
+
+    # Re-run against the state the repairs left behind, so the findings a
+    # person reads are the ones that are still true. A `--fix` that reported
+    # what it found rather than what it left would make the second run of an
+    # idempotent command look like it had done nothing.
+    ok, cfg, cerr = load_config()
+    if not ok:
+        emit('error', EXIT_ENV, reason=cerr)
+    with open(source, encoding='utf-8') as fh:
+        text = fh.read()
+    findings = [f for f in findings if f['check'] in ('gh-auth', 'file-config')]
+    findings.extend(_config_file_findings(root, source_rel, text))
+    audit, audit_checked, audit_skipped, _ = collect_config_findings(
+        cfg, args, root)
+    findings.extend(audit)
+    return _emit_preflight(findings, checked, skipped, cfg, args, done, blocked)
+
+
+def _emit_preflight(findings, checked, skipped, cfg, args, fixed, blocked):
+    summary = wf_core.preflight_summary(findings)
+    payload = {'summary': summary, 'checked': sorted(set(checked)),
+               'skipped': sorted(set(skipped))}
+    if cfg:
+        payload['org'] = cfg.get('org')
+        payload['repo'] = '%s/%s' % (cfg.get('org'), cfg.get('repo'))
+    if not args.quiet:
+        payload['findings'] = [
+            dict(f, fixable=wf_core.FIXABLE_CHECKS.get(f['check'])
+                 or wf_core.unfixable_reason(f['check']),
+                 auto=f['check'] in wf_core.FIXABLE_CHECKS)
+            for f in findings]
+    if args.fix:
+        payload['fixed'] = fixed
+        payload['unfixed'] = blocked
+
+    if summary['critical']:
+        emit('blocked', EXIT_DRIFT,
+             reason='%d problem%s stop%s a workflow command from running '
+                    'correctly here%s'
+                    % (summary['critical'],
+                       '' if summary['critical'] == 1 else 's',
+                       's' if summary['critical'] == 1 else '',
+                       '' if not summary['warning']
+                       else '; %d more will degrade it' % summary['warning']),
+             **payload)
+    emit('ok', EXIT_OK,
+         reason=('nothing blocks a workflow command'
+                 + ('' if not summary['warning']
+                    else '; %d thing%s will run on a default'
+                    % (summary['warning'],
+                       '' if summary['warning'] == 1 else 's'))),
+         **payload)
 
 # GitHub caps a connection page at 100 records -- asking for more is an
 # `EXCESSIVE_PAGINATION` error, not a truncated answer, so the whole query
@@ -3361,7 +3755,7 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
     The single claim-first/validate-lazily loop shared by auto-pick and the
     explicit `--issue` path. For each candidate it acquires the atomic claim,
     applies the in-progress marker, then validates: a dependency-blocked issue
-    is returned to `status-blocked`, an already-resolved one is closed **and
+    is moved to the Blocked column, an already-resolved one is closed **and
     moved to Done**, and the claim is released in both cases before walking on.
     The first valid claim is returned as the selection.
 
@@ -3922,9 +4316,9 @@ def cmd_board_move(args):
     if moved:
         emit('ok', EXIT_OK, number=args.number, column=column, moved=True,
              reason='#%d moved to %s' % (args.number, column))
-    # A board is a mirror of the lifecycle labels, never the source of truth, so
-    # a failed move is reported and never fatal: the caller has already applied
-    # the label that actually decides the issue's state.
+    # A failed move is reported and never fatal, but it is not harmless
+    # either: the column *is* the state, so an issue whose move failed is left
+    # in whichever lane it was already in. Callers surface the reason.
     emit('ok', EXIT_OK, number=args.number, column=column, moved=False,
          reason='board not updated: %s' % message)
 
@@ -3938,6 +4332,8 @@ def apply_claim_marker(cfg, args):
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     if args.issue is not None:
+        # The labels are read only so that any retired one can be taken off
+        # on the way past; nothing is applied in their place.
         ok, data, _ = gh_json(['issue', 'view', str(args.issue), '--repo', repo,
                                '--json', 'labels'])
         if not ok or data is None:
@@ -3945,7 +4341,7 @@ def apply_claim_marker(cfg, args):
             return None
         apply_in_progress(cfg, {'number': args.issue,
                                 'labels': [l['name'] for l in data.get('labels', [])]})
-        return '@me + %s' % label(cfg, 'status-in-progress')
+        return '@me + the In Progress column'
     names = wf_core.review_names(cfg.get('review_labels'))
     code, _, err = run(['gh', 'pr', 'edit', str(args.pr), '--repo', repo,
                         '--remove-label', names['needs-review'],
@@ -4075,30 +4471,37 @@ def claim_age_hours(sha):
 
 
 def claim_target_state(cfg, target):
-    """Read the issue or PR a claim ref names. Returns (kind, number, state,
-    labels, has_open_pr). `state` is None when the lookup failed."""
+    """Read the issue or PR a claim ref names.
+
+    Returns `(kind, number, state, labels, has_open_pr, assigned)`. `state` is
+    None when the lookup failed. `assigned` is what tells a live issue claim
+    from an abandoned one now that no label does: `apply_in_progress` assigns
+    `@me`, so an issue claim over an unassigned issue is a claim nobody holds.
+    """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     kind, _, raw = target.partition('-')
     try:
         number = int(raw)
     except ValueError:
-        return None, None, None, [], False
+        return None, None, None, [], False, False
     if kind not in ('issue', 'pr'):
-        return None, None, None, [], False
+        return None, None, None, [], False, False
 
+    fields = 'state,labels,assignees' if kind == 'issue' else 'state,labels'
     ok, data, _ = gh_json([kind, 'view', str(number), '--repo', repo,
-                           '--json', 'state,labels'])
+                           '--json', fields])
     if not ok or not data:
         return kind, number, None, [], False
     labels = [l['name'] for l in data.get('labels', [])]
     state = data.get('state', '')
+    assigned = bool(data.get('assignees'))
 
     has_open_pr = False
     if kind == 'issue' and state.upper() == 'OPEN':
         ok, prs, _ = gh_json(['pr', 'list', '--repo', repo, '--state', 'open',
                               '--search', 'closes #%d' % number, '--json', 'number'])
         has_open_pr = bool(ok and prs)
-    return kind, number, state, labels, has_open_pr
+    return kind, number, state, labels, has_open_pr, assigned
 
 
 def cmd_claim_reap(args):
@@ -4120,19 +4523,19 @@ def cmd_claim_reap(args):
 
     names = wf_core.review_names(cfg.get('review_labels'))
     active_review = [names['reviewing'], names['updating']]
-    in_progress = label(cfg, 'status-in-progress')
 
     results, detail = [], {wf_core.REAP: [], wf_core.SUSPECT: [], wf_core.SKIP: []}
     for sha, target in refs:
-        kind, number, state, labels, has_open_pr = claim_target_state(cfg, target)
+        kind, number, state, labels, has_open_pr, assigned = \
+            claim_target_state(cfg, target)
         age = claim_age_hours(sha)
         if kind is None:
             verdict, reason = wf_core.SUSPECT, 'not an issue or PR claim'
         else:
             verdict, reason = wf_core.reap_verdict(
                 kind, age, state, labels, threshold=args.threshold,
-                in_progress_label=in_progress, review_labels=active_review,
-                has_open_pr=has_open_pr)
+                review_labels=active_review, has_open_pr=has_open_pr,
+                assigned=assigned)
         results.append((target, verdict, reason))
         entry = {'ref': 'refs/claims/%s' % target, 'reason': reason}
         if age is not None:
@@ -4174,16 +4577,16 @@ def cmd_handoff(args):
 
     issues = []
     for number in args.issue or []:
-        edit = ['gh', 'issue', 'edit', str(number), '--repo', repo,
-                '--add-label', label(cfg, 'status-in-review'),
-                '--remove-label', label(cfg, 'status-in-progress')]
-        code, _, ierr = run(edit)
-        if code != 0:
-            eprint('wf: warning - could not relabel issue #%d (%s)' % (number, ierr.strip()))
-        moved, message = board_move(cfg, number, wf_core.BOARD_COLUMN_NAMES['col-in-review'])
+        # The move *is* the hand-off. There is no label to swap any more:
+        # an issue waiting on a review is one whose card sits in In Review,
+        # and that is the only place the state is written.
+        moved, message = board_move(cfg, number,
+                                    wf_core.BOARD_COLUMN_NAMES['col-in-review'])
+        if not moved:
+            eprint('wf: warning - could not move #%d to In Review (%s)'
+                   % (number, message))
         release_claim('issue-%d' % number)
-        issues.append({'number': number, 'relabelled': code == 0,
-                       'board_moved': moved, 'board': message})
+        issues.append({'number': number, 'board_moved': moved, 'board': message})
 
     for name in ('plan.md', 'preflight-passed.txt', 'label-cache.json'):
         try:
@@ -4370,6 +4773,26 @@ def build_parser():
     ca.add_argument('--refresh', action='store_true',
                     help='re-query org capabilities instead of reading the cache')
     ca.set_defaults(func=cmd_config_audit)
+
+    pf = sub.add_parser('preflight',
+                        help='is this project in a state a workflow command '
+                             'can run against? `--fix` repairs what can be '
+                             'repaired without guessing')
+    pf.add_argument('--fix', action='store_true',
+                    help='repair every finding that has a safe automatic fix, '
+                         'then re-run the checks and report what is left')
+    pf.add_argument('--repo', default=None,
+                    help='check this owner/name instead of the configured repo')
+    pf.add_argument('--scan', action='append', default=None,
+                    help='directory of instruction files to scan for label '
+                         'references (repeatable; defaults to the plugin root)')
+    pf.add_argument('--offline', action='store_true',
+                    help='run only the checks that need no network')
+    pf.add_argument('--quiet', action='store_true',
+                    help='report counts only, keeping the exit code, for CI')
+    pf.add_argument('--refresh', action='store_true',
+                    help='re-query org capabilities instead of reading the cache')
+    pf.set_defaults(func=cmd_preflight)
 
     bm = sub.add_parser('board-move',
                         help='move an issue to a board column (no-op with no '
