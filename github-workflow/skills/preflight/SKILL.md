@@ -16,259 +16,62 @@ Verify project configuration is complete and consistent before running workflow 
 
 Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
-## 1. Startup checks (one shell round-trip)
+## 1. Run the check
 
-Run suppression, GitHub-CLI auth, `ClaudeProject.md`, and `CLAUDE.md` in a **single** block so the common path costs one round-trip instead of four — and so a suppressed project pays for none of the auth/grep work. (None of these checks contain a code-fence delimiter, so they are safe in an auto-run block — see issue #33.)
+One command answers the whole question. Do not re-derive any part of it by reading files, and do not run `gh` by hand: every check `preflight` makes is in Python, is covered by the offline test suite, and gives the same answer twice for the same project. A second implementation in shell is what this replaced.
 
 ```!
 if [ -f .claude/preflight-passed.txt ]; then
   echo "PREFLIGHT_ALREADY_PASSED"
 elif [ -f .claude/preflight-dismiss.md ]; then
   echo "PREFLIGHT_SUPPRESSED"
+elif [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" ]; then
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" preflight
+  echo "PREFLIGHT_EXIT: $?"
 else
-  echo "PREFLIGHT_ACTIVE"
-  crit=0
-
-  # GitHub CLI auth (CRITICAL)
-  if gh auth status >/dev/null 2>&1; then
-    echo "OK gh-auth"
-  else
-    echo "CRITICAL gh-auth: not authenticated — run 'gh auth login'"; crit=1
-  fi
-
-  # ClaudeProject.md: existence (CRITICAL), placeholders (WARNING), sections (CRITICAL)
-  if [ -f ClaudeProject.md ]; then
-    echo "OK file-ClaudeProject"
-    # grep -c prints "0" (and exits 1) when there are no matches, so swallow
-    # the exit code with `|| true` rather than `|| echo "0"`.
-    placeholders=$(grep -cE '\{(org|repo|name|id|package_manager|quality_gate_command|branch_pattern|default_branch|n|criteria|path/to/doc)\}' ClaudeProject.md 2>/dev/null || true)
-    placeholders=${placeholders:-0}
-    if [ "$placeholders" -gt 0 ]; then
-      echo "WARNING placeholders: $placeholders unreplaced template placeholder(s)"
-      grep -nE '\{(org|repo|name|id|package_manager|quality_gate_command|branch_pattern|default_branch|n|criteria|path/to/doc)\}' ClaudeProject.md 2>/dev/null | head -5
-    fi
-    for section in "## Identity" "## Package Manager" "## Quality Gate" "## Branch Convention" "## Label Map" "## Issue Types & Fields"; do
-      slug=$(echo "$section" | sed 's/## //; s/ /-/g' | tr '[:upper:]' '[:lower:]')
-      if grep -q "$section" ClaudeProject.md 2>/dev/null; then
-        echo "OK section-$slug"
-      else
-        echo "CRITICAL section-$slug: $section section missing"; crit=1
-      fi
-    done
-  else
-    # Check for common alternative config filenames before reporting missing
-    alt=""
-    for candidate in project.config.md ProjectConfig.md claude-project.md .claude/project.md; do
-      if [ -f "$candidate" ]; then alt="$candidate"; break; fi
-    done
-    if [ -n "$alt" ]; then
-      echo "CRITICAL file-ClaudeProject: ClaudeProject.md not found but '$alt' exists — rename it to ClaudeProject.md"
-      echo "CONFIG_RENAME_CANDIDATE: $alt"
-    else
-      echo "CRITICAL file-ClaudeProject: ClaudeProject.md not found — run /github-workflow:setup"
-    fi
-    crit=1
-  fi
-
-  # CLAUDE.md (WARNING-level)
-  if [ -f CLAUDE.md ]; then
-    echo "OK file-CLAUDE"
-    if grep -q "ClaudeProject.md" CLAUDE.md 2>/dev/null; then
-      echo "OK claude-ref"
-    else
-      echo "WARNING claude-ref: CLAUDE.md does not reference ClaudeProject.md"
-    fi
-  else
-    echo "WARNING file-CLAUDE: CLAUDE.md not found"
-  fi
-
-  # Ecosystem tools onboarding nudge (informational — never blocks, never
-  # CRITICAL). Speak up only when the project is configured (ClaudeProject.md
-  # present) but has neither opted in (.claude/ecosystem.md) nor explicitly
-  # opted out (.claude/ecosystem-declined). Declining once writes the marker,
-  # which silences this permanently.
-  if [ -f ClaudeProject.md ] && [ ! -f .claude/ecosystem.md ] && [ ! -f .claude/ecosystem-declined ]; then
-    echo "ECOSYSTEM_TIP: companion tools (Graphify/RTK/etc.) not set up — optional"
-  fi
-
-  # One verdict token for the cheap checks above. "OK" means nothing here is
-  # CRITICAL — the only CRITICALs still possible come from the by-hand board
-  # checks in Section 2, which apply to every project, because the pick pool
-  # is a board column and a project without one can select nothing.
-  if [ "$crit" -eq 0 ]; then
-    echo "PREFLIGHT_CHEAP_VERDICT: OK"
-  else
-    echo "PREFLIGHT_CHEAP_VERDICT: CRITICAL"
-  fi
+  echo "PREFLIGHT_UNAVAILABLE"
 fi
 ```
 
-**React to the token, do not re-derive it.** The block prints exactly one of three lead tokens — branch on it without re-reading files:
+**React to the token, do not re-derive it.**
 
-- `PREFLIGHT_ALREADY_PASSED` — preflight already passed earlier this session (the marker exists). **Return silently and immediately**; run no further checks. The calling command proceeds.
-- `PREFLIGHT_SUPPRESSED` — the user dismissed preflight reminders. Skip all remaining checks, return silently, and let the calling command proceed. They can re-enable by deleting `.claude/preflight-dismiss.md` or running `/github-workflow:setup`.
-- `PREFLIGHT_ACTIVE` — the checks ran. Read `PREFLIGHT_CHEAP_VERDICT`, then continue to the by-hand checks below either way: the board is required on every project, so a cheap verdict of `OK` is never the whole verdict. Write the pass marker (Section 3) and return silently once those have run clean too.
+- `PREFLIGHT_ALREADY_PASSED` — preflight passed earlier this session. **Return silently and immediately**; the calling command proceeds.
+- `PREFLIGHT_SUPPRESSED` — the user dismissed preflight reminders. Return silently; the calling command proceeds. They re-enable by deleting `.claude/preflight-dismiss.md` or running `/github-workflow:setup`.
+- `PREFLIGHT_UNAVAILABLE` — the plugin's scripts are not on disk, so nothing was checked. Say so in one line and let the command proceed; do not substitute a hand-run version of the checks.
+- Otherwise read the JSON object it printed. `PREFLIGHT_EXIT` is `0` when nothing blocks and `26` when something does.
 
-**`CONFIG_RENAME_CANDIDATE` — alternative config file found.** If the block printed a `CONFIG_RENAME_CANDIDATE: {path}` line, a file with the right content but the wrong name exists. Use `AskUserQuestion` to offer:
-- **"Rename to ClaudeProject.md (Recommended)"** — rename the file (`git mv {path} ClaudeProject.md`), re-run the startup checks, and continue.
-- **"Run setup instead"** — invoke `/github-workflow:setup`, which will create a fresh `ClaudeProject.md`.
+## 2. Read the result
 
-**`ECOSYSTEM_TIP` is informational, not a finding.** If the block printed an `ECOSYSTEM_TIP` line, the project is configured but has not opted into *or* out of the companion tools. It is **never** CRITICAL or WARNING and never gates a command. The only thing it changes: when you would otherwise return silently (everything OK, or WARNINGs-but-no-CRITICAL), print **one** plain line first — e.g. "Tip: companion tools like Graphify aren't set up. Run `/github-workflow:setup ecosystem` to enable them, or skip — it's optional." Then proceed exactly as before (write the pass marker, return control). It shows at most once per session (the pass marker short-circuits later runs), and once the user sets up or declines it stops entirely. If no `ECOSYSTEM_TIP` line was printed, say nothing about ecosystem tools.
+The object carries `summary` (counts by level and by check), `checked` and `skipped` (which checks ran, so silence can be told from absence), and `findings`. Each finding has `level`, `check`, `detail`, `fix`, `where` — the file to open — and two fields that say what `wf preflight --fix` would do with it:
 
-## 2. Run diagnostics
+- `auto: true` — a run can repair this without guessing. `fixable` says how.
+- `auto: false` — it must not. `fixable` says why: the value is the project's to choose, or two configured things disagree and either could be the right one, or the repair happens in the org settings rather than through the API.
 
-**Fast path (the common, healthy case).** Only **CRITICAL** items can block a command (gh auth, `ClaudeProject.md` + its required sections, the board and its Backlog column). Everything else is a WARNING that proceeds on a default. The one-shot block above already ran the cheap CRITICAL file/auth/section checks; the only checks left are the **by-hand** ones below (quality gate, board). If nothing is CRITICAL, **return silently and let the command proceed** — do not compose a findings report. The WARNING-level results (placeholders, label-map completeness, CLAUDE.md, quality gate, review config) only ever print one informational line and never block.
-
-Collect the output from the block above and the by-hand checks below.
-
-**Reuse, don't re-read.** Several calling commands (`execute`, `code-review`, `block-story`) auto-load the full `ClaudeProject.md` into context before invoking preflight. When that copy is already present, evaluate the by-hand checks (quality gate, board) against it — do **not** open `ClaudeProject.md` again. Only read the file if it is not already in context.
-
-**Run expensive checks only when needed.** Network calls here are few. The board-identity `gh api` query runs once, and it does run: the pool is a board column, so a board that does not resolve is a project that can select nothing, which is worth one round-trip. The auto-merge repo-setting and CI-gate checks run **only when `auto-merge-on-approval` is `enabled`** in `review.config.md` (an opt-in, off-by-default feature). None of these calls run in the default configuration.
-
-> The GitHub-CLI, `ClaudeProject.md` (existence, placeholders, required sections), and `CLAUDE.md` checks all run in the one-shot block in Section 1 above. The remaining checks below are read by hand because they need value extraction or a `gh` API call that an auto-run block cannot do reliably (issue #33).
-
-### Quality gate command
-
-Read this one by hand — do **not** use an auto-run (`!`-prefixed) block. The quality-gate command lives inside a fenced code block in `ClaudeProject.md`, and an auto-run block cannot contain a code-fence delimiter without truncating itself mid-command (this previously emitted a bash "unexpected EOF" error on every preflight run — issue #33).
-
-Open `ClaudeProject.md`, find the `## Quality Gate` section, and read the command inside its fenced code block. Then classify:
-
-- Section missing, command empty, or still the literal `{quality_gate_command}` placeholder → emit `WARNING quality-gate: not configured or has template placeholder`.
-- Otherwise → emit `OK quality-gate: {command}`.
-
-### Project board
-
-Read this by hand — board identity needs a `gh` API call plus value extraction from `ClaudeProject.md` tables, which an auto-run (`!`) block cannot do reliably (and the `gh` query below contains a code fence, which would truncate an auto-run block — see issue #33).
-
-**A board is required.** It stopped being optional in 9.0.0, when the pick pool became the board's `Backlog` column: `pick` and `candidates` read that column and nothing else, so a project with no board, or a board with no Backlog column, can select no work at all. There is no gate setting to consult, and no configuration under which the board is decorative.
-
-1. In `## Project Board`, read `project-node-id`, `project-title`, and the Status option ids.
-2. Classify:
-
-- **No board** — the `## Project Board` section is missing, or `project-node-id` is absent, `n/a`, or still a `{placeholder}`: emit `CRITICAL board-lane: no project board is configured, and the pick pool is a board column, so pick and candidates have nothing to read`.
-- **Backlog column missing** — the `### Status Options` table has no `col-backlog` row, or its Option ID is `n/a`, absent, or a `{placeholder}`: emit `CRITICAL board-lane: the board has no Backlog column, and that column is the pick pool`.
-- **Other lanes missing** — any of `col-in-progress`, `col-in-review`, `col-blocked`, `col-non-code`, `col-refinement`, `col-parked`, `col-attention`, `col-done` has no recorded id: emit `WARNING board-lane: the board has no '{name}' column, so an issue that reaches that state stays in whichever lane it was already in`. A missing lane costs one state's board move and nothing else, which is why it warns where Backlog fails. What each lane means is in `templates/default-labels.md` → Board Columns.
-- **Board identity + snapshot freshness** — one query resolves the title **and** the live Status options, so both checks share a single round-trip:
-
-  ```
-  gh api graphql -f query='query($id:ID!){ node(id:$id){ ... on ProjectV2 {
-    title
-    field(name:"Status"){ ... on ProjectV2SingleSelectField { options { id name } } }
-  } } }' -F id='<project-node-id>' --jq '{title:.data.node.title, options:.data.node.field.options}'
-  ```
-
-  - Resolves and the title **matches** `project-title` → emit `OK board-identity: '{project-title}'`.
-  - Does not resolve, or the resolved title **differs** from `project-title` → emit `CRITICAL board-lane: stored project-node-id resolves to '<resolved>' but project-title is '<configured>'` (or `... does not resolve to a ProjectV2`). Critical rather than a warning for the same reason as the rest: a node id pointing at nothing is a project with no pool.
-  - **Snapshot freshness** — for each column recorded in `### Status Options`, find the live option with the matching name and compare its id to the snapshotted Option ID. Any that differ (or whose name no longer exists live) → emit `WARNING board-snapshot-stale: column(s) {names} recorded id(s) no longer match the live board; run /github-workflow:setup to refresh the snapshot`. A stale id costs the recorded shortcut, not the move — `board-move` resolves the column live by name — so this prompts a cleanup rather than blocking.
-
-**`wf config-audit` runs every one of these against the live board**, and reports them under the same `board-lane` and `board-column` check names. Prefer it to reading the tables by hand wherever the session can spare the round trip; the by-hand path exists for the case where `wf` cannot run.
-
-### Label-map completeness
-
-One purpose, because one label. `claude-authored` is the only label the issue workflow applies; state, priority, effort and ownership are the board column and the org fields, and `wf config-audit` reports a map row that still claims a retired label (`label-deprecated`).
-
-```!
-if [ -f ClaudeProject.md ]; then
-  labelmap=$(f=0; while IFS= read -r line || [ -n "$line" ]; do
-      if [ "$f" -eq 1 ]; then case "$line" in '## '*) break ;; esac; printf '%s\n' "$line"; fi
-      [ "$line" = "## Label Map" ] && f=1
-    done < ClaudeProject.md)
-  if printf '%s\n' "$labelmap" | grep -q 'default-labels\.md'; then
-    echo "OK label-map: all purposes covered (defaults declared via default-labels.md)"
-  else
-    if printf '%s\n' "$labelmap" | grep -q 'claude-authored'; then
-      echo "OK label-map: all expected purposes mapped"
-    else
-      echo "WARNING label-map: no label mapped for purpose 'claude-authored'"
-    fi
-  fi
-fi
-```
-
-### Configuration and label drift
-
-`ClaudeProject.md`, the labels the repo actually carries, and the org's issue-type configuration drift apart quietly: a label gets renamed and a call site still applies the old name, an org field stops being pinned and every value written to it disappears from the issue form. None of it raises an error. `wf config-audit` compares all three in two API calls.
-
-```!
-if [ -f ClaudeProject.md ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" ]; then
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit --quiet 2>/dev/null
-  echo "CONFIG_AUDIT_EXIT: $?"
-fi
-```
-
-Read the `summary` it printed:
-
-- `critical` is `0` — nothing here blocks. If `warning` is above zero, that is one informational line at most (see Section 3), never a prompt.
-- `critical` is above zero (exit code 26, `"status": "drift"`) — these are CRITICAL. Re-run **without** `--quiet` to list them; each finding names the file to open (`where`) and the fix (`fix`). Report them verbatim rather than paraphrasing: the fix for an unpinned field is a specific form in the org settings, and a paraphrase loses it.
-- The command did not run (no `CONFIG_AUDIT_EXIT` line) — the plugin's scripts are not on disk. No finding; the other checks still stand.
-
-It costs two round-trips and runs once per session, because a passing preflight writes `.claude/preflight-passed.txt` and later commands skip it. Use `config-audit --offline` when only the file-level checks are wanted.
-
-### Review configuration
-
-```!
-# Review is "in play" when ClaudeProject.md references a review state-label
-# file. If so, that file must exist or review-state labelling silently breaks.
-if [ -f ClaudeProject.md ] && grep -q 'review\.config\.md' ClaudeProject.md 2>/dev/null; then
-  path=$(grep -oE '[A-Za-z0-9._/-]*review\.config\.md' ClaudeProject.md | head -1)
-  path=${path:-docs/review.config.md}
-  if [ -f "$path" ]; then
-    echo "OK review-config: $path present"
-    if grep -qE 'auto-merge-on-approval' "$path" 2>/dev/null && grep -E 'auto-merge-on-approval' "$path" | grep -qiE 'enabled'; then
-      echo "AUTO_MERGE_ENABLED — run references/review-auto-merge-checks.md"
-    fi
-  else
-    echo "WARNING review-config: $path referenced by ClaudeProject.md but not found"
-  fi
-fi
-```
-
-If the block above printed `AUTO_MERGE_ENABLED`, the opt-in auto-merge feature is on — read `references/review-auto-merge-checks.md` and run its safety checks (repo `Allow auto-merge` setting + CI gate). Otherwise skip it entirely; in the default configuration (no `review.config.md`, or auto-merge disabled) those checks never run.
-
-## 3. Evaluate results
-
-Read all output from the checks above. Categorize:
-
-- **CRITICAL** — the workflow **cannot proceed and has no usable default**: gh not authenticated, ClaudeProject.md missing, a required section absent, no board configured, a `project-node-id` that does not resolve, or a board with no `Backlog` column (`board-lane`). Only these trigger the wizard. Every `board-lane` critical is one fact wearing different clothes: the pick pool is the board's Backlog column, so without it `pick` and `candidates` return nothing and the whole workflow stops. A missing lane *other* than Backlog is a warning, because it costs one state's move and no selection. `config-audit` reporting `"status": "drift"` is also CRITICAL: a call site applying a label the repo does not have, or an issue type not pinned to a field the tooling writes, produces a *wrong* result rather than a defaulted one — the command runs, GitHub accepts it, and the value is never seen.
-- **WARNING** — something is missing **but a default covers it**, so the workflow proceeds: an unmapped label purpose (resolves to its default name via `templates/default-labels.md`), unreplaced placeholders, CLAUDE.md missing, quality gate not set, a referenced `review.config.md` missing, a **required** board whose recorded column option-ids no longer match the live board (`board-snapshot-stale` — write-time live resolution keeps moves correct; the warning just prompts a snapshot refresh), `auto-merge-on-approval` enabled while the repo's "Allow auto-merge" setting is off (reviews still run; only the queued-merge step is affected), or `auto-merge-on-approval` enabled with **no CI gate** — neither GitHub required status checks nor `require-ci-before-merge` (an approved PR could merge with no CI guarantee; `/github-workflow:setup harden` wires up the gate). or any `config-audit` finding at `warning` level (label drift, an org field no purpose key maps, a stale board column, issue-type pinning that could not be read — each degrades the workflow without breaking it). **Defaults are not a failure** — the `claude-authored` marker and the review-state labels all have defaults, so a missing mapping is never critical on its own. A missing *field* is a different matter: an org that defines no `Priority`, `Effort` or `Ownership` is `CRITICAL field-absent`, because the picker reads all three and nothing supplies a default for them. (Best-effort board identity is **not** checked here — `wf board-move` verifies it at write time.)
-- **OK** — check passed.
-
-**Defaults-first principle.** Everything that *can* default *does* default at runtime. The wizard exists only for the few things that genuinely have no default (identity, auth, required board). Never escalate a default-covered gap to the wizard.
-
-**If every check is OK**: proceed silently — do not mention preflight to the user. (The one exception is the `ECOSYSTEM_TIP` line described in Section 1: if it was printed, emit that single optional-tools line first, then continue.) Write `.claude/preflight-passed.txt` (creating `.claude/` if it does not exist) so subsequent commands in this session can skip the redundant re-run:
+**If `summary.critical` is `0`.** Nothing blocks. Write the pass marker so later commands in this session skip the re-run, then return control **silently** — do not compose a report, and do not mention preflight:
 
 ```
 mkdir -p .claude
 echo "preflight-passed" > .claude/preflight-passed.txt
 ```
 
-Return control to the calling command.
+If `summary.warning` is above zero, print **one** line first naming what is running on a default (e.g. "Quality gate not configured; run `/github-workflow:setup` to set one") and then do exactly the same. A warning is a thing that still works, so it never prompts and never blocks.
 
-**If there are WARNINGs but NO CRITICAL items**: do **not** prompt or run the wizard. Print one concise line noting what is using defaults — e.g. "Using default labels for {purposes}; run `/github-workflow:setup` to customise" — then write `.claude/preflight-passed.txt` (same command as above) and return control to the calling command. The command resolves the missing names through `templates/default-labels.md` (and creates any missing GitHub labels with the guarded create-if-missing pattern) on its own.
+**If `summary.critical` is above zero.** Go to Section 3. Report every critical finding's `detail` and `fix` **verbatim** rather than paraphrasing — the fix for an unpinned field is a specific form in the org settings, and a paraphrase loses it.
 
-**If any CRITICAL item is present**: continue to step 4 (the wizard).
+## 3. Present the findings and ask
 
-## 4. Present findings and ask (CRITICAL only)
+Show a brief summary using these markers:
 
-Reached only when at least one CRITICAL item exists. Show a brief summary using these markers:
+- `[pass]` — briefly, what came back clean
+- `[action needed]` — each critical finding: its `detail`, then its `fix`
+- `[recommended]` — each warning, as informational; they are proceeding on defaults, not reasons to configure
 
-- `[pass]` for OK items — list these first, briefly
-- `[action needed]` for CRITICAL items
-- `[recommended]` for WARNING items — list them as informational (they are proceeding on defaults), not as reasons to configure
+Then use `AskUserQuestion`. Offer the repair option **only when at least one critical finding has `auto: true`**; a run that would repair nothing must not offer to:
 
-Then use `AskUserQuestion` with these options:
-
-- **"Configure now (Recommended)"** — Run `/github-workflow:setup` to resolve the issues. After setup completes, the calling command continues with the updated configuration.
-- **"Continue anyway"** — Proceed with the current command. Preflight will check again next time.
-- **"Don't remind me"** — Suppress preflight checks until the user runs `/github-workflow:setup` or deletes `.claude/preflight-dismiss.md`.
-
-## 5. Handle the response
-
-**Configure now**: Invoke `/github-workflow:setup`. Once setup is done, return to the calling command. Tell the user to re-run the command they originally asked for, since the configuration loaded at the start of the command was stale.
-
-**Continue anyway**: Return immediately. The calling command proceeds with whatever configuration is available. Next invocation of any command will re-run preflight.
-
-**Don't remind me**: Create `.claude/preflight-dismiss.md` with this content:
+- **"Fix what can be fixed (Recommended)"** — run `wf preflight --fix`. It repairs every finding it can repair without guessing, re-runs the checks, and reports the state it leaves behind rather than the state it found. Read the `fixed` and `unfixed` arrays it returns and say what changed. If `summary.critical` is then `0`, write the pass marker and continue.
+- **"Configure now"** — run `/github-workflow:setup`. Afterwards, tell the user to re-run the command they originally asked for, because the configuration loaded at the start of that command is now stale.
+- **"Continue anyway"** — return immediately. The calling command proceeds on whatever configuration exists. Preflight runs again next time.
+- **"Don't remind me"** — write `.claude/preflight-dismiss.md`, then return:
 
 ```
 # Preflight checks dismissed
@@ -279,4 +82,38 @@ Configuration checks have been suppressed. To re-enable:
 - Run `/github-workflow:setup`
 ```
 
-Then return. The calling command proceeds.
+## What each check means
+
+Named here so a finding can be acted on without reading the source. `wf preflight --help` lists the flags; `--offline` skips every network check, `--quiet` reports counts only for CI.
+
+| Check | Level | What it means |
+| ----- | ----- | ------------- |
+| `gh-auth` | critical | The GitHub CLI cannot act for this repository. Nothing else can run. |
+| `file-config` | critical | There is no `ClaudeProject.md`, so every value the workflow reads is a default nobody chose. |
+| `config-section` | critical | A section the plugin reads is absent, so its values fall back silently. |
+| `board-lane` | critical | No board, a `project-node-id` that resolves to nothing, or no `Backlog` column. The pool *is* that column, so any of the three means selection reads nothing. A missing lane other than Backlog warns instead: it costs one state's move. |
+| `board-orphan` | critical | An open, unassigned issue with no card. Invisible to `pick` whatever it carries. |
+| `board-unset` | critical | A card in no lane. The column is the state, so the issue has none. |
+| `field-absent` | critical | The org defines no `Priority`, `Effort` or `Ownership`, and the picker reads all three. |
+| `label-reference` | critical | An instruction file tells an agent to apply a label the repo does not have. `gh` refuses it and the issue stays as it was. |
+| `field-unpinned` | warning | An issue type does not pin a field the tooling writes, so values written to it never appear on the issue form. |
+| `config-retired` | warning | A `## Ready Gate` or `## Agent Gating` section survives. Nothing reads it, and leaving it there means the next person believes it. |
+| `label-deprecated` | warning | The label map names a label nothing applies any more. |
+| `placeholders` | warning | Template placeholders nobody replaced. |
+| `quality-gate` | warning | No pre-commit command, so nothing checks a change before it is committed. |
+| `claude-md-ref` | warning | `CLAUDE.md` never mentions `ClaudeProject.md`, so a session that runs no workflow command never finds the configuration. |
+| `review-config` | warning | `ClaudeProject.md` points at a review-state label file that is not there, so every review label falls back to its default name. |
+| `board-column` | warning | A recorded option id no longer resolves. Moves still work — they resolve by name — so this prompts a snapshot refresh. |
+| `board-title` | warning | `project-title` and the node id disagree. Not repaired automatically: either could be the right one. |
+
+## What `--fix` will and will not do
+
+It repairs seven things, all idempotent: it creates a missing board column, rewrites the `### Status Options` table from the live board, deletes a retired section, deletes a deprecated label-map row, adds the `ClaudeProject.md` pointer to an existing `CLAUDE.md`, and puts an orphaned issue or an unset card into `Backlog`.
+
+`Backlog` and not "wherever it belongs", because nothing on an orphaned issue says where it belongs and the pool is the one lane that means "nobody has decided anything about this yet". Somebody moving it straight back out is a decision; leaving it invisible is not.
+
+It will not create a `CLAUDE.md` that does not exist, invent an `## Identity` section, create an org-level issue field, pin a field to an issue type, choose between two disagreeing values, or write a quality gate. Each of those is either a decision only the project can make or a change that happens in the GitHub org settings rather than through the API this runs on. A finding it leaves alone comes back with `auto: false` and a reason, and after `--fix` it is still in `findings` — which is the point: what the command reports is the state it leaves behind.
+
+## Auto-merge safety checks
+
+`wf preflight` reports `review-config` when the file `ClaudeProject.md` names is missing. It does not check the repo's own "Allow auto-merge" setting or whether a CI gate exists, because both cost a round trip that only matters to a project that opted in. If `docs/review.config.md` sets `auto-merge-on-approval: enabled`, read `references/review-auto-merge-checks.md` and run its two checks. Otherwise skip it entirely.

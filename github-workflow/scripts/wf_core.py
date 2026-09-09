@@ -727,21 +727,27 @@ REAP, SUSPECT, SKIP = 'reap', 'suspect', 'skip'
 
 
 def reap_verdict(kind, age_hours, state, labels, threshold=REAP_THRESHOLD_HOURS,
-                 in_progress_label=None, review_labels=(), has_open_pr=False):
+                 review_labels=(), has_open_pr=False, assigned=True):
     """Decide what to do with one claim ref. Returns (verdict, reason).
 
     `kind` is 'issue' or 'pr'; `state` is GitHub's own state string (OPEN /
     CLOSED / MERGED) or None when it could not be read.
 
-    An issue claim is reaped when the issue is closed, when its lifecycle
-    label has moved off in-progress, or when a PR is already open for it (the
-    post-create release did not run). It is suspect when the issue is still
-    in-progress with no PR: that is exactly what a slow but healthy session
-    looks like.
+    An issue claim is reaped when the issue is closed, when nobody is assigned
+    to it, or when a PR is already open for it (the post-create release did not
+    run). It is suspect when the issue is open, assigned and has no PR: that is
+    exactly what a slow but healthy session looks like.
+
+    The assignment is the test because the assignment is what `pick` writes.
+    Until 10.0.0 this read a `status-in-progress` label instead, which stopped
+    being applied when the state moved to the board -- so every claim looked
+    abandoned the moment the label went away, and a healthy in-flight session
+    would have had its claim reaped out from under it.
 
     A PR claim is reaped when the PR is closed or merged, or when it is open
-    but carries no active review-state label. It is suspect while a review is
-    genuinely in flight.
+    but carries no active review-state label. A pull request has no board card,
+    so its review-state label is the only record of where it is, and that is
+    why this half still reads labels.
     """
     if age_hours is None:
         return SUSPECT, 'the age of the claim ref could not be read'
@@ -754,11 +760,11 @@ def reap_verdict(kind, age_hours, state, labels, threshold=REAP_THRESHOLD_HOURS,
     if kind == 'issue':
         if state.upper() == 'CLOSED':
             return REAP, 'the issue is closed'
-        if in_progress_label and in_progress_label not in names:
-            return REAP, 'the issue is no longer marked in progress'
+        if not assigned:
+            return REAP, 'nobody is assigned to the issue'
         if has_open_pr:
             return REAP, 'a PR is already open for the issue'
-        return SUSPECT, 'the issue is still in progress with no PR open'
+        return SUSPECT, 'the issue is still assigned with no PR open'
 
     if state.upper() in ('CLOSED', 'MERGED'):
         return REAP, 'the PR is %s' % state.lower()
@@ -805,6 +811,30 @@ BOARD_COLUMN_NAMES = {
 # exclusion list of its own: `Status` holds one value, so a card in any other
 # column is already out.
 POOL_COLUMN = 'col-backlog'
+
+BOARD_COLUMN_COLOURS = {
+    'Backlog':          'GREEN',
+    'Needs refinement': 'BLUE',
+    'In Progress':      'YELLOW',
+    'In Review':        'ORANGE',
+    'Needs attention':  'PURPLE',
+    'Blocked':          'RED',
+    'Non-code':         'PINK',
+    'Parked':           'GRAY',
+    'Done':             'GRAY',
+}
+
+BOARD_COLUMN_DESCRIPTIONS = {
+    'Backlog':          'Available to pick',
+    'Needs refinement': 'Specced too thinly to start',
+    'In Progress':      'Claimed by an agent',
+    'In Review':        'Waiting on a pull request',
+    'Needs attention':  'Stopped part-way and needs a person',
+    'Blocked':          'Waiting on an open blocked-by edge',
+    'Non-code':         'Owned by a person or a browser agent',
+    'Parked':           'Deliberately set aside',
+    'Done':             'Closed',
+}
 
 # The lanes `setup` creates and `board-lane` checks for. Every state an issue
 # can be in is one of these, because since 10.0.0 the column *is* the state:
@@ -2586,3 +2616,334 @@ def plan_bulk_order(stories, max_size=BULK_MAX):
             placed.add(story['number'])
         remaining = [s for s in remaining if s['number'] not in placed]
     return ordered, notes
+
+
+# ── preflight: the file-level checks, and what `--fix` may repair ────────────
+# `config-audit` compares `ClaudeProject.md` against the live repo, board and
+# org. It never looked at the file's own contents beyond its headings, so the
+# checks below lived in shell blocks inside `skills/preflight/SKILL.md` -- a
+# second implementation, in a second language, of the same idea. They are here
+# now because a check that decides whether a workflow runs has to be as
+# testable as the picker it gates.
+
+# The template's own placeholder vocabulary. A file that still carries one was
+# copied and not filled in, and every value it holds is a guess.
+_PLACEHOLDER_RE = re.compile(
+    r'\{(org|repo|name|id|package_manager|quality_gate_command|branch_pattern'
+    r'|default_branch|n|criteria|path/to/doc)\}')
+
+# Sections a previous version of the workflow read and this one does not. A
+# file that still carries one is not misconfigured, it is out of date -- but
+# leaving it in place means the next person to read the file believes it.
+RETIRED_CONFIG_SECTIONS = {
+    'Ready Gate': ("the pool is the board's `Backlog` column, which no setting "
+                   'turns off'),
+    'Agent Gating': ('approval is the card being in `Backlog`, so there is no '
+                     'gate to enable'),
+}
+
+
+def placeholder_findings(text, path='ClaudeProject.md'):
+    """Template placeholders nobody replaced.
+
+    A warning rather than a failure: a placeholder in a section no command
+    reaches costs nothing, and the ones that do matter fail their own check.
+    """
+    hits = []
+    for number, line in enumerate((text or '').splitlines(), 1):
+        if _PLACEHOLDER_RE.search(line):
+            hits.append(number)
+    if not hits:
+        return []
+    shown = ', '.join(str(n) for n in hits[:5])
+    if len(hits) > 5:
+        shown += ' and %d more' % (len(hits) - 5)
+    return [finding(
+        WARNING, 'placeholders',
+        '%d line%s in %s still carr%s a template placeholder (line%s %s), so '
+        "the value there is the template's, not this project's"
+        % (len(hits), '' if len(hits) == 1 else 's', path,
+           'ies' if len(hits) == 1 else 'y', '' if len(hits) == 1 else 's', shown),
+        'fill them in, or run `/github-workflow:setup` to write them from the '
+        'live repo', path)]
+
+
+def retired_section_findings(headings, path='ClaudeProject.md'):
+    """Sections this version of the workflow reads and ignores."""
+    present = {_normalise_heading(h) for h in headings or ()}
+    out = []
+    for section, why in sorted(RETIRED_CONFIG_SECTIONS.items()):
+        if _normalise_heading(section) not in present:
+            continue
+        out.append(finding(
+            WARNING, 'config-retired',
+            '%s still has a `## %s` section, which nothing reads -- %s'
+            % (path, section, why),
+            'delete the section', path))
+    return out
+
+
+def quality_gate_findings(command, path='ClaudeProject.md'):
+    """The pre-commit command, or the absence of one.
+
+    Unset means every run decides for itself what "the tests pass" means, which
+    is the difference between a gate and a habit. It still warns: a project
+    with no gate is a project, not a broken configuration.
+    """
+    value = (command or '').strip()
+    if value and value != '{quality_gate_command}':
+        return []
+    return [finding(
+        WARNING, 'quality-gate',
+        '%s records no quality gate%s, so nothing checks a change before it is '
+        'committed' % (path,
+                       ' (the template placeholder is still there)'
+                       if value else ''),
+        "put the project's pre-commit command in the `## Quality Gate` fenced "
+        'block', path)]
+
+
+def claude_md_findings(exists, references_config, path='CLAUDE.md',
+                       config='ClaudeProject.md'):
+    """Whether a session that never runs a workflow command finds the config.
+
+    `CLAUDE.md` is what a plain session reads. If it does not point at
+    `ClaudeProject.md`, everything in there -- the branch convention, the
+    quality gate, the board -- is invisible outside the slash commands.
+    """
+    if not exists:
+        return [finding(
+            WARNING, 'file-claude-md',
+            'this project has no %s, so a session that runs no workflow command '
+            'never sees %s' % (path, config),
+            'add a %s that points at %s' % (path, config), path)]
+    if references_config:
+        return []
+    return [finding(
+        WARNING, 'claude-md-ref',
+        '%s does not mention %s, so a session reading it alone does not know '
+        'the project has one' % (path, config),
+        'add a line to %s pointing at %s' % (path, config), path)]
+
+
+def review_config_findings(referenced, exists, path='ClaudeProject.md'):
+    """A review-state label file the config names and the repo does not have.
+
+    Named but missing is the failure: every review-state label falls back to
+    its `review-` default, so the labels a run applies are not the ones the
+    project chose, and nothing says so.
+    """
+    if not referenced or exists:
+        return []
+    return [finding(
+        WARNING, 'review-config',
+        '%s points at `%s`, which is not there, so every review-state label '
+        'falls back to its default name' % (path, referenced),
+        'create `%s`, or drop the reference from %s' % (referenced, path),
+        path)]
+
+
+# What `--fix` will do, per check. A check absent from this map is one a run
+# must not repair on its own -- either because the repair is a guess (which of
+# two disagreeing values is right) or because it is not a repair at all (a
+# missing `## Identity` section is a project nobody has configured).
+#
+# The reasons live here rather than at each call site so that `preflight`
+# without `--fix` can tell a person, per finding, whether running it again with
+# `--fix` would change anything.
+FIXABLE_CHECKS = {
+    'board-lane': 'create the missing column on the live board',
+    'board-column': 'refresh the recorded option ids from the live board',
+    'board-orphan': 'add the card and put it in `Backlog`',
+    'board-unset': 'put the card in `Backlog`',
+    'label-deprecated': 'delete the row from the label map',
+    'config-retired': 'delete the section',
+    'claude-md-ref': 'add the pointer to CLAUDE.md',
+}
+
+UNFIXABLE_REASONS = {
+    'gh-auth': 'only the person at the keyboard can authenticate',
+    'config-section': 'the section holds decisions no run can make for a project',
+    'file-config': 'there is nothing to repair until the file exists',
+    'file-claude-md': "writing a project's CLAUDE.md is the project's call",
+    'board-title': 'the title and the node id disagree and either could be the '
+                   'right one',
+    'field-absent': 'an org-level issue field is created in the org settings, '
+                    'not through the API this runs on',
+    'field-absent-optional': 'an org-level issue field is created in the org '
+                             'settings, not through the API this runs on',
+    'field-unpinned': 'pinning a field to an issue type is done in the org '
+                      'settings',
+    'field-unmapped': "which purpose key a project's field serves is the "
+                      "project's decision",
+    'label-reference': 'the fix is an edit to a plugin instruction file, not to '
+                       'this project',
+    'config-label': 'creating a label the config names would guess at its '
+                    'colour and description',
+    'label-drift': "which of two equivalent labels to keep is the project's "
+                   'decision',
+    'placeholders': "the replacement values are the project's to supply",
+    'quality-gate': 'nobody but the project knows what its gate should run',
+    'review-config': "the file's contents are the project's to choose",
+    'pin-unknown': 'nothing is known to be wrong yet',
+}
+
+
+def fix_plan(findings):
+    """Split findings into what `--fix` repairs and what it must not touch.
+
+    Pure, so that "would this run change anything?" is answerable without a
+    network call -- which is what makes `preflight` safe to run before every
+    command and `preflight --fix` safe to run twice.
+    """
+    fixable, blocked = [], []
+    for entry in findings or ():
+        if entry.get('check') in FIXABLE_CHECKS:
+            fixable.append(entry)
+        else:
+            blocked.append(entry)
+    return fixable, blocked
+
+
+def unfixable_reason(check):
+    """Why `--fix` leaves this check alone. Falls back to a truthful blank."""
+    return UNFIXABLE_REASONS.get(check, 'no automatic repair is defined for it')
+
+
+# ── editing ClaudeProject.md in place ────────────────────────────────────────
+# Three repairs rewrite the file. Each is a whole-section operation on the
+# markdown rather than a line match, because a project is free to word the
+# prose inside a section however it likes -- the heading is the only part the
+# parser depends on, so the heading is the only part these may key on.
+
+_HEADING_RE = re.compile(r'^(#{1,6})\s+(.+?)\s*$')
+
+
+def _section_bounds(lines, heading, level=2):
+    """`(start, end)` line indices of a section, or `None`. End is exclusive."""
+    want = _normalise_heading(heading)
+    start = None
+    for index, line in enumerate(lines):
+        match = _HEADING_RE.match(line)
+        if not match:
+            continue
+        if start is None:
+            if (len(match.group(1)) == level
+                    and _normalise_heading(match.group(2)) == want):
+                start = index
+            continue
+        if len(match.group(1)) <= level:
+            return (start, index)
+    if start is None:
+        return None
+    return (start, len(lines))
+
+
+def strip_sections(text, headings, level=2):
+    """Remove whole level-2 sections. Returns `(text, removed_names)`."""
+    lines = (text or '').split('\n')
+    removed = []
+    for heading in headings or ():
+        bounds = _section_bounds(lines, heading, level)
+        if not bounds:
+            continue
+        start, end = bounds
+        # Take the blank lines the section left behind with it, so removing a
+        # section twice in a row cannot leave a growing gap.
+        while end < len(lines) and not lines[end].strip():
+            end += 1
+        del lines[start:end]
+        removed.append(heading)
+    return '\n'.join(lines), removed
+
+
+def strip_label_map_rows(text, labels):
+    """Drop `## Label Map` table rows whose purpose key is in `labels`.
+
+    Only rows inside that section, and only rows whose *first* cell matches --
+    a project is free to mention a retired label in the prose, and prose is not
+    a claim that the workflow applies it.
+    """
+    wanted = {l.strip().strip('`') for l in labels or () if l}
+    if not wanted:
+        return text, []
+    lines = (text or '').split('\n')
+    bounds = _section_bounds(lines, 'Label Map')
+    if not bounds:
+        return text, []
+    start, end = bounds
+    kept, removed = [], []
+    for line in lines[start:end]:
+        stripped = line.strip()
+        if stripped.startswith('|') and stripped.endswith('|'):
+            cells = [c.strip().strip('`') for c in stripped.strip('|').split('|')]
+            if cells and cells[0] in wanted:
+                removed.append(cells[0])
+                continue
+        kept.append(line)
+    if not removed:
+        return text, []
+    return '\n'.join(lines[:start] + kept + lines[end:]), removed
+
+
+STATUS_OPTIONS_HEADING = 'Status Options'
+
+
+def render_status_options(columns):
+    """The `### Status Options` table, rebuilt from `{purpose key: option id}`.
+
+    Written in the canonical column order rather than whatever order the live
+    board returns, so the same board always produces the same table and a
+    refresh that changes nothing changes nothing in the file either.
+    """
+    rows = ['| Column | Purpose Key | Option ID |',
+            '| ------ | ----------- | --------- |']
+    for purpose, name in BOARD_COLUMN_NAMES.items():
+        option_id = (columns or {}).get(purpose)
+        rows.append('| %s | `%s` | %s |'
+                    % (name, purpose, '`%s`' % option_id if option_id else 'n/a'))
+    return '\n'.join(rows)
+
+
+def replace_status_options(text, columns):
+    """Swap the `### Status Options` table for one built from `columns`.
+
+    Returns `(text, changed)`. A file with no such section is left alone: the
+    table is written by `setup`, and inventing one here would put a heading
+    into a `## Project Board` section that may not exist either.
+    """
+    lines = (text or '').split('\n')
+    bounds = _section_bounds(lines, STATUS_OPTIONS_HEADING, level=3)
+    if not bounds:
+        return text, False
+    start, end = bounds
+    trailing = []
+    while end > start + 1 and not lines[end - 1].strip():
+        trailing.insert(0, lines[end - 1])
+        end -= 1
+    block = ([lines[start], ''] + render_status_options(columns).split('\n')
+             + trailing)
+    if lines[start:end + len(trailing)] == block:
+        return text, False
+    lines[start:end + len(trailing)] = block
+    return '\n'.join(lines), True
+
+
+CLAUDE_MD_POINTER = (
+    'Project configuration -- org and repo, branch convention, quality gate, '
+    'label map and project board -- lives in [`ClaudeProject.md`]'
+    '(ClaudeProject.md). Read it before running a workflow command.')
+
+
+def add_config_pointer(text, pointer=CLAUDE_MD_POINTER):
+    """Append the `ClaudeProject.md` pointer to a CLAUDE.md that lacks one.
+
+    Idempotent on the filename rather than on the sentence, so a project that
+    worded its own pointer differently is left exactly as it is.
+    """
+    body = text or ''
+    if 'ClaudeProject.md' in body:
+        return body, False
+    if body and not body.endswith('\n'):
+        body += '\n'
+    return body + ('\n' if body else '') + pointer + '\n', True

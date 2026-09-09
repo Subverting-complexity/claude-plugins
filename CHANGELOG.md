@@ -7,6 +7,20 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 10.1.0
+
+**Preflight is one command, in Python, and it can repair what it finds.** The gate every workflow command runs first was half a Python command (`wf config-audit`, comparing `ClaudeProject.md` against the live repo, board and org) and half a set of shell blocks inside the skill (`gh auth status`, the required-section grep, the placeholder scan, the quality-gate read, the `CLAUDE.md` check). Two implementations of one question, and they disagreed: a board with no `Backlog` column was fatal on the Python side and absent on the shell side. `wf preflight` is now the whole gate — every `config-audit` check plus the file-level ones — and the skill runs it and reads its JSON rather than greping anything itself.
+
+**`wf preflight --fix` repairs seven things, idempotently.** It creates a missing board column, rewrites the `### Status Options` table from the live board, deletes a surviving `## Ready Gate` or `## Agent Gating` section, deletes a deprecated label-map row, adds the `ClaudeProject.md` pointer to an existing `CLAUDE.md`, and puts an orphaned issue or a card in no lane into `Backlog`. Then it re-runs every check and reports the state it leaves behind rather than the state it found — which is what makes the second run of the command tell you whether the first one worked.
+
+**Every finding says whether `--fix` would touch it, and why not when it would not.** `auto: true` with a `fixable` saying how; `auto: false` with a `fixable` saying why — the value is the project's to choose, or two configured things disagree and either could be right, or the repair happens in the org settings rather than through the API. The split is decided offline (`wf_core.FIXABLE_CHECKS`), so "would running `--fix` change anything?" is answerable without a network call.
+
+**Adding a column no longer risks the board.** `updateProjectV2Field` replaces the whole option list rather than adding to it, so an existing option passed back without its colour is silently recoloured and one omitted entirely is deleted along with every card in it. The repair path makes its own uncached read that asks for each option's colour and description, and every lane's colour and description now live in `wf_core` beside its name, so the wizard and the repair write the same board.
+
+**`handoff` stopped writing a lifecycle label.** It swapped `status-in-progress` for `status-in-review` on every issue and then moved the card as well. The move is the hand-off; the label was a second record of it that 10.0.0 retired everywhere else.
+
+**Claim reaping reads the assignment, not a label.** A stale claim was detected by the absence of `status-in-progress` — a label 10.0.0 stopped applying, so every healthy in-flight claim would have looked abandoned and been reaped out from under the session holding it. An issue claim is now stale when the issue is closed, when nobody is assigned, or when a PR is already open for it. The pull-request half still reads its review-state label, because a pull request has no board card and that label is the only record of where it is.
+
 ## github-workflow 10.0.0
 
 **Breaking: no label decides anything, anywhere.** The issue-side labels are retired outright — every `status-*`, every `priority-*`, the two scope labels, `needs-refinement` and `claude-ready`. What replaced them was already there: an issue's state is the board column its card sits in, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. 9.0.0 kept the labels as a human-readable mirror; a mirror that nothing reads is a second answer to every question the board already answers, and the two drift. The only issue label left is the `claude-authored` provenance marker. Pull request review-state labels (`needs-review`, `reviewing`, `approved`, `changes-requested`) are untouched — they describe a pull request, which has no board card.
