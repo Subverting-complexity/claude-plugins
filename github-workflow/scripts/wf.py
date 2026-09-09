@@ -1873,9 +1873,12 @@ def cmd_issue_audit(args):
         wrote, write_err = write_audit_spec(spec_path,
                                             [a['proposed'] for a in with_gaps])
 
+    # `spec_written` says whether a spec was written, so a clean run says
+    # `false` rather than `true` beside a null path -- which read as "the file
+    # is there" every time somebody checked whether the backfill had run.
     payload = {'repo': repo, 'summary': summary,
                'spec': spec_path if with_gaps else None,
-               'spec_written': wrote}
+               'spec_written': bool(with_gaps) and wrote}
     if not wrote:
         payload['write_error'] = write_err
     if not args.quiet:
@@ -2803,7 +2806,8 @@ def report_unprioritised(pool, priority_map):
     if not missing:
         return
     eprint('wf: %d candidate(s) have no Priority field value and sort last: '
-           '%s (run `wf issue-audit --apply` to backfill)'
+           '%s (run `wf issue-audit`, then `wf issue-apply` on the spec it '
+           'writes, to backfill)'
            % (len(missing), ', '.join('#%d' % n for n in missing)))
 
 

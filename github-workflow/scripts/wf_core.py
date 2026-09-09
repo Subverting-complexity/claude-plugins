@@ -592,8 +592,8 @@ def unset_optional_comment(names):
         'it stands -- but %s worth setting: `Classification` is what separates '
         'a `Feature` that is tech debt from one that is new work, and `Origin` '
         'records where the work came from.\n\n'
-        'Set %s in the issue form, or run `wf issue-audit --apply` to sweep '
-        'the backlog.'
+        'Set %s in the issue form, or run `wf issue-audit` and apply the spec '
+        'it writes to sweep the backlog.'
         % (_names(sorted(names)),
            'it' if len(names) == 1 else 'them',
            'it is' if len(names) == 1 else 'they are',
@@ -1934,22 +1934,41 @@ def unmapped_field_findings(field_names, project_fields=None,
 
 
 def board_column_findings(columns, live_options, path='ClaudeProject.md'):
-    """Board columns recorded in config that no longer resolve on the board.
+    """Where the recorded snapshot and the live board disagree, either way.
 
     `columns` is `{purpose key: option id}`, `live_options` is
-    `{option id: name}`. A stale id costs the recorded shortcut, not the move:
-    the mover falls back to resolving the column by name, so this warns.
-    Whether the column exists at all is `board_lane_findings`.
+    `{option id: name}`. Two disagreements, both warnings, because a stale
+    snapshot costs the recorded shortcut and not the move -- `board-move`
+    resolves a column by name at write time. Whether the column exists at all
+    is `board_lane_findings`, and that one is critical for `Backlog`.
+
+    The second direction is the one a repair creates. Adding a lane to the
+    board fixes `board-lane` and leaves the file recording that lane as `n/a`,
+    which nothing reported until this checked for it -- so the run that created
+    three columns looked clean while the file still said the board had none of
+    them.
     """
     live = live_options or {}
+    recorded = columns or {}
     out = []
-    for purpose, option_id in sorted((columns or {}).items()):
+    for purpose, option_id in sorted(recorded.items()):
         if option_id in live:
             continue
         out.append(finding(
             WARNING, 'board-column',
             '`%s` is recorded as option `%s`, which the board no longer has, so '
             'that move is skipped' % (purpose, option_id),
+            'refresh the `### Status Options` table from the live board',
+            path))
+    names = {(name or '').strip().lower() for name in live.values()}
+    for purpose, name in sorted(BOARD_COLUMN_NAMES.items()):
+        if purpose in recorded or name.strip().lower() not in names:
+            continue
+        out.append(finding(
+            WARNING, 'board-column',
+            'the board has a `%s` column and `%s` records no option id for it, '
+            'so every move to that lane costs a lookup it should not have to '
+            'make' % (name, path),
             'refresh the `### Status Options` table from the live board',
             path))
     return out
@@ -2022,8 +2041,8 @@ def absent_field_findings(defined_names, project_fields=None,
                'it' if len(missing) == 1 else 'them',
                'it' if len(missing) == 1 else 'them'),
             'create %s as an org issue field (Planning -> Issue fields), pin it '
-            'to every enabled issue type, then run `wf issue-audit --apply` to '
-            'backfill the backlog' % _names(missing),
+            'to every enabled issue type, then run `wf issue-audit` and apply the '
+            'spec it writes to backfill the backlog' % _names(missing),
             path))
     optional = absent(OPTIONAL_FIELD_KEYS)
     if optional:
@@ -2906,10 +2925,17 @@ def render_status_options(columns):
 
 
 def replace_status_options(text, columns):
-    """Swap the `### Status Options` table for one built from `columns`.
+    """Swap the table inside `### Status Options` for one built from `columns`.
 
-    Returns `(text, changed)`. A file with no such section is left alone: the
-    table is written by `setup`, and inventing one here would put a heading
+    Returns `(text, changed)`. Only the table's own lines are replaced. The
+    first version of this replaced the whole section, which ate the paragraphs
+    a project had written around the table -- on the repository this plugin is
+    developed in, four of them, including the one recording why `col-backlog`
+    kept its old option id through a rename. A repair that destroys the
+    project's own writing is not a repair.
+
+    A section with no table is left alone, and so is a file with no section:
+    the table is written by `setup`, and inventing one here would put a heading
     into a `## Project Board` section that may not exist either.
     """
     lines = (text or '').split('\n')
@@ -2917,15 +2943,17 @@ def replace_status_options(text, columns):
     if not bounds:
         return text, False
     start, end = bounds
-    trailing = []
-    while end > start + 1 and not lines[end - 1].strip():
-        trailing.insert(0, lines[end - 1])
-        end -= 1
-    block = ([lines[start], ''] + render_status_options(columns).split('\n')
-             + trailing)
-    if lines[start:end + len(trailing)] == block:
+    first = next((i for i in range(start + 1, end)
+                  if lines[i].strip().startswith('|')), None)
+    if first is None:
         return text, False
-    lines[start:end + len(trailing)] = block
+    last = first
+    while last + 1 < end and lines[last + 1].strip().startswith('|'):
+        last += 1
+    block = render_status_options(columns).split('\n')
+    if lines[first:last + 1] == block:
+        return text, False
+    lines[first:last + 1] = block
     return '\n'.join(lines), True
 
 

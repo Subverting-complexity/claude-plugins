@@ -7,6 +7,18 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 10.1.1
+
+Everything here came out of running 10.1.0 against a live board for the first time.
+
+**`--fix` no longer eats the prose around the `### Status Options` table.** It replaced the whole section, so on the repository this plugin is developed in it deleted four paragraphs, including the one recording why `col-backlog` kept its old option id through a rename. Only the table's own lines move now.
+
+**A lane the board has and the file does not record is reported.** `board-column` checked one direction: a recorded option id the board no longer has. Adding a column produces the other — the lane exists and `ClaudeProject.md` still says `n/a` — which meant the run that created three columns reported a clean board while the file said it had none of them. Both directions warn, because `board-move` resolves a column by name at write time, so a stale snapshot costs a lookup rather than the move.
+
+**Three commands stopped naming a flag that does not exist.** `wf issue-audit --apply` was in the unprioritised-candidate warning, the unset-optional-field comment written onto an issue, and the `field-absent` fix text. There is no such flag: the audit writes a spec and `wf issue-apply` applies it, which is deliberate, because the dependency edges in that spec are inferred and want a person's eye first.
+
+**A clean `issue-audit` reports `spec_written: false`.** It reported `true` beside a null path, which read as "the file is there" every time somebody checked whether the backfill had run.
+
 ## github-workflow 10.1.0
 
 **Preflight is one command, in Python, and it can repair what it finds.** The gate every workflow command runs first was half a Python command (`wf config-audit`, comparing `ClaudeProject.md` against the live repo, board and org) and half a set of shell blocks inside the skill (`gh auth status`, the required-section grep, the placeholder scan, the quality-gate read, the `CLAUDE.md` check). Two implementations of one question, and they disagreed: a board with no `Backlog` column was fatal on the Python side and absent on the shell side. `wf preflight` is now the whole gate — every `config-audit` check plus the file-level ones — and the skill runs it and reads its JSON rather than greping anything itself.
