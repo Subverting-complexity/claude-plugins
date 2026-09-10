@@ -1202,8 +1202,8 @@ _ORG_CAPS_RESPONSE = {
              'options': [{'id': 'o_newfeat', 'name': 'New Feature'}]},
             {'__typename': 'IssueFieldDate', 'id': 'IFD_start',
              'name': 'Start date'},
-            {'__typename': 'IssueFieldText', 'id': 'IFT_parent',
-             'name': 'Parent'},
+            {'__typename': 'IssueFieldText', 'id': 'IFT_notes',
+             'name': 'Notes'},
         ]},
     },
 }
@@ -1220,7 +1220,7 @@ class TestParseOrgCapabilities(unittest.TestCase):
         self.assertEqual(fields['Priority']['data_type'], 'single-select')
         self.assertEqual(fields['Classification']['data_type'], 'multi-select')
         self.assertEqual(fields['Start date']['data_type'], 'date')
-        self.assertEqual(fields['Parent']['data_type'], 'text')
+        self.assertEqual(fields['Notes']['data_type'], 'text')
 
     def test_multi_select_option_ids_survive(self):
         """The whole reason this query is GraphQL and not REST."""
@@ -1454,7 +1454,7 @@ class TestFieldNameOverrides(unittest.TestCase):
         self.assertEqual(cfg['fields']['field-priority'], 'Urgency')
         self.assertEqual(wf.field_name(cfg, 'field-priority'), 'Urgency')
         # An unlisted key still falls through to the default inventory.
-        self.assertEqual(wf.field_name(cfg, 'field-parent'), 'Parent')
+        self.assertEqual(wf.field_name(cfg, 'field-target'), 'Target date')
 
     def test_absent_section_leaves_every_default_in_place(self):
         cfg = wf.parse_claude_project('# P\n\n## Identity\n\n| org | acme |\n')
@@ -3036,20 +3036,6 @@ class TestConfigAudit(unittest.TestCase):
             {'name': 'Epic', 'enabled': True, 'pinned': self._PINNED}])
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(self._checks(payload), ['pin-asymmetry'])
-
-    def test_parent_unpinned_on_epic_leaves_the_audit_clean(self):
-        """The one asymmetry the audit itself calls correct is not reported.
-
-        An org configured exactly as the workflow wants it should come back
-        with nothing at all, so that a warning always means something.
-        """
-        code, payload, _ = self._run(types=[
-            {'name': 'User Story', 'enabled': True,
-             'pinned': self._PINNED + ['Parent']},
-            {'name': 'Epic', 'enabled': True, 'pinned': self._PINNED}])
-        self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(self._checks(payload), [])
-        self.assertEqual(payload['summary']['warning'], 0)
 
     def test_a_status_label_the_map_still_claims_is_deprecated(self):
         """`label-unmapped` used to fail the run here, because a purpose key

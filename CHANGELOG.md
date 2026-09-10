@@ -7,6 +7,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 11.1.0
+
+**Two org fields are no longer part of the workflow.** The `field-parent` purpose key is gone: an issue's parent is GitHub's native Parent issue relationship, which `wf issue-apply` already writes from a spec's `parent`. The `field-retired` preflight check is gone too. An org that still defines either field now sees it reported as `field-unmapped`, like any other org field no purpose key names.
+
 ## github-workflow 11.0.0
 
 **Every user story sits under a feature, and a feature under an epic when the work has one.** `wf issue-apply` refuses a spec that files a `User Story` with no `Feature` parent, or a story or feature under the wrong type, and writes nothing. A feature with no epic is allowed: an epic groups several features toward one outcome, and one invented to hold a single feature would only restate it. A parent that already exists is judged by its live type, and an update is judged by the parent it has or the one it names. The rule is enforced only where the org has the parent type enabled, and `Bug`, `Chore` and `Epic` need no parent. `feature-discovery` now plans stories under features, and features under an epic only when the outcome spans more than one; it attaches to an existing epic or feature before creating one. `issue-audit` reports an issue outside the tree as a `hierarchy` gap. This is the breaking change: a spec that filed parentless stories against an org with `Feature` enabled now exits 22.

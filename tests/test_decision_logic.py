@@ -1886,8 +1886,7 @@ class TestAuditIssue(unittest.TestCase):
         ensured a fully classified backlog could never come back clean — 275
         such findings across 69 issues on one real repo.
         """
-        result = wf_core.audit_issue(_node(), {'Start date': {}, 'Target date': {},
-                                               'Parent': {}, 'Status reason': {}})
+        result = wf_core.audit_issue(_node(), {'Start date': {}, 'Target date': {}})
         self.assertEqual(_kinds(result), [])
         self.assertNotIn('fields', result['proposed'])
 
@@ -2143,32 +2142,6 @@ class TestPinnedFieldFindings(unittest.TestCase):
         self.assertEqual(findings[0]['check'], 'pin-asymmetry')
         self.assertIn('`Team`', findings[0]['detail'])
         self.assertIn('`Epic`', findings[0]['detail'])
-
-    def test_parent_unpinned_on_epic_is_not_reported_at_all(self):
-        """An epic is the parent, so it has no parent to record.
-
-        The audit used to warn about this and then say in its own fix text
-        that it was correct, which is how a clean run stops meaning anything.
-        """
-        self.assertEqual(wf_core.pinned_field_findings(
-            [self._type('User Story', self._REQUIRED + ['Parent']),
-             self._type('Epic', self._REQUIRED)], self._REQUIRED), [])
-
-    def test_the_parent_exemption_ignores_case(self):
-        """The names are org-configured, so the pair is matched case-blind."""
-        self.assertEqual(wf_core.pinned_field_findings(
-            [self._type('Story', self._REQUIRED + ['parent']),
-             self._type('epic', self._REQUIRED)], self._REQUIRED), [])
-
-    def test_parent_missing_from_a_type_that_is_not_epic_still_warns(self):
-        """Only `Epic` is exempt — a story with no `Parent` is a real gap."""
-        findings = wf_core.pinned_field_findings(
-            [self._type('User Story', self._REQUIRED + ['Parent']),
-             self._type('Bug', self._REQUIRED),
-             self._type('Epic', self._REQUIRED)], self._REQUIRED)
-        self.assertEqual(_levels(findings), [wf_core.WARNING])
-        self.assertIn('`Bug`', findings[0]['detail'])
-        self.assertNotIn('`Epic`', findings[0]['detail'])
 
     def test_a_correctly_pinned_org_is_clean(self):
         findings = wf_core.pinned_field_findings(
@@ -3323,17 +3296,6 @@ class TestStatusOptionsTable(unittest.TestCase):
 class TestRetiredWorkflowFindings(unittest.TestCase):
     """What preflight reports about the workflow this one replaced."""
 
-    def test_a_retired_org_field_warns_and_names_itself(self):
-        findings = wf_core.retired_field_findings(['Status reason', 'Priority'])
-        self.assertEqual(_checks(findings), ['field-retired'])
-        self.assertEqual(_levels(findings), [wf_core.WARNING])
-        self.assertIn('Status reason', findings[0]['detail'])
-
-    def test_a_retired_field_is_not_also_unmapped(self):
-        """`field-unmapped` used to advise mapping a purpose key to it."""
-        self.assertEqual(wf_core.unmapped_field_findings(
-            {'Status reason': {}}, {}), [])
-
     def test_a_ready_column_on_the_board_warns(self):
         findings = wf_core.board_retired_findings(['Backlog', 'Ready', 'Done'])
         self.assertEqual(_checks(findings), ['board-retired'])
@@ -3353,7 +3315,7 @@ class TestRetiredWorkflowFindings(unittest.TestCase):
     def test_both_retired_repairs_are_fixable_and_the_rest_are_not(self):
         for check in ('label-retired', 'board-retired'):
             self.assertIn(check, wf_core.FIXABLE_CHECKS)
-        for check in ('field-retired', 'field-options', 'instructions-retired'):
+        for check in ('field-options', 'instructions-retired'):
             self.assertIn(check, wf_core.UNFIXABLE_REASONS)
 
     def test_a_priority_option_the_picker_cannot_rank_warns(self):

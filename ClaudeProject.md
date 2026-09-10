@@ -64,7 +64,7 @@ An organisation with native issue types enabled: **Bug**, **Chore**, **Epic**, *
 
 ### Field names
 
-All eight resolve to their default names.
+All seven resolve to their default names.
 
 | Purpose key          | Field name       |
 | -------------------- | ---------------- |
@@ -75,7 +75,6 @@ All eight resolve to their default names.
 | field-origin         | `Origin`         |
 | field-start          | `Start date`     |
 | field-target         | `Target date`    |
-| field-parent         | `Parent`         |
 
 `Classification` is a **multi-select**; the rest are single-select, date or text as `wf_core.FIELD_DATA_TYPES` records.
 

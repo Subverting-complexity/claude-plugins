@@ -2399,7 +2399,7 @@ def collect_config_findings(cfg, args, root):
     if args.offline:
         skipped = ['label-reference', 'config-label', 'label-drift',
                    'field-unpinned', 'field-unmapped', 'field-absent',
-                   'field-retired', 'field-options', 'label-retired',
+                   'field-options', 'label-retired',
                    'board-column', 'board-lane', 'board-retired',
                    'board-orphan', 'board-unset']
         return findings, ['config-section', 'instructions-retired'], skipped, context
@@ -2478,15 +2478,11 @@ def collect_config_findings(cfg, args, root):
                                                     cfg.get('fields'), source_rel))
     checked.append('field-unmapped')
 
-    # A field this workflow retired that the org still defines, and options on a
-    # mandatory field that no decision here knows. Both fail silently otherwise:
-    # the first invites somebody to map a purpose key to a dead field, the
-    # second sorts every issue carrying an unrecognised value last.
-    findings.extend(wf_core.retired_field_findings(
-        (caps['field_map'] or {}).keys(), cfg.get('fields'), source_rel))
+    # Options on a mandatory field that no decision here knows. This fails
+    # silently otherwise: every issue carrying an unrecognised value sorts last.
     findings.extend(wf_core.field_option_findings(
         caps['field_map'], cfg.get('fields'), source_rel))
-    checked.extend(['field-retired', 'field-options'])
+    checked.append('field-options')
 
     # A mandatory field the org has not created is the failure every other
     # check here assumes away: the picker reads these five and nothing else,

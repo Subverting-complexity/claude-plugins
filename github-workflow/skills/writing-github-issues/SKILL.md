@@ -74,7 +74,7 @@ The native types are a tree, not a flat list. A `User Story` sits under a `Featu
 
 Attach before creating. Where the work belongs to an epic or feature that already exists, name it as the `parent` by issue number rather than filing a second one.
 
-The parent is the native relationship the spec's `parent` writes. It is not a sentence in the body and not the org's `Parent` field; a body line saying "Part of #N" parents nothing.
+The parent is GitHub's native Parent issue relationship, which the spec's `parent` writes. It is not a sentence in the body; a body line saying "Part of #N" parents nothing.
 
 ## Scope: one issue, one party
 

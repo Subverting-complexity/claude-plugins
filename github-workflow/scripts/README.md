@@ -307,7 +307,7 @@ A `[DEBT]` issue typed `Feature` is **not** a type contradiction on an org whose
 
 One gap above comes from body prose, and it is worth understanding before trusting a proposal.
 
-**A parent is a native relationship, not the `Parent` field.** An issue whose first line says `Part of the Cadence Plus epic (#959)` and which GitHub renders as free-standing is invisible as a child: the epic shows no sub-issues and nothing reports that the two disagree. `wf_core.parse_parent` reads a fixed set of phrasings in precedence order, and an issue that **already has** a parent is left alone even when the body names a different one, because a deeper parent is usually the more specific truth and reparenting would flatten a hierarchy somebody built on purpose.
+**A parent is GitHub's native Parent issue relationship.** An issue whose first line says `Part of the Cadence Plus epic (#959)` and which GitHub renders as free-standing is invisible as a child: the epic shows no sub-issues and nothing reports that the two disagree. `wf_core.parse_parent` reads a fixed set of phrasings in precedence order, and an issue that **already has** a parent is left alone even when the body names a different one, because a deeper parent is usually the more specific truth and reparenting would flatten a hierarchy somebody built on purpose.
 
 This one is **opt-in**, and the reason is worth stating rather than treating as caution. A story created through `feature-discovery` carries `"parent"` in the spec that creates it, so on a repo whose issues all arrive that way, parsing the sentence back out of the body only re-derives what the pipeline already knew, and every issue that politely repeats its epic in the first line shows up as a gap. Where the prose is the only record — a backlog written before any of this existed, or an issue typed into the GitHub UI — pass `--parents` and the three gaps above come back.
 
@@ -334,7 +334,6 @@ Three things describe how a project works, and they drift apart quietly: `Claude
 | `label-deprecated` | warning | The label map still names a label nothing reads. |
 | `label-retired` | warning | Open issues still carry a label the fields replaced. `--fix` takes it off. |
 | `board-retired` | warning | The board still has a `Ready` column. `--fix` empties it into Backlog, then deletes it. |
-| `field-retired` | warning | The org still defines `Status reason`. Never repaired: deleting an org field deletes its values from every issue in every repository the org owns. |
 | `field-absent-optional` | warning | The org defines no `Classification` or `Origin`, so issues are filed with less on them. |
 | `label-drift` | warning | Two live labels mean the same thing (`type:bug` beside `type-bug`, `bug` beside `type-bug`). A pair of retired labels is `label-retired`'s, whose advice is the opposite: take both off. |
 | `pin-asymmetry` | warning | A field some enabled types pin and others do not. |
@@ -346,7 +345,7 @@ Three things describe how a project works, and they drift apart quietly: `Claude
 
 One question decides it: does the workflow produce a **wrong** result, or a **degraded** one? A missing section or a label that does not exist produces wrong behaviour — the command runs, GitHub accepts or refuses it, and the outcome is not what anyone asked for. An org field nobody mapped or a stale board snapshot degrades gracefully, so it warns and the run continues.
 
-Pin asymmetry is the case that makes the distinction concrete. `Epic` is not pinned to `Parent`, and that is correct — an epic *is* the parent. So a field that some enabled types carry and others do not can only ever be a warning, and only the three fields the tooling actually writes (`wf_core.MANDATORY_FIELD_KEYS`) are ever a failure.
+Pin asymmetry is the case that makes the distinction concrete. A type that cannot hold a field should not pin it, so a field that some enabled types carry and others do not can only ever be a warning, and only the three fields the tooling actually writes (`wf_core.MANDATORY_FIELD_KEYS`) are ever a failure.
 
 The fix text is written to be reported verbatim. For an unpinned field it names the type, the fields, and the form: org settings → Planning → Issue fields → the field's edit form → "Pin to issues". A paraphrase loses the only part that tells someone where to click.
 
@@ -383,7 +382,7 @@ The file-level checks used to be shell blocks inside `skills/preflight/SKILL.md`
 | `quality-gate` | warning | No pre-commit command, or the placeholder is still there. |
 | `file-claude-md` / `claude-md-ref` | warning | No `CLAUDE.md`, or one that never mentions `ClaudeProject.md` — so a session that runs no workflow command never finds the configuration. |
 | `review-config` | warning | `ClaudeProject.md` names a review-state label file that is not there, so every review label falls back to its default name. |
-| `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, `Status reason`, a lifecycle, priority or scope label, or a dependency written as prose, named by line. Never rewritten: the lines are somebody's own sentences. The plugin's own directory is not scanned, since its templates name what was retired on purpose. |
+| `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, a lifecycle, priority or scope label, or a dependency written as prose, named by line. Never rewritten: the lines are somebody's own sentences. The plugin's own directory is not scanned, since its templates name what was retired on purpose. |
 
 ### Every finding says whether `--fix` would touch it
 

@@ -108,8 +108,7 @@ Named here so a finding can be acted on without reading the source. `wf prefligh
 | `field-options` | critical or warning | An option on `Priority`, `Effort` or `Ownership` that no decision here knows. Critical for `Ownership`, because nothing can route an issue carrying it; a warning for the other two, because the issue still sorts, just last or as `Medium`. |
 | `board-retired` | warning | The board still has a `Ready` column. Nothing selects from it, so a card there is invisible to every command. |
 | `label-retired` | warning | Open issues still carry a label the fields replaced (`status-*`, `priority-*`, `browser-agent`, `human-required`, `needs-refinement`, `claude-ready`). It decides nothing, and it misleads anyone filtering the issues list by hand. |
-| `field-retired` | warning | The org still defines `Status reason`. Nothing reads or writes it: the column is the state and a comment carries the reason. |
-| `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, `Status reason`, a lifecycle, priority or scope label, or a dependency written as prose. A session reading it is told to do something the tooling no longer does. |
+| `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, a lifecycle, priority or scope label, or a dependency written as prose. A session reading it is told to do something the tooling no longer does. |
 
 ## What `--fix` will and will not do
 
@@ -117,7 +116,7 @@ It repairs nine things, all idempotent: it creates a missing board column, rewri
 
 `Backlog` and not "wherever it belongs", because nothing on an orphaned issue says where it belongs and the pool is the one lane that means "nobody has decided anything about this yet". Somebody moving it straight back out is a decision; leaving it invisible is not. The `Ready` column is emptied first and deleted second, and only when every card in it moved: deleting a column deletes the value from each card in it, which would leave those issues in no lane at all.
 
-It will not create a `CLAUDE.md` that does not exist, invent an `## Identity` section, create or delete an org-level issue field, rename a field's options, pin a field to an issue type, choose between two disagreeing values, rewrite a sentence in somebody's `CLAUDE.md`, or write a quality gate. Each of those is either a decision only the project can make or a change that happens in the GitHub org settings rather than through the API this runs on. Deleting `Status reason` in particular deletes its values from every issue in every repository the org owns. A finding it leaves alone comes back with `auto: false` and a reason, and after `--fix` it is still in `findings` — which is the point: what the command reports is the state it leaves behind.
+It will not create a `CLAUDE.md` that does not exist, invent an `## Identity` section, create or delete an org-level issue field, rename a field's options, pin a field to an issue type, choose between two disagreeing values, rewrite a sentence in somebody's `CLAUDE.md`, or write a quality gate. Each of those is either a decision only the project can make or a change that happens in the GitHub org settings rather than through the API this runs on. A finding it leaves alone comes back with `auto: false` and a reason, and after `--fix` it is still in `findings` — which is the point: what the command reports is the state it leaves behind.
 
 ## Auto-merge safety checks
 

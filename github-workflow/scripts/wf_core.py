@@ -566,7 +566,6 @@ FIELD_NAME_DEFAULTS = {
     'field-origin':        'Origin',
     'field-start':         'Start date',
     'field-target':        'Target date',
-    'field-parent':        'Parent',
 }
 
 FIELD_DATA_TYPES = {
@@ -577,7 +576,6 @@ FIELD_DATA_TYPES = {
     'field-origin':        'single-select',
     'field-start':         'date',
     'field-target':        'date',
-    'field-parent':        'text',
 }
 
 # The fields a decision reads. An issue missing one of these is an issue the
@@ -2218,16 +2216,6 @@ def label_drift_findings(live_labels, project_map=None):
     return out
 
 
-# Asymmetry that is correct by construction, so the audit stays silent about
-# it. An audit that reports a finding and then tells you in the same breath
-# that it is fine is an audit people learn to skim, and the whole value of
-# `preflight` is that a clean run means something. `Parent` on `Epic` is the
-# only such pair the workflow knows of: an epic *is* the parent, so it has no
-# parent of its own to record. Keyed and matched lower-case because these are
-# org-configured names.
-STRUCTURAL_PIN_EXEMPTIONS = {'parent': frozenset({'epic'})}
-
-
 def pinned_field_findings(issue_types, required_names, portal_hint=True):
     """Types whose issue form will not show a field the tooling writes to.
 
@@ -2238,8 +2226,7 @@ def pinned_field_findings(issue_types, required_names, portal_hint=True):
 
     Asymmetry between types is a separate and softer matter: a field some
     enabled types carry and others do not is a warning, and only the fields the
-    tooling actually writes are ever a failure. Asymmetry that is correct by
-    construction is not reported at all -- see `STRUCTURAL_PIN_EXEMPTIONS`.
+    tooling actually writes are ever a failure.
     """
     enabled = [t for t in issue_types or () if t.get('enabled')]
     required = list(required_names or ())
@@ -2268,9 +2255,7 @@ def pinned_field_findings(issue_types, required_names, portal_hint=True):
     for name in sorted(everywhere):
         if name in required:
             continue
-        exempt = STRUCTURAL_PIN_EXEMPTIONS.get(name.strip().lower(), frozenset())
-        absent = sorted(n for n in names - everywhere[name]
-                        if n.strip().lower() not in exempt)
+        absent = sorted(names - everywhere[name])
         if not absent:
             continue
         out.append(finding(
@@ -2292,10 +2277,6 @@ def unmapped_field_findings(field_names, project_fields=None,
     out = []
     for name in sorted(set(field_names or ())):
         if field_purpose_for_name(name, project_fields or {}):
-            continue
-        if str(name).strip().lower() in RETIRED_FIELD_NAMES:
-            # `field-retired` names this one, and says the opposite: a purpose
-            # key must never map to it again.
             continue
         out.append(finding(
             WARNING, 'field-unmapped',
@@ -2433,55 +2414,11 @@ def absent_field_findings(defined_names, project_fields=None,
     return out
 
 
-# Org issue fields this workflow used to write and no longer has any use for.
-# `Status reason` held a sentence saying why an issue was in the state it was
-# in, beside a `Status` that already said what the state was. Nothing could
-# select on the sentence, every command that wrote one had to keep it in step
-# with the column, and the two disagreed on most of the issues carrying both.
-# The column is the state and a comment is where a reason belongs.
-RETIRED_FIELD_NAMES = {
-    'status reason': 'Status reason',
-}
-
 # Board columns a previous version of the workflow selected from. `Ready` was
 # the opt-in pool: an issue was invisible until somebody moved it there or
 # labelled it. Backlog is the pool now, and a board that still carries a Ready
 # lane has a column whose cards nothing will ever look at.
 RETIRED_BOARD_COLUMNS = ('Ready',)
-
-
-def retired_field_findings(field_names, project_fields=None,
-                           path='ClaudeProject.md'):
-    """Org fields the workflow retired and the org still defines.
-
-    A warning and not a failure: an extra field costs nothing at read time. It
-    is worth saying because the field is on every issue form in the org, so
-    people keep filling it in, and because `field-unmapped` would otherwise
-    report the same field with the opposite advice -- "map a purpose key to
-    it" -- for something no purpose key should ever name again.
-
-    Never repaired automatically. Deleting an org issue field deletes its
-    values from every issue in every repository the org owns, which is not a
-    thing a configuration check may do on its own.
-    """
-    mapped = {str(v).strip().lower() for v in (project_fields or {}).values()}
-    out = []
-    for name in sorted(set(field_names or ())):
-        key = str(name).strip().lower()
-        if key not in RETIRED_FIELD_NAMES:
-            continue
-        detail = ('the org still defines `%s`, which this workflow retired: the '
-                  'board column is the state and a comment is where the reason '
-                  'for it belongs, so nothing reads or writes this field' % name)
-        if key in mapped:
-            detail += (', and `## Issue Types & Fields` still maps a purpose key '
-                       'to it')
-        out.append(finding(
-            WARNING, 'field-retired', detail,
-            'delete `%s` in the org settings (Planning -> Issue fields), and '
-            'remove any row naming it from `## Issue Types & Fields`' % name,
-            path))
-    return out
 
 
 def retired_label_findings(issues, project_map=None, path='ClaudeProject.md'):
@@ -2608,15 +2545,13 @@ def field_option_findings(field_map, project_fields=None,
 
 # Vocabulary a project's own instructions can still carry from before the
 # structured-field workflow. Each pattern is a thing a session would act on:
-# telling the model to look for a `Ready` label, to read a dependency out of a
-# body, or to fill in a field that no longer exists sends it to do work the
-# tooling will not agree with, and nothing else reports that.
+# telling the model to look for a `Ready` label or to read a dependency out of
+# a body sends it to do work the tooling will not agree with, and nothing else
+# reports that.
 _RETIRED_INSTRUCTION_PATTERNS = (
     (r'status[-:_ ]ready|claude-ready|`?Ready`? (?:label|column|gate|status)|##\s*Ready Gate',
      'the `Ready` opt-in, which no longer exists -- the pool is the board\'s '
      '`Backlog` column'),
-    (r'status[-:_ ]reason|Status reason',
-     'the retired `Status reason` field'),
     (r'status[-:_](?:in-progress|blocked|parked|non-code|in-review|needs-attention)|'
      r'\bneeds-refinement\b|\bhuman-required\b|\bbrowser-agent\b|priority[-:](?:critical|high|medium|low)',
      'a lifecycle, scope or priority label that decided something and no '
@@ -3400,8 +3335,6 @@ UNFIXABLE_REASONS = {
                       'settings',
     'field-unmapped': "which purpose key a project's field serves is the "
                       "project's decision",
-    'field-retired': 'deleting an org issue field deletes its values from every '
-                     'issue in every repository the org owns',
     'field-options': "renaming an org field's options moves every issue "
                      'carrying one, so it is the org\'s decision',
     'instructions-retired': 'the lines are somebody\'s own sentences, and an '
