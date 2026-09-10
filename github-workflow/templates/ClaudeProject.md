@@ -86,7 +86,6 @@ Every purpose key the workflow writes, mapped to the field name **this** owner u
 | field-ownership      | `Ownership`      |
 | field-start          | `Start date`     |
 | field-target         | `Target date`    |
-| field-parent         | `Parent`         |
 
 **Three of these are required**, and the line is whether a decision reads the value: `field-priority` is the pool's order, `field-effort` its size ceiling, `field-ownership` whether a code agent may take the issue at all (`wf_core.MANDATORY_FIELD_KEYS`). An org that has not defined one is a critical preflight finding, and `wf issue-apply` refuses a spec that leaves one blank rather than creating an issue nothing can rank, size or route.
 
