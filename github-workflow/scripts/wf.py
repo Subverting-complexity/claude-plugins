@@ -4385,6 +4385,49 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
 PICKABLE_BY_NAME = frozenset({'Backlog', 'Blocked', 'Needs refinement', 'Parked'})
 
 
+# How far below a container `candidates --parent` looks. Epic, Feature, story
+# is two levels; the third is room for a story that has sub-issues of its own.
+CONTAINER_TREE_DEPTH = 3
+
+
+def _tree_selection(depth):
+    base = 'number title state issueType { name } repository { nameWithOwner }'
+    if depth <= 0:
+        return base
+    return base + ' subIssues(first:50){ nodes { %s } }' % _tree_selection(depth - 1)
+
+
+def _tree_node(node):
+    return {'number': node['number'], 'title': node.get('title') or '',
+            'state': node.get('state') or '',
+            'type': (node.get('issueType') or {}).get('name'),
+            'repo': (node.get('repository') or {}).get('nameWithOwner'),
+            'children': [_tree_node(c) for c
+                         in (node.get('subIssues') or {}).get('nodes') or []]}
+
+
+def fetch_container_tree(cfg, number):
+    """The sub-issue tree under one issue, in one query. (ok, tree, err)."""
+    ok, data, err = gh_graphql(
+        'query($o:String!,$r:String!,$n:Int!){ repository(owner:$o,name:$r){'
+        ' issue(number:$n){ %s } } }' % _tree_selection(CONTAINER_TREE_DEPTH),
+        o=cfg['org'], r=cfg['repo'], n=int(number))
+    if not ok or not data:
+        return False, None, err or 'the sub-issue query failed'
+    node = (data.get('repository') or {}).get('issue')
+    if not node:
+        return False, None, 'issue #%d not found' % int(number)
+    return True, _tree_node(node), ''
+
+
+def _tree_titles(node, out=None):
+    out = {} if out is None else out
+    out[node['number']] = node.get('title') or ''
+    for child in node.get('children') or ():
+        _tree_titles(child, out)
+    return out
+
+
 def fetch_issue_candidate(cfg, number):
     """Fetch one issue as a normalized candidate for the explicit `--issue` path.
 
@@ -4680,6 +4723,12 @@ def cmd_candidates(args):
             max_effort=getattr(args, 'max_effort', None), oversized=oversized)
 
     backlog_mode, pool = ordered_pool(cfg, issues, selector)
+    maps = {'priority': priority_map, 'effort': effort_map,
+            'ownership': ownership_map}
+    if getattr(args, 'parent', None):
+        # Before the empty-pool exit: a parent whose leaves are all out of the
+        # pool still owes the caller the list of why.
+        candidates_under_parent(args, cfg, pool, maps)
     if not pool:
         emit('no-candidates', EXIT_NO_CANDIDATES,
              reason='nothing in the %s column is available to a code agent'
@@ -4692,48 +4741,10 @@ def cmd_candidates(args):
         pool = pool[:args.limit]
 
     edge_map, edges_unknown = issue_edges_map(cfg, [c['number'] for c in pool])
-    listed = []
-    for cand in pool:
-        body = cand.get('body') or ''
-        truncated = False
-        if args.body_chars and args.body_chars > 0 and len(body) > args.body_chars:
-            body, truncated = body[:args.body_chars], True
-        open_deps, closed_deps = wf_core.edge_states(
-            edge_map.get(cand['number']) or [])
-        entry = {
-            'number': cand['number'],
-            'title': cand['title'],
-            'url': cand.get('url', ''),
-            'labels': cand.get('labels', []),
-            'milestone': cand.get('milestone'),
-            'body': body,
-            'body_truncated': truncated,
-            # Straight from the native blocked-by edges: every issue this one
-            # waits on, and which of them are still open. A candidate with an
-            # open dependency is listed and marked rather than hidden, because
-            # this command answers "what is there" and `pick` answers "what can
-            # I start".
-            'dependencies': sorted(open_deps + closed_deps),
-            'dependencies_open': sorted(open_deps),
-            'blocked': bool(open_deps),
-            # True when the edges could not be read at all, so `blocked` says
-            # nothing about this candidate rather than saying "no".
-            'dependencies_unknown': cand['number'] in edges_unknown,
-            'dependency_overflow': len(open_deps) > wf_core.DEP_LIMIT,
-            # The three fields every decision about this issue is made from,
-            # reported beside the issue so a caller choosing a set can see what
-            # the picker saw. `scope` is the `Ownership` value read as one of
-            # the three parties, and it is the field's own answer -- it was
-            # derived from the title prefix until 10.1.2, which meant this
-            # listing could disagree with the filter that produced it.
-            'ownership': ownership_map.get(cand['number']),
-            'scope': wf_core.ownership_scope(ownership_map.get(cand['number'])),
-            'effort': effort_map.get(cand['number']),
-            # The org's own Priority, which is the only thing this listing is
-            # ordered by. None means the issue carries no value and sorts last.
-            'priority': priority_map.get(cand['number']),
-        }
-        listed.append(entry)
+    listed = [_candidate_entry(cand, edge_map.get(cand['number']) or [],
+                               cand['number'] in edges_unknown, maps,
+                               args.body_chars)
+              for cand in pool]
 
     emit('ok', EXIT_OK, mode=args.mode, backlog_mode=backlog_mode,
          total=total, listed=len(listed), candidates=listed,
@@ -4746,6 +4757,151 @@ def cmd_candidates(args):
          # caller reading a long tail of unranked work knows why.
          unprioritised_count=len([c for c in pool
                                   if not priority_map.get(c['number'])]))
+
+
+def _candidate_entry(cand, edges, edges_unknown, maps, body_chars):
+    """One `candidates` listing entry: the issue, its native edges, and the
+    three fields every decision about it is made from."""
+    number = cand['number']
+    body = cand.get('body') or ''
+    truncated = False
+    if body_chars and body_chars > 0 and len(body) > body_chars:
+        body, truncated = body[:body_chars], True
+    open_deps, closed_deps = wf_core.edge_states(edges or [])
+    ownership = (maps.get('ownership') or {}).get(number)
+    return {
+        'number': number,
+        'title': cand['title'],
+        'url': cand.get('url', ''),
+        'labels': cand.get('labels', []),
+        'milestone': cand.get('milestone'),
+        'body': body,
+        'body_truncated': truncated,
+        # Straight from the native blocked-by edges: every issue this one
+        # waits on, and which of them are still open. A candidate with an
+        # open dependency is listed and marked rather than hidden, because
+        # this command answers "what is there" and `pick` answers "what can
+        # I start".
+        'dependencies': sorted(open_deps + closed_deps),
+        'dependencies_open': sorted(open_deps),
+        'blocked': bool(open_deps),
+        # True when the edges could not be read at all, so `blocked` says
+        # nothing about this candidate rather than saying "no".
+        'dependencies_unknown': bool(edges_unknown),
+        'dependency_overflow': len(open_deps) > wf_core.DEP_LIMIT,
+        # The three fields every decision about this issue is made from,
+        # reported beside the issue so a caller choosing a set can see what
+        # the picker saw. `scope` is the `Ownership` value read as one of
+        # the three parties, and it is the field's own answer -- it was
+        # derived from the title prefix until 10.1.2, which meant this
+        # listing could disagree with the filter that produced it.
+        'ownership': ownership,
+        'scope': wf_core.ownership_scope(ownership),
+        'effort': (maps.get('effort') or {}).get(number),
+        # The org's own Priority, which is the only thing this listing is
+        # ordered by. None means the issue carries no value and sorts last.
+        'priority': (maps.get('priority') or {}).get(number),
+    }
+
+
+def candidates_under_parent(args, cfg, pool, maps):
+    """`candidates --parent N`: the one bulk set the tree under N offers.
+
+    The pool is the same pool as ever, narrowed to N's leaves, plus the one
+    exception #239 settled: a leaf in the Blocked column whose every open
+    blocker is another leaf taken in the same run. Non-code work is never
+    taken, because it is neither in the pool nor owned by the code agent.
+    Every other leaf under N is listed in `excluded` with its reason, so a
+    short set reads as a decision rather than as a gap. The choice itself is
+    `wf_core.choose_parent_set`; this is the reading around it.
+    """
+    ok, tree, err = fetch_container_tree(cfg, args.parent)
+    if not ok:
+        emit('error', EXIT_ENV, reason='could not read the sub-issues of #%d (%s)'
+                                       % (args.parent, err))
+    parent = {'number': tree['number'], 'title': tree['title'], 'type': tree['type']}
+    if tree['type'] not in wf_core.HIERARCHY_CONTAINER_TYPES:
+        emit('usage', EXIT_USAGE, parent=parent,
+             reason='#%d is %s, not an Epic or Feature, so it has no stories to '
+                    'choose from. Name its parent, or name the stories directly.'
+                    % (args.parent, ('a %s' % tree['type']) if tree['type']
+                       else 'untyped'))
+
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    groups, _, _ = wf_core.parent_leaf_groups(tree, repo)
+    leaves = [n for members in groups.values() for n in members]
+    wanted = set(leaves)
+    pool = [c for c in pool if c['number'] in wanted]
+    pool_by = {c['number']: c for c in pool}
+    outside = [n for n in leaves if n not in pool_by]
+
+    # The fields and the Blocked column are read only for leaves the pool did
+    # not already answer for.
+    out_maps = {'priority': {}, 'effort': {}, 'ownership': {}}
+    blocked = {}
+    if outside:
+        facets = load_issue_facets(cfg, outside)
+        out_maps = {k: facets.get(k) or {} for k in out_maps}
+        column, berr = blocked_issues(cfg)
+        if berr:
+            emit('error', EXIT_ENV,
+                 reason='could not read the %s column (%s), so which leaves '
+                        'wait only on each other is unknown'
+                        % (wf_core.BOARD_COLUMN_NAMES['col-blocked'], berr))
+        blocked = {i['number']: i for i in column
+                   if i['number'] in wanted and i['number'] not in pool_by
+                   and not i.get('assigned')
+                   and wf_core.ownership_scope(out_maps['ownership'].get(i['number']))
+                   == wf_core.SCOPE_CODE}
+
+    edge_map, edges_unknown = issue_edges_map(cfg, list(pool_by))
+    blocked_edges = {n: ((i.get('blockedBy') or {}).get('nodes')) or []
+                     for n, i in blocked.items()}
+    deps = {}
+    for n in leaves:
+        if n in pool_by:
+            deps[n] = wf_core.edge_states(edge_map.get(n) or [])[0]
+        elif n in blocked:
+            deps[n] = wf_core.edge_states(blocked_edges[n])[0]
+
+    pool_column = wf_core.BOARD_COLUMN_NAMES[wf_core.POOL_COLUMN]
+    reasons = {}
+    rest = [n for n in outside if n not in blocked]
+    if rest:
+        ok, lanes, _ = board_current_columns(cfg, rest)
+        for n in rest:
+            lane = lanes.get(n) if ok else None
+            owner = out_maps['ownership'].get(n)
+            why = []
+            if lane and lane != pool_column:
+                why.append('in the `%s` column' % lane)
+            if wf_core.ownership_scope(owner) != wf_core.SCOPE_CODE:
+                why.append('owned by %s, not the code agent' % (owner or 'nobody'))
+            reasons[n] = ', '.join(why) or 'not in the pool (assigned, or left out by --mode)'
+
+    choice = wf_core.choose_parent_set(tree, [c['number'] for c in pool], deps,
+                                       reasons, max_size=args.size, repo=repo)
+    titles = _tree_titles(tree)
+    excluded = [dict(e, title=titles.get(e['number'], '')) for e in choice['excluded']]
+    listed = []
+    for story in choice['selected']:
+        n = story['number']
+        if n in pool_by:
+            entry = _candidate_entry(pool_by[n], edge_map.get(n) or [],
+                                     n in edges_unknown, maps, args.body_chars)
+            entry['column'] = pool_column
+        else:
+            entry = _candidate_entry(blocked[n], blocked_edges[n], False,
+                                     out_maps, args.body_chars)
+            entry['column'] = wf_core.BOARD_COLUMN_NAMES['col-blocked']
+        listed.append(entry)
+
+    if not listed:
+        emit('no-candidates', EXIT_NO_CANDIDATES, parent=parent, excluded=excluded,
+             reason='nothing under #%d is available to a code agent' % args.parent)
+    emit('ok', EXIT_OK, mode=args.mode, parent=parent, feature=choice['group'],
+         total=len(listed), listed=len(listed), candidates=listed,
+         excluded=excluded)
 
 
 def cmd_update_next(args):
@@ -5313,6 +5469,15 @@ def build_parser():
     cand.add_argument('--body-chars', type=int, default=600,
                       help='truncate each body to this many characters (default 600; '
                            '0 for the whole body)')
+    cand.add_argument('--parent', type=int, default=None,
+                      help='narrow to the leaves under this Epic or Feature and '
+                           'choose one bulk set from them: one Feature per run, '
+                           'Backlog leaves plus any Blocked leaf waiting only on '
+                           'another leaf taken; everything else is listed in '
+                           '`excluded` with its reason')
+    cand.add_argument('--size', type=int, default=wf_core.BULK_MAX,
+                      help='with --parent, the most leaves to take, highest '
+                           'priority first (default %d)' % wf_core.BULK_MAX)
     cand.set_defaults(func=cmd_candidates)
 
     pm = sub.add_parser('post-merge',

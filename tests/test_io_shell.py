@@ -3834,5 +3834,98 @@ class TestPreflight(unittest.TestCase):
         self.assertIn('config-section', self._checks(payload))
         self.assertEqual(payload['fixed'], [])
 
+
+# ── candidates --parent (#239) ───────────────────────────────────────────────
+
+def _node(number, kind, *children, title=None):
+    return {'number': number, 'title': title or 'issue %d' % number,
+            'state': 'OPEN', 'type': kind, 'repo': None,
+            'children': list(children)}
+
+
+def _blocked_card(number, *blockers):
+    return {'number': number, 'title': 'issue %d' % number, 'body': '',
+            'labels': [], 'milestone': None, 'url': '', 'assigned': False,
+            'assignees': [],
+            'blockedBy': {'nodes': [{'number': b, 'state': 'OPEN'} for b in blockers]}}
+
+
+class TestCandidatesUnderParent(unittest.TestCase):
+    """`wf candidates --parent N`: the one set a container's tree offers."""
+
+    def setUp(self):
+        for name, value in (('check_environment', None),
+                            ('load_config', (True, _cfg(), '')),
+                            ('issue_edges_map', ({}, set()))):
+            patch = mock.patch.object(wf, name, return_value=value)
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def _run(self, tree, pool, blocked=(), lanes=None, ownership=None, argv=()):
+        facets = _facets(ownership=ownership) if ownership else _facets()
+        with mock.patch.object(wf, 'fetch_container_tree', return_value=(True, tree, '')), \
+                mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')), \
+                mock.patch.object(wf, 'load_issue_facets', return_value=facets), \
+                mock.patch.object(wf, 'blocked_issues', return_value=(list(blocked), None)), \
+                mock.patch.object(wf, 'board_current_columns',
+                                  return_value=(True, lanes or {}, '')):
+            return _capture(wf.cmd_candidates,
+                            _candidates_args('--parent', str(tree['number']), *argv))
+
+    def test_backlog_leaves_and_a_leaf_waiting_on_them_are_offered(self):
+        tree = _node(50, 'Feature', _node(51, 'User Story'), _node(52, 'User Story'),
+                     _node(53, 'User Story'))
+        code, payload = self._run(
+            tree, [_candidate(51)], blocked=[_blocked_card(52, 51)],
+            lanes={53: 'Non-code'},
+            ownership={51: 'Code agent', 52: 'Code agent', 53: 'Human'})
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual([c['number'] for c in payload['candidates']], [51, 52])
+        self.assertEqual([c['column'] for c in payload['candidates']],
+                         ['Backlog', 'Blocked'])
+        self.assertEqual(payload['feature'], 50)
+        reason = next(e['reason'] for e in payload['excluded'] if e['number'] == 53)
+        self.assertIn('Non-code', reason)
+        self.assertIn('Human', reason)
+
+    def test_a_blocked_leaf_waiting_on_other_work_is_not_offered(self):
+        tree = _node(50, 'Feature', _node(51, 'User Story'), _node(52, 'User Story'))
+        _, payload = self._run(tree, [_candidate(51)], blocked=[_blocked_card(52, 99)])
+        self.assertEqual([c['number'] for c in payload['candidates']], [51])
+        self.assertIn('#99', payload['excluded'][0]['reason'])
+
+    def test_a_story_is_not_a_parent(self):
+        code, payload = self._run(_node(51, 'User Story'), [_candidate(51)])
+        self.assertEqual(code, wf.EXIT_USAGE)
+        self.assertIn('not an Epic or Feature', payload['reason'])
+
+    def test_nothing_available_still_says_why(self):
+        tree = _node(50, 'Feature', _node(51, 'User Story'))
+        code, payload = self._run(tree, [], lanes={51: 'Parked'})
+        self.assertEqual(code, wf.EXIT_NO_CANDIDATES)
+        self.assertIn('Parked', payload['excluded'][0]['reason'])
+
+
+class TestPickBlockedSibling(unittest.TestCase):
+    """`pick --issue N --sibling M` claims a Blocked leaf whose only open
+    blocker is M, which is how `--parent`'s Blocked leaves get claimed."""
+
+    def test_a_blocked_card_is_accepted_and_a_sibling_does_not_block_it(self):
+        data = {'number': 52, 'title': 't', 'labels': [], 'body': '',
+                'milestone': None, 'url': '', 'state': 'OPEN', 'assignees': []}
+        cfg = _cfg()
+        with mock.patch.object(wf, 'gh_json', return_value=(True, data, '')), \
+                mock.patch.object(wf, 'load_issue_facets', return_value=_facets()), \
+                mock.patch.object(wf, 'board_current_columns',
+                                  return_value=(True, {52: 'Blocked'}, '')):
+            self.assertEqual(wf.fetch_issue_candidate(cfg, 52)['number'], 52)
+        with mock.patch.object(wf, 'issue_edges',
+                               return_value=[{'number': 51, 'state': 'OPEN'}]), \
+                mock.patch.object(wf, 'merged_pr_closing', return_value=None):
+            self.assertEqual(wf.validate_issue(cfg, {'number': 52}, siblings=[51])[0],
+                             'valid')
+            self.assertEqual(wf.validate_issue(cfg, {'number': 52})[0], 'blocked')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

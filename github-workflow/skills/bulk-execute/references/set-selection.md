@@ -1,6 +1,6 @@
 # Bulk Execute — Phase 1 (choose the set, claim every story)
 
-Read this at Phase 1. It is the whole of set selection: the two ways a set gets chosen, the rules that decide what belongs in one pull request, the claim every member has to hold, and how a story leaves the set again.
+Read this at Phase 1. It is the whole of set selection: the three ways a set gets chosen, the rules that decide what belongs in one pull request, the claim every member has to hold, and how a story leaves the set again.
 
 Two things hold throughout:
 
@@ -99,9 +99,34 @@ Then go to **Claiming the set**.
 
 ---
 
+## Path C — the user named an Epic or Feature
+
+`--parent N` is present. The tree under N has already said which stories belong together, so nothing is grouped by heuristics and nothing is asked. Named story numbers and `--parent` cannot be combined; if both are given, stop and say so.
+
+**1. Read the set the tree offers.**
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --mode {mode} --parent {N} --size {size}
+```
+
+It walks N's sub-issues down through its Features to the leaves (every open descendant that is not an Epic or Feature) and applies the rules settled on #239:
+
+- **Only work a code agent may take.** A leaf is taken only when its card is in Backlog and its `Ownership` is `Code agent`. Non-code, Parked, Needs refinement, In Progress and In Review leaves are never taken.
+- **One exception for Blocked.** A leaf in Blocked is taken when every open blocker is another leaf taken in the same run. A leaf blocked by anything else stays out.
+- **One Feature per run.** Under an Epic, only the Feature holding the highest-priority leaf is taken.
+- **Capped by `--size`**, highest priority first, and returned in build order.
+
+Interpret the result by its `status`: **`ok`** — the `candidates` are the set, in build order; **`no-candidates`** — nothing under N is available, so report the `excluded` list and stop; **`usage`** — N is not an Epic or Feature, so say so and stop; **`error`** — `wf` cannot run, so name the prerequisite and stop.
+
+**2. Report what was left out.** `excluded` names every other leaf with its reason. Say in one line per Feature or column what was not taken, so the next run can be pointed at it. The container itself is never claimed, moved or closed.
+
+**3. Name the lead.** The first story in `candidates` is the lead. Then go to **Claiming the set**, passing `--sibling` for every other story exactly as for the other paths: that is also what lets a Blocked leaf be claimed, because its blocker is a sibling.
+
+---
+
 ## Claiming the set
 
-Identical for both paths. Claim in **build order**, so the lead is claimed first and a run that loses claims part way still holds a coherent prefix.
+Identical for every path. Claim in **build order**, so the lead is claimed first and a run that loses claims part way still holds a coherent prefix.
 
 For each story, in order:
 

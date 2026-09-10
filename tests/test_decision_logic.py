@@ -3390,5 +3390,98 @@ class TestAddConfigPointer(unittest.TestCase):
         once, _ = wf_core.add_config_pointer('# Repo\n')
         self.assertEqual(wf_core.add_config_pointer(once), (once, False))
 
+
+# ── a bulk set chosen from a container (#239) ────────────────────────────────
+
+def _tree(number, kind, *children, state='OPEN', repo=None):
+    return {'number': number, 'type': kind, 'state': state, 'repo': repo,
+            'children': list(children)}
+
+
+class TestChooseParentSet(unittest.TestCase):
+    """`choose_parent_set` — the one bulk set a container's tree offers."""
+
+    @staticmethod
+    def _numbers(choice):
+        return [s['number'] for s in choice['selected']]
+
+    @staticmethod
+    def _reason(choice, number):
+        return next(e['reason'] for e in choice['excluded'] if e['number'] == number)
+
+    def test_a_feature_offers_its_pool_leaves_in_priority_order(self):
+        root = _tree(10, 'Feature', _tree(11, 'User Story'), _tree(12, 'Bug'))
+        choice = wf_core.choose_parent_set(root, [12, 11], {11: [], 12: []})
+        self.assertEqual(choice['group'], 10)
+        self.assertEqual(self._numbers(choice), [12, 11])
+        self.assertEqual(choice['excluded'], [])
+
+    def test_under_an_epic_one_feature_is_taken(self):
+        """The Feature holding the highest-priority leaf, and only that one:
+        leaves from two Features are two deliverables in one pull request."""
+        root = _tree(1, 'Epic',
+                     _tree(2, 'Feature', _tree(21, 'User Story')),
+                     _tree(3, 'Feature', _tree(31, 'User Story'),
+                           _tree(32, 'User Story')))
+        choice = wf_core.choose_parent_set(root, [31, 21, 32],
+                                           {21: [], 31: [], 32: []})
+        self.assertEqual(choice['group'], 3)
+        self.assertEqual(self._numbers(choice), [31, 32])
+        self.assertIn('#2', self._reason(choice, 21))
+
+    def test_a_leaf_blocked_by_a_sibling_is_taken_after_it(self):
+        root = _tree(10, 'Feature', _tree(11, 'User Story'), _tree(12, 'User Story'))
+        choice = wf_core.choose_parent_set(root, [11], {11: [], 12: [11]})
+        self.assertEqual(self._numbers(choice), [11, 12])
+
+    def test_a_leaf_blocked_by_anything_else_is_left_out(self):
+        root = _tree(10, 'Feature', _tree(11, 'User Story'), _tree(12, 'User Story'))
+        choice = wf_core.choose_parent_set(root, [11], {11: [], 12: [99]})
+        self.assertEqual(self._numbers(choice), [11])
+        self.assertIn('#99', self._reason(choice, 12))
+
+    def test_work_outside_the_pool_is_never_taken_and_says_why(self):
+        root = _tree(10, 'Feature', _tree(11, 'User Story'), _tree(12, 'User Story'))
+        choice = wf_core.choose_parent_set(
+            root, [11], {11: []},
+            {12: 'in the `Non-code` column, owned by Human, not the code agent'})
+        self.assertEqual(self._numbers(choice), [11])
+        self.assertIn('Non-code', self._reason(choice, 12))
+
+    def test_a_feature_with_no_stories_is_reported_not_built(self):
+        root = _tree(1, 'Epic', _tree(2, 'Feature'),
+                     _tree(3, 'Feature', _tree(31, 'User Story')))
+        choice = wf_core.choose_parent_set(root, [31], {31: []})
+        self.assertEqual(self._numbers(choice), [31])
+        self.assertIn('no open stories', self._reason(choice, 2))
+
+    def test_the_size_cut_takes_a_dependent_with_its_blocker(self):
+        """13 waits on 12, which waits on 11. A size of two keeps 11 and 13 by
+        preference order, and 13 then waits on something nobody is building."""
+        root = _tree(10, 'Feature', _tree(11, 'User Story'),
+                     _tree(12, 'User Story'), _tree(13, 'User Story'))
+        choice = wf_core.choose_parent_set(root, [11], {11: [], 13: [12], 12: [11]},
+                                           max_size=2)
+        self.assertEqual(self._numbers(choice), [11])
+        self.assertIn('--size', self._reason(choice, 12))
+        self.assertIn('#12', self._reason(choice, 13))
+
+    def test_nothing_ready_means_nothing_is_taken(self):
+        root = _tree(10, 'Feature', _tree(11, 'User Story'))
+        choice = wf_core.choose_parent_set(root, [], {}, {11: 'in the `Parked` column'})
+        self.assertIsNone(choice['group'])
+        self.assertEqual(choice['selected'], [])
+        self.assertIn('Parked', self._reason(choice, 11))
+
+    def test_closed_leaves_are_ignored_and_foreign_ones_reported(self):
+        root = _tree(10, 'Feature', _tree(11, 'User Story', state='CLOSED'),
+                     _tree(12, 'User Story', repo='o/other'),
+                     _tree(13, 'User Story', repo='o/r'))
+        choice = wf_core.choose_parent_set(root, [13], {13: []}, repo='o/r')
+        self.assertEqual(self._numbers(choice), [13])
+        self.assertEqual(self._reason(choice, 12), 'in another repository')
+        self.assertNotIn(11, [e['number'] for e in choice['excluded']])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

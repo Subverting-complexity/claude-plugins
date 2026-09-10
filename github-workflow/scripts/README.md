@@ -26,6 +26,14 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout
 # auto-closes it + moves it to Done if a merged PR already resolved it)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue 42 --checkout
 
+# List the pool without claiming anything (bulk-execute chooses its set from this)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --limit 0
+
+# …or the one set the stories under an Epic or Feature offer: one Feature per
+# run, Backlog leaves plus any Blocked leaf waiting only on another leaf taken,
+# and every other leaf in `excluded` with its reason
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --parent 42 --size 5
+
 # After merging a PR: close any still-open linked issue and move it to Done,
 # then release whatever that merge freed
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr 123
