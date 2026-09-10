@@ -112,7 +112,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --mode {mode} --parent {N}
 It walks N's sub-issues down through its Features to the leaves (every open descendant that is not an Epic or Feature) and applies the rules settled on #239:
 
 - **Only work a code agent may take.** A leaf is taken only when its card is in Backlog and its `Ownership` is `Code agent`. Non-code, Parked, Needs refinement, In Progress and In Review leaves are never taken.
-- **One exception for Blocked.** A leaf in Blocked is taken when every open blocker is another leaf taken in the same run. A leaf blocked by anything else stays out.
+- **One exception for Blocked.** A leaf in Blocked is taken when it has an open blocker and every one is another leaf taken in the same run. A leaf blocked by anything else, or by no issue at all, stays out.
 - **One Feature per run.** Under an Epic, only the Feature holding the highest-priority leaf is taken.
 - **Capped by `--size`**, highest priority first, and returned in build order.
 

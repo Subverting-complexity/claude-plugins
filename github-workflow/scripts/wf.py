@@ -4965,6 +4965,16 @@ def candidates_under_parent(args, cfg, pool, maps):
                 refused[n] = 'untyped, so `--mode %s` cannot place it' % args.mode
             else:
                 refused[n] = 'left out by `--mode %s`' % args.mode
+        # Only a card waiting on another issue. Most Blocked cards wait on a
+        # person or a decision and carry no edge, and building siblings frees
+        # none of those; with no open blocker one would even lead the run.
+        for n in list(blocked):
+            nodes = ((blocked[n].get('blockedBy') or {}).get('nodes')) or []
+            if not wf_core.edge_states(nodes)[0]:
+                refused[n] = ('in the `%s` column with no open blocker, so it waits '
+                              'on something other than an issue'
+                              % wf_core.BOARD_COLUMN_NAMES['col-blocked'])
+                del blocked[n]
 
     edge_map, edges_unknown = issue_edges_map(cfg, list(pool_by))
     blocked_edges = {n: ((i.get('blockedBy') or {}).get('nodes')) or []

@@ -4130,6 +4130,18 @@ class TestCandidatesUnderParent(unittest.TestCase):
         self.assertIn('--mode maintenance', reason)
         self.assertNotIn('Blocked', reason)
 
+    def test_a_blocked_leaf_waiting_on_no_issue_is_not_offered(self):
+        """Blocked on a person or a decision, so no edge: it must neither be
+        offered nor lead the run, however high its priority."""
+        tree = _node(40, 'Epic', _node(50, 'Feature', _node(51, 'User Story')),
+                     _node(60, 'Feature', _node(61, 'User Story')))
+        _, payload = self._run(tree, [_candidate(51)], blocked=[_blocked_card(61)],
+                               priority={51: 'Low', 61: 'High'})
+        self.assertEqual(payload['feature'], 50)
+        self.assertEqual([c['number'] for c in payload['candidates']], [51])
+        reason = next(e['reason'] for e in payload['excluded'] if e['number'] == 61)
+        self.assertIn('no open blocker', reason)
+
     def test_a_blocked_leaf_keeps_its_priority_against_the_pool(self):
         """A High leaf waiting on a Medium one is built next, ahead of a Low
         leaf that was ready all along, and `--size` keeps it."""
