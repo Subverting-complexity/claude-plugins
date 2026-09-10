@@ -68,6 +68,14 @@ An issue says what kind of work it is **once**, through GitHub's native issue ty
 
 `[Manual]` and `[Browser]` are not classifications and are not covered by that rule. They say who has to do the work, not what kind of work it is, and nothing native records either. See **Scope: one issue, one party** below.
 
+## Hierarchy: epic, feature, story
+
+The native types are a tree, not a flat list. A `Feature` sits under an `Epic`, and a `User Story` under a `Feature`. `wf issue-apply` refuses to file either without that parent, or under the wrong type, wherever the org has the parent type enabled. `Bug` and `Chore` sit outside the tree: a parent is allowed on either and never required.
+
+Attach before creating. Where the work belongs to an epic or feature that already exists, name it as the `parent` by issue number rather than filing a second one.
+
+The parent is the native relationship the spec's `parent` writes. It is not a sentence in the body and not the org's `Parent` field; a body line saying "Part of #N" parents nothing.
+
 ## Scope: one issue, one party
 
 Three parties do work on a backlog, and they cannot substitute for each other.
@@ -175,7 +183,7 @@ Add specialised sections only when the implementer would otherwise have to guess
 
 Do not add them by default.
 
-Keep workflow markers such as `**Size estimate:**`, `## Dependencies`, `## Stories` and `## Architecture` exact when the repository automation depends on them.
+Keep workflow markers such as `## Dependencies`, `## Stories` and `## Architecture` exact when the repository automation depends on them.
 
 ## Rewriting an existing issue
 

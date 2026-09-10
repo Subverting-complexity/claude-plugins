@@ -74,6 +74,7 @@ def _priority_rank(field_value):
 # backlog rather than as a filter that no longer matches anything.
 
 NATIVE_FEATURE_TYPES = frozenset({'User Story'})
+NATIVE_CONTAINER_TYPES = frozenset({'Epic'})
 NATIVE_MAINTENANCE_TYPES = frozenset({'Bug', 'Chore'})
 NATIVE_MAINTENANCE_CLASSIFIABLE_TYPES = frozenset({'Feature'})
 MAINTENANCE_CLASSIFICATIONS = frozenset({
@@ -121,7 +122,10 @@ def filter_by_native_type(candidates, mode, type_map, classification_map=None,
     Classification field marks it as maintenance work. With no Classification
     field to read at all (`classification_map` is None) every Feature is kept:
     a stray candidate beats a missed one when the org cannot answer at all.
-    story mode: no filter (returns all).
+    story mode: every type except `Epic`. An epic is the outcome its features
+    and stories deliver, so handing one to an agent hands it the whole tree
+    under it at once; found live, when the pool offered a freshly filed epic
+    beside its own stories.
 
     The org's own answer is the only one consulted. An issue it has not typed,
     and a `Feature` it has not classified on an org that does classify, are
@@ -131,7 +135,8 @@ def filter_by_native_type(candidates, mode, type_map, classification_map=None,
     type-capable orgs, so reading them would be reading its own stale exhaust.
     """
     if mode == 'story':
-        return list(candidates)
+        return [c for c in candidates
+                if type_map.get(c['number']) not in NATIVE_CONTAINER_TYPES]
     result = []
     for c in candidates:
         native_type = type_map.get(c['number'])
@@ -375,6 +380,25 @@ RETIRED_LABELS = {
     'priority-low': 'priority-low',
     'claude-ready': 'claude-ready',
 }
+
+def retired_label_variants(labels, project_map=None):
+    """Retired labels on an issue, punctuation variants included.
+
+    `retired_labels_on` matches the exact names, which is what the write path
+    wants: it takes a label off somebody's issue, so it may only take off the
+    ones this workflow put there. Reporting is the looser question -- a repo
+    carrying `status:ready` beside `status-ready` has two spellings of one
+    retired idea, and a person filtering the list sees whichever they typed --
+    so the check that names them flattens the separators first.
+    """
+    known = {_drift_key(resolve_label(key, project_map or {}, RETIRED_LABELS))
+             for key in RETIRED_LABELS}
+    out = []
+    for name in labels or ():
+        if _drift_key(name) in known and name not in out:
+            out.append(name)
+    return out
+
 
 def resolve_label(purpose_key, project_map, defaults=None):
     """Resolve a purpose key to a concrete label name.
@@ -994,15 +1018,66 @@ def scope_findings(issues, ownership_map=None):
     return findings
 
 
-def board_column_for(scope, open_blockers):
+# What a spec entry may ask for in `state`, and the column each asks for. Three
+# and not nine: these are the states a *writer* can know. In Progress, In
+# Review and Done are written by the run that does the work, and Needs
+# attention by the run that gives up on it, so a spec naming one of those would
+# be describing something that has not happened.
+SPEC_STATE_COLUMNS = {
+    'backlog':    'col-backlog',
+    'refinement': 'col-refinement',
+    'parked':     'col-parked',
+}
+
+# The lanes `issue-apply` may move a card out of on its own. Everything else is
+# a state some other run, or a person, put the card in, and an update that is
+# about a field value has no business overruling it: an issue in progress that
+# was moved back to Backlog is offered to a second agent, and one a person
+# parked or held for refinement is approved by the update that released it.
+#
+# `Needs refinement` is deliberately not here. It is where this phase puts an
+# issue nothing can route, and it is also where a person withholds approval;
+# the two are indistinguishable from the outside, so releasing one releases the
+# other. A spec says `"state": "backlog"` to release it deliberately.
+AUTO_MANAGED_COLUMNS = frozenset({'Backlog', 'Blocked', 'Non-code'})
+
+
+def spec_state_column(value):
+    """The column purpose key a spec's `state` names. Returns (key, err)."""
+    if value is None:
+        return None, None
+    key = str(value).strip().lower()
+    if key in SPEC_STATE_COLUMNS:
+        return SPEC_STATE_COLUMNS[key], None
+    return None, ("'%s' is not a state a spec may ask for (it reads: %s)"
+                  % (value, ', '.join(sorted(SPEC_STATE_COLUMNS))))
+
+
+def board_column_for(scope, open_blockers, requested=None):
     """The board column purpose key an issue in this state belongs in.
 
-    Non-code wins over blocked, and deliberately: the scope is a property of
-    the work and survives every blocker closing, so an issue that is both must
-    end up in the lane no sweep will release it from. `col-backlog` is the
-    pickable answer, and it is an answer rather than an absence -- there is no
-    state an issue can be in that this does not name a column for, which is
-    what lets the board be the whole record of state.
+    Five inputs in one order, and the order is the whole rule:
+
+      non-code    `scope` is a browser agent or a person, so the card goes in
+                  Non-code. This wins over everything below it: the owner is a
+                  property of the work, it survives every blocker closing, and
+                  no sweep may release it into a pool that cannot do it.
+      requested   the spec named a `state`. A person asking for `parked` or
+                  `refinement` is a decision, and a decision outranks the
+                  inference below it.
+      unowned     `scope` is None, so the org's `Ownership` field says nothing
+                  this workflow recognises. Nothing can route the issue -- the
+                  picker will not offer it to a code agent and no view groups
+                  it -- so it goes to Needs refinement rather than into a pool
+                  it would sit in unpickable. Until 10.1.2 it landed in
+                  Backlog, on a title-prefix fallback, which is how a card can
+                  look available and never be picked.
+      blocked     at least one native edge points at an open issue.
+      pickable    none of the above, so Backlog, which is what available means.
+
+    `col-backlog` is an answer rather than an absence -- there is no state an
+    issue can be in that this does not name a column for, which is what lets
+    the board be the whole record of state.
 
     This used to have a twin, `lifecycle_for`, returning the label that
     mirrored the column. The label is gone; `Status` holds one value and a card
@@ -1011,7 +1086,196 @@ def board_column_for(scope, open_blockers):
     """
     if scope in (SCOPE_BROWSER, SCOPE_HUMAN):
         return 'col-non-code'
+    if requested:
+        return requested
+    if scope is None:
+        return 'col-refinement'
     return 'col-blocked' if open_blockers else 'col-backlog'
+
+
+def may_place_card(current_column, requested=None):
+    """Whether `issue-apply` may write this card's lane. (allowed, why_not).
+
+    A card with no lane at all -- no card on the board, or a card sitting in
+    the board's `No Status` bucket -- is always placed: an issue in no lane is
+    in no state, and it is invisible to every command that reads one.
+    """
+    if requested:
+        return True, None
+    current = (current_column or '').strip()
+    if not current:
+        return True, None
+    if current in AUTO_MANAGED_COLUMNS:
+        return True, None
+    return False, current
+
+
+# ── issue hierarchy: epic → feature → user story ─────────────────────────────
+# The native types are a hierarchy and not a flat vocabulary, so a Feature
+# belongs to an Epic and a User Story belongs to a Feature. Recorded here, and
+# enforced when an issue is written, because the alternative is where every
+# backlog ends up: a scattering of stories that each made sense on the day and
+# no epic that shows what they add up to. GitHub renders the tree and reports
+# progress against it, and neither can show anything if nothing is attached.
+#
+# `Bug` and `Chore` are absent on purpose. Both arrive unplanned, both are
+# frequently self-contained, and requiring an epic for a typo fix would mean
+# inventing one. A parent on either is allowed and never required.
+HIERARCHY_PARENT_TYPE = {
+    'Feature':    'Epic',
+    'User Story': 'Feature',
+}
+
+
+def hierarchy_error(type_name, parent_type, type_map=None, parent_label=None):
+    """Why this type may not sit under that parent, or None when it may.
+
+    `type_map` is the org's enabled native types. A rule whose parent type the
+    org has not enabled is not enforced: an org with no `Epic` cannot put a
+    Feature under one, and failing every create until somebody enables a type
+    in the org settings would be a workflow this plugin broke rather than one
+    it protects.
+    """
+    required = HIERARCHY_PARENT_TYPE.get(type_name)
+    if not required:
+        return None
+    if type_map is not None and required not in type_map:
+        return None
+    if not parent_type:
+        return ("a '%s' needs a '%s' parent, and this one has none -- give it "
+                '`parent` (an existing %s issue number, or the spec key of one '
+                'this spec creates)' % (type_name, required, required))
+    if parent_type != required:
+        return ("a '%s' belongs under a '%s', but %s is a '%s'"
+                % (type_name, required,
+                   parent_label or 'its parent', parent_type))
+    return None
+
+
+def spec_hierarchy_errors(plans, issue_types=None, issue_parents=None,
+                          type_map=None):
+    """Every hierarchy rule a spec breaks, as plain strings.
+
+    A parent is named three ways and all three resolve here: the spec key of an
+    entry this spec creates, the number of an issue that already exists, and --
+    for an update that says nothing about its parent -- the parent the issue
+    already has. The third is why an update is checked at all: an entry that
+    changes a Chore into a User Story has to acquire a Feature parent, and the
+    only place that is knowable is against the live issue.
+
+    An entry whose type this spec does not settle is judged by the type the
+    issue already carries, but only when the entry moves it: an update that
+    names a `parent` is changing the tree, and re-parenting a live User Story
+    straight onto an Epic got through live precisely because the entry named no
+    `kind`. An update that sets a field value and says nothing about type or
+    parent touches nothing structural and is not refused over the tree it
+    already sits in; `issue-audit` reports that as a `hierarchy` gap instead.
+    """
+    issue_types = issue_types or {}
+    issue_parents = issue_parents or {}
+    # Same index `spec_levels` builds, so a parent resolves to the same entry
+    # here as it does when the levels are ordered: spec key, number, or the
+    # number as a string.
+    by_ref = {}
+    for plan in plans:
+        for ref in _entry_refs(plan['entry']):
+            by_ref[ref] = plan
+
+    def as_number(ref):
+        if isinstance(ref, bool):
+            return None
+        if isinstance(ref, int):
+            return ref
+        if isinstance(ref, str) and ref.isdigit():
+            return int(ref)
+        return None
+
+    errors = []
+    for plan in plans:
+        entry = plan['entry']
+        ref = entry.get('parent')
+        type_name = plan.get('type')
+        if type_name is None and ref is not None:
+            own = as_number(entry.get('number'))
+            if own is not None:
+                type_name = issue_types.get(own)
+        if type_name not in HIERARCHY_PARENT_TYPE:
+            continue
+
+        parent_type, parent_label = None, None
+        if ref is None:
+            # An update that says nothing about its parent keeps the one it
+            # has, so that is the parent this rule is about.
+            number = as_number(entry.get('number'))
+            if number is not None:
+                live_number, parent_type = issue_parents.get(number,
+                                                             (None, None))
+                parent_label = '#%s' % live_number if live_number else None
+        else:
+            number = as_number(ref)
+            parent_plan = by_ref.get(ref)
+            if parent_plan is not None:
+                parent_type = parent_plan.get('type')
+                parent_label = entry_label(parent_plan['entry'])
+            if parent_type is None and number is not None:
+                # Either the parent is an issue outside this spec, or it is an
+                # entry the spec updates without restating its type -- both
+                # answer to the type the issue already carries.
+                parent_type = issue_types.get(number)
+                parent_label = '#%d' % number
+            if parent_plan is None and number is None:
+                # `spec_levels` treats an unknown key as "outside this spec"
+                # and there is no issue to read a type from, so this rule has
+                # nothing to check.
+                continue
+
+        err = hierarchy_error(type_name, parent_type, type_map, parent_label)
+        if err:
+            errors.append('%s: %s' % (entry_label(entry), err))
+    return errors
+
+
+def ownership_conflict(title, ownership):
+    """The one-issue-one-party error for a spec entry, or None.
+
+    An issue belongs to exactly one of the three parties, and it says so twice:
+    the `Ownership` field, which every command reads, and the title prefix,
+    which is what a person scanning a list of titles sees. A spec whose two
+    disagree is refused rather than written, because whichever of them is wrong
+    the issue is about to mislead somebody, and the writer is the one place
+    where both are in hand at once.
+    """
+    owned = ownership_scope(ownership)
+    if owned is None:
+        return None
+    # No prefix is the code agent's prefix. `SCOPE_PREFIXES` deliberately has no
+    # row for it -- an agent-written issue is the ordinary case and marking it
+    # would put a tag on nearly every title -- so an unprefixed title agrees
+    # with `Code agent` and disagrees with the other two.
+    prefixed = scope_from_title(title) or SCOPE_CODE
+    if prefixed == owned:
+        return None
+    expected = SCOPE_PREFIXES.get(owned)
+    if expected:
+        return ('is owned by %s, so its title has to start with "%s"'
+                % (OWNERSHIP_FIELD_OPTIONS[owned], expected.strip()))
+    return ('is titled "%s" but owned by %s -- one issue, one party'
+            % (SCOPE_PREFIXES[prefixed].strip(), OWNERSHIP_FIELD_OPTIONS[owned]))
+
+
+def edge_diff(current, wanted):
+    """(to_add, to_remove) for an issue whose spec entry restated `blocked_by`.
+
+    A spec entry that carries the key describes the *whole* set of edges, so an
+    edge the issue holds and the entry leaves out is one the entry asks to
+    remove. That is the deliberate unblock: `wf unblock` releases an issue when
+    its blockers close, and this is how one is released because the dependency
+    turned out not to exist. An entry with no `blocked_by` key at all says
+    nothing about edges and neither does this -- the caller does not call it.
+    """
+    have = {int(n) for n in current or ()}
+    want = {int(n) for n in wanted or ()}
+    return sorted(want - have), sorted(have - want)
 
 
 # ── issue spec: validation and value shaping ─────────────────────────────────
@@ -1135,7 +1399,8 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
 
     for entry in entries:
         name = entry_label(entry)
-        plan = {'entry': entry, 'type': None, 'fields': {}, 'errors': []}
+        plan = {'entry': entry, 'type': None, 'fields': {}, 'errors': [],
+                'live_required': []}
 
         if not entry.get('number') and not entry.get('title'):
             errors.append('%s: an entry needs a title to create, or a number to update'
@@ -1151,6 +1416,12 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
             if number in seen_numbers:
                 errors.append('%s: issue appears more than once in this spec' % name)
             seen_numbers.add(number)
+
+        # The lane the entry asks for, when it asks for one at all.
+        state_column, err = spec_state_column(entry.get('state'))
+        if err:
+            errors.append('%s: %s' % (name, err))
+        plan['state'] = state_column
 
         # Native type.
         type_name, err = resolve_entry_type(entry, type_map)
@@ -1184,6 +1455,12 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
                               'every issue must carry one; create it and re-run'
                               % (name, concrete, purpose))
                 continue
+            if purpose not in wanted and entry.get('number'):
+                # An update names what it changes. A value it leaves out is
+                # judged against the issue once that has been read
+                # (`spec_live_errors`); a placeholder it writes is not left out.
+                plan['live_required'].append(concrete)
+                continue
             if not _is_supplied(wanted.get(purpose)):
                 errors.append("%s: missing a value for '%s' (%s), which this org "
                               'defines and every issue must carry'
@@ -1212,9 +1489,69 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
                 plan['fields'][concrete] = {'input': shaped, 'value': value,
                                             'purpose': purpose}
 
+        # One issue, one party. Checked here rather than at the write, because
+        # the title and the `Ownership` value are both in hand at this point
+        # and neither is recoverable from the other afterwards.
+        owner_name = resolve_field_name('field-ownership', project_fields)
+        owner_plan = plan['fields'].get(owner_name)
+        if entry.get('title') and owner_plan:
+            conflict = ownership_conflict(entry['title'], owner_plan['value'])
+            if conflict:
+                errors.append('%s: %s' % (name, conflict))
+
         plans.append(plan)
 
     return errors, skipped, plans
+
+
+def spec_live_errors(plans, live, project_fields=None):
+    """What an update breaks once the issue it updates is taken into account.
+
+    `live` is {number: {'title': str, 'fields': {field name: value}}}, read in
+    the same lookup as the referenced issues' types. Two rules need it, because
+    an update names only what it changes:
+
+    - A required field the entry leaves out has to be on the issue already. An
+      update is refused for leaving the issue without a value, not for failing
+      to restate one it carries.
+    - One issue, one party, judged on the title and the owner the issue will
+      have afterwards. An update that sets `Human` on an unprefixed issue, or
+      retitles a code-agent issue `[Manual] ...`, is the same contradiction as a
+      create that does. An update that touches neither is not judged: refusing
+      a priority change over a conflict it did not make blocks the fix.
+    """
+    project_fields = project_fields or {}
+    owner_name = resolve_field_name('field-ownership', project_fields)
+    errors = []
+    for plan in plans:
+        entry = plan['entry']
+        try:
+            number = int(entry.get('number'))
+        except (TypeError, ValueError):
+            continue
+        issue = live.get(number)
+        if issue is None:
+            continue
+        have = issue.get('fields') or {}
+        name = entry_label(entry)
+        for field in plan.get('live_required') or ():
+            if not _is_supplied(have.get(field)):
+                errors.append("%s: missing a value for '%s', which the issue does "
+                              'not carry either and every issue must' % (name, field))
+
+        sets_owner = owner_name in plan['fields']
+        if entry.get('title') and sets_owner:
+            continue  # both in the spec, and `validate_spec` judged them
+        if not entry.get('title') and not sets_owner:
+            continue
+        title = entry.get('title') or issue.get('title') or ''
+        owner = (plan['fields'][owner_name]['value'] if sets_owner
+                 else have.get(owner_name))
+        if title and _is_supplied(owner):
+            conflict = ownership_conflict(title, owner)
+            if conflict:
+                errors.append('%s: %s' % (name, conflict))
+    return errors
 
 
 # How many issues ride in one aliased multi-mutation. GraphQL caps the nodes a
@@ -1408,15 +1745,6 @@ def strip_title_prefix(title):
     return (title or '')[match.end():].strip()
 
 
-def infer_priority(labels, project_map=None):
-    """The Priority value the issue's own `priority-*` label implies."""
-    present = set(labels or ())
-    for key, value in PRIORITY_FIELD_OPTIONS.items():
-        if resolve_label(key, project_map or {}) in present:
-            return value
-    return None
-
-
 def audit_issue(issue, field_map, type_capable=True, project_map=None,
                 project_fields=None, open_numbers=None, type_map=None,
                 parents=False):
@@ -1430,9 +1758,10 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
 
     Dependency edges are not audited, because there is nothing to audit them
     against: the native `blockedBy` edge is the only record of a dependency, so
-    it cannot disagree with anything. What is audited in its place is **scope**
-    — whether the title prefix, the scope label and the `status-non-code`
-    lifecycle label agree about which of the three parties owns the issue.
+    it cannot disagree with anything. What is audited in its place is
+    **ownership** — whether the `Ownership` field and the title prefix agree
+    about which of the three parties owns the issue — and **hierarchy**, whether
+    a Feature sits under an Epic and a User Story under a Feature.
 
     `parents` is off by default, and that is a statement about where parents
     come from rather than about how well the parsing works. A story created
@@ -1523,17 +1852,22 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
             'detail': "no value for '%s'" % concrete})
         if purpose == 'field-type' and kind:
             proposed_fields[purpose] = default_classification({'kind': kind})
-        elif purpose == 'field-priority':
-            proposed_fields[purpose] = (infer_priority(labels, project_map)
-                                        or SPEC_PLACEHOLDER)
         elif purpose == 'field-ownership':
-            # Never a placeholder. Ownership has an answer for every issue —
-            # the title prefix names it, and code is the default when there is
-            # none — so a backfill that stopped to ask a person would stop on
-            # every issue in the backlog the day the field was added.
-            proposed_fields[purpose] = OWNERSHIP_FIELD_OPTIONS[
-                issue_scope(title)]
+            # From the title prefix when there is one, and a placeholder
+            # otherwise. The prefix is written by this workflow and means
+            # exactly one thing, so reading it back is not a guess. The absence
+            # of one is not evidence of anything: until 10.1.2 a title with no
+            # prefix was proposed as `Code agent`, which is the wrong answer in
+            # the one direction that matters -- an issue needing a person, read
+            # as code work, handed to an agent that cannot finish it.
+            prefixed = scope_from_title(title)
+            proposed_fields[purpose] = (OWNERSHIP_FIELD_OPTIONS[prefixed]
+                                        if prefixed else SPEC_PLACEHOLDER)
         else:
+            # `Priority` included, and it used to be inferred from a
+            # `priority-*` label. A label decides nothing since 10.0.0, and
+            # reading one here would have let a label somebody set months ago
+            # write the field the picker orders on.
             proposed_fields[purpose] = SPEC_PLACEHOLDER
 
     # Who owns this issue: the `Ownership` field, and the title prefix that is
@@ -1546,10 +1880,18 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
     # the check that says so, once for the org rather than once per issue.
     owner_field = resolve_field_name('field-ownership', project_fields)
     if owner_field in field_map:
-        owner = have.get(owner_field) or proposed_fields.get('field-ownership')
-        for finding in scope_findings([{'number': number, 'title': title}],
-                                      {number: owner}):
-            gaps.append({'kind': finding['kind'], 'detail': finding['detail']})
+        owner = have.get(owner_field)
+        if not _is_supplied(owner):
+            owner = proposed_fields.get('field-ownership')
+        # A placeholder is the audit saying it does not know. The
+        # `missing-field` gap above already says Ownership has no value, so an
+        # unowned issue is not reported a second time as `scope-unowned`; what
+        # is left to check is whether a value that exists agrees with the title.
+        if _is_supplied(owner):
+            for finding in scope_findings([{'number': number, 'title': title}],
+                                          {number: owner}):
+                gaps.append({'kind': finding['kind'],
+                             'detail': finding['detail']})
 
     # The parent the body claims and the hierarchy does not have. An issue
     # whose first line says "Part of the X epic (#N)" and which GitHub shows
@@ -1583,6 +1925,18 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
                      'detail': 'the body says this is part of #%s but its parent '
                                'is #%s; not changed automatically'
                                % (claimed_parent, current_parent)})
+
+    # Where the issue sits in the epic → feature → user story tree. Reported
+    # and never proposed: which epic a feature belongs to is a judgement about
+    # the work, and an audit that guessed would attach a story to whichever
+    # epic happened to be nearest.
+    if native and type_map:
+        parent_type = ((issue.get('parent') or {}).get('issueType') or {}).get('name')
+        problem = hierarchy_error(
+            native, parent_type, type_map,
+            parent_label='#%s' % current_parent if current_parent else None)
+        if problem:
+            gaps.append({'kind': 'hierarchy', 'detail': problem})
 
     proposed = {'number': number, 'title': title}
     if kind:
@@ -1822,6 +2176,11 @@ def label_drift_findings(live_labels, project_map=None):
     for names in sorted(grouped.values()):
         if len(names) < 2:
             continue
+        if len(retired_label_variants(names, project_map)) == len(names):
+            # Two spellings of a label nothing reads. Asking which of them to
+            # keep is the wrong question, and `label-retired` asks the right
+            # one about the same pair.
+            continue
         out.append(finding(
             WARNING, 'label-drift',
             '%s differ only in punctuation, so issues carrying one are invisible '
@@ -1923,6 +2282,10 @@ def unmapped_field_findings(field_names, project_fields=None,
     out = []
     for name in sorted(set(field_names or ())):
         if field_purpose_for_name(name, project_fields or {}):
+            continue
+        if str(name).strip().lower() in RETIRED_FIELD_NAMES:
+            # `field-retired` names this one, and says the opposite: a purpose
+            # key must never map to it again.
             continue
         out.append(finding(
             WARNING, 'field-unmapped',
@@ -2057,6 +2420,235 @@ def absent_field_findings(defined_names, project_fields=None,
             'create %s as an org issue field, or leave it and accept that '
             'issues carry less' % _names(optional),
             path))
+    return out
+
+
+# Org issue fields this workflow used to write and no longer has any use for.
+# `Status reason` held a sentence saying why an issue was in the state it was
+# in, beside a `Status` that already said what the state was. Nothing could
+# select on the sentence, every command that wrote one had to keep it in step
+# with the column, and the two disagreed on most of the issues carrying both.
+# The column is the state and a comment is where a reason belongs.
+RETIRED_FIELD_NAMES = {
+    'status reason': 'Status reason',
+}
+
+# Board columns a previous version of the workflow selected from. `Ready` was
+# the opt-in pool: an issue was invisible until somebody moved it there or
+# labelled it. Backlog is the pool now, and a board that still carries a Ready
+# lane has a column whose cards nothing will ever look at.
+RETIRED_BOARD_COLUMNS = ('Ready',)
+
+
+def retired_field_findings(field_names, project_fields=None,
+                           path='ClaudeProject.md'):
+    """Org fields the workflow retired and the org still defines.
+
+    A warning and not a failure: an extra field costs nothing at read time. It
+    is worth saying because the field is on every issue form in the org, so
+    people keep filling it in, and because `field-unmapped` would otherwise
+    report the same field with the opposite advice -- "map a purpose key to
+    it" -- for something no purpose key should ever name again.
+
+    Never repaired automatically. Deleting an org issue field deletes its
+    values from every issue in every repository the org owns, which is not a
+    thing a configuration check may do on its own.
+    """
+    mapped = {str(v).strip().lower() for v in (project_fields or {}).values()}
+    out = []
+    for name in sorted(set(field_names or ())):
+        key = str(name).strip().lower()
+        if key not in RETIRED_FIELD_NAMES:
+            continue
+        detail = ('the org still defines `%s`, which this workflow retired: the '
+                  'board column is the state and a comment is where the reason '
+                  'for it belongs, so nothing reads or writes this field' % name)
+        if key in mapped:
+            detail += (', and `## Issue Types & Fields` still maps a purpose key '
+                       'to it')
+        out.append(finding(
+            WARNING, 'field-retired', detail,
+            'delete `%s` in the org settings (Planning -> Issue fields), and '
+            'remove any row naming it from `## Issue Types & Fields`' % name,
+            path))
+    return out
+
+
+def retired_label_findings(issues, project_map=None, path='ClaudeProject.md'):
+    """Open issues still carrying a label the workflow retired.
+
+    `issues` are dicts with `number` and `labels`. The label decides nothing,
+    which is exactly why it is worth taking off: it is a second, stale answer
+    to a question the fields now answer, and a person filtering the issues list
+    by hand still believes it.
+
+    Repairable, and one of the few writes `--fix` will make to an issue: the
+    write path already strips these off any issue it touches, so this is the
+    same operation applied to the issues no command has reached.
+    """
+    carrying = []
+    for issue in issues or ():
+        stale = retired_label_variants(issue.get('labels'), project_map)
+        if stale:
+            carrying.append((issue.get('number'), stale))
+    if not carrying:
+        return []
+    names = sorted({n for _number, stale in carrying for n in stale})
+    numbers = sorted(n for n, _stale in carrying if n is not None)
+    shown = ', '.join('#%d' % n for n in numbers[:10])
+    if len(numbers) > 10:
+        shown += ' and %d more' % (len(numbers) - 10)
+    return [finding(
+        WARNING, 'label-retired',
+        '%d open issue%s still carr%s %s, %s the structured fields answered '
+        'and nothing reads any more (%s)'
+        % (len(carrying), '' if len(carrying) == 1 else 's',
+           'ies' if len(carrying) == 1 else 'y', _names(names),
+           'a question' if len(names) == 1 else 'questions', shown),
+        'run `wf preflight --fix`, which takes them off, or leave them and let '
+        'the write path clear each issue the next time a command touches it',
+        path)]
+
+
+def board_retired_findings(live_option_names, path='ClaudeProject.md'):
+    """A lane on the board that this workflow no longer selects from."""
+    live = {(name or '').strip().lower(): name for name in live_option_names or ()}
+    out = []
+    for retired in RETIRED_BOARD_COLUMNS:
+        name = live.get(retired.strip().lower())
+        if not name:
+            continue
+        out.append(finding(
+            WARNING, 'board-retired',
+            'the board still has a `%s` column, which nothing selects from: the '
+            'pool is `%s`, and a card left in `%s` is invisible to every command'
+            % (name, BOARD_COLUMN_NAMES[POOL_COLUMN], name),
+            'run `wf preflight --fix`, which moves any card still in it to `%s` '
+            'and then removes the column'
+            % BOARD_COLUMN_NAMES[POOL_COLUMN],
+            path))
+    return out
+
+
+# The option names each mandatory field's decision is defined against. A value
+# outside these is not an error in the org's data -- a project may call its
+# levels whatever it likes -- but it is one this code cannot act on, and the
+# way it fails is silent: an unrankable `Priority` sorts last, an unreadable
+# `Effort` sorts as Medium, and an `Ownership` nothing recognises is never
+# offered to any agent.
+def _known_field_options():
+    return {
+        'field-priority': (sorted(PRIORITY_FIELD_RANK), WARNING,
+                           'issues carrying it sort last, behind every issue '
+                           'the picker can rank'),
+        'field-effort': (sorted(EFFORT_RANK), WARNING,
+                         'issues carrying it are sized as `Medium`, and '
+                         '`--max-effort` cannot exclude them'),
+        'field-ownership': (sorted(o.lower() for o
+                                   in OWNERSHIP_FIELD_OPTIONS.values()),
+                            CRITICAL,
+                            'nothing can route an issue carrying it, so no '
+                            'agent is ever offered it'),
+    }
+
+
+def field_option_findings(field_map, project_fields=None,
+                          path='ClaudeProject.md'):
+    """Options on a mandatory field that no decision in this workflow knows.
+
+    The check the field-driven workflow was missing: `field-absent` proves the
+    org has a `Priority` field, and nothing proved that its options were the
+    ones the picker ranks. An org that renamed `Urgent` to `P0` kept a clean
+    audit and a backlog that silently sorted every P0 issue last.
+    """
+    field_map = field_map or {}
+    out = []
+    for purpose, (known, level, consequence) in sorted(_known_field_options().items()):
+        name = resolve_field_name(purpose, project_fields or {})
+        meta = field_map.get(name)
+        if not meta:
+            continue  # `field-absent` owns the missing case
+        options = list((meta.get('options') or {}))
+        if not options:
+            continue
+        unknown = sorted(o for o in options if str(o).strip().lower() not in known)
+        if not unknown:
+            continue
+        readable = ', '.join('`%s`' % o for o in known)
+        if len(unknown) == len(options):
+            out.append(finding(
+                level, 'field-options',
+                'no option on `%s` is one this workflow knows (it has %s, and '
+                'reads %s), so %s'
+                % (name, _names(options), readable, consequence),
+                'rename the options to %s, or leave them and accept that %s'
+                % (readable, consequence), path))
+            continue
+        out.append(finding(
+            level, 'field-options',
+            '`%s` carries %s, which %s not %s, so %s'
+            % (name, _names(unknown), 'is' if len(unknown) == 1 else 'are',
+               'an option this workflow reads (%s)' % readable, consequence),
+            'rename %s to one of %s, or move the issues carrying %s onto an '
+            'option this workflow reads'
+            % (_names(unknown), readable,
+               'it' if len(unknown) == 1 else 'them'), path))
+    return out
+
+
+# Vocabulary a project's own instructions can still carry from before the
+# structured-field workflow. Each pattern is a thing a session would act on:
+# telling the model to look for a `Ready` label, to read a dependency out of a
+# body, or to fill in a field that no longer exists sends it to do work the
+# tooling will not agree with, and nothing else reports that.
+_RETIRED_INSTRUCTION_PATTERNS = (
+    (r'status[-:_ ]ready|claude-ready|`?Ready`? (?:label|column|gate|status)|##\s*Ready Gate',
+     'the `Ready` opt-in, which no longer exists -- the pool is the board\'s '
+     '`Backlog` column'),
+    (r'status[-:_ ]reason|Status reason',
+     'the retired `Status reason` field'),
+    (r'status[-:_](?:in-progress|blocked|parked|non-code|in-review|needs-attention)|'
+     r'\bneeds-refinement\b|\bhuman-required\b|\bbrowser-agent\b|priority[-:](?:critical|high|medium|low)',
+     'a lifecycle, scope or priority label that decided something and no '
+     'longer does'),
+    (r'(?i)blocked by\s*#\d+|depends on\s*#\d+',
+     'a dependency written as prose, which nothing reads: the native '
+     'blocked-by edge is the only record'),
+)
+
+
+def instruction_findings(files, path=None):
+    """Retired workflow vocabulary in a project's own instruction files.
+
+    `files` is ``{relative path: text}``. Reported per file with the line
+    numbers, and never repaired: these are somebody's sentences, and an
+    automatic edit would either mangle the paragraph around the phrase or
+    delete a line that was explaining the history on purpose.
+    """
+    out = []
+    for name in sorted(files or {}):
+        text = files[name] or ''
+        hits = {}
+        for pattern, why in _RETIRED_INSTRUCTION_PATTERNS:
+            matcher = re.compile(pattern)
+            for number, line in enumerate(text.splitlines(), 1):
+                if matcher.search(line):
+                    hits.setdefault(why, []).append(number)
+        for why in sorted(hits):
+            lines = sorted(set(hits[why]))
+            shown = ', '.join(str(n) for n in lines[:5])
+            if len(lines) > 5:
+                shown += ' and %d more' % (len(lines) - 5)
+            out.append(finding(
+                WARNING, 'instructions-retired',
+                '%s describes %s (line%s %s), so a session reading it is told '
+                'to do something the tooling no longer does'
+                % (name, why, '' if len(lines) == 1 else 's', shown),
+                'rewrite those lines against the current workflow: the board '
+                'column is the state, `Priority`, `Effort` and `Ownership` are '
+                'the fields every decision reads, and a dependency is a native '
+                'blocked-by edge',
+                name))
     return out
 
 
@@ -2776,6 +3368,9 @@ FIXABLE_CHECKS = {
     'board-orphan': 'add the card and put it in `Backlog`',
     'board-unset': 'put the card in `Backlog`',
     'label-deprecated': 'delete the row from the label map',
+    'label-retired': 'take the retired labels off the open issues carrying them',
+    'board-retired': 'move any card still in the retired column to `Backlog`, '
+                     'then remove the column',
     'config-retired': 'delete the section',
     'claude-md-ref': 'add the pointer to CLAUDE.md',
 }
@@ -2795,6 +3390,13 @@ UNFIXABLE_REASONS = {
                       'settings',
     'field-unmapped': "which purpose key a project's field serves is the "
                       "project's decision",
+    'field-retired': 'deleting an org issue field deletes its values from every '
+                     'issue in every repository the org owns',
+    'field-options': "renaming an org field's options moves every issue "
+                     'carrying one, so it is the org\'s decision',
+    'instructions-retired': 'the lines are somebody\'s own sentences, and an '
+                            'automatic edit would either mangle the paragraph '
+                            'or delete a line explaining the history on purpose',
     'label-reference': 'the fix is an edit to a plugin instruction file, not to '
                        'this project',
     'config-label': 'creating a label the config names would guess at its '

@@ -122,9 +122,9 @@ Target ~100k tokens per session. One story per session, run start-to-finish. Com
 
 Issues should include at minimum: **Context** (what/why), **Requirements** (acceptance criteria + constraints), and optionally **Notes** (dependencies, references, edge cases).
 
-## Project Board (optional)
+## Project Board
 
-Remove this entire section if you don't use a GitHub project board. `project-title` is re-checked against `project-node-id` before any board write, so a stale id fails loudly instead of mutating the wrong board.
+**Required.** The column a card sits in is the issue's state, and the Backlog column is the pick pool, so a project with no board here selects nothing and preflight fails the run. `project-title` is re-checked against `project-node-id` before any board write, so a stale id fails loudly instead of mutating the wrong board.
 
 | Setting             | Value      |
 | ------------------- | ---------- |
@@ -138,7 +138,7 @@ Remove this entire section if you don't use a GitHub project board. `project-tit
 
 ### Status Options
 
-The canonical nine columns. **Backlog is not optional**: it is the pool `pick` and `candidates` read, so a board without it can select nothing and preflight fails the run. The rest are lanes an issue is moved into and out of; a missing one warns. Setup creates them all, preflight flags any missing. Label ⇄ column pairing: `templates/default-labels.md` → Board Columns.
+The canonical nine columns. **Backlog is not optional**: it is the pool `pick` and `candidates` read, so a board without it can select nothing and preflight fails the run. The rest are lanes an issue is moved into and out of; a missing one warns. Setup creates them all, preflight flags any missing. What each column means: `templates/default-labels.md` → Board Columns.
 
 | Status           | Purpose key       | Option ID |
 | ---------------- | ----------------- | --------- |

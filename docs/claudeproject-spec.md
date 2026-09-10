@@ -31,15 +31,17 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 | `## Quality Gate` | The pre-commit command inside a fenced code block. |
 | `## Branch Convention` | Branch pattern containing `{number}` in a fenced block. |
 | `## Label Map` | Purpose → label tables (may use `###` sub-tables). |
+| `## Issue Types & Fields` | Purpose key → field name table, plus what the org does not define. `Priority`, `Effort` and `Ownership` are the picker's only inputs, so a project that has not written this section cannot rank, size or route anything; `wf config-audit` reports the missing section as CRITICAL. |
+| `## Project Board` | Board ids, plus `### Status Options` mapping each `col-` purpose key to an option id. The card's column is the issue's state and `Backlog` is the pick pool, so a missing section is CRITICAL `board-lane` rather than a skipped feature. |
 
-**Recommended** — read by commands, default-covered when absent: `## Story Template`, `## Session Budget`, `## Refinement`, `## Issue Types & Fields`.
+**Recommended** — read by commands, default-covered when absent: `## Story Template`, `## Session Budget`, `## Refinement`.
 
-**Optional** — remove if unused: `## Project Board` (with `### Status Options`), `## Reference Docs`, `## Bundled Skills`, the `### Custom` label table.
+**Optional** — remove if unused: `## Reference Docs`, `## Bundled Skills`, the `### Custom` label table.
 
 ## Heading rules
 
 - Preflight matches the **exact literal text** (`grep -q "## Identity"`, case-sensitive substring). Do not rename or re-level the required headings.
-- `wf.py` matches headings case-insensitively, level-aware, and **tolerates a trailing parenthetical qualifier** — this is the "(optional)" suffix convention: `## Project Board (optional)` parses identically to `## Project Board`. Any other rewording makes the section invisible to the picker, which then falls back to defaults.
+- `wf.py` matches headings case-insensitively, level-aware, and **tolerates a trailing parenthetical qualifier**, so `## Project Board (optional)` parses identically to `## Project Board`. That tolerance is why a file written while the board section was still optional keeps working; the section itself is now required. Any other rewording makes the section invisible to the picker, which then falls back to defaults.
 
 ## Value formats
 
@@ -57,4 +59,4 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 - **Missing file, missing required section, or `gh` unauthenticated** — preflight CRITICAL: the calling command stops and offers `wf preflight --fix`, the setup wizard, "continue anyway" or "don't remind me". A missing file is reported on its own and stops before the network: with no file there is nothing to compare anything against.
 - **Missing recommended/optional content** — WARNING at most; commands proceed on defaults (`templates/default-labels.md` for labels and columns, `main` for the default branch, `feature/{number}/{short-desc}` for branches).
 - **Board section absent or unparseable** — CRITICAL `board-lane`. The board is where the pick pool lives, so a project without one selects nothing. A board that **is** configured but has no `Backlog` column, or whose `project-node-id` no longer resolves to the recorded `project-title` is CRITICAL too.
-- **`wf.py` parse failures** are never fatal — the picker returns a non-`ok` status and callers fall back to the inline (slower) procedure, so a malformed file degrades performance, not correctness.
+- **`wf.py` parse failures stop the run.** The picker returns a non-`ok` status and the calling command reports it and stops. There is no inline procedure to fall back to: selection, claiming, board moves, handoff and issue creation are `wf` commands and nothing else implements them, so a `wf` that cannot read this file is a stop, not a slow path.

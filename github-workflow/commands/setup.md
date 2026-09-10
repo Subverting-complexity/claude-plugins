@@ -144,11 +144,11 @@ gh api graphql -f query='mutation {
   updateProjectV2Field(input: {
     fieldId: "{status_field_id}"
     singleSelectOptions: [
-      { id: "<existing-id-1>", name: "Backlog",     color: GRAY,   description: "" },
-      { id: "<existing-id-2>", name: "In Progress", color: BLUE,   description: "" },
+      { id: "<existing-id-1>", name: "Backlog",     color: GREEN,  description: "" },
+      { id: "<existing-id-2>", name: "In Progress", color: YELLOW, description: "" },
       { id: "<existing-id-3>", name: "Done",        color: GRAY,   description: "" },
-      { name: "In Review", color: YELLOW, description: "PR open, awaiting review" },
-      { name: "Blocked",   color: RED,    description: "Blocked or parked — out of the pick pool" }
+      { name: "In Review", color: ORANGE, description: "PR open, awaiting review" },
+      { name: "Blocked",   color: RED,    description: "Has an open blocked-by edge — out of the pick pool" }
     ]
   }) {
     projectV2Field { ... on ProjectV2SingleSelectField { options { id name } } }
@@ -279,9 +279,9 @@ Then write `## Issue Types & Fields` into `ClaudeProject.md` following `template
 - The payload carries a **`denied`** list — the signed-in account may not read this org's types and fields, so nothing is known about them. Say which account and what it could not read, point at `gh auth switch`, and **leave any existing section alone**. Writing `type-capable: no` here records a failed lookup as a fact, and every issue created afterwards gets no type and no field values with nothing reporting it.
 - No `denied` list — the org genuinely has neither: write the section saying exactly that (`type-capable: no`, every field under *Missing*).
 
-An org without types and fields is fully supported on the label-only path — but "this org has none" and "nobody wrote this section" must not look the same, which is the failure this step exists to prevent. `wf config-audit` reports a missing section as CRITICAL, so leaving it out breaks preflight in the consumer's repo.
+An org without types and fields cannot run this workflow at all, because the fields are the only inputs the picker has — but "this org has none" and "nobody wrote this section" must not look the same, which is the failure this step exists to prevent. `wf config-audit` reports a missing section as CRITICAL, so leaving it out breaks preflight in the consumer's repo.
 
-Flag the mandatory four — `field-priority`, `field-effort`, `field-type`, `field-origin` — if any is missing, because `wf issue-apply` refuses to create an issue without them. `Origin` is the one the workflow populates that GitHub does not create by default; point the user at the owner's *Issue fields* settings to add it as a single-select (Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request).
+Flag the three mandatory fields — `field-priority`, `field-effort`, `field-ownership` — if any is missing, because `wf issue-apply` refuses to create an issue without them: they are the pool's order, its size ceiling, and whether a code agent may take the issue at all. `field-type` (`Classification`) and `field-origin` are optional; an issue created without one gets a comment on it saying so, and nothing else changes. `Origin` is the one the workflow populates that GitHub does not create by default; point the user at the owner's *Issue fields* settings to add it as a single-select (Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request).
 
 On exit **20** the capability read failed (auth, network, no `wf`). Say so and leave any existing section alone — do not overwrite a good section with a guess.
 
@@ -375,17 +375,17 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit
 
 Add `--repo owner/name` to audit a different repository, `--limit N` or `--since 2026-01-01` to work through a large backlog in slices, and `--parents` to also report the parent an issue's body claims but the hierarchy does not have (off by default — a story created through `feature-discovery` already carries its epic, so reading it back out of the body only re-derives what the pipeline knew).
 
-Read the exit code: **0** means every open issue carries its type, its field values and its dependency edges — say so and stop. **25** means it found gaps and wrote a spec, by default `.claude/issue-audit-spec.json`. **21** means the org's capabilities could not be read, so there is nothing to audit against; fix that first (Step 5e) rather than reporting a clean backlog.
+Read the exit code: **0** means every open issue carries its type and its field values — say so and stop. **25** means it found gaps and wrote a spec, by default `.claude/issue-audit-spec.json`. **21** means the org's capabilities could not be read, so there is nothing to audit against; fix that first (Step 5e) rather than reporting a clean backlog.
 
-On **25**, open the spec. Every value the audit could not infer is the placeholder `TODO`, and `issue-apply` refuses a spec that still contains one, so fill each in — priority, effort and origin are the usual ones. Then apply it:
+On **25**, open the spec. Every value the audit could not infer is the placeholder `TODO`, and `issue-apply` refuses a spec that still contains one, so fill each in. Expect `Priority` and `Effort` to be `TODO` on nearly every issue: nothing on an issue records how urgent or how large it is, so there is nothing to read them off. `Ownership` is proposed only where the title starts `[Manual] ` or `[Browser] `, and is left `TODO` otherwise rather than assuming a code agent can take work nobody has said it can take. Then apply it:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/issue-audit-spec.json
 ```
 
-Dependency edges are **proposed, never applied unattended**: they are read out of body prose, which is not reliable enough to build a graph from without someone looking. Check each `blocked_by` before applying, and delete the ones that are wrong.
+The audit proposes no dependency edges, because there is nothing to propose them against: a native blocked-by edge is the only record a dependency has, so it cannot disagree with anything. The one thing it ever reads out of a body is the parent an issue claims, and only when you pass `--parents`. To add or remove an edge, put a `blocked_by` list on the spec entry yourself — it is the complete set, so the edges it names are added and any the issue carries that it omits are removed.
 
-Report the counts by gap kind and name what you changed. A `dependency-closed` finding is not fixed by the spec — the body cites an issue that is no longer open, so either the body is stale or the dependency was resolved; say which issues and leave them to the user.
+Report the counts by gap kind and name what you changed.
 
 ## Troubleshooting
 

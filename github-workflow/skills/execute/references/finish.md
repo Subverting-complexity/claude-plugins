@@ -63,7 +63,7 @@ Read this at Phase 7 of the `execute` workflow (quality gate passed, work commit
 
    The command labels the PR `claude-authored` plus the review-state entry label, moves each issue's board item to In Review, releases the issue's claim ref, and deletes the session scratch files (`.claude/plan.md`, `preflight-passed.txt`, `label-cache.json`).
 
-   It **always exits 0**, because none of these is a reason to stop once the PR exists. Read the payload instead: `pr_labelled`, and per issue `relabelled` and `board_moved` with a `board` reason. Report anything false — a board that did not move is worth a line, not a halt.
+   It **always exits 0**, because none of these is a reason to stop once the PR exists. Read the payload instead: `pr_labelled` and `review_label`, and per issue `board_moved` with a `board` reason. Report anything false — a card that did not move is worth a line, not a halt, but it does mean the issue's state still says In Progress.
 
    Releasing the claim here is deliberate. The open PR plus the assignment are the ownership markers from this point on, so holding the ref longer only risks leaking it. The issue stays assigned to @me through review.
 

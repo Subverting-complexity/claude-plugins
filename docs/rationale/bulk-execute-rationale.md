@@ -44,7 +44,7 @@ This is the invariant the whole finish phase is arranged around. A `Closes #N` l
 
 Hence `built` in `.claude/bulk-set.json`, flipped per story at commit time, and hence the body validation step counting `Closes` lines against it rather than reading them over. It is the one check in this workflow that fails silently and expensively if skipped.
 
-The mirror of the same rule is that a story which cannot be finished goes **back to the backlog properly** — claim released, `status-in-progress` removed, unassigned, board back to Backlog, and a comment saying what happened. The board move is the part that returns it to the pool; the rest is bookkeeping. A story left assigned and `status-in-progress` after the run ends is invisible to the picker and to the person who wrote it.
+The mirror of the same rule is that a story which cannot be finished goes **back to the backlog properly** — claim released, unassigned, card moved back to Backlog, and a comment saying what happened. The board move is the part that returns it to the pool; the rest is bookkeeping. A story left assigned in In Progress after the run ends is invisible to the picker and to the person who wrote it.
 
 ## Why the build is serial and one commit per story
 
@@ -66,6 +66,6 @@ The `--size` default is that same 5, so the flag only ever lowers the ceiling. T
 
 `execute` merges on a self-review when no separate agent context can be spawned, provided the run says so on the pull request and in its report. The reasoning is in `docs/rationale/execute-rationale.md`: a workflow that can only finish when the harness happens to offer subagents is a workflow that stops half way in every nested run, leaving an unreviewed pull request that nothing is scheduled to pick up.
 
-A set makes that outcome worse rather than better, which is the argument for keeping the same answer here. A stranded single-story pull request holds up one story; a stranded bulk one holds up three to five, and every one of them has already been claimed, built and labelled `status-in-review`, so nothing else will touch them either. Refusing to merge without an independent reviewer would trade weaker evidence for a larger backlog of work that is finished but cannot land.
+A set makes that outcome worse rather than better, which is the argument for keeping the same answer here. A stranded single-story pull request holds up one story; a stranded bulk one holds up three to five, and every one of them has already been claimed, built and moved into In Review, so nothing else will touch them either. Refusing to merge without an independent reviewer would trade weaker evidence for a larger backlog of work that is finished but cannot land.
 
 What does change is the standard the fallback is held to. The whole lens plus the scope-creep question is carried explicitly and in order, because the failure mode of an inline review of a large diff is a single skim that reports nothing; and the disclosure lists the stories the pull request closes, because how much a weak verdict matters depends on how much it covers. The real merge gates are untouched: they carry evidence about the code rather than about who read it.

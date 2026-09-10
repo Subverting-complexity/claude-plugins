@@ -325,7 +325,8 @@ class TestBulkPickPaths(unittest.TestCase):
                                return_value=(True, [candidate], '')), \
                 mock.patch.object(wf, 'acquire_claim', return_value='won'), \
                 mock.patch.object(wf, 'apply_in_progress'), \
-                mock.patch.object(wf, 'mark_blocked'), \
+                mock.patch.object(wf, 'mark_blocked',
+                                  return_value=(True, 'moved')), \
                 mock.patch.object(wf, 'release_claim'), \
                 mock.patch.object(wf, 'merged_pr_closing', return_value=None), \
                 mock.patch.object(wf, 'issue_edges', return_value=edges), \
@@ -588,20 +589,27 @@ class TestIssueFacets(unittest.TestCase):
         self.assertNotIn('cursor', calls[0][0])
         self.assertNotIn('cursor', calls[0][1])
 
-    def test_paging_stops_at_the_cap(self):
-        pages = [_facet_page([_facet_node(n, 'Bug')], has_next=True)
-                 for n in range(1, 6)]
-        _, _, _, calls = self._run(pages)
+    def test_paging_stops_at_the_cap_and_says_so(self):
+        """A read that stopped at the cap is not a smaller backlog. It used to
+        come back as success, and every issue past the cap had no Priority,
+        Effort or Ownership as far as the picker knew."""
+        pages = [_facet_page([_facet_node(n, 'Bug')], has_next=True,
+                             cursor='C%d' % n)
+                 for n in range(1, wf.FACET_MAX_PAGES + 2)]
+        ok, _, err, calls = self._run(pages)
         self.assertEqual(len(calls), wf.FACET_MAX_PAGES)
+        self.assertFalse(ok)
+        self.assertIn('more than', err)
 
-    def test_a_failed_query_reports_and_returns_empty_maps(self):
+    def test_a_failed_query_stops_the_command(self):
+        """Every decision reads these fields, so an empty answer is not a
+        degraded one. It used to fall back to empty maps, and an empty pool
+        read exactly like a finished backlog."""
         with mock.patch.object(wf, 'gh_graphql', return_value=(False, None, 'boom')):
-            with contextlib.redirect_stderr(io.StringIO()) as errs:
-                facets = wf.load_issue_facets(_cfg())
-        self.assertEqual(facets, {'types': {}, 'priority': {},
-                                  'classification': {}, 'effort': {},
-                                  'ownership': {}})
-        self.assertIn('ordering and typing this pool by labels', errs.getvalue())
+            code, payload = _capture(wf.load_issue_facets, _cfg())
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertEqual(payload['status'], 'error')
+        self.assertIn('boom', payload['reason'])
 
     def test_a_renamed_field_is_read_under_the_project_name(self):
         """A project that renamed `Priority` still orders by its field."""
@@ -784,11 +792,15 @@ class TestBoardColumnCandidates(unittest.TestCase):
         self.assertNotIn('cursor', calls[0][0])
         self.assertNotIn('cursor', calls[0][1])
 
-    def test_paging_stops_at_the_cap(self):
+    def test_paging_stops_at_the_cap_and_says_so(self):
+        """The cards past the cap could be the whole of the Backlog column,
+        so a partial read is an unknown pool rather than a short one."""
         pages = [_board_page([_board_item(n)], has_next=True, cursor='C%d' % n)
-                 for n in range(1, 6)]
-        _, _, _, calls = self._run(pages)
+                 for n in range(1, wf.BOARD_MAX_PAGES + 2)]
+        ok, _, err, calls = self._run(pages)
         self.assertEqual(len(calls), wf.BOARD_MAX_PAGES)
+        self.assertFalse(ok)
+        self.assertIn('Archive', err)
 
     def test_a_column_the_board_does_not_have_is_an_error(self):
         """Not an empty pool. The two are indistinguishable to the caller, and
@@ -899,7 +911,8 @@ class TestCandidatesCommand(unittest.TestCase):
                      {'number': 8, 'state': 'CLOSED'}]}
         with mock.patch.object(wf, 'assemble_candidates',
                                return_value=(True, [cand], '')), \
-                mock.patch.object(wf, 'issue_edges_map', return_value=edges):
+                mock.patch.object(wf, 'issue_edges_map',
+                                  return_value=(edges, set())):
             _, payload = _capture(wf.cmd_candidates, _candidates_args())
         entry = payload['candidates'][0]
         self.assertEqual(entry['dependencies'], [7, 8])
@@ -911,7 +924,7 @@ class TestCandidatesCommand(unittest.TestCase):
         cand['body'] = '## Blocked by\n\n#979\n'
         with mock.patch.object(wf, 'assemble_candidates',
                                return_value=(True, [cand], '')), \
-                mock.patch.object(wf, 'issue_edges_map', return_value={}):
+                mock.patch.object(wf, 'issue_edges_map', return_value=({}, set())):
             _, payload = _capture(wf.cmd_candidates, _candidates_args())
         self.assertEqual(payload['candidates'][0]['dependencies'], [])
         self.assertFalse(payload['candidates'][0]['blocked'])
@@ -931,7 +944,7 @@ class TestCandidatesCommand(unittest.TestCase):
                 mock.patch.object(wf, 'load_issue_facets',
                                   return_value=_facets(ownership={
                                       1: 'Browser agent', 2: 'Code agent'})), \
-                mock.patch.object(wf, 'issue_edges_map', return_value={}):
+                mock.patch.object(wf, 'issue_edges_map', return_value=({}, set())):
             _, payload = _capture(wf.cmd_candidates, _candidates_args())
         self.assertEqual([c['number'] for c in payload['candidates']], [2])
 
@@ -944,14 +957,14 @@ class TestCandidatesCommand(unittest.TestCase):
                                return_value=(True, [_candidate(1)], '')), \
                 mock.patch.object(wf, 'load_issue_facets',
                                   return_value=_facets(ownership={})), \
-                mock.patch.object(wf, 'issue_edges_map', return_value={}):
+                mock.patch.object(wf, 'issue_edges_map', return_value=({}, set())):
             code, payload = _capture(wf.cmd_candidates, _candidates_args())
         self.assertEqual(code, wf.EXIT_NO_CANDIDATES)
 
     def test_the_listing_says_who_owns_each_candidate(self):
         with mock.patch.object(wf, 'assemble_candidates',
                                return_value=(True, [_candidate(1)], '')), \
-                mock.patch.object(wf, 'issue_edges_map', return_value={}):
+                mock.patch.object(wf, 'issue_edges_map', return_value=({}, set())):
             _, payload = _capture(wf.cmd_candidates, _candidates_args())
         self.assertEqual(payload['candidates'][0]['scope'], 'code')
 
@@ -1684,13 +1697,17 @@ class _FakeHub(object):
     """
 
     def __init__(self, issues=(), labels=None, swallow_fields=False,
-                 fail_create=(), fail_link=False, closed_edges=()):
+                 fail_create=(), fail_link=False, closed_edges=(),
+                 board_lanes=None, type_map=None):
         # Blocker numbers this hub reports as CLOSED on the batched edge read.
         # Everything else reads OPEN, which is what a freshly written edge is.
         self.closed_edges = set(closed_edges)
         # The board this hub serves. Every lane the plugin can move a card to,
         # so a test that expects a column to exist finds it.
         self.board_columns = list(wf_core.BOARD_COLUMN_NAMES.values())
+        # Which lane each issue's card is in before the run. An issue absent
+        # here has no card at all, which is what a created issue looks like.
+        self.board_lanes = dict(board_lanes or {})
         self.board_placed = {}
         self.board_writes = []
         self.issues = {i['number']: i for i in issues}
@@ -1705,7 +1722,10 @@ class _FakeHub(object):
         self.swallow_fields = swallow_fields
         self.fail_create = set(fail_create)
         self.fail_link = fail_link
-        self.type_names = {v: k for k, v in _APPLY_CAPS['type_map'].items()}
+        # The caps a test runs with decide which type ids exist, so the hub
+        # has to read a created issue's type back under the same map.
+        self.type_names = {v: k for k, v
+                           in (type_map or _APPLY_CAPS['type_map']).items()}
         self.field_names = {m['id']: (n, m) for n, m
                             in _APPLY_CAPS['field_map'].items()}
 
@@ -1722,7 +1742,10 @@ class _FakeHub(object):
             'id': issue['id'], 'number': issue['number'],
             'title': issue['title'], 'body': issue['body'],
             'issueType': {'name': issue['type']} if issue['type'] else None,
-            'parent': {'number': issue['parent']} if issue['parent'] else None,
+            'parent': ({'number': issue['parent'],
+                        'issueType': ({'name': issue['parent_type']}
+                                      if issue.get('parent_type') else None)}
+                       if issue['parent'] else None),
             'blockedBy': {'nodes': [{'number': n} for n in issue['blocked_by']]},
             'labels': {'nodes': [{'name': n} for n in issue['labels']]},
             'issueFieldValues': {'nodes': nodes},
@@ -1736,18 +1759,39 @@ class _FakeHub(object):
                                                for n, i in self.labels.items()]}}
             for alias, number in re.findall(r'(n\d+): issue\(number:(\d+)\)', query):
                 issue = self.issues.get(int(number))
-                repository[alias] = ({'id': issue['id'], 'number': issue['number']}
+                repository[alias] = self._readback(issue) if issue else None
+            return True, {'repository': repository}, ''
+        if re.search(r'n\d+: issue\(number:\d+\)\{ id number \}', query):
+            # `resolve_issue_ids` — the ids of blockers an entry dropped, which
+            # were never in the spec's own prerequisite lookup.
+            repository = {}
+            for alias, number in re.findall(r'(n\d+): issue\(number:(\d+)\)',
+                                            query):
+                issue = self.issues.get(int(number))
+                repository[alias] = ({'id': issue['id'],
+                                      'number': issue['number']}
                                      if issue else None)
             return True, {'repository': repository}, ''
-        if 'blockedBy(first:50)' in query and ': issue(number:' in query:
+        if re.search(r'blockedBy\(first:\d+\)', query) and ': issue(number:' in query:
             repository = {}
             for alias, number in re.findall(
                     r'(e\d+): issue\(number:(\d+)\)', query):
                 issue = self.issues.get(int(number))
                 repository[alias] = {'blockedBy': {'nodes': [
-                    {'number': n,
+                    {'number': n, 'title': 'blocker %d' % n,
                      'state': 'CLOSED' if n in self.closed_edges else 'OPEN'}
                     for n in issue['blocked_by']]}} if issue else None
+            return True, {'repository': repository}, ''
+        if re.search(r'c\d+: issue\(number:\d+\)', query):
+            # `board_current_columns` — the lane each card is in before the run.
+            repository = {}
+            for alias, number in re.findall(r'(c\d+): issue\(number:(\d+)\)',
+                                            query):
+                lane = self.board_lanes.get(int(number))
+                repository[alias] = {'projectItems': {'nodes': (
+                    [{'project': {'id': _cfg()['board']['project_node_id']},
+                      'fieldValueByName': {'name': lane} if lane else None}]
+                    if int(number) in self.board_lanes else [])}}
             return True, {'repository': repository}, ''
         if 'projectItems' in query:
             repository = {}
@@ -1843,7 +1887,8 @@ class _FakeHub(object):
                 data[alias] = {'issue': self._readback(self._create(arg))}
             return 0, json.dumps({'data': data, 'errors': errors}), ''
 
-        aliased = re.findall(r'(b\d+): (addBlockedBy|updateIssue)', query)
+        aliased = re.findall(r'(b\d+): (addBlockedBy|removeBlockedBy|updateIssue)',
+                             query)
         if aliased:
             for alias, kind in aliased:
                 if self.fail_link:
@@ -1851,10 +1896,14 @@ class _FakeHub(object):
                     errors.append({'path': [alias], 'message': 'nope'})
                     continue
                 issue = self._by_id(variables['%s_i' % alias])
-                if kind == 'addBlockedBy':
+                if kind in ('addBlockedBy', 'removeBlockedBy'):
                     blocker = self._by_id(variables['%s_b' % alias])
-                    self.sent.append(('addBlockedBy', blocker['number']))
-                    issue['blocked_by'].append(blocker['number'])
+                    self.sent.append((kind, blocker['number']))
+                    if kind == 'addBlockedBy':
+                        issue['blocked_by'].append(blocker['number'])
+                    else:
+                        issue['blocked_by'] = [n for n in issue['blocked_by']
+                                               if n != blocker['number']]
                     data[alias] = {'issue': {
                         'id': issue['id'],
                         'blockedBy': {'nodes': [{'number': n}
@@ -2163,6 +2212,92 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(payload['applied'][0]['board_column'], 'Backlog')
 
+    def test_an_update_leaves_an_in_flight_card_where_it_is(self):
+        """Reproduced live: a spec setting one field on an issue in progress
+        moved its card back to Backlog, where a second agent could pick up
+        work already underway. A lane this phase does not own is kept."""
+        hub = _FakeHub([_existing(7, type='User Story')],
+                       board_lanes={7: 'In Progress'})
+        code, payload, _, _ = self._run([self._full(number=7)], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['applied'][0]['board_column_kept'], 'In Progress')
+        self.assertEqual(hub.board_writes, [])
+
+    def test_a_parked_card_is_not_silently_unparked(self):
+        hub = _FakeHub([_existing(7, type='User Story')],
+                       board_lanes={7: 'Parked'})
+        _, payload, _, _ = self._run([self._full(number=7)], hub)
+        self.assertEqual(payload['applied'][0]['board_column_kept'], 'Parked')
+
+    def test_an_explicit_state_moves_even_an_in_flight_card(self):
+        """Asking for a lane is a decision, not an inference, so it wins."""
+        hub = _FakeHub([_existing(7, type='User Story')],
+                       board_lanes={7: 'In Progress'})
+        code, payload, _, _ = self._run([self._full(number=7, state='parked')],
+                                        hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['applied'][0]['board_column'], 'Parked')
+        self.assertNotIn('board_column_kept', payload['applied'][0])
+
+    def test_a_thin_issue_can_be_filed_straight_into_needs_refinement(self):
+        hub = _FakeHub()
+        code, payload, _, _ = self._run([self._full(state='refinement')], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['applied'][0]['board_column'], 'Needs refinement')
+
+    def test_a_state_the_spec_does_not_know_is_refused(self):
+        hub = _FakeHub()
+        code, payload, _, _ = self._run([self._full(state='ready')], hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertEqual(hub.mutations, [])
+
+    def test_a_backlog_card_is_still_re_placed_by_its_state(self):
+        """Backlog is a lane this phase owns, so an edge written on an issue
+        sitting there moves it to Blocked."""
+        hub = _FakeHub([_existing(7, type='User Story'), _existing(6)],
+                       board_lanes={7: 'Backlog'})
+        _, payload, _, _ = self._run([self._full(number=7, blocked_by=[6])], hub)
+        self.assertEqual(payload['applied'][0]['board_column'], 'Blocked')
+
+    def test_restating_blocked_by_removes_an_edge_the_entry_left_out(self):
+        """`blocked_by` is the whole set. An edge added by mistake had no way
+        back off: `wf unblock` only releases an issue when its blockers close."""
+        hub = _FakeHub([_existing(7, type='User Story', blocked_by=[5, 6]),
+                        _existing(5), _existing(6)])
+        code, payload, _, _ = self._run([self._full(number=7, blocked_by=[5])],
+                                        hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(hub.issues[7]['blocked_by'], [5])
+        self.assertIn(('removeBlockedBy', 6), hub.sent)
+        self.assertIn('removed blocked-by #6', payload['applied'][0]['changed'])
+
+    def test_an_empty_blocked_by_releases_every_edge(self):
+        hub = _FakeHub([_existing(7, type='User Story', blocked_by=[6]),
+                        _existing(6)], board_lanes={7: 'Blocked'})
+        code, payload, _, _ = self._run([self._full(number=7, blocked_by=[])],
+                                        hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(hub.issues[7]['blocked_by'], [])
+        self.assertEqual(payload['applied'][0]['board_column'], 'Backlog')
+
+    def test_an_entry_without_blocked_by_leaves_the_edges_alone(self):
+        hub = _FakeHub([_existing(7, type='User Story', blocked_by=[6]),
+                        _existing(6)])
+        code, _, _, _ = self._run([self._full(number=7)], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(hub.issues[7]['blocked_by'], [6])
+        self.assertNotIn('removeBlockedBy', hub.names_sent())
+
+    def test_one_issue_one_party(self):
+        """A `[Manual]` title owned by `Code agent` is refused before any
+        write: whichever of the two is wrong, the issue would mislead."""
+        hub = _FakeHub()
+        code, payload, _, _ = self._run([self._full(title='[Manual] Device pass')],
+                                        hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertIn('one issue, one party', ' '.join(payload['errors']))
+        self.assertEqual(hub.mutations, [])
+
     def test_a_retired_label_is_taken_off_whatever_the_spec_said(self):
         """How an existing backlog migrates: an issue still carrying a label
         from the label workflow is cleaned the next time a command touches it.
@@ -2255,28 +2390,137 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(code, wf.EXIT_CAPABILITY)
         self.assertEqual(payload['status'], 'no-capabilities')
 
-    def test_a_create_naming_no_labels_is_reported(self):
-        """Nothing else supplies them, so the issue would be unpickable."""
+    def test_a_create_naming_no_labels_is_not_warned_about(self):
+        """Labels decide nothing. Priority is a field the spec must carry, so
+        an issue with no labels is exactly as orderable as one with ten, and a
+        warning saying otherwise sent people to add labels nothing reads."""
         hub = _FakeHub()
         code, _, stderr, _ = self._run([self._full()], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertIn('name no labels', stderr)
+        self.assertNotIn('label', stderr)
 
-    def test_a_create_that_names_labels_is_not_reported(self):
+
+_FEATURE_CAPS = dict(_APPLY_CAPS,
+                     type_map=dict(_APPLY_CAPS['type_map'], Feature='IT_feature'))
+
+
+class TestIssueHierarchy(_ApplyCase):
+    """Epic → Feature → User Story, enforced at the write.
+
+    Only against an org that has the parent type enabled: `_APPLY_CAPS` has no
+    `Feature`, which is why every other apply test can file a parentless story.
+    """
+
+    def _story(self, **over):
+        return self._full(**over)
+
+    def test_a_story_with_no_feature_parent_is_refused(self):
         hub = _FakeHub()
-        code, _, stderr, _ = self._run(
-            [self._full(labels=['priority-high'])], hub)
-        self.assertEqual(code, wf.EXIT_OK)
-        self.assertNotIn('name no labels', stderr)
+        code, payload, _, _ = self._run([self._story()], hub, caps=_FEATURE_CAPS)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertIn("'Feature' parent", ' '.join(payload['errors']))
+        self.assertEqual(hub.mutations, [])
 
-    def test_an_update_is_never_reported_for_labels(self):
-        """An issue that already exists got its labels when it was filed."""
-        hub = _FakeHub([_existing(42, type='User Story',
-                                  fields={'Priority': 'High', 'Effort': 'Medium',
-                                          'Ownership': 'Code agent',
-                                          'Classification': ['New Feature']})])
-        _, _, stderr, _ = self._run([self._full(number=42)], hub)
-        self.assertNotIn('name no labels', stderr)
+    def test_a_story_under_an_epic_is_refused(self):
+        hub = _FakeHub([_existing(50, type='Epic')])
+        code, payload, _, _ = self._run([self._story(parent=50)], hub,
+                                        caps=_FEATURE_CAPS)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertIn("#50 is a 'Epic'", ' '.join(payload['errors']))
+
+    def test_a_story_under_an_existing_feature_is_accepted(self):
+        hub = _FakeHub([_existing(50, type='Feature')])
+        code, payload, _, _ = self._run([self._story(parent=50)], hub,
+                                        caps=_FEATURE_CAPS)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(hub.issues[payload['applied'][0]['number']]['parent'], 50)
+
+    def test_a_whole_tree_in_one_spec_is_accepted(self):
+        fields = self._full()['fields']
+        entries = [
+            {'key': 'e', 'title': 'Epic', 'kind': 'epic', 'fields': dict(fields)},
+            {'key': 'f', 'title': 'Feature', 'kind': 'feature', 'parent': 'e',
+             'fields': dict(fields)},
+            {'key': 's', 'title': 'Story', 'kind': 'story', 'parent': 'f',
+             'fields': dict(fields)},
+        ]
+        hub = _FakeHub(type_map=_FEATURE_CAPS['type_map'])
+        code, payload, _, _ = self._run(entries, hub, caps=_FEATURE_CAPS)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        by_key = {r['key']: r['number'] for r in payload['applied']}
+        self.assertEqual(hub.issues[by_key['f']]['type'], 'Feature')
+        self.assertEqual(hub.issues[by_key['s']]['parent'], by_key['f'])
+
+    def test_a_feature_needs_an_epic(self):
+        hub = _FakeHub()
+        entry = self._full(kind='feature', title='A feature')
+        code, payload, _, _ = self._run([entry], hub, caps=_FEATURE_CAPS)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertIn("'Epic' parent", ' '.join(payload['errors']))
+
+    def test_an_update_moving_a_story_onto_an_epic_is_refused(self):
+        """Found live: the entry named no `kind`, so the check never ran and
+        a User Story was re-parented straight onto an Epic."""
+        hub = _FakeHub([_existing(40, type='Epic'),
+                        _existing(50, type='Feature'),
+                        _existing(7, type='User Story', parent=50,
+                                  parent_type='Feature')])
+        code, payload, _, _ = self._run([{'number': 7, 'parent': 40}], hub,
+                                        caps=_FEATURE_CAPS)
+        self.assertEqual(code, wf.EXIT_SPEC, payload)
+        self.assertIn("#40 is a 'Epic'", ' '.join(payload['errors']))
+        self.assertEqual(hub.mutations, [])
+
+    def test_an_update_need_not_restate_the_fields_the_issue_carries(self):
+        hub = _FakeHub([_existing(7, fields={'Priority': 'High',
+                                             'Effort': 'Medium',
+                                             'Ownership': 'Code agent'})])
+        code, payload, _, _ = self._run(
+            [{'number': 7, 'fields': {'field-priority': 'Medium'}}], hub)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(hub.issues[7]['fields']['Priority'], 'Medium')
+
+    def test_an_update_leaving_the_issue_without_a_required_value_is_refused(self):
+        hub = _FakeHub([_existing(7, fields={'Priority': 'High'})])
+        code, payload, _, _ = self._run(
+            [{'number': 7, 'fields': {'field-priority': 'Medium'}}], hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        joined = ' '.join(payload['errors'])
+        self.assertIn('Effort', joined)
+        self.assertIn('Ownership', joined)
+        self.assertEqual(hub.mutations, [])
+
+    def test_an_update_handing_an_unprefixed_issue_to_a_person_is_refused(self):
+        hub = _FakeHub([_existing(7, fields={'Priority': 'High',
+                                             'Effort': 'Medium',
+                                             'Ownership': 'Code agent'})])
+        code, payload, _, _ = self._run(
+            [{'number': 7, 'fields': {'field-ownership': 'Human'}}], hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertIn('[Manual]', ' '.join(payload['errors']))
+        self.assertEqual(hub.mutations, [])
+
+    def test_an_update_that_keeps_its_feature_parent_is_accepted(self):
+        """An update need not restate a parent it already has."""
+        hub = _FakeHub([_existing(50, type='Feature'),
+                        _existing(7, type='User Story', parent=50,
+                                  parent_type='Feature')])
+        code, _, _, _ = self._run([self._story(number=7)], hub,
+                                  caps=_FEATURE_CAPS)
+        self.assertEqual(code, wf.EXIT_OK)
+
+    def test_an_update_to_an_orphan_story_is_refused(self):
+        hub = _FakeHub([_existing(7, type='User Story')])
+        code, _, _, _ = self._run([self._story(number=7)], hub,
+                                  caps=_FEATURE_CAPS)
+        self.assertEqual(code, wf.EXIT_SPEC)
+
+    def test_an_org_without_the_parent_type_is_not_held_to_it(self):
+        """Refusing every create until somebody enables a type in the org
+        settings would be a workflow this plugin broke."""
+        hub = _FakeHub()
+        code, _, _, _ = self._run([self._story()], hub)
+        self.assertEqual(code, wf.EXIT_OK)
 
 
 class TestEpicTreeBatching(_ApplyCase):
@@ -2308,13 +2552,15 @@ class TestEpicTreeBatching(_ApplyCase):
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(len(payload['applied']), 13)
         self.assertEqual(len(hub.mutations), 4)
-        # Six requests for thirteen issues, and the number does not move when
-        # the tree grows. Two reads -- the prerequisite lookup (repo id and
-        # label ids together) and one batched edge read, so the lifecycle phase
-        # knows which of the edges it just wrote point at something still open
-        # -- then the four the board costs: its Status field, the cards that
-        # already exist, the cards that have to be added, the column write.
-        self.assertEqual(len(hub.queries), 6)
+        # Seven requests for thirteen issues, and the number does not move when
+        # the tree grows. Three reads -- the prerequisite lookup (repo id and
+        # label ids together), one batched edge read, so the lifecycle phase
+        # knows which of the edges it just wrote point at something still open,
+        # and one batched read of the lane each card is in now, so an update
+        # never drags an in-flight card back to Backlog -- then the four the
+        # board costs: its Status field, the cards that already exist, the
+        # cards that have to be added, the column write.
+        self.assertEqual(len(hub.queries), 7)
 
     def test_children_are_created_after_their_parents(self):
         hub = _FakeHub()
@@ -2834,7 +3080,7 @@ class TestConfigAudit(unittest.TestCase):
 
     def test_label_drift_warns_without_failing_the_run(self):
         code, payload, _ = self._run(
-            labels=self._LABELS + ['priority-medium', 'priority:medium', 'blocked'])
+            labels=self._LABELS + ['type:bug', 'type-feature', 'type:feature'])
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(set(self._checks(payload)), {'label-drift'})
         self.assertEqual(payload['summary']['warning'], 2)
@@ -2947,7 +3193,9 @@ class TestConfigAudit(unittest.TestCase):
                 argv=['--offline'])
         self.assertEqual(code, wf.EXIT_DRIFT)
         self.assertEqual(self._checks(payload), ['config-section'])
-        self.assertEqual(payload['checked'], ['config-section'])
+        # The instruction-file scan reads local files only, so it runs too.
+        self.assertEqual(payload['checked'],
+                         ['config-section', 'instructions-retired'])
 
     def test_quiet_keeps_the_exit_code_and_drops_the_detail(self):
         code, payload, _ = self._run(sections=[], argv=['--quiet'])

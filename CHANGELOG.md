@@ -7,6 +7,30 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 11.0.0
+
+**Every feature sits under an epic, and every user story under a feature.** `wf issue-apply` refuses a spec that files a `Feature` with no `Epic` parent, a `User Story` with no `Feature` parent, or either one under the wrong type, and writes nothing. A parent that already exists is judged by its live type, and an update is judged by the parent it has or the one it names. The rule is enforced only where the org has the parent type enabled, and `Bug`, `Chore` and `Epic` need no parent. `feature-discovery` now plans three levels and attaches to an existing epic or feature before creating one; `report-issue` files an architecture report under an existing epic, or as tech debt where none fits; `issue-audit` reports an issue outside the tree as a `hierarchy` gap. This is the breaking change: a spec that filed parentless stories or features against an org with `Feature` and `Epic` enabled now exits 22.
+
+**An epic is never offered as work.** `story` mode applied no type filter, so the pool offered a freshly filed epic beside its own stories. It now leaves `Epic` out in every mode.
+
+**An update names only what it changes.** An update entry had to restate Priority, Effort and Ownership even when the issue carried all three. It is now refused only when a value it leaves out is missing from the issue too. A `TODO` it writes is still refused. The one-issue-one-party rule is judged against the title and owner the issue will have afterwards, so setting `Human` on an unprefixed issue is refused as a create would be.
+
+**An update no longer moves a card it does not own.** Found live: setting one field on an in-progress issue moved its card back to Backlog, where a second agent could pick it up. An update writes only Backlog, Blocked and Non-code, and leaves a card in any other lane where it is. A spec entry can name a lane outright with `"state": "backlog" | "refinement" | "parked"`.
+
+**`blocked_by` is the complete set.** A restated list removes the edges it omits, and `[]` releases them all; leaving the key out leaves the edges alone. A card in Blocked is re-placed once its last edge goes.
+
+**An issue nobody owns goes to Needs refinement**, not Backlog, because nothing can route it.
+
+**Preflight finds the rest of the retired workflow, and `--fix` clears what it safely can.** New checks: `board-retired` (a `Ready` column survives), `label-retired` (open issues still carry a label the fields replaced), `field-retired` (the org still defines `Status reason`), `field-options` (an option on a required field no decision knows) and `instructions-retired` (a `CLAUDE.md` or `ClaudeProject.md` still describes the `Ready` opt-in, `Status reason` or a lifecycle label). `--fix` now takes retired labels off open issues, and empties a `Ready` column into Backlog before deleting it, only once every card has moved. It never deletes an org field or rewrites somebody's instructions. `field-unpinned` is critical, as the code always had it.
+
+**Instructions match the code.** Every command, skill, template and reference was swept for the `Ready` opt-in, `Status reason`, priority, state and scope labels, and dependencies written as prose.
+
+**Action for maintainers:** delete the `Status reason` issue field in the org settings. Preflight reports it as a warning and will not delete it, because deleting an org field deletes its values on every issue in every repository the org owns.
+
+## local-workflow 2.14.0
+
+**`feature-discovery` plans epics, features and stories.** The shared skill now breaks work into three levels, attaching to an existing epic or feature before proposing a new one, where it used to add epics only for large scope. The synced body standard and story template carry the same wording sweep as github-workflow 11.0.0.
+
 ## github-workflow 10.1.2
 
 **The listing describes the workflow it actually has.** The marketplace entry and the plugin's own description still said the plugin picks an issue "from your backlog" and supports "configurable label mappings", which 10.0.0 removed: the pool is a board column and there is one issue label left, deciding nothing. Both now say what a run reads — the board column is the status, and Priority, Effort and Ownership are org issue fields — and both carry `project-board` and `issue-fields` keywords. Metadata only; no behaviour changed.

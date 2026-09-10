@@ -46,9 +46,9 @@ gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
 
 The comment should include: the blocker reason, what was attempted, what failed or is missing, and a suggested resolution if known.
 
-If the blocker is another issue, record it as a **native blocked-by edge** (Step 3 below). That edge is the only thing that lets `wf unblock` release the issue when `#N` closes; a sentence in the body does nothing.
+If the blocker is another issue, record it as a **native blocked-by edge** (the spec below, still part of this step). That edge is the only thing that lets `wf unblock` release the issue when `#N` closes; a sentence in the body does nothing.
 
-Add the marker and nothing else. The blocker narrative stays in the comment, so do not restate it in the body, and leave the rest of the body as it is. If you are editing the body for any other reason, the result has to satisfy `../skills/writing-github-issues/SKILL.md`.
+The blocker narrative stays in the comment. Do not restate it in the body, and leave the rest of the body as it is. If you are editing the body for any other reason, the result has to satisfy `../skills/writing-github-issues/SKILL.md`.
 
 **Record the blocker where the tooling reads it.** The native blocked-by edge is the source of truth for auto-unblock and for selection. Nothing else records "why" in a structured field — the reason is prose, it belongs in the Step 2 comment, and a field holding a sentence is a field nothing can select on. Write a one-entry spec and apply it:
 
@@ -60,9 +60,11 @@ JSON
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/block-spec.json
 ```
 
-`issue-apply` places the card as well as writing the edge, so Step 5's board move is a no-op after this — run it only when the blocker is **not** another issue and there is no spec to apply. Read the exit code: **0** applied it; **22** (`spec-invalid`) means the spec is wrong, so fix it; **24** (`partial`) means some of it landed, so report what did not.
+`blocked_by` is the **complete set** of edges, not an addition to it: the issues it names are added and any the issue already carries that the list omits are removed. So name every issue this one waits on, not just the newest, and leave the key out altogether if you only mean to leave the existing edges alone.
 
-Skip this step entirely when the blocker is not an issue: there is no edge to write, and Step 5 moves the card on its own.
+This writes the edge but **does not** move the card, and Step 4 is still required. `issue-apply` only places a card sitting in a lane it owns — no card at all, no Status value, Backlog, Blocked or Non-code — and a story being blocked is in In Progress, which it leaves alone and reports as `board_column_kept`. That is deliberate: updating an in-flight issue must not drag it out of the lane the run put it in. Read the exit code: **0** applied it; **22** (`spec-invalid`) means the spec is wrong, so fix it; **24** (`partial`) means some of it landed, so report what did not.
+
+Skip this step entirely when the blocker is not an issue: there is no edge to write, and Step 4 moves the card either way.
 
 ### 3. Release the claim and unassign
 
@@ -95,7 +97,25 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-bloc
 
 The command verifies the board's identity and resolves the column **before** it adds the card, so a column the board does not have costs one query and writes nothing. It **always exits 0** so a board problem never costs the run its work — but read `moved` and `reason`, and if the move did not happen say so plainly: the issue is still available and the next `pick` will offer it.
 
-**Use `col-non-code` instead when the blocker is the work's own nature** — a browser console, or a person with a device. Blocked means an open edge and `wf unblock` releases it when that edge closes, which for non-code work would hand it to an agent that cannot do it. Set `Ownership` to `Browser agent` or `Human` at the same time, which is what keeps it out of the pool for good.
+**When the blocker is the work's own nature** — it needs a browser console, or a person with a device — do not use this step at all. Blocked means an open edge, and `wf unblock` releases it when that edge closes, which for non-code work would hand it back to an agent that cannot do it. Set `Ownership` instead, which is what actually routes the work, and put the card in Non-code:
+
+```bash
+mkdir -p .claude
+cat > .claude/non-code-spec.json <<'JSON'
+{"issues": [{"number": {number},
+             "title": "{[Browser] |[Manual] }{existing title}",
+             "fields": {"field-ownership": "{Browser agent|Human}"}}]}
+JSON
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/non-code-spec.json
+```
+
+Then move the card, because the story is in In Progress and `issue-apply` leaves an in-flight card where it is:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-non-code
+```
+
+The field is what keeps the issue out of the pool for good — `pick` refuses an issue whose `Ownership` is not `Code agent`, so it stays refused even if someone later drags the card back to Backlog. The prefix and the field have to agree, `[Manual] ` with `Human` and `[Browser] ` with `Browser agent`; a spec where they contradict each other is refused rather than applied, because one issue has one owner.
 
 ### 5. Reconcile the working tree to clean
 

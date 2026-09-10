@@ -14,7 +14,7 @@ depends-on:
 argument-hint: '[issue# issue# ...] [--mode feature|maintenance] [--size N] [--no-merge] [--bypass-ci]'
 arguments:
   - name: story_numbers
-    description: 'Optional list of issue numbers to build together, e.g. "41 43 47". Naming them is the precise way to choose the set. If omitted, the ready pool is read and a related group is chosen from it deliberately.'
+    description: 'Optional list of issue numbers to build together, e.g. "41 43 47". Naming them is the precise way to choose the set. If omitted, the Backlog pool is read and a related group is chosen from it deliberately.'
   - name: mode
     description: 'Selection mode for the lead story: story (default), feature (feature stories only), maintenance (bug/security/architecture/debt). A set never mixes modes.'
   - name: size
@@ -158,7 +158,7 @@ The set is **chosen**, never taken off the top of the backlog. Priority order de
 **Read `references/set-selection.md` and follow it.** It covers both paths:
 
 - **Named stories** (`$ARGUMENTS.story_numbers` given, e.g. `/github-workflow:bulk-execute 41 43 47`) — the user has already made the choice. Validate each named story, check none is already in flight, and claim them all. Relatedness is not re-litigated; a named story is only ever dropped when it cannot be worked at all.
-- **No numbers given** — read the ready pool with `wf candidates --mode {mode}`, which returns the same filtered, priority-sorted pool `execute` would pick from and claims nothing. Group it into genuinely related stories, choose one group against the relatedness rules, and only then claim.
+- **No numbers given** — read the Backlog pool with `wf candidates --mode {mode}`, which returns the same filtered, priority-sorted pool `execute` would pick from and claims nothing. Group it into genuinely related stories, choose one group against the relatedness rules, and only then claim.
 
 Either way, **every story in the set gets a real atomic claim** before any code is written — the `refs/claims/issue-{number}` ref, plus the `@me` assignment and the board move to In Progress. A story built without its own claim is a story another agent can pick up underneath you.
 
@@ -183,7 +183,7 @@ Phase 1 ends in one of three states:
 
    Record the branch name in `.claude/bulk-set.json`.
 
-Board failures are loud but not fatal: report them ("Board update failed: {error}. Continuing.") and proceed. When no board is configured, skip the board silently.
+Board failures are loud but not fatal: report them ("Board update failed: {error}. Continuing.") and proceed. There is no no-board case to handle — preflight fails a project without one before this command runs, because the column is the issue's state and the Backlog column is the pool the set was chosen from.
 
 ## Phase 3 — Plan the set as one change
 
@@ -281,5 +281,5 @@ Read `skills/execute/references/escape-hatches.md` when a run leaves the happy p
 
 - **Blocked.** One story blocking does not block the run. Drop that story from the set (`references/set-selection.md`, **Dropping a story**, then `/github-workflow:block-story` for it) and carry on with the rest. Block the whole run only when the set drops below one buildable story and no code exists yet.
 - **Dependency.** A dependency *inside* the set is the ordinary case here and needs no hatch: the dependency is built first, which Phase 1 already ordered. A dependency on an open issue *outside* the set drops that story from the set. Never chain a bulk branch off another feature branch: the pull request would then close several stories against a base that may never merge.
-- **Too large.** Shrink the set, do not slice a story. Drop stories until what remains fits, and leave the dropped ones ready in the backlog for their own run.
+- **Too large.** Shrink the set, do not slice a story. Drop stories until what remains fits, and leave the dropped ones in the Backlog column for their own run.
 - **Failure reporting.** Comment the failure on **every** claimed issue before exiting, and move each card to Needs attention. Once the pull request is open, comment on the PR instead and leave the cards in In Review.

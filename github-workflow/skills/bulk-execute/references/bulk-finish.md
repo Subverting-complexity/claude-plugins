@@ -80,7 +80,7 @@ Add `--gate-failed` when `.claude/gate-failed.flag` exists, which enters review 
 
 It labels the pull request `claude-authored` plus the review-state entry label once, then for **each** issue moves its board item to In Review and releases its claim ref — so the per-story release that used to be its own step is done here. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`.
 
-It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read the payload instead — `pr_labelled`, and per issue `relabelled`, `board_moved` and a `board` reason. A failure on one issue does not affect the others; report what failed by issue number **and** title and carry on. The review matters more than a label.
+It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read the payload instead — `pr_labelled` and `review_label`, and per issue `board_moved` and a `board` reason. A failure on one issue does not affect the others; report what failed by issue number **and** title and carry on. The review matters more than a label.
 
 Keep `.claude/bulk-set.json`: Phases 8 to 10 still read it for the story list, and **Exit cleanup** deletes it at the end of the run. Every issue stays assigned to @me through review.
 

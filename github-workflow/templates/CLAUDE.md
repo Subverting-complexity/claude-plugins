@@ -42,12 +42,16 @@ Work on **one story at a time** in a **fresh session per story**. Complete it (P
 
 ### Chaining Stories
 
+A dependency between two stories is a **native blocked-by edge** on the dependent one, and nothing else. Not a sentence in the body, not a label: the edge is what keeps the dependent story out of the pick pool, what puts its card in the Blocked column, and what `wf unblock` reads to release it once the dependency closes.
+
 When a story depends on another unmerged story:
 
 1. Build the dependency on its own branch from the default branch.
 2. Branch the dependent story off the dependency branch.
 3. Set the dependent PR's base to the dependency branch.
 4. After merge, rebase onto the default branch and update the PR base.
+
+Chaining like this is only possible while the dependency's branch is published. Where it is not, the dependent story is blocked instead: its card goes to Blocked and stays out of the pool until the edge closes.
 
 ## Bug, Security, and Maintenance Workflow
 

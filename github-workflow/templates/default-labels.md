@@ -129,13 +129,15 @@ Columns are resolved by **purpose key** through the same path as labels: read fr
 | In Review (`col-in-review`)  | execute |
 | Blocked (`col-blocked`)      | block-story, `wf issue-apply` (an open dependency edge), `wf pick` (returning a blocked issue) |
 | Non-code (`col-non-code`)    | `wf issue-apply`, `wf unblock` (`Ownership` is not `Code agent`) |
-| Needs refinement (`col-refinement`) | feature-discovery, `wf issue-apply` |
-| Parked (`col-parked`)        | a person, or update via park |
+| Needs refinement (`col-refinement`) | `wf issue-apply` (`"state": "refinement"` on the entry), feature-discovery (a deferred story), execute (a story too thin to build) |
+| Parked (`col-parked`)        | a person, or `wf issue-apply` (`"state": "parked"` on the entry) |
 | Needs attention (`col-attention`) | execute (error / timeout) |
-| Backlog (`col-backlog`)      | `wf issue-apply` (create and update, nothing open), `wf unblock` (every blocker closed) |
+| Backlog (`col-backlog`)      | `wf issue-apply` (nothing on the entry says otherwise), `wf unblock` (every blocker closed) |
 | Done (`col-done`)            | `wf pick` (already-resolved), `wf post-merge` (after merge), code-review auto-merge |
 
-Done is the one move with no decision behind it: the GitHub closed state is authoritative, and the commands above mirror the board so a finished story leaves the In Review column. Best-effort, like every board move — a no-op when no board is configured.
+`issue-apply` only ever moves a card that is in a lane it owns — no card at all, no Status value, Backlog, Blocked or Non-code — unless the entry carries an explicit `"state"`. A card in In Progress, In Review, Needs attention, Parked, Needs refinement or Done is left where it is and reported as `board_column_kept`, so updating an issue somebody is working on does not drag it back into the pool.
+
+Done is the one move with no decision behind it: the GitHub closed state is authoritative, and the commands above move the card so a finished story leaves the In Review column.
 
 **A board is required, and Backlog is required on it.** It is the pool `pick` and `candidates` read, so without it selection has nowhere to look. Preflight reports a missing Backlog column, an unrecorded board, or a `project-node-id` that resolves to nothing as `CRITICAL board-lane`; an open issue with no card at all as `CRITICAL board-orphan`; and a card sitting in no lane as `CRITICAL board-unset`. Every other column warns — a lane that does not exist costs one state's board move, which is visible on the board and which no command depends on. Setup creates them all.
 

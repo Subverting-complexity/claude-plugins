@@ -5,11 +5,11 @@ The single canonical specification of exit cleanup — every other mention point
 ## 1. Release the claim refs
 
 ```
-git push origin :refs/claims/issue-{number}
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
 rm -f .claude/claim-issue-{number}.sha
 ```
 
-Ignore an already-gone-ref error (Phase 7 step 4 or `block-story` may have released it).
+`claim-release` is idempotent, so releasing a ref Phase 7 step 4 or `block-story` already released is a no-op rather than an error.
 
 If the run **won** a review claim on its own PR in Phase 8, release that too. The test is the file Acquire writes only on a win:
 
@@ -32,7 +32,7 @@ gh pr view {pr_number} --repo {org}/{repo} --json state,labels
 Then release the lock:
 
 ```
-git push origin :refs/claims/pr-{pr_number}
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --pr {pr_number}
 rm -f .claude/claim-pr-{pr_number}.sha
 ```
 
