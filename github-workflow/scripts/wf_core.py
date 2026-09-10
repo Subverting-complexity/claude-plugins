@@ -75,6 +75,11 @@ def _priority_rank(field_value):
 
 NATIVE_FEATURE_TYPES = frozenset({'User Story'})
 NATIVE_CONTAINER_TYPES = frozenset({'Epic'})
+# The levels of the Epic -> Feature -> story tree that group work rather than
+# being it. Wider than `NATIVE_CONTAINER_TYPES` on purpose: the pool still
+# offers an untyped-tree `Feature` as work, but a walk of the tree treats one
+# as a grouping level, which is what a Feature with stories under it is.
+HIERARCHY_CONTAINER_TYPES = frozenset({'Epic', 'Feature'})
 NATIVE_MAINTENANCE_TYPES = frozenset({'Bug', 'Chore'})
 NATIVE_MAINTENANCE_CLASSIFIABLE_TYPES = frozenset({'Feature'})
 MAINTENANCE_CLASSIFICATIONS = frozenset({
@@ -1731,6 +1736,18 @@ def strip_type_labels(labels, project_map=None):
     return kept, dropped
 
 
+def same_text(a, b):
+    """Whether two issue titles or bodies say the same thing.
+
+    A read-back can carry `\\r\\n` where the spec has `\\n`, and trailing
+    whitespace is not a difference anyone wrote, so neither makes an update
+    rewrite a body that already matches.
+    """
+    def norm(text):
+        return (text or '').replace('\r\n', '\n').strip()
+    return norm(a) == norm(b)
+
+
 def strip_title_prefix(title):
     """The title minus a leading `[KIND]` the native type already states.
 
@@ -1946,7 +1963,9 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
         if problem:
             gaps.append({'kind': 'hierarchy', 'detail': problem})
 
-    proposed = {'number': number, 'title': title}
+    # No title: an update now writes the title it is given, and the one read
+    # here would strip a prefix or undo an edit made after the audit.
+    proposed = {'number': number}
     if kind:
         proposed['kind'] = kind
     if proposed_fields:
@@ -3174,6 +3193,208 @@ def plan_bulk_order(stories, max_size=BULK_MAX):
     return ordered, notes
 
 
+# ── a bulk set chosen from a container (`candidates --parent`) ───────────────
+# An Epic or grouping Feature is not work, but its tree is the best answer
+# there is to "which stories belong in one pull request". These two functions
+# are the decision half of that answer; `cmd_candidates --parent` does the
+# reading. The rules were settled on #239.
+
+def parent_leaf_groups(root, repo=None):
+    """Walk a container's sub-issue tree and group its open leaves.
+
+    `root` is `{'number', 'type', 'state', 'repo', 'children': [...]}`,
+    nested. A leaf is an open descendant that is not a container. Each leaf is
+    grouped under its nearest `Feature` ancestor, or under the root itself when
+    it hangs directly off it.
+
+    Returns (groups, empty, foreign). `groups` maps a group number to its
+    leaves in tree order. `empty` lists the open Features with no open leaf
+    under them: building a whole Feature as one story is the oversized unit
+    the tree exists to prevent. `foreign` lists open descendants in another
+    repository, which this repository's board and claims cannot speak for.
+    """
+    groups, empty, foreign = {}, [], []
+
+    def walk(node, group):
+        found = False
+        for child in node.get('children') or ():
+            if (child.get('state') or '').upper() != 'OPEN':
+                continue
+            if repo and child.get('repo') and child['repo'] != repo:
+                foreign.append(child['number'])
+                continue
+            kind = child.get('type')
+            if kind in HIERARCHY_CONTAINER_TYPES:
+                inner = child['number'] if kind == 'Feature' else group
+                if walk(child, inner):
+                    found = True
+                elif kind == 'Feature' and not child.get('unread'):
+                    # A Feature whose stories were past the tree read is
+                    # not empty; the caller reports it as unread instead.
+                    empty.append(child['number'])
+                continue
+            groups.setdefault(group, []).append(child['number'])
+            found = True
+        return found
+
+    walk(root, root['number'])
+    return groups, empty, foreign
+
+
+def choose_parent_set(root, pool_order, deps, reasons=None, max_size=BULK_MAX,
+                      repo=None):
+    """Choose one bulk set from the leaves under an Epic or Feature.
+
+    `pool_order` is every leaf a run could take, in priority order: the pool
+    -- Backlog, owned by the code agent, unassigned -- with the Blocked
+    leaves the code agent owns ranked in among it, so a waiting leaf keeps
+    its priority. `deps` maps each of them to its **open** blockers.
+    `reasons` is the caller's explanation for any other leaf: its column, its
+    owner. Nothing else is ever taken, so Non-code work never is.
+
+    - **One group per run.** The Feature (or the root, for leaves hanging off
+      it directly) holding the highest-priority pool leaf with no open
+      blocker. A group is one deliverable surface; leaves from two are the
+      unrelated bundle bulk-execute exists to avoid.
+    - **A leaf with open blockers is taken only when every one of them is
+      taken too.** That is the only way a Blocked leaf gets in: its blocker is
+      a sibling being built in the same run.
+    - **Put in build order, then cut to `max_size`.** The order is greedy:
+      the next leaf is always the highest-priority one whose blockers are
+      already placed, so a waiting leaf keeps its priority and every prefix
+      carries its own blockers. The set only comes back short when the tree
+      is short.
+
+    Returns {'group', 'selected', 'excluded'}: `selected` is story dicts in
+    build order, each carrying `blocked_by`; `excluded` is every other leaf
+    as {'number', 'reason'}.
+    """
+    reasons = reasons or {}
+    groups, empty, foreign = parent_leaf_groups(root, repo)
+    order = [leaf for leaves in groups.values() for leaf in leaves]
+    group_of = {leaf: g for g, leaves in groups.items() for leaf in leaves}
+    in_pool = [n for n in pool_order if n in group_of]
+    takeable = in_pool + [n for n in deps if n in group_of and n not in in_pool]
+    ready = [n for n in in_pool if not deps.get(n)]
+    group = group_of[ready[0]] if ready else None
+
+    kept, trimmed = [], set()
+    if group is not None:
+        members = [n for n in takeable if group_of[n] == group]
+        chosen = {n for n in members if not deps.get(n)}
+        grew = True
+        while grew:
+            grew = False
+            for n in members:
+                if n not in chosen and set(deps.get(n) or ()) <= chosen:
+                    chosen.add(n)
+                    grew = True
+        stories = [{'number': n, 'blocked_by': list(deps.get(n) or ())}
+                   for n in members if n in chosen]
+        # Greedy, not `plan_bulk_order`'s rounds: a round puts every ready
+        # leaf ahead of any leaf waiting on one, whatever their priority, so
+        # the cut would take a higher-priority dependent before a ready leaf
+        # below it. Every blocker of a chosen leaf was chosen before it, so
+        # there is always a next one, and every prefix carries its blockers.
+        ordered, placed, remaining = [], set(), list(stories)
+        while remaining:
+            story = next(s for s in remaining if set(s['blocked_by']) <= placed)
+            ordered.append(story)
+            placed.add(story['number'])
+            remaining.remove(story)
+        cap = max_size if max_size and max_size > 0 else len(ordered)
+        kept = ordered[:cap]
+        trimmed = {s['number'] for s in ordered[cap:]}
+
+    selected = {s['number'] for s in kept}
+    excluded = []
+    for n in order:
+        if n in selected:
+            continue
+        if n in trimmed:
+            reason = ('left out by --size; the stories ahead of it in priority '
+                      'and build order were kept')
+        elif group is not None and group_of[n] != group and n in takeable:
+            reason = 'under #%d, not the Feature this run takes' % group_of[n]
+        elif deps.get(n):
+            reason = 'blocked by %s, which this run is not building' % ', '.join(
+                '#%d' % d for d in deps[n])
+        else:
+            reason = reasons.get(n, 'not in the pool')
+        excluded.append({'number': n, 'reason': reason})
+    excluded += [{'number': n, 'reason': 'a Feature with no open stories yet'}
+                 for n in empty]
+    excluded += [{'number': n, 'reason': 'in another repository'}
+                 for n in foreign]
+    return {'group': group, 'selected': kept, 'excluded': excluded}
+
+
+# ── closing a finished container (#240) ──────────────────────────────────────
+# GitHub's native sub-issues never close a parent, and a merge closes only the
+# issues its pull request names. So an Epic or Feature whose last story merged
+# stayed open, in a column nobody routinely looks at, until somebody noticed.
+
+def container_finished(node, closed=()):
+    """Whether an Epic or Feature is finished: open, and every sub-issue closed.
+
+    `node` is `{'number', 'type', 'state', 'children': [{'number', 'state'}]}`.
+    `closed` names issues this run has just closed, whose read may predate it.
+
+    Any close counts, including "not planned": a container held open by one
+    dropped story would stay open for ever. A container with no sub-issues is
+    never finished, because an empty Epic may be a placeholder.
+    """
+    if node.get('type') not in HIERARCHY_CONTAINER_TYPES:
+        return False
+    if (node.get('state') or '').upper() != 'OPEN':
+        return False
+    children = node.get('children') or []
+    if not children:
+        return False
+    done = set(closed or ())
+    return all((c.get('state') or '').upper() == 'CLOSED' or c.get('number') in done
+               for c in children)
+
+
+def ancestors_to_close(origin, chain, closed=(), repo=None):
+    """The ancestors closing `origin` finishes, nearest first.
+
+    `chain` is `origin`'s parents, nearest first, each shaped as
+    `container_finished` reads it plus `repo`. The walk stops at the first
+    parent that is not finished, because every ancestor above it has it as an
+    open child, and at the first one in another repository, which this
+    repository has no business closing.
+
+    Returns [{'number', 'finished_by'}], where `finished_by` is the child whose
+    close finished it -- `origin` for the nearest, the one below for the rest.
+    """
+    done = set(closed or ()) | {origin}
+    out, child = [], origin
+    for node in chain or ():
+        if repo and node.get('repo') and node['repo'] != repo:
+            break
+        if not container_finished(node, done):
+            break
+        out.append({'number': node['number'], 'finished_by': child})
+        done.add(node['number'])
+        child = node['number']
+    return out
+
+
+def finished_container_findings(containers, path='ClaudeProject.md'):
+    """One warning naming every open Epic or Feature that is already finished."""
+    if not containers:
+        return []
+    count = len(containers)
+    return [finding(
+        WARNING, 'container-finished',
+        '%d open Epic or Feature issue%s %s every sub-issue closed, and nothing '
+        'closes a container on its own: %s'
+        % (count, '' if count == 1 else 's', 'has' if count == 1 else 'have',
+           ', '.join('#%d' % c['number'] for c in containers)),
+        'close each as completed, or run `wf preflight --fix`', path)]
+
+
 # ── preflight: the file-level checks, and what `--fix` may repair ────────────
 # `config-audit` compares `ClaudeProject.md` against the live repo, board and
 # org. It never looked at the file's own contents beyond its headings, so the
@@ -3318,6 +3539,8 @@ FIXABLE_CHECKS = {
                      'then remove the column',
     'config-retired': 'delete the section',
     'claude-md-ref': 'add the pointer to CLAUDE.md',
+    'container-finished': 'close each finished container as completed and '
+                          'move it to `Done`',
 }
 
 UNFIXABLE_REASONS = {

@@ -78,7 +78,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" handoff --pr {pr_number} \
 
 Add `--gate-failed` when `.claude/gate-failed.flag` exists, which enters review as changes-requested rather than needs-review.
 
-It labels the pull request `claude-authored` plus the review-state entry label once, then for **each** issue moves its board item to In Review and releases its claim ref — so the per-story release that used to be its own step is done here. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`.
+It takes the pull request's review claim first, so the set is never held by no lock between the build and the review, then labels the pull request `claude-authored` plus the review-state entry label once, then for **each** issue moves its board item to In Review and releases its claim ref — so the per-story release that used to be its own step is done here. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`.
 
 It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read the payload instead — `pr_labelled` and `review_label`, and per issue `board_moved` and a `board` reason. A failure on one issue does not affect the others; report what failed by issue number **and** title and carry on. The review matters more than a label.
 

@@ -7,6 +7,16 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 11.2.0
+
+**`bulk-execute --parent N` chooses the set from an Epic or Feature.** `wf candidates --parent N` walks the sub-issues under it and returns the one set it offers: the stories of a single Feature, only those a code agent may take, plus any story in Blocked whose every open blocker is another story in the same set. Every other story is listed with the reason it was left out, and nothing is asked. Non-code work is never taken.
+
+**A merge closes the Epic or Feature it finishes.** `wf post-merge` walks up from each issue it settles and closes any Epic or Feature whose sub-issues are now all closed, as completed, moving it to Done with a comment naming the child that finished it. Closing a Feature can finish its Epic in the same run. A container with no sub-issues is never closed, and a parent in another repository is left alone. A new `container-finished` preflight warning finds the ones that finished before this release, and `wf preflight --fix` closes them.
+
+**`wf issue-apply` writes the title and body on an update.** An update entry's `title`, `body` or `body_file` used to be ignored, and the run still reported `ok`. Each is now compared with the issue and written only when it differs, listed in `changed`, and read back, so a mismatch is reported.
+
+**A pull request is locked from the moment it is handed to review.** `wf handoff` takes the pull request's review claim before it releases the issue claims, so a scheduled `code-review` run can no longer claim a run's own pull request in the gap before that run's review starts. `wf claim --pr N --keep-held` keeps a claim the same checkout already holds, rather than reading its own lock as a rival's; without the flag a second session sharing the checkout still loses.
+
 ## github-workflow 11.1.0
 
 **Two org fields are no longer part of the workflow.** The `field-parent` purpose key is gone: an issue's parent is GitHub's native Parent issue relationship, which `wf issue-apply` already writes from a spec's `parent`. The `field-retired` preflight check is gone too. An org that still defines either field now sees it reported as `field-unmapped`, like any other org field no purpose key names.

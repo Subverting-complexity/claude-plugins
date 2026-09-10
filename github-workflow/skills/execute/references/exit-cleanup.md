@@ -11,23 +11,24 @@ rm -f .claude/claim-issue-{number}.sha
 
 `claim-release` is idempotent, so releasing a ref Phase 7 step 4 or `block-story` already released is a no-op rather than an error.
 
-If the run **won** a review claim on its own PR in Phase 8, release that too. The test is the file Acquire writes only on a win:
+If the run **won** a review claim on its own PR, in Phase 7's `handoff` or in Phase 8, release that too. The test is the file Acquire writes only on a win:
 
 ```
 test -f .claude/claim-pr-{pr_number}.sha || echo "NO PR CLAIM — skip this whole step"
 ```
 
-When that file is absent, do **nothing** here. A run that never reached Phase 8 has no claim, and on the claim-lost path another agent owns the review — deleting a claim ref or stripping a label needs only push access, not ownership, so acting would unlock a PR that agent is actively reviewing.
+When that file is absent, do **nothing** here. A run that never reached the Phase 7 hand-off has no claim, and on the claim-lost path another agent owns the review: deleting its claim ref or label needs only push access, so acting would unlock a PR that agent is reviewing.
 
-When it is present, reconcile the marker **before** deleting the ref, so no window exists in which a rival claims the PR and then has its own marker stripped. Acquiring the claim applied the human-visible `reviewing` marker, Release frees only the lock, and the review picker skips a PR carrying that marker — so an exit before a verdict was recorded would otherwise orphan the PR. Read the PR once to decide:
+When it is present, reconcile the marker **before** deleting the ref, so a rival never claims the PR and then has its own marker stripped. Phase 8's claim applied the `reviewing` marker, Release frees only the lock, and the picker skips a PR carrying that marker, so an exit before a verdict would orphan the PR. Read the PR once to decide:
 
 ```
 gh pr view {pr_number} --repo {org}/{repo} --json state,labels
 ```
 
-- Still `OPEN` **and** carrying `reviewing` → no verdict was recorded. Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict changes-requested`. That is the honest state for a review that did not finish, and it is a tier the picker selects, so the next `/github-workflow:code-review` run takes the PR from here.
+- Still `OPEN` **and** carrying `reviewing` → no verdict was recorded. Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict changes-requested`. That is the honest state for an unfinished review, and a tier the picker selects.
 - Merged, or already carrying a verdict label → Phase 8 or Phase 9 already reconciled it. Change nothing.
-- Any other state on an open PR (no `reviewing`, no verdict — label drift) → treat it as "no verdict recorded" and run the same reconcile. An open PR carrying neither marker matches no picker tier, so leaving it would strand it.
+- Still `OPEN`, carrying `needs-review` and no `reviewing` → no review started. Change nothing: the picker selects that label.
+- Any other open state (no `reviewing`, no verdict: label drift) → run the same reconcile, because an open PR carrying no marker matches no picker tier.
 
 Then release the lock:
 

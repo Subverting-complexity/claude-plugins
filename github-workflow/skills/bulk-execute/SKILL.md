@@ -11,10 +11,12 @@ depends-on:
   - code-architect
   - structured-coding
   - code-review
-argument-hint: '[issue# issue# ...] [--mode feature|maintenance] [--size N] [--no-merge] [--bypass-ci]'
+argument-hint: '[issue# issue# ... | --parent N] [--mode feature|maintenance] [--size N] [--no-merge] [--bypass-ci]'
 arguments:
   - name: story_numbers
     description: 'Optional list of issue numbers to build together, e.g. "41 43 47". Naming them is the precise way to choose the set. If omitted, the Backlog pool is read and a related group is chosen from it deliberately.'
+  - name: parent
+    description: 'An Epic or Feature number. The set is chosen from the stories under it: one Feature per run, only stories a code agent may take. Cannot be combined with story numbers.'
   - name: mode
     description: 'Selection mode for the lead story: story (default), feature (feature stories only), maintenance (bug/security/architecture/debt). A set never mixes modes.'
   - name: size
@@ -155,10 +157,11 @@ Every exit path — finish, block, failure, timeout, rate-limit pause — ends b
 
 The set is **chosen**, never taken off the top of the backlog. Priority order decides which story is worth doing next; it says nothing about which stories belong in one pull request, and a set assembled by taking the top few off the backlog is the failure this command is most likely to produce. Whichever path below applies, the choice is deliberate and the reason for each story being in the set is recorded.
 
-**Read `references/set-selection.md` and follow it.** It covers both paths:
+**Read `references/set-selection.md` and follow it.** It covers three paths:
 
 - **Named stories** (`$ARGUMENTS.story_numbers` given, e.g. `/github-workflow:bulk-execute 41 43 47`) — the user has already made the choice. Validate each named story, check none is already in flight, and claim them all. Relatedness is not re-litigated; a named story is only ever dropped when it cannot be worked at all.
 - **No numbers given** — read the Backlog pool with `wf candidates --mode {mode}`, which returns the same filtered, priority-sorted pool `execute` would pick from and claims nothing. Group it into genuinely related stories, choose one group against the relatedness rules, and only then claim.
+- **A parent given** (`--parent N`, an Epic or Feature) — `wf candidates --parent N` returns the set the tree under it offers: one Feature's stories, only those a code agent may take, plus any Blocked story waiting only on another story in the set. Nothing is asked; what was left out is reported.
 
 Either way, **every story in the set gets a real atomic claim** before any code is written — the `refs/claims/issue-{number}` ref, plus the `@me` assignment and the board move to In Progress. A story built without its own claim is a story another agent can pick up underneath you.
 
@@ -259,7 +262,7 @@ The moment the pull request exists, **read `skills/execute/references/review-and
 - Its **severity rubric** is unchanged for a set. A larger diff invites a longer list of observations, and the rubric is what stops that: only blocking findings and genuine quick fixes are raised, and an observation that is neither is left unsaid.
 - Its Phase 9 fix-in-scope rule reads against **all** the stories the PR closes, not one. A gap the reviewer finds in any of them is this run's unfinished work, and it is fixed here. Its re-review test is unchanged too: quick fixes are pushed without a second reading, and only substantial rework earns one round.
 - Its Phase 10 duplicate-PR merge stopper applies **per story**: a possible duplicate flagged against any story in the set stops the merge for the whole pull request, because the PR is indivisible.
-- Its Phase 10 settle step runs `wf post-merge --pr {pr_number}`, which already closes and moves **every** issue the pull request closes. Report each settled story by number and title, and the `unblocked` sweep it returns: a bulk set is the run most likely to free downstream work.
+- Its Phase 10 settle step runs `wf post-merge --pr {pr_number}`, which already closes and moves **every** issue the pull request closes. Report each settled story by number and title, any Epic or Feature in `containers_closed` that the set finished, and the `unblocked` sweep it returns: a bulk set is the run most likely to free downstream work.
 
 **The run ends at Phase 10, not at the pull request.** A bulk run that reports its new PR, or its review verdict, and stops has stranded every story in the set at once. Where merging is switched on, this run merges its own pull request and settles every issue behind it before reporting anything; where it is switched off, or a Phase 10 condition stops the merge, it goes as far as that condition allows and says in one line which condition it was. Neither outcome is reached by asking the user first.
 

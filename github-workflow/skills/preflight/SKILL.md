@@ -109,10 +109,11 @@ Named here so a finding can be acted on without reading the source. `wf prefligh
 | `board-retired` | warning | The board still has a `Ready` column. Nothing selects from it, so a card there is invisible to every command. |
 | `label-retired` | warning | Open issues still carry a label the fields replaced (`status-*`, `priority-*`, `browser-agent`, `human-required`, `needs-refinement`, `claude-ready`). It decides nothing, and it misleads anyone filtering the issues list by hand. |
 | `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, a lifecycle, priority or scope label, or a dependency written as prose. A session reading it is told to do something the tooling no longer does. |
+| `container-finished` | warning | An open Epic or Feature whose sub-issues are all closed. Nothing else closes a container, so finished ones pile up out of sight. A container with no sub-issues is never flagged. |
 
 ## What `--fix` will and will not do
 
-It repairs nine things, all idempotent: it creates a missing board column, rewrites the `### Status Options` table from the live board, deletes a retired section, deletes a deprecated label-map row, adds the `ClaudeProject.md` pointer to an existing `CLAUDE.md`, puts an orphaned issue or an unset card into `Backlog`, takes retired labels off the open issues carrying them, and empties a `Ready` column into `Backlog` before deleting the column.
+It repairs ten things, all idempotent: it creates a missing board column, rewrites the `### Status Options` table from the live board, deletes a retired section, deletes a deprecated label-map row, adds the `ClaudeProject.md` pointer to an existing `CLAUDE.md`, puts an orphaned issue or an unset card into `Backlog`, takes retired labels off the open issues carrying them, empties a `Ready` column into `Backlog` before deleting the column, and closes an open Epic or Feature whose sub-issues are all closed, as completed, moving it to Done.
 
 `Backlog` and not "wherever it belongs", because nothing on an orphaned issue says where it belongs and the pool is the one lane that means "nobody has decided anything about this yet". Somebody moving it straight back out is a decision; leaving it invisible is not. The `Ready` column is emptied first and deleted second, and only when every card in it moved: deleting a column deletes the value from each card in it, which would leave those issues in no lane at all.
 

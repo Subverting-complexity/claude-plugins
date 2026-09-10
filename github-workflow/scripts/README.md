@@ -26,7 +26,16 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout
 # auto-closes it + moves it to Done if a merged PR already resolved it)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue 42 --checkout
 
+# List the pool without claiming anything (bulk-execute chooses its set from this)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --limit 0
+
+# …or the one set the stories under an Epic or Feature offer: one Feature per
+# run, Backlog leaves plus any Blocked leaf waiting only on another leaf taken,
+# and every other leaf in `excluded` with its reason
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --parent 42 --size 5
+
 # After merging a PR: close any still-open linked issue and move it to Done,
+# close any Epic or Feature above it whose sub-issues are now all closed,
 # then release whatever that merge freed
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr 123
 
@@ -196,7 +205,7 @@ A JSON object with an `issues` list (a bare list is accepted too). An entry with
 | --- | ------- |
 | `key` | A spec-local name, so entries can reference each other before any of them has a number. Optional, but required to be referenced. |
 | `number` | An existing issue to update. Absent means create. |
-| `title`, `body` | As on GitHub. A create needs a title. A `[BUG]`-style kind prefix is stripped from the title — the native type says that. |
+| `title`, `body` | As on GitHub. A create needs a title. A `[BUG]`-style kind prefix is stripped from the title — the native type says that. An update compares each with the issue and writes it only when it differs, so re-running a matching spec writes nothing; a written one is listed in `changed` and read back, and a read-back that does not match is a mismatch. An update entry that leaves one out leaves that one as it is. |
 | `body_file` | A path to read the body from, used when `body` is absent. A body is prose — fenced code, backticks, `$`, quotes — and building that into a JSON string by hand in a shell is where bodies get mangled. The spec file keeps saying `body_file` after a write-back; the body is never inlined into it. |
 | `kind` | One of `wf_core.NATIVE_TYPE_MAP`'s keys (`story`, `feature`, `epic`, `bug`, `spike`, …). Supplies both the native type and a default `Classification`. |
 | `type` | An explicit native type name, overriding what `kind` implies. |
@@ -383,6 +392,7 @@ The file-level checks used to be shell blocks inside `skills/preflight/SKILL.md`
 | `file-claude-md` / `claude-md-ref` | warning | No `CLAUDE.md`, or one that never mentions `ClaudeProject.md` — so a session that runs no workflow command never finds the configuration. |
 | `review-config` | warning | `ClaudeProject.md` names a review-state label file that is not there, so every review label falls back to its default name. |
 | `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, a lifecycle, priority or scope label, or a dependency written as prose, named by line. Never rewritten: the lines are somebody's own sentences. The plugin's own directory is not scanned, since its templates name what was retired on purpose. |
+| `container-finished` | warning | An open Epic or Feature whose sub-issues are all closed. `post-merge` closes the ones a merge finishes; this finds the ones that finished before it did, and `--fix` closes them as completed and moves them to `Done`. A container with no sub-issues is never flagged. |
 
 ### Every finding says whether `--fix` would touch it
 
@@ -482,7 +492,7 @@ It **always exits 0**, including when no board is configured. A board mirrors th
 
 ### `handoff`
 
-`handoff --pr P --issue N [--issue M …]` ends a build: it labels the PR `claude-authored` plus the review-state entry label, then for each issue moves its board item to In Review and releases its claim ref. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`. `--gate-failed` enters review as changes-requested rather than needs-review.
+`handoff --pr P --issue N [--issue M …]` ends a build: it takes the PR's review claim (`refs/claims/pr-P`) first, so the work is never unlocked between the build and its review, and reports that as `pr_claimed` (`won`, `lost` or `error`). A later `claim --pr P --keep-held` from the same checkout keeps the claim it holds; without `--keep-held` it reports `lost`, so a second session sharing the checkout cannot take the PR. Then it labels the PR `claude-authored` plus the review-state entry label, then for each issue moves its board item to In Review and releases its claim ref. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`. `--gate-failed` enters review as changes-requested rather than needs-review.
 
 It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read `pr_labelled` and the per-issue `relabelled`, `board_moved` and `board` reason instead. A failure on one issue does not affect the others.
 
