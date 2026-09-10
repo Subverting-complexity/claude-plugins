@@ -1128,6 +1128,12 @@ HIERARCHY_PARENT_TYPE = {
     'User Story': 'Feature',
 }
 
+# A feature is expected under an epic, not required to be. An epic groups
+# several features toward one outcome; work that is a single feature stands on
+# its own, because an epic invented to hold it would only restate it. A feature
+# that has a parent still needs an `Epic` one.
+HIERARCHY_OPTIONAL_PARENT = frozenset({'Feature'})
+
 
 def hierarchy_error(type_name, parent_type, type_map=None, parent_label=None):
     """Why this type may not sit under that parent, or None when it may.
@@ -1144,6 +1150,8 @@ def hierarchy_error(type_name, parent_type, type_map=None, parent_label=None):
     if type_map is not None and required not in type_map:
         return None
     if not parent_type:
+        if type_name in HIERARCHY_OPTIONAL_PARENT:
+            return None
         return ("a '%s' needs a '%s' parent, and this one has none -- give it "
                 '`parent` (an existing %s issue number, or the spec key of one '
                 'this spec creates)' % (type_name, required, required))

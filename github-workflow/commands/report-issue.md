@@ -32,7 +32,7 @@ Determine the type:
 - **Architecture** — Layer violation, coupling, design problem
 - **Tech Debt** — Working but needs improvement
 
-A bug, a security problem and tech debt need no parent. An architecture report is filed as a `Feature`, and every feature sits under an epic (`../skills/writing-github-issues/SKILL.md` → **Hierarchy**): find the open epic the work belongs to and pass its number as `parent` in Step 5. Where no epic fits, report it as tech debt instead. Do not file an epic to hold one report.
+A bug, a security problem and tech debt need no parent. An architecture report is filed as a `Feature` (`../skills/writing-github-issues/SKILL.md` → **Hierarchy**): where an open epic covers the work, pass its number as `parent` in Step 5; otherwise file it without one. Do not file an epic to hold one report.
 
 ### 3. Assess severity, size and owner
 
@@ -108,13 +108,13 @@ The exceptions are `[Manual] `, for an issue a person has to do, and `[Browser] 
 
 **Field values.**
 
-- `kind` is the Step 2 classification in lower case. For `architecture`, add `"parent": {epic number}` beside it.
+- `kind` is the Step 2 classification in lower case. For `architecture`, add `"parent": {epic number}` beside it when an epic covers the work.
 - `field-priority`, `field-effort` and `field-ownership` are the three values Step 3 settled. All three are **required**: `issue-apply` refuses a spec that leaves one blank rather than filing work nothing can rank, size or route.
 - `field-origin` is **Development**, or **Security Audit** if this report came out of a security audit session. It is optional — leave it out and the created issue gets a comment saying it was filed without one.
 
 **The issue number** comes back in the command's JSON as `applied[0].number`, and is written into the spec file too. Later steps need it.
 
-**Read the exit code.** **0** created it. **21** (`no-capabilities`) means the org defines no issue types or fields — report that the issue could not be classified rather than filing an unclassified one by hand. **22** (`spec-invalid`) means the spec is wrong (an unknown label, a milestone that is not open, a missing required field, an architecture report with no epic parent, or an org that defines no `Priority`, `Effort` or `Ownership` field at all): fix it and re-run. **23** and **24** mean the issue exists but some metadata did not land — report which, by number and title, and carry on. Re-running the same spec after a partial failure completes the remainder rather than filing a duplicate.
+**Read the exit code.** **0** created it. **21** (`no-capabilities`) means the org defines no issue types or fields — report that the issue could not be classified rather than filing an unclassified one by hand. **22** (`spec-invalid`) means the spec is wrong (an unknown label, a milestone that is not open, a missing required field, a parent of the wrong type, or an org that defines no `Priority`, `Effort` or `Ownership` field at all): fix it and re-run. **23** and **24** mean the issue exists but some metadata did not land — report which, by number and title, and carry on. Re-running the same spec after a partial failure completes the remainder rather than filing a duplicate.
 
 **Body shape.** Follow `../skills/writing-github-issues/SKILL.md`.
 

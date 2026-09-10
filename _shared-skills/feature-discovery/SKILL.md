@@ -218,13 +218,13 @@ Break the work into epics, features and stories.
 
 ### Epic → Feature → User Story
 
-Every user story belongs to a feature, and every feature to an epic. That is the tree GitHub renders and reports progress against, and under github-workflow `wf issue-apply` refuses a spec that breaks it wherever the org has the parent type enabled: a feature with no epic parent, a story with no feature parent, or either one under the wrong type.
+Every user story belongs to a feature. A feature belongs to an epic when the work has one: an epic groups several features toward one outcome, so work that is a single feature is filed as a feature on its own, never under an epic that restates it. Under github-workflow `wf issue-apply` refuses a story with no feature parent, and a story or feature under the wrong type, wherever the org has the parent type enabled. A feature with no epic is allowed.
 
-- **Epic**: the outcome. Title (short, capability-focused), goal (2–3 sentences), dependencies on other epics.
-- **Feature**: one capability inside the epic that a user can see working on its own. Title and a one-paragraph goal.
+- **Epic**: an outcome that takes more than one feature. Title (short, capability-focused), goal (2–3 sentences), dependencies on other epics.
+- **Feature**: one capability a user can see working on its own. Title and a one-paragraph goal. If a feature's title and goal would read the same as its epic's, there is one level too many: drop the epic.
 - **User story**: one session of buildable work (sizing below), under its feature.
 
-Attach before creating. When the work extends an epic or a feature that already exists, parent the new features or stories to it by issue number rather than filing a second one. Scope decides how many new levels the plan adds, not whether the levels exist: a small change is one story under an existing feature, and where no feature fits, the plan proposes the feature (and, if no epic fits either, the epic) alongside it.
+Attach before creating. When the work extends an epic or a feature that already exists, parent the new features or stories to it by issue number rather than filing a second one. A small change is one story under an existing feature. Where no feature fits, the plan proposes one, and proposes an epic above it only when the outcome spans more than one feature.
 
 Bugs and chores sit outside the tree, and a parent on either is allowed and never required. Where the org has no `Chore` type, `chore` and `tech debt` are filed as `User Story` and `Feature` instead, and then they are in the tree like any other.
 
@@ -352,7 +352,7 @@ When the user approves the plan, offer to create the stories as GitHub issues. I
 
    - Each body goes in its own file and the entry names it (`body_file`) rather than carrying the text, so fenced code, backticks, `$` and quotes survive intact. github-workflow states the rule once in `templates/body-file-write.md`.
    - `kind` supplies the native type **and** the `Classification` value together (a story → User Story / New Feature, a feature → Feature, an epic → Epic), so neither is chosen by hand. Use `spike` for a research story.
-   - `parent` is required on every feature and story: a feature names its epic and a story its feature, by spec `key` or by the issue number of one that already exists. An epic takes none.
+   - `parent` is required on every story, naming its feature, and set on a feature that belongs to an epic, by spec `key` or by the issue number of one that already exists. Drop the epic entry and the feature's `parent` when the work is a single feature. An epic takes none.
    - **No labels at all**, and no `[STORY]` title prefix. The native type classifies the issue and the fields carry everything a decision reads; `issue-apply` strips a retired label or a type prefix if a spec still names one, and says that it did.
    - `field-effort` comes from the story's size estimate: large → **High**, medium → **Medium**, small → **Low**.
    - `field-priority`, `field-effort` and `field-ownership` are **required on every entry** — they are the pool's order, its size ceiling and whether a code agent may take the story at all, and `issue-apply` refuses a spec that leaves one blank. `field-ownership` is `Code agent` for a story a code agent will build, and `Browser agent` or `Human` for one it cannot.
@@ -360,7 +360,7 @@ When the user approves the plan, offer to create the stories as GitHub issues. I
    - Add `"milestone": "{title}"` to an entry in sprint mode. It must name an open milestone.
 2. Name every dependency in the entry's `blocked_by`. Where the dependency is another entry in the same spec and has no number yet, reference it by `key` and `issue-apply` resolves it once both exist.
 3. **Do not move a card by hand.** `issue-apply` places every card from the issue's own fields: one owned by a person or a browser agent goes to Non-code; one whose edges point at something still open goes to Blocked; everything else goes to Backlog, which is what available means. A **deferred** story (see "Deferred speccing") is the one case the fields cannot express, because nothing on the issue says its spec is thin — say so with `"state": "refinement"` on the entry, which is read before the edges and lands the card in Needs refinement.
-4. **Read the exit code.** **0** created them, and every issue number is written back into the spec file, so a re-run after a partial failure completes the remainder rather than filing duplicates. **21** (`no-capabilities`) means the org defines no types or fields — report that the stories could not be classified rather than filing them unclassified by hand. **22** means the spec is wrong (an unknown label, a milestone that is not open, a missing required field, a feature or story outside the epic tree, or an org that defines no `Priority`, `Effort` or `Ownership` field at all), so fix it and re-run. **23** and **24** mean the issues exist but some metadata did not land, so name what failed and carry on.
+4. **Read the exit code.** **0** created them, and every issue number is written back into the spec file, so a re-run after a partial failure completes the remainder rather than filing duplicates. **21** (`no-capabilities`) means the org defines no types or fields — report that the stories could not be classified rather than filing them unclassified by hand. **22** means the spec is wrong (an unknown label, a milestone that is not open, a missing required field, a story with no feature parent, or an org that defines no `Priority`, `Effort` or `Ownership` field at all), so fix it and re-run. **23** and **24** mean the issues exist but some metadata did not land, so name what failed and carry on.
 
    Where the command is unavailable, say so and stop rather than hand-writing the mutations.
 5. After creation, check the dependency graph against the edges `issue-apply` reports back, not against anything in the bodies — a body never records a dependency. `issue-apply` reads each body back in the same request, so body corruption is already reported; only if it flagged a mismatch, apply the corruption test and retry in `templates/body-file-write.md`.

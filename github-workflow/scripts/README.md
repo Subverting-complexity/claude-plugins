@@ -201,7 +201,7 @@ A JSON object with an `issues` list (a bare list is accepted too). An entry with
 | `kind` | One of `wf_core.NATIVE_TYPE_MAP`'s keys (`story`, `feature`, `epic`, `bug`, `spike`, …). Supplies both the native type and a default `Classification`. |
 | `type` | An explicit native type name, overriding what `kind` implies. |
 | `labels` | Purpose keys or literal names; resolved through the project's label map. Labels decide nothing: a `type-*` label or a retired one (`status-*`, `priority-*`, a scope label) is dropped, and in practice the only label a spec names is `claude-authored`. |
-| `parent` | An issue number, or another entry's `key`. A `Feature` needs an `Epic` parent and a `User Story` a `Feature` parent (see below). |
+| `parent` | An issue number, or another entry's `key`. A `User Story` needs a `Feature` parent; a `Feature` that has a parent needs an `Epic` one (see below). |
 | `blocked_by` | A list of issue numbers and/or `key`s. **The complete set**: an issue already carrying an edge the list omits has it removed, and `[]` removes them all. Leave the key out to leave the edges alone. |
 | `state` | `backlog`, `refinement` or `parked`: the lane to put the card in, overriding the one the issue's fields name. Absent means the fields decide. It never moves `Browser agent` or `Human` work out of Non-code. |
 | `fields` | Purpose key → value. Names resolve through `ClaudeProject.md`'s `## Issue Types & Fields`, then `wf_core.FIELD_NAME_DEFAULTS`. |
@@ -237,7 +237,7 @@ Everything decidable offline is decided before the first mutation, because a hal
 - **A placeholder** (`TODO`) counts as missing, so an audit's proposal cannot quietly pass as a value.
 - **A dependency cycle** within the spec exits 22 before anything is written, and so does a **parent cycle** — a different fault, and equally unresolvable.
 - **A label or referenced issue that does not exist** in the repo exits 22, named, before the first mutation.
-- **An issue outside the epic tree.** A `Feature` with no `Epic` parent, a `User Story` with no `Feature` parent, or either one under the wrong type exits 22. A parent that already exists is judged by its live type, and an update that does not restate its parent is judged by the parent it already has. Enforced only where the org has the parent type enabled; `Bug`, `Chore` and `Epic` need no parent. `wf_core.HIERARCHY_PARENT_TYPE` is the rule.
+- **An issue outside the epic tree.** A `User Story` with no `Feature` parent, or a story or feature under the wrong type, exits 22. A `Feature` with no parent is allowed: it sits under an `Epic` when the work has one, and an epic invented to hold a single feature would only restate it. A parent that already exists is judged by its live type, and an update that does not restate its parent is judged by the parent it already has. Enforced only where the org has the parent type enabled; `Bug`, `Chore` and `Epic` need no parent. `wf_core.HIERARCHY_PARENT_TYPE` is the rule.
 - **One issue, two parties.** A title prefix and an `Ownership` value that disagree, such as `[Manual]` owned by `Code agent` or `Human` with no prefix, exits 22. One of the two is wrong, and the issue would mislead whoever reads it.
 - **A `state` that is not one of the three** exits 22. There is no `ready`.
 - **A field this org does not define** is skipped, not an error — an org is allowed fewer fields than the default inventory. It is reported once for the run on stderr, not once per issue.
@@ -294,7 +294,7 @@ It **never writes**. Both write transports are stubbed out in its tests to prove
 | `classification-contradiction` | The `Classification` value cannot be true of the declared kind — a story classified `Bug Fix`, a bug classified `New Feature`. |
 | `scope-option` | An `Ownership` value the workflow does not recognise, usually a renamed option. |
 | `scope-prefix` | The `[Manual] `/`[Browser] ` title prefix and the `Ownership` value disagree. |
-| `hierarchy` | A `Feature` with no `Epic` parent, a `User Story` with no `Feature` parent, or either under the wrong type. Reported and never proposed: which epic a feature belongs to is a judgement about the work. |
+| `hierarchy` | A `User Story` with no `Feature` parent, or a story or feature under the wrong type. Reported and never proposed: which feature a story belongs to is a judgement about the work. |
 | `missing-parent` | `--parents` only. The body says it is part of an issue and GitHub shows it as free-standing. |
 | `parent-closed` | `--parents` only. The parent the body names is not open. |
 | `parent-differs` | `--parents` only. The body names one parent and the hierarchy has another. Reported, never changed. |

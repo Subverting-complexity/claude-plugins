@@ -68,7 +68,7 @@ When the target org has **native GitHub issue types** and **org issue fields** c
 | Size estimate → `Effort` option | `EFFORT_FIELD_OPTIONS` |
 | Creating command → `Origin` option | `ORIGIN_FIELD_OPTIONS` |
 
-They were tables here until the mechanism moved into `wf`. Data in prose could not be validated and drifted unnoticed — 82 issues in one consuming repo had 7 native types between them and no field values at all. Restating any of it here would recreate that. Add a value by editing `wf_core.py`, where the tests cover it.
+Data in prose could not be validated and drifted unnoticed, so do not restate any of it here. Add a value by editing `wf_core.py`, where the tests cover it.
 
 To see what a specific org actually has enabled, resolve it rather than assuming:
 
@@ -119,7 +119,7 @@ Columns are resolved by **purpose key** through the same path as labels: read fr
 
 > Option `color` values come from the GitHub enum `ProjectV2SingleSelectFieldOptionColor`: `GRAY`, `BLUE`, `GREEN`, `YELLOW`, `ORANGE`, `RED`, `PINK`, `PURPLE`. These name the *board* option color and are distinct from the hex label colors above.
 
-> The enum has eight colours and the board has nine lanes, so exactly one pair shares one. `Parked` and `Done` take it: both mean nothing is happening here, both sit at the far end of the board, and neither is a lane work is picked from or moved through. Every lane an issue passes through on its way to being done is a different colour from its neighbours.
+> Eight colours, nine lanes: `Parked` and `Done` share `GRAY`, because nothing happens in either and work is never picked from or moved through them.
 
 **Which command moves a card where (the single mapping every command follows):**
 
@@ -135,7 +135,7 @@ Columns are resolved by **purpose key** through the same path as labels: read fr
 | Backlog (`col-backlog`)      | `wf issue-apply` (nothing on the entry says otherwise), `wf unblock` (every blocker closed) |
 | Done (`col-done`)            | `wf pick` (already-resolved), `wf post-merge` (after merge), code-review auto-merge |
 
-`issue-apply` only ever moves a card that is in a lane it owns — no card at all, no Status value, Backlog, Blocked or Non-code — unless the entry carries an explicit `"state"`. A card in In Progress, In Review, Needs attention, Parked, Needs refinement or Done is left where it is and reported as `board_column_kept`, so updating an issue somebody is working on does not drag it back into the pool.
+`issue-apply` moves only a card with no lane or one in Backlog, Blocked or Non-code, unless the entry names a `"state"`. Any other card stays put (`board_column_kept`), so an update never drags in-flight work back into the pool.
 
 Done is the one move with no decision behind it: the GitHub closed state is authoritative, and the commands above move the card so a finished story leaves the In Review column.
 

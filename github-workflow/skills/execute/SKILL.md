@@ -206,7 +206,7 @@ gh issue view {number} --repo {org}/{repo} --json state,assignees
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
 ```
 
-No labels are read here, because none of them says anything: the issue's state is its card's column, which this JSON cannot answer. `pick --issue` reads it and refuses a story whose card is in In Progress, In Review, Non-code or Done, so the guard below is what tells you *why* before that refusal arrives.
+No label is read: state is the card's column, and `pick --issue` refuses a story in In Progress, In Review, Non-code or Done. The guard below says why first.
 
 `sibling-pr` answers "which open PRs will close this issue on merge?" from GitHub's own parse of closing references — the same parse that auto-closes the issue — so every site that asks gets the same answer. Exit 0 with `found: 0` is the normal result; exit 20 means the lookup failed, so stop rather than assume there is no duplicate.
 
@@ -240,7 +240,7 @@ gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
 ```
 
-The card leaving Backlog is what takes the story out of the pool, so the next `pick` will not offer it again. Write the comment to `skills/writing-github-issues/SKILL.md`: say what a person would have to add before it can be built, not that you could not build it.
+Leaving Backlog takes it out of the pool. Write the comment to `skills/writing-github-issues/SKILL.md`: say what a person would have to add before it can be built, not that you could not build it.
 
 ## Phase 2 — Start
 

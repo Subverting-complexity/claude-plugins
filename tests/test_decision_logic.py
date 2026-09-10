@@ -2774,9 +2774,15 @@ class TestSpecHierarchy(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("belongs under a 'Feature'", errors[0])
 
-    def test_a_parentless_feature_is_refused(self):
-        errors = self._errors([_hplan('Feature', key='f', title='F')])
-        self.assertIn("needs a 'Epic' parent", errors[0])
+    def test_a_feature_may_stand_without_an_epic(self):
+        """An epic invented to hold one feature would only restate it."""
+        self.assertEqual(self._errors([_hplan('Feature', key='f', title='F')]), [])
+
+    def test_a_feature_with_a_parent_needs_an_epic_one(self):
+        plans = [_hplan('Feature', key='f', title='F', parent=50)]
+        errors = self._errors(plans, types={50: 'User Story'})
+        self.assertEqual(len(errors), 1)
+        self.assertIn("belongs under a 'Epic'", errors[0])
 
     def test_bugs_chores_and_epics_need_no_parent(self):
         plans = [_hplan('Bug', key='b', title='B'),

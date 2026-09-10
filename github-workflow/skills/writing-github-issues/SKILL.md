@@ -70,7 +70,7 @@ An issue says what kind of work it is **once**, through GitHub's native issue ty
 
 ## Hierarchy: epic, feature, story
 
-The native types are a tree, not a flat list. A `Feature` sits under an `Epic`, and a `User Story` under a `Feature`. `wf issue-apply` refuses to file either without that parent, or under the wrong type, wherever the org has the parent type enabled. `Bug` and `Chore` sit outside the tree: a parent is allowed on either and never required.
+The native types are a tree, not a flat list. A `User Story` sits under a `Feature`, and `wf issue-apply` refuses one without that parent, or under the wrong type, wherever the org has `Feature` enabled. A `Feature` sits under an `Epic` when the work has one. An epic groups several features toward one outcome, so a feature that would be an epic's only child is filed on its own rather than under an epic that restates it; a feature that does have a parent must have an `Epic` one. `Bug` and `Chore` sit outside the tree: a parent is allowed on either and never required.
 
 Attach before creating. Where the work belongs to an epic or feature that already exists, name it as the `parent` by issue number rather than filing a second one.
 

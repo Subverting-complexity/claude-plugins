@@ -2451,12 +2451,13 @@ class TestIssueHierarchy(_ApplyCase):
         self.assertEqual(hub.issues[by_key['f']]['type'], 'Feature')
         self.assertEqual(hub.issues[by_key['s']]['parent'], by_key['f'])
 
-    def test_a_feature_needs_an_epic(self):
-        hub = _FakeHub()
+    def test_a_feature_may_stand_without_an_epic(self):
+        hub = _FakeHub(type_map=_FEATURE_CAPS['type_map'])
         entry = self._full(kind='feature', title='A feature')
         code, payload, _, _ = self._run([entry], hub, caps=_FEATURE_CAPS)
-        self.assertEqual(code, wf.EXIT_SPEC)
-        self.assertIn("'Epic' parent", ' '.join(payload['errors']))
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(hub.issues[payload['applied'][0]['number']]['type'],
+                         'Feature')
 
     def test_an_update_moving_a_story_onto_an_epic_is_refused(self):
         """Found live: the entry named no `kind`, so the check never ran and
