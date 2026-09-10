@@ -15,7 +15,7 @@ update appears to do nothing.
 
 **`wf issue-apply` writes the title and body on an update.** An update entry's `title`, `body` or `body_file` used to be ignored, and the run still reported `ok`. Each is now compared with the issue and written only when it differs, listed in `changed`, and read back, so a mismatch is reported.
 
-**A pull request is locked from the moment it is handed to review.** `wf handoff` takes the pull request's review claim before it releases the issue claims, so a scheduled `code-review` run can no longer claim a run's own pull request in the gap before that run's review starts. `wf claim --pr` now keeps a claim the same checkout already holds, rather than reading its own lock as a rival's.
+**A pull request is locked from the moment it is handed to review.** `wf handoff` takes the pull request's review claim before it releases the issue claims, so a scheduled `code-review` run can no longer claim a run's own pull request in the gap before that run's review starts. `wf claim --pr N --keep-held` keeps a claim the same checkout already holds, rather than reading its own lock as a rival's; without the flag a second session sharing the checkout still loses.
 
 ## github-workflow 11.1.0
 

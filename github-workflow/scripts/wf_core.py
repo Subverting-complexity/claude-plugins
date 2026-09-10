@@ -1963,7 +1963,9 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
         if problem:
             gaps.append({'kind': 'hierarchy', 'detail': problem})
 
-    proposed = {'number': number, 'title': title}
+    # No title: an update now writes the title it is given, and the one read
+    # here would strip a prefix or undo an edit made after the audit.
+    proposed = {'number': number}
     if kind:
         proposed['kind'] = kind
     if proposed_fields:
@@ -3243,10 +3245,10 @@ def choose_parent_set(root, pool_order, deps, reasons=None, max_size=BULK_MAX,
                       repo=None):
     """Choose one bulk set from the leaves under an Epic or Feature.
 
-    `pool_order` is the pool -- Backlog, owned by the code agent, unassigned --
-    in priority order. `deps` maps every leaf a run could take to its **open**
-    blockers: the pool's leaves, and the leaves in the Blocked column that the
-    code agent owns, which appear in `deps` but not in `pool_order`.
+    `pool_order` is every leaf a run could take, in priority order: the pool
+    -- Backlog, owned by the code agent, unassigned -- with the Blocked
+    leaves the code agent owns ranked in among it, so a waiting leaf keeps
+    its priority. `deps` maps each of them to its **open** blockers.
     `reasons` is the caller's explanation for any other leaf: its column, its
     owner. Nothing else is ever taken, so Non-code work never is.
 

@@ -2910,14 +2910,22 @@ class TestHandoffAndClaims(unittest.TestCase):
                 return 1, '', 'rejected'  # a fresh object would lose
             return 0, '', ''
 
-        args = wf.build_parser().parse_args(['claim', '--pr', '7', '--no-marker'])
-        with mock.patch.object(wf, 'check_environment', lambda: None), \
-                mock.patch.object(wf, 'run', fake_run), \
-                mock.patch.object(wf, 'repo_root', lambda: root), \
-                contextlib.redirect_stderr(io.StringIO()):
-            code, payload = _capture(args.func, args)
+        def claim(*extra):
+            args = wf.build_parser().parse_args(['claim', '--pr', '7', '--no-marker',
+                                                 *extra])
+            with mock.patch.object(wf, 'check_environment', lambda: None), \
+                    mock.patch.object(wf, 'run', fake_run), \
+                    mock.patch.object(wf, 'repo_root', lambda: root), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                return _capture(args.func, args)
+
+        code, payload = claim('--keep-held')
         self.assertEqual(code, wf.EXIT_OK)
         self.assertTrue(payload['claimed'])
+        # Without the flag the same checkout is refused, so a second session
+        # sharing it (a `code-review N`) cannot take a PR another holds.
+        code, _ = claim()
+        self.assertEqual(code, wf.EXIT_LOST)
 
     def test_claim_still_loses_to_a_rival_holding_a_different_object(self):
         root = tempfile.mkdtemp()
@@ -4073,9 +4081,9 @@ class TestCandidatesUnderParent(unittest.TestCase):
             self.addCleanup(patch.stop)
 
     def _run(self, tree, pool, blocked=(), lanes=None, ownership=None, argv=(),
-             types=None):
-        facets = (_facets(types=types, ownership=ownership) if ownership
-                  else _facets(types=types))
+             types=None, priority=None):
+        facets = (_facets(types=types, priority=priority, ownership=ownership)
+                  if ownership else _facets(types=types, priority=priority))
         with mock.patch.object(wf, 'fetch_container_tree', return_value=(True, tree, '')), \
                 mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')), \
                 mock.patch.object(wf, 'load_issue_facets', return_value=facets), \
@@ -4122,6 +4130,20 @@ class TestCandidatesUnderParent(unittest.TestCase):
         self.assertIn('--mode maintenance', reason)
         self.assertNotIn('Blocked', reason)
 
+    def test_a_blocked_leaf_keeps_its_priority_against_the_pool(self):
+        """A High leaf waiting on a Medium one is built next, ahead of a Low
+        leaf that was ready all along, and `--size` keeps it."""
+        tree = _node(50, 'Feature', _node(51, 'User Story'), _node(52, 'User Story'),
+                     _node(53, 'User Story'))
+        priority = {51: 'Low', 52: 'Medium', 53: 'High'}
+        pool = [_candidate(52), _candidate(51)]
+        _, payload = self._run(tree, pool, blocked=[_blocked_card(53, 52)],
+                               priority=priority)
+        self.assertEqual([c['number'] for c in payload['candidates']], [52, 53, 51])
+        _, payload = self._run(tree, pool, blocked=[_blocked_card(53, 52)],
+                               priority=priority, argv=('--size', '2'))
+        self.assertEqual([c['number'] for c in payload['candidates']], [52, 53])
+
     def test_sub_issues_past_the_page_size_are_reported(self):
         tree = _node(50, 'Feature', _node(51, 'User Story'))
         tree['unread'] = 3
@@ -4144,6 +4166,26 @@ class TestCandidatesUnderParent(unittest.TestCase):
         code, payload = self._run(tree, [], lanes={51: 'Parked'})
         self.assertEqual(code, wf.EXIT_NO_CANDIDATES)
         self.assertIn('Parked', payload['excluded'][0]['reason'])
+
+
+class TestContainerTreeRead(unittest.TestCase):
+    """How much of the tree one read covers, and what it says it missed."""
+
+    def test_the_deepest_level_reads_how_many_sub_issues_there_are(self):
+        self.assertIn('subIssues { totalCount }', wf._tree_selection(0))
+        self.assertIn('subIssues(first:50){ totalCount', wf._tree_selection(1))
+
+    def test_unread_is_reported_for_containers_and_never_for_a_story(self):
+        """A Feature at the deepest level has stories nobody read; a story's
+        own sub-issues are never walked for leaves, so they are not missed."""
+        raw = {'number': 1, 'issueType': {'name': 'Epic'},
+               'subIssues': {'totalCount': 2, 'nodes': [
+                   {'number': 2, 'issueType': {'name': 'Feature'},
+                    'subIssues': {'totalCount': 3}},
+                   {'number': 3, 'issueType': {'name': 'User Story'},
+                    'subIssues': {'totalCount': 2}}]}}
+        tree = wf._tree_node(raw)
+        self.assertEqual(wf._tree_unread(tree), [{'number': 2, 'unread': 3}])
 
 
 class TestPickBlockedSibling(unittest.TestCase):

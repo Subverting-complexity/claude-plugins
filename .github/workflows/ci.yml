@@ -101,9 +101,13 @@ jobs:
       # lifecycle label (`status-non-code`), two scope labels and a board
       # column. A run has to know they exist to put an issue in the right
       # lane, so this is a decision the run carries rather than prose.
+      #
+      # Raised again in 11.2.0: bulk-execute gained a third way to choose its
+      # set (`--parent`, #239), and the hand-off now takes the PR's review
+      # claim (#164), which review-and-merge and exit cleanup must describe.
       - name: Check execute whole-run footprint
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 34160
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 34300
 
       - name: Check bulk-execute build-window footprint
         shell: bash
@@ -111,11 +115,11 @@ jobs:
           bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md \
             --exclude github-workflow/skills/execute/references/review-and-merge.md \
             --exclude github-workflow/skills/code-review/references/auto-merge.md \
-            --budget 23140
+            --budget 23700
 
       - name: Check bulk-execute whole-run footprint
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 37270
+        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 37900
 
       - name: Check code-review skill footprint
         shell: bash

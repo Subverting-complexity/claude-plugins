@@ -4994,7 +4994,13 @@ def candidates_under_parent(args, cfg, pool, maps):
                 why.append('owned by %s, not the code agent' % (owner or 'nobody'))
             reasons[n] = ', '.join(why) or 'not in the pool (assigned, or left out by --mode)'
 
-    choice = wf_core.choose_parent_set(tree, [c['number'] for c in pool], deps,
+    # The Blocked leaves ranked in among the pool by the pool's own sort, or
+    # the build order would put every one of them behind every pool leaf.
+    ranked = wf_core._sort_candidates(
+        pool + list(blocked.values()), cfg.get('labels', {}),
+        {**(maps.get('priority') or {}), **out_maps['priority']},
+        {**(maps.get('effort') or {}), **out_maps['effort']})
+    choice = wf_core.choose_parent_set(tree, [c['number'] for c in ranked], deps,
                                        reasons, max_size=args.size, repo=repo)
     titles = _tree_titles(tree)
     excluded = [dict(e, title=titles.get(e['number'], '')) for e in choice['excluded']]
@@ -5459,10 +5465,12 @@ def cmd_claim(args):
         emit('usage', EXIT_USAGE, reason='name exactly one of --issue N or --pr N')
     target = ('issue-%d' % args.issue) if args.issue else ('pr-%d' % args.pr)
 
-    # A claim this checkout already holds is kept (#164): `handoff` takes the
-    # PR's review claim, and Phase 8's own `claim --pr` must not then read
-    # that lock as a rival's, which a fresh object always would.
-    outcome = 'won' if holds_claim(target) else acquire_claim(target)
+    # `--keep-held` keeps a claim this checkout already holds (#164): `handoff`
+    # takes the PR's review claim, and Phase 8's own `claim --pr` must not
+    # then read that lock as a rival's, which a fresh object always would.
+    # Only on request, so a second session sharing the checkout still loses.
+    held = getattr(args, 'keep_held', False) and holds_claim(target)
+    outcome = 'won' if held else acquire_claim(target)
     if outcome == 'won':
         # The ref is the lock, but it is ephemeral. Ownership has to be
         # visible on GitHub too, or a picker running after this session dies
@@ -5669,7 +5677,7 @@ def cmd_handoff(args):
     # and a scheduled review firing in between claimed the run's own PR,
     # failed to check out a branch this worktree held, and stranded it as
     # `review-failed`. No marker: the entry label stays until Phase 8's own
-    # `claim --pr`, which keeps this claim and applies `reviewing`.
+    # `claim --pr --keep-held`, which keeps this claim and applies `reviewing`.
     target = 'pr-%d' % args.pr
     pr_claimed = 'won' if holds_claim(target) else acquire_claim(target)
     if pr_claimed != 'won':
@@ -5927,6 +5935,9 @@ def build_parser():
                     default=True,
                     help='take the lock without advertising it on GitHub '
                          '(assignment / reviewing label)')
+    cl.add_argument('--keep-held', action='store_true',
+                    help='keep a claim this checkout already holds (the PR '
+                         'claim `handoff` took) instead of reporting it lost')
     cl.set_defaults(func=cmd_claim)
 
     cr = sub.add_parser('claim-release',
