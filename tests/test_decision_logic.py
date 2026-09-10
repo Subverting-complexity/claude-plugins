@@ -1031,6 +1031,25 @@ class TestNativeTypeFiltering(unittest.TestCase):
         result = filter_by_native_type(candidates, 'story', self.TYPE_MAP)
         self.assertEqual(len(result), 3)
 
+    def test_story_mode_never_offers_an_epic(self):
+        """Found live: the pool offered a freshly filed epic beside its own
+        stories. An epic is the outcome, not a piece of work."""
+        candidates = [_issue(1, []), _issue(6, []), _issue(7, [])]
+        result = filter_by_native_type(candidates, 'story', self.TYPE_MAP)
+        self.assertEqual([c['number'] for c in result], [1, 7])
+
+    def test_the_story_pool_never_offers_an_epic(self):
+        """The filter above is only half of it: the pool itself skipped type
+        filtering in story mode, which is how the epic still reached `pick`."""
+        candidates = [_issue(1, []), _issue(6, [])]
+        owners = {1: 'Code agent', 6: 'Code agent'}
+        pool = wf_core.select_pool(candidates, mode='story',
+                                   type_map=self.TYPE_MAP, ownership_map=owners)
+        self.assertEqual([c['number'] for c in pool], [1])
+        untyped = wf_core.select_pool(candidates, mode='story', type_map=None,
+                                      ownership_map=owners)
+        self.assertEqual(len(untyped), 2)
+
     def test_feature_mode_keeps_user_story(self):
         candidates = [_issue(1, []), _issue(2, []), _issue(3, []),
                        _issue(5, []), _issue(6, [])]
@@ -1737,17 +1756,32 @@ class TestAuditIssue(unittest.TestCase):
         self.assertEqual(_kinds(result),
                          ['missing-field'] * 3 + ['missing-optional-field'] * 2)
 
-    def test_ownership_is_backfilled_rather_than_left_to_a_person(self):
-        """Every other mandatory field can fall back to a placeholder. This
-        one cannot: it has an answer for every issue, and a backlog that gained
-        the field yesterday would otherwise need a person on every issue."""
-        code = wf_core.audit_issue(_node(), _AUDIT_FIELDS)
-        self.assertEqual(code['proposed']['fields']['field-ownership'], 'Code agent')
-        human = wf_core.audit_issue(
-            _node(title='[Manual] rotate the key',
-                  labels={'nodes': [{'name': 'human-required'}]}),
-            _AUDIT_FIELDS)
+    def test_ownership_comes_from_the_prefix_and_nothing_else(self):
+        """The prefix is written by this workflow and means one thing, so it
+        is read back. Its absence means nothing: an unprefixed title used to be
+        proposed as `Code agent`, which is wrong in the one direction that
+        matters -- work that needs a person, handed to an agent that cannot
+        finish it. A label never decides it either way."""
+        unknown = wf_core.audit_issue(_node(), _AUDIT_FIELDS)
+        self.assertEqual(unknown['proposed']['fields']['field-ownership'],
+                         wf_core.SPEC_PLACEHOLDER)
+        human = wf_core.audit_issue(_node(title='[Manual] rotate the key'),
+                                    _AUDIT_FIELDS)
         self.assertEqual(human['proposed']['fields']['field-ownership'], 'Human')
+        browser = wf_core.audit_issue(_node(title='[Browser] turn on the API'),
+                                      _AUDIT_FIELDS)
+        self.assertEqual(browser['proposed']['fields']['field-ownership'],
+                         'Browser agent')
+        labelled = wf_core.audit_issue(
+            _node(labels={'nodes': [{'name': 'human-required'}]}), _AUDIT_FIELDS)
+        self.assertEqual(labelled['proposed']['fields']['field-ownership'],
+                         wf_core.SPEC_PLACEHOLDER)
+
+    def test_an_unowned_issue_is_reported_once_not_twice(self):
+        """`missing-field` already says Ownership is empty; `scope-unowned`
+        saying it again made every unowned issue look like two problems."""
+        result = wf_core.audit_issue(_node(), _AUDIT_FIELDS)
+        self.assertNotIn('scope-unowned', _kinds(result))
 
     def test_a_field_the_org_does_not_define_is_not_a_gap(self):
         """The audit reports against the org's real shape, not a wish list."""
@@ -1830,10 +1864,13 @@ class TestAuditIssue(unittest.TestCase):
         result = wf_core.audit_issue(issue, {}, open_numbers={3, 5})
         self.assertEqual(_kinds(result), [])
 
-    def test_priority_is_inferred_from_the_issue_own_label(self):
+    def test_a_priority_label_does_not_propose_a_priority(self):
+        """Labels decide nothing since 10.0.0. Reading one here would let a
+        label somebody set months ago write the field the picker orders on."""
         issue = _node(labels={'nodes': [{'name': 'priority-high'}]})
         result = wf_core.audit_issue(issue, {'Priority': {}})
-        self.assertEqual(result['proposed']['fields']['field-priority'], 'High')
+        self.assertEqual(result['proposed']['fields']['field-priority'],
+                         wf_core.SPEC_PLACEHOLDER)
 
     def test_what_cannot_be_inferred_becomes_a_placeholder(self):
         """Silence must not pass: `issue-apply` refuses the spec until it is filled."""
@@ -1872,7 +1909,8 @@ class TestAuditIssue(unittest.TestCase):
         entry = result['proposed']
         entry['fields'] = dict(entry['fields'], **{'field-priority': 'High',
                                                    'field-effort': 'Medium',
-                                                   'field-origin': 'Development'})
+                                                   'field-origin': 'Development',
+                                                   'field-ownership': 'Code agent'})
         field_map = {
             'Priority': {'id': 'p', 'data_type': 'single-select',
                          'options': {'High': 'o1'}},
@@ -2033,9 +2071,17 @@ class TestConfigLabelFindings(unittest.TestCase):
 class TestLabelDriftFindings(unittest.TestCase):
 
     def test_a_separator_that_drifted_is_a_warning(self):
-        findings = wf_core.label_drift_findings(['priority-medium', 'priority:medium'])
+        findings = wf_core.label_drift_findings(['type-bug', 'type:bug'])
         self.assertEqual(_levels(findings), [wf_core.WARNING])
-        self.assertIn('priority:medium', findings[0]['detail'])
+        self.assertIn('type:bug', findings[0]['detail'])
+
+    def test_a_pair_of_retired_labels_is_not_drift(self):
+        """`label-retired` owns these, and its advice is the opposite: take
+        them off. Drift's advice -- consolidate onto one of the pair -- would
+        have a person tidying up two labels that should both go."""
+        self.assertEqual(
+            wf_core.label_drift_findings(['priority-medium', 'priority:medium']),
+            [])
 
     def test_a_dropped_prefix_is_a_warning(self):
         findings = wf_core.label_drift_findings(['blocked', 'status-blocked'])
@@ -2618,6 +2664,258 @@ class TestWorkScope(unittest.TestCase):
         self.assertEqual(wf_core.board_column_for(wf_core.SCOPE_CODE, []),
                          'col-backlog')
 
+    def test_an_issue_nobody_owns_needs_refinement(self):
+        """Not Backlog: the picker refuses an unowned issue, so a Backlog card
+        with no owner is a card nothing will ever take."""
+        self.assertEqual(wf_core.board_column_for(None, []), 'col-refinement')
+
+    def test_an_explicit_state_wins_for_code_work(self):
+        self.assertEqual(
+            wf_core.board_column_for(wf_core.SCOPE_CODE, [979], 'col-parked'),
+            'col-parked')
+
+    def test_non_code_work_wins_even_over_an_explicit_state(self):
+        """Non-code is what keeps it out of every agent's pool for good."""
+        self.assertEqual(
+            wf_core.board_column_for(wf_core.SCOPE_HUMAN, [], 'col-backlog'),
+            'col-non-code')
+
+    def test_a_spec_state_names_one_of_three_lanes(self):
+        self.assertEqual(wf_core.spec_state_column('parked'),
+                         ('col-parked', None))
+        self.assertEqual(wf_core.spec_state_column(None), (None, None))
+        key, err = wf_core.spec_state_column('ready')
+        self.assertIsNone(key)
+        self.assertIn('ready', err)
+
+
+class TestMayPlaceCard(unittest.TestCase):
+    """Which lanes `issue-apply` may move a card out of."""
+
+    def test_no_card_or_no_lane_may_be_placed(self):
+        self.assertEqual(wf_core.may_place_card(None), (True, None))
+        self.assertEqual(wf_core.may_place_card(''), (True, None))
+
+    def test_the_lanes_it_owns_may_be_rewritten(self):
+        for lane in ('Backlog', 'Blocked', 'Non-code'):
+            self.assertEqual(wf_core.may_place_card(lane), (True, None), lane)
+
+    def test_a_lane_a_person_or_a_run_chose_is_kept(self):
+        for lane in ('In Progress', 'In Review', 'Parked', 'Needs refinement',
+                     'Needs attention', 'Done'):
+            self.assertEqual(wf_core.may_place_card(lane), (False, lane), lane)
+
+    def test_an_explicit_request_overrides_that(self):
+        self.assertEqual(wf_core.may_place_card('In Progress', 'col-parked'),
+                         (True, None))
+
+
+class TestEdgeDiff(unittest.TestCase):
+
+    def test_what_to_add_and_what_to_remove(self):
+        self.assertEqual(wf_core.edge_diff([5, 6], [5, 7]), ([7], [6]))
+
+    def test_an_empty_list_removes_everything(self):
+        self.assertEqual(wf_core.edge_diff([5, 6], []), ([], [5, 6]))
+
+    def test_an_unchanged_set_is_a_no_op(self):
+        self.assertEqual(wf_core.edge_diff([6, 5], [5, 6]), ([], []))
+
+
+class TestOwnershipConflict(unittest.TestCase):
+    """One issue, one party: the field and the title prefix must agree."""
+
+    def test_an_unprefixed_title_is_code_work(self):
+        self.assertIsNone(wf_core.ownership_conflict('Add a setting', 'Code agent'))
+
+    def test_matching_prefixes_are_clean(self):
+        self.assertIsNone(wf_core.ownership_conflict('[Manual] Pass', 'Human'))
+        self.assertIsNone(wf_core.ownership_conflict('[browser] Turn it on',
+                                                     'Browser agent'))
+
+    def test_a_person_owned_issue_needs_the_prefix(self):
+        self.assertIn('[Manual]', wf_core.ownership_conflict('Pass', 'Human'))
+
+    def test_a_prefix_on_code_work_is_a_conflict(self):
+        self.assertIn('one issue, one party',
+                      wf_core.ownership_conflict('[Manual] Pass', 'Code agent'))
+
+    def test_no_value_is_not_a_conflict(self):
+        """Missing is `validate_spec`'s mandatory-field error, not this one."""
+        self.assertIsNone(wf_core.ownership_conflict('[Manual] Pass', None))
+
+
+def _hplan(type_name, **entry):
+    return {'entry': entry, 'type': type_name}
+
+
+class TestSpecHierarchy(unittest.TestCase):
+    """Epic → Feature → User Story, checked across a whole spec."""
+
+    TYPES = {'Epic': 'e', 'Feature': 'f', 'User Story': 's', 'Bug': 'b'}
+
+    def _errors(self, plans, types=None, parents=None, type_map=TYPES):
+        return wf_core.spec_hierarchy_errors(plans, types or {}, parents or {},
+                                             type_map)
+
+    def test_a_tree_in_one_spec_is_clean(self):
+        plans = [_hplan('Epic', key='e', title='E'),
+                 _hplan('Feature', key='f', title='F', parent='e'),
+                 _hplan('User Story', key='s', title='S', parent='f')]
+        self.assertEqual(self._errors(plans), [])
+
+    def test_a_story_under_an_existing_feature_is_clean(self):
+        plans = [_hplan('User Story', key='s', title='S', parent=50)]
+        self.assertEqual(self._errors(plans, types={50: 'Feature'}), [])
+
+    def test_a_story_straight_under_an_epic_is_refused(self):
+        plans = [_hplan('User Story', key='s', title='S', parent=50)]
+        errors = self._errors(plans, types={50: 'Epic'})
+        self.assertEqual(len(errors), 1)
+        self.assertIn("belongs under a 'Feature'", errors[0])
+
+    def test_a_feature_may_stand_without_an_epic(self):
+        """An epic invented to hold one feature would only restate it."""
+        self.assertEqual(self._errors([_hplan('Feature', key='f', title='F')]), [])
+
+    def test_a_feature_with_a_parent_needs_an_epic_one(self):
+        plans = [_hplan('Feature', key='f', title='F', parent=50)]
+        errors = self._errors(plans, types={50: 'User Story'})
+        self.assertEqual(len(errors), 1)
+        self.assertIn("belongs under a 'Epic'", errors[0])
+
+    def test_bugs_chores_and_epics_need_no_parent(self):
+        plans = [_hplan('Bug', key='b', title='B'),
+                 _hplan('Epic', key='e', title='E')]
+        self.assertEqual(self._errors(plans), [])
+
+    def test_an_update_is_judged_against_the_parent_it_already_has(self):
+        plans = [_hplan('User Story', number=7)]
+        self.assertEqual(self._errors(plans, parents={7: (50, 'Feature')}), [])
+        self.assertEqual(len(self._errors(plans, parents={7: (None, None)})), 1)
+
+    def test_an_update_that_settles_no_type_is_not_checked(self):
+        """Setting a field on an issue must not refuse over structure."""
+        self.assertEqual(self._errors([_hplan(None, number=7)]), [])
+
+    def test_a_parent_updated_in_the_same_spec_keeps_its_live_type(self):
+        """The parent entry names no type, so its live one answers."""
+        plans = [_hplan(None, number=50),
+                 _hplan('User Story', key='s', title='S', parent=50)]
+        self.assertEqual(self._errors(plans, types={50: 'Feature'}), [])
+
+    def test_an_org_without_the_parent_type_is_not_held_to_it(self):
+        plans = [_hplan('User Story', key='s', title='S')]
+        self.assertEqual(self._errors(plans, type_map={'User Story': 's'}), [])
+
+    def test_an_update_that_moves_its_parent_is_judged_by_its_live_type(self):
+        """Found live: a story re-parented onto an epic by an entry that named
+        no `kind` went straight through."""
+        plans = [_hplan(None, number=7, parent=40)]
+        errors = self._errors(plans, types={7: 'User Story', 40: 'Epic'})
+        self.assertEqual(len(errors), 1)
+        self.assertIn("belongs under a 'Feature'", errors[0])
+        self.assertEqual(
+            self._errors(plans, types={7: 'User Story', 40: 'Feature'}), [])
+
+
+class TestSpecLiveErrors(unittest.TestCase):
+    """What an update breaks once the issue it updates is read."""
+
+    FIELDS = {
+        'Priority': {'id': 'p', 'data_type': 'single-select',
+                     'options': {'High': 'o1', 'Low': 'o2'}},
+        'Effort': {'id': 'e', 'data_type': 'single-select',
+                   'options': {'Medium': 'o3'}},
+        'Ownership': {'id': 'w', 'data_type': 'single-select',
+                      'options': {'Code agent': 'o4', 'Human': 'o5'}},
+    }
+    CARRIES = {'Priority': 'High', 'Effort': 'Medium', 'Ownership': 'Code agent'}
+
+    def _check(self, entry, live_fields=None, title='Fix the thing'):
+        errors, _, plans = wf_core.validate_spec([entry], self.FIELDS, {})
+        self.assertEqual(errors, [])
+        live = {7: {'title': title,
+                    'fields': self.CARRIES if live_fields is None else live_fields}}
+        return wf_core.spec_live_errors(plans, live)
+
+    def test_an_update_need_not_restate_what_the_issue_carries(self):
+        self.assertEqual(
+            self._check({'number': 7, 'fields': {'field-priority': 'Low'}}), [])
+
+    def test_a_value_neither_the_entry_nor_the_issue_has_is_refused(self):
+        errors = self._check({'number': 7, 'fields': {'field-priority': 'Low'}},
+                             live_fields={'Priority': 'High'})
+        self.assertEqual(len(errors), 2)
+        self.assertIn('Effort', errors[0])
+
+    def test_a_placeholder_on_an_update_is_still_refused_before_any_read(self):
+        """`TODO` is what an audit writes: somebody saying the value is unknown."""
+        entry = {'number': 7, 'fields': {'field-priority': wf_core.SPEC_PLACEHOLDER}}
+        errors, _, _ = wf_core.validate_spec([entry], self.FIELDS, {})
+        self.assertEqual(len(errors), 1)
+        self.assertIn('Priority', errors[0])
+
+    def test_a_create_still_needs_every_value_in_the_spec(self):
+        errors, _, _ = wf_core.validate_spec(
+            [{'title': 'New', 'fields': {'field-priority': 'Low'}}],
+            self.FIELDS, {})
+        self.assertEqual(len(errors), 2)
+
+    def test_setting_a_person_on_an_unprefixed_issue_is_refused(self):
+        errors = self._check({'number': 7, 'fields': {'field-ownership': 'Human'}})
+        self.assertEqual(len(errors), 1)
+        self.assertIn('[Manual]', errors[0])
+
+    def test_a_manual_retitle_of_a_code_agent_issue_is_refused(self):
+        errors = self._check({'number': 7, 'title': '[Manual] Device pass'})
+        self.assertEqual(len(errors), 1)
+
+    def test_an_update_touching_neither_title_nor_owner_is_not_judged(self):
+        """Refusing a priority change over a conflict it did not make blocks the fix."""
+        self.assertEqual(
+            self._check({'number': 7, 'fields': {'field-priority': 'Low'}},
+                        live_fields=dict(self.CARRIES, Ownership='Human')), [])
+
+
+class TestValidateSpecStructure(unittest.TestCase):
+    """The two structural refusals `validate_spec` makes before any write."""
+
+    FIELDS = {
+        'Priority': {'id': 'p', 'data_type': 'single-select',
+                     'options': {'High': 'o1'}},
+        'Effort': {'id': 'e', 'data_type': 'single-select',
+                   'options': {'Medium': 'o2'}},
+        'Ownership': {'id': 'w', 'data_type': 'single-select',
+                      'options': {'Code agent': 'o5', 'Human': 'o6'}},
+    }
+
+    def _entry(self, **over):
+        entry = {'title': 'A thing', 'kind': 'story',
+                 'fields': {'field-priority': 'High', 'field-effort': 'Medium',
+                            'field-ownership': 'Code agent'}}
+        entry.update(over)
+        return entry
+
+    def test_the_state_lands_on_the_plan(self):
+        errors, _, plans = wf_core.validate_spec(
+            [self._entry(state='refinement')], self.FIELDS,
+            {'User Story': 's'})
+        self.assertEqual(errors, [])
+        self.assertEqual(plans[0]['state'], 'col-refinement')
+
+    def test_an_unknown_state_is_an_error(self):
+        errors, _, _ = wf_core.validate_spec(
+            [self._entry(state='Ready')], self.FIELDS, {'User Story': 's'})
+        self.assertEqual(len(errors), 1)
+
+    def test_a_title_and_owner_that_disagree_are_refused(self):
+        errors, _, _ = wf_core.validate_spec(
+            [self._entry(title='[Manual] Device pass')], self.FIELDS,
+            {'User Story': 's'})
+        self.assertEqual(len(errors), 1)
+        self.assertIn('one issue, one party', errors[0])
+
     def test_ownership_takes_an_issue_out_of_the_pool(self):
         """The teeth. Everything else here is bookkeeping if this does not hold."""
         pool = select_pool([{'number': 1, 'title': 'a', 'labels': []},
@@ -3020,6 +3318,76 @@ class TestStatusOptionsTable(unittest.TestCase):
     def test_a_file_with_no_table_is_left_alone_rather_than_given_one(self):
         self.assertEqual(wf_core.replace_status_options('# x\n', {'a': 'b'}),
                          ('# x\n', False))
+
+
+class TestRetiredWorkflowFindings(unittest.TestCase):
+    """What preflight reports about the workflow this one replaced."""
+
+    def test_a_retired_org_field_warns_and_names_itself(self):
+        findings = wf_core.retired_field_findings(['Status reason', 'Priority'])
+        self.assertEqual(_checks(findings), ['field-retired'])
+        self.assertEqual(_levels(findings), [wf_core.WARNING])
+        self.assertIn('Status reason', findings[0]['detail'])
+
+    def test_a_retired_field_is_not_also_unmapped(self):
+        """`field-unmapped` used to advise mapping a purpose key to it."""
+        self.assertEqual(wf_core.unmapped_field_findings(
+            {'Status reason': {}}, {}), [])
+
+    def test_a_ready_column_on_the_board_warns(self):
+        findings = wf_core.board_retired_findings(['Backlog', 'Ready', 'Done'])
+        self.assertEqual(_checks(findings), ['board-retired'])
+        self.assertIn('Backlog', findings[0]['detail'])
+
+    def test_a_board_without_one_is_clean(self):
+        self.assertEqual(wf_core.board_retired_findings(['Backlog', 'Done']), [])
+
+    def test_open_issues_carrying_retired_labels_are_named(self):
+        findings = wf_core.retired_label_findings([
+            {'number': 3, 'labels': ['status-ready', 'type-bug']},
+            {'number': 4, 'labels': ['type-bug']}])
+        self.assertEqual(_checks(findings), ['label-retired'])
+        self.assertIn('#3', findings[0]['detail'])
+        self.assertNotIn('#4', findings[0]['detail'])
+
+    def test_both_retired_repairs_are_fixable_and_the_rest_are_not(self):
+        for check in ('label-retired', 'board-retired'):
+            self.assertIn(check, wf_core.FIXABLE_CHECKS)
+        for check in ('field-retired', 'field-options', 'instructions-retired'):
+            self.assertIn(check, wf_core.UNFIXABLE_REASONS)
+
+    def test_a_priority_option_the_picker_cannot_rank_warns(self):
+        findings = wf_core.field_option_findings(
+            {'Priority': {'options': {'P0': 'x', 'High': 'y'}}})
+        self.assertEqual(_checks(findings), ['field-options'])
+        self.assertEqual(_levels(findings), [wf_core.WARNING])
+        self.assertIn('P0', findings[0]['detail'])
+
+    def test_an_ownership_nothing_can_route_is_critical(self):
+        findings = wf_core.field_option_findings(
+            {'Ownership': {'options': {'Platform team': 'x'}}})
+        self.assertEqual(_levels(findings), [wf_core.CRITICAL])
+
+    def test_the_options_the_workflow_reads_are_clean(self):
+        self.assertEqual(wf_core.field_option_findings({
+            'Priority': {'options': {'Urgent': 'a', 'High': 'b', 'Medium': 'c',
+                                     'Low': 'd'}},
+            'Ownership': {'options': {'Code agent': 'a', 'Browser agent': 'b',
+                                      'Human': 'c'}}}), [])
+
+    def test_retired_vocabulary_in_an_instruction_file_is_reported(self):
+        findings = wf_core.instruction_findings({
+            'CLAUDE.md': 'Intro.\nMove it to the Ready column.\nBlocked by #12\n'})
+        self.assertEqual(sorted(_checks(findings)),
+                         ['instructions-retired', 'instructions-retired'])
+        joined = ' '.join(f['detail'] for f in findings)
+        self.assertIn('line 2', joined)
+        self.assertIn('line 3', joined)
+
+    def test_a_current_instruction_file_is_clean(self):
+        self.assertEqual(wf_core.instruction_findings({
+            'CLAUDE.md': 'The board column is the state. Backlog is the pool.\n'}),
+            [])
 
 
 class TestBoardColumnCreationValues(unittest.TestCase):

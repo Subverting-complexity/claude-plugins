@@ -152,7 +152,7 @@ Use plain English and British spelling. Avoid filler openers such as:
 - Is anything said twice?
 - Has uncertainty survived?
 - Is every paragraph on a single line, with no hard wrapping?
-- Are machine-read markers intact and exact (`Closes #N`, `**Size estimate:**`)?
+- Are machine-read markers intact and exact (`Closes #N`)?
 - Can anything else go without making the work harder to do or to verify?
 
 If yes, remove it.

@@ -36,7 +36,7 @@ If this story depends on another unmerged story (discovered during planning, not
   1. Branch the dependent story off the dependency branch.
   2. Set the dependent PR's base to the dependency branch.
   3. After the dependency merges, rebase onto the default branch and update the PR base.
-- **Dependency branch does not exist on the remote** (not started, or started but unpushed — you cannot build on what you cannot fetch): do **not** fork a parallel copy. Block this story (`/github-workflow:block-story`, recording `Blocked by #N`) and pick the dependency — or the next available story — instead.
+- **Dependency branch does not exist on the remote** (not started, or started but unpushed — you cannot build on what you cannot fetch): do **not** fork a parallel copy. Block this story with `/github-workflow:block-story` and pick the dependency — or the next available story — instead. The dependency is recorded as a native blocked-by edge, written through a one-entry `issue-apply` spec (`{"issues": [{"number": {this}, "blocked_by": [{dependency}]}]}`), never as a sentence in the body: the edge is the only thing `wf unblock` can read when the dependency closes.
 
 This is the same policy the Phase 1 dependency filter enforces (skip a dependent story while its dependency issue is open): chaining is the narrow exception for a dependency that is already pushed, not a parallel route around an unfinished one.
 

@@ -214,16 +214,19 @@ Skip for small-scope work unless the user raises architecture concerns. For medi
 
 Skip this phase entirely in validation mode.
 
-Break the work into stories (and optionally epics if the feature is large enough to warrant grouping).
+Break the work into epics, features and stories.
 
-### Epic structure (large scope only)
+### Epic → Feature → User Story
 
-Each epic groups related stories. For each:
-- Title (short, capability-focused)
-- Goal (2-3 sentences)
-- Dependencies on other epics
+Every user story belongs to a feature. A feature belongs to an epic when the work has one: an epic groups several features toward one outcome, so work that is a single feature is filed as a feature on its own, never under an epic that restates it. Under github-workflow `wf issue-apply` refuses a story with no feature parent, and a story or feature under the wrong type, wherever the org has the parent type enabled. A feature with no epic is allowed.
 
-For small and medium scope, skip epics. Just produce stories.
+- **Epic**: an outcome that takes more than one feature. Title (short, capability-focused), goal (2–3 sentences), dependencies on other epics.
+- **Feature**: one capability a user can see working on its own. Title and a one-paragraph goal. If a feature's title and goal would read the same as its epic's, there is one level too many: drop the epic.
+- **User story**: one session of buildable work (sizing below), under its feature.
+
+Attach before creating. When the work extends an epic or a feature that already exists, parent the new features or stories to it by issue number rather than filing a second one. A small change is one story under an existing feature. Where no feature fits, the plan proposes one, and proposes an epic above it only when the outcome spans more than one feature.
+
+Bugs and chores sit outside the tree, and a parent on either is allowed and never required. Where the org has no `Chore` type, `chore` and `tech debt` are filed as `User Story` and `Feature` instead, and then they are in the tree like any other.
 
 ### Story structure
 
@@ -239,16 +242,17 @@ A story the interview left genuinely open keeps that uncertainty in the words th
 - More than 5 files to create/modify means the story is too big.
 - More than 3 modules touched means the story is too big.
 - Dependencies must be explicit and acyclic.
-- Assign a size estimate to each story: `small` (< 50k tokens), `medium` (50–100k), `large` (needs splitting). Include this in the story's Summary section as `**Size estimate:** {size}`.
+- Assign a size estimate to each story: `small` (< 50k tokens), `medium` (50–100k), `large` (needs splitting). It is carried by the `Effort` field on the spec entry and nowhere else — do not also write it into the body, where nothing reads it and it goes stale the first time somebody re-estimates.
 - When a story is flagged as too large, automatically split it and explain the split to the user before proceeding.
+- **One story, one party.** A story whose work is partly a code agent's and partly a browser agent's or a person's is split along that line, however small the manual half is, because `Ownership` is one value and the half nothing can route would otherwise sit unfinished inside a story the pool thinks is buildable. The manual half becomes its own story, and the code story takes a `blocked_by` edge to it where it genuinely cannot start first. github-workflow states the rule in `writing-github-issues` → **Scope: one issue, one party**, which is also where the `[Manual] ` and `[Browser] ` title prefixes are defined.
 
 ### Deferred speccing (large features)
 
 When a large-scope feature produces more than 4 stories:
 
 1. **Fully spec** the first 2–3 stories in the dependency chain (the fundamentals that later stories depend on).
-2. **Defer speccing** for stories deeper in the dependency chain. Create them with minimal spec: title, one-line Overview, dependency markers, and a note: "This story needs refinement after its dependencies are complete."
-3. Put each deferred story's card in the board's **Needs refinement** column rather than Backlog. The pool is the Backlog column, so that is what keeps a half-specced story out of it until its dependencies are resolved and a refinement session has been run.
+2. **Defer speccing** for stories deeper in the dependency chain. Create them with minimal spec: title, one-line Overview, a `blocked_by` list naming what they wait on, and a note: "This story needs refinement after its dependencies are complete." The dependency is the edge `blocked_by` writes; nothing reads a dependency out of a body.
+3. Put each deferred story's card in the board's **Needs refinement** column rather than Backlog, by setting `"state": "refinement"` on its spec entry. The pool is the Backlog column, so that is what keeps a half-specced story out of it until its dependencies are resolved and a refinement session has been run.
 
 ### Dependency chain enforcement
 
@@ -276,7 +280,7 @@ After decomposition, verify:
 Skip this phase entirely in validation mode.
 
 Present the plan before finalising:
-1. Story list with one-line summaries (grouped by epic if applicable)
+1. Story list with one-line summaries, grouped under their features and epics, naming the issue number of any existing epic or feature they attach to
 2. Dependency graph (text or visual)
 3. Coverage check against interview findings
 4. Open issues or deferred items
@@ -293,7 +297,7 @@ Iterate until confirmed.
 
 ## Output
 
-**Discovery mode:** The final deliverable is stories (optionally grouped into epics) with acceptance criteria and dependency ordering. Do **not** write decision documents, design specs, or summary files to the filesystem. The conversation is the decision record; the stories are the actionable output.
+**Discovery mode:** The final deliverable is stories, grouped under features and epics, with acceptance criteria and dependency ordering. Do **not** write decision documents, design specs, or summary files to the filesystem. The conversation is the decision record; the stories are the actionable output.
 
 **Validation mode:** The conversation is the entire deliverable. Present a summary of resolved decisions and open issues when the interview is complete. Do **not** write any files.
 
@@ -323,11 +327,20 @@ When the user approves the plan, offer to create the stories as GitHub issues. I
                            "field-effort": "{Low|Medium|High}",
                            "field-ownership": "Code agent",
                            "field-origin": "Feature Discovery"}},
+               {"key": "feature-1",
+                "title": "{feature title}",
+                "body_file": ".claude/feature-1-body.md",
+                "kind": "feature",
+                "parent": "epic",
+                "fields": {"field-priority": "{Urgent|High|Medium|Low}",
+                           "field-effort": "{Low|Medium|High}",
+                           "field-ownership": "Code agent",
+                           "field-origin": "Feature Discovery"}},
                {"key": "story-1",
                 "title": "{story title}",
                 "body_file": ".claude/story-1-body.md",
                 "kind": "story",
-                "parent": "epic",
+                "parent": "feature-1",
                 "blocked_by": ["{other key or issue number}"],
                 "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                            "field-effort": "{Low|Medium|High}",
@@ -338,18 +351,19 @@ When the user approves the plan, offer to create the stories as GitHub issues. I
    ```
 
    - Each body goes in its own file and the entry names it (`body_file`) rather than carrying the text, so fenced code, backticks, `$` and quotes survive intact. github-workflow states the rule once in `templates/body-file-write.md`.
-   - `kind` supplies the native type **and** the `Classification` value together (a story → User Story / New Feature, an epic → Epic), so neither is chosen by hand. Use `spike` for a research story.
+   - `kind` supplies the native type **and** the `Classification` value together (a story → User Story / New Feature, a feature → Feature, an epic → Epic), so neither is chosen by hand. Use `spike` for a research story.
+   - `parent` is required on every story, naming its feature, and set on a feature that belongs to an epic, by spec `key` or by the issue number of one that already exists. Drop the epic entry and the feature's `parent` when the work is a single feature. An epic takes none.
    - **No labels at all**, and no `[STORY]` title prefix. The native type classifies the issue and the fields carry everything a decision reads; `issue-apply` strips a retired label or a type prefix if a spec still names one, and says that it did.
    - `field-effort` comes from the story's size estimate: large → **High**, medium → **Medium**, small → **Low**.
    - `field-priority`, `field-effort` and `field-ownership` are **required on every entry** — they are the pool's order, its size ceiling and whether a code agent may take the story at all, and `issue-apply` refuses a spec that leaves one blank. `field-ownership` is `Code agent` for a story a code agent will build, and `Browser agent` or `Human` for one it cannot.
    - `blocked_by` writes a native edge, and `issue-apply` then moves the card to Blocked for any entry whose edges point at something still open.
    - Add `"milestone": "{title}"` to an entry in sprint mode. It must name an open milestone.
 2. Name every dependency in the entry's `blocked_by`. Where the dependency is another entry in the same spec and has no number yet, reference it by `key` and `issue-apply` resolves it once both exist.
-3. **Do not set state by hand.** `issue-apply` places every card from the issue's own state: a story with no unresolved dependency goes to Backlog, which is what available means; one whose dependencies are still open goes to Blocked, from the edges it just wrote; one owned by a person or a browser agent goes to Non-code. The single exception is a **deferred** story (see "Deferred speccing") — move its card to Needs refinement afterwards with `wf board-move {number} --column col-refinement`, because nothing on the issue itself says that its spec is thin.
-4. **Read the exit code.** **0** created them, and every issue number is written back into the spec file, so a re-run after a partial failure completes the remainder rather than filing duplicates. **21** (`no-capabilities`) means the org defines no types or fields — report that the stories could not be classified rather than filing them unclassified by hand. **22** means the spec is wrong (an unknown label, a milestone that is not open, a missing required field, or an org that defines no `Priority`, `Effort` or `Ownership` field at all), so fix it and re-run. **23** and **24** mean the issues exist but some metadata did not land, so name what failed and carry on.
+3. **Do not move a card by hand.** `issue-apply` places every card from the issue's own fields: one owned by a person or a browser agent goes to Non-code; one whose edges point at something still open goes to Blocked; everything else goes to Backlog, which is what available means. A **deferred** story (see "Deferred speccing") is the one case the fields cannot express, because nothing on the issue says its spec is thin — say so with `"state": "refinement"` on the entry, which is read before the edges and lands the card in Needs refinement.
+4. **Read the exit code.** **0** created them, and every issue number is written back into the spec file, so a re-run after a partial failure completes the remainder rather than filing duplicates. **21** (`no-capabilities`) means the org defines no types or fields — report that the stories could not be classified rather than filing them unclassified by hand. **22** means the spec is wrong (an unknown label, a milestone that is not open, a missing required field, a story with no feature parent, or an org that defines no `Priority`, `Effort` or `Ownership` field at all), so fix it and re-run. **23** and **24** mean the issues exist but some metadata did not land, so name what failed and carry on.
 
    Where the command is unavailable, say so and stop rather than hand-writing the mutations.
-5. After creation, verify each issue body contains the correct dependency references. Use the post-creation validation pattern (see report-issue) to catch body corruption.
+5. After creation, check the dependency graph against the edges `issue-apply` reports back, not against anything in the bodies — a body never records a dependency. `issue-apply` reads each body back in the same request, so body corruption is already reported; only if it flagged a mismatch, apply the corruption test and retry in `templates/body-file-write.md`.
 6. Present a summary: issue numbers, titles, native type, priority and effort, and the dependency graph with issue numbers filled in.
 
 **Leave the assignee blank.** Do not assign created stories to anyone — not the creator, not an agent. Pass no `--assignee`/`--add-assignee` on creation and do not edit issues to assign them afterward. Backlog stories must enter the unassigned pool so `execute` can select them; assignment happens only at claim time, never at creation.

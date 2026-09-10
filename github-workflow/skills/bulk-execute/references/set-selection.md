@@ -13,11 +13,19 @@ Two things hold throughout:
 
 `$ARGUMENTS.story_numbers` is present, e.g. `/github-workflow:bulk-execute 41 43 47`. The choice has been made, so do not re-litigate relatedness: a person who names three issues is asserting they belong together, and that assertion outranks the heuristics below. Two things still apply — the size cap, and the fact that a story which cannot be worked cannot be built.
 
-**1. Validate each named story in one batch.** For each number:
+**1. Validate each named story in one batch.** Read the pool once — it is the answer to "is this story available", because it *is* the Backlog column with the unavailable already filtered out:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --mode {mode} --limit 0
+```
+
+Then read each named number for its own content:
 
 ```
-gh issue view {number} --repo {org}/{repo} --json state,labels,assignees,title,body,milestone
+gh issue view {number} --repo {org}/{repo} --json state,assignees,title,body,milestone
 ```
+
+That JSON deliberately does not ask for labels. No label says which lane a card is in, how urgent the story is or who owns it, so there is nothing in a label list to decide on — the lane is the board's answer, which `wf candidates` has already given.
 
 Drop a named story, with a one-line reason in your report, when it is:
 
@@ -29,11 +37,11 @@ Drop a named story, with a one-line reason in your report, when it is:
   Exit 0 with `found: 0` means nothing closes it; exit 20 means the lookup failed, so say so rather than assuming it is free. Report any PR found by number and title and say `/github-workflow:code-review` handles it;
 - **assigned to someone else** — another agent or person owns it;
 - **empty** — no Context and no Requirements anywhere in the body, comments or linked docs, so any implementation would be a guess;
-- **not in Backlog** — its card is in Needs refinement, Parked, Blocked or Non-code, so the board already says it is not available. Name the lane in your reason.
+- **not in the pool** — the number came back in none of the `wf candidates` entries, so it is not an unassigned Backlog card a code agent may take. Its card is in Needs refinement, Parked, Blocked or Non-code, or its `Ownership` is not `Code agent`. Read the reason off the board or the issue's fields and name it; `pick --issue` refuses the same story anyway, so claiming it would only fail later.
 
 If a named story sits in In Review but **no** open PR is found, check for a **closed, unmerged** PR (`closingIssuesReferences`, `states: CLOSED`). If there is one, the PR was abandoned: reset the issue automatically — unassign, move the card to Backlog, comment `"Resetting — PR #{N} closed without merge."` — and keep it in the set. If there is no closed PR either, surface the inconsistency and drop it.
 
-**2. Cap the size.** More than `--size` stories (default 5, which is also the maximum) were named. Keep the first `--size` in the order the user gave them, and say which were left out and that they stay ready in the backlog. Do not silently build more than the cap: the cap is what keeps the pull request reviewable.
+**2. Cap the size.** More than `--size` stories (default 5, which is also the maximum) were named. Keep the first `--size` in the order the user gave them, and say which were left out and that their cards stay in the Backlog column. Do not silently build more than the cap: the cap is what keeps the pull request reviewable.
 
 **3. Warn, but obey, on a set that looks unrelated.** If the named stories share nothing by the rules in Path B, say so in one sentence in your report and build them anyway. The user's instruction stands; your job is to make the consequence visible, not to override it.
 
@@ -70,7 +78,7 @@ Ask for a bigger read only if you need it: `--limit 0` for the whole pool, `--bo
 
 **Weak — both are needed:**
 
-- **Same milestone and the same area.** The same sprint plus a shared `area-*`, `component-*` or scope label.
+- **Same milestone and the same area.** The same sprint plus a shared area, named by whatever custom `area-*` or `component-*` label the project happens to keep, or by both bodies pointing at the same part of the system.
 - **Same kind of change against the same subject.** Three bugs in one importer; two stories adding fields to one form.
 
 **None of these counts as relatedness**, however tempting: both are small, both are high priority, both are typed `Bug`, both are in this repo, both are in this sprint on their own, or the pool happens to hold exactly three stories.

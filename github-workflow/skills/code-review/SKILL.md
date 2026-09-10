@@ -206,7 +206,7 @@ Run all of the following. If any command fails, treat as a review failure (see E
 
 - **Linked issue:** Parse the PR body for `Closes #N` or `Fixes #N`, then:
   ```bash
-  gh issue view <N> --repo <org>/<repo> --json title,body,labels,milestone
+  gh issue view <N> --repo <org>/<repo> --json title,body,milestone
   ```
   The issue is the source of truth for what the PR should accomplish. If there is no linked issue and the config lists that as a hard gate, it is a non-compliance failure, but continue the review.
 
@@ -339,7 +339,7 @@ After pushing fixes, update the recorded commit SHA to the new `HEAD`.
 
 #### 7e — File anything you could not fix to the board
 
-For every problem you detected but did **not** fix on the branch, run `/github-workflow:report-issue` (autonomous — do not pause for confirmation). Apply the actual issue type (bug, security, architecture, or tech debt) — `report-issue` places the card in Backlog, which is what makes it available — and in the body name the source PR (`Detected during review of #<pr-number>`) and the `file:line` location.
+For every problem you detected but did **not** fix on the branch, run `/github-workflow:report-issue` (autonomous — do not pause for confirmation). Apply the actual issue type (bug, security, architecture, or tech debt), and in the body name the source PR (`Detected during review of #<pr-number>`) and the `file:line` location. `report-issue` places the card itself, in the lane the fields it wrote name: Backlog, which is what makes it available, unless `Ownership` sends it to Non-code or a blocked-by edge sends it to Blocked. Read the column it reports back rather than assuming Backlog.
 
 Record each created issue's number, title, and type — Step 9 lists them under "Issues remaining (filed to board)" and the **Final report format** names them. Filing a non-blocking issue does **not** force a "Changes Requested" verdict.
 

@@ -76,9 +76,9 @@ The plugin also reads two files from the host project:
 
 **`ClaudeProject.md`** (required) — The single source of truth for all project-specific values. Every command and the skill read this file. Full format specification: [`docs/claudeproject-spec.md`](../docs/claudeproject-spec.md).
 
-Required sections: Identity, Package Manager, Quality Gate, Branch Convention, Label Map, Story Template.
+Required sections: Identity, Package Manager, Quality Gate, Branch Convention, Label Map, Story Template, Issue Types & Fields, Project Board.
 
-Optional sections: Project Board, Reference Docs.
+Optional sections: Reference Docs.
 
 **`CLAUDE.md`** (required) — Project rules, build principles, and session hygiene.
 
@@ -96,7 +96,7 @@ The plugin supports two backlog styles, auto-detected from milestones:
 
 - Milestones with due dates represent sprints.
 - The plugin finds the earliest milestone with open issues — that's the current sprint. No hardcoded sprint order needed.
-- Issues are picked by priority label, then issue number.
+- Issues are picked by the `Priority` field, then `Effort`, then issue number — the same order as a flat backlog, applied within the current milestone.
 - Product version filtering is optional.
 
 ### Flat backlog
@@ -121,16 +121,13 @@ A map row naming a label the workflow retired (`status-*`, `priority-*`, `needs-
 
 ## Project board
 
-A project without a board works fine — when no board is configured, the plugin skips board updates (status transitions, date stamps) silently.
+A project board is required. Which column a card sits in is the issue's state, and the Backlog column is the pick pool, so there is no useful behaviour left for a project that has no board — preflight fails the run rather than degrading quietly. The columns and what each means are below.
 
-This is the rule everywhere in the plugin: **"best-effort" never means "skip a configured feature."** It applies only to two cases:
-
-1. **Feature not configured** — e.g. no board in `ClaudeProject.md`. The step is skipped silently.
-2. **Inherently idempotent cleanup** — e.g. deleting a claim ref that may already be gone, or removing a label that may not be present. The "failure" is a no-op, not a swallowed error.
+Where the plugin does allow a best-effort step, the rule is that **"best-effort" never means "skip a configured feature."** It applies to one case: **inherently idempotent cleanup** — deleting a claim ref that may already be gone, or removing a label that may not be present. The "failure" is a no-op, not a swallowed error.
 
 When a feature **is** configured, its steps fail loudly: a board, label, or milestone operation that errors is reported to the user, never swallowed. The workflow continues past the failed step, but the failure is surfaced.
 
-When configured, the setup wizard auto-fetches:
+The setup wizard auto-fetches:
 
 - Project number and node ID
 - Field IDs for Status, Start Date, End Date

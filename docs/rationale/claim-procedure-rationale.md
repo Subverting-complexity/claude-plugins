@@ -12,10 +12,10 @@ Git refs **do** offer a server-side compare-and-swap. Creating a ref that does n
 
 The claim ref protects **only the brief window between selecting a work item and recording ownership** — the instant where two agents could both think an unassigned issue is theirs. It is **not** the long-term record of who owns the work. Durable ownership lives in the **human-visible markers**:
 
-- **Issue:** the assignment (`@me`) **plus** the `status-in-progress` / `status-parked` lifecycle label.
+- **Issue:** the assignment (`@me`) **plus** the board column the card sits in (`In Progress`, or `Parked` when a person has set it aside).
 - **PR:** the open PR itself **plus** its review-state label (`reviewing` / `updating` / …).
 
-Because `execute` only ever selects *unassigned* issues, an assigned + labelled issue stays out of the pick pool **indefinitely** — for days if a human parks it. This is the intended way to pause work and resume later without a second agent producing a duplicate branch or PR: the assignment + lifecycle label, not the claim ref, are what keep it yours. Never treat the claim ref as the thing that prevents duplicate pickup; the assignment + label do that. The ref only stops the simultaneous-select race.
+Because `execute` only ever selects *unassigned* issues out of the Backlog column, an assigned card in any other lane stays out of the pick pool **indefinitely** — for days if a person parks it. This is the intended way to pause work and resume later without a second agent producing a duplicate branch or PR: the assignment and the column, not the claim ref, are what keep it yours. Never treat the claim ref as the thing that prevents duplicate pickup; the assignment and the column do that. The ref only stops the simultaneous-select race.
 
 ## Load-bearing invariant: hold the issue claim across PR creation
 
@@ -43,7 +43,9 @@ git ls-remote origin 'refs/claims/*'
 git fetch origin refs/claims/issue-{number} && git log -1 FETCH_HEAD
 
 # Cross-check: is the issue still being worked, or the PR still in review?
-gh issue view {number} --repo {org}/{repo} --json assignees,state,labels
+# The issue's state is its board column, which this JSON cannot answer — read
+# `assignees` here and the card's lane on the board itself.
+gh issue view {number} --repo {org}/{repo} --json assignees,state
 gh pr list --repo {org}/{repo} --state open
 
 # Once certain no live session holds it, delete the orphaned ref.

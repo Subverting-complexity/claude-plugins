@@ -15,7 +15,6 @@ Most stories need three sections:
 ## Summary
 What this story delivers and why, in 1-3 short paragraphs. The reader
 should understand the story from this section alone.
-**Size estimate:** small | medium | large
 
 ## Changes
 What has to change, as outcomes rather than a development diary. Exact
@@ -44,14 +43,13 @@ Each of these is optional. An empty or obvious one is worse than none, and none 
 | `## Verification` | Verification needs more than the acceptance criteria convey: a physical device, several environments, a regression check, specific commands. |
 | `## Dependencies` | Rarely. A dependency between two issues is a native blocked-by edge, not a sentence; use this section for the *reason*, or for a dependency on something outside GitHub. |
 | `## Out of scope` | There is a realistic risk the work expands into something that should stay separate. |
-| `## Manual step` | The story cannot be finished until a person does something no agent can do. Say exactly what, and why. A story with this section also takes the `[Manual]` title prefix and `Ownership` set to `Human`, so it is visible in a list and never picked up by an agent that cannot finish it. Work a person must do that belongs to a *different* story is that story, linked by a native blocked-by edge. |
+| `## Manual step` | The story cannot be finished by a code agent. Say exactly what has to be done and why. A story with this section also takes the matching title prefix and `Ownership` value — `[Manual] ` with `Human`, `[Browser] ` with `Browser agent` — so it is visible in a list and never picked up by an agent that cannot finish it. Work of the other kind that belongs to a *different* story is that story, linked by a native blocked-by edge. |
 
 Do not reach for these out of habit, and do not add a "Definition of done" section: the acceptance criteria and the project's quality gate already cover it.
 
-## Two conventions the workflow reads
+## The one convention the workflow reads
 
-- `**Size estimate:** {size}` sits in the Summary. The `Effort` field mirrors it.
-- A dependency is a **native blocked-by edge**, written from a spec's `blocked_by` by `wf issue-apply`. Selection skips a story with an open edge, and `wf unblock` releases it when every edge closes. Prose is not parsed, so a `Blocked by #N` sentence with no edge behind it holds nothing back.
+A dependency is a **native blocked-by edge**, written from a spec's `blocked_by` by `wf issue-apply`. Selection skips a story with an open edge, and `wf unblock` releases it when every edge closes. Prose is not parsed, so a `Blocked by #N` sentence with no edge behind it holds nothing back.
 
 ## What not to include
 

@@ -35,7 +35,7 @@ Everything a person reads — plans, questions, findings, summaries, and anythin
 
 **This workflow is fully autonomous.** Every phase flows into the next without pausing for user input — except the **interactive discovery gate** before Phase 3 (user-present sessions only). The only reasons to stop are:
 
-- The issue is so underspecified that any implementation would be a guess — block the story and pick the next one.
+- The issue is so underspecified that any implementation would be a guess — move its card to Needs refinement and pick the next one. Not blocked: blocked means an open blocked-by edge, and an issue put in Blocked without one is never released again.
 - The story needs to be broken into sub-stories before implementation can begin — run `/github-workflow:feature-discovery` to plan the breakdown with the user, then pick the first sub-story.
 
 Opening the pull request is **not** one of them. Phases 8 to 10 need no permission, no confirmation and no green CI: the moment the PR exists, keep going in the same turn. A run that reports its new PR and offers to review and merge it if asked has stopped half way, however finished it sounds.
@@ -202,9 +202,11 @@ On `ok` the JSON carries `number`, `title`, `url`, `labels`, `milestone`, `body`
 With `$ARGUMENTS.story_number`, run the **already-in-flight guard** first. The auto-pick pool is the board's Backlog column minus what is assigned, but a named number bypasses that, and the claim ref is released the moment a PR opens — so a fresh claim on a story already in review would succeed and duplicate the work.
 
 ```bash
-gh issue view {number} --repo {org}/{repo} --json state,labels,assignees
+gh issue view {number} --repo {org}/{repo} --json state,assignees
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
 ```
+
+No label is read: state is the card's column, and `pick --issue` refuses a story in In Progress, In Review, Non-code or Done. The guard below says why first.
 
 `sibling-pr` answers "which open PRs will close this issue on merge?" from GitHub's own parse of closing references — the same parse that auto-closes the issue — so every site that asks gets the same answer. Exit 0 with `found: 0` is the normal result; exit 20 means the lookup failed, so stop rather than assume there is no duplicate.
 
@@ -224,10 +226,21 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
 **Then, on the claimed story**, read the full issue body and confirm it has **Context** and **Requirements**:
 
 - Enough guidance (body, comments, linked docs) → proceed to Phase 2.
-- Its card was in Needs refinement (a configuration may surface such an issue) → offer refinement: "The next priority story (#{number}: {title}) needs refinement before it can be implemented. Would you like to refine it now?" Use `AskUserQuestion`:
+- Thin — a real topic, but not enough to implement without guessing at what was wanted → offer refinement, in a user-present session: "The next priority story (#{number}: {title}) needs refinement before it can be implemented. Would you like to refine it now?" Use `AskUserQuestion`:
   - "Refine now (Recommended)" — run the refinement skill from `refinement-skill` (default `feature-discovery`). After refinement, continue with Phase 2 — the card is already in In Progress.
-  - "Skip and pick next" — release the claim (`wf claim-release --issue {number}`) and re-run the selection.
-- Truly empty with no guidance anywhere → run `/github-workflow:block-story` (which releases the claim) and re-run the selection for the next story.
+  - "Skip and pick next" — send it to refinement as below.
+- Truly empty, or thin with nobody present to answer → send it to refinement and re-run the selection for the next story. Do **not** run `/github-workflow:block-story`: blocked means an open blocked-by edge, and this issue has none, so nothing would ever release it.
+
+Sending a story to refinement is a comment saying what is missing, the card into the refinement lane, and the assignment and claim given up so somebody can take it once it has been refined:
+
+```bash
+gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-refinement
+gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
+```
+
+Leaving Backlog takes it out of the pool. Write the comment to `skills/writing-github-issues/SKILL.md`: say what a person would have to add before it can be built, not that you could not build it.
 
 ## Phase 2 — Start
 

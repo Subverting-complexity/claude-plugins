@@ -51,7 +51,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply spec.json
 # …check the spec against the org and report what would change, writing nothing
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply spec.json --dry-run
 
-# Report open issues missing type, fields or dependency edges (writes a backfill spec)
+# Report open issues missing a type, a field value, an owner or a place in the epic tree (writes a backfill spec)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit
 
 # …against another repo in the org, newest 50 only, counts only (for CI)
@@ -167,16 +167,25 @@ A JSON object with an `issues` list (a bare list is accepted too). An entry with
       "title": "Ship the classifier",
       "body": "Why this matters.",
       "kind": "epic",
+      "fields": {"field-priority": "High", "field-effort": "High",
+                 "field-ownership": "Code agent", "field-origin": "Development"}
+    },
+    {
+      "key": "feature",
+      "title": "Classify issues from the org's own fields",
+      "kind": "feature",
+      "parent": "epic",
       "fields": {"field-priority": "High", "field-effort": "Medium",
-                 "field-origin": "Development"}
+                 "field-ownership": "Code agent", "field-origin": "Development"}
     },
     {
       "key": "first-story",
       "title": "Resolve org fields in Python",
       "kind": "story",
-      "parent": "epic",
+      "parent": "feature",
       "blocked_by": [187],
       "fields": {"field-priority": "High", "field-effort": "Medium",
+                 "field-ownership": "Code agent",
                  "field-type": ["New Feature"], "field-origin": "Development"}
     }
   ]
@@ -189,11 +198,12 @@ A JSON object with an `issues` list (a bare list is accepted too). An entry with
 | `number` | An existing issue to update. Absent means create. |
 | `title`, `body` | As on GitHub. A create needs a title. A `[BUG]`-style kind prefix is stripped from the title — the native type says that. |
 | `body_file` | A path to read the body from, used when `body` is absent. A body is prose — fenced code, backticks, `$`, quotes — and building that into a JSON string by hand in a shell is where bodies get mangled. The spec file keeps saying `body_file` after a write-back; the body is never inlined into it. |
-| `kind` | One of `wf_core.NATIVE_TYPE_MAP`'s keys (`story`, `bug`, `epic`, `spike`, …). Supplies both the native type and a default `Classification`. |
+| `kind` | One of `wf_core.NATIVE_TYPE_MAP`'s keys (`story`, `feature`, `epic`, `bug`, `spike`, …). Supplies both the native type and a default `Classification`. |
 | `type` | An explicit native type name, overriding what `kind` implies. |
-| `labels` | Purpose keys or literal names; resolved through the project's label map. A `type-*` label is dropped — the native type classifies the issue. A create writes only what survives that, so an entry with no `labels` gets no priority label. That does not hide it from `pick` — the pool is the board's Backlog column — but it does drop it to the bottom of the order. The command says so on stderr. |
-| `parent` | An issue number, or another entry's `key`. |
-| `blocked_by` | A list of issue numbers and/or `key`s. |
+| `labels` | Purpose keys or literal names; resolved through the project's label map. Labels decide nothing: a `type-*` label or a retired one (`status-*`, `priority-*`, a scope label) is dropped, and in practice the only label a spec names is `claude-authored`. |
+| `parent` | An issue number, or another entry's `key`. A `User Story` needs a `Feature` parent; a `Feature` that has a parent needs an `Epic` one (see below). |
+| `blocked_by` | A list of issue numbers and/or `key`s. **The complete set**: an issue already carrying an edge the list omits has it removed, and `[]` removes them all. Leave the key out to leave the edges alone. |
+| `state` | `backlog`, `refinement` or `parked`: the lane to put the card in, overriding the one the issue's fields name. Absent means the fields decide. It never moves `Browser agent` or `Human` work out of Non-code. |
 | `fields` | Purpose key → value. Names resolve through `ClaudeProject.md`'s `## Issue Types & Fields`, then `wf_core.FIELD_NAME_DEFAULTS`. |
 | `milestone` | An open milestone's title, so a sprint placement rides in the same write. A title that names no open milestone fails the spec before anything is written. |
 
@@ -221,12 +231,15 @@ Updates are not batched. An update has to read the issue first to decide what di
 
 Everything decidable offline is decided before the first mutation, because a half-applied epic tree is far harder to reason about than a refused spec:
 
-- **A missing required field** — Priority, Effort or Ownership — exits 22 naming the issue and the field. That is the blank-metadata failure this command exists to stop, and the three are exactly what a decision reads: the pool's order, its size ceiling, and whether a code agent may take the issue at all. `wf_core.MANDATORY_FIELD_KEYS` is the list.
+- **A missing required field** — Priority, Effort or Ownership — exits 22 naming the issue and the field. A create must name all three. An update names only what it changes, and is refused when a value it leaves out is not on the issue either; a `TODO` it writes is refused whatever the issue carries. That is the blank-metadata failure this command exists to stop, and the three are exactly what a decision reads: the pool's order, its size ceiling, and whether a code agent may take the issue at all. `wf_core.MANDATORY_FIELD_KEYS` is the list.
 - **An org that defines no such field** exits 22 as well, naming the field and saying to create it. Skipping is what let a repository run for weeks with no `Ownership` field while `config-audit` reported a clean configuration.
 - **A missing optional field** — Classification or Origin — is not refused. `wf_core.OPTIONAL_FIELD_KEYS` is that list, nothing selects on either, and a create that leaves one unset gets a comment on the issue naming it.
 - **A placeholder** (`TODO`) counts as missing, so an audit's proposal cannot quietly pass as a value.
 - **A dependency cycle** within the spec exits 22 before anything is written, and so does a **parent cycle** — a different fault, and equally unresolvable.
 - **A label or referenced issue that does not exist** in the repo exits 22, named, before the first mutation.
+- **An issue outside the epic tree.** A `User Story` with no `Feature` parent, or a story or feature under the wrong type, exits 22. A `Feature` with no parent is allowed: it sits under an `Epic` when the work has one, and an epic invented to hold a single feature would only restate it. A parent that already exists is judged by its live type, and an update that does not restate its parent is judged by the parent it already has. Enforced only where the org has the parent type enabled; `Bug`, `Chore` and `Epic` need no parent. `wf_core.HIERARCHY_PARENT_TYPE` is the rule.
+- **One issue, two parties.** A title prefix and an `Ownership` value that disagree, such as `[Manual]` owned by `Code agent` or `Human` with no prefix, exits 22. One of the two is wrong, and the issue would mislead whoever reads it.
+- **A `state` that is not one of the three** exits 22. There is no `ready`.
 - **A field this org does not define** is skipped, not an error — an org is allowed fewer fields than the default inventory. It is reported once for the run on stderr, not once per issue.
 - **A refused capability read** exits 21 rather than falling back to labels, for the reason `org-capabilities` gives above.
 
@@ -241,10 +254,16 @@ After the edges are written, `issue-apply` places each issue's card. Nothing did
 | The issue is | Board column |
 | --- | --- |
 | owned by a browser agent or a person (`Ownership`) | Non-code |
+| given a `state` on its spec entry | the lane it names |
+| owned by nobody | Needs refinement |
 | pointing at least one open edge | Blocked |
-| neither | Backlog |
+| none of these | Backlog |
 
-**Every issue gets a card, every time.** An earlier version returned early on the third row, leaving a created code issue on no board at all — an issue that existed in the repository and nowhere in the pool. That is what makes the column trustworthy as the only record of state.
+**Every issue gets a card, every time.** An earlier version returned early on the last row, leaving a created code issue on no board at all — an issue that existed in the repository and nowhere in the pool. That is what makes the column trustworthy as the only record of state.
+
+**A card in a lane this phase does not own stays there.** It may write Backlog, Blocked and Non-code, and place an issue with no card or no lane; a card in In Progress, In Review, Parked, Needs refinement, Needs attention or Done is left where it is and reported as `board_column_kept`. Found live: an update setting one field on an in-progress issue moved its card back to Backlog, where a second agent could pick up the same work. An entry that names a `state` overrides this, because asking for a lane is a decision rather than an inference.
+
+**An issue whose edges or lane cannot be read is not moved**, and its entry fails. A failed read is not the answer "nothing blocks it", and re-running the spec completes the placement because every write before it is idempotent.
 
 Ownership wins over a dependency. It is a property of the work and survives every blocker closing, so an issue that is both ends up in the lane no sweep releases it from.
 
@@ -269,13 +288,13 @@ It **never writes**. Both write transports are stubbed out in its tests to prove
 | Gap | Meaning |
 | --- | ------- |
 | `missing-type` | The org has issue types enabled and this issue has none. |
-| `missing-field` | One of the three required fields (`wf_core.MANDATORY_FIELD_KEYS`) this issue holds no value for. |
+| `missing-field` | One of the three required fields (`wf_core.MANDATORY_FIELD_KEYS`) this issue holds no value for. An unset `Ownership` is reported here, once. The proposal fills `Ownership` from a `[Manual] ` or `[Browser] ` prefix and leaves everything else it cannot know as `TODO`: no label is read, and an unprefixed title is not taken to mean `Code agent`. |
 | `missing-optional-field` | `Classification` or `Origin` unset. Worth filling in, never worth refusing an issue over. |
 | `type-contradiction` | The native type disagrees with a legacy `type-*` label or `[BUG]`-style title prefix the issue still carries. Reported so the stale one can be removed; neither is written any more. |
 | `classification-contradiction` | The `Classification` value cannot be true of the declared kind — a story classified `Bug Fix`, a bug classified `New Feature`. |
-| `scope-unowned` | No `Ownership` value, so nothing says who has to do the work and no code agent will be offered it. |
 | `scope-option` | An `Ownership` value the workflow does not recognise, usually a renamed option. |
 | `scope-prefix` | The `[Manual] `/`[Browser] ` title prefix and the `Ownership` value disagree. |
+| `hierarchy` | A `User Story` with no `Feature` parent, or a story or feature under the wrong type. Reported and never proposed: which feature a story belongs to is a judgement about the work. |
 | `missing-parent` | `--parents` only. The body says it is part of an issue and GitHub shows it as free-standing. |
 | `parent-closed` | `--parents` only. The parent the body names is not open. |
 | `parent-differs` | `--parents` only. The body names one parent and the hierarchy has another. Reported, never changed. |
@@ -311,9 +330,13 @@ Three things describe how a project works, and they drift apart quietly: `Claude
 | `field-absent` | critical | The org defines no `Priority`, `Effort` or `Ownership` field, and the picker reads all three. |
 | `board-orphan` | critical | An open, unassigned issue with no card, so the pool cannot see it. |
 | `board-unset` | critical | A card sitting in no lane, so the issue has no state. |
+| `field-options` | critical / warning | An option on a mandatory field that no decision knows. Critical on `Ownership`, where nothing can route the issue; a warning on `Priority` (sorts last) and `Effort` (sized as `Medium`). |
 | `label-deprecated` | warning | The label map still names a label nothing reads. |
+| `label-retired` | warning | Open issues still carry a label the fields replaced. `--fix` takes it off. |
+| `board-retired` | warning | The board still has a `Ready` column. `--fix` empties it into Backlog, then deletes it. |
+| `field-retired` | warning | The org still defines `Status reason`. Never repaired: deleting an org field deletes its values from every issue in every repository the org owns. |
 | `field-absent-optional` | warning | The org defines no `Classification` or `Origin`, so issues are filed with less on them. |
-| `label-drift` | warning | Two live labels mean the same thing (`priority:medium` beside `priority-medium`, `bug` beside `type-bug`). |
+| `label-drift` | warning | Two live labels mean the same thing (`type:bug` beside `type-bug`, `bug` beside `type-bug`). A pair of retired labels is `label-retired`'s, whose advice is the opposite: take both off. |
 | `pin-asymmetry` | warning | A field some enabled types pin and others do not. |
 | `field-unmapped` | warning | An org field no purpose key resolves to, so nothing ever sets it. |
 | `board-column` / `board-title` | warning | The recorded board snapshot no longer matches the live board. |
@@ -323,7 +346,7 @@ Three things describe how a project works, and they drift apart quietly: `Claude
 
 One question decides it: does the workflow produce a **wrong** result, or a **degraded** one? A missing section or a label that does not exist produces wrong behaviour — the command runs, GitHub accepts or refuses it, and the outcome is not what anyone asked for. An org field nobody mapped or a stale board snapshot degrades gracefully, so it warns and the run continues.
 
-Pin asymmetry is the case that makes the distinction concrete. `Epic` is not pinned to `Parent`, and that is correct — an epic *is* the parent. So a field that some enabled types carry and others do not can only ever be a warning, and only the four fields the tooling actually writes (`wf_core.MANDATORY_FIELD_KEYS`) are ever a failure.
+Pin asymmetry is the case that makes the distinction concrete. `Epic` is not pinned to `Parent`, and that is correct — an epic *is* the parent. So a field that some enabled types carry and others do not can only ever be a warning, and only the three fields the tooling actually writes (`wf_core.MANDATORY_FIELD_KEYS`) are ever a failure.
 
 The fix text is written to be reported verbatim. For an unpinned field it names the type, the fields, and the form: org settings → Planning → Issue fields → the field's edit form → "Pin to issues". A paraphrase loses the only part that tells someone where to click.
 
@@ -333,7 +356,7 @@ The label scan reads `--add-label`, `--remove-label` and `--label` out of every 
 
 ### Cost
 
-Two round trips: one repo query carrying the labels and the board together, and one org query for the pinning. Org capabilities come from the cache. `--offline` runs only the checks that need no network, `--quiet` drops the per-finding detail and keeps the exit code, and exit 26 makes it usable as a CI gate.
+Three round trips: one repo query carrying the labels and the board together, one walk of the open issues (which have no card, which sit in no lane, and which still carry a retired label), and one org query for the pinning. Org capabilities come from the cache. `--offline` runs only the checks that need no network, `--quiet` drops the per-finding detail and keeps the exit code, and exit 26 makes it usable as a CI gate.
 
 ## Can this project be worked on at all — `preflight`
 
@@ -360,12 +383,13 @@ The file-level checks used to be shell blocks inside `skills/preflight/SKILL.md`
 | `quality-gate` | warning | No pre-commit command, or the placeholder is still there. |
 | `file-claude-md` / `claude-md-ref` | warning | No `CLAUDE.md`, or one that never mentions `ClaudeProject.md` — so a session that runs no workflow command never finds the configuration. |
 | `review-config` | warning | `ClaudeProject.md` names a review-state label file that is not there, so every review label falls back to its default name. |
+| `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, `Status reason`, a lifecycle, priority or scope label, or a dependency written as prose, named by line. Never rewritten: the lines are somebody's own sentences. The plugin's own directory is not scanned, since its templates name what was retired on purpose. |
 
 ### Every finding says whether `--fix` would touch it
 
 Each finding comes back with `auto` and `fixable`. `auto: true` means a run can repair it and `fixable` says how; `auto: false` means it must not, and `fixable` says why. The split is decided offline, in `wf_core.FIXABLE_CHECKS` and `wf_core.UNFIXABLE_REASONS`, which is what makes "would running `--fix` change anything?" answerable without a network call.
 
-`--fix` repairs seven things, all idempotent:
+`--fix` repairs nine things, all idempotent:
 
 | It does | Because |
 | ------- | ------- |
@@ -375,8 +399,10 @@ Each finding comes back with `auto` and `fixable`. `auto: true` means a run can 
 | deletes a deprecated label-map row | Nothing applies the label. The label itself stays in the repo — deleting one strips it from every issue that ever carried it. |
 | adds the `ClaudeProject.md` pointer to an existing `CLAUDE.md` | One sentence, and it is idempotent on the filename rather than the wording, so a project that worded its own pointer keeps it. |
 | puts an orphaned issue or an unset card in `Backlog` | Nothing on the issue says where it belongs, and `Backlog` is the one lane that means "nobody has decided anything about this yet". Somebody moving it straight back out is a decision; leaving it invisible is not. |
+| takes retired labels off the open issues carrying them | They decide nothing, and the write path already strips them from any issue it touches; this reaches the ones no command has. |
+| empties a `Ready` column into `Backlog`, then deletes it | In that order and only if every card moved: deleting a column deletes the value from each card in it, which would leave those issues in no lane. |
 
-It will not create a `CLAUDE.md`, invent an `## Identity` section, create an org-level issue field, pin a field to an issue type, choose between two disagreeing values, or write a quality gate. Each is either a decision only the project can make or a change that happens in the org settings rather than through the API this runs on.
+It will not create a `CLAUDE.md`, invent an `## Identity` section, create or delete an org-level issue field, rename a field's options, pin a field to an issue type, choose between two disagreeing values, rewrite a sentence in somebody's instructions, or write a quality gate. Each is either a decision only the project can make or a change that happens in the org settings rather than through the API this runs on.
 
 **Adding a column is the most destructive thing this file can do**, and it is worth knowing why. `updateProjectV2Field` replaces the whole option list rather than adding to it: omit an existing option and GitHub deletes it, along with every card sitting in that column. So `board_column_options` makes a second, uncached read that asks for each option's `color` and `description` as well as its id — the cached `board_status_field` a move uses asks only for id and name, and passing an option back without its colour silently recolours the board.
 
@@ -422,7 +448,7 @@ All share the same atomic claim/checkout core and JSON contract. `--checkout` cr
 
 ## Scope / deferrals
 
-- **`pick`** — `--mode story` / `feature` / `maintenance`, reading the board's Backlog column as the pool. One GraphQL query (`fetch_issue_facets`) reads the native type, the `Priority` field and the `Classification` field for the open backlog, and the pool is ordered by `Priority` — `Urgent` → `High` → `Medium` → `Low`, then lowest issue number. An issue with no `Priority` value sorts last and is named on stderr; there is no label fallback, on purpose. **Type has none**: `feature` and `maintenance` filter on the native `issueType` alone, so an issue the org has not typed — or a `Feature` it left unclassified — is out of the pool and named on stderr rather than guessed at from a `type-*` label or a `[PREFIX]` title. An org whose backlog carries no native type at all cannot answer those modes and `pick` exits `no-capabilities` (21) saying so; `--mode story` is unaffected. Membership of the pool is the board's answer and only the board's: an issue is in it because its card sits in `Backlog` and nobody is assigned. Every other state has a column of its own, so an issue in one is already out of the pool. No label is read at any point in the selection.
+- **`pick`** — `--mode story` / `feature` / `maintenance`, reading the board's Backlog column as the pool. One GraphQL query (`fetch_issue_facets`) reads the native type, the `Priority` field and the `Classification` field for the open backlog, and the pool is ordered by `Priority` — `Urgent` → `High` → `Medium` → `Low`, then lowest issue number. An issue with no `Priority` value sorts last and is named on stderr; there is no label fallback, on purpose. No mode offers an `Epic`: it is the outcome its features and stories deliver, not a piece of work. **Type has none**: `feature` and `maintenance` filter on the native `issueType` alone, so an issue the org has not typed — or a `Feature` it left unclassified — is out of the pool and named on stderr rather than guessed at from a `type-*` label or a `[PREFIX]` title. An org whose backlog carries no native type at all cannot answer those modes and `pick` exits `no-capabilities` (21) saying so; `--mode story` is unaffected. Membership of the pool is the board's answer and only the board's: an issue is in it because its card sits in `Backlog` and nobody is assigned. Every other state has a column of its own, so an issue in one is already out of the pool. No label is read at any point in the selection.
 - **`review-next`** — the *label-driven* subset. A PR whose head SHA changed since its last review (needing review without a label) is **not** detected here, so `code-review` treats `no-candidates` as non-conclusive and falls back to its inline SHA check. Pass `--no-claim` for a read-only review (no push access): it selects the next PR without writing a claim ref or applying the `reviewing` marker, and the JSON reports `claimed: false`.
 
 ## Locks, board and handoff

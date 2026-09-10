@@ -32,6 +32,8 @@ Determine the type:
 - **Architecture** — Layer violation, coupling, design problem
 - **Tech Debt** — Working but needs improvement
 
+A bug, a security problem and tech debt need no parent. An architecture report is filed as a `Feature` (`../skills/writing-github-issues/SKILL.md` → **Hierarchy**): where an open epic covers the work, pass its number as `parent` in Step 5; otherwise file it without one. Do not file an epic to hold one report.
+
 ### 3. Assess severity, size and owner
 
 First decide what happens to the issue:
@@ -48,7 +50,7 @@ Then settle the three field values every issue must carry. They are written in S
 
 **No label carries any of this.** There is no priority label, no type label and no state label to choose — `wf issue-apply` writes the fields, sets the native issue type from `kind`, and places the card. The only label to pass is `claude-authored`, the provenance marker.
 
-An issue too vague to implement without a refinement session is not filed into the pool: file it and move its card to `col-refinement`, which is what keeps it out.
+An issue too vague to implement without a refinement session is not filed into the pool: file it with `"state": "refinement"` on the spec entry, which lands the card in Needs refinement instead of Backlog and is what keeps it out.
 
 ### 4. Detect current milestone
 
@@ -81,7 +83,7 @@ cat > .claude/report-spec.json <<'JSON'
              "body_file": ".claude/report-body.md",
              "kind": "{bug|security|architecture|tech debt}",
              "milestone": "{current_milestone}",
-             "labels": ["{priority_label}", "claude-authored"],
+             "labels": ["claude-authored"],
              "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                         "field-effort": "{Low|Medium|High}",
                         "field-ownership": "{Code agent|Browser agent|Human}",
@@ -94,25 +96,25 @@ The body goes in a file and the spec names it (`body_file`) rather than carrying
 
 Drop the `milestone` key entirely in flat-backlog mode, or whenever Step 4 found no current milestone. It takes the milestone's title, and a title that names no **open** milestone fails the spec rather than filing the issue outside the sprint.
 
-**The title carries no prefix**, with one exception. No `[BUG]`, `[SECURITY]`, `[ARCH]` or `[DEBT]`, no priority and no size. GitHub renders the issue type and the fields beside the title already. `wf issue-apply` strips such a prefix if one slips in, and reports that it did.
+**The title carries no prefix**, with two exceptions. No `[BUG]`, `[SECURITY]`, `[ARCH]` or `[DEBT]`, no priority and no size. GitHub renders the issue type and the fields beside the title already. `wf issue-apply` strips such a prefix if one slips in, and reports that it did.
 
-The exception is `[Manual]`, for an issue a person has to do (Step 3). It is kept, because nothing native says an issue needs a human.
+The exceptions are `[Manual] `, for an issue a person has to do, and `[Browser] `, for one a browser agent has to do (Step 3). They are kept because nothing native says who has to do the work. The prefix and `field-ownership` must agree — `[Manual] ` with `Human`, `[Browser] ` with `Browser agent` — and `issue-apply` refuses a spec where they contradict each other rather than filing an issue two things claim to own.
 
 **The labels carry no type, no priority and no state.** `kind` supplies the native issue type and the `Classification` value together, and the three required fields carry the rest. `wf issue-apply` drops any retired label in the list. Pass `claude-authored` and nothing else.
 
-**You do not choose the lane.** `issue-apply` decides it from the issue's own state — `Ownership` first, then open dependency edges — and places the card itself. Non-code work goes to Non-code, an issue with an open edge to Blocked, everything else to Backlog.
+**You do not choose the lane.** `issue-apply` decides it from the issue's own fields and places the card itself, in this order: `Ownership` of `Human` or `Browser agent` goes to Non-code; an explicit `"state"` on the spec entry (`backlog`, `refinement` or `parked`) goes to that lane; an `Ownership` that is missing or unrecognised goes to Needs refinement, because nothing can route it; an open blocked-by edge goes to Blocked; everything else goes to Backlog.
 
 **Leave the assignee blank.** The spec has no assignee key, and you must not follow up with `gh issue edit --add-assignee`. Creating an issue is never an act of claiming it: new issues must enter the unassigned pool so `execute` (which queries `--assignee ""`) can select them. Assignment happens only at claim time (`execute` Acquire).
 
 **Field values.**
 
-- `kind` is the Step 2 classification in lower case.
+- `kind` is the Step 2 classification in lower case. For `architecture`, add `"parent": {epic number}` beside it when an epic covers the work.
 - `field-priority`, `field-effort` and `field-ownership` are the three values Step 3 settled. All three are **required**: `issue-apply` refuses a spec that leaves one blank rather than filing work nothing can rank, size or route.
 - `field-origin` is **Development**, or **Security Audit** if this report came out of a security audit session. It is optional — leave it out and the created issue gets a comment saying it was filed without one.
 
 **The issue number** comes back in the command's JSON as `applied[0].number`, and is written into the spec file too. Later steps need it.
 
-**Read the exit code.** **0** created it. **21** (`no-capabilities`) means the org defines no issue types or fields — report that the issue could not be classified rather than filing an unclassified one by hand. **22** (`spec-invalid`) means the spec is wrong (an unknown label, a milestone that is not open, a missing required field, or an org that defines no `Priority`, `Effort` or `Ownership` field at all): fix it and re-run. **23** and **24** mean the issue exists but some metadata did not land — report which, by number and title, and carry on. Re-running the same spec after a partial failure completes the remainder rather than filing a duplicate.
+**Read the exit code.** **0** created it. **21** (`no-capabilities`) means the org defines no issue types or fields — report that the issue could not be classified rather than filing an unclassified one by hand. **22** (`spec-invalid`) means the spec is wrong (an unknown label, a milestone that is not open, a missing required field, a parent of the wrong type, or an org that defines no `Priority`, `Effort` or `Ownership` field at all): fix it and re-run. **23** and **24** mean the issue exists but some metadata did not land — report which, by number and title, and carry on. Re-running the same spec after a partial failure completes the remainder rather than filing a duplicate.
 
 **Body shape.** Follow `../skills/writing-github-issues/SKILL.md`.
 
@@ -135,9 +137,9 @@ Do not narrate how you found the problem, and do not add a section that would be
 
 ### 6b. The board placement is already done
 
-`issue-apply` places every issue it touches on the board itself, in the column its own state names — Blocked when a native edge points at something open, Non-code when the issue is scoped to a person or a browser agent, Backlog otherwise. There is no board step to run by hand, and no column to choose: the state decides it, in one place, for created and updated issues alike.
+`issue-apply` places every issue it touches on the board itself, in the column the ladder above names. There is no board step to run by hand, and no column to choose: the fields decide it, in one place, for created and updated issues alike.
 
-Read `board_column` and `board_moved` from the command's output and report them. A `board_moved` of `false` carries a `board_message` saying why; it is never fatal, because the board mirrors the issue and is never the source of truth.
+Read `board_column` and `board_moved` from the command's output and report them. A `board_moved` of `false` carries a `board_message` saying why. The issue exists either way, so this does not undo the filing, but the column **is** the issue's state — a card that did not move is work nothing can see — so report it as an issue filed without a state rather than as a clean filing.
 
 ### 7. Report
 

@@ -387,7 +387,13 @@ def _norm_issue(raw):
 # GitHub caps a connection page at 100, so the board query pages too. Two
 # pages of items match the 200-issue window the label gate reads.
 BOARD_PAGE_SIZE = 100
-BOARD_MAX_PAGES = 2
+# Twenty pages, not two. The query reads *every* card on the board and filters
+# to one column afterwards, so the cap is a limit on the whole board rather
+# than on the pool: at two pages, a board whose Done column had run past 200
+# cards returned an empty Backlog and `pick` reported a finished backlog. A run
+# that still has pages left when it reaches this cap is an error rather than a
+# short answer -- see `_board_column_candidates`.
+BOARD_MAX_PAGES = 20
 
 
 def _board_items_query(field_name, paged, extra=''):
@@ -440,7 +446,7 @@ def _board_column_candidates(cfg, column_name, unassigned_only=True, extra=''):
     if not node:
         return False, None, 'the pick pool needs a configured board (project-node-id)'
     field_name = board.get('status_field_name', 'Status')
-    nodes, options, cursor, pages = [], None, None, 0
+    nodes, options, cursor, pages, truncated = [], None, None, 0, False
     while pages < BOARD_MAX_PAGES:
         args = {'id': node}
         if cursor:
@@ -464,6 +470,18 @@ def _board_column_candidates(cfg, column_name, unassigned_only=True, extra=''):
         cursor = page_info.get('endCursor')
         if not cursor:
             break
+        truncated = pages >= BOARD_MAX_PAGES
+
+    if truncated:
+        # A partial read of the board is not a partial pool, it is an unknown
+        # one: the cards this run never saw could be the whole of the column it
+        # was asked for. Saying so is the difference between "there is nothing
+        # to pick" and "I could not find out".
+        return False, None, (
+            'the board has more than %d cards, which is more than this reads in '
+            'one pass, so the %s column cannot be read completely. Archive the '
+            'closed cards (the board\'s own `Archive items` view) and re-run.'
+            % (BOARD_PAGE_SIZE * BOARD_MAX_PAGES, column_name))
 
     if not options:
         return False, None, (
@@ -498,6 +516,7 @@ def _board_column_candidates(cfg, column_name, unassigned_only=True, extra=''):
             'milestone': content.get('milestone', {}).get('title') if content.get('milestone') else None,
             'url': content.get('url', ''),
             'assigned': bool(assignees),
+            'assignees': [a.get('login') for a in assignees if a.get('login')],
             'blockedBy': content.get('blockedBy') or {},
         })
     return True, issues, ''
@@ -819,13 +838,7 @@ def cmd_org_capabilities(args):
 # The selection every read-back uses. A mutation payload can carry it too, so
 # `createIssue` returns the issue *as GitHub now holds it* — which turns
 # verification from an extra round trip per issue into a free one.
-ISSUE_SELECTION = (
-    '  id number title body'
-    '  issueType { name }'
-    '  milestone { title }'
-    '  parent { number }'
-    '  blockedBy(first:50){ nodes { number } }'
-    '  labels(first:50){ nodes { name } }'
+ISSUE_FIELD_VALUES_SELECTION = (
     '  issueFieldValues(first:50){ nodes {'
     '   __typename'
     '   ... on IssueFieldSingleSelectValue { field { ... on IssueFieldSingleSelect { name } } name }'
@@ -834,6 +847,16 @@ ISSUE_SELECTION = (
     '   ... on IssueFieldDateValue { field { ... on IssueFieldDate { name } } value }'
     '   ... on IssueFieldNumberValue { field { ... on IssueFieldNumber { name } } value }'
     '  } }'
+)
+
+ISSUE_SELECTION = (
+    '  id number title body'
+    '  issueType { name }'
+    '  milestone { title }'
+    '  parent { number issueType { name } }'
+    '  blockedBy(first:50){ nodes { number } }'
+    '  labels(first:50){ nodes { name } }'
+    + ISSUE_FIELD_VALUES_SELECTION
 )
 
 ISSUE_READBACK_QUERY = (
@@ -902,8 +925,18 @@ def resolve_spec_context(cfg, label_names, numbers, repo=None,
     owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
     wanted = sorted({int(n) for n in numbers})
     aliases = [('n%d' % n, n) for n in wanted]
-    issue_parts = ' '.join('%s: issue(number:%d){ id number }' % (alias, number)
-                           for alias, number in aliases)
+    # The native type comes back with the id because the hierarchy rule needs
+    # it: a spec that parents a `User Story` to an existing issue is only legal
+    # when that issue is a `Feature`, and this is the one place the referenced
+    # issues are read. The title and field values come back for the update
+    # rules: an update names only what it changes, so whether it leaves the
+    # issue without a required value, or two parties on one issue, is only
+    # knowable against what the issue already carries.
+    issue_parts = ' '.join(
+        '%s: issue(number:%d){ id number title issueType { name }'
+        ' parent { number issueType { name } }%s }'
+        % (alias, number, ISSUE_FIELD_VALUES_SELECTION)
+        for alias, number in aliases)
     ok, data, err = gh_graphql(
         'query($owner:String!,$repo:String!){'
         ' repository(owner:$owner,name:$repo){ id'
@@ -924,11 +957,21 @@ def resolve_spec_context(cfg, label_names, numbers, repo=None,
     have_milestones = {n['title']: n['id'] for n
                        in (repository.get('milestones') or {}).get('nodes') or []}
     issues = {}
+    issue_types = {}
+    issue_parents = {}
+    issue_live = {}
     missing_issues = []
     for alias, number in aliases:
         node = repository.get(alias)
         if node:
             issues[number] = node['id']
+            issue_types[number] = (node.get('issueType') or {}).get('name')
+            issue_live[number] = {'title': node.get('title') or '',
+                                  'fields': issue_field_values(node)}
+            parent = node.get('parent') or {}
+            issue_parents[number] = (
+                parent.get('number'),
+                (parent.get('issueType') or {}).get('name'))
         else:
             missing_issues.append(number)
 
@@ -942,8 +985,43 @@ def resolve_spec_context(cfg, label_names, numbers, repo=None,
         'missing_milestones': [t for t in wanted_milestones
                                if t not in have_milestones],
         'issues': issues,
+        'issue_types': issue_types,
+        'issue_parents': issue_parents,
+        'issue_live': issue_live,
         'missing_issues': missing_issues,
     }, ''
+
+
+def resolve_issue_ids(cfg, numbers, repo=None):
+    """Node id for each issue number given. Returns {number: id}.
+
+    Only the ids, and only for issues the caller already knows exist — the
+    edge-removal path needs a node id for a blocker the spec no longer names,
+    which by definition was not in the spec's own resolve pass. A number that
+    cannot be read is left out rather than guessed at, and the caller reports
+    the edge it could not remove.
+    """
+    wanted = sorted({int(n) for n in numbers})
+    if not wanted:
+        return {}
+    owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
+    found = {}
+    for start in range(0, len(wanted), EDGE_BATCH):
+        window = wanted[start:start + EDGE_BATCH]
+        parts = ' '.join('n%d: issue(number:%d){ id number }' % (n, n)
+                         for n in window)
+        ok, data, _err = gh_graphql(
+            'query($owner:String!,$repo:String!){'
+            ' repository(owner:$owner,name:$repo){ %s } }' % parts,
+            owner=owner, repo=name)
+        if not ok:
+            continue
+        repository = (data or {}).get('repository') or {}
+        for number in window:
+            node = repository.get('n%d' % number)
+            if node and node.get('id'):
+                found[number] = node['id']
+    return found
 
 
 def _mutation_result(code, out, err, path):
@@ -1028,20 +1106,21 @@ def send_create_batch(inputs):
 def send_link_batch(ops):
     """Apply every dependency edge in one request.
 
-    `ops` are (alias, kind, variables) with kind `'blocked-by'`. This is the
-    last phase, run once every issue in the spec exists and every reference
-    resolves. It used to carry body rewrites too, for the `## Dependencies`
-    prose that mirrored these edges; the prose is gone and the edge is the
-    whole record.
+    `ops` are (alias, kind, variables) with kind `'blocked-by'` to add an edge
+    or `'unblocked-by'` to remove one. This is the last phase, run once every
+    issue in the spec exists and every reference resolves. It used to carry
+    body rewrites too, for the `## Dependencies` prose that mirrored these
+    edges; the prose is gone and the edge is the whole record.
     """
     decls, body, aliases = [], [], []
     variables = {}
     for alias, kind, args in ops:
         aliases.append(alias)
+        mutation = 'removeBlockedBy' if kind == 'unblocked-by' else 'addBlockedBy'
         decls.append('$%s_i:ID!,$%s_b:ID!' % (alias, alias))
-        body.append('%s: addBlockedBy(input:{issueId:$%s_i,blockingIssueId:$%s_b})'
-                    '{ issue { id blockedBy(first:50){ nodes { number } } } }'
-                    % (alias, alias, alias))
+        body.append('%s: %s(input:{issueId:$%s_i,blockingIssueId:$%s_b})'
+                    '{ issue { id blockedBy(first:%d){ nodes { number } } } }'
+                    % (alias, mutation, alias, alias, EDGE_PAGE))
         variables['%s_i' % alias] = args['issue_id']
         variables['%s_b' % alias] = args['blocking_id']
     code, out, err = _graphql_json('mutation(%s){ %s }' % (','.join(decls),
@@ -1424,12 +1503,20 @@ def link_phase(cfg, plans, results, resolved, node_ids):
     as the edge and once as `## Dependencies` prose in the body, and the two
     drifted apart on most of the issues carrying both. Only the edge is written
     now, and only the edge is read.
+
+    **An entry that carries `blocked_by` describes the whole set.** An edge the
+    issue holds and the entry does not name is removed, which is how a
+    dependency that turned out not to exist is taken back off: `wf unblock`
+    releases an issue when its blockers *close*, and nothing else could undo an
+    edge somebody added by mistake. An entry with no `blocked_by` key says
+    nothing about edges, and nothing is added or removed.
     """
-    ops, owners = [], []
+    ops, owners, pending_removals = [], [], []
     for plan, result in zip(plans, results):
         entry = plan['entry']
         if result['errors'] or not result.get('number'):
             continue
+        restated = 'blocked_by' in entry
         numbers, unresolved = _blockers(entry, resolved)
         if unresolved:
             result['errors'].append(
@@ -1437,14 +1524,14 @@ def link_phase(cfg, plans, results, resolved, node_ids):
                 % ', '.join(str(u) for u in unresolved))
             continue
         result['blocked_by'] = numbers
-        if not numbers:
+        if not restated:
             continue
 
         issue = result.get('issue') or {}
-        have = {n['number'] for n in (issue.get('blockedBy') or {}).get('nodes') or []}
-        for blocker in numbers:
-            if blocker in have:
-                continue
+        have = sorted({n['number'] for n
+                       in (issue.get('blockedBy') or {}).get('nodes') or []})
+        to_add, to_remove = wf_core.edge_diff(have, numbers)
+        for blocker in to_add:
             blocking_id = node_ids.get(blocker)
             if not blocking_id:
                 result['errors'].append('blocker #%s could not be resolved' % blocker)
@@ -1452,6 +1539,27 @@ def link_phase(cfg, plans, results, resolved, node_ids):
             owners.append((result, 'blocked-by', blocker))
             ops.append(('blocked-by', {'issue_id': result['issue_id'],
                                        'blocking_id': blocking_id}))
+        for blocker in to_remove:
+            pending_removals.append((result, blocker))
+
+    # An edge being removed points at an issue the spec never mentions, so its
+    # node id was not in the prerequisite lookup. One query for all of them,
+    # after the loop, rather than one per edge.
+    if pending_removals:
+        missing = sorted({b for _result, b in pending_removals
+                          if b not in node_ids})
+        node_ids.update(resolve_issue_ids(cfg, missing))
+        for result, blocker in pending_removals:
+            blocking_id = node_ids.get(blocker)
+            if not blocking_id:
+                result['errors'].append(
+                    'this entry drops blocked-by #%s, which is on the issue, '
+                    'but that issue could not be resolved to remove the edge'
+                    % blocker)
+                continue
+            owners.append((result, 'unblocked-by', blocker))
+            ops.append(('unblocked-by', {'issue_id': result['issue_id'],
+                                         'blocking_id': blocking_id}))
 
 
     for chunk_start in range(0, len(ops), wf_core.BATCH_MAX_NODES):
@@ -1459,55 +1567,73 @@ def link_phase(cfg, plans, results, resolved, node_ids):
         batch = [('b%d' % n, kind, args)
                  for n, (kind, args) in enumerate(ops[window])]
         outcomes = send_link_batch(batch)
-        for offset, (result, _kind, blocker) in enumerate(owners[window]):
+        for offset, (result, kind, blocker) in enumerate(owners[window]):
             ok, node, err = outcomes['b%d' % offset]
             if not ok:
-                result['errors'].append('blocked-by #%s failed: %s'
-                                        % (blocker, err))
+                result['errors'].append(
+                    '%s #%s failed: %s'
+                    % ('removing blocked-by' if kind == 'unblocked-by'
+                       else 'blocked-by', blocker, err))
                 continue
-            result['changed'].append('blocked-by #%s' % blocker)
+            result['changed'].append(
+                'removed blocked-by #%s' % blocker if kind == 'unblocked-by'
+                else 'blocked-by #%s' % blocker)
             result['issue'] = dict(result.get('issue') or {},
                                    blockedBy=node.get('blockedBy') or {})
 
     # The edge mutations returned the issue's blockers, so the check is free.
     for result in results:
-        for want in result.get('blocked_by') or ():
-            have = {n['number'] for n
-                    in ((result.get('issue') or {}).get('blockedBy')
-                        or {}).get('nodes') or []}
+        if 'blocked_by' not in result:
+            continue
+        have = {n['number'] for n
+                in ((result.get('issue') or {}).get('blockedBy')
+                    or {}).get('nodes') or []}
+        for want in result['blocked_by']:
             if want not in have:
                 result['mismatches'].append('#%s: missing blocked-by edge to #%s'
                                             % (result['number'], want))
+        for _result, blocker in pending_removals:
+            if _result is result and blocker in have:
+                result['mismatches'].append(
+                    '#%s: blocked-by edge to #%s is still there'
+                    % (result['number'], blocker))
     return results
 
 
 def lifecycle_phase(cfg, plans, results):
     """Put every issue the spec touched in the board lane its own state names.
 
-    Three states and one rule each, applied after the edges exist because two
-    of the three depend on them:
-
-      non-code   the issue is owned by a browser agent or a person, so its card
-                 goes in the Non-code column. This wins over blocked: the owner
-                 is a property of the work and no dependency closing changes
-                 it.
-      blocked    at least one native edge points at an open issue, so the card
-                 goes in Blocked.
-      pickable   neither, so the card goes in Backlog, which is what
-                 "available" means.
+    The rule is `wf_core.board_column_for`, applied after the edges exist
+    because two of its five inputs depend on them: an owner who is a person or
+    a browser agent puts the card in Non-code, an explicit `state` on the entry
+    puts it where the entry asked, an issue nothing owns goes to Needs
+    refinement, an open edge means Blocked, and everything else is Backlog.
 
     The column is the whole of the answer. Until 10.0.0 this phase wrote a
     lifecycle label as well and the two were meant to agree; they are one thing
     now, so there is nothing to keep in step and no way for the label and the
     board to disagree about what state an issue is in.
 
-    **The card is placed every time.** A created code issue with no blockers is
-    pickable, and an earlier version returned early on that verdict, leaving it
-    with no board item at all -- an issue that existed in the repository and
-    nowhere on the board. That was survivable while the pool was a label query.
-    It is not survivable now the pool *is* the Backlog column, and it is what
-    makes the column trustworthy as the only record: every issue the workflow
+    **A card in a lane this phase does not own is left where it is.** The rule
+    above describes an issue nobody is working on, and it was applied to every
+    issue a spec touched: an update setting a field value on an issue that was
+    in progress moved its card back to Backlog, where a second agent could pick
+    up work already underway, and an update to a parked issue silently
+    un-parked it. `wf_core.AUTO_MANAGED_COLUMNS` is the set this phase may
+    write -- Backlog, Blocked, Non-code, plus any issue with no card or no
+    lane at all -- and an entry that names a `state` overrides even that,
+    because asking for a lane is a decision rather than an inference.
+
+    **A card is placed the first time regardless.** A created issue has no
+    card, and an earlier version returned early on the pickable verdict,
+    leaving it in the repository and nowhere on the board. That is not
+    survivable now the pool *is* the Backlog column: every issue the workflow
     touches leaves it holding a state.
+
+    **An issue whose edges could not be read is not placed at all**, and the
+    entry is failed. The lane depends on whether anything blocks the issue, and
+    a failed query is not the same answer as "nothing does" -- re-running the
+    spec completes the placement, because every write before it is idempotent.
 
     **A retired label is taken off.** Whatever `status-*`, `priority-*`,
     scope or `needs-refinement` label an issue is still carrying from the label
@@ -1518,10 +1644,10 @@ def lifecycle_phase(cfg, plans, results):
     from its own read-back) and from the spec otherwise, which is what a create
     just applied.
 
-    Ownership is read from the field the spec just wrote rather than from the
-    issue, because that write and this decision are the same run: `plan`
-    carries the resolved value, and re-reading it would cost a query to learn
-    what the caller already knows.
+    Ownership is read from the field the spec just wrote where the spec wrote
+    one, and from the issue's own value otherwise: an update about a milestone
+    says nothing about ownership, and re-deciding the lane without it would
+    read an owned issue as unowned.
     """
     numbers = [r['number'] for r in results
                if r.get('number') and not r.get('errors')]
@@ -1530,7 +1656,8 @@ def lifecycle_phase(cfg, plans, results):
     # otherwise look dependency-free and have its card moved out of Blocked.
     # The edges are the record, so they are read for every issue whose lane is
     # about to be decided.
-    edge_map = issue_edges_map(cfg, numbers)
+    edge_map, edges_unknown = issue_edges_map(cfg, numbers)
+    lanes_ok, current_lanes, lanes_err = board_current_columns(cfg, numbers)
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     ownership_field = field_name(cfg, 'field-ownership')
     placements, by_number = {}, {}
@@ -1545,9 +1672,10 @@ def lifecycle_phase(cfg, plans, results):
             names = [n['name'] for n in live_labels]
         else:
             names = [label(cfg, l) for l in (entry.get('labels') or [])]
-        title = live.get('title') or entry.get('title') or ''
         owner = (plan.get('fields') or {}).get(ownership_field, {}).get('value')
-        scope = wf_core.issue_scope(title, owner)
+        if owner is None:
+            owner = issue_field_values(live).get(ownership_field)
+        scope = wf_core.ownership_scope(owner)
         open_blockers, _closed = wf_core.edge_states(edge_map.get(number) or [])
 
         retired = wf_core.retired_labels_on(names, cfg.get('labels') or {})
@@ -1568,9 +1696,33 @@ def lifecycle_phase(cfg, plans, results):
                 result['changed'].append('cleared retired label(s) %s'
                                          % ', '.join(retired))
 
+        if number in edges_unknown:
+            result['errors'].append(
+                'could not read the blocked-by edges, so the lane its card '
+                'belongs in is unknown and it was not moved — re-run the spec')
+            continue
+
+        requested = plan.get('state')
         column = wf_core.BOARD_COLUMN_NAMES[
-            wf_core.board_column_for(scope, open_blockers)]
+            wf_core.board_column_for(scope, open_blockers, requested)]
         result['board_column'] = column
+
+        if not lanes_ok:
+            result['errors'].append(
+                'could not read where its card sits on the board (%s), so it '
+                'was not moved — re-run the spec' % lanes_err)
+            continue
+
+        allowed, held_in = wf_core.may_place_card(current_lanes.get(number),
+                                                  requested)
+        if not allowed:
+            # Somebody, or some other run, put the card there. An update about
+            # a field value does not overrule that.
+            result['board_column'] = held_in
+            result['board_column_kept'] = held_in
+            by_number[number] = result
+            continue
+
         placements[number] = column
         by_number[number] = result
 
@@ -1580,8 +1732,21 @@ def lifecycle_phase(cfg, plans, results):
     for number, (moved, message) in board_place_many(cfg, placements).items():
         result = by_number[number]
         result['board_moved'] = moved
-        if not moved:
-            result['board_message'] = message
+        if moved:
+            continue
+        result['board_message'] = message
+        if message == 'no board configured':
+            # A project with no board at all is a configuration `preflight`
+            # fails on, once, rather than something to fail every entry over.
+            result['warnings'] = result.get('warnings') or []
+            result['warnings'].append('no board configured, so the issue holds '
+                                      'no state')
+            continue
+        # The card is the state. An issue whose card did not move is in the
+        # lane it was in — for a create, in no lane at all — so the entry has
+        # not finished, and re-running the spec finishes it.
+        result['errors'].append('the card did not reach %s (%s) — re-run the '
+                                'spec' % (result.get('board_column'), message))
 
     # `Classification` and `Origin` are not worth refusing an issue over, and
     # they are worth saying out loud. A one-line stderr warning reaches whoever
@@ -1663,20 +1828,6 @@ def cmd_issue_apply(args):
         eprint('wf: skipped %d field(s) this org does not define: %s'
                % (len(skipped), ', '.join(sorted(skipped))))
 
-    # A create writes only what the spec names. Readiness no longer depends on
-    # a label — `issue-apply` puts the card in Backlog and that is what the
-    # pickers read — but ordering still does: an issue created with no `labels`
-    # and no Priority field value sorts last within its band. Warned rather
-    # than defaulted, because the spec is the authority on what an issue
-    # carries and a label appearing from nowhere would be as surprising as the
-    # missing one.
-    unlabelled = [wf_core.entry_label(e) for e in entries
-                  if not e.get('number') and not e.get('labels')]
-    if unlabelled:
-        eprint('wf: %d new issue(s) name no labels, so nothing gives them a '
-               'priority to sort on: %s'
-               % (len(unlabelled), ', '.join(unlabelled)))
-
     label_names = sorted({label(cfg, l) for e in entries
                           for l in (e.get('labels') or [])})
     referenced = set()
@@ -1705,6 +1856,27 @@ def cmd_issue_apply(args):
         emit('spec-invalid', EXIT_SPEC, spec=args.spec,
              reason='issues the spec references do not exist in this repo',
              issues=ctx['missing_issues'])
+
+    # Epic → Feature → User Story. Checked here rather than in `validate_spec`
+    # because a parent may be an issue that already exists, and its type is only
+    # known once the referenced issues have been read.
+    hierarchy = wf_core.spec_hierarchy_errors(
+        plans, ctx['issue_types'], ctx['issue_parents'], caps['type_map'])
+    if hierarchy:
+        emit('spec-invalid', EXIT_SPEC, spec=args.spec, errors=hierarchy,
+             reason='%d %s outside the epic → feature → story tree; nothing '
+                    'was written'
+                    % (len(hierarchy),
+                       'entry sits' if len(hierarchy) == 1 else 'entries sit'))
+
+    # The rules an update can only break against the issue it updates.
+    live_errors = wf_core.spec_live_errors(plans, ctx['issue_live'],
+                                           cfg.get('fields', {}))
+    if live_errors:
+        emit('spec-invalid', EXIT_SPEC, spec=args.spec, errors=live_errors,
+             reason='%d spec %s against the issues it updates; nothing was written'
+                    % (len(live_errors),
+                       'error' if len(live_errors) == 1 else 'errors'))
 
     if args.dry_run:
         emit('ok', EXIT_OK, spec=args.spec, dry_run=True,
@@ -1886,14 +2058,15 @@ def cmd_issue_audit(args):
                               'gaps': a['gaps']} for a in with_gaps]
 
     if not with_gaps:
-        emit('ok', EXIT_OK, reason='every open issue in %s carries its type, '
-                                   'its field values and its dependency edges'
-                                   % repo, **payload)
+        emit('ok', EXIT_OK, reason='every open issue in %s carries its type, its '
+                                   'field values, an owner and a place in the '
+                                   'epic tree' % repo, **payload)
 
     # Non-zero so the audit can run as a check. The spec it just wrote is the
-    # input to the backfill, but it is deliberately not applied here: the
-    # dependency edges in it are inferred from body prose, which is not
-    # reliable enough to write a graph from unattended.
+    # input to the backfill, but it is deliberately not applied here: every gap
+    # it cannot fill deterministically is left as a placeholder for a person to
+    # decide, and applying a spec full of `TODO` would write the blank metadata
+    # this command exists to find.
     # The path is reported relative to the repo when it sits inside it: the
     # absolute form is long enough that printing it twice buried the counts
     # that are the actual result.
@@ -2024,12 +2197,18 @@ def _board_placement_query(field_name):
     "which issues have no card" and "which cards are in no lane". Those are the
     two ways an issue can be absent from the board's account of the work, and
     both are invisible to every command that reads a lane.
+
+    The labels ride along for the same reason: the retired-label check needs
+    every open issue's labels, and that is the same walk. Two paginated scans of
+    the same issues to answer two questions about them is a round trip nobody
+    gets back.
     """
     return (
         'query($owner:String!,$repo:String!,$after:String){'
         ' repository(owner:$owner,name:$repo){ issues(states:OPEN,first:100,after:$after){'
         ' pageInfo { hasNextPage endCursor }'
         ' nodes { number title assignees(first:1){ totalCount }'
+        ' labels(first:50){ nodes { name } }'
         ' projectItems(first:20){ nodes { project { id }'
         '  fieldValueByName(name:"%s"){'
         '   ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } } }'
@@ -2037,35 +2216,45 @@ def _board_placement_query(field_name):
 
 
 def fetch_board_placement(cfg, repo=None):
-    """Which open issues the board does not account for.
+    """What the open issues look like to the board and to the label checks.
 
-    Returns (ok, orphans, unset, err) -- issues with no card, and issues whose
-    card holds no `Status` value. Both are the same failure in the end: the
-    column is the state, so an issue in neither a card nor a lane is in no
-    state, invisible to `pick` and to every other command that reads one.
+    Returns (ok, orphans, unset, labelled, err) -- issues with no card, issues
+    whose card holds no `Status` value, and every open issue that carries any
+    label at all. The first two are the same failure in the end: the column is
+    the state, so an issue in neither a card nor a lane is in no state,
+    invisible to `pick` and to every other command that reads one.
 
     Assigned issues are excluded from `orphans` because they are somebody's
     already and adding a card would not change that. They are **not** excluded
     from `unset`: an assigned issue in no lane is exactly the in-progress work
     that has fallen off the board, which is worth saying.
+
+    A project with no board still gets `labelled`: whether the repo's issues
+    carry labels that decide nothing is a question about the repo, not about
+    the board, and it is answerable either way.
     """
     board = cfg.get('board') or {}
     board_id = board.get('project_node_id')
-    if not board_id:
-        return True, [], [], ''
     field = board.get('status_field_name', 'Status')
     owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
     query = _board_placement_query(field)
-    orphans, unset, cursor = [], [], None
+    orphans, unset, labelled, cursor = [], [], [], None
     while True:
         fields = {'owner': owner, 'repo': name}
         if cursor:
             fields['after'] = cursor
         ok, data, err = gh_graphql(query, **fields)
         if not ok or not data:
-            return False, None, None, err
+            return False, None, None, None, err
         page = ((data.get('repository') or {}).get('issues')) or {}
         for node in page.get('nodes') or []:
+            names = [n['name'] for n
+                     in (node.get('labels') or {}).get('nodes') or []
+                     if n.get('name')]
+            if names:
+                labelled.append({'number': node['number'], 'labels': names})
+            if not board_id:
+                continue
             assigned = ((node.get('assignees') or {}).get('totalCount') or 0) > 0
             items = [i for i in (node.get('projectItems') or {}).get('nodes') or []
                      if (i.get('project') or {}).get('id') == board_id]
@@ -2078,7 +2267,7 @@ def fetch_board_placement(cfg, repo=None):
                 unset.append(node['number'])
         info = page.get('pageInfo') or {}
         if not info.get('hasNextPage'):
-            return True, orphans, unset, ''
+            return True, orphans, unset, labelled, ''
         cursor = info.get('endCursor')
 
 
@@ -2095,6 +2284,48 @@ def plugin_scan_roots(explicit=None):
     if env and os.path.isdir(env):
         return [os.path.abspath(env)]
     return [os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]
+
+
+# The instruction files a session actually reads before it does anything: the
+# project's own `CLAUDE.md` at any depth, and `ClaudeProject.md` beside it.
+# Deliberately not every markdown file in the repo -- a design note describing
+# what `Ready` used to be is history somebody wrote on purpose, while a
+# `CLAUDE.md` saying the same thing is an instruction a session will follow.
+INSTRUCTION_FILE_NAMES = ('CLAUDE.md', 'ClaudeProject.md')
+INSTRUCTION_SCAN_MAX = 200
+
+
+def read_instruction_files(root, exclude=()):
+    """Every instruction file under `root`, as {relative path: text}.
+
+    `exclude` is the plugin's own directory, which only sits inside the project
+    in the plugin's own repository. Its templates are the plugin describing the
+    workflow -- including naming what it retired, so a project knows to drop
+    it -- and they are held to the plugin's own test suite rather than to a
+    check about the project's instructions. Found live: the shipped
+    `ClaudeProject.md` template was reported for the sentence telling projects
+    that the retired labels decide nothing.
+    """
+    skip = {os.path.normcase(os.path.abspath(p)) for p in exclude or ()}
+    out = {}
+    for dirpath, dirnames, filenames in os.walk(root or '.'):
+        dirnames[:] = [d for d in dirnames
+                       if not d.startswith('.') and d != 'node_modules'
+                       and os.path.normcase(os.path.abspath(
+                           os.path.join(dirpath, d))) not in skip]
+        for name in INSTRUCTION_FILE_NAMES:
+            if name not in filenames:
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                with open(path, encoding='utf-8') as fh:
+                    text = fh.read()
+            except OSError:
+                continue
+            out[os.path.relpath(path, root or '.').replace(os.sep, '/')] = text
+        if len(out) >= INSTRUCTION_SCAN_MAX:
+            return out
+    return out
 
 
 def scan_plugin_labels(roots, base=None):
@@ -2143,7 +2374,7 @@ def collect_config_findings(cfg, args, root):
     source_rel = os.path.basename(source)
 
     findings, checked, skipped = [], [], []
-    context = {'orphans': [], 'unset': [], 'board': None}
+    context = {'orphans': [], 'unset': [], 'board': None, 'retired_labels': []}
 
     # ── offline ──────────────────────────────────────────────────────────────
     headings = []
@@ -2153,15 +2384,25 @@ def collect_config_findings(cfg, args, root):
     findings.extend(wf_core.config_section_findings(headings, source_rel))
     checked.append('config-section')
 
+    # Retired vocabulary in the project's own instructions. Offline, and worth
+    # running first: a `CLAUDE.md` telling a session to look for a `Ready` label
+    # sends it to do work no amount of correct board configuration will make
+    # right.
     roots = plugin_scan_roots(args.scan)
+    findings.extend(wf_core.instruction_findings(
+        read_instruction_files(root, exclude=roots)))
+    checked.append('instructions-retired')
+
     references = scan_plugin_labels(roots, base=root)
     checked.append('label-reference')
 
     if args.offline:
         skipped = ['label-reference', 'config-label', 'label-drift',
                    'field-unpinned', 'field-unmapped', 'field-absent',
-                   'board-column', 'board-lane', 'board-orphan', 'board-unset']
-        return findings, ['config-section'], skipped, context
+                   'field-retired', 'field-options', 'label-retired',
+                   'board-column', 'board-lane', 'board-retired',
+                   'board-orphan', 'board-unset']
+        return findings, ['config-section', 'instructions-retired'], skipped, context
 
     # ── the repo: labels and the board, in one round trip ────────────────────
     ok, state, err = fetch_repo_state(cfg, args.repo)
@@ -2181,23 +2422,35 @@ def collect_config_findings(cfg, args, root):
 
     board_cfg = cfg.get('board') or {}
     context['board'] = state['board']
-    if board_cfg.get('project_node_id'):
+    has_board = bool(board_cfg.get('project_node_id'))
+    if has_board:
         findings.extend(_board_findings(board_cfg, state['board'], source_rel))
-        checked.extend(['board-column', 'board-lane'])
-        ok, orphans, unset, err = fetch_board_placement(cfg, args.repo)
-        if not ok:
-            findings.append(wf_core.finding(
-                wf_core.WARNING, 'board-orphan',
-                'could not read where the open issues sit on the board (%s), so '
-                'whether any are invisible to `pick` is unverified' % err,
-                'check the token and re-run', source_rel))
-            skipped.extend(['board-orphan', 'board-unset'])
-        else:
+        checked.extend(['board-column', 'board-lane', 'board-retired'])
+
+    # One walk of the open issues answers three questions: which have no card,
+    # which sit in no lane, and which still carry a label that decides nothing.
+    ok, orphans, unset, labelled, err = fetch_board_placement(cfg, args.repo)
+    if not ok:
+        findings.append(wf_core.finding(
+            wf_core.WARNING, 'board-orphan',
+            'could not read the open issues (%s), so whether any are invisible '
+            'to `pick` or still carry a retired label is unverified' % err,
+            'check the token and re-run', source_rel))
+        skipped.extend(['board-orphan', 'board-unset', 'label-retired'])
+    else:
+        findings.extend(wf_core.retired_label_findings(
+            labelled, cfg.get('labels'), source_rel))
+        checked.append('label-retired')
+        context['retired_labels'] = labelled
+        if has_board:
             findings.extend(wf_core.board_orphan_findings(orphans, source_rel))
             findings.extend(wf_core.board_unset_findings(unset, source_rel))
             checked.extend(['board-orphan', 'board-unset'])
             context['orphans'], context['unset'] = orphans, unset
-    else:
+        else:
+            skipped.extend(['board-orphan', 'board-unset'])
+
+    if not has_board:
         # Not a skip. Selection reads the board's Backlog column, so a project
         # without a board cannot pick anything at all, and reporting that as
         # "unchecked" is how it stayed invisible.
@@ -2224,6 +2477,16 @@ def collect_config_findings(cfg, args, root):
     findings.extend(wf_core.unmapped_field_findings(caps['field_map'],
                                                     cfg.get('fields'), source_rel))
     checked.append('field-unmapped')
+
+    # A field this workflow retired that the org still defines, and options on a
+    # mandatory field that no decision here knows. Both fail silently otherwise:
+    # the first invites somebody to map a purpose key to a dead field, the
+    # second sorts every issue carrying an unrecognised value last.
+    findings.extend(wf_core.retired_field_findings(
+        (caps['field_map'] or {}).keys(), cfg.get('fields'), source_rel))
+    findings.extend(wf_core.field_option_findings(
+        caps['field_map'], cfg.get('fields'), source_rel))
+    checked.extend(['field-retired', 'field-options'])
 
     # A mandatory field the org has not created is the failure every other
     # check here assumes away: the picker reads these five and nothing else,
@@ -2288,6 +2551,7 @@ def _board_findings(board_cfg, live_board, path):
     out.extend(wf_core.board_column_findings(board_cfg.get('columns'), options,
                                              path))
     out.extend(wf_core.board_lane_findings(options.values(), path))
+    out.extend(wf_core.board_retired_findings(options.values(), path))
     return out
 
 
@@ -2581,6 +2845,103 @@ def _fix_board_placement(cfg, orphans, unset):
     return done, blocked
 
 
+def _fix_retired_labels(cfg, labelled, repo=None):
+    """Take every retired label off the open issues still carrying one.
+
+    The only write this command makes to an issue's own content, and it is safe
+    because the labels decide nothing: `pick`, `unblock` and the board all read
+    fields now. What a stale label still does is mislead a person filtering the
+    issues list by hand, which is why it is worth removing rather than leaving
+    for the write path to clear one issue at a time.
+    """
+    repo = repo or '%s/%s' % (cfg['org'], cfg['repo'])
+    project_map = cfg.get('labels')
+    cleared, failed, names = [], [], set()
+    for issue in labelled or ():
+        stale = wf_core.retired_label_variants(issue.get('labels'), project_map)
+        if not stale:
+            continue
+        args = []
+        for name in stale:
+            args.extend(['--remove-label', name])
+        code, _out, err = run(['gh', 'issue', 'edit', str(issue['number']),
+                               '--repo', repo] + args)
+        if code != 0:
+            failed.append('#%s (%s)' % (issue['number'],
+                                        (err or '').strip() or 'edit failed'))
+            continue
+        cleared.append(issue['number'])
+        names.update(stale)
+    done, blocked = [], []
+    if cleared:
+        done.append('took %s off %d issue%s'
+                    % (wf_core._names(sorted(names)), len(cleared),
+                       '' if len(cleared) == 1 else 's'))
+    if failed:
+        blocked.append('could not clear the retired labels on %s'
+                       % ', '.join(failed))
+    return done, blocked
+
+
+def _fix_retired_board_column(cfg, findings):
+    """Empty a retired lane into `Backlog`, then delete the lane.
+
+    In that order, and only in that order: deleting a single-select option
+    deletes the value from every card holding it, so a `Ready` column removed
+    while cards sat in it would leave those issues in no lane at all -- which is
+    the `board-unset` failure, created by the repair meant to prevent it. A lane
+    this run could not empty keeps its column and is reported instead.
+    """
+    if not any(f['check'] == 'board-retired' for f in findings):
+        return [], []
+    ok, field, err = board_column_options(cfg)
+    if not ok:
+        return [], ['could not read the board (%s), so no retired column was '
+                    'removed' % err]
+
+    pool = wf_core.BOARD_COLUMN_NAMES[wf_core.POOL_COLUMN]
+    by_name = {(o.get('name') or '').strip().lower(): o for o in field['options']}
+    done, blocked = [], []
+    doomed = []
+    for retired in wf_core.RETIRED_BOARD_COLUMNS:
+        option = by_name.get(retired.strip().lower())
+        if not option:
+            continue
+        ok, issues, cerr = _board_column_candidates(cfg, option['name'],
+                                                    unassigned_only=False)
+        if not ok:
+            blocked.append('could not read the `%s` column (%s), so it was left '
+                           'in place' % (option['name'], cerr))
+            continue
+        stuck = []
+        for issue in issues:
+            moved, message = board_move(cfg, issue['number'], pool)
+            if not moved:
+                stuck.append('#%d (%s)' % (issue['number'], message))
+        if stuck:
+            blocked.append('could not move %s out of `%s`, so the column was '
+                           'left in place' % (', '.join(stuck), option['name']))
+            continue
+        if issues:
+            done.append('moved %d card%s out of `%s` into %s'
+                        % (len(issues), '' if len(issues) == 1 else 's',
+                           option['name'], pool))
+        doomed.append(option)
+
+    if not doomed:
+        return done, blocked
+    keep = [o for o in field['options'] if o not in doomed]
+    ok, _options, uerr = create_board_columns(field['id'], keep, [])
+    if not ok:
+        blocked.append('emptied %s but could not remove %s from the board (%s)'
+                       % (wf_core._names([o['name'] for o in doomed]),
+                          'it' if len(doomed) == 1 else 'them', uerr))
+        return done, blocked
+    done.append('removed %s from the board'
+                % wf_core._names([o['name'] for o in doomed]))
+    return done, blocked
+
+
 def cmd_preflight(args):
     """Is this project in a state a workflow command can run against?
 
@@ -2644,10 +3005,17 @@ def cmd_preflight(args):
         board_done, board_blocked = _fix_board_columns(cfg, source, fixable)
         done.extend(board_done)
         blocked.extend(board_blocked)
+        column_done, column_blocked = _fix_retired_board_column(cfg, fixable)
+        done.extend(column_done)
+        blocked.extend(column_blocked)
         place_done, place_blocked = _fix_board_placement(
             cfg, context.get('orphans'), context.get('unset'))
         done.extend(place_done)
         blocked.extend(place_blocked)
+        label_done, label_blocked = _fix_retired_labels(
+            cfg, context.get('retired_labels'), args.repo)
+        done.extend(label_done)
+        blocked.extend(label_blocked)
 
     # Re-run against the state the repairs left behind, so the findings a
     # person reads are the ones that are still true. A `--fix` that reported
@@ -2703,11 +3071,24 @@ def _emit_preflight(findings, checked, skipped, cfg, args, fixed, blocked):
 
 # GitHub caps a connection page at 100 records -- asking for more is an
 # `EXCESSIVE_PAGINATION` error, not a truncated answer, so the whole query
-# fails. Two pages cover the same 200 open issues `assemble_candidates` reads
-# through `gh issue list --limit 200`, and the same newest-first order, so the
-# facets window and the candidate window are the same issues.
+# fails.
 FACET_PAGE_SIZE = 100
-FACET_MAX_PAGES = 2
+FACET_MAX_PAGES = 20
+
+# Issues per aliased request when the caller names them. The same twenty as
+# every other aliased read here, for the same reason: GitHub's complexity
+# budget.
+FACET_BATCH = 20
+
+_FACET_SELECTION = (
+    ' number issueType { name }'
+    ' issueFieldValues(first:20){ nodes {'
+    '  ... on IssueFieldSingleSelectValue {'
+    '   field { ... on IssueFieldSingleSelect { name } } name }'
+    '  ... on IssueFieldMultiSelectValue {'
+    '   field { ... on IssueFieldMultiSelect { name } } options { name } }'
+    ' } }'
+)
 
 
 def _facets_query(paged):
@@ -2717,22 +3098,30 @@ def _facets_query(paged):
         ' repository(owner:$owner,name:$repo){'
         '  issues(first:%d,states:OPEN,orderBy:{field:CREATED_AT,direction:DESC}%s){'
         '   pageInfo { hasNextPage endCursor }'
-        '   nodes { number issueType { name }'
-        '    issueFieldValues(first:20){ nodes {'
-        '     ... on IssueFieldSingleSelectValue {'
-        '      field { ... on IssueFieldSingleSelect { name } } name }'
-        '     ... on IssueFieldMultiSelectValue {'
-        '      field { ... on IssueFieldMultiSelect { name } } options { name } }'
-        '    } }'
+        '   nodes {%s'
         '   } } } }'
         % (',$cursor:String!' if paged else '', FACET_PAGE_SIZE,
-           ',after:$cursor' if paged else ''))
+           ',after:$cursor' if paged else '', _FACET_SELECTION))
 
 
-def fetch_issue_facets(cfg, priority_field='Priority',
+def _read_facets(node, facets, fields):
+    """Fold one issue node into the facet maps."""
+    number = node.get('number')
+    if number is None:
+        return
+    native = node.get('issueType') or {}
+    if native.get('name'):
+        facets['types'][number] = native['name']
+    values = issue_field_values(node)
+    for key, field in fields.items():
+        if values.get(field):
+            facets[key][number] = values[field]
+
+
+def fetch_issue_facets(cfg, numbers=None, priority_field='Priority',
                        classification_field='Classification',
                        effort_field='Effort', ownership_field='Ownership'):
-    """Every structured field the picker reads, for every open issue.
+    """Every structured field a decision reads, for the issues it decides about.
 
     Returns (ok, facets, err) where facets is ``{'types', 'priority',
     'classification', 'effort', 'ownership'}``, each a ``{number: value}`` map.
@@ -2741,13 +3130,44 @@ def fetch_issue_facets(cfg, priority_field='Priority',
     same row: the type to filter the pool, Priority and Effort to order it,
     Effort again for a size ceiling, Ownership to keep work a code agent cannot
     do out of a code agent's pool, and Classification to tell a `Feature` that
-    is tech debt from one that is a new feature. Fields the org does not define
-    simply produce empty maps, and the caller falls back to labels -- which is
-    also what happens when the query fails outright, so a repo whose schema has
-    none of this still picks stories.
+    is tech debt from one that is a new feature.
+
+    **Pass `numbers` whenever the caller knows them.** Without it this reads the
+    repository's open issues newest-first, and the window used to be two pages:
+    on a repository with more than two hundred open issues, an older issue sat
+    in the Backlog column with no `Ownership` value in the map, was dropped by
+    the pool filter as unowned, and was named nowhere. The pool it belongs to
+    is a board column and this was a repository query, so the two windows were
+    never the same set of issues. Naming the pool's own numbers removes the
+    window entirely.
+
+    A failure is a failure. There is no label fallback left to degrade to since
+    10.0.0 -- an empty ownership map means an empty pool, which reads exactly
+    like a finished backlog -- so the caller is told, and stops.
     """
+    fields = {'priority': priority_field, 'classification': classification_field,
+              'effort': effort_field, 'ownership': ownership_field}
     facets = {'types': {}, 'priority': {}, 'classification': {},
               'effort': {}, 'ownership': {}}
+
+    if numbers is not None:
+        ordered = sorted({int(n) for n in numbers})
+        for chunk in _chunks(ordered, FACET_BATCH):
+            parts = ['f%d: issue(number:%d){%s }' % (n, n, _FACET_SELECTION)
+                     for n in chunk]
+            ok, data, err = gh_graphql(
+                'query($owner:String!,$repo:String!){'
+                ' repository(owner:$owner,name:$repo){ %s } }' % ' '.join(parts),
+                owner=cfg['org'], repo=cfg['repo'])
+            if not ok or not data:
+                return False, facets, 'issue facet query failed: %s' % err
+            repo = data.get('repository') or {}
+            for number in chunk:
+                node = repo.get('f%d' % number)
+                if node:
+                    _read_facets(node, facets, fields)
+        return True, facets, ''
+
     cursor, pages = None, 0
     while pages < FACET_MAX_PAGES:
         args = {'owner': cfg['org'], 'repo': cfg['repo']}
@@ -2762,21 +3182,7 @@ def fetch_issue_facets(cfg, priority_field='Priority',
         except (KeyError, TypeError):
             return False, facets, 'unexpected issue facet response shape'
         for node in nodes:
-            number = node.get('number')
-            if number is None:
-                continue
-            native = node.get('issueType') or {}
-            if native.get('name'):
-                facets['types'][number] = native['name']
-            values = issue_field_values(node)
-            if values.get(priority_field):
-                facets['priority'][number] = values[priority_field]
-            if values.get(classification_field):
-                facets['classification'][number] = values[classification_field]
-            if values.get(effort_field):
-                facets['effort'][number] = values[effort_field]
-            if values.get(ownership_field):
-                facets['ownership'][number] = values[ownership_field]
+            _read_facets(node, facets, fields)
         pages += 1
         page_info = connection.get('pageInfo') or {}
         if not page_info.get('hasNextPage'):
@@ -2784,6 +3190,10 @@ def fetch_issue_facets(cfg, priority_field='Priority',
         cursor = page_info.get('endCursor')
         if not cursor:
             break
+        if pages >= FACET_MAX_PAGES:
+            return False, facets, (
+                'this repository has more than %d open issues, which is more '
+                'than one pass reads' % (FACET_PAGE_SIZE * FACET_MAX_PAGES))
     return True, facets, ''
 
 
@@ -2811,20 +3221,26 @@ def report_unprioritised(pool, priority_map):
            % (len(missing), ', '.join('#%d' % n for n in missing)))
 
 
-def load_issue_facets(cfg):
-    """`fetch_issue_facets` with the failure already reported. Returns the maps.
+def load_issue_facets(cfg, numbers=None):
+    """`fetch_issue_facets` for this project's field names, or stop.
 
-    Every map is empty on failure rather than absent, so each caller reads the
-    same shape and degrades to label ordering and label typing without a
-    branch of its own.
+    A failure ends the run rather than returning empty maps. Empty maps used to
+    be the fallback, from when a label could answer these questions: with no
+    `Ownership` value for anything, every candidate is filtered out, and the
+    command reports `no-candidates` -- a finished backlog -- because a query
+    failed. There is nothing left to fall back to, so there is nothing to
+    report but the failure.
     """
-    ok, facets, err = fetch_issue_facets(cfg, field_name(cfg, 'field-priority'),
+    ok, facets, err = fetch_issue_facets(cfg, numbers,
+                                         field_name(cfg, 'field-priority'),
                                          field_name(cfg, 'field-type'),
                                          field_name(cfg, 'field-effort'),
                                          field_name(cfg, 'field-ownership'))
     if not ok:
-        eprint('wf: issue type/field lookup failed (%s); ordering and typing '
-               'this pool by labels instead' % err)
+        emit('error', EXIT_ENV,
+             reason='could not read the issue fields every decision here is '
+                    'made from (%s), so nothing about this backlog is known. '
+                    'Check the token and re-run.' % err)
     return facets
 
 
@@ -2862,6 +3278,24 @@ def assemble_candidates(cfg):
             'and record it.' % wf_core.BOARD_COLUMN_NAMES[wf_core.POOL_COLUMN])
     return _board_column_candidates(
         cfg, wf_core.BOARD_COLUMN_NAMES[wf_core.POOL_COLUMN])
+
+
+def ordered_pool(cfg, issues, selector):
+    """The filtered, sorted pool, narrowed to a sprint when one applies.
+
+    Returns (backlog_mode, pool). Filtering runs first and narrowing second,
+    which is the opposite of the order this ran in until 10.1.2, and the reason
+    is that a milestone is not an eligibility rule: narrowing first meant that
+    a sprint whose only Backlog issues were owned by a person produced an empty
+    pool and `no-candidates`, while pickable work sat in the next milestone.
+    For the same reason a sprint that holds nothing this agent may take falls
+    back to the flat pool rather than to nothing.
+    """
+    pool = selector(issues)
+    mode, narrowed = narrow_to_sprint(cfg, pool)
+    if mode == 'sprint' and narrowed:
+        return mode, narrowed
+    return 'flat', pool
 
 
 def narrow_to_sprint(cfg, issues):
@@ -2974,10 +3408,40 @@ def apply_in_progress(cfg, issue):
                % (issue['number'], message))
 
 
+def revert_in_progress(cfg, number):
+    """Undo `apply_in_progress`: unassign and put the card back in Backlog.
+
+    The claim is taken before the issue can be validated, so a candidate that
+    turns out not to be workable has already been assigned and moved. Every
+    path that gives one back has to leave it exactly as available as it was
+    found, or the next run sees an issue somebody is apparently working on and
+    skips it for good. Returns (moved, message) for the board half.
+    """
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    code, _, err = run(['gh', 'issue', 'edit', str(number), '--repo', repo,
+                        '--remove-assignee', '@me'])
+    if code != 0:
+        eprint('wf: warning — could not unassign #%s (%s)' % (number, err.strip()))
+    return board_move(cfg, number,
+                      wf_core.BOARD_COLUMN_NAMES[wf_core.POOL_COLUMN])
+
+
 # ── dependency validation ────────────────────────────────────────────────────
+
+# How many blocked-by edges one read asks for. A full page is treated as "more
+# than this can see" rather than as the whole set: releasing an issue because
+# its first hundred blockers are closed, while the hundred-and-first is open,
+# is the one mistake a dependency reader must not make.
+EDGE_PAGE = 100
+
 
 def issue_edges(cfg, number):
     """The issue's native blocked-by edges, with each blocker's state.
+
+    Returns the edge list, or None when the answer is unknown -- a failed
+    query, or more edges than one page holds. None is not "no edges": every
+    caller has to tell the two apart, because acting on "no edges" means
+    treating the issue as unblocked.
 
     One query, and it answers the whole question: which issues this one waits
     on, and which of those are still open. The old shape read the body prose
@@ -2985,61 +3449,83 @@ def issue_edges(cfg, number):
     """
     ok, data, _ = gh_graphql(
         'query($o:String!,$r:String!,$n:Int!){ repository(owner:$o,name:$r){'
-        ' issue(number:$n){ blockedBy(first:50){ nodes { number state } } } } }',
+        ' issue(number:$n){ blockedBy(first:%d){ nodes { number state } } } } }'
+        % EDGE_PAGE,
         o=cfg['org'], r=cfg['repo'], n=int(number))
     if not ok or not data:
         return None
     try:
-        return data['repository']['issue']['blockedBy']['nodes'] or []
+        nodes = data['repository']['issue']['blockedBy']['nodes'] or []
     except (KeyError, TypeError):
         return None
+    return None if len(nodes) >= EDGE_PAGE else nodes
 
 
 EDGE_BATCH = 20
 
 
 def issue_edges_map(cfg, numbers):
-    """The native blocked-by edges of many issues at once. {number: [edge]}.
+    """The native blocked-by edges of many issues at once. (found, unknown).
 
-    One aliased query per twenty issues rather than one query per issue. A
-    number absent from the result is a lookup that failed, which reads the same
-    as "no edges" at every call site here — deliberately, because a listing
-    that loses its dependency column is better than a listing that refuses to
-    print.
+    `found` is {number: [edge]}; `unknown` is every number whose edges this
+    could not read — a failed request, an alias GitHub did not answer, or more
+    edges than one page holds.
+
+    One aliased query per twenty issues rather than one query per issue. The
+    split return is what stops a network failure reading as an unblocked issue:
+    an absent number used to come back the same as one with no edges, so a
+    transient error on this query moved a genuinely blocked card into Backlog
+    and handed the issue to an agent whose dependency was still open.
     """
-    found = {}
+    found, unknown = {}, []
     ordered = sorted({int(n) for n in (numbers or ())})
     for start in range(0, len(ordered), EDGE_BATCH):
         batch = ordered[start:start + EDGE_BATCH]
-        parts = ['e%d: issue(number:%d){ blockedBy(first:50){'
-                 ' nodes { number state title } } }' % (n, n) for n in batch]
+        parts = ['e%d: issue(number:%d){ blockedBy(first:%d){'
+                 ' nodes { number state title } } }' % (n, n, EDGE_PAGE)
+                 for n in batch]
         ok, data, _ = gh_graphql(
             'query($o:String!,$r:String!){ repository(owner:$o,name:$r){ %s } }'
             % ' '.join(parts), o=cfg['org'], r=cfg['repo'])
         if not ok or not data:
+            unknown.extend(batch)
             continue
         repo = data.get('repository') or {}
         for number in batch:
             node = repo.get('e%d' % number)
             if node is None:
+                unknown.append(number)
                 continue
-            found[number] = (node.get('blockedBy') or {}).get('nodes') or []
-    return found
+            nodes = (node.get('blockedBy') or {}).get('nodes') or []
+            if len(nodes) >= EDGE_PAGE:
+                unknown.append(number)
+                continue
+            found[number] = nodes
+    return found, sorted(set(unknown))
 
 
 def validate_issue(cfg, issue, siblings=()):
     """Validate a claimed issue. Returns (verdict, detail).
 
-    verdict ∈ {'valid', 'blocked', 'resolved'}:
+    verdict ∈ {'valid', 'blocked', 'resolved', 'unknown'}:
       blocked  → open dependencies (detail = list of open #s, or 'meta' on overflow)
       resolved → already closed by a merged PR (detail = pr number)
-      valid    → ready to work
+      unknown  → the edges could not be read, so nothing here is decidable
+      valid    → nothing stops the work starting
 
-    The dependencies come from the native `blockedBy` edges, not from the body
-    prose. The prose is still parsed, but only to notice when it names a
-    blocker no edge records: that is a data gap rather than a block, and it is
-    exactly how an issue ends up sitting blocked with nothing able to see it
-    has been freed. It is warned about and does not hold the pick.
+    The dependencies come from the native `blockedBy` edges and from nowhere
+    else. No body prose is parsed here: a dependency is the edge, and a
+    sentence naming one is not a second record of it.
+
+    `unknown` exists because the alternative was worse in a specific way. A
+    failed edge query used to return `blocked`, and the caller then moved the
+    card to Blocked -- an issue with no edge behind it, which `wf unblock` will
+    never release, parked indefinitely by one bad request.
+
+    The dependency ceiling counts **open** blockers only. Counting closed ones
+    too made an issue with six delivered dependencies permanently
+    unworkable: `pick` marked it blocked, the next sweep found every edge
+    closed and released it, and the two took turns.
 
     `siblings` are the other issues in a bulk set — stories being built in the
     same commit series on the same branch. A dependency on one of those does
@@ -3049,11 +3535,12 @@ def validate_issue(cfg, issue, siblings=()):
     """
     edges = issue_edges(cfg, issue['number'])
     if edges is None:
-        return 'blocked', 'could not read the blocked-by edges'
+        return 'unknown', 'could not read the blocked-by edges'
     open_numbers, closed_numbers = wf_core.edge_states(edges)
     deps = open_numbers + closed_numbers
-    if len(deps) > wf_core.DEP_LIMIT:
-        return 'blocked', 'meta-issue (> %d dependencies)' % wf_core.DEP_LIMIT
+    if len(open_numbers) > wf_core.DEP_LIMIT:
+        return 'blocked', ('meta-issue (> %d open dependencies)'
+                           % wf_core.DEP_LIMIT)
     open_deps = wf_core.blocking_dependencies(deps, open_numbers, siblings)
     if open_deps:
         return 'blocked', ', '.join('#%d' % d for d in open_deps)
@@ -3073,14 +3560,18 @@ def merged_pr_closing(cfg, number):
     base, e.g. a chained story, where GitHub recognises the reference but does
     not auto-close), and never misfires on a stray "closes"/"#N" in prose.
 
-    Returns the lowest such PR number (oldest-first) so the result is
-    deterministic when more than one merged PR references the issue.
+    The **newest** hundred merged pull requests, and the lowest matching number
+    among them so the answer is deterministic when more than one references the
+    issue. It read the oldest hundred until 10.1.2, which on any repository
+    past its first hundred merges could only ever see the beginning of history
+    — so the case this exists to catch, a pull request that merged in the last
+    few days, was the one case it could not see.
     """
     query = (
         'query($owner:String!,$repo:String!){'
         ' repository(owner:$owner,name:$repo){'
         ' pullRequests(states:MERGED, first:100,'
-        ' orderBy:{field:CREATED_AT, direction:ASC}){'
+        ' orderBy:{field:CREATED_AT, direction:DESC}){'
         ' nodes { number closingIssuesReferences(first:10){ nodes { number } } } } } }'
     )
     ok, data, _ = gh_graphql(query, owner=cfg['org'], repo=cfg['repo'])
@@ -3090,25 +3581,34 @@ def merged_pr_closing(cfg, number):
         nodes = data['repository']['pullRequests']['nodes']
     except (KeyError, TypeError):
         return None
-    for pr in nodes:
-        if number in wf_core.closing_issue_numbers(pr.get('closingIssuesReferences')):
-            return pr['number']
-    return None
+    matches = [pr['number'] for pr in nodes
+               if number in wf_core.closing_issue_numbers(
+                   pr.get('closingIssuesReferences'))]
+    return min(matches) if matches else None
 
 
 def mark_blocked(cfg, issue, detail):
-    """Return an issue to blocked: label, comment, and the board column.
+    """Return an issue to blocked: unassign, comment, move the card.
 
-    The board move is not decoration. It is the whole record of the state: the
-    card in Blocked is what says the issue is blocked, and it is what keeps the
-    issue out of the pool, because the pool is the Backlog column.
+    Returns (moved, message) for the board half, which the caller reports. The
+    board move is not decoration. It is the whole record of the state: the card
+    in Blocked is what says the issue is blocked, and it is what keeps the
+    issue out of the pool, because the pool is the Backlog column. A failed
+    move therefore leaves the issue in the pool, unassigned, and the next run
+    picks it up again — so it has to be said rather than swallowed.
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     run(['gh', 'issue', 'edit', str(issue['number']), '--repo', repo,
          '--remove-assignee', '@me'])
     run(['gh', 'issue', 'comment', str(issue['number']), '--repo', repo,
          '--body', 'Blocked — open dependency(ies): %s. Returned to blocked until they close.' % detail])
-    board_move(cfg, issue['number'], wf_core.BOARD_COLUMN_NAMES['col-blocked'])
+    moved, message = board_move(cfg, issue['number'],
+                                wf_core.BOARD_COLUMN_NAMES['col-blocked'])
+    if not moved:
+        eprint('wf: warning — #%s is unassigned but its card did not move to '
+               'Blocked (%s), so it is still in the pool'
+               % (issue['number'], message))
+    return moved, message
 
 
 def clear_lifecycle_label(cfg, number, labels):
@@ -3218,6 +3718,47 @@ def board_status_field(cfg):
             outcome = (True, node, field, '')
     _BOARD_FIELD_CACHE[key] = outcome
     return outcome
+
+
+def board_current_columns(cfg, numbers):
+    """The lane each issue's card is in now. (ok, {number: column or None}, err).
+
+    A number maps to None when the issue has a card with no `Status` value, and
+    is absent from the mapping when it has no card on this board at all. Both
+    mean "in no lane", and both are lanes `issue-apply` may write; the
+    difference matters only to the message it prints.
+    """
+    board = cfg.get('board') or {}
+    node = board.get('project_node_id')
+    if not node:
+        return False, {}, 'no board configured'
+    field_name = (board.get('status_field_name') or 'Status').replace('"', '\\"')
+    ordered = sorted({int(n) for n in (numbers or ())})
+    out = {}
+    for chunk in _chunks(ordered, BOARD_BATCH):
+        parts = ['c%d: issue(number:%d){ projectItems(first:20){ nodes {'
+                 ' project { id }'
+                 ' fieldValueByName(name:"%s"){'
+                 '  ... on ProjectV2ItemFieldSingleSelectValue { name } } } } }'
+                 % (n, n, field_name) for n in chunk]
+        ok, data, err = gh_graphql(
+            'query($o:String!,$r:String!){ repository(owner:$o,name:$r){ %s } }'
+            % ' '.join(parts), o=cfg['org'], r=cfg['repo'])
+        if not ok or not data:
+            return False, {}, err or 'board lane lookup failed'
+        repo = data.get('repository') or {}
+        for number in chunk:
+            content = repo.get('c%d' % number)
+            if not content:
+                continue
+            items = [i for i in (content.get('projectItems') or {}).get('nodes') or []
+                     if (i.get('project') or {}).get('id') == node]
+            if not items:
+                continue
+            out[number] = next(
+                ((i.get('fieldValueByName') or {}).get('name') for i in items
+                 if (i.get('fieldValueByName') or {}).get('name')), None)
+    return True, out, ''
 
 
 def board_place_many(cfg, wanted):
@@ -3616,6 +4157,14 @@ def release_issue(cfg, issue, closed_numbers):
     number = issue['number']
     result = {'issue': number, 'title': issue.get('title'),
               'closed_blockers': closed_numbers}
+    # The pool is the *unassigned* issues in Backlog, so an issue that kept the
+    # assignee it had when it was blocked arrives in the pool and is still
+    # invisible to every pick. That is said rather than fixed: taking somebody's
+    # name off their issue is not a sweep's decision to make.
+    if issue.get('assigned'):
+        result['still_assigned'] = issue.get('assignees') or True
+        eprint('wf: #%s was released to Backlog but is still assigned, so no '
+               'pick will offer it until somebody unassigns it' % number)
     moved, message = board_move(cfg, number,
                                 wf_core.BOARD_COLUMN_NAMES['col-backlog'])
     result['board_moved'] = moved
@@ -3686,8 +4235,11 @@ def unblock_scan(cfg, dry_run=False, only=None, now=None):
     """
     issues, error = blocked_issues(cfg)
     wanted = {int(n) for n in (only or ())} or None
-    _ok, facets, _err = fetch_issue_facets(
-        cfg, ownership_field=field_name(cfg, 'field-ownership'))
+    # Ownership for exactly the issues in the lane, and a failure here stops the
+    # sweep: with no ownership values every blocked issue reads as unowned, so a
+    # failed query would report a lane full of issues nobody owns and release
+    # none of them.
+    facets = load_issue_facets(cfg, [i['number'] for i in issues])
     ownership = facets.get('ownership') or {}
 
     released, rescoped, held, no_edges, unowned = [], [], [], [], []
@@ -3739,6 +4291,15 @@ def cmd_unblock(args):
     """Release every blocked issue whose native dependencies have all closed."""
     cfg = prepare_cfg()
     report = unblock_scan(cfg, dry_run=args.dry_run, only=args.issue)
+    if report.get('error'):
+        # The lane could not be read, so "nothing to release" is not a result.
+        # This reported `ok` with the error inside the payload, which is a
+        # clean exit code on a sweep that swept nothing.
+        emit('error', EXIT_ENV,
+             reason='could not read the %s column (%s), so nothing was checked'
+                    % (wf_core.BOARD_COLUMN_NAMES['col-blocked'],
+                       report['error']),
+             dry_run=bool(args.dry_run), **report)
     emit('ok', EXIT_OK, dry_run=bool(args.dry_run), **report)
 
 
@@ -3784,10 +4345,30 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
             continue
         apply_in_progress(cfg, cand)
         verdict, detail = validate_issue(cfg, cand, siblings)
-        if verdict == 'blocked':
-            mark_blocked(cfg, cand, detail)
+        if verdict == 'unknown':
+            # Nothing is known about this issue's dependencies, so nothing may
+            # be written about them. The claim and the In Progress move are
+            # undone and the run stops: retrying the next candidate would
+            # almost certainly hit the same failure, one issue at a time.
+            restored, message = revert_in_progress(cfg, cand['number'])
             release_claim(target)
-            side_effects.append({'issue': cand['number'], 'action': 'marked-blocked', 'detail': detail})
+            side_effects.append({'issue': cand['number'],
+                                 'action': 'released-unverified',
+                                 'detail': detail, 'restored': restored,
+                                 'board_message': None if restored else message})
+            emit('error', EXIT_ENV,
+                 reason='could not read the blocked-by edges of #%d, so whether '
+                        'it is blocked is unknown and nothing was decided from '
+                        'it. The claim and the In Progress move were undone. '
+                        'Check the token and the network, then re-run.'
+                        % cand['number'],
+                 backlog_mode=backlog_mode, side_effects=side_effects)
+        if verdict == 'blocked':
+            moved, message = mark_blocked(cfg, cand, detail)
+            release_claim(target)
+            side_effects.append({'issue': cand['number'], 'action': 'marked-blocked',
+                                 'detail': detail, 'board_moved': moved,
+                                 'board_message': None if moved else message})
             continue
         if verdict == 'resolved':
             board_moved, _ = close_resolved(cfg, cand, detail)
@@ -3799,23 +4380,75 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
     return None, side_effects
 
 
+# Lanes an explicitly named issue may be picked out of. Backlog is the pool;
+# Blocked is here because the edge check runs anyway and an issue whose
+# blockers have all closed is workable; Needs refinement and Parked are here
+# because naming the issue is the person overruling the hold they put on it. In
+# Progress and In Review are somebody else's work, Non-code is work a code
+# agent cannot do, and Done is finished.
+PICKABLE_BY_NAME = frozenset({'Backlog', 'Blocked', 'Needs refinement', 'Parked'})
+
+
 def fetch_issue_candidate(cfg, number):
     """Fetch one issue as a normalized candidate for the explicit `--issue` path.
 
-    Emits + exits when the issue cannot be worked: not found (error) or already
-    closed (all-blocked — there is nothing to pick, and closing-on-pickup only
-    applies to *open* issues a merged PR resolved). Otherwise returns the
-    single normalized candidate for `claim_validate_walk`.
+    Emits + exits when the issue cannot be worked, and the checks are the pool's
+    own rules rather than a shorter list: this path skips selection, so until
+    10.1.2 it skipped every eligibility rule with it. `wf pick --issue N` would
+    claim an issue owned by a person, assign itself, move the card to In
+    Progress and hand back work no code agent can finish — and do the same to
+    an issue somebody else was already assigned to.
+
+    Refused, in order: not found, already closed, assigned to somebody,
+    `Ownership` that is not `Code agent`, and a card in a lane that means the
+    issue is not available. Dependencies are not checked here —
+    `claim_validate_walk` does that for every path.
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     ok, data, err = gh_json(['issue', 'view', str(number), '--repo', repo,
-                             '--json', 'number,title,labels,body,milestone,url,state'])
+                             '--json', 'number,title,labels,body,milestone,url,'
+                                       'state,assignees'])
     if not ok or not data:
         emit('error', EXIT_ENV, reason='could not read issue #%d (%s)' % (number, err))
     if (data.get('state') or '').upper() == 'CLOSED':
         emit('all-blocked', EXIT_ALL_BLOCKED,
              reason='issue #%d is already closed — nothing to pick' % number,
              number=number)
+
+    assignees = [a.get('login') for a in data.get('assignees') or []]
+    if assignees:
+        emit('all-blocked', EXIT_ALL_BLOCKED,
+             reason='issue #%d is assigned to %s, so it is already somebody\'s. '
+                    'Unassign it first if that claim is stale.'
+                    % (number, ', '.join(a for a in assignees if a)),
+             number=number, assignees=assignees)
+
+    facets = load_issue_facets(cfg, [number])
+    ownership = (facets.get('ownership') or {}).get(number)
+    scope = wf_core.ownership_scope(ownership)
+    if scope != wf_core.SCOPE_CODE:
+        emit('all-blocked', EXIT_ALL_BLOCKED,
+             reason='issue #%d is owned by %s, so a code agent must not take it. '
+                    'Set `%s` to `%s` if that is wrong.'
+                    % (number, ownership or 'nobody — it carries no `%s` value'
+                       % field_name(cfg, 'field-ownership'),
+                       field_name(cfg, 'field-ownership'),
+                       wf_core.OWNERSHIP_FIELD_OPTIONS[wf_core.SCOPE_CODE]),
+             number=number, ownership=ownership)
+
+    ok, lanes, lane_err = board_current_columns(cfg, [number])
+    if not ok:
+        emit('error', EXIT_ENV,
+             reason='could not read where #%d sits on the board (%s), and the '
+                    'column is what says whether it is available' % (number, lane_err),
+             number=number)
+    lane = lanes.get(number)
+    if lane and lane not in PICKABLE_BY_NAME:
+        emit('all-blocked', EXIT_ALL_BLOCKED,
+             reason="issue #%d is in the board's `%s` column, so it is not "
+                    'available to pick. Move the card to `%s` if it should be.'
+                    % (number, lane, wf_core.BOARD_COLUMN_NAMES[wf_core.POOL_COLUMN]),
+             number=number, column=lane)
     return _norm_issue(data)
 
 
@@ -3848,16 +4481,27 @@ def cmd_pick(args):
                  side_effects=side_effects)
         finish_pick(args, cfg, selected, side_effects, backlog_mode=None)
 
-    # The org's own view of the backlog: native type, Priority, Classification.
-    # One query, read before selection, because all three decide the pool --
-    # what is in it, what order it is in, and which `Feature` counts as
-    # maintenance. Labels are the fallback for whatever the org has not set.
-    facets = load_issue_facets(cfg)
+    # The pool first, then the fields of the issues in it. That order is the
+    # point: these fields are read *about the pool*, so asking the repository
+    # for its newest issues instead could answer about a different set
+    # entirely.
+    ok, issues, err = assemble_candidates(cfg)
+    if not ok:
+        emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
+
+    # The org's own view of those issues: native type, Priority, Effort,
+    # Ownership, Classification. All five decide the pool -- what is in it,
+    # what order it is in, how big each one is, whether a code agent may take
+    # it, and which `Feature` counts as maintenance.
+    facets = load_issue_facets(cfg, [i['number'] for i in issues])
     priority_map = facets['priority']
     effort_map = facets['effort']
     ownership_map = facets['ownership']
     type_map = classification_map = None
-    if args.mode != 'story':
+    if args.mode == 'story':
+        # Read only to leave epics out; story mode classifies nothing.
+        type_map = facets['types'] or None
+    else:
         type_map = facets['types'] or None
         classification_map = facets['classification'] if type_map else None
         if not type_map:
@@ -3865,15 +4509,11 @@ def cmd_pick(args):
             # and `maintenance` are unanswerable -- and answering them wrongly
             # by label is exactly what this replaced.
             emit('no-capabilities', EXIT_CAPABILITY, mode=args.mode,
-                 reason='no issue on this backlog carries a native issue type, so '
+                 reason='no issue in this pool carries a native issue type, so '
                         '%s mode cannot be told apart from any other. Enable issue '
                         'types for the org and run `wf issue-audit` to backfill '
                         'them, or pick with `--mode story`.' % args.mode)
         eprint('wf: filtering %s mode by native issueType' % args.mode)
-
-    ok, issues, err = assemble_candidates(cfg)
-    if not ok:
-        emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
 
     # An issue the org has not typed is out of a feature/maintenance pool --
     # the native type is the only classifier now. Collected here so the run can
@@ -3891,8 +4531,7 @@ def cmd_pick(args):
             effort_map=effort_map, ownership_map=ownership_map,
             max_effort=getattr(args, 'max_effort', None), oversized=oversized)
 
-    backlog_mode, issues = narrow_to_sprint(cfg, issues)
-    pool = selector(issues)
+    backlog_mode, pool = ordered_pool(cfg, issues, selector)
 
     selected, side_effects = None, []
     if pool:
@@ -3904,8 +4543,11 @@ def cmd_pick(args):
             eprint('wf: unblock sweep released %d issue(s) — retrying' % restored)
             ok, issues, err = assemble_candidates(cfg)
             if ok and issues:
-                backlog_mode, issues = narrow_to_sprint(cfg, issues)
-                pool = selector(issues)
+                facets = load_issue_facets(cfg, [i['number'] for i in issues])
+                priority_map = facets['priority']
+                effort_map = facets['effort']
+                ownership_map = facets['ownership']
+                backlog_mode, pool = ordered_pool(cfg, issues, selector)
                 if pool:
                     selected, more_effects = claim_validate_walk(cfg, pool, backlog_mode,
                                                                  siblings)
@@ -4013,18 +4655,21 @@ def cmd_candidates(args):
     if not cfg.get('org') or not cfg.get('repo'):
         emit('error', EXIT_ENV, reason='org/repo missing from config')
 
-    facets = load_issue_facets(cfg)
+    ok, issues, err = assemble_candidates(cfg)
+    if not ok:
+        emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
+
+    facets = load_issue_facets(cfg, [i['number'] for i in issues])
     priority_map = facets['priority']
     effort_map = facets['effort']
     ownership_map = facets['ownership']
     type_map = classification_map = None
-    if args.mode != 'story' and cfg.get('type_capable'):
+    if args.mode == 'story':
+        # Read only to leave epics out, as `pick` does.
+        type_map = facets['types'] or None
+    elif cfg.get('type_capable'):
         type_map = facets['types'] or None
         classification_map = facets['classification'] if type_map else None
-
-    ok, issues, err = assemble_candidates(cfg)
-    if not ok:
-        emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
 
     unclassified = []
     oversized = []
@@ -4038,8 +4683,7 @@ def cmd_candidates(args):
             effort_map=effort_map, ownership_map=ownership_map,
             max_effort=getattr(args, 'max_effort', None), oversized=oversized)
 
-    backlog_mode, issues = narrow_to_sprint(cfg, issues)
-    pool = selector(issues)
+    backlog_mode, pool = ordered_pool(cfg, issues, selector)
     if not pool:
         emit('no-candidates', EXIT_NO_CANDIDATES,
              reason='nothing in the %s column is available to a code agent'
@@ -4051,7 +4695,7 @@ def cmd_candidates(args):
     if args.limit and args.limit > 0:
         pool = pool[:args.limit]
 
-    edge_map = issue_edges_map(cfg, [c['number'] for c in pool])
+    edge_map, edges_unknown = issue_edges_map(cfg, [c['number'] for c in pool])
     listed = []
     for cand in pool:
         body = cand.get('body') or ''
@@ -4076,10 +4720,19 @@ def cmd_candidates(args):
             'dependencies': sorted(open_deps + closed_deps),
             'dependencies_open': sorted(open_deps),
             'blocked': bool(open_deps),
-            'scope': wf_core.issue_scope(
-                cand['title'], (facets.get('ownership') or {}).get(cand['number'])),
-            'dependency_overflow':
-                len(open_deps) + len(closed_deps) > wf_core.DEP_LIMIT,
+            # True when the edges could not be read at all, so `blocked` says
+            # nothing about this candidate rather than saying "no".
+            'dependencies_unknown': cand['number'] in edges_unknown,
+            'dependency_overflow': len(open_deps) > wf_core.DEP_LIMIT,
+            # The three fields every decision about this issue is made from,
+            # reported beside the issue so a caller choosing a set can see what
+            # the picker saw. `scope` is the `Ownership` value read as one of
+            # the three parties, and it is the field's own answer -- it was
+            # derived from the title prefix until 10.1.2, which meant this
+            # listing could disagree with the filter that produced it.
+            'ownership': ownership_map.get(cand['number']),
+            'scope': wf_core.ownership_scope(ownership_map.get(cand['number'])),
+            'effort': effort_map.get(cand['number']),
             # The org's own Priority, which is the only thing this listing is
             # ordered by. None means the issue carries no value and sorts last.
             'priority': priority_map.get(cand['number']),
