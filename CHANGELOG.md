@@ -7,9 +7,13 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 11.2.1
+
+**The marketplace listing and plugin description mention the Epic and Feature tree.** Both now say that a bulk run can take its set from the stories under one Epic or Feature, and that an Epic or Feature is closed once its last sub-issue closes. No behaviour changes.
+
 ## github-workflow 11.2.0
 
-**`bulk-execute --parent N` chooses the set from an Epic or Feature.** `wf candidates --parent N` walks the sub-issues under it and returns the one set it offers: the stories of a single Feature, only those a code agent may take, plus any story in Blocked whose every open blocker is another story in the same set. Every other story is listed with the reason it was left out, and nothing is asked. Non-code work is never taken.
+**`bulk-execute --parent N` chooses the set from an Epic or Feature.** `wf candidates --parent N` walks the sub-issues under it and returns the one set it offers: the stories of a single Feature, only those a code agent may take, plus any story in Blocked that has an open blocker and whose every open blocker is another story in the same set. Every other story is listed with the reason it was left out, and nothing is asked. Non-code work is never taken.
 
 **A merge closes the Epic or Feature it finishes.** `wf post-merge` walks up from each issue it settles and closes any Epic or Feature whose sub-issues are now all closed, as completed, moving it to Done with a comment naming the child that finished it. Closing a Feature can finish its Epic in the same run. A container with no sub-issues is never closed, and a parent in another repository is left alone. A new `container-finished` preflight warning finds the ones that finished before this release, and `wf preflight --fix` closes them.
 
