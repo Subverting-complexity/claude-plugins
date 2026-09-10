@@ -11,7 +11,7 @@
     {
       "name": "github-workflow",
       "source": "./github-workflow",
-      "description": "Takes a GitHub story end to end: picks it off the board, plans, builds, runs the quality gate, opens a pull request, has that pull request reviewed by agents in a fresh context, and merges it where auto-merge is enabled. Every decision reads structured GitHub state — the card's board column is the status, and Priority, Effort and Ownership are org issue fields — so no label and no line of an issue body changes what gets picked.",
+      "description": "Takes a GitHub story end to end: picks it off the board, plans, builds, runs the quality gate, opens a pull request, has that pull request reviewed by agents in a fresh context, and merges it where auto-merge is enabled. Every decision reads structured GitHub state — the card's board column is the status, and Priority, Effort and Ownership are org issue fields — so no label and no line of an issue body changes what gets picked. It reads the Epic and Feature tree too: a bulk run can take its set from the stories under one Epic or Feature, and an Epic or Feature is closed once its last sub-issue closes.",
       "author": {
         "name": "Subverting Complexity"
       },
