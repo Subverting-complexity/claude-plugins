@@ -3214,7 +3214,9 @@ def parent_leaf_groups(root, repo=None):
                 inner = child['number'] if kind == 'Feature' else group
                 if walk(child, inner):
                     found = True
-                elif kind == 'Feature':
+                elif kind == 'Feature' and not child.get('unread'):
+                    # A Feature whose stories were past the tree read is
+                    # not empty; the caller reports it as unread instead.
                     empty.append(child['number'])
                 continue
             groups.setdefault(group, []).append(child['number'])
@@ -3243,13 +3245,11 @@ def choose_parent_set(root, pool_order, deps, reasons=None, max_size=BULK_MAX,
     - **A leaf with open blockers is taken only when every one of them is
       taken too.** That is the only way a Blocked leaf gets in: its blocker is
       a sibling being built in the same run.
-    - **Put in build order by `plan_bulk_order`, then cut to `max_size`.**
-      Ordering first is what keeps the cut from taking a blocker and leaving
-      its dependent: a prefix of a build order carries its own blockers, so
-      the set only comes back short when the tree is short. Ready leaves keep
-      priority order, so pool leaves come ahead of the Blocked ones waiting
-      on them. A leaf whose blocker the cut still took (a dependency cycle)
-      goes with it, because its dependency is no longer being built.
+    - **Put in build order, then cut to `max_size`.** The order is greedy:
+      the next leaf is always the highest-priority one whose blockers are
+      already placed, so a waiting leaf keeps its priority and every prefix
+      carries its own blockers. The set only comes back short when the tree
+      is short.
 
     Returns {'group', 'selected', 'excluded'}: `selected` is story dicts in
     build order, each carrying `blocked_by`; `excluded` is every other leaf
@@ -3264,7 +3264,7 @@ def choose_parent_set(root, pool_order, deps, reasons=None, max_size=BULK_MAX,
     ready = [n for n in in_pool if not deps.get(n)]
     group = group_of[ready[0]] if ready else None
 
-    kept, trimmed, cut = [], set(), {}
+    kept, trimmed = [], set()
     if group is not None:
         members = [n for n in takeable if group_of[n] == group]
         chosen = {n for n in members if not deps.get(n)}
@@ -3277,22 +3277,20 @@ def choose_parent_set(root, pool_order, deps, reasons=None, max_size=BULK_MAX,
                     grew = True
         stories = [{'number': n, 'blocked_by': list(deps.get(n) or ())}
                    for n in members if n in chosen]
-        ordered, _ = plan_bulk_order(stories, None)
-        if max_size and max_size > 0:
-            kept = ordered[:max_size]
-            trimmed = {s['number'] for s in ordered[max_size:]}
-        else:
-            kept = ordered
-        changed = True
-        while changed:
-            changed = False
-            present = {s['number'] for s in kept}
-            for story in list(kept):
-                missing = [d for d in story['blocked_by'] if d not in present]
-                if missing:
-                    kept.remove(story)
-                    cut[story['number']] = missing[0]
-                    changed = True
+        # Greedy, not `plan_bulk_order`'s rounds: a round puts every ready
+        # leaf ahead of any leaf waiting on one, whatever their priority, so
+        # the cut would take a higher-priority dependent before a ready leaf
+        # below it. Every blocker of a chosen leaf was chosen before it, so
+        # there is always a next one, and every prefix carries its blockers.
+        ordered, placed, remaining = [], set(), list(stories)
+        while remaining:
+            story = next(s for s in remaining if set(s['blocked_by']) <= placed)
+            ordered.append(story)
+            placed.add(story['number'])
+            remaining.remove(story)
+        cap = max_size if max_size and max_size > 0 else len(ordered)
+        kept = ordered[:cap]
+        trimmed = {s['number'] for s in ordered[cap:]}
 
     selected = {s['number'] for s in kept}
     excluded = []
@@ -3300,9 +3298,8 @@ def choose_parent_set(root, pool_order, deps, reasons=None, max_size=BULK_MAX,
         if n in selected:
             continue
         if n in trimmed:
-            reason = 'left out by --size; the stories ahead of it in build order were kept'
-        elif n in cut:
-            reason = 'its blocker #%d was left out by --size' % cut[n]
+            reason = ('left out by --size; the stories ahead of it in priority '
+                      'and build order were kept')
         elif group is not None and group_of[n] != group and n in takeable:
             reason = 'under #%d, not the Feature this run takes' % group_of[n]
         elif deps.get(n):

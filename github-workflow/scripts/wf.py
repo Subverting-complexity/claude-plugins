@@ -4410,7 +4410,9 @@ CONTAINER_TREE_DEPTH = 3
 def _tree_selection(depth):
     base = 'number title state issueType { name } repository { nameWithOwner }'
     if depth <= 0:
-        return base
+        # The deepest level reads only how many sub-issues there are, so a
+        # container down there reports them as unread rather than as empty.
+        return base + ' subIssues { totalCount }'
     # Fifty, not GitHub's hundred, because the levels multiply against the
     # query's node limit. `totalCount` says when a level held more.
     return base + (' subIssues(first:50){ totalCount nodes { %s } }'
@@ -4433,7 +4435,8 @@ def _tree_unread(node, out=None):
     [{'number', 'unread'}]: a Feature past the page size says so rather than
     losing stories from both `candidates` and `excluded`."""
     out = [] if out is None else out
-    if node.get('unread'):
+    # Only a container's: a story's own sub-issues are never walked for leaves.
+    if node.get('unread') and node.get('type') in wf_core.HIERARCHY_CONTAINER_TYPES:
         out.append({'number': node['number'], 'unread': node['unread']})
     for child in node.get('children') or ():
         _tree_unread(child, out)
@@ -4877,7 +4880,7 @@ def candidates_under_parent(args, cfg, pool, maps):
     # The fields and the Blocked column are read only for leaves the pool did
     # not already answer for.
     out_maps = {'priority': {}, 'effort': {}, 'ownership': {}}
-    blocked = {}
+    blocked, refused = {}, {}
     if outside:
         facets = load_issue_facets(cfg, outside)
         out_maps = {k: facets.get(k) or {} for k in out_maps}
@@ -4894,12 +4897,26 @@ def candidates_under_parent(args, cfg, pool, maps):
                  if i['number'] in wanted and i['number'] not in pool_by
                  and not i.get('assigned')]
         types, classes = _mode_maps(cfg, args.mode, facets)
+        untyped, heavy = [], []
         blocked = {i['number']: i for i in wf_core.select_pool(
             cards, mode=args.mode, project_map=cfg.get('labels', {}),
-            type_map=types, classification_map=classes, unclassified=[],
+            type_map=types, classification_map=classes, unclassified=untyped,
             priority_map=out_maps['priority'], effort_map=out_maps['effort'],
             ownership_map=out_maps['ownership'],
-            max_effort=getattr(args, 'max_effort', None), oversized=[])}
+            max_effort=getattr(args, 'max_effort', None), oversized=heavy)}
+        # Why the filter refused a code-owned Blocked card. Being in Blocked
+        # is what #239 lets a leaf through with, so it is never the reason.
+        for card in cards:
+            n = card['number']
+            if n in blocked or (wf_core.ownership_scope(out_maps['ownership'].get(n))
+                                != wf_core.SCOPE_CODE):
+                continue
+            if n in heavy:
+                refused[n] = 'over the `--max-effort` ceiling'
+            elif n in untyped:
+                refused[n] = 'untyped, so `--mode %s` cannot place it' % args.mode
+            else:
+                refused[n] = 'left out by `--mode %s`' % args.mode
 
     edge_map, edges_unknown = issue_edges_map(cfg, list(pool_by))
     blocked_edges = {n: ((i.get('blockedBy') or {}).get('nodes')) or []
@@ -4917,6 +4934,9 @@ def candidates_under_parent(args, cfg, pool, maps):
     if rest:
         ok, lanes, _ = board_current_columns(cfg, rest)
         for n in rest:
+            if n in refused:
+                reasons[n] = refused[n]
+                continue
             lane = lanes.get(n) if ok else None
             owner = out_maps['ownership'].get(n)
             why = []
@@ -5215,7 +5235,6 @@ def _fix_finished_containers(cfg, containers):
     above, errors = close_finished_ancestors(cfg, closed)
     closed += [c['issue'] for c in above if c['closed']]
     failed += ['#%d (%s)' % (c['issue'], c['error']) for c in above if not c['closed']]
-    failed += errors
     done, blocked = [], []
     if closed:
         done.append('closed %d finished Epic or Feature issue%s: %s'
@@ -5223,6 +5242,11 @@ def _fix_finished_containers(cfg, containers):
                        ', '.join('#%d' % n for n in closed)))
     if failed:
         blocked.append('could not close %s' % ', '.join(failed))
+    if errors:
+        # Its own wording: the container did close, and saying "could not
+        # close" beside "closed" would contradict the line above.
+        blocked.append('could not read the parents of %s, so whether an Epic '
+                       'above is now finished is unchecked' % '; '.join(errors))
     return done, blocked
 
 

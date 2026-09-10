@@ -3475,6 +3475,24 @@ class TestChooseParentSet(unittest.TestCase):
         self.assertEqual(self._numbers(choice), [12, 11])
         self.assertIn('--size', self._reason(choice, 13))
 
+    def test_a_waiting_leaf_keeps_its_priority_over_a_ready_one(self):
+        """12 waits on 11 and outranks 13. Ordering in rounds put 13 ahead of
+        12 for being ready sooner, and the cut then took 12."""
+        root = _tree(10, 'Feature', _tree(11, 'User Story'),
+                     _tree(12, 'User Story'), _tree(13, 'User Story'))
+        choice = wf_core.choose_parent_set(root, [11, 12, 13],
+                                           {11: [], 12: [11], 13: []}, max_size=2)
+        self.assertEqual(self._numbers(choice), [11, 12])
+        self.assertIn('--size', self._reason(choice, 13))
+
+    def test_a_feature_with_unread_stories_is_not_called_empty(self):
+        """Its stories were past the tree read, not absent."""
+        unread = _tree(2, 'Feature')
+        unread['unread'] = 4
+        root = _tree(1, 'Epic', unread, _tree(3, 'Feature', _tree(31, 'User Story')))
+        choice = wf_core.choose_parent_set(root, [31], {31: []})
+        self.assertNotIn(2, [e['number'] for e in choice['excluded']])
+
     def test_nothing_ready_means_nothing_is_taken(self):
         root = _tree(10, 'Feature', _tree(11, 'User Story'))
         choice = wf_core.choose_parent_set(root, [], {}, {11: 'in the `Parked` column'})

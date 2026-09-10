@@ -3682,6 +3682,15 @@ class TestPreflight(unittest.TestCase):
         self.assertEqual(closed, ['40', '1'])
         self.assertTrue(any('#1' in line for line in payload['fixed']))
 
+    def test_fix_says_when_it_could_not_read_a_parent(self):
+        with mock.patch.object(wf, 'fetch_parent_chain',
+                               return_value=(False, [], 'HTTP 502')):
+            _, payload, _ = self._run(['--fix'], finished=[40])
+        self.assertTrue(any('#40' in line for line in payload['fixed']))
+        self.assertTrue(any('could not read the parents of #40' in line
+                            for line in payload['unfixed']))
+        self.assertFalse(any('could not close' in line for line in payload['unfixed']))
+
     def _run(self, argv=(), board=_UNSET, orphans=(), unset=(), env_err=None,
              mutation=None, moves=None, finished=()):
         if board is _UNSET:
@@ -4014,7 +4023,9 @@ class TestCandidatesUnderParent(unittest.TestCase):
                                    types={51: 'Bug', 52: 'User Story'},
                                    argv=('--mode', 'maintenance'))
         self.assertEqual([c['number'] for c in payload['candidates']], [51])
-        self.assertIn(52, [e['number'] for e in payload['excluded']])
+        reason = next(e['reason'] for e in payload['excluded'] if e['number'] == 52)
+        self.assertIn('--mode maintenance', reason)
+        self.assertNotIn('Blocked', reason)
 
     def test_sub_issues_past_the_page_size_are_reported(self):
         tree = _node(50, 'Feature', _node(51, 'User Story'))
