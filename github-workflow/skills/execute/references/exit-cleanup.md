@@ -11,13 +11,13 @@ rm -f .claude/claim-issue-{number}.sha
 
 `claim-release` is idempotent, so releasing a ref Phase 7 step 4 or `block-story` already released is a no-op rather than an error.
 
-If the run **won** a review claim on its own PR in Phase 8, release that too. The test is the file Acquire writes only on a win:
+If the run **won** a review claim on its own PR, in Phase 7's `handoff` or in Phase 8, release that too. The test is the file Acquire writes only on a win:
 
 ```
 test -f .claude/claim-pr-{pr_number}.sha || echo "NO PR CLAIM — skip this whole step"
 ```
 
-When that file is absent, do **nothing** here. A run that never reached Phase 8 has no claim, and on the claim-lost path another agent owns the review — deleting a claim ref or stripping a label needs only push access, not ownership, so acting would unlock a PR that agent is actively reviewing.
+When that file is absent, do **nothing** here. A run that never reached the Phase 7 hand-off has no claim, and on the claim-lost path another agent owns the review — deleting a claim ref or stripping a label needs only push access, not ownership, so acting would unlock a PR that agent is actively reviewing.
 
 When it is present, reconcile the marker **before** deleting the ref, so no window exists in which a rival claims the PR and then has its own marker stripped. Acquiring the claim applied the human-visible `reviewing` marker, Release frees only the lock, and the review picker skips a PR carrying that marker — so an exit before a verdict was recorded would otherwise orphan the PR. Read the PR once to decide:
 
@@ -27,6 +27,7 @@ gh pr view {pr_number} --repo {org}/{repo} --json state,labels
 
 - Still `OPEN` **and** carrying `reviewing` → no verdict was recorded. Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict changes-requested`. That is the honest state for a review that did not finish, and it is a tier the picker selects, so the next `/github-workflow:code-review` run takes the PR from here.
 - Merged, or already carrying a verdict label → Phase 8 or Phase 9 already reconciled it. Change nothing.
+- Still `OPEN`, carrying the review-state entry label `needs-review` and no `reviewing` → `handoff` took the claim and no review started. Change nothing: the picker selects that label, so the next `/github-workflow:code-review` run reviews the PR from the start.
 - Any other state on an open PR (no `reviewing`, no verdict — label drift) → treat it as "no verdict recorded" and run the same reconcile. An open PR carrying neither marker matches no picker tier, so leaving it would strand it.
 
 Then release the lock:

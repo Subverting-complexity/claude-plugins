@@ -58,6 +58,7 @@ import random
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 
@@ -1166,7 +1167,7 @@ def add_blocked_by(issue_id, blocking_id):
 
 
 def issue_mismatches(number, issue, plan, expect_type=None, expect_parent=None,
-                     expect_blocked_by=()):
+                     expect_blocked_by=(), expect_title=None, expect_body=None):
     """Compare an issue as GitHub holds it against what the spec asked for.
 
     A mutation GitHub accepts is not a value GitHub stored — an unpinned field,
@@ -1201,17 +1202,27 @@ def issue_mismatches(number, issue, plan, expect_type=None, expect_parent=None,
         if want not in have:
             mismatches.append('#%s: missing blocked-by edge to #%s' % (number, want))
 
+    if expect_title is not None and not wf_core.same_text(expect_title,
+                                                          issue.get('title')):
+        mismatches.append("#%s: title is %r, expected %r"
+                          % (number, issue.get('title'), expect_title))
+    if expect_body is not None and not wf_core.same_text(expect_body,
+                                                         issue.get('body')):
+        mismatches.append('#%s: body is not the one the spec wrote' % number)
+
     return mismatches
 
 
 def verify_issue(cfg, number, plan, expect_type=None, expect_parent=None,
-                 expect_blocked_by=(), repo=None):
+                 expect_blocked_by=(), repo=None, expect_title=None,
+                 expect_body=None):
     """Read the issue back and compare it. Returns (passed, mismatches)."""
     ok, issue, err = read_issue(cfg, number, repo)
     if not ok:
         return False, ['#%s: could not read back: %s' % (number, err)]
     mismatches = issue_mismatches(number, issue, plan, expect_type,
-                                  expect_parent, expect_blocked_by)
+                                  expect_parent, expect_blocked_by,
+                                  expect_title, expect_body)
     return not mismatches, mismatches
 
 
@@ -1484,10 +1495,47 @@ def update_entry(cfg, ctx, caps, plan, resolved, node_ids):
             return result
         result['changed'].append('labels')
 
+    # The title and body, which an update used to leave as they were without
+    # a word (#242). Compared first, so re-running a spec that already
+    # matches writes nothing, and the body goes through a file for the reason
+    # `entry_body` gives. A key the entry leaves out leaves that one alone.
+    title = entry.get('title')
+    if title is not None:
+        title = wf_core.strip_title_prefix(title)
+    body, berr = entry_body(entry)
+    if berr:
+        result['errors'].append(berr)
+        return result
+    edit, edited, body_path = [], [], None
+    if title is not None and not wf_core.same_text(title, current.get('title')):
+        edit += ['--title', title]
+        edited.append('title')
+    if body is not None and not wf_core.same_text(body, current.get('body')):
+        fd, body_path = tempfile.mkstemp(suffix='.md')
+        with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+            fh.write(body)
+        edit += ['--body-file', body_path]
+        edited.append('body')
+    if edit:
+        code, _, eerr = run(['gh', 'issue', 'edit', str(entry['number']),
+                             '--repo', repo] + edit)
+        if body_path:
+            try:
+                os.remove(body_path)
+            except OSError:
+                pass
+        if code != 0:
+            result['errors'].append('%s update failed: %s'
+                                    % (' and '.join(edited), eerr.strip()))
+            return result
+        result['changed'].extend(edited)
+
     if result['changed']:
         _, result['mismatches'] = verify_issue(
             cfg, entry['number'], plan, expect_type=plan['type'],
-            expect_parent=parent_number, repo=repo)
+            expect_parent=parent_number, repo=repo,
+            expect_title=title if 'title' in edited else None,
+            expect_body=body if 'body' in edited else None)
     return result
 
 
@@ -5380,6 +5428,23 @@ def apply_claim_marker(cfg, args):
     return names['reviewing']
 
 
+def holds_claim(target):
+    """Whether this checkout already holds refs/claims/<target>.
+
+    It does when the marker Acquire wrote names the object the remote ref
+    points at. A rival's claim is a different object, so it never matches.
+    """
+    try:
+        with open(_claim_marker_path(repo_root(), target), encoding='utf-8') as fh:
+            held = fh.read().strip()
+    except OSError:
+        return False
+    if not held:
+        return False
+    code, out, _ = run(['git', 'ls-remote', 'origin', 'refs/claims/%s' % target])
+    return code == 0 and out.split()[:1] == [held]
+
+
 def cmd_claim(args):
     """Take the atomic claim on one issue or PR, without selecting anything.
 
@@ -5394,7 +5459,10 @@ def cmd_claim(args):
         emit('usage', EXIT_USAGE, reason='name exactly one of --issue N or --pr N')
     target = ('issue-%d' % args.issue) if args.issue else ('pr-%d' % args.pr)
 
-    outcome = acquire_claim(target)
+    # A claim this checkout already holds is kept (#164): `handoff` takes the
+    # PR's review claim, and Phase 8's own `claim --pr` must not then read
+    # that lock as a rival's, which a fresh object always would.
+    outcome = 'won' if holds_claim(target) else acquire_claim(target)
     if outcome == 'won':
         # The ref is the lock, but it is ephemeral. Ownership has to be
         # visible on GitHub too, or a picker running after this session dies
@@ -5596,6 +5664,18 @@ def cmd_handoff(args):
     names = wf_core.review_names(cfg.get('review_labels'))
     state_label = names['changes-requested' if args.gate_failed else 'needs-review']
 
+    # The review claim first, before any issue claim is let go (#164). Until
+    # 11.2.0 the issue claims went here and the PR claim waited for Phase 8,
+    # and a scheduled review firing in between claimed the run's own PR,
+    # failed to check out a branch this worktree held, and stranded it as
+    # `review-failed`. No marker: the entry label stays until Phase 8's own
+    # `claim --pr`, which keeps this claim and applies `reviewing`.
+    target = 'pr-%d' % args.pr
+    pr_claimed = 'won' if holds_claim(target) else acquire_claim(target)
+    if pr_claimed != 'won':
+        eprint('wf: warning - could not take the review claim on PR #%d (%s)'
+               % (args.pr, pr_claimed))
+
     code, _, perr = run(['gh', 'pr', 'edit', str(args.pr), '--repo', repo,
                          '--add-label', label(cfg, 'claude-authored'),
                          '--add-label', state_label])
@@ -5622,7 +5702,7 @@ def cmd_handoff(args):
         except OSError:
             pass
 
-    emit('ok', EXIT_OK, pr=args.pr, pr_labelled=pr_labelled,
+    emit('ok', EXIT_OK, pr=args.pr, pr_claimed=pr_claimed, pr_labelled=pr_labelled,
          review_label=state_label, issues=issues,
          reason='PR #%d labelled %s; %d issue(s) handed to review'
                 % (args.pr, state_label, len(issues)))

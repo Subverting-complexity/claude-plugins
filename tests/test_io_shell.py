@@ -2014,7 +2014,9 @@ class _FakeHub(object):
 
 
 def _existing(number, **over):
-    issue = {'id': 'I_%d' % number, 'number': number, 'title': 'issue %d' % number,
+    # Titled as `_ApplyCase._full` titles its entry, so an update that says
+    # nothing new about the title writes none (#242).
+    issue = {'id': 'I_%d' % number, 'number': number, 'title': 'A story',
              'body': '', 'type': None, 'fields': {}, 'parent': None,
              'blocked_by': [], 'labels': []}
     issue.update(over)
@@ -2154,6 +2156,41 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(hub.names_sent(), ['setIssueFieldValue'])
         self.assertEqual(len(hub.sent[0][1]['f']), 1)
         self.assertEqual(payload['applied'][0]['changed'], ['fields'])
+
+    _CORRECT = {'type': 'User Story',
+                'fields': {'Priority': 'High', 'Effort': 'Medium',
+                           'Ownership': 'Code agent',
+                           'Classification': ['New Feature']}}
+
+    def test_an_update_writes_a_changed_title_and_body(self):
+        """#242: an update used to exit 0 and leave both as they were."""
+        hub = _FakeHub([_existing(42, **self._CORRECT)])
+        body = os.path.join(self.dir, 'body.md')
+        with open(body, 'w', encoding='utf-8') as fh:
+            fh.write('A new body\n')
+        calls = []
+        _, payload, _, _ = self._run(
+            [self._full(number=42, title='A new title', body_file=body)], hub,
+            calls=calls)
+        edits = [c for c in calls if c[:3] == ['gh', 'issue', 'edit']]
+        self.assertEqual(len(edits), 1)
+        self.assertIn('A new title', edits[0])
+        self.assertIn('--body-file', edits[0])
+        applied = payload['applied'][0]
+        self.assertEqual(applied['changed'], ['title', 'body'])
+        # The fake hub never applies a `gh issue edit`, so the read-back still
+        # holds the old title and body: the mismatch the command must report.
+        self.assertTrue(any('title' in m for m in applied['mismatches']))
+        self.assertTrue(any('body' in m for m in applied['mismatches']))
+
+    def test_an_update_whose_title_and_body_match_writes_nothing(self):
+        hub = _FakeHub([_existing(42, title='A story', body='The body',
+                                  **self._CORRECT)])
+        calls = []
+        _, payload, _, _ = self._run(
+            [self._full(number=42, body='The body\r\n')], hub, calls=calls)
+        self.assertFalse(any(c[:3] == ['gh', 'issue', 'edit'] for c in calls))
+        self.assertEqual(payload['applied'][0]['changed'], [])
 
     def test_a_missing_mandatory_field_refuses_before_any_write(self):
         hub = _FakeHub()
@@ -2845,6 +2882,64 @@ class TestHandoffAndClaims(unittest.TestCase):
         self.assertFalse(any('issue edit' in c for c in joined))
         self.assertTrue(any('refs/claims/issue-3' in c for c in joined))
         self.assertEqual(payload['issues'][0]['board_moved'], True)
+
+    def test_handoff_takes_the_pr_claim_before_freeing_the_issue_claim(self):
+        """#164: the PR is locked from the moment it is handed to review, so a
+        scheduled review cannot claim it in the gap before Phase 8."""
+        calls = []
+        _, payload = self._run(['handoff', '--pr', '7', '--issue', '3'], calls)
+        pushes = [' '.join(c) for c in calls if c[:2] == ['git', 'push']]
+        claim = next(i for i, c in enumerate(pushes) if 'refs/claims/pr-7' in c)
+        release = next(i for i, c in enumerate(pushes) if 'refs/claims/issue-3' in c)
+        self.assertLess(claim, release)
+        self.assertEqual(payload['pr_claimed'], 'won')
+
+    def test_claim_keeps_a_pr_claim_this_checkout_already_holds(self):
+        """After handoff took it, Phase 8's `wf claim --pr` must not read its
+        own lock as a rival's."""
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        os.makedirs(os.path.join(root, '.claude'))
+        with open(os.path.join(root, '.claude', 'claim-pr-7.sha'), 'w') as fh:
+            fh.write('abc123')
+
+        def fake_run(cmd, input_text=None):
+            if cmd[:2] == ['git', 'ls-remote']:
+                return 0, 'abc123\trefs/claims/pr-7\n', ''
+            if cmd[:2] == ['git', 'push']:
+                return 1, '', 'rejected'  # a fresh object would lose
+            return 0, '', ''
+
+        args = wf.build_parser().parse_args(['claim', '--pr', '7', '--no-marker'])
+        with mock.patch.object(wf, 'check_environment', lambda: None), \
+                mock.patch.object(wf, 'run', fake_run), \
+                mock.patch.object(wf, 'repo_root', lambda: root), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code, payload = _capture(args.func, args)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertTrue(payload['claimed'])
+
+    def test_claim_still_loses_to_a_rival_holding_a_different_object(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        os.makedirs(os.path.join(root, '.claude'))
+        with open(os.path.join(root, '.claude', 'claim-pr-7.sha'), 'w') as fh:
+            fh.write('abc123')
+
+        def fake_run(cmd, input_text=None):
+            if cmd[:2] == ['git', 'ls-remote']:
+                return 0, 'fff999\trefs/claims/pr-7\n', ''
+            if cmd[:2] == ['git', 'push']:
+                return 1, '', 'rejected'
+            return 0, '', ''
+
+        args = wf.build_parser().parse_args(['claim', '--pr', '7', '--no-marker'])
+        with mock.patch.object(wf, 'check_environment', lambda: None), \
+                mock.patch.object(wf, 'run', fake_run), \
+                mock.patch.object(wf, 'repo_root', lambda: root), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code, payload = _capture(args.func, args)
+        self.assertEqual(code, wf.EXIT_LOST)
 
     def test_a_failed_gate_enters_review_as_changes_requested(self):
         """The PR is real work but not ready to approve; say so in the label."""

@@ -1736,6 +1736,18 @@ def strip_type_labels(labels, project_map=None):
     return kept, dropped
 
 
+def same_text(a, b):
+    """Whether two issue titles or bodies say the same thing.
+
+    A read-back can carry `\\r\\n` where the spec has `\\n`, and trailing
+    whitespace is not a difference anyone wrote, so neither makes an update
+    rewrite a body that already matches.
+    """
+    def norm(text):
+        return (text or '').replace('\r\n', '\n').strip()
+    return norm(a) == norm(b)
+
+
 def strip_title_prefix(title):
     """The title minus a leading `[KIND]` the native type already states.
 
