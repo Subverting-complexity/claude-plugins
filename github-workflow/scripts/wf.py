@@ -4411,16 +4411,33 @@ def _tree_selection(depth):
     base = 'number title state issueType { name } repository { nameWithOwner }'
     if depth <= 0:
         return base
-    return base + ' subIssues(first:50){ nodes { %s } }' % _tree_selection(depth - 1)
+    # Fifty, not GitHub's hundred, because the levels multiply against the
+    # query's node limit. `totalCount` says when a level held more.
+    return base + (' subIssues(first:50){ totalCount nodes { %s } }'
+                   % _tree_selection(depth - 1))
 
 
 def _tree_node(node):
+    subs = node.get('subIssues') or {}
+    nodes = subs.get('nodes') or []
     return {'number': node['number'], 'title': node.get('title') or '',
             'state': node.get('state') or '',
             'type': (node.get('issueType') or {}).get('name'),
             'repo': (node.get('repository') or {}).get('nameWithOwner'),
-            'children': [_tree_node(c) for c
-                         in (node.get('subIssues') or {}).get('nodes') or []]}
+            'unread': max(0, (subs.get('totalCount') or 0) - len(nodes)),
+            'children': [_tree_node(c) for c in nodes]}
+
+
+def _tree_unread(node, out=None):
+    """Every node with sub-issues the tree query did not read, as
+    [{'number', 'unread'}]: a Feature past the page size says so rather than
+    losing stories from both `candidates` and `excluded`."""
+    out = [] if out is None else out
+    if node.get('unread'):
+        out.append({'number': node['number'], 'unread': node['unread']})
+    for child in node.get('children') or ():
+        _tree_unread(child, out)
+    return out
 
 
 def fetch_container_tree(cfg, number):
@@ -4682,6 +4699,17 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode):
     emit('ok', EXIT_OK, **result)
 
 
+def _mode_maps(cfg, mode, facets):
+    """The (type_map, classification_map) `select_pool` reads for `mode`."""
+    if mode == 'story':
+        # Read only to leave epics out, as `pick` does.
+        return facets['types'] or None, None
+    if cfg.get('type_capable'):
+        types = facets['types'] or None
+        return types, (facets['classification'] if types else None)
+    return None, None
+
+
 def cmd_candidates(args):
     """List the Backlog pool in priority order, claiming nothing.
 
@@ -4719,13 +4747,7 @@ def cmd_candidates(args):
     priority_map = facets['priority']
     effort_map = facets['effort']
     ownership_map = facets['ownership']
-    type_map = classification_map = None
-    if args.mode == 'story':
-        # Read only to leave epics out, as `pick` does.
-        type_map = facets['types'] or None
-    elif cfg.get('type_capable'):
-        type_map = facets['types'] or None
-        classification_map = facets['classification'] if type_map else None
+    type_map, classification_map = _mode_maps(cfg, args.mode, facets)
 
     unclassified = []
     oversized = []
@@ -4865,11 +4887,19 @@ def candidates_under_parent(args, cfg, pool, maps):
                  reason='could not read the %s column (%s), so which leaves '
                         'wait only on each other is unknown'
                         % (wf_core.BOARD_COLUMN_NAMES['col-blocked'], berr))
-        blocked = {i['number']: i for i in column
-                   if i['number'] in wanted and i['number'] not in pool_by
-                   and not i.get('assigned')
-                   and wf_core.ownership_scope(out_maps['ownership'].get(i['number']))
-                   == wf_core.SCOPE_CODE}
+        # The same filter the pool went through -- ownership, `--mode`, any
+        # effort ceiling -- so the one exception #239 made is about the
+        # column and nothing else. A Blocked story does not join a bug's set.
+        cards = [i for i in column
+                 if i['number'] in wanted and i['number'] not in pool_by
+                 and not i.get('assigned')]
+        types, classes = _mode_maps(cfg, args.mode, facets)
+        blocked = {i['number']: i for i in wf_core.select_pool(
+            cards, mode=args.mode, project_map=cfg.get('labels', {}),
+            type_map=types, classification_map=classes, unclassified=[],
+            priority_map=out_maps['priority'], effort_map=out_maps['effort'],
+            ownership_map=out_maps['ownership'],
+            max_effort=getattr(args, 'max_effort', None), oversized=[])}
 
     edge_map, edges_unknown = issue_edges_map(cfg, list(pool_by))
     blocked_edges = {n: ((i.get('blockedBy') or {}).get('nodes')) or []
@@ -4913,12 +4943,23 @@ def candidates_under_parent(args, cfg, pool, maps):
             entry['column'] = wf_core.BOARD_COLUMN_NAMES['col-blocked']
         listed.append(entry)
 
+    unread = _tree_unread(tree)
+    note = ''
+    if unread:
+        note = ('; %s had more sub-issues than one read returns, so %d were not '
+                'read and are in neither list'
+                % (', '.join('#%d' % u['number'] for u in unread),
+                   sum(u['unread'] for u in unread)))
     if not listed:
         emit('no-candidates', EXIT_NO_CANDIDATES, parent=parent, excluded=excluded,
-             reason='nothing under #%d is available to a code agent' % args.parent)
+             unread=unread,
+             reason='nothing under #%d is available to a code agent%s'
+                    % (args.parent, note))
     emit('ok', EXIT_OK, mode=args.mode, parent=parent, feature=choice['group'],
          total=len(listed), listed=len(listed), candidates=listed,
-         excluded=excluded)
+         excluded=excluded, unread=unread,
+         reason='%d stor%s under #%d%s' % (len(listed), 'y' if len(listed) == 1
+                                           else 'ies', args.parent, note))
 
 
 def cmd_update_next(args):
@@ -5169,6 +5210,12 @@ def _fix_finished_containers(cfg, containers):
             closed.append(container['number'])
         else:
             failed.append('#%d (%s)' % (container['number'], result['error']))
+    # The same rule as post-merge: closing a Feature can finish its Epic, and
+    # a second `--fix` should not be what it takes to see that.
+    above, errors = close_finished_ancestors(cfg, closed)
+    closed += [c['issue'] for c in above if c['closed']]
+    failed += ['#%d (%s)' % (c['issue'], c['error']) for c in above if not c['closed']]
+    failed += errors
     done, blocked = [], []
     if closed:
         done.append('closed %d finished Epic or Feature issue%s: %s'
@@ -5217,15 +5264,21 @@ def cmd_post_merge(args):
                                 '--json', 'state,labels'])
         was_open = ok and idata and (idata.get('state') or '').upper() == 'OPEN'
         label_names = [l['name'] for l in (idata or {}).get('labels', [])]
+        # Whether the issue is closed once this is done. The container walk
+        # below reads it: an Epic or Feature is only finished by a close that
+        # happened, not by one that was attempted.
+        closed = bool(ok and idata and (idata.get('state') or '').upper() == 'CLOSED')
         if was_open:
-            run(['gh', 'issue', 'close', str(number), '--repo', repo,
-                 '--comment', 'Closing — resolved by merged PR #%d.' % args.pr])
+            code, _, _ = run(['gh', 'issue', 'close', str(number), '--repo', repo,
+                              '--comment', 'Closing — resolved by merged PR #%d.' % args.pr])
+            closed = code == 0
         # A settled issue is Done: strip any open-state lifecycle label it still
         # carries (e.g. a PR that auto-closed the issue but left status-in-review
         # on).
         cleared = clear_lifecycle_label(cfg, number, label_names)
         board_moved, board_msg = board_move(cfg, number, 'Done')
-        settled.append({'issue': number, 'closed_now': bool(was_open),
+        settled.append({'issue': number, 'closed_now': bool(was_open and closed),
+                        'closed': closed,
                         'lifecycle_label_cleared': cleared,
                         'board_moved_done': board_moved, 'board_message': board_msg})
 
@@ -5238,7 +5291,7 @@ def cmd_post_merge(args):
     # else ever closes one (#240). Walked before the unblock sweep, so anything
     # waiting on a container this closes is released by the same run.
     containers, container_errors = close_finished_ancestors(
-        cfg, [s['issue'] for s in settled])
+        cfg, [s['issue'] for s in settled if s['closed']])
 
     unblocked = unblock_scan(cfg) if not args.no_unblock else None
 

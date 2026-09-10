@@ -3455,16 +3455,25 @@ class TestChooseParentSet(unittest.TestCase):
         self.assertEqual(self._numbers(choice), [31])
         self.assertIn('no open stories', self._reason(choice, 2))
 
-    def test_the_size_cut_takes_a_dependent_with_its_blocker(self):
-        """13 waits on 12, which waits on 11. A size of two keeps 11 and 13 by
-        preference order, and 13 then waits on something nobody is building."""
+    def test_the_size_cut_keeps_a_full_set_in_build_order(self):
+        """13 waits on 12, which waits on 11, and the Blocked leaves arrive in
+        the order the column lists them. Cutting before ordering kept 11 and
+        13, then had to drop 13 for waiting on 12: a set of one where a set
+        of two fits. Ordering first keeps 11 and 12 and cuts only 13."""
         root = _tree(10, 'Feature', _tree(11, 'User Story'),
                      _tree(12, 'User Story'), _tree(13, 'User Story'))
         choice = wf_core.choose_parent_set(root, [11], {11: [], 13: [12], 12: [11]},
                                            max_size=2)
-        self.assertEqual(self._numbers(choice), [11])
-        self.assertIn('--size', self._reason(choice, 12))
-        self.assertIn('#12', self._reason(choice, 13))
+        self.assertEqual(self._numbers(choice), [11, 12])
+        self.assertIn('--size', self._reason(choice, 13))
+
+    def test_the_size_cut_prefers_ready_leaves_in_priority_order(self):
+        root = _tree(10, 'Feature', _tree(11, 'User Story'),
+                     _tree(12, 'User Story'), _tree(13, 'User Story'))
+        choice = wf_core.choose_parent_set(root, [12, 11], {11: [], 12: [], 13: [11]},
+                                           max_size=2)
+        self.assertEqual(self._numbers(choice), [12, 11])
+        self.assertIn('--size', self._reason(choice, 13))
 
     def test_nothing_ready_means_nothing_is_taken(self):
         root = _tree(10, 'Feature', _tree(11, 'User Story'))

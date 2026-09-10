@@ -3243,9 +3243,13 @@ def choose_parent_set(root, pool_order, deps, reasons=None, max_size=BULK_MAX,
     - **A leaf with open blockers is taken only when every one of them is
       taken too.** That is the only way a Blocked leaf gets in: its blocker is
       a sibling being built in the same run.
-    - **Trimmed to `max_size`**, pool leaves ahead of Blocked ones, then put in
-      build order by `plan_bulk_order`. A leaf whose blocker the trim cut goes
-      with it, because its dependency is no longer being built.
+    - **Put in build order by `plan_bulk_order`, then cut to `max_size`.**
+      Ordering first is what keeps the cut from taking a blocker and leaving
+      its dependent: a prefix of a build order carries its own blockers, so
+      the set only comes back short when the tree is short. Ready leaves keep
+      priority order, so pool leaves come ahead of the Blocked ones waiting
+      on them. A leaf whose blocker the cut still took (a dependency cycle)
+      goes with it, because its dependency is no longer being built.
 
     Returns {'group', 'selected', 'excluded'}: `selected` is story dicts in
     build order, each carrying `blocked_by`; `excluded` is every other leaf
@@ -3273,8 +3277,12 @@ def choose_parent_set(root, pool_order, deps, reasons=None, max_size=BULK_MAX,
                     grew = True
         stories = [{'number': n, 'blocked_by': list(deps.get(n) or ())}
                    for n in members if n in chosen]
-        kept, notes = plan_bulk_order(stories, max_size)
-        trimmed = {note['number'] for note in notes if note['reason'] == 'trimmed'}
+        ordered, _ = plan_bulk_order(stories, None)
+        if max_size and max_size > 0:
+            kept = ordered[:max_size]
+            trimmed = {s['number'] for s in ordered[max_size:]}
+        else:
+            kept = ordered
         changed = True
         while changed:
             changed = False
@@ -3292,7 +3300,7 @@ def choose_parent_set(root, pool_order, deps, reasons=None, max_size=BULK_MAX,
         if n in selected:
             continue
         if n in trimmed:
-            reason = 'left out by --size; the highest-priority leaves were kept'
+            reason = 'left out by --size; the stories ahead of it in build order were kept'
         elif n in cut:
             reason = 'its blocker #%d was left out by --size' % cut[n]
         elif group is not None and group_of[n] != group and n in takeable:

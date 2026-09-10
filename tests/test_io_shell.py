@@ -1144,11 +1144,13 @@ class TestShapeRegressionGuards(unittest.TestCase):
 class TestPostMergeClosesFinishedContainers(unittest.TestCase):
     """A merge closes the Epic or Feature its last story finished (#240)."""
 
-    def _post_merge(self, chain):
+    def _post_merge(self, chain, close_fails=False):
         cfg, calls = _cfg(), []
 
         def fake_run(argv, input_text=None):
             calls.append(argv)
+            if close_fails and argv[:4] == ['gh', 'issue', 'close', '5']:
+                return 1, '', 'HTTP 502'
             if argv[:3] == ['gh', 'pr', 'view']:
                 return 0, json.dumps({
                     'number': 50, 'state': 'MERGED', 'mergedAt': '2026-09-10T00:00:00Z',
@@ -1194,6 +1196,15 @@ class TestPostMergeClosesFinishedContainers(unittest.TestCase):
         chain = [self._node(10, 'Feature', (5, 'OPEN'), (6, 'OPEN'))]
         _, payload, closes = self._post_merge(chain)
         self.assertEqual(payload['containers_closed'], [])
+        self.assertNotIn('10', [c[3] for c in closes])
+
+    def test_a_story_whose_close_failed_finishes_nothing(self):
+        """An attempted close is not a close: the Feature would otherwise be
+        closed over a story that is still open."""
+        chain = [self._node(10, 'Feature', (5, 'OPEN'))]
+        _, payload, closes = self._post_merge(chain, close_fails=True)
+        self.assertEqual(payload['containers_closed'], [])
+        self.assertFalse(payload['settled'][0]['closed'])
         self.assertNotIn('10', [c[3] for c in closes])
 
 
@@ -3660,6 +3671,17 @@ class TestPreflight(unittest.TestCase):
         self.assertIn('completed', closes[0])
         self.assertTrue(any('#40' in line for line in payload['fixed']))
 
+    def test_fix_walks_up_to_an_epic_the_closed_container_finished(self):
+        """The same rule as post-merge, so one `--fix` is enough."""
+        epic = {'number': 1, 'title': 'e', 'state': 'OPEN', 'type': 'Epic',
+                'repo': None, 'children': [{'number': 40, 'state': 'OPEN'}]}
+        with mock.patch.object(wf, 'fetch_parent_chain',
+                               return_value=(True, [epic], '')):
+            _, payload, calls = self._run(['--fix'], finished=[40])
+        closed = [c[3] for c in calls if c[:3] == ['gh', 'issue', 'close']]
+        self.assertEqual(closed, ['40', '1'])
+        self.assertTrue(any('#1' in line for line in payload['fixed']))
+
     def _run(self, argv=(), board=_UNSET, orphans=(), unset=(), env_err=None,
              mutation=None, moves=None, finished=()):
         if board is _UNSET:
@@ -3946,8 +3968,10 @@ class TestCandidatesUnderParent(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def _run(self, tree, pool, blocked=(), lanes=None, ownership=None, argv=()):
-        facets = _facets(ownership=ownership) if ownership else _facets()
+    def _run(self, tree, pool, blocked=(), lanes=None, ownership=None, argv=(),
+             types=None):
+        facets = (_facets(types=types, ownership=ownership) if ownership
+                  else _facets(types=types))
         with mock.patch.object(wf, 'fetch_container_tree', return_value=(True, tree, '')), \
                 mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')), \
                 mock.patch.object(wf, 'load_issue_facets', return_value=facets), \
@@ -3978,6 +4002,31 @@ class TestCandidatesUnderParent(unittest.TestCase):
         _, payload = self._run(tree, [_candidate(51)], blocked=[_blocked_card(52, 99)])
         self.assertEqual([c['number'] for c in payload['candidates']], [51])
         self.assertIn('#99', payload['excluded'][0]['reason'])
+
+    def test_a_blocked_leaf_outside_the_mode_is_not_offered(self):
+        """`--mode` holds for a Blocked leaf as it does for the pool, because
+        a set never mixes modes: a waiting story does not join a bug's set."""
+        tree = _node(50, 'Feature', _node(51, 'Bug'), _node(52, 'User Story'))
+        with mock.patch.object(wf, 'load_config',
+                               return_value=(True, _cfg(type_capable=True), '')):
+            _, payload = self._run(tree, [_candidate(51)],
+                                   blocked=[_blocked_card(52, 51)],
+                                   types={51: 'Bug', 52: 'User Story'},
+                                   argv=('--mode', 'maintenance'))
+        self.assertEqual([c['number'] for c in payload['candidates']], [51])
+        self.assertIn(52, [e['number'] for e in payload['excluded']])
+
+    def test_sub_issues_past_the_page_size_are_reported(self):
+        tree = _node(50, 'Feature', _node(51, 'User Story'))
+        tree['unread'] = 3
+        _, payload = self._run(tree, [_candidate(51)])
+        self.assertEqual(payload['unread'], [{'number': 50, 'unread': 3}])
+        self.assertIn('#50', payload['reason'])
+
+    def test_a_tree_read_in_full_reports_nothing_unread(self):
+        tree = _node(50, 'Feature', _node(51, 'User Story'))
+        _, payload = self._run(tree, [_candidate(51)])
+        self.assertEqual(payload['unread'], [])
 
     def test_a_story_is_not_a_parent(self):
         code, payload = self._run(_node(51, 'User Story'), [_candidate(51)])
