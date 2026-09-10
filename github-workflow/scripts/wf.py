@@ -2201,13 +2201,16 @@ def _board_placement_query(field_name):
     The labels ride along for the same reason: the retired-label check needs
     every open issue's labels, and that is the same walk. Two paginated scans of
     the same issues to answer two questions about them is a round trip nobody
-    gets back.
+    gets back. So do the type and sub-issues the finished-container check reads
+    (#240), for the same reason.
     """
     return (
         'query($owner:String!,$repo:String!,$after:String){'
         ' repository(owner:$owner,name:$repo){ issues(states:OPEN,first:100,after:$after){'
         ' pageInfo { hasNextPage endCursor }'
-        ' nodes { number title assignees(first:1){ totalCount }'
+        ' nodes { number title state issueType { name }'
+        ' subIssues(first:100){ nodes { number state } }'
+        ' assignees(first:1){ totalCount }'
         ' labels(first:50){ nodes { name } }'
         ' projectItems(first:20){ nodes { project { id }'
         '  fieldValueByName(name:"%s"){'
@@ -2218,9 +2221,10 @@ def _board_placement_query(field_name):
 def fetch_board_placement(cfg, repo=None):
     """What the open issues look like to the board and to the label checks.
 
-    Returns (ok, orphans, unset, labelled, err) -- issues with no card, issues
-    whose card holds no `Status` value, and every open issue that carries any
-    label at all. The first two are the same failure in the end: the column is
+    Returns (ok, orphans, unset, labelled, finished, err) -- issues with no
+    card, issues whose card holds no `Status` value, every open issue that
+    carries any label at all, and every open Epic or Feature whose sub-issues
+    are all closed (`{'number', 'title'}`). The first two are the same failure in the end: the column is
     the state, so an issue in neither a card nor a lane is in no state,
     invisible to `pick` and to every other command that reads one.
 
@@ -2238,14 +2242,14 @@ def fetch_board_placement(cfg, repo=None):
     field = board.get('status_field_name', 'Status')
     owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
     query = _board_placement_query(field)
-    orphans, unset, labelled, cursor = [], [], [], None
+    orphans, unset, labelled, finished, cursor = [], [], [], [], None
     while True:
         fields = {'owner': owner, 'repo': name}
         if cursor:
             fields['after'] = cursor
         ok, data, err = gh_graphql(query, **fields)
         if not ok or not data:
-            return False, None, None, None, err
+            return False, None, None, None, None, err
         page = ((data.get('repository') or {}).get('issues')) or {}
         for node in page.get('nodes') or []:
             names = [n['name'] for n
@@ -2253,6 +2257,9 @@ def fetch_board_placement(cfg, repo=None):
                      if n.get('name')]
             if names:
                 labelled.append({'number': node['number'], 'labels': names})
+            if wf_core.container_finished(_container_node(node)):
+                finished.append({'number': node['number'],
+                                 'title': node.get('title') or ''})
             if not board_id:
                 continue
             assigned = ((node.get('assignees') or {}).get('totalCount') or 0) > 0
@@ -2267,7 +2274,7 @@ def fetch_board_placement(cfg, repo=None):
                 unset.append(node['number'])
         info = page.get('pageInfo') or {}
         if not info.get('hasNextPage'):
-            return True, orphans, unset, labelled, ''
+            return True, orphans, unset, labelled, finished, ''
         cursor = info.get('endCursor')
 
 
@@ -2401,7 +2408,7 @@ def collect_config_findings(cfg, args, root):
                    'field-unpinned', 'field-unmapped', 'field-absent',
                    'field-options', 'label-retired',
                    'board-column', 'board-lane', 'board-retired',
-                   'board-orphan', 'board-unset']
+                   'board-orphan', 'board-unset', 'container-finished']
         return findings, ['config-section', 'instructions-retired'], skipped, context
 
     # ── the repo: labels and the board, in one round trip ────────────────────
@@ -2427,21 +2434,27 @@ def collect_config_findings(cfg, args, root):
         findings.extend(_board_findings(board_cfg, state['board'], source_rel))
         checked.extend(['board-column', 'board-lane', 'board-retired'])
 
-    # One walk of the open issues answers three questions: which have no card,
-    # which sit in no lane, and which still carry a label that decides nothing.
-    ok, orphans, unset, labelled, err = fetch_board_placement(cfg, args.repo)
+    # One walk of the open issues answers four questions: which have no card,
+    # which sit in no lane, which still carry a label that decides nothing, and
+    # which Epic or Feature is finished with nothing having closed it (#240).
+    ok, orphans, unset, labelled, finished, err = fetch_board_placement(
+        cfg, args.repo)
     if not ok:
         findings.append(wf_core.finding(
             wf_core.WARNING, 'board-orphan',
             'could not read the open issues (%s), so whether any are invisible '
-            'to `pick` or still carry a retired label is unverified' % err,
+            'to `pick`, still carry a retired label or are a finished Epic or '
+            'Feature is unverified' % err,
             'check the token and re-run', source_rel))
-        skipped.extend(['board-orphan', 'board-unset', 'label-retired'])
+        skipped.extend(['board-orphan', 'board-unset', 'label-retired',
+                        'container-finished'])
     else:
         findings.extend(wf_core.retired_label_findings(
             labelled, cfg.get('labels'), source_rel))
-        checked.append('label-retired')
+        findings.extend(wf_core.finished_container_findings(finished, source_rel))
+        checked.extend(['label-retired', 'container-finished'])
         context['retired_labels'] = labelled
+        context['finished_containers'] = finished
         if has_board:
             findings.extend(wf_core.board_orphan_findings(orphans, source_rel))
             findings.extend(wf_core.board_unset_findings(unset, source_rel))
@@ -3012,6 +3025,10 @@ def cmd_preflight(args):
             cfg, context.get('retired_labels'), args.repo)
         done.extend(label_done)
         blocked.extend(label_blocked)
+        container_done, container_blocked = _fix_finished_containers(
+            cfg, context.get('finished_containers'))
+        done.extend(container_done)
+        blocked.extend(container_blocked)
 
     # Re-run against the state the repairs left behind, so the findings a
     # person reads are the ones that are still true. A `--fix` that reported
@@ -5044,6 +5061,124 @@ def cmd_review_finish(args):
          verified=verified, labels=after)
 
 
+# ── closing a finished container (#240) ──────────────────────────────────────
+
+# How far up a merged story's parents the walk reads: story, Feature, Epic,
+# and one more for a tree nested deeper than the usual three levels.
+CONTAINER_CHAIN_DEPTH = 4
+
+CONTAINER_CLOSE_COMMENT = (
+    'Closing as completed: every sub-issue is closed, and #%d was the last to '
+    'close. Reopen this if more work is planned under it.')
+CONTAINER_SWEEP_COMMENT = (
+    'Closing as completed: every sub-issue is closed. Found by `wf preflight '
+    '--fix`; reopen this if more work is planned under it.')
+
+_CONTAINER_NODE = ('number title state issueType { name }'
+                   ' repository { nameWithOwner }'
+                   ' subIssues(first:100){ nodes { number state } }')
+
+
+def _container_node(node):
+    return {'number': node['number'], 'title': node.get('title') or '',
+            'state': node.get('state') or '',
+            'type': (node.get('issueType') or {}).get('name'),
+            'repo': (node.get('repository') or {}).get('nameWithOwner'),
+            'children': [{'number': c.get('number'), 'state': c.get('state')}
+                         for c in (node.get('subIssues') or {}).get('nodes') or []]}
+
+
+def _chain_selection(depth):
+    if depth <= 1:
+        return _CONTAINER_NODE
+    return _CONTAINER_NODE + ' parent { %s }' % _chain_selection(depth - 1)
+
+
+def fetch_parent_chain(cfg, number):
+    """The parents above one issue, nearest first. (ok, chain, err)."""
+    ok, data, err = gh_graphql(
+        'query($o:String!,$r:String!,$n:Int!){ repository(owner:$o,name:$r){'
+        ' issue(number:$n){ parent { %s } } } }' % _chain_selection(CONTAINER_CHAIN_DEPTH),
+        o=cfg['org'], r=cfg['repo'], n=int(number))
+    if not ok or not data:
+        return False, [], err or 'the parent query failed'
+    node = (((data.get('repository') or {}).get('issue')) or {}).get('parent')
+    chain = []
+    while node:
+        chain.append(_container_node(node))
+        node = node.get('parent')
+    return True, chain, ''
+
+
+def close_container(cfg, number, comment):
+    """Close one finished container as completed and move its card to Done."""
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    code, _, err = run(['gh', 'issue', 'close', str(number), '--repo', repo,
+                        '--reason', 'completed', '--comment', comment])
+    if code != 0:
+        return {'issue': number, 'closed': False,
+                'error': err.strip() or 'gh issue close failed'}
+    moved, message = board_move(cfg, number, wf_core.BOARD_COLUMN_NAMES['col-done'])
+    return {'issue': number, 'closed': True, 'board_moved_done': moved,
+            'board_message': message}
+
+
+def close_finished_ancestors(cfg, numbers):
+    """Close every Epic or Feature that closing `numbers` finished (#240).
+
+    Walks up each issue's parents and stops at the first that still has an
+    open child, so closing a Feature can finish its Epic in the same run. A
+    parent in another repository is left alone. Returns (closed, errors):
+    one entry per container it tried to close, and each parent chain that
+    could not be read.
+    """
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    done = {int(n) for n in numbers or ()}
+    closed, errors = [], []
+    for number in numbers or ():
+        ok, chain, err = fetch_parent_chain(cfg, number)
+        if not ok:
+            errors.append('#%d: %s' % (number, err))
+            continue
+        for step in wf_core.ancestors_to_close(number, chain, done, repo):
+            if step['number'] in done:
+                continue
+            result = close_container(cfg, step['number'],
+                                     CONTAINER_CLOSE_COMMENT % step['finished_by'])
+            result['finished_by'] = step['finished_by']
+            closed.append(result)
+            if not result['closed']:
+                # The ancestors above were judged on this one closing.
+                break
+            done.add(step['number'])
+    return closed, errors
+
+
+def _fix_finished_containers(cfg, containers):
+    """Close every open Epic or Feature preflight found already finished.
+
+    The preflight half of #240: the merge closes what it finishes from now
+    on, and `fetch_board_placement` finds the ones that finished before it did.
+    """
+    if not containers:
+        return [], []
+    closed, failed = [], []
+    for container in containers:
+        result = close_container(cfg, container['number'], CONTAINER_SWEEP_COMMENT)
+        if result['closed']:
+            closed.append(container['number'])
+        else:
+            failed.append('#%d (%s)' % (container['number'], result['error']))
+    done, blocked = [], []
+    if closed:
+        done.append('closed %d finished Epic or Feature issue%s: %s'
+                    % (len(closed), '' if len(closed) == 1 else 's',
+                       ', '.join('#%d' % n for n in closed)))
+    if failed:
+        blocked.append('could not close %s' % ', '.join(failed))
+    return done, blocked
+
+
 def cmd_post_merge(args):
     """Settle a merged PR's linked issues: force-close any still open, move all to Done.
 
@@ -5099,9 +5234,16 @@ def cmd_post_merge(args):
     # PR that closes nothing reports `settled: []`, which reads as "finished"
     # and is not. The sweep runs whether or not anything settled, because the
     # merge may have closed a blocker through a reference this never saw.
+    # Closing a story can finish the Epic or Feature above it, and nothing
+    # else ever closes one (#240). Walked before the unblock sweep, so anything
+    # waiting on a container this closes is released by the same run.
+    containers, container_errors = close_finished_ancestors(
+        cfg, [s['issue'] for s in settled])
+
     unblocked = unblock_scan(cfg) if not args.no_unblock else None
 
     emit('ok', EXIT_OK, pr=args.pr, base=data.get('baseRefName'), settled=settled,
+         containers_closed=containers, container_errors=container_errors,
          unblocked=unblocked)
 
 

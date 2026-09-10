@@ -3483,5 +3483,66 @@ class TestChooseParentSet(unittest.TestCase):
         self.assertNotIn(11, [e['number'] for e in choice['excluded']])
 
 
+# ── closing a finished container (#240) ──────────────────────────────────────
+
+def _container(number, kind, *children, state='OPEN', repo=None):
+    return {'number': number, 'type': kind, 'state': state, 'repo': repo,
+            'children': [{'number': n, 'state': s} for n, s in children]}
+
+
+class TestFinishedContainers(unittest.TestCase):
+    """Which Epic or Feature a closed issue finishes, and how far up."""
+
+    def test_every_child_closed_finishes_it_whatever_the_reason(self):
+        """The read carries state only, so a child closed as not planned is
+        closed like any other: that was the decision on #240."""
+        self.assertTrue(wf_core.container_finished(
+            _container(1, 'Feature', (2, 'CLOSED'), (3, 'CLOSED'))))
+
+    def test_one_open_child_keeps_it_open(self):
+        self.assertFalse(wf_core.container_finished(
+            _container(1, 'Epic', (2, 'CLOSED'), (3, 'OPEN'))))
+
+    def test_a_child_this_run_closed_counts_before_the_read_catches_up(self):
+        self.assertTrue(wf_core.container_finished(
+            _container(1, 'Feature', (2, 'OPEN')), closed={2}))
+
+    def test_an_empty_container_is_never_finished(self):
+        self.assertFalse(wf_core.container_finished(_container(1, 'Epic')))
+
+    def test_only_an_open_container_can_be_finished(self):
+        self.assertFalse(wf_core.container_finished(
+            _container(1, 'User Story', (2, 'CLOSED'))))
+        self.assertFalse(wf_core.container_finished(
+            _container(1, 'Feature', (2, 'CLOSED'), state='CLOSED')))
+
+    def test_closing_a_story_can_finish_its_feature_and_then_its_epic(self):
+        chain = [_container(10, 'Feature', (11, 'OPEN')),
+                 _container(1, 'Epic', (10, 'OPEN'), (20, 'CLOSED'))]
+        self.assertEqual(wf_core.ancestors_to_close(11, chain),
+                         [{'number': 10, 'finished_by': 11},
+                          {'number': 1, 'finished_by': 10}])
+
+    def test_the_walk_stops_at_the_first_unfinished_ancestor(self):
+        chain = [_container(10, 'Feature', (11, 'OPEN'), (12, 'OPEN')),
+                 _container(1, 'Epic', (10, 'OPEN'))]
+        self.assertEqual(wf_core.ancestors_to_close(11, chain), [])
+
+    def test_a_parent_in_another_repository_is_left_alone(self):
+        chain = [_container(10, 'Feature', (11, 'OPEN'), repo='o/other')]
+        self.assertEqual(wf_core.ancestors_to_close(11, chain, repo='o/r'), [])
+
+    def test_one_finding_names_every_finished_container(self):
+        found = wf_core.finished_container_findings(
+            [{'number': 5, 'title': 'a'}, {'number': 6, 'title': 'b'}])
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]['check'], 'container-finished')
+        self.assertEqual(found[0]['level'], wf_core.WARNING)
+        self.assertIn('#5', found[0]['detail'])
+        self.assertIn('#6', found[0]['detail'])
+        self.assertIn('container-finished', wf_core.FIXABLE_CHECKS)
+        self.assertEqual(wf_core.finished_container_findings([]), [])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -1141,6 +1141,62 @@ class TestShapeRegressionGuards(unittest.TestCase):
         self.assertEqual(args[n_idx - 1], '-F')
 
 
+class TestPostMergeClosesFinishedContainers(unittest.TestCase):
+    """A merge closes the Epic or Feature its last story finished (#240)."""
+
+    def _post_merge(self, chain):
+        cfg, calls = _cfg(), []
+
+        def fake_run(argv, input_text=None):
+            calls.append(argv)
+            if argv[:3] == ['gh', 'pr', 'view']:
+                return 0, json.dumps({
+                    'number': 50, 'state': 'MERGED', 'mergedAt': '2026-09-10T00:00:00Z',
+                    'baseRefName': 'main',
+                    'closingIssuesReferences': [{'number': 5}]}), ''
+            if argv[:3] == ['gh', 'issue', 'view']:
+                return 0, json.dumps({'state': 'OPEN', 'labels': []}), ''
+            return 0, '', ''
+
+        args = wf.build_parser().parse_args(['post-merge', '--pr', '50', '--no-unblock'])
+        with mock.patch.object(wf, 'check_environment', return_value=None), \
+                mock.patch.object(wf, 'load_config', return_value=(True, cfg, '')), \
+                mock.patch.object(wf, 'run', side_effect=fake_run), \
+                mock.patch.object(wf, 'board_move', return_value=(True, 'moved')), \
+                mock.patch.object(wf, 'fetch_parent_chain',
+                                  return_value=(True, chain, '')):
+            code, payload = _capture(args.func, args)
+        closes = [c for c in calls if c[:3] == ['gh', 'issue', 'close']]
+        return code, payload, closes
+
+    @staticmethod
+    def _node(number, kind, *children):
+        cfg = _cfg()
+        return {'number': number, 'type': kind, 'state': 'OPEN',
+                'repo': '%s/%s' % (cfg['org'], cfg['repo']),
+                'children': [{'number': n, 'state': s} for n, s in children]}
+
+    def test_closing_the_last_story_closes_its_feature_then_its_epic(self):
+        # The read still shows #5 open: GitHub may not have caught up with
+        # the close this run just made, and the walk must not wait for it.
+        chain = [self._node(10, 'Feature', (5, 'OPEN')),
+                 self._node(1, 'Epic', (10, 'OPEN'), (20, 'CLOSED'))]
+        code, payload, closes = self._post_merge(chain)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual([(c['issue'], c['finished_by'], c['closed'])
+                          for c in payload['containers_closed']],
+                         [(10, 5, True), (1, 10, True)])
+        for number, close in zip(('10', '1'), closes[-2:]):
+            self.assertEqual(close[3], number)
+            self.assertIn('completed', close)
+
+    def test_a_parent_with_an_open_story_left_stays_open(self):
+        chain = [self._node(10, 'Feature', (5, 'OPEN'), (6, 'OPEN'))]
+        _, payload, closes = self._post_merge(chain)
+        self.assertEqual(payload['containers_closed'], [])
+        self.assertNotIn('10', [c[3] for c in closes])
+
+
 class TestRunDecoding(unittest.TestCase):
     """`run()` must decode subprocess output as UTF-8 regardless of host locale.
 
@@ -3586,8 +3642,26 @@ class TestPreflight(unittest.TestCase):
         with open(os.path.join(self.dir, name), encoding='utf-8') as fh:
             return fh.read()
 
+    # ── finished containers (#240) ───────────────────────────────────────────
+
+    def test_a_finished_container_is_a_warning_the_fix_can_repair(self):
+        _, payload, _ = self._run(finished=[40])
+        found = [f for f in payload['findings'] if f['check'] == 'container-finished']
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]['level'], wf_core.WARNING)
+        self.assertIn('#40', found[0]['detail'])
+        self.assertTrue(found[0]['auto'])
+
+    def test_fix_closes_a_finished_container_as_completed(self):
+        _, payload, calls = self._run(['--fix'], finished=[40])
+        closes = [c for c in calls if c[:3] == ['gh', 'issue', 'close']]
+        self.assertEqual(len(closes), 1)
+        self.assertIn('40', closes[0])
+        self.assertIn('completed', closes[0])
+        self.assertTrue(any('#40' in line for line in payload['fixed']))
+
     def _run(self, argv=(), board=_UNSET, orphans=(), unset=(), env_err=None,
-             mutation=None, moves=None):
+             mutation=None, moves=None, finished=()):
         if board is _UNSET:
             board = copy.deepcopy(self._LIVE_BOARD)
         args = wf.build_parser().parse_args(
@@ -3605,7 +3679,18 @@ class TestPreflight(unittest.TestCase):
                          + [{'number': n, 'title': 't', 'assignees': {'totalCount': 1},
                              'projectItems': {'nodes': [
                                  {'project': {'id': 'PVT_1'},
-                                  'fieldValueByName': None}]}} for n in unset])
+                                  'fieldValueByName': None}]}} for n in unset]
+                         # An Epic whose only sub-issue is closed, carded in a
+                         # lane, so it is finished and nothing else (#240).
+                         + [{'number': n, 'title': 'container %d' % n,
+                             'state': 'OPEN', 'issueType': {'name': 'Epic'},
+                             'subIssues': {'nodes': [
+                                 {'number': n + 1, 'state': 'CLOSED'}]},
+                             'assignees': {'totalCount': 0},
+                             'projectItems': {'nodes': [
+                                 {'project': {'id': 'PVT_1'},
+                                  'fieldValueByName': {'name': 'Backlog'}}]}}
+                            for n in finished])
                 return True, {'repository': {'issues': {
                     'pageInfo': {'hasNextPage': False, 'endCursor': None},
                     'nodes': nodes}}}, ''

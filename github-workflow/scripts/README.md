@@ -35,6 +35,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --limit 0
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --parent 42 --size 5
 
 # After merging a PR: close any still-open linked issue and move it to Done,
+# close any Epic or Feature above it whose sub-issues are now all closed,
 # then release whatever that merge freed
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr 123
 
@@ -391,6 +392,7 @@ The file-level checks used to be shell blocks inside `skills/preflight/SKILL.md`
 | `file-claude-md` / `claude-md-ref` | warning | No `CLAUDE.md`, or one that never mentions `ClaudeProject.md` — so a session that runs no workflow command never finds the configuration. |
 | `review-config` | warning | `ClaudeProject.md` names a review-state label file that is not there, so every review label falls back to its default name. |
 | `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, a lifecycle, priority or scope label, or a dependency written as prose, named by line. Never rewritten: the lines are somebody's own sentences. The plugin's own directory is not scanned, since its templates name what was retired on purpose. |
+| `container-finished` | warning | An open Epic or Feature whose sub-issues are all closed. `post-merge` closes the ones a merge finishes; this finds the ones that finished before it did, and `--fix` closes them as completed and moves them to `Done`. A container with no sub-issues is never flagged. |
 
 ### Every finding says whether `--fix` would touch it
 

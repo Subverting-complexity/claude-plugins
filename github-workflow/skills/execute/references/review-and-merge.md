@@ -132,7 +132,7 @@ git checkout --detach origin/{default-branch}
 
 If `git status --porcelain --untracked-files=no` is not empty, run **End clean** in `templates/worktree-hygiene.md` first — the detach will not move with tracked modifications in the way. Ignore untracked files here: this workflow's own `.claude/` scratch files are untracked by design, and routing a mid-merge run into End clean over them would risk committing scratch to the PR.
 
-Its step 6 runs `wf post-merge --pr {pr_number}`, which closes every issue the PR closes and moves each card to the board's **Done** column. Report each settled issue by number and title.
+Its step 6 runs `wf post-merge --pr {pr_number}`, which closes every issue the PR closes and moves each card to the board's **Done** column. It also closes any Epic or Feature that merge finished, meaning every sub-issue is now closed, and lists it in `containers_closed`. Report each settled issue and each closed container by number and title.
 
 It then runs the unblock sweep and returns it as `unblocked`, because settling this PR's own issues is only half of a merge. Report `released` (blocked issues whose dependency edges have all closed — name each by number and title, they are back in the pool) and `partials` (still held, but a blocker just merged something, so a person must judge whether that freed them). For `no_edges` report the count only. An empty `settled` is not a finished run: a PR that closes nothing still frees work.
 
