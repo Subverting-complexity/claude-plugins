@@ -1038,6 +1038,18 @@ class TestNativeTypeFiltering(unittest.TestCase):
         result = filter_by_native_type(candidates, 'story', self.TYPE_MAP)
         self.assertEqual([c['number'] for c in result], [1, 7])
 
+    def test_the_story_pool_never_offers_an_epic(self):
+        """The filter above is only half of it: the pool itself skipped type
+        filtering in story mode, which is how the epic still reached `pick`."""
+        candidates = [_issue(1, []), _issue(6, [])]
+        owners = {1: 'Code agent', 6: 'Code agent'}
+        pool = wf_core.select_pool(candidates, mode='story',
+                                   type_map=self.TYPE_MAP, ownership_map=owners)
+        self.assertEqual([c['number'] for c in pool], [1])
+        untyped = wf_core.select_pool(candidates, mode='story', type_map=None,
+                                      ownership_map=owners)
+        self.assertEqual(len(untyped), 2)
+
     def test_feature_mode_keeps_user_story(self):
         candidates = [_issue(1, []), _issue(2, []), _issue(3, []),
                        _issue(5, []), _issue(6, [])]

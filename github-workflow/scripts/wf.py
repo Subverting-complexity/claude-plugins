@@ -4498,7 +4498,10 @@ def cmd_pick(args):
     effort_map = facets['effort']
     ownership_map = facets['ownership']
     type_map = classification_map = None
-    if args.mode != 'story':
+    if args.mode == 'story':
+        # Read only to leave epics out; story mode classifies nothing.
+        type_map = facets['types'] or None
+    else:
         type_map = facets['types'] or None
         classification_map = facets['classification'] if type_map else None
         if not type_map:
@@ -4661,7 +4664,10 @@ def cmd_candidates(args):
     effort_map = facets['effort']
     ownership_map = facets['ownership']
     type_map = classification_map = None
-    if args.mode != 'story' and cfg.get('type_capable'):
+    if args.mode == 'story':
+        # Read only to leave epics out, as `pick` does.
+        type_map = facets['types'] or None
+    elif cfg.get('type_capable'):
         type_map = facets['types'] or None
         classification_map = facets['classification'] if type_map else None
 

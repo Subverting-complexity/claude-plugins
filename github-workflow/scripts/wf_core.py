@@ -308,7 +308,9 @@ def select_pool(candidates, mode='story', project_map=None,
     nothing about, because an unanswered question is not a yes.
     """
     if mode == 'story':
-        pool = list(candidates)
+        # Every type but a container. An org with no types has no epics to
+        # leave out, so the whole pool stands.
+        pool = filter_by_native_type(candidates, mode, type_map or {})
     elif type_map:
         pool = filter_by_native_type(candidates, mode, type_map, classification_map,
                                      project_map, unclassified)
