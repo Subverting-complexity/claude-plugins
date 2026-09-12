@@ -7,6 +7,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 11.2.2
+
+**`bulk-execute`'s Phase 1 spells out what `wf` means before using it bare.** The bare `wf candidates` / `wf claim` / `wf post-merge` mentions in `SKILL.md` used to assume the reader had already opened `references/set-selection.md`, which carries the real invocation (`bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh"`). A run that acted on the bullet summary without opening that file could mistake `wf` for a system-installed CLI and go looking for it with `which`, `find`, `npm`, or `gh extension list`. Phase 1 now says up front that `wf` is always the bundled launcher, never a PATH lookup.
+
 ## github-workflow 11.2.1
 
 **The marketplace listing and plugin description mention the Epic and Feature tree.** Both now say that a bulk run can take its set from the stories under one Epic or Feature, and that an Epic or Feature is closed once its last sub-issue closes. No behaviour changes.
