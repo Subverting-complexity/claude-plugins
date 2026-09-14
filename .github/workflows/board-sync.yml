@@ -1,0 +1,43 @@
+name: Board sync
+
+# Adds any board card GitHub's "Auto-add to project" workflow missed, and
+# brings every issue's Stage into line with its real state, across every
+# repository in the organisation.
+#
+# Only a schedule and a manual dispatch trigger it. It never runs on
+# pull_request or pull_request_target, so a fork can never reach the App
+# secrets below. The logs are public, so `wf board-sync` prints totals only.
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: board-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync boards and Stage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint a GitHub App token for the organisation
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.BOARD_SYNC_APP_ID }}
+          private-key: ${{ secrets.BOARD_SYNC_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Run wf board-sync
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: python3 github-workflow/scripts/wf.py board-sync

@@ -3616,6 +3616,127 @@ class TestStageDrift(unittest.TestCase):
         self.assertIn('#6 (should be In Progress)', found[0]['detail'])
         self.assertEqual(wf_core.stage_drift_findings([]), [])
 
+class TestReconcileStage(unittest.TestCase):
+    """`board-sync`'s one decision: the stage an issue's own facts call for.
+
+    The last test is the one the schedule depends on. Every answer is a fixed
+    point, so a second run over unchanged issues writes nothing.
+    """
+
+    FACTS = dict(is_open=True, stage='', blockers=0, open_blockers=0,
+                 assigned=False, claimed=False)
+
+    def r(self, open_pr=False, draft_pr=False, **over):
+        """`open_pr` is a ready pull request closing the issue, `draft_pr` a
+        draft one."""
+        facts = dict(self.FACTS, **over)
+        facts['open_prs'] = ([{'isDraft': False}] if open_pr else []) + (
+            [{'isDraft': True}] if draft_pr else [])
+        return wf_core.reconcile_stage(**facts)
+
+    def test_a_protected_stage_is_never_changed_even_once_closed(self):
+        for stage in wf_core.SYNC_PROTECTED_STAGES:
+            self.assertIsNone(self.r(stage=stage, open_blockers=1, blockers=1,
+                                     open_pr=True))
+            self.assertIsNone(self.r(stage=stage, is_open=False))
+
+    def test_a_value_that_is_not_a_stage_is_left_alone(self):
+        self.assertIsNone(self.r(stage='Ready', open_blockers=1, blockers=1))
+
+    def test_a_closed_issue_is_done(self):
+        self.assertEqual(self.r(is_open=False, stage='In Review'), 'Done')
+        self.assertEqual(self.r(is_open=False), 'Done')
+        self.assertIsNone(self.r(is_open=False, stage='Done'))
+
+    def test_an_open_pull_request_puts_available_or_started_work_in_review(self):
+        for stage in ('', 'Backlog', 'In Progress'):
+            self.assertEqual(self.r(stage=stage, open_pr=True), 'In Review')
+        self.assertIsNone(self.r(stage='In Review', open_pr=True))
+
+    def test_a_pull_request_does_not_overrule_blocked(self):
+        self.assertIsNone(self.r(stage='Blocked', blockers=1, open_blockers=1,
+                                 open_pr=True))
+
+    def test_abandoned_work_goes_back_to_backlog(self):
+        self.assertEqual(self.r(stage='In Progress'), 'Backlog')
+        self.assertEqual(self.r(stage='In Review'), 'Backlog')
+
+    def test_abandoned_work_with_an_open_edge_goes_straight_to_blocked(self):
+        self.assertEqual(self.r(stage='In Progress', blockers=1,
+                                open_blockers=1), 'Blocked')
+
+    def test_an_assignee_or_a_claim_keeps_work_where_it_is(self):
+        self.assertIsNone(self.r(stage='In Progress', assigned=True))
+        self.assertIsNone(self.r(stage='In Progress', claimed=True))
+        self.assertIsNone(self.r(stage='In Review', claimed=True))
+
+    def test_an_open_edge_blocks_available_work(self):
+        self.assertEqual(self.r(blockers=1, open_blockers=1), 'Blocked')
+        self.assertEqual(self.r(stage='Backlog', blockers=2, open_blockers=1),
+                         'Blocked')
+
+    def test_a_plugin_set_block_clears_once_every_blocker_closes(self):
+        self.assertEqual(self.r(stage='Blocked', blockers=2), 'Backlog')
+        self.assertIsNone(self.r(stage='Blocked', blockers=2, open_blockers=1))
+
+    def test_a_cleared_block_with_a_pull_request_goes_straight_to_review(self):
+        self.assertEqual(self.r(stage='Blocked', blockers=1, open_pr=True),
+                         'In Review')
+
+    def test_blocked_with_no_edge_was_set_by_a_person_and_stays(self):
+        self.assertIsNone(self.r(stage='Blocked'))
+
+    def test_a_blank_stage_with_nothing_to_say_is_not_written(self):
+        self.assertIsNone(self.r())
+        self.assertIsNone(self.r(claimed=True))
+
+    def test_a_draft_pull_request_or_an_assignee_is_in_progress(self):
+        for stage in ('', 'Backlog'):
+            self.assertEqual(self.r(stage=stage, draft_pr=True), 'In Progress')
+            self.assertEqual(self.r(stage=stage, assigned=True), 'In Progress')
+        self.assertIsNone(self.r(stage='In Progress', draft_pr=True))
+
+    def test_started_work_outranks_an_open_blocker(self):
+        self.assertEqual(self.r(blockers=1, open_blockers=1, assigned=True),
+                         'In Progress')
+
+    def test_a_cleared_block_somebody_started_lands_where_it_belongs(self):
+        self.assertEqual(self.r(stage='Blocked', blockers=1, assigned=True),
+                         'In Progress')
+        self.assertEqual(self.r(stage='Blocked', blockers=1, draft_pr=True),
+                         'In Progress')
+
+    def test_it_agrees_with_the_stage_drift_repair_wherever_that_answers(self):
+        """`preflight --fix` and `board-sync` must never pull one issue two ways."""
+        import itertools
+        for stage, assigned, prs in itertools.product(
+                ('', 'Backlog'), (True, False),
+                ([], [{'isDraft': True}], [{'isDraft': False}])):
+            drift = wf_core.stage_drift_target(stage, assigned=assigned,
+                                               open_prs=prs)
+            if drift:
+                self.assertEqual(
+                    wf_core.reconcile_stage(True, stage, 0, 0, assigned, False,
+                                            prs),
+                    wf_core.STAGE_NAMES[drift], (stage, assigned, prs))
+
+    def test_every_answer_is_a_fixed_point(self):
+        import itertools
+        stages = [''] + list(wf_core.STAGE_NAMES.values())
+        pr_sets = ([], [{'isDraft': True}], [{'isDraft': False}])
+        combos = itertools.product((True, False), stages,
+                                   ((0, 0), (1, 0), (1, 1)),
+                                   (True, False), (True, False), pr_sets)
+        for is_open, stage, edges, assigned, claimed, open_prs in combos:
+            facts = dict(is_open=is_open, blockers=edges[0],
+                         open_blockers=edges[1], assigned=assigned,
+                         claimed=claimed, open_prs=open_prs)
+            target = wf_core.reconcile_stage(stage=stage, **facts)
+            if target:
+                self.assertIsNone(
+                    wf_core.reconcile_stage(stage=target, **facts),
+                    'from %r with %r' % (stage, facts))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

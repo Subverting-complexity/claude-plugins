@@ -491,6 +491,26 @@ It **always exits 0**, so a failed write never costs a run its work. Read `set`,
 
 It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read `pr_labelled` and the per-issue `stage_set` and `stage_message` instead. A failure on one issue does not affect the others.
 
+### `board-sync`
+
+`board-sync` is what `.github/workflows/board-sync.yml` runs every 6 hours. It is the backup for everything a run or a person did not keep in step, across every unarchived repository in the org that has issues turned on:
+
+- **Cards.** Each open issue gets a card on every open board linked to its repository (`Repository.projectsV2`) that does not already hold one. GitHub's own "Auto-add to project" workflow stays the primary way issues reach a board; this adds what it missed. A repository with no linked board gets no cards.
+- **Stage.** Each open issue, and each issue closed in the last `--closed-days` days (default 7), has its `Stage` set by `wf_core.reconcile_stage`: `Done` when closed; for a blank or `Backlog` issue somebody has started, `In Review` for a ready pull request and `In Progress` for a draft one or an assignee, which is `wf_core.stage_drift_target`, the same rule `preflight --fix` repairs `stage-drift` with; `In Review` for `In Progress` work once a ready pull request closes it; `Backlog` (or `Blocked`, if an edge is still open) when it sits in `In Progress` or `In Review` with no assignee, no `refs/claims/issue-N` and no open pull request; `Blocked` when it is blank or `Backlog` with an open blocked-by edge and nobody has started it; and, when it is `Blocked` and every blocker has closed, `Backlog`, or straight to where the started rule puts it.
+
+It never changes `Parked`, `Needs refinement`, `Needs attention` or `Non-code`, and it never clears a `Blocked` that has no blocked-by edge, because a person set that. A claim ref it cannot read counts as held, so an unreadable lock never releases somebody's work. For the same reason a blocked-by edge it cannot read counts as open, and an issue with more edges than one page reads is left as it is unless an open one was seen. Every result is a fixed point, so a second run over unchanged issues writes nothing.
+
+The output is **totals only** (`repos`, `repos_with_boards`, `repos_failed`, `claims_unread`, `issues_read`, `cards_added`, `cards_failed`, `stages_set`, `stages_failed`, `stages_by_value`). A workflow's logs are public on a public repository, so no repository name, issue number, title or error text is printed. `--dry-run` counts what would change and writes nothing. It exits 0 when everything landed, 24 (`partial`) when any repository could not be read or any write failed, 21 when the org has no `Stage` field, and 20 when the org cannot be read at all.
+
+**Setting up the workflow.** It authenticates as a GitHub App, so its writes do not depend on anybody's personal token:
+
+1. Create a GitHub App owned by the organisation, with repository permissions *Issues: read and write*, *Contents: read* and *Pull requests: read*, and organisation permissions *Projects: read and write* and *Issue fields: read and write*. These are what the queries and mutations appear to need. They have not been checked against a live install, and *Issue fields* may need only read, since the values are written through the Issues permission.
+2. Install it on every repository the sync should cover.
+3. Add the App's id as the `BOARD_SYNC_APP_ID` Actions secret and its private key as `BOARD_SYNC_PRIVATE_KEY`, on this repository.
+4. Run the workflow once by hand (*Actions* → *Board sync* → *Run workflow*) and check the totals.
+
+The workflow is triggered only by `schedule` and `workflow_dispatch`. It never runs on `pull_request` or `pull_request_target`, so a fork cannot reach the secrets.
+
 ## Claim outcomes vs. environment errors
 
 A claim push that fails is only a **lost claim** (a rival got there first) when the `refs/claims/<target>` ref actually exists on the remote afterward. `acquire_claim` probes with `git ls-remote`; if the ref is absent the push failed for another reason — no write access, auth, or network — and the picker emits `status: error` rather than walking the pool and reporting a phantom `all-blocked`. So "nothing to pick" always means the backlog is genuinely empty, never that claims could not be written.
