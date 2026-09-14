@@ -4438,5 +4438,368 @@ class TestPickBlockedSibling(unittest.TestCase):
             self.assertEqual(wf.validate_issue(cfg, {'number': 52})[0], 'blocked')
 
 
+
+_NOW_ISH = '2099-01-01T00:00:00Z'
+_LONG_AGO = '2000-01-01T00:00:00Z'
+
+
+def _sync_issue(open_=True, stage='', blockers=(), prs=(), assignee=False,
+                cards=(), updated=_NOW_ISH, more_blockers=False):
+    """`blockers` holds each edge's state, or None for one the token cannot
+    read; `more_blockers` says the edge list runs past the page read."""
+    return dict(open=open_, stage=stage, blockers=list(blockers),
+                prs=list(prs), assignee=assignee, cards=list(cards),
+                updated=updated, more_blockers=more_blockers)
+
+
+class _SyncHub(object):
+    """A small org for `board-sync`, recorded at every seam it writes through.
+
+    `widgets` has a linked board and one issue for each rule, `gadgets` has no
+    board, and `attic` is archived. Writes are applied back to the issues, so
+    running the command twice shows whether the second run has anything left.
+    """
+
+    def __init__(self, claims_fail=False, fail_stage=(), page_size=100,
+                 fail_repo=None, fail_cards=False, fail_repos=False,
+                 no_stage=False):
+        self.claims_fail = claims_fail
+        self.fail_stage = set(fail_stage)
+        self.page_size = page_size
+        self.fail_repo = fail_repo
+        self.fail_cards = fail_cards
+        self.fail_repos = fail_repos
+        self.no_stage = no_stage
+        self.repos = [
+            {'name': 'attic', 'isArchived': True, 'hasIssuesEnabled': True,
+             'projectsV2': {'nodes': [{'id': 'PVT_2', 'closed': False}]}},
+            {'name': 'gadgets', 'isArchived': False, 'hasIssuesEnabled': True,
+             'projectsV2': {'nodes': []}},
+            {'name': 'widgets', 'isArchived': False, 'hasIssuesEnabled': True,
+             'projectsV2': {'nodes': [{'id': 'PVT_1', 'closed': False},
+                                      {'id': 'PVT_old', 'closed': True}]}},
+        ]
+        self.issues = {
+            'attic': {1: _sync_issue(stage='In Progress')},
+            'gadgets': {
+                1: _sync_issue(open_=False, stage='Backlog', updated=_LONG_AGO),
+                2: _sync_issue(),
+            },
+            'widgets': {
+                1: _sync_issue(blockers=['OPEN']),
+                2: _sync_issue(stage='Blocked', blockers=['CLOSED'],
+                               cards=['PVT_1']),
+                3: _sync_issue(stage='Blocked', cards=['PVT_1']),
+                4: _sync_issue(stage='In Progress', cards=['PVT_1']),
+                5: _sync_issue(stage='In Progress', cards=['PVT_1']),
+                6: _sync_issue(stage='Backlog', prs=['OPEN'], assignee=True,
+                               cards=['PVT_1']),
+                7: _sync_issue(stage='Parked', blockers=['OPEN'],
+                               prs=['OPEN'], cards=['PVT_1']),
+                8: _sync_issue(open_=False, stage='In Review',
+                               cards=['PVT_1']),
+                9: _sync_issue(stage='Backlog', assignee=True,
+                               cards=['PVT_1']),
+                10: _sync_issue(prs=['DRAFT'], cards=['PVT_1']),
+                11: _sync_issue(stage='Blocked', blockers=[None, 'CLOSED'],
+                                cards=['PVT_1']),
+                12: _sync_issue(stage='Blocked', blockers=['CLOSED'],
+                                more_blockers=True, cards=['PVT_1']),
+            },
+        }
+        self.claims = {'gadgets': set(), 'widgets': {5}}
+        self.card_writes = []
+        self.stage_writes = []
+        self.mutations = []
+
+    def _node(self, repo, number, facts):
+        return {
+            'id': 'I_%s_%d' % (repo, number), 'number': number,
+            'updatedAt': facts['updated'],
+            'assignees': {'nodes': [{'login': 'someone'}]
+                          if facts['assignee'] else []},
+            'blockedBy': {
+                'pageInfo': {'hasNextPage': facts['more_blockers']},
+                'nodes': [{'state': s} if s else None
+                          for s in facts['blockers']]},
+            # 'DRAFT' stands for an open draft pull request.
+            'closedByPullRequestsReferences': {
+                'nodes': [{'state': 'OPEN' if s == 'DRAFT' else s,
+                           'isDraft': s == 'DRAFT'} for s in facts['prs']]},
+            'projectItems': {'nodes': [{'project': {'id': p}}
+                                       for p in facts['cards']]},
+            'issueFieldValues': {'nodes': [
+                {'field': {'name': 'Stage'}, 'name': facts['stage']}]
+                if facts['stage'] else []},
+        }
+
+    def gh_graphql(self, query, **fields):
+        # Failure text names the repository on purpose, so the output test can
+        # prove none of it reaches the log.
+        if 'repositories(' in query:
+            if self.fail_repos:
+                return False, None, 'HTTP 502 listing widgets'
+            return True, {'organization': {'repositories': {
+                'pageInfo': {'hasNextPage': False}, 'nodes': self.repos}}}, ''
+        if 'issues(first' in query:
+            repo = fields['repo']
+            if repo == self.fail_repo:
+                return False, None, 'Could not resolve %s' % repo
+            want_open = 'states:OPEN' in query
+            nodes = [self._node(repo, n, f)
+                     for n, f in sorted(self.issues[repo].items())
+                     if f['open'] == want_open]
+            nodes.sort(key=lambda node: node['updatedAt'], reverse=True)
+            start = int(fields.get('cursor') or 0)
+            end = start + self.page_size
+            return True, {'repository': {'issues': {
+                'pageInfo': {'hasNextPage': end < len(nodes),
+                             'endCursor': str(end)},
+                'nodes': nodes[start:end]}}}, ''
+        return False, None, 'not stubbed'
+
+    def run(self, cmd, input_text=None):
+        path = cmd[-1] if cmd else ''
+        match = re.match(r'/repos/[^/]+/([^/]+)/git/matching-refs/', path)
+        if not match:
+            return 1, '', 'not stubbed'
+        if self.claims_fail:
+            return 1, '', 'HTTP 403'
+        repo = match.group(1)
+        refs = [{'ref': 'refs/claims/issue-%d' % n}
+                for n in sorted(self.claims.get(repo, ()))]
+        return 0, json.dumps(refs), ''
+
+    def graphql_json(self, query, variables):
+        self.mutations.append(query)
+        data, errors = {}, []
+        for alias in re.findall(r'(c\d+): addProjectV2ItemById', query):
+            project = variables['%s_p' % alias]
+            _, repo, number = variables['%s_c' % alias].split('_')
+            if self.fail_cards:
+                data[alias] = None
+                errors.append({'path': [alias],
+                               'message': 'no access to %s' % repo})
+                continue
+            self.issues[repo][int(number)]['cards'].append(project)
+            self.card_writes.append((repo, int(number), project))
+            data[alias] = {'item': {'id': 'PVTI_x'}}
+        for alias in re.findall(r'(s\d+): setIssueFieldValue', query):
+            _, repo, number = variables['%s_i' % alias].split('_')
+            number = int(number)
+            name = _STAGE_BY_ID[variables['%s_f' % alias][0]
+                                ['singleSelectOptionId']]
+            if (repo, number) in self.fail_stage:
+                data[alias] = None
+                errors.append({'path': [alias], 'message': 'denied'})
+                continue
+            self.issues[repo][number]['stage'] = name
+            self.stage_writes.append((repo, number, name))
+            data[alias] = {'issue': {'id': 'x'}}
+        return 0, json.dumps({'data': data, 'errors': errors}), ''
+
+    def sync(self, *argv):
+        err = io.StringIO()
+        args = wf.build_parser().parse_args(['board-sync'] + list(argv))
+        caps = dict(_APPLY_CAPS, field_map={
+            name: meta for name, meta in _APPLY_CAPS['field_map'].items()
+            if not (self.no_stage and name == 'Stage')})
+        with mock.patch.object(wf, 'prepare_cfg', lambda: _cfg()), \
+                mock.patch.object(wf, 'resolve_org_capabilities',
+                                  lambda cfg, refresh=False, root=None:
+                                  (True, caps, '')), \
+                mock.patch.object(wf, 'gh_graphql', self.gh_graphql), \
+                mock.patch.object(wf, '_graphql_json', self.graphql_json), \
+                mock.patch.object(wf, 'run', self.run), \
+                contextlib.redirect_stderr(err):
+            code, payload = _capture(wf.cmd_board_sync, args)
+        return code, payload, err.getvalue()
+
+
+class TestBoardSync(unittest.TestCase):
+    """`wf board-sync` against a recorded org: cards, stages, and silence."""
+
+    def test_cards_are_added_only_where_a_linked_open_board_lacks_one(self):
+        hub = _SyncHub()
+        code, payload, _ = hub.sync()
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(hub.card_writes, [('widgets', 1, 'PVT_1')])
+        self.assertEqual(payload['totals']['cards_added'], 1)
+
+    def test_each_stage_the_rules_name_is_written_and_nothing_else(self):
+        hub = _SyncHub()
+        code, payload, _ = hub.sync()
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(sorted(hub.stage_writes), [
+            ('widgets', 1, 'Blocked'),
+            ('widgets', 2, 'Backlog'),
+            ('widgets', 4, 'Backlog'),
+            ('widgets', 6, 'In Review'),
+            ('widgets', 8, 'Done'),
+            ('widgets', 9, 'In Progress'),
+            ('widgets', 10, 'In Progress'),
+        ])
+        totals = payload['totals']
+        self.assertEqual(totals['stages_set'], 7)
+        self.assertEqual(totals['stages_by_value'],
+                         {'Blocked': 1, 'Backlog': 2, 'In Review': 1,
+                          'Done': 1, 'In Progress': 2})
+        # The archived repository is skipped outright.
+        self.assertEqual(totals['repos'], 2)
+        self.assertEqual(totals['repos_with_boards'], 1)
+
+    def test_a_closed_issue_outside_the_window_is_not_read(self):
+        hub = _SyncHub()
+        hub.sync()
+        self.assertEqual(hub.issues['gadgets'][1]['stage'], 'Backlog')
+
+    def test_a_second_run_writes_nothing(self):
+        hub = _SyncHub()
+        hub.sync()
+        hub.mutations = []
+        code, payload, _ = hub.sync()
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(hub.mutations, [])
+        self.assertEqual(payload['totals']['cards_added'], 0)
+        self.assertEqual(payload['totals']['stages_set'], 0)
+
+    def test_a_dry_run_counts_the_changes_and_writes_none(self):
+        hub = _SyncHub()
+        code, payload, _ = hub.sync('--dry-run')
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(hub.mutations, [])
+        self.assertTrue(payload['dry_run'])
+        self.assertEqual(payload['totals']['cards_added'], 1)
+        self.assertEqual(payload['totals']['stages_set'], 7)
+
+    def test_unreadable_claim_refs_never_release_work_in_progress(self):
+        hub = _SyncHub(claims_fail=True)
+        code, payload, _ = hub.sync()
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        written = {(r, n) for r, n, _ in hub.stage_writes}
+        self.assertNotIn(('widgets', 4), written)
+        self.assertNotIn(('widgets', 5), written)
+        self.assertEqual(payload['totals']['claims_unread'], 2)
+
+    def test_a_failed_write_makes_the_run_partial(self):
+        hub = _SyncHub(fail_stage=[('widgets', 8)])
+        code, payload, _ = hub.sync()
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+        self.assertEqual(payload['status'], 'partial')
+        self.assertEqual(payload['totals']['stages_failed'], 1)
+
+    def test_an_edge_the_token_cannot_read_never_releases_a_block(self):
+        hub = _SyncHub()
+        hub.sync()
+        written = {(r, n) for r, n, _ in hub.stage_writes}
+        self.assertNotIn(('widgets', 11), written)
+
+    def test_an_edge_list_past_one_page_with_none_open_is_not_judged(self):
+        hub = _SyncHub()
+        hub.sync()
+        written = {(r, n) for r, n, _ in hub.stage_writes}
+        self.assertNotIn(('widgets', 12), written)
+
+    def test_paging_reads_every_issue_and_writes_the_same_changes(self):
+        whole, paged = _SyncHub(), _SyncHub(page_size=1)
+        whole.sync()
+        code, payload, _ = paged.sync()
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(sorted(paged.stage_writes), sorted(whole.stage_writes))
+        self.assertEqual(paged.card_writes, whole.card_writes)
+
+    def test_the_closed_read_stops_at_the_first_issue_outside_the_window(self):
+        hub = _SyncHub(page_size=1)
+        hub.issues['gadgets'][3] = _sync_issue(open_=False)
+        hub.issues['gadgets'][4] = _sync_issue(open_=False, updated=_LONG_AGO)
+        hub.sync()
+        written = {(r, n) for r, n, _ in hub.stage_writes}
+        self.assertIn(('gadgets', 3), written)
+        self.assertNotIn(('gadgets', 1), written)
+        self.assertNotIn(('gadgets', 4), written)
+
+    def test_a_repository_past_the_page_cap_is_failed_and_left_untouched(self):
+        hub = _SyncHub(page_size=1)
+        with mock.patch.object(wf, 'SYNC_MAX_PAGES', 2):
+            code, payload, _ = hub.sync()
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+        self.assertEqual(payload['totals']['repos_failed'], 1)
+        self.assertEqual([w for w in hub.stage_writes if w[0] == 'widgets'], [])
+        self.assertEqual(hub.card_writes, [])
+
+    def test_a_repository_whose_read_fails_is_left_untouched(self):
+        hub = _SyncHub(fail_repo='widgets')
+        code, payload, _ = hub.sync()
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+        self.assertEqual(payload['totals']['repos_failed'], 1)
+        self.assertEqual(hub.stage_writes, [])
+        self.assertEqual(hub.card_writes, [])
+
+    def test_a_failed_card_write_makes_the_run_partial(self):
+        hub = _SyncHub(fail_cards=True)
+        code, payload, _ = hub.sync()
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+        self.assertEqual(payload['totals']['cards_failed'], 1)
+        self.assertEqual(payload['totals']['cards_added'], 0)
+
+    def test_an_org_that_cannot_be_listed_is_an_environment_error(self):
+        hub = _SyncHub(fail_repos=True)
+        code, payload, _ = hub.sync()
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertEqual(hub.mutations, [])
+
+    def test_an_org_with_no_stage_field_writes_nothing(self):
+        hub = _SyncHub(no_stage=True)
+        code, payload, _ = hub.sync()
+        self.assertEqual(code, wf.EXIT_CAPABILITY)
+        self.assertEqual(hub.mutations, [])
+
+    def test_the_output_names_no_repository_board_or_issue(self):
+        """The workflow's logs are public, on every path out of the command."""
+        hubs = {
+            'stage write failed': _SyncHub(fail_stage=[('widgets', 8)]),
+            'card write failed': _SyncHub(fail_cards=True),
+            'repository unreadable': _SyncHub(fail_repo='widgets'),
+            'claims unreadable': _SyncHub(claims_fail=True),
+            'org unlisted': _SyncHub(fail_repos=True),
+            'no Stage field': _SyncHub(no_stage=True),
+            'clean': _SyncHub(),
+        }
+        for path, hub in hubs.items():
+            _, payload, stderr = hub.sync()
+            text = json.dumps(payload) + stderr
+            for identifier in ('widgets', 'gadgets', 'attic', 'I_', 'PVT_',
+                               'denied', 'no access', 'Could not resolve',
+                               'HTTP', '#'):
+                self.assertNotIn(identifier, text, path)
+
+
+class TestBoardSyncWorkflow(unittest.TestCase):
+    """The workflow file itself: what may start it, and what it runs."""
+
+    PATH = os.path.join(os.path.dirname(__file__), '..', '.github',
+                        'workflows', 'board-sync.yml')
+
+    def setUp(self):
+        with open(self.PATH, encoding='utf-8') as fh:
+            text = fh.read()
+        self.code = '\n'.join(l for l in text.splitlines()
+                              if l.strip() and not l.lstrip().startswith('#'))
+
+    def test_only_a_schedule_or_a_manual_dispatch_starts_it(self):
+        self.assertIn('schedule:', self.code)
+        self.assertIn("cron: '17 */6 * * *'", self.code)
+        self.assertIn('workflow_dispatch:', self.code)
+        self.assertNotIn('pull_request', self.code)
+        self.assertNotIn('push:', self.code)
+
+    def test_it_runs_board_sync_with_the_app_token(self):
+        self.assertIn('secrets.BOARD_SYNC_APP_ID', self.code)
+        self.assertIn('secrets.BOARD_SYNC_PRIVATE_KEY', self.code)
+        self.assertIn('GH_TOKEN: ${{ steps.app-token.outputs.token }}',
+                      self.code)
+        self.assertIn('wf.py board-sync', self.code)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

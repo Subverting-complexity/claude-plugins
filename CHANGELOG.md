@@ -7,6 +7,14 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 12.3.0
+
+**A scheduled workflow keeps boards and `Stage` in step on its own.** `.github/workflows/board-sync.yml` runs `wf board-sync` every 6 hours across every repository in the org. It adds a card for any open issue missing from a board linked to its repository, as a backup to GitHub's own "Auto-add to project" workflow, and it corrects `Stage` where the issue shows something else: `Done` once closed; `In Review` once a ready pull request closes it, and `In Progress` while only a draft does or somebody is assigned; `Blocked` while an edge is open; `Backlog` once every blocker has closed; and `Backlog` again for `In Progress` or `In Review` work nobody is assigned to, holds a claim on or has a pull request for.
+
+Started work is judged by the same rule `wf preflight --fix` uses to repair `stage-drift` (12.1.0), so the scheduled sync and preflight never pull an issue two ways. It never touches `Parked`, `Needs refinement`, `Needs attention` or `Non-code`, and it leaves a `Blocked` with no blocked-by edge alone, because a person set it. A second run over unchanged issues writes nothing, and the logs carry totals only. `--dry-run` reports what would change.
+
+**Setting it up** needs a GitHub App and two Actions secrets, `BOARD_SYNC_APP_ID` and `BOARD_SYNC_PRIVATE_KEY`; the permissions are listed under `board-sync` in `github-workflow/scripts/README.md`. Until they exist the scheduled run fails at the token step and changes nothing.
+
 ## github-workflow 12.2.0
 
 **Preflight stops reading a project's instructions for board wording.** Nothing in the workflow reads or writes a board, so `instructions-retired` has no reason to look at how a project describes one. The patterns added in 12.1.0 and the ones they extended from 12.0.0 are both gone. The check still reports the `Ready` opt-in, retired lifecycle, priority and scope labels, and dependencies written as prose.

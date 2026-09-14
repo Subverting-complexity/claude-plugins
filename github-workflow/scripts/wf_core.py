@@ -1118,6 +1118,77 @@ def may_set_stage(current_stage, requested=None):
     return False, current
 
 
+# Stages `board-sync` never writes, whatever the issue looks like. Each one is a
+# person's decision, and nothing readable on the issue can show it was undone.
+SYNC_PROTECTED_STAGES = frozenset({'Parked', 'Needs refinement',
+                                   'Needs attention', 'Non-code'})
+
+
+def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
+                    open_prs=()):
+    """The stage `board-sync` writes for one issue, or None to leave it alone.
+
+    `blockers` and `open_blockers` count the issue's native blocked-by edges,
+    all and still open. `open_prs` is every open pull request that closes the
+    issue, each as `{'isDraft': bool}`. `claimed` is whether
+    `refs/claims/issue-N` exists, and a caller that could not read the claim
+    refs passes True, so an unreadable lock never releases work somebody holds.
+
+    The rules, in the order they are tried:
+
+      protected   Parked, Needs refinement, Needs attention and Non-code are
+                  left alone, and so is a value that is not a stage at all.
+      closed      a closed issue is Done.
+      started     a blank or Backlog issue somebody has started goes to In
+                  Review for a ready pull request, or In Progress for a draft
+                  one or an assignee. This is `stage_drift_target`, the rule
+                  `preflight --fix` repairs `stage-drift` with, so the sync and
+                  preflight never disagree. It is tried before Blocked, because
+                  work under way is stronger evidence than a blocker.
+      handed off  In Progress with a ready pull request goes to In Review.
+      abandoned   In Progress or In Review with no assignee, no claim ref and
+                  no open pull request goes back to Backlog, or to Blocked when
+                  an edge is still open, so the next run has nothing to add.
+      blocked     blank or Backlog with an open edge becomes Blocked.
+      unblocked   Blocked whose edges have all closed is released: to Backlog,
+                  or straight to where `started` puts it if somebody already
+                  has. Blocked with no edge at all was set by a person and
+                  stays.
+
+    Every result is a fixed point: feeding the stage it returns back in, with
+    the same facts, returns None. That is what makes a second run a no-op.
+    """
+    current = stage_name(stage) or ''
+    if (stage or '').strip() and not current:
+        return None
+    if current in SYNC_PROTECTED_STAGES:
+        return None
+    done = STAGE_NAMES['stage-done']
+    if not is_open:
+        return None if current == done else done
+
+    prs = list(open_prs or ())
+    backlog = STAGE_NAMES['stage-backlog']
+    blocked = STAGE_NAMES['stage-blocked']
+    in_progress = STAGE_NAMES['stage-in-progress']
+    in_review = STAGE_NAMES['stage-in-review']
+    started = stage_drift_target(current, assigned=assigned, open_prs=prs)
+    if started:
+        return STAGE_NAMES[started]
+    if current == in_progress and any(not pr.get('isDraft') for pr in prs):
+        return in_review
+    if current in (in_progress, in_review) and not (assigned or claimed or prs):
+        return blocked if open_blockers else backlog
+    if current in ('', backlog) and open_blockers:
+        return blocked
+    if current == blocked and blockers and not open_blockers:
+        # Judged as if already released, so work somebody started lands where
+        # it belongs in one write rather than via Backlog on the next run.
+        released = stage_drift_target(backlog, assigned=assigned, open_prs=prs)
+        return STAGE_NAMES[released or POOL_STAGE]
+    return None
+
+
 # ── issue hierarchy: epic → feature → user story ─────────────────────────────
 # The native types are a hierarchy and not a flat vocabulary, so a Feature
 # belongs to an Epic and a User Story belongs to a Feature. Recorded here, and

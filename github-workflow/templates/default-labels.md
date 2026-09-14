@@ -135,7 +135,7 @@ Stages are resolved by **purpose key**: the field name through `field-stage` in 
 
 **`Blocked` with no blocked-by edge was set by a person**, and the plugin never changes it. `wf unblock` only releases a `Blocked` issue that has edges, and only once every one of them is closed.
 
-**The `Stage` field is required, with all nine options.** Preflight reports an org with no `Stage` field as `CRITICAL stage-absent`, and a `Stage` missing an option as `CRITICAL stage-options`, naming it. A project board is not required: boards are views for people, grouped by `Stage`, and GitHub's "Auto-add to project" workflow keeps cards on them. Agents never move cards.
+**The `Stage` field is required, with all nine options.** Preflight reports an org with no `Stage` field as `CRITICAL stage-absent`, and a `Stage` missing an option as `CRITICAL stage-options`, naming it. A project board is not required: boards are views for people, grouped by `Stage`, and GitHub's "Auto-add to project" workflow keeps cards on them, and the scheduled `wf board-sync` adds any it missed. Agents never move cards.
 
 ## Review State Labels
 
