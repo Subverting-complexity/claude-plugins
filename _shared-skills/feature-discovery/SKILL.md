@@ -41,7 +41,7 @@ Determine scope before the interview. It decides which coverage topics apply.
 | **Medium** | Multi-concern feature: touches 2-4 modules, new user journey, new data model | Adds journeys, data model, API surface, dependencies. |
 | **Large** | Major feature: new subsystem, significant rewrite, 5+ stories of work | Every topic. |
 
-After the research, state the tier and the topics it brings in, and continue: "This looks like a medium-scope feature, so the interview will cover scope, data model and integration points." Do not stop to ask for confirmation. The user can correct the tier at any point, and a correction changes the coverage list.
+After the research, state the tier and the topics it brings in, and continue: "This looks like a medium-scope feature, so the interview will cover scope, user journeys, data model, API surface, integration points and dependencies." Do not stop to ask for confirmation. The user can correct the tier at any point, and a correction changes the coverage list.
 
 When called as the refinement skill for a story too thin to implement, the story is the subject and its missing detail is what the interview is for.
 

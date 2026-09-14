@@ -32,7 +32,7 @@ Determine the project scope before starting. It decides which coverage topics ap
 | **Medium** | Multi-module app, API + frontend, 2-4 major concerns | Adds journeys, data, API, architecture, dependencies, DevOps. |
 | **Large** | Platform, multi-service system, 5+ sprints of work | Every topic. |
 
-After the research, state the tier and the topics it brings in, and continue: "This looks like a medium-scope project, so the interview will cover scope, data model, API surface and architecture." Do not stop to ask for confirmation. The user can correct the tier at any point, and a correction changes the coverage list.
+After the research, state the tier and the topics it brings in, and continue: "This looks like a medium-scope project, so the interview will cover vision and scope, tech stack, user journeys, data model, API surface, architecture, dependencies and DevOps." Do not stop to ask for confirmation. The user can correct the tier at any point, and a correction changes the coverage list.
 
 ---
 
