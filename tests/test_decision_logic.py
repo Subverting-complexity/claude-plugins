@@ -3211,13 +3211,13 @@ class TestFixPlan(unittest.TestCase):
                       'field-absent', 'quality-gate', 'placeholders'):
             self.assertNotIn(check, wf_core.FIXABLE_CHECKS, check)
 
-    def test_the_five_repairs_a_run_may_make_are_the_whole_list(self):
+    def test_the_six_repairs_a_run_may_make_are_the_whole_list(self):
         """A check absent from the map is one no run touches on its own, so the
         list is the contract rather than a starting point."""
         self.assertEqual(sorted(wf_core.FIXABLE_CHECKS),
                          ['claude-md-ref', 'config-retired',
                           'container-finished', 'label-deprecated',
-                          'label-retired'])
+                          'label-retired', 'stage-drift'])
 
     def test_neither_stage_finding_can_be_repaired_from_here(self):
         """An org-level issue field, and its options, are created in the org
@@ -3355,7 +3355,13 @@ class TestRetiredWorkflowFindings(unittest.TestCase):
                      'Move the card to Blocked.',
                      'The board column is the state.',
                      'Record the ids under Status Options.',
-                     'Set status-field-name to Status.'):
+                     'Set status-field-name to Status.',
+                     # CadenceReader's 11.x `ClaudeProject.md`, which the
+                     # patterns above let through.
+                     "Neither is a label any more. An issue's status is the column its card",
+                     'edge, or an ownership this run cannot satisfy. Moving a card out of',
+                     'authoritative and the board mirrors it by moving the card to `Done`.',
+                     "The pool is the board's `Backlog` column, and a card there is"):
             findings = wf_core.instruction_findings(
                 {'CLAUDE.md': 'Intro.\n%s\n' % line})
             self.assertEqual(_checks(findings), ['instructions-retired'], line)
@@ -3566,6 +3572,61 @@ class TestFinishedContainers(unittest.TestCase):
         self.assertIn('#6', found[0]['detail'])
         self.assertIn('container-finished', wf_core.FIXABLE_CHECKS)
         self.assertEqual(wf_core.finished_container_findings([]), [])
+
+
+class TestStageDrift(unittest.TestCase):
+    """A `Stage` that says an issue is available after the work on it started.
+
+    Found on CadenceReader: a bulk run on 11.3.0 moved four board cards to In
+    Progress and In Review and never wrote `Stage`, so every issue still read
+    `Backlog`.
+    """
+
+    def test_a_ready_pull_request_puts_a_backlog_issue_in_review(self):
+        self.assertEqual(wf_core.stage_drift_target(
+            'Backlog', assigned=True, open_prs=[{'isDraft': False}]),
+            'stage-in-review')
+
+    def test_a_draft_pull_request_is_still_in_progress(self):
+        self.assertEqual(wf_core.stage_drift_target(
+            'Backlog', open_prs=[{'isDraft': True}]), 'stage-in-progress')
+
+    def test_one_ready_pull_request_among_drafts_is_enough_for_review(self):
+        self.assertEqual(wf_core.stage_drift_target(
+            '', open_prs=[{'isDraft': True}, {'isDraft': False}]),
+            'stage-in-review')
+
+    def test_an_assignee_alone_is_in_progress(self):
+        """A claim assigns the issue, so an assignee is what one leaves behind."""
+        self.assertEqual(wf_core.stage_drift_target('', assigned=True),
+                         'stage-in-progress')
+
+    def test_the_stage_name_is_matched_whatever_its_case(self):
+        self.assertEqual(wf_core.stage_drift_target('backlog', assigned=True),
+                         'stage-in-progress')
+
+    def test_an_issue_nobody_has_started_is_not_drift(self):
+        self.assertIsNone(wf_core.stage_drift_target('Backlog'))
+        self.assertIsNone(wf_core.stage_drift_target(None))
+
+    def test_a_stage_somebody_chose_is_never_overruled(self):
+        """An assigned `Blocked` issue, or a `Parked` one with a draft, is a
+        decision; only blank and `Backlog` claim the work is free."""
+        for stage in ('In Progress', 'In Review', 'Blocked', 'Parked',
+                      'Needs attention', 'Needs refinement', 'Non-code'):
+            self.assertIsNone(wf_core.stage_drift_target(
+                stage, assigned=True, open_prs=[{'isDraft': False}]), stage)
+
+    def test_one_finding_names_every_issue_and_its_stage(self):
+        found = wf_core.stage_drift_findings(
+            [{'number': 5, 'title': 'a', 'stage': 'stage-in-review'},
+             {'number': 6, 'title': 'b', 'stage': 'stage-in-progress'}])
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]['check'], 'stage-drift')
+        self.assertEqual(found[0]['level'], wf_core.WARNING)
+        self.assertIn('#5 (should be In Review)', found[0]['detail'])
+        self.assertIn('#6 (should be In Progress)', found[0]['detail'])
+        self.assertEqual(wf_core.stage_drift_findings([]), [])
 
 
 if __name__ == '__main__':

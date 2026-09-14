@@ -4022,7 +4022,8 @@ class TestPreflight(unittest.TestCase):
                             for line in payload['unfixed']))
         self.assertFalse(any('could not close' in line for line in payload['unfixed']))
 
-    def _run(self, argv=(), env_err=None, finished=(), labelled=(), caps=None):
+    def _run(self, argv=(), env_err=None, finished=(), labelled=(), caps=None,
+             drifted=(), stages=None):
         args = wf.build_parser().parse_args(
             ['preflight', '--scan', self.scan, *argv])
         cfg = _cfg(board={'project_node_id': 'PVT_1', 'project_title': 'Board',
@@ -4042,7 +4043,20 @@ class TestPreflight(unittest.TestCase):
                              'subIssues': {'nodes': [
                                  {'number': n + 1, 'state': 'CLOSED'}]},
                              'labels': {'nodes': []}}
-                            for n in finished])
+                            for n in finished]
+                         # An issue reading `Backlog` with somebody on it:
+                         # `(number, assigned, [isDraft of each open PR])`.
+                         + [{'number': n, 'title': 'drifted %d' % n,
+                             'state': 'OPEN', 'issueType': None,
+                             'subIssues': {'nodes': []},
+                             'labels': {'nodes': []},
+                             'assignees': {'nodes': [{'login': 'me'}]
+                                           if assigned else []},
+                             'closedByPullRequestsReferences': {'nodes': [
+                                 {'state': 'OPEN', 'isDraft': d} for d in drafts]},
+                             'issueFieldValues': {'nodes': [
+                                 {'field': {'name': 'Stage'}, 'name': 'Backlog'}]}}
+                            for n, assigned, drafts in drifted])
                 return True, {'repository': {'issues': {
                     'pageInfo': {'hasNextPage': False, 'endCursor': None},
                     'nodes': nodes}}}, ''
@@ -4074,10 +4088,43 @@ class TestPreflight(unittest.TestCase):
                 mock.patch.object(wf, 'gh_graphql_partial', gh_graphql_partial), \
                 mock.patch.object(wf, 'set_stage',
                                   return_value=(True, 'Stage set to Done')), \
+                mock.patch.object(wf, 'set_stages',
+                                  lambda cfg, wanted: (
+                                      (stages if stages is not None else []).append(dict(wanted)),
+                                      {int(n): (True, '') for n in wanted})[1]), \
                 mock.patch.object(wf, 'run', fake_run), \
                 contextlib.redirect_stderr(io.StringIO()):
             code, payload = _capture(wf.cmd_preflight, args)
         return code, payload, calls
+
+    # ── stage drift ──────────────────────────────────────────────────────────
+
+    def test_a_backlog_issue_with_an_open_pull_request_is_a_fixable_warning(self):
+        code, payload, _ = self._run(drifted=[(12, True, [False])])
+        self.assertEqual(code, wf.EXIT_OK)
+        found = [f for f in payload['findings'] if f['check'] == 'stage-drift']
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]['level'], wf_core.WARNING)
+        self.assertIn('#12 (should be In Review)', found[0]['detail'])
+        self.assertTrue(found[0]['auto'])
+        self.assertIn('stage-drift', payload['checked'])
+
+    def test_fix_writes_the_stage_each_issue_belongs_in(self):
+        writes = []
+        _, payload, _ = self._run(['--fix'], stages=writes,
+                                  drifted=[(12, False, [False]),
+                                           (13, True, []),
+                                           (14, False, [True])])
+        self.assertEqual(writes, [{12: 'stage-in-review',
+                                   13: 'stage-in-progress',
+                                   14: 'stage-in-progress'}])
+        self.assertTrue(any('#12 to In Review' in line for line in payload['fixed']))
+        self.assertTrue(any('#13 to In Progress' in line for line in payload['fixed']))
+
+    def test_fix_leaves_a_healthy_backlog_alone(self):
+        writes = []
+        self._run(['--fix'], stages=writes, finished=[40])
+        self.assertEqual(writes, [])
 
     def _checks(self, payload):
         return [f['check'] for f in payload['findings']]

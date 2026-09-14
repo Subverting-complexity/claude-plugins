@@ -7,6 +7,14 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 12.1.0
+
+**Preflight finds and repairs an issue whose `Stage` is behind its work.** The new `stage-drift` warning names every open issue whose `Stage` is blank or `Backlog` although an open pull request closes it or somebody is assigned. `wf preflight --fix` sets it to `In Review` when a ready pull request closes it, and to `In Progress` when a draft pull request closes it or it is only assigned. Any other stage is left alone, so nothing a run or a person chose is overwritten.
+
+The case it exists for: a bulk run on CadenceReader under 11.3.0 moved four issues' board cards to In Progress and In Review and never wrote `Stage`, so every one still read `Backlog`. Any backlog worked on before 12.0.0 can carry the same thing, and so can a `Stage` write that failed after its claim. Run `wf preflight --fix` once after upgrading.
+
+**`instructions-retired` catches the 11.x wording for board state.** A `ClaudeProject.md` saying "an issue's status is the column its card sits in", "moving a card out of `Backlog`" or "the board's `Backlog` column" is now reported. Those lines tell a session to move cards, which nothing reads any more.
+
 ## local-workflow 2.16.0
 
 **`feature-discovery` and the story template describe stages, not board columns.** The instructions for filing a set of stories through github-workflow now say that `issue-apply` writes each issue's `Stage` — `Non-code` for work a person or a browser agent owns, `Blocked` for an open edge, `Backlog` otherwise, and `Needs refinement` from `"state": "refinement"` — and that nothing moves a card. Same behaviour on this plugin's own side; it is the other plugin's contract that changed.
