@@ -2510,7 +2510,12 @@ _RETIRED_INSTRUCTION_PATTERNS = (
     (r'status[-:_ ]ready|claude-ready|`?Ready`? (?:label|column|gate|status)|##\s*Ready Gate',
      'the `Ready` opt-in, which no longer exists -- the pool is every issue '
      'whose `Stage` is blank or `Backlog`'),
+    # The second line is the wording an 11.x `ClaudeProject.md` actually used
+    # ("an issue's status is the column its card sits in", "moving a card out
+    # of `Backlog`"), which the first line missed on a real backlog.
     (r'(?i)board-move|move (?:the|its) card|board column is the state|'
+     r'(?:status|state) is the column|moving (?:a|the|its) card|'
+     r'moves? (?:a|the|its) card (?:to|into|out of)|board\'s `?Backlog`? column|'
      r'Status Options|status-field-(?:name|id)',
      'an issue\'s state held in a board column, which nothing reads or writes '
      'any more: the `Stage` issue field is the state'),
@@ -3281,6 +3286,62 @@ def finished_container_findings(containers, path='ClaudeProject.md'):
         'close each as completed, or run `wf preflight --fix`', path)]
 
 
+# ── stage drift ──────────────────────────────────────────────────────────────
+# An issue whose `Stage` says it is available while GitHub says somebody has it.
+# Two ways to get one. A run on a version before 12.0.0 moved a board card and
+# never wrote the field, which on CadenceReader left four issues reading
+# `Backlog` while their cards sat in In Progress and In Review. And a `Stage`
+# write can fail after its claim landed, which every writer reports and none
+# retries. Either way every view grouped by `Stage` shows the work as free.
+
+DRIFT_STAGES = frozenset({'', STAGE_NAMES[POOL_STAGE].lower()})
+
+
+def stage_drift_target(stage, assigned=False, open_prs=()):
+    """The stage purpose key an issue's own GitHub state puts it in, or None.
+
+    Only a blank or `Backlog` stage is judged. Every other stage was written
+    on purpose by a run or a person, and an assignee or a pull request does not
+    overrule `Blocked`, `Parked` or `Needs attention`.
+
+    `open_prs` is every open pull request that closes the issue, each as
+    `{'isDraft': bool}`. The order is the rule:
+
+      in review    a ready pull request closes it, which is what hand-off means
+      in progress  a draft pull request closes it, or somebody is assigned,
+                   which is what a claim leaves behind
+    """
+    if (stage or '').strip().lower() not in DRIFT_STAGES:
+        return None
+    prs = list(open_prs or ())
+    if any(not pr.get('isDraft') for pr in prs):
+        return 'stage-in-review'
+    if prs or assigned:
+        return 'stage-in-progress'
+    return None
+
+
+def stage_drift_findings(drifted, path='ClaudeProject.md'):
+    """One warning naming every issue whose `Stage` says it is available.
+
+    `drifted` is `[{'number', 'stage'}]`, where `stage` is the purpose key
+    `stage_drift_target` returned.
+    """
+    if not drifted:
+        return []
+    count = len(drifted)
+    return [finding(
+        WARNING, 'stage-drift',
+        '%d open issue%s %s a blank or `Backlog` `Stage` although an assignee or '
+        'an open pull request says the work has started, so every view grouped '
+        'by `Stage` shows %s as available: %s'
+        % (count, '' if count == 1 else 's', 'has' if count == 1 else 'have',
+           'it' if count == 1 else 'them',
+           ', '.join('#%d (should be %s)' % (d['number'], STAGE_NAMES[d['stage']])
+                     for d in drifted)),
+        'set each to the stage named, or run `wf preflight --fix`', path)]
+
+
 # ── preflight: the file-level checks, and what `--fix` may repair ────────────
 # `config-audit` compares `ClaudeProject.md` against the live repo and org. It never looked at the file's own contents beyond its headings, so the
 # checks below lived in shell blocks inside `skills/preflight/SKILL.md` -- a
@@ -3420,6 +3481,8 @@ FIXABLE_CHECKS = {
     'claude-md-ref': 'add the pointer to CLAUDE.md',
     'container-finished': 'close each finished container as completed and '
                           'set its `Stage` to `Done`',
+    'stage-drift': 'set each issue\'s `Stage` to the one its open pull request '
+                   'or assignee says it is in',
 }
 
 UNFIXABLE_REASONS = {

@@ -391,12 +391,13 @@ The file-level checks used to be shell blocks inside `skills/preflight/SKILL.md`
 | `review-config` | warning | `ClaudeProject.md` names a review-state label file that is not there, so every review label falls back to its default name. |
 | `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, a lifecycle, priority or scope label, or a dependency written as prose, named by line. Never rewritten: the lines are somebody's own sentences. The plugin's own directory is not scanned, since its templates name what was retired on purpose. |
 | `container-finished` | warning | An open Epic or Feature whose sub-issues are all closed. `post-merge` closes the ones a merge finishes; this finds the ones that finished before it did, and `--fix` closes them as completed and sets their stage to `Done`. A container with no sub-issues is never flagged. |
+| `stage-drift` | warning | An open issue's `Stage` is blank or `Backlog` although an open pull request closes it or somebody is assigned. `--fix` sets it to `In Review` for a ready pull request and `In Progress` for a draft one or an assignee. Only a blank or `Backlog` stage is judged, so nothing a run or a person chose is overwritten. The usual cause is a run on a version before 12.0.0, which moved a board card and never wrote `Stage`; a `Stage` write that failed after its claim is the other. |
 
 ### Every finding says whether `--fix` would touch it
 
 Each finding comes back with `auto` and `fixable`. `auto: true` means a run can repair it and `fixable` says how; `auto: false` means it must not, and `fixable` says why. The split is decided offline, in `wf_core.FIXABLE_CHECKS` and `wf_core.UNFIXABLE_REASONS`, which is what makes "would running `--fix` change anything?" answerable without a network call.
 
-`--fix` repairs five things, all idempotent:
+`--fix` repairs six things, all idempotent:
 
 | It does | Because |
 | ------- | ------- |
@@ -405,6 +406,7 @@ Each finding comes back with `auto` and `fixable`. `auto: true` means a run can 
 | adds the `ClaudeProject.md` pointer to an existing `CLAUDE.md` | One sentence, and it is idempotent on the filename rather than the wording, so a project that worded its own pointer keeps it. |
 | takes retired labels off the open issues carrying them | They decide nothing, and the write path already strips them from any issue it touches; this reaches the ones no command has. |
 | closes a finished Epic or Feature, setting its stage to `Done` | Every sub-issue is closed, and nothing else closes a container. |
+| sets a drifted issue's stage to `In Review` or `In Progress` | An open pull request or an assignee already says the work started, and only a blank or `Backlog` stage is ever changed. |
 
 It will not create a `CLAUDE.md`, invent an `## Identity` section, create or delete an org-level issue field (`Stage` included), add or rename a field's options, pin a field to an issue type, choose between two disagreeing values, rewrite a sentence in somebody's instructions, or write a quality gate. Each is either a decision only the project can make or a change that happens in the org settings rather than through the API this runs on.
 
