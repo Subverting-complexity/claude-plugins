@@ -120,9 +120,16 @@ def _cfg(**over):
     return cfg
 
 
+# A body the unclear check passes: long enough, with acceptance criteria. A
+# fixture's body is not what most tests are about, so it must not be the reason
+# an issue leaves the pool.
+_CLEAR_BODY = ('## Summary\n\nChange the thing the story names.\n\n'
+               '## Acceptance criteria\n\n- [ ] The thing is changed.\n')
+
+
 def _candidate(number, labels=(), milestone=None, stage=None):
     return {'number': number, 'title': 'issue %d' % number,
-            'labels': list(labels), 'body': '', 'milestone': milestone,
+            'labels': list(labels), 'body': _CLEAR_BODY, 'milestone': milestone,
             'url': '', 'stage': stage}
 
 
@@ -187,6 +194,9 @@ class TestPickStatusContract(unittest.TestCase):
         facets = mock.patch.object(wf, 'load_issue_facets', return_value=_facets())
         facets.start()
         self.addCleanup(facets.stop)
+        claims = mock.patch.object(wf, 'claimed_issue_numbers', return_value=set())
+        claims.start()
+        self.addCleanup(claims.stop)
 
     def _use_cfg(self, cfg):
         p = mock.patch.object(wf, 'load_config', return_value=(True, cfg, ''))
@@ -317,6 +327,9 @@ class TestBulkPickPaths(unittest.TestCase):
         facets = mock.patch.object(wf, 'load_issue_facets', return_value=_facets())
         facets.start()
         self.addCleanup(facets.stop)
+        claims = mock.patch.object(wf, 'claimed_issue_numbers', return_value=set())
+        claims.start()
+        self.addCleanup(claims.stop)
 
     def _use_cfg(self, cfg):
         p = mock.patch.object(wf, 'load_config', return_value=(True, cfg, ''))
@@ -380,7 +393,7 @@ class TestBulkPickPaths(unittest.TestCase):
         """Baseline: execute's dependency rule is intact with no siblings."""
         self._use_cfg(_cfg())
         cand = _candidate(1)
-        cand['body'] = 'Blocked by #7'
+        cand['body'] += '\nBlocked by #7'
         with self._claimable(cand, open_issues=[7]):
             code, payload = _capture(wf.cmd_pick, _pick_args())
         self.assertEqual(code, wf.EXIT_ALL_BLOCKED)
@@ -391,7 +404,7 @@ class TestBulkPickPaths(unittest.TestCase):
         """Same issue, same open dependency -- but #7 is in this bulk set."""
         self._use_cfg(_cfg())
         cand = _candidate(1)
-        cand['body'] = 'Blocked by #7'
+        cand['body'] += '\nBlocked by #7'
         with self._claimable(cand, open_issues=[7]):
             code, payload = _capture(wf.cmd_pick, _pick_args('--sibling', '7'))
         self.assertEqual(code, wf.EXIT_OK)
@@ -403,7 +416,7 @@ class TestBulkPickPaths(unittest.TestCase):
         """#7 is a sibling, #8 is not -- #8 still blocks the pick."""
         self._use_cfg(_cfg())
         cand = _candidate(1)
-        cand['body'] = 'Depends on #7\nDepends on #8'
+        cand['body'] += '\nDepends on #7\nDepends on #8'
         with self._claimable(cand, open_issues=[7, 8]):
             code, payload = _capture(wf.cmd_pick, _pick_args('--sibling', '7'))
         self.assertEqual(code, wf.EXIT_ALL_BLOCKED)
@@ -482,6 +495,9 @@ class TestBestEffortSteps(unittest.TestCase):
         facets = mock.patch.object(wf, 'load_issue_facets', return_value=_facets())
         facets.start()
         self.addCleanup(facets.stop)
+        claims = mock.patch.object(wf, 'claimed_issue_numbers', return_value=set())
+        claims.start()
+        self.addCleanup(claims.stop)
 
     def test_the_wrapper_turns_a_raise_into_a_message(self):
         def boom(cfg, number):
@@ -865,12 +881,42 @@ class TestStageIssues(unittest.TestCase):
         self.assertIsNone(issues)
         self.assertIn('boom', err)
 
-    def test_the_pool_is_blank_or_backlog(self):
-        """`assemble_candidates` is this read with the pool's own stages."""
+    def test_the_pool_reads_every_open_issue_with_its_tree_facts(self):
+        """`assemble_candidates` reads every stage, assigned or not, because a
+        Parked Epic and a Feature's stories decide what is pickable (#256)."""
         with mock.patch.object(wf, 'stage_issues',
                                return_value=(True, [], '')) as read:
             wf.assemble_candidates(_cfg())
-        self.assertEqual(list(read.call_args[0][1]), ['', 'Backlog'])
+        self.assertIsNone(read.call_args[0][1])
+        self.assertFalse(read.call_args[1]['unassigned_only'])
+        self.assertEqual(read.call_args[1]['extra'], wf.POOL_SELECTION)
+
+    def test_a_repository_past_a_thousand_open_issues_is_read_completely(self):
+        pages = [_open_issue_page([_open_issue(p * 100 + k + 1) for k in range(100)],
+                                  has_next=p < 11, cursor='C%d' % p)
+                 for p in range(12)]
+        ok, issues, _, calls = self._run(pages, stages=None, unassigned_only=False)
+        self.assertTrue(ok)
+        self.assertEqual(len(calls), 12)
+        self.assertEqual(len(issues), 1200)
+
+    def test_the_tree_facts_are_read_and_a_foreign_parent_is_dropped(self):
+        node = _open_issue(5)
+        node.update({
+            'issueType': {'name': 'User Story'},
+            'parent': {'number': 2, 'repository': {'nameWithOwner': 'acme/other'}},
+            'subIssues': {'totalCount': 2, 'nodes': [
+                {'number': 6, 'state': 'OPEN', 'repository': {'nameWithOwner': 'acme/widgets'}},
+                {'number': 7, 'state': 'CLOSED', 'repository': {'nameWithOwner': 'acme/widgets'}}]},
+            'closedByPullRequestsReferences': {'nodes': [
+                {'number': 40, 'state': 'OPEN'}, {'number': 41, 'state': 'MERGED'}]}})
+        ok, issues, _, _ = self._run([_open_issue_page([node])], stages=None,
+                                     unassigned_only=False)
+        self.assertTrue(ok)
+        self.assertEqual(issues[0]['type'], 'User Story')
+        self.assertIsNone(issues[0]['parent'])
+        self.assertEqual(issues[0]['sub_issues'], {'total': 2, 'open': [6]})
+        self.assertEqual(issues[0]['open_prs'], [40])
 
     def test_the_blocked_read_keeps_assigned_issues_and_asks_for_edges(self):
         with mock.patch.object(wf, 'stage_issues',
@@ -899,6 +945,9 @@ class TestCandidatesCommand(unittest.TestCase):
         facets = mock.patch.object(wf, 'load_issue_facets', return_value=_facets())
         facets.start()
         self.addCleanup(facets.stop)
+        claims = mock.patch.object(wf, 'claimed_issue_numbers', return_value=set())
+        claims.start()
+        self.addCleanup(claims.stop)
 
     def test_the_pool_is_ordered_by_the_org_priority_field(self):
         """The field is the whole order, and the listing carries its value.
@@ -949,7 +998,7 @@ class TestCandidatesCommand(unittest.TestCase):
         of those dependencies are still open. The body says nothing here on
         purpose: prose naming a blocker is not a dependency."""
         cand = _candidate(1)
-        cand['body'] = 'Part of the epic.\n\nBlocked by #7'
+        cand['body'] += '\nPart of the epic.\n\nBlocked by #7'
         edges = {1: [{'number': 7, 'state': 'OPEN'},
                      {'number': 8, 'state': 'CLOSED'}]}
         with mock.patch.object(wf, 'assemble_candidates',
@@ -964,7 +1013,7 @@ class TestCandidatesCommand(unittest.TestCase):
 
     def test_an_issue_with_no_edges_is_not_blocked_whatever_its_body_says(self):
         cand = _candidate(1)
-        cand['body'] = '## Blocked by\n\n#979\n'
+        cand['body'] += '\n## Blocked by\n\n#979\n'
         with mock.patch.object(wf, 'assemble_candidates',
                                return_value=(True, [cand], '')), \
                 mock.patch.object(wf, 'issue_edges_map', return_value=({}, set())):
@@ -1013,20 +1062,20 @@ class TestCandidatesCommand(unittest.TestCase):
 
     def test_bodies_are_truncated_and_flagged(self):
         cand = _candidate(1)
-        cand['body'] = 'x' * 900
+        cand['body'] = _CLEAR_BODY + 'x' * 900
         with mock.patch.object(wf, 'assemble_candidates', return_value=(True, [cand], '')):
             _, payload = _capture(wf.cmd_candidates,
                                   _candidates_args('--body-chars', '10'))
-        self.assertEqual(payload['candidates'][0]['body'], 'x' * 10)
+        self.assertEqual(payload['candidates'][0]['body'], _CLEAR_BODY[:10])
         self.assertTrue(payload['candidates'][0]['body_truncated'])
 
     def test_zero_body_chars_keeps_the_whole_body(self):
         cand = _candidate(1)
-        cand['body'] = 'x' * 900
+        cand['body'] = _CLEAR_BODY + 'x' * 900
         with mock.patch.object(wf, 'assemble_candidates', return_value=(True, [cand], '')):
             _, payload = _capture(wf.cmd_candidates,
                                   _candidates_args('--body-chars', '0'))
-        self.assertEqual(len(payload['candidates'][0]['body']), 900)
+        self.assertEqual(len(payload['candidates'][0]['body']), len(_CLEAR_BODY) + 900)
         self.assertFalse(payload['candidates'][0]['body_truncated'])
 
     def test_limit_clips_the_listing_but_total_reports_the_pool(self):
@@ -4288,6 +4337,7 @@ class TestCandidatesUnderParent(unittest.TestCase):
     def setUp(self):
         for name, value in (('check_environment', None),
                             ('load_config', (True, _cfg(), '')),
+                            ('claimed_issue_numbers', set()),
                             ('issue_edges_map', ({}, set()))):
             patch = mock.patch.object(wf, name, return_value=value)
             patch.start()

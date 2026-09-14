@@ -444,11 +444,27 @@ Nothing did this. `post-merge` settles only the issues a pull request *closes*, 
 
 | Subcommand     | Pool                                              | Claims          | Marker applied        | Used by      |
 | -------------- | ------------------------------------------------- | --------------- | --------------------- | ------------ |
-| `pick`         | Unassigned issues at Backlog or blank `Stage`     | `issue-{n}` ref | `Stage` In Progress   | execute |
+| `pick`         | Every open issue, judged by the rules below       | `issue-{n}` ref | `Stage` In Progress   | execute |
 | `update-next`  | My open PRs with actionable review feedback       | `pr-{n}` ref    | `updating` (keeps the feedback label) | code-review |
 | `review-next`  | Open PRs labelled `needs-review` / `needs-re-review` | `pr-{n}` ref | `reviewing` (removes prior) | code-review |
 
 All share the same atomic claim/checkout core and JSON contract. `--checkout` creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
+
+### Choosing from the issue tree
+
+`pick` and `candidates` read every open issue in the repository in one paged query: type, fields, assignees, blocked-by edges, sub-issues, parent and the pull requests that close it. No board is read. Each issue is judged by these rules, and the first that applies decides (`wf_core.evaluate_pool`):
+
+1. `Stage` is anything but blank or `Backlog`: not pickable.
+2. Assigned, held by a claim ref, or closed by an open pull request: not pickable.
+3. `Ownership` is not `Code agent`: not pickable. A `User Story` or `Bug` with no `Ownership` counts as `Code agent`; any other type with none does not.
+4. An open blocked-by edge: not pickable, and `pick` sets `Stage` to `Blocked`. A blocker holds back only the issues it blocks.
+5. Under an Epic or Feature whose `Stage` is `Parked`: not pickable. This is the one rule that passes down the tree.
+6. Any other story, bug or chore: pickable as itself.
+7. A `Feature` with pickable stories: pickable. `pick` claims its highest-priority story and returns the rest in `offered`; `candidates` lists them in `stories`.
+8. An `Epic` with a pickable `Feature`: pickable, taking its highest-priority `Feature`.
+9. An Epic or Feature with no sub-issues, or a story whose body is nearly empty or has no acceptance criteria: needs refinement. `pick` stops with `needs-refinement` (exit 12) and claims nothing, so a person can clarify it; with `--unattended` it sets `Stage` to `Needs refinement`, comments why, and walks on. `candidates` lists these under `needs_refinement`.
+
+The pool is ordered by `Priority`, then `Effort`, then issue number. `--mode` and `--max-effort` apply to stories, bugs and chores; in `maintenance` mode a story under a `Feature` classified as maintenance work counts too. Nothing here sets an Epic or Feature to `In Progress`, `In Review` or `Parked`.
 
 ## Scope / deferrals
 
