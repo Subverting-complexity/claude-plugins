@@ -3686,6 +3686,24 @@ class TestReconcileStage(unittest.TestCase):
     def test_blocked_with_no_edge_was_set_by_a_person_and_stays(self):
         self.assertIsNone(self.r(stage='Blocked'))
 
+    def test_work_for_a_person_or_a_browser_agent_goes_to_non_code(self):
+        for scope in (wf_core.SCOPE_HUMAN, wf_core.SCOPE_BROWSER):
+            for stage in ('', 'Backlog'):
+                self.assertEqual(self.r(stage=stage, scope=scope), 'Non-code')
+                self.assertEqual(self.r(stage=stage, assigned=True, scope=scope),
+                                 'Non-code')
+            self.assertEqual(self.r(stage='Blocked', blockers=1, open_blockers=1,
+                                    scope=scope), 'Non-code')
+            self.assertEqual(self.r(stage='In Progress', scope=scope), 'Non-code')
+            self.assertIsNone(self.r(stage='In Progress', assigned=True, scope=scope))
+            self.assertIsNone(self.r(stage='Parked', scope=scope))
+            self.assertEqual(self.r(is_open=False, scope=scope), 'Done')
+
+    def test_code_work_is_not_moved_to_non_code(self):
+        self.assertIsNone(self.r(stage='Backlog', scope=wf_core.SCOPE_CODE))
+        self.assertEqual(self.r(stage='In Progress', scope=wf_core.SCOPE_CODE),
+                         'Backlog')
+
     def test_a_blank_stage_with_nothing_to_say_is_not_written(self):
         self.assertIsNone(self.r())
         self.assertIsNone(self.r(claimed=True))
@@ -3726,11 +3744,12 @@ class TestReconcileStage(unittest.TestCase):
         pr_sets = ([], [{'isDraft': True}], [{'isDraft': False}])
         combos = itertools.product((True, False), stages,
                                    ((0, 0), (1, 0), (1, 1)),
-                                   (True, False), (True, False), pr_sets)
-        for is_open, stage, edges, assigned, claimed, open_prs in combos:
+                                   (True, False), (True, False), pr_sets,
+                                   (None, wf_core.SCOPE_CODE, wf_core.SCOPE_HUMAN))
+        for is_open, stage, edges, assigned, claimed, open_prs, scope in combos:
             facts = dict(is_open=is_open, blockers=edges[0],
                          open_blockers=edges[1], assigned=assigned,
-                         claimed=claimed, open_prs=open_prs)
+                         claimed=claimed, open_prs=open_prs, scope=scope)
             target = wf_core.reconcile_stage(stage=stage, **facts)
             if target:
                 self.assertIsNone(

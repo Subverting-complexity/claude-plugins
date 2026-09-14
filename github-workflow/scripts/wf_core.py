@@ -1385,7 +1385,7 @@ SYNC_PROTECTED_STAGES = frozenset({'Parked', 'Needs refinement',
 
 
 def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
-                    open_prs=()):
+                    open_prs=(), scope=None):
     """The stage `board-sync` writes for one issue, or None to leave it alone.
 
     `blockers` and `open_blockers` count the issue's native blocked-by edges,
@@ -1393,12 +1393,17 @@ def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
     issue, each as `{'isDraft': bool}`. `claimed` is whether
     `refs/claims/issue-N` exists, and a caller that could not read the claim
     refs passes True, so an unreadable lock never releases work somebody holds.
+    `scope` is the issue's `Ownership` read by `ownership_scope`.
 
     The rules, in the order they are tried:
 
       protected   Parked, Needs refinement, Needs attention and Non-code are
                   left alone, and so is a value that is not a stage at all.
       closed      a closed issue is Done.
+      non-code    work owned by a browser agent or a person that is blank,
+                  Backlog or Blocked goes to Non-code, as `stage_for` puts it
+                  when the issue is written. Abandoned work of that kind goes
+                  there too rather than back to Backlog.
       started     a blank or Backlog issue somebody has started goes to In
                   Review for a ready pull request, or In Progress for a draft
                   one or an assignee. This is `stage_drift_target`, the rule
@@ -1432,13 +1437,16 @@ def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
     blocked = STAGE_NAMES['stage-blocked']
     in_progress = STAGE_NAMES['stage-in-progress']
     in_review = STAGE_NAMES['stage-in-review']
+    non_code = STAGE_NAMES['stage-non-code'] if scope in (SCOPE_BROWSER, SCOPE_HUMAN) else None
+    if non_code and current in ('', backlog, blocked):
+        return non_code
     started = stage_drift_target(current, assigned=assigned, open_prs=prs)
     if started:
         return STAGE_NAMES[started]
     if current == in_progress and any(not pr.get('isDraft') for pr in prs):
         return in_review
     if current in (in_progress, in_review) and not (assigned or claimed or prs):
-        return blocked if open_blockers else backlog
+        return non_code or (blocked if open_blockers else backlog)
     if current in ('', backlog) and open_blockers:
         return blocked
     if current == blocked and blockers and not open_blockers:

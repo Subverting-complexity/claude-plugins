@@ -7,6 +7,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 12.5.0
+
+**`board-sync` moves work for a person or a browser agent to `Non-code`.** An open issue whose `Ownership` is `Human` or `Browser agent` and whose `Stage` is blank, `Backlog` or `Blocked` is set to `Non-code`, the stage `issue-apply` already gives it. Abandoned work of that kind goes to `Non-code` rather than back to `Backlog`. `Parked`, `Needs refinement`, `Needs attention` and work somebody is still doing are left alone.
+
 ## github-workflow 12.4.0
 
 **`wf pick` and `wf candidates` choose work from the issue tree.** They read every open issue in one paged query and judge each by one rule set: not at another `Stage`, not assigned, claimed or already closed by an open pull request, owned by the code agent, no open blocker, and not under a `Parked` Epic or Feature. An issue with an open blocker is set to `Blocked` and its siblings are still offered. The rules are listed under **Choosing from the issue tree** in `github-workflow/scripts/README.md`.
