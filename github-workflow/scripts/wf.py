@@ -68,6 +68,7 @@ import wf_core  # noqa: E402
 EXIT_OK = 0
 EXIT_NO_CANDIDATES = 10
 EXIT_ALL_BLOCKED = 11
+EXIT_NEEDS_REFINEMENT = 12
 EXIT_ENV = 20
 EXIT_CAPABILITY = 21
 EXIT_SPEC = 22
@@ -406,6 +407,49 @@ def _stage_issues_query(paged, extra=''):
            ',after:$cursor' if paged else '', extra))
 
 
+# What the pick pool reads about each open issue beyond the basics: its type,
+# where it sits in the Epic and Feature tree, what blocks it, and whether an
+# open pull request already closes it. One paged query covers all of it, so a
+# pick costs the same few requests on a repository of any size.
+POOL_SELECTION = (
+    'issueType { name }'
+    ' parent { number repository { nameWithOwner } }'
+    ' subIssues(first:50){ totalCount nodes { number state'
+    '  repository { nameWithOwner } } }'
+    ' blockedBy(first:20){ totalCount nodes { number state title } }'
+    ' closedByPullRequestsReferences(first:5){ nodes { number state } }'
+)
+
+
+def _tree_facts(node, repo):
+    """The pool's facts about one issue node; empty for what was not asked.
+
+    A parent or sub-issue in another repository is dropped, because its number
+    means a different issue here.
+    """
+    facts = {}
+    if 'issueType' in node:
+        facts['type'] = (node.get('issueType') or {}).get('name')
+    if 'parent' in node:
+        parent = node.get('parent') or {}
+        home = (parent.get('repository') or {}).get('nameWithOwner')
+        facts['parent'] = (parent.get('number')
+                           if parent and (not home or home == repo) else None)
+    if 'subIssues' in node:
+        subs = node.get('subIssues') or {}
+        facts['sub_issues'] = {
+            'total': subs.get('totalCount') or 0,
+            'open': [c['number'] for c in subs.get('nodes') or []
+                     if c and (c.get('state') or '').upper() == 'OPEN'
+                     and ((c.get('repository') or {}).get('nameWithOwner')
+                          in (None, repo))]}
+    if 'closedByPullRequestsReferences' in node:
+        refs = (node.get('closedByPullRequestsReferences') or {}).get('nodes') or []
+        facts['open_prs'] = [p['number'] for p in refs
+                             if p and (p.get('state') or '').upper() == 'OPEN']
+    return facts
+
+
 def stage_issues(cfg, stages, unassigned_only=True, extra=''):
     """The open issues whose `Stage` is one of `stages`. (ok, issues, err).
 
@@ -423,7 +467,10 @@ def stage_issues(cfg, stages, unassigned_only=True, extra=''):
     is an error rather than a short pool.
     """
     stage_field = field_name(cfg, 'field-stage')
-    wanted = {(s or '').strip().lower() for s in stages}
+    # `stages=None` is every open issue, whatever its stage: the pick pool
+    # judges them all, and a parent's stage decides its children.
+    wanted = None if stages is None else {(s or '').strip().lower() for s in stages}
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
     issues, cursor, pages = [], None, 0
     while True:
         if pages >= STAGE_MAX_PAGES:
@@ -433,6 +480,7 @@ def stage_issues(cfg, stages, unassigned_only=True, extra=''):
                 'the repository has more than %d open issues, which is more '
                 'than one pass reads, so the issues in %s cannot be listed '
                 'completely' % (STAGE_PAGE_SIZE * STAGE_MAX_PAGES,
+                                'every stage' if stages is None else
                                 wf_core._names(sorted(s or 'no stage'
                                                       for s in stages))))
         args = {'owner': cfg['org'], 'repo': cfg['repo']}
@@ -451,13 +499,13 @@ def stage_issues(cfg, stages, unassigned_only=True, extra=''):
             if not node or not node.get('number'):
                 continue
             stage = issue_field_values(node).get(stage_field) or ''
-            if stage.strip().lower() not in wanted:
+            if wanted is not None and stage.strip().lower() not in wanted:
                 continue
             assignees = (node.get('assignees') or {}).get('nodes') or []
             if unassigned_only and assignees:
                 continue
             milestone = node.get('milestone')
-            issues.append({
+            issues.append(dict(_tree_facts(node, repo), **{
                 'number': node['number'],
                 'title': node.get('title', ''),
                 'labels': [l['name'] for l
@@ -469,7 +517,7 @@ def stage_issues(cfg, stages, unassigned_only=True, extra=''):
                 'assigned': bool(assignees),
                 'assignees': [a.get('login') for a in assignees if a.get('login')],
                 'blockedBy': node.get('blockedBy') or {},
-            })
+            }))
         pages += 1
         page_info = connection.get('pageInfo') or {}
         cursor = page_info.get('endCursor')
@@ -2946,9 +2994,13 @@ def load_issue_facets(cfg, numbers=None):
 
 
 def assemble_candidates(cfg):
-    """Fetch the pool: open, unassigned issues whose `Stage` is blank or Backlog.
+    """Fetch every open issue the pool is judged from. (ok, issues, err).
 
-    Returns (ok, issues, err).
+    Every stage, assigned or not, since 12.4.0: `wf_core.evaluate_pool`
+    decides what is pickable, and it needs the issues that are not, because a
+    Parked Epic holds back the stories under it and a Feature is pickable only
+    through its stories. Each issue carries `POOL_SELECTION`'s facts. No board
+    is read.
 
     This replaced four `ready-gate` settings -- `label`, `board-column`,
     `both`, `none` -- of which three required an issue to be explicitly marked
@@ -2964,7 +3016,58 @@ def assemble_candidates(cfg):
     board column, so an issue with no card could not be picked at all; the
     state lives on the issue now, and no board is needed to read it.
     """
-    return stage_issues(cfg, ('', wf_core.STAGE_NAMES[wf_core.POOL_STAGE]))
+    return stage_issues(cfg, None, unassigned_only=False, extra=POOL_SELECTION)
+
+
+def claimed_issue_numbers():
+    """The issue numbers a claim ref holds on the remote. One `ls-remote`.
+
+    An unreadable remote is an empty set, said out loud: the claim itself is
+    atomic, so a candidate somebody holds is still refused when it is claimed.
+    """
+    code, out, err = run(['git', 'ls-remote', 'origin', 'refs/claims/issue-*'])
+    if code != 0:
+        eprint('wf: could not list claim refs (%s); a held issue is refused at '
+               'claim instead' % (err.strip() or 'git ls-remote failed'))
+        return set()
+    found = set()
+    for line in out.splitlines():
+        ref = line.split()[-1] if line.split() else ''
+        suffix = ref[len('refs/claims/issue-'):] if ref.startswith('refs/claims/issue-') else ''
+        if suffix.isdigit():
+            found.add(int(suffix))
+    return found
+
+
+def _prefilter_numbers(issues, claimed):
+    """The issues whose fields are worth reading: rules 1 and 2 of the pool,
+    which need no field. Everything else is out whatever its fields say."""
+    return [i['number'] for i in issues
+            if wf_core.is_available_stage(i.get('stage'))
+            and not i.get('assigned') and i['number'] not in claimed
+            and not i.get('open_prs')]
+
+
+def pool_verdict(cfg, args, issues, claimed, facets, type_map, classification_map):
+    """Run `wf_core.evaluate_pool` for this project. (backlog_mode, verdict).
+
+    Sprint narrowing applies to the ranked list, as it did to the pool.
+    """
+    verdict = {}
+
+    def selector(pool_issues):
+        verdict.update(wf_core.evaluate_pool(
+            pool_issues, mode=args.mode, type_map=type_map,
+            classification_map=classification_map,
+            priority_map=facets['priority'], effort_map=facets['effort'],
+            ownership_map=facets['ownership'], claimed=claimed,
+            max_effort=getattr(args, 'max_effort', None)))
+        return verdict['ranked']
+
+    backlog_mode, ranked = ordered_pool(cfg, issues, selector)
+    verdict['ranked'] = ranked
+    verdict['pool'] = [e for e in ranked if not e.get('unclear')]
+    return backlog_mode, verdict
 
 
 def ordered_pool(cfg, issues, selector):
@@ -3826,7 +3929,8 @@ def unblock_scan(cfg, dry_run=False, only=None, now=None):
     for issue in issues:
         if wanted is not None and issue['number'] not in wanted:
             continue
-        scope = wf_core.ownership_scope(ownership.get(issue['number']))
+        scope = wf_core.effective_scope(ownership.get(issue['number']),
+                                        (facets.get('types') or {}).get(issue['number']))
         if scope is None:
             unowned.append({'issue': issue['number'], 'title': issue.get('title')})
             continue
@@ -4069,7 +4173,7 @@ def fetch_issue_candidate(cfg, number):
 
     facets = load_issue_facets(cfg, [number])
     ownership = (facets.get('ownership') or {}).get(number)
-    scope = wf_core.ownership_scope(ownership)
+    scope = wf_core.effective_scope(ownership, (facets.get('types') or {}).get(number))
     if scope != wf_core.SCOPE_CODE:
         emit('all-blocked', EXIT_ALL_BLOCKED,
              reason='issue #%d is owned by %s, so a code agent must not take it. '
@@ -4120,30 +4224,99 @@ def cmd_pick(args):
                  side_effects=side_effects)
         finish_pick(args, cfg, selected, side_effects, backlog_mode=None)
 
-    # The pool first, then the fields of the issues in it. That order is the
-    # point: these fields are read *about the pool*, so asking the repository
-    # for its newest issues instead could answer about a different set
-    # entirely.
+    side_effects = []
+    outcome = _pick_round(cfg, args, siblings, side_effects)
+    if not outcome['selected']:
+        restored = auto_unblock_scan(cfg)
+        if restored:
+            eprint('wf: unblock sweep released %d issue(s) — retrying' % restored)
+            outcome = _pick_round(cfg, args, siblings, side_effects)
+
+    verdict, backlog_mode = outcome['verdict'], outcome['backlog_mode']
+    report_unprioritised(verdict['pool'], outcome['priority'])
+    unclassified = sorted(set(verdict.get('unclassified') or ()))
+    oversized = sorted(set(verdict.get('oversized') or ()))
+    if unclassified:
+        eprint('wf: %d issue(s) left out of the %s pool because the org has not '
+               'typed or classified them: %s (run wf issue-audit to backfill)'
+               % (len(unclassified), args.mode,
+                  ', '.join('#%d' % n for n in unclassified)))
+    if oversized:
+        eprint('wf: %d issue(s) left out because their Effort is above '
+               '--max-effort %s: %s'
+               % (len(oversized), args.max_effort,
+                  ', '.join('#%d' % n for n in oversized)))
+
+    if not outcome['selected'] and not verdict['ranked']:
+        emit('no-candidates', EXIT_NO_CANDIDATES,
+             reason='nothing with a blank or %s Stage is available to a code '
+                    'agent' % wf_core.STAGE_NAMES[wf_core.POOL_STAGE],
+             backlog_mode=backlog_mode, oversized=oversized,
+             side_effects=side_effects)
+    if not outcome['selected']:
+        emit('all-blocked', EXIT_ALL_BLOCKED,
+             reason='every candidate was claimed-away, blocked, or already resolved',
+             backlog_mode=backlog_mode, side_effects=side_effects)
+
+    finish_pick(args, cfg, outcome['selected'], side_effects, backlog_mode,
+                container=outcome['container'], offered=outcome['offered'])
+
+
+REFINEMENT_COMMENT = (
+    '`Stage` set to `%s` by `wf pick`: %s. An unattended run cannot ask what '
+    'was meant, so it moved on to the next candidate. Add what is missing, '
+    'then set `Stage` back to `Backlog`.'
+)
+
+
+def send_to_refinement(cfg, entry):
+    """Set an unclear issue to Needs refinement and say why. Side effect dict."""
+    stage = wf_core.STAGE_NAMES['stage-refinement']
+    written, message = set_stage(cfg, entry['number'], stage)
+    if written:
+        run(['gh', 'issue', 'comment', str(entry['number']), '--repo',
+             '%s/%s' % (cfg['org'], cfg['repo']),
+             '--body', REFINEMENT_COMMENT % (stage, entry['unclear'])])
+    return {'issue': entry['number'], 'action': 'sent-to-refinement',
+            'detail': entry['unclear'], 'stage_set': written,
+            'stage_message': None if written else message}
+
+
+def block_in_pool(cfg, blocked, side_effects):
+    """Set every issue rule 4 caught to Blocked, in one batched write.
+
+    No comment and no unassign: these were never claimed, and the blocked-by
+    edge already says why. The unblock sweep releases each one when its last
+    blocker closes.
+    """
+    if not blocked:
+        return
+    results = set_stages(cfg, {n: wf_core.STAGE_NAMES['stage-blocked']
+                               for n in blocked})
+    for number in sorted(blocked):
+        written, message = results.get(number, (False, 'not written'))
+        side_effects.append({'issue': number, 'action': 'marked-blocked',
+                             'detail': ', '.join('#%d' % b for b in blocked[number]),
+                             'stage_set': written,
+                             'stage_message': None if written else message})
+
+
+def _pick_round(cfg, args, siblings, side_effects):
+    """Read the pool, judge it, and walk it once. Emits and exits on a hard
+    stop; otherwise returns what it chose and what it read."""
     ok, issues, err = assemble_candidates(cfg)
     if not ok:
         emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
+    claimed = claimed_issue_numbers()
 
-    # The org's own view of those issues: native type, Priority, Effort,
-    # Ownership, Classification. All five decide the pool -- what is in it,
-    # what order it is in, how big each one is, whether a code agent may take
-    # it, and which `Feature` counts as maintenance.
-    facets = load_issue_facets(cfg, [i['number'] for i in issues])
-    priority_map = facets['priority']
-    effort_map = facets['effort']
-    ownership_map = facets['ownership']
-    type_map = classification_map = None
-    if args.mode == 'story':
-        # Read only to leave epics out; story mode classifies nothing.
-        type_map = facets['types'] or None
-    else:
-        type_map = facets['types'] or None
+    # The org's own view of the issues still in the running: native type,
+    # Priority, Effort, Ownership, Classification. All five decide the pool.
+    facets = load_issue_facets(cfg, _prefilter_numbers(issues, claimed))
+    type_map = facets['types'] or None
+    classification_map = None
+    if args.mode != 'story':
         classification_map = facets['classification'] if type_map else None
-        if not type_map:
+        if not type_map and not any(i.get('type') for i in issues):
             # The native type is the only classifier. Without one, `feature`
             # and `maintenance` are unanswerable -- and answering them wrongly
             # by label is exactly what this replaced.
@@ -4154,73 +4327,61 @@ def cmd_pick(args):
                         'them, or pick with `--mode story`.' % args.mode)
         eprint('wf: filtering %s mode by native issueType' % args.mode)
 
-    # An issue the org has not typed is out of a feature/maintenance pool --
-    # the native type is the only classifier now. Collected here so the run can
-    # name it, because a pool that is quietly short reads as a clean backlog.
-    unclassified = []
+    backlog_mode, verdict = pool_verdict(cfg, args, issues, claimed, facets,
+                                         type_map, classification_map)
+    block_in_pool(cfg, verdict['blocked'], side_effects)
+    by_num = {i['number']: i for i in issues}
+    outcome = {'verdict': verdict, 'backlog_mode': backlog_mode,
+               'priority': facets['priority'], 'selected': None,
+               'container': None, 'offered': []}
 
-    oversized = []
-
-    def selector(pool_issues):
-        return wf_core.select_pool(
-            pool_issues, mode=args.mode,
-            project_map=cfg.get('labels', {}),
-            type_map=type_map, classification_map=classification_map,
-            unclassified=unclassified, priority_map=priority_map,
-            effort_map=effort_map, ownership_map=ownership_map,
-            max_effort=getattr(args, 'max_effort', None), oversized=oversized)
-
-    backlog_mode, pool = ordered_pool(cfg, issues, selector)
-
-    selected, side_effects = None, []
-    if pool:
-        selected, side_effects = claim_validate_walk(cfg, pool, backlog_mode, siblings)
-
-    if not selected:
-        restored = auto_unblock_scan(cfg)
-        if restored:
-            eprint('wf: unblock sweep released %d issue(s) — retrying' % restored)
-            ok, issues, err = assemble_candidates(cfg)
-            if ok and issues:
-                facets = load_issue_facets(cfg, [i['number'] for i in issues])
-                priority_map = facets['priority']
-                effort_map = facets['effort']
-                ownership_map = facets['ownership']
-                backlog_mode, pool = ordered_pool(cfg, issues, selector)
-                if pool:
-                    selected, more_effects = claim_validate_walk(cfg, pool, backlog_mode,
-                                                                 siblings)
-                    side_effects.extend(more_effects)
-
-    report_unprioritised(pool, priority_map)
-
-    if unclassified:
-        eprint('wf: %d issue(s) left out of the %s pool because the org has not '
-               'typed or classified them: %s (run wf issue-audit to backfill)'
-               % (len(set(unclassified)), args.mode,
-                  ', '.join('#%d' % n for n in sorted(set(unclassified)))))
-
-    if oversized:
-        eprint('wf: %d issue(s) left out because their Effort is above '
-               '--max-effort %s: %s'
-               % (len(set(oversized)), args.max_effort,
-                  ', '.join('#%d' % n for n in sorted(set(oversized)))))
-
-    if not selected and not pool:
-        emit('no-candidates', EXIT_NO_CANDIDATES,
-             reason='nothing with a blank or %s Stage is available to a code '
-                    'agent' % wf_core.STAGE_NAMES[wf_core.POOL_STAGE],
-             backlog_mode=backlog_mode, oversized=sorted(set(oversized)))
-    if not selected:
-        emit('all-blocked', EXIT_ALL_BLOCKED,
-             reason='every candidate was claimed-away, blocked, or already resolved',
-             backlog_mode=backlog_mode, side_effects=side_effects)
-
-    finish_pick(args, cfg, selected, side_effects, backlog_mode)
+    tried = set()
+    for entry in verdict['ranked']:
+        if entry.get('unclear'):
+            if getattr(args, 'unattended', False):
+                side_effects.append(send_to_refinement(cfg, entry))
+                continue
+            # A person is there to say what was meant, so the run stops on the
+            # highest-ranked unclear issue rather than skipping past it.
+            emit('needs-refinement', EXIT_NEEDS_REFINEMENT,
+                 number=entry['number'], title=entry['title'],
+                 url=entry.get('url', ''), type=entry.get('type'),
+                 detail=entry['unclear'], backlog_mode=backlog_mode,
+                 side_effects=side_effects,
+                 reason='#%d is the next pick but %s' % (entry['number'],
+                                                         entry['unclear']))
+        stories = entry.get('stories')
+        if stories is None:
+            walk = [entry] if entry['number'] not in tried else []
+        else:
+            walk = [by_num[n] for n in stories if n not in tried]
+        tried.update(c['number'] for c in walk)
+        if not walk:
+            continue
+        selected, effects = claim_validate_walk(cfg, walk, backlog_mode, siblings)
+        side_effects.extend(effects)
+        if not selected:
+            continue
+        outcome['selected'] = selected
+        if stories is not None:
+            outcome['container'] = {'number': entry['number'], 'title': entry['title'],
+                                    'type': entry.get('type'),
+                                    'feature': entry.get('feature')}
+            rest = stories[stories.index(selected['number']) + 1:]
+            outcome['offered'] = [{'number': n, 'title': by_num[n].get('title', '')}
+                                  for n in rest][:wf_core.BULK_MAX - 1]
+        return outcome
+    return outcome
 
 
-def finish_pick(args, cfg, selected, side_effects, backlog_mode):
-    """Build the `ok` result for a selected story, optionally checking out, and emit."""
+def finish_pick(args, cfg, selected, side_effects, backlog_mode, container=None,
+                offered=()):
+    """Build the `ok` result for a selected story, optionally checking out, and emit.
+
+    `container` and `offered` are set when the pick came through an Epic or
+    Feature: the story claimed is the first of the stories it offers, and
+    `offered` is the rest, which the caller may build alongside it.
+    """
     result = {
         'number': selected['number'],
         'title': selected['title'],
@@ -4237,6 +4398,9 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode):
     siblings = [int(n) for n in (getattr(args, 'sibling', None) or [])]
     if siblings:
         result['siblings'] = siblings
+    if container:
+        result['container'] = container
+        result['offered'] = list(offered)
 
     if args.checkout:
         written, stage_msg = best_effort(stage_in_progress, cfg,
@@ -4308,37 +4472,39 @@ def cmd_candidates(args):
     ok, issues, err = assemble_candidates(cfg)
     if not ok:
         emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
+    claimed = claimed_issue_numbers()
 
-    facets = load_issue_facets(cfg, [i['number'] for i in issues])
+    facets = load_issue_facets(cfg, _prefilter_numbers(issues, claimed))
     priority_map = facets['priority']
-    effort_map = facets['effort']
-    ownership_map = facets['ownership']
     type_map, classification_map = _mode_maps(cfg, args.mode, facets)
-
-    unclassified = []
-    oversized = []
-
-    def selector(pool_issues):
-        return wf_core.select_pool(
-            pool_issues, mode=args.mode,
-            project_map=cfg.get('labels', {}),
-            type_map=type_map, classification_map=classification_map,
-            unclassified=unclassified, priority_map=priority_map,
-            effort_map=effort_map, ownership_map=ownership_map,
-            max_effort=getattr(args, 'max_effort', None), oversized=oversized)
-
-    backlog_mode, pool = ordered_pool(cfg, issues, selector)
-    maps = {'priority': priority_map, 'effort': effort_map,
-            'ownership': ownership_map}
+    backlog_mode, verdict = pool_verdict(cfg, args, issues, claimed, facets,
+                                         type_map, classification_map)
+    pool = verdict['pool']
+    by_num = {i['number']: i for i in issues}
+    maps = {'priority': priority_map, 'effort': facets['effort'],
+            'ownership': facets['ownership']}
     if getattr(args, 'parent', None):
         # Before the empty-pool exit: a parent whose leaves are all out of the
         # pool still owes the caller the list of why.
-        candidates_under_parent(args, cfg, pool, maps)
+        candidates_under_parent(args, cfg, pool, maps, verdict, by_num)
+
+    # Issues that would be offered but for one thing a person has to fix, and
+    # the ones an open blocker holds. Neither is a candidate; both are listed
+    # so a short pool reads as a decision rather than as a gap.
+    needs_refinement = [{'number': e['number'], 'title': e['title'],
+                         'type': e.get('type'), 'reason': e['unclear']}
+                        for e in verdict['ranked'] if e.get('unclear')]
+    blocked = [{'number': n, 'title': (by_num.get(n) or {}).get('title', ''),
+                'dependencies_open': deps}
+               for n, deps in sorted(verdict['blocked'].items())]
+    unclassified = sorted(set(verdict.get('unclassified') or ()))
     if not pool:
         emit('no-candidates', EXIT_NO_CANDIDATES,
              reason='nothing with a blank or %s Stage is available to a code '
                     'agent' % wf_core.STAGE_NAMES[wf_core.POOL_STAGE],
-             backlog_mode=backlog_mode, oversized=sorted(set(oversized)))
+             backlog_mode=backlog_mode,
+             oversized=sorted(set(verdict.get('oversized') or ())),
+             needs_refinement=needs_refinement, blocked=blocked)
 
     total = len(pool)
     report_unprioritised(pool, priority_map)
@@ -4346,13 +4512,24 @@ def cmd_candidates(args):
         pool = pool[:args.limit]
 
     edge_map, edges_unknown = issue_edges_map(cfg, [c['number'] for c in pool])
-    listed = [_candidate_entry(cand, edge_map.get(cand['number']) or [],
-                               cand['number'] in edges_unknown, maps,
-                               args.body_chars)
-              for cand in pool]
+    listed = []
+    for cand in pool:
+        item = _candidate_entry(cand, edge_map.get(cand['number']) or [],
+                                cand['number'] in edges_unknown, maps,
+                                args.body_chars)
+        item['type'] = cand.get('type')
+        if cand.get('stories') is not None:
+            # An Epic or Feature: the stories it offers, as one set. An Epic
+            # offers its best Feature's.
+            item['stories'] = [{'number': n, 'title': by_num[n].get('title', '')}
+                               for n in cand['stories']]
+            if cand.get('feature'):
+                item['feature'] = cand['feature']
+        listed.append(item)
 
     emit('ok', EXIT_OK, mode=args.mode, backlog_mode=backlog_mode,
          total=total, listed=len(listed), candidates=listed,
+         needs_refinement=needs_refinement, blocked=blocked,
          # Issues the org has not typed or classified, and which are therefore
          # not in this pool at all. Reported so a short list reads as a gap in
          # the data rather than as a clean backlog.
@@ -4409,7 +4586,7 @@ def _candidate_entry(cand, edges, edges_unknown, maps, body_chars):
     }
 
 
-def candidates_under_parent(args, cfg, pool, maps):
+def candidates_under_parent(args, cfg, pool, maps, verdict=None, by_num=None):
     """`candidates --parent N`: the one bulk set the tree under N offers.
 
     The pool is the same pool as ever, narrowed to N's leaves, plus the one
@@ -4461,6 +4638,12 @@ def candidates_under_parent(args, cfg, pool, maps):
         cards = [i for i in blocked_now
                  if i['number'] in wanted and i['number'] not in pool_by
                  and not i.get('assigned')]
+        # A Backlog leaf the pool held back for an open edge waits exactly as
+        # a Blocked one does, so it gets the same exception.
+        seen = {i['number'] for i in cards}
+        cards += [(by_num or {})[n] for n in sorted((verdict or {}).get('blocked') or ())
+                  if n in wanted and n not in pool_by and n not in seen
+                  and n in (by_num or {})]
         types, classes = _mode_maps(cfg, args.mode, facets)
         untyped, heavy = [], []
         blocked = {i['number']: i for i in wf_core.select_pool(
@@ -4517,7 +4700,9 @@ def candidates_under_parent(args, cfg, pool, maps):
                 why.append('`%s` is `%s`' % (field_name(cfg, 'field-stage'), stage))
             if wf_core.ownership_scope(owner) != wf_core.SCOPE_CODE:
                 why.append('owned by %s, not the code agent' % (owner or 'nobody'))
-            reasons[n] = ', '.join(why) or 'not in the pool (assigned, or left out by --mode)'
+            reasons[n] = (', '.join(why)
+                          or ((verdict or {}).get('excluded') or {}).get(n)
+                          or 'not in the pool (assigned, or left out by --mode)')
 
     # The Blocked leaves ranked in among the pool by the pool's own sort, or
     # the build order would put every one of them behind every pool leaf.
@@ -5576,6 +5761,10 @@ def build_parser():
                       help='an issue being built alongside this one on the same branch '
                            '(repeatable); a dependency on one of them does not block the '
                            'pick, because this run writes it too')
+    pick.add_argument('--unattended', action='store_true',
+                      help='nobody is there to answer questions: an unclear issue '
+                           'ahead of the pick is set to Needs refinement and passed '
+                           'over, instead of stopping the run with needs-refinement')
     pick.set_defaults(func=cmd_pick)
 
     cand = sub.add_parser('candidates',

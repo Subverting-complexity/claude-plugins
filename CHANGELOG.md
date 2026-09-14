@@ -7,6 +7,18 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 12.4.0
+
+**`wf pick` and `wf candidates` choose work from the issue tree.** They read every open issue in one paged query and judge each by one rule set: not at another `Stage`, not assigned, claimed or already closed by an open pull request, owned by the code agent, no open blocker, and not under a `Parked` Epic or Feature. An issue with an open blocker is set to `Blocked` and its siblings are still offered. The rules are listed under **Choosing from the issue tree** in `github-workflow/scripts/README.md`.
+
+**An Epic or Feature can be picked.** A `Feature` is picked through its pickable stories: `pick` claims the highest-priority one and returns the others in `offered`, and `execute` decides while planning whether to build them together. An `Epic` takes its highest-priority pickable `Feature`. `candidates` lists a container with its `stories`.
+
+**Unclear work goes to refinement.** An Epic or Feature with no sub-issues, or a story whose body is nearly empty or has no acceptance criteria, is not claimed. `pick` stops with the new `needs-refinement` status (exit 12) so the person running it can clarify the issue with `grill`; `pick --unattended` sets it to `Needs refinement`, says why on the issue, and picks the next one.
+
+**A `User Story` or `Bug` with no `Ownership` is code work.** Any other type with no `Ownership` is still left out.
+
+**After upgrading:** Epics and Features that were parked only because the old picker offered a whole Feature as one piece of work can go back to `Backlog`.
+
 ## github-workflow 12.3.0
 
 **A scheduled workflow keeps boards and `Stage` in step on its own.** `.github/workflows/board-sync.yml` runs `wf board-sync` every 6 hours across every repository in the org. It adds a card for any open issue missing from a board linked to its repository, as a backup to GitHub's own "Auto-add to project" workflow, and it corrects `Stage` where the issue shows something else: `Done` once closed; `In Review` once a ready pull request closes it, and `In Progress` while only a draft does or somebody is assigned; `Blocked` while an edge is open; `Backlog` once every blocker has closed; and `Backlog` again for `In Progress` or `In Review` work nobody is assigned to, holds a claim on or has a pull request for.

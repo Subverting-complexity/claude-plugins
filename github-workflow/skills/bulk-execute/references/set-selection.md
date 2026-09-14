@@ -59,7 +59,7 @@ Then go to **Claiming the set**.
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --mode {mode}
 ```
 
-This returns the same pool `execute` picks from — the open, unassigned issues at a blank or `Backlog` stage, sprint narrowed, the mode filter applied, anything `Ownership` does not mark `Code agent` removed, sorted by `Priority` then `Effort` then issue number — and claims nothing. Each entry carries `number`, `title`, `priority`, `scope`, `milestone`, a truncated `body`, and the `dependencies` read from the native blocked-by edges. `total` is the unclipped pool size, `listed` is how many came back, and `unprioritised_count` is how many carry no `Priority` and therefore sort last.
+This returns the same pool `execute` picks from — every open issue judged by the pick rules in `scripts/README.md`, sprint narrowed, sorted by `Priority` then `Effort` then issue number — and claims nothing. Each entry carries `number`, `title`, `type`, `priority`, `scope`, `milestone`, a truncated `body`, and the `dependencies` read from the native blocked-by edges. An `Epic` or `Feature` entry also carries `stories`, the pickable stories it offers: that group is already declared by the tree, so take it with Path C. Issues an open blocker holds back are listed under `blocked`, so a dependency chain can still be grouped, and issues too unclear to build under `needs_refinement`. `total` is the unclipped pool size, `listed` is how many came back, and `unprioritised_count` is how many carry no `Priority` and therefore sort last.
 
 Interpret the result by its `status`:
 

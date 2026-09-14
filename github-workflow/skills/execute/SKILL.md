@@ -183,7 +183,7 @@ From the repo root:
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout --mode {mode}
 ```
 
-`{mode}` is `$ARGUMENTS.mode`, default `story` (`audit` never reaches this phase). The command detects backlog mode (sprint or flat), reads the open, unassigned issues whose `Stage` is blank or **Backlog**, applies the mode filter, drops anything `Ownership` does not mark `Code agent`, sorts by `Priority` then `Effort` then issue number, **claims the top candidate before any side effect** and validates only that one — walking down the list on a lost claim, setting a genuinely blocked issue to `Blocked`, closing one a merged PR already resolved, and running the dependency unblock scan if the pool comes up empty. No label is read anywhere in that sequence.
+`{mode}` is `$ARGUMENTS.mode`, default `story` (`audit` never reaches this phase). Add `--unattended` when nobody is present to answer a question, as in a scheduled or background run. The command detects backlog mode (sprint or flat) and reads every open issue from the repository, never a board. It skips anything at another `Stage`, assigned, claimed, already closed by an open pull request, or not `Code agent` (a `User Story` or `Bug` with no `Ownership` counts as one). It sets an issue with an open blocked-by edge to `Blocked`, skips anything under a `Parked` Epic or Feature, and sorts the rest by `Priority` then `Effort` then issue number. A `Feature` is picked through its pickable stories and an `Epic` through its best `Feature`; the full rules are in `scripts/README.md`. It **claims the top candidate before any side effect** and validates only that one — walking down the list on a lost claim, setting a genuinely blocked issue to `Blocked`, closing one a merged PR already resolved, and running the dependency unblock scan if the pool comes up empty. No label is read anywhere in that sequence.
 
 Read the result by its `status`; the exit code mirrors it:
 
@@ -192,10 +192,11 @@ Read the result by its `status`; the exit code mirrors it:
 | `ok` | 0 | A story is claimed and you are on its branch. **Stop selecting — do not re-derive anything.** |
 | `no-candidates` | 10 | Nothing was pickable. Stop with "No stories available for pickup". |
 | `all-blocked` | 11 | Every candidate was blocked or already claimed. Stop the same way. |
+| `needs-refinement` | 12 | The next pick is too unclear to build and nothing was claimed; `detail` says why. Only without `--unattended`. Run `/github-workflow:grill` on issue `number` with the user (`refinement-skill` for an Epic or Feature with no sub-issues), then `pick --issue {number} --checkout`. If they skip it, send it to refinement as below and re-run `pick`. |
 | `unsupported` | 30 | `wf` deferred this configuration (reserved; not expected). Stop and report what it named. |
 | `error` | 20, or the launcher reports Python is missing | `wf` cannot run here. Stop and name the prerequisite: `wf` needs Python 3.8+ on `PATH` and an authenticated `gh`. Do not select a story by hand. |
 
-On `ok` the JSON carries `number`, `title`, `url`, `labels`, `milestone`, `body`, `claim_ref`, `branch`, `checked_out`, `stage_set`, `stage_message`, `start_date_set` and `side_effects`. The stage is `In Progress`, the `@me` assignment is applied, and the claim ref is held. Surface any `side_effects` (issues returned to blocked, or closed as already resolved), then do **only** the body-validation check at the end of this phase and go to Phase 2 — whose claim, stage and branch steps are already done. If `checked_out` is false, read `branch_message` (e.g. a rebase conflict against the default branch) and run `/github-workflow:block-story` instead of building.
+On `ok` the JSON carries `number`, `title`, `url`, `labels`, `milestone`, `body`, `claim_ref`, `branch`, `checked_out`, `stage_set`, `stage_message`, `start_date_set` and `side_effects`. The stage is `In Progress`, the `@me` assignment is applied, and the claim ref is held. When the pick came through an Epic or Feature, `container` names it and `offered` lists its other pickable stories, at most four. Decide in Phase 3 whether they belong in this pull request. To add one, claim it with `pick --issue {n} --checkout --no-branch --sibling {number}` and build the set as `bulk-execute` does; otherwise leave them in the pool. Surface any `side_effects` (issues set to blocked, sent to refinement, or closed as already resolved), then do **only** the body-validation check at the end of this phase and go to Phase 2 — whose claim, stage and branch steps are already done. If `checked_out` is false, read `branch_message` (e.g. a rebase conflict against the default branch) and run `/github-workflow:block-story` instead of building.
 
 ### An explicit story number
 
@@ -227,7 +228,7 @@ No label is read: state is the `Stage` field, and `pick --issue` refuses a story
 
 - Enough guidance (body, comments, linked docs) → proceed to Phase 2.
 - Thin — a real topic, but not enough to implement without guessing at what was wanted → offer refinement, in a user-present session: "The next priority story (#{number}: {title}) needs refinement before it can be implemented. Would you like to refine it now?" Use `AskUserQuestion`:
-  - "Refine now (Recommended)" — run the refinement skill from `refinement-skill` (default `feature-discovery`). After refinement, continue with Phase 2 — the stage is already `In Progress`.
+  - "Refine now (Recommended)" — run `/github-workflow:grill` on the story with the user, or the refinement skill from `refinement-skill` (default `feature-discovery`) when it needs breaking down. After refinement, continue with Phase 2 — the stage is already `In Progress`.
   - "Skip and pick next" — send it to refinement as below.
 - Truly empty, or thin with nobody present to answer → send it to refinement and re-run the selection for the next story. Do **not** run `/github-workflow:block-story`: blocked means an open blocked-by edge, and this issue has none, so nothing would ever release it.
 
