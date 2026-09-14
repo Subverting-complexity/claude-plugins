@@ -104,9 +104,9 @@ Named here so a finding can be acted on without reading the source. `wf prefligh
 | `review-config` | warning | `ClaudeProject.md` points at a review-state label file that is not there, so every review label falls back to its default name. |
 | `field-options` | critical or warning | An option on `Priority`, `Effort` or `Ownership` that no decision here knows. Critical for `Ownership`, because nothing can route an issue carrying it; a warning for the other two, because the issue still sorts, just last or as `Medium`. |
 | `label-retired` | warning | Open issues still carry a label the fields replaced (`status-*`, `priority-*`, `browser-agent`, `human-required`, `needs-refinement`, `claude-ready`). It decides nothing, and it misleads anyone filtering the issues list by hand. |
-| `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, a board column as an issue's state, a lifecycle, priority or scope label, or a dependency written as prose. A session reading it is told to do something the tooling no longer does. |
+| `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, a lifecycle, priority or scope label, or a dependency written as prose. A session reading it is told to do something the tooling no longer does. |
 | `container-finished` | warning | An open Epic or Feature whose sub-issues are all closed. Nothing else closes a container, so finished ones pile up out of sight. A container with no sub-issues is never flagged. |
-| `stage-drift` | warning | An open issue's `Stage` is blank or `Backlog` although an open pull request closes it or somebody is assigned, so every view grouped by `Stage` shows started work as available. A run on a version before 12.0.0, which moved board cards instead of writing `Stage`, leaves exactly this behind. Any other stage is left alone. |
+| `stage-drift` | warning | An open issue's `Stage` is blank or `Backlog` although an open pull request closes it or somebody is assigned, so every view grouped by `Stage` shows started work as available. A run on a version before 12.0.0, which never wrote `Stage`, leaves exactly this behind. Any other stage is left alone. |
 
 ## What `--fix` will and will not do
 

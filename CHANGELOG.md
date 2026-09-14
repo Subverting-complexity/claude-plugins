@@ -7,6 +7,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 12.2.0
+
+**Preflight stops reading a project's instructions for board wording.** Nothing in the workflow reads or writes a board, so `instructions-retired` has no reason to look at how a project describes one. The patterns added in 12.1.0 and the ones they extended from 12.0.0 are both gone. The check still reports the `Ready` opt-in, retired lifecycle, priority and scope labels, and dependencies written as prose.
+
 ## github-workflow 12.1.0
 
 **Preflight finds and repairs an issue whose `Stage` is behind its work.** The new `stage-drift` warning names every open issue whose `Stage` is blank or `Backlog` although an open pull request closes it or somebody is assigned. `wf preflight --fix` sets it to `In Review` when a ready pull request closes it, and to `In Progress` when a draft pull request closes it or it is only assigned. Any other stage is left alone, so nothing a run or a person chose is overwritten.

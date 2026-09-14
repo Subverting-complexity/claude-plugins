@@ -2510,15 +2510,6 @@ _RETIRED_INSTRUCTION_PATTERNS = (
     (r'status[-:_ ]ready|claude-ready|`?Ready`? (?:label|column|gate|status)|##\s*Ready Gate',
      'the `Ready` opt-in, which no longer exists -- the pool is every issue '
      'whose `Stage` is blank or `Backlog`'),
-    # The second line is the wording an 11.x `ClaudeProject.md` actually used
-    # ("an issue's status is the column its card sits in", "moving a card out
-    # of `Backlog`"), which the first line missed on a real backlog.
-    (r'(?i)board-move|move (?:the|its) card|board column is the state|'
-     r'(?:status|state) is the column|moving (?:a|the|its) card|'
-     r'moves? (?:a|the|its) card (?:to|into|out of)|board\'s `?Backlog`? column|'
-     r'Status Options|status-field-(?:name|id)',
-     'an issue\'s state held in a board column, which nothing reads or writes '
-     'any more: the `Stage` issue field is the state'),
     (r'status[-:_](?:in-progress|blocked|parked|non-code|in-review|needs-attention)|'
      r'\bneeds-refinement\b|\bhuman-required\b|\bbrowser-agent\b|priority[-:](?:critical|high|medium|low)',
      'a lifecycle, scope or priority label that decided something and no '
@@ -3288,9 +3279,9 @@ def finished_container_findings(containers, path='ClaudeProject.md'):
 
 # ── stage drift ──────────────────────────────────────────────────────────────
 # An issue whose `Stage` says it is available while GitHub says somebody has it.
-# Two ways to get one. A run on a version before 12.0.0 moved a board card and
-# never wrote the field, which on CadenceReader left four issues reading
-# `Backlog` while their cards sat in In Progress and In Review. And a `Stage`
+# Two ways to get one. A run on a version before 12.0.0 never wrote the field,
+# which on CadenceReader left four issues reading `Backlog` while they were in
+# progress and in review. And a `Stage`
 # write can fail after its claim landed, which every writer reports and none
 # retries. Either way every view grouped by `Stage` shows the work as free.
 

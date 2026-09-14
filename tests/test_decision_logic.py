@@ -3347,25 +3347,14 @@ class TestRetiredWorkflowFindings(unittest.TestCase):
         self.assertIn('line 2', joined)
         self.assertIn('line 3', joined)
 
-    def test_state_held_in_a_board_column_is_reported(self):
-        """The whole of 12.0.0: a file telling a session to move a card sends
-        it to do work nothing reads, because the `Stage` issue field is the
-        state now."""
-        for line in ('Run a board-move to In Progress.',
+    def test_how_a_project_describes_a_board_is_not_looked_at(self):
+        """Nothing reads or writes a board, so preflight has no business with
+        what a project's instructions say about one."""
+        for line in ("An issue's status is the column its card sits in.",
                      'Move the card to Blocked.',
-                     'The board column is the state.',
-                     'Record the ids under Status Options.',
-                     'Set status-field-name to Status.',
-                     # CadenceReader's 11.x `ClaudeProject.md`, which the
-                     # patterns above let through.
-                     "Neither is a label any more. An issue's status is the column its card",
-                     'edge, or an ownership this run cannot satisfy. Moving a card out of',
-                     'authoritative and the board mirrors it by moving the card to `Done`.',
-                     "The pool is the board's `Backlog` column, and a card there is"):
-            findings = wf_core.instruction_findings(
-                {'CLAUDE.md': 'Intro.\n%s\n' % line})
-            self.assertEqual(_checks(findings), ['instructions-retired'], line)
-            self.assertIn('`Stage`', findings[0]['detail'] + findings[0]['fix'])
+                     'Record the ids under Status Options.'):
+            self.assertEqual(wf_core.instruction_findings(
+                {'CLAUDE.md': 'Intro.\n%s\n' % line}), [], line)
 
     def test_a_current_instruction_file_is_clean(self):
         self.assertEqual(wf_core.instruction_findings({
@@ -3577,9 +3566,8 @@ class TestFinishedContainers(unittest.TestCase):
 class TestStageDrift(unittest.TestCase):
     """A `Stage` that says an issue is available after the work on it started.
 
-    Found on CadenceReader: a bulk run on 11.3.0 moved four board cards to In
-    Progress and In Review and never wrote `Stage`, so every issue still read
-    `Backlog`.
+    Found on CadenceReader: a bulk run on 11.3.0 never wrote `Stage`, so four
+    issues in progress and in review still read `Backlog`.
     """
 
     def test_a_ready_pull_request_puts_a_backlog_issue_in_review(self):
