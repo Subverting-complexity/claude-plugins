@@ -7,6 +7,29 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## local-workflow 2.16.0
+
+**`feature-discovery` and the story template describe stages, not board columns.** The instructions for filing a set of stories through github-workflow now say that `issue-apply` writes each issue's `Stage` — `Non-code` for work a person or a browser agent owns, `Blocked` for an open edge, `Backlog` otherwise, and `Needs refinement` from `"state": "refinement"` — and that nothing moves a card. Same behaviour on this plugin's own side; it is the other plugin's contract that changed.
+
+## github-workflow 12.0.0
+
+**An issue's state is the org's `Stage` field, and nothing writes to a project board.** Every transition that moved a card now writes one single-select issue field: `In Progress` at the claim, `In Review` when the pull request opens, `Done` at the merge, `Blocked` while a blocked-by edge is open, `Non-code` when `Ownership` is a person or a browser agent, and `Backlog` when a sweep releases the issue. The pick pool is every open, unassigned issue whose `Stage` is blank or `Backlog`, read from the repository rather than from a board.
+
+Three things this fixes, each of which cost work on real backlogs: an issue with no card had no state and could not be picked at all; a board past its item limit could not be read, so a full backlog reported as empty; and an issue on two boards had two states. A board is now a view — group it by `Stage` and it shows what every command already agrees on.
+
+**Migrating.** The `Stage` field is required, and it is created in the org settings (Planning → Issue fields), not through the API, so `wf preflight` reports it rather than repairing it:
+
+1. Create `Stage` as a single-select org issue field with the options `Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention` and `Done`, and pin it to every enabled issue type.
+2. Set `Stage` on the issues that are in a state worth keeping — anything in progress, in review, blocked, parked or awaiting refinement. Everything else can be left blank: blank means available.
+3. Delete the `status-field-name`, `status-field-id` and `### Status Options` rows from `ClaudeProject.md`. `## Project Board` is now optional and informational.
+4. Re-point each board's view at `Stage` if you want the board to keep showing the work.
+
+**`wf board-move` is gone; `wf stage-set {number} --stage stage-in-review` replaces it.** It accepts a purpose key or the option's own name, always exits 0, and reports `set` and `reason`.
+
+**Preflight drops five checks and gains two.** `board-lane`, `board-column`, `board-orphan`, `board-unset` and `board-retired` are gone, along with their repairs, because none of them describes a way an issue can now be invisible. `stage-absent` and `stage-options` replace them, and both are critical: without the field, or without an option, a transition fails at GitHub and the issue keeps the state it had. `Stage` is checked for pinning beside `Priority`, `Effort` and `Ownership`.
+
+**Result keys renamed.** `board_column` → `stage`, `board_column_kept` → `stage_kept`, `board_moved` → `stage_set`, `board_message` → `stage_message`, and `candidates --parent` entries carry `stage` instead of `column`.
+
 ## github-workflow 11.3.0 and local-workflow 2.15.0
 
 **New shared `grill` skill, and every interview now runs through it.** `/github-workflow:grill` and `/local-workflow:grill` question a plan until each open question is answered or deferred with a reason: they look for where the plan will break before asking, take the hardest topic first, lead every question with a recommendation, and ask bounded questions through `AskUserQuestion` pop-ups. With nobody present to answer, the grill never guesses: it records the open questions and, under github-workflow, moves the issue's card to Needs refinement.

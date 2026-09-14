@@ -182,7 +182,7 @@ An organisation owner must install the Cloudflare GitHub App on the `Subverting-
 - A push to `main` triggers a Cloudflare deployment.
 ```
 
-The three go together: `[Manual]` in the title, `Ownership` set to `Human`, and a `## Manual step` section saying what a person must do and why. `issue-apply` puts the card in the Non-code column from the field.
+The three go together: `[Manual]` in the title, `Ownership` set to `Human`, and a `## Manual step` section saying what a person must do and why. `issue-apply` sets its stage to `Non-code` from the field.
 
 ---
 

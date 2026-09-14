@@ -48,9 +48,9 @@ Then settle the three field values every issue must carry. They are written in S
 - **`Effort`** — **Low** for a targeted fix in a few files, **Medium** for moderate scope with some investigation, **High** for broad impact, architectural change or significant unknowns.
 - **`Ownership`** — **Code agent** unless the fix needs a browser (**Browser agent**) or a person (**Human**). This is what keeps work a code agent cannot finish out of the pool. When the report covers both kinds of work, file two issues rather than choosing one owner for both halves: `../skills/writing-github-issues/SKILL.md` → **Scope: one issue, one party**.
 
-**No label carries any of this.** There is no priority label, no type label and no state label to choose — `wf issue-apply` writes the fields, sets the native issue type from `kind`, and places the card. The only label to pass is `claude-authored`, the provenance marker.
+**No label carries any of this.** There is no priority label, no type label and no state label to choose — `wf issue-apply` writes the fields, sets the native issue type from `kind`, and writes the stage. The only label to pass is `claude-authored`, the provenance marker.
 
-An issue too vague to implement without a refinement session is not filed into the pool: file it with `"state": "refinement"` on the spec entry, which lands the card in Needs refinement instead of Backlog and is what keeps it out.
+An issue too vague to implement without a refinement session is not filed into the pool: file it with `"state": "refinement"` on the spec entry, which sets its stage to `Needs refinement` instead of `Backlog` and is what keeps it out.
 
 ### 4. Detect current milestone
 
@@ -102,7 +102,7 @@ The exceptions are `[Manual] `, for an issue a person has to do, and `[Browser] 
 
 **The labels carry no type, no priority and no state.** `kind` supplies the native issue type and the `Classification` value together, and the three required fields carry the rest. `wf issue-apply` drops any retired label in the list. Pass `claude-authored` and nothing else.
 
-**You do not choose the lane.** `issue-apply` decides it from the issue's own fields and places the card itself, in this order: `Ownership` of `Human` or `Browser agent` goes to Non-code; an explicit `"state"` on the spec entry (`backlog`, `refinement` or `parked`) goes to that lane; an `Ownership` that is missing or unrecognised goes to Needs refinement, because nothing can route it; an open blocked-by edge goes to Blocked; everything else goes to Backlog.
+**You do not choose the stage.** `issue-apply` decides it from the issue's own fields and writes it itself, in this order: `Ownership` of `Human` or `Browser agent` goes to Non-code; an explicit `"state"` on the spec entry (`backlog`, `refinement` or `parked`) goes to that stage; an `Ownership` that is missing or unrecognised goes to Needs refinement, because nothing can route it; an open blocked-by edge goes to Blocked; everything else goes to Backlog.
 
 **Leave the assignee blank.** The spec has no assignee key, and you must not follow up with `gh issue edit --add-assignee`. Creating an issue is never an act of claiming it: new issues must enter the unassigned pool so `execute` (which queries `--assignee ""`) can select them. Assignment happens only at claim time (`execute` Acquire).
 
@@ -135,12 +135,12 @@ Do not narrate how you found the problem, and do not add a section that would be
 
 `issue-apply` reads the created issue back in the same request and reports any mismatch, so there is nothing to check by hand when it exits 0. Only if it reported a mismatch on the body, apply the corruption test and retry in `templates/body-file-write.md` (**Validate** + **Retry**). The `Closes #N` clause is PR-only and does not apply to an issue body.
 
-### 6b. The board placement is already done
+### 6b. The stage is already written
 
-`issue-apply` places every issue it touches on the board itself, in the column the ladder above names. There is no board step to run by hand, and no column to choose: the fields decide it, in one place, for created and updated issues alike.
+`issue-apply` writes the `Stage` of every issue it touches itself, to the stage the ladder above names. There is no stage step to run by hand, and no stage to choose: the fields decide it, in one place, for created and updated issues alike.
 
-Read `board_column` and `board_moved` from the command's output and report them. A `board_moved` of `false` carries a `board_message` saying why. The issue exists either way, so this does not undo the filing, but the column **is** the issue's state — a card that did not move is work nothing can see — so report it as an issue filed without a state rather than as a clean filing.
+Read `stage` and `stage_set` from the command's output and report them. A `stage_set` of `false` carries a `stage_message` saying why. The issue exists either way, so this does not undo the filing, but the stage **is** the issue's state, so report a failed write loudly ("Stage update failed: {reason}. Continuing.") rather than as a clean filing.
 
 ### 7. Report
 
-Display the created issue by number **and** title together (e.g. `#42 Fix login crash`, never the number alone) plus its URL, whether it blocks the current story or is deferred, and its board column (if placed).
+Display the created issue by number **and** title together (e.g. `#42 Fix login crash`, never the number alone) plus its URL, whether it blocks the current story or is deferred, and its stage.

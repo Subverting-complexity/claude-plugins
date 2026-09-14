@@ -14,7 +14,7 @@ depends-on:
 argument-hint: '[issue# issue# ... | --parent N] [--mode feature|maintenance] [--size N] [--no-merge] [--bypass-ci]'
 arguments:
   - name: story_numbers
-    description: 'Optional list of issue numbers to build together, e.g. "41 43 47". Naming them is the precise way to choose the set. If omitted, the Backlog pool is read and a related group is chosen from it deliberately.'
+    description: 'Optional list of issue numbers to build together, e.g. "41 43 47". Naming them is the precise way to choose the set. If omitted, the pick pool is read and a related group is chosen from it deliberately.'
   - name: parent
     description: 'An Epic or Feature number. The set is chosen from the stories under it: one Feature per run, only stories a code agent may take. Cannot be combined with story numbers.'
   - name: mode
@@ -72,7 +72,7 @@ test -f .claude/preflight-passed.txt && echo "PREFLIGHT_ALREADY_PASSED"
 
 ## Project configuration (auto-loaded)
 
-This emits a projection of `ClaudeProject.md`: the configuration the pick, plan and build window needs, dropping the heavy sections needed only later. When a later phase resolves the **board** or the **org issue fields**, read the omitted `## Project Board` or `## Issue Types & Fields` section straight from `ClaudeProject.md` then.
+This emits a projection of `ClaudeProject.md`: the configuration the pick, plan and build window needs, dropping the heavy sections needed only later. When a later phase resolves the **org issue fields**, `Stage` included, read the omitted `## Issue Types & Fields` section straight from `ClaudeProject.md` then.
 
 ```!
 if [ -f .claude/projected-config.md ] && [ .claude/projected-config.md -nt ClaudeProject.md ] 2>/dev/null; then
@@ -122,11 +122,11 @@ Stay under ~150k tokens for the whole set, and treat that as the constraint that
 - **The pull request only ever closes stories it actually implements.** If the budget runs out with stories unbuilt, release those claims back to the backlog and open the PR for what was built. Never write `Closes #N` for a story this run did not finish.
 - **One set, one session.** Do not pick a second set after finishing.
 - **Leave room for the review phases, and size the set so they fit.** Phases 8 and 9 hand the diff to a separate context, so here they cost the review reference, the merge mechanics, the findings returned and the fixes you apply — plus, when no agent can be spawned, the whole code-review hot path inline. One reviewer rather than two, and a re-review only when the rework earns one, is what keeps that affordable; stop short of the cap anyway when the stories are not small, because running out of budget before the review strands every story in the set at once.
-- **60-minute timeout.** Record the start time (`date +%s`); before each story and each phase, check the elapsed time. Past 60 minutes: commit and push, release the claims of the unbuilt stories, then run Phase 7 for a **real** pull request (never a draft) covering the built ones and carry on into Phases 8 to 10. If nothing is shippable, leave the branch pushed, move every claimed issue to `col-attention` with a comment listing what remains, file follow-ups, and run **Exit cleanup**.
+- **60-minute timeout.** Record the start time (`date +%s`); before each story and each phase, check the elapsed time. Past 60 minutes: commit and push, release the claims of the unbuilt stories, then run Phase 7 for a **real** pull request (never a draft) covering the built ones and carry on into Phases 8 to 10. If nothing is shippable, leave the branch pushed, set every claimed issue to `stage-attention` (`wf stage-set {number} --stage stage-attention`) with a comment listing what remains, file follow-ups, and run **Exit cleanup**.
 
 ## API rate limiting
 
-Before a batch of `gh` calls, check the remaining quota (`gh api rate_limit --jq '.rate.remaining'`). If it is below **100**, pause: commit and push current work, move every claimed issue to `col-attention` with a comment noting the pause, run **Exit cleanup**, then exit. **Once the pull request is open (Phase 8 onward)** leave the cards in In Review and note the pause on the PR instead, so the board and the PR's review state stay in agreement. Do not retry rate-limited requests in a loop.
+Before a batch of `gh` calls, check the remaining quota (`gh api rate_limit --jq '.rate.remaining'`). If it is below **100**, pause: commit and push current work, set every claimed issue to `stage-attention` (`wf stage-set {number} --stage stage-attention`) with a comment noting the pause, run **Exit cleanup**, then exit. **Once the pull request is open (Phase 8 onward)** leave the stages at `In Review` and note the pause on the PR instead, so the stages and the PR's review state stay in agreement. Do not retry rate-limited requests in a loop.
 
 ## Mode selection
 
@@ -160,10 +160,10 @@ The set is **chosen**, never taken off the top of the backlog. Priority order de
 **Read `references/set-selection.md` and follow it.** It covers three paths. Bare `wf` below is `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh"` (invocations there) — never a system CLI to `which`/`find` for.
 
 - **Named stories** (`$ARGUMENTS.story_numbers` given, e.g. `/github-workflow:bulk-execute 41 43 47`) — the user has already made the choice. Validate each named story, check none is already in flight, and claim them all. Relatedness is not re-litigated; a named story is only ever dropped when it cannot be worked at all.
-- **No numbers given** — read the Backlog pool with `wf candidates --mode {mode}`, which returns the same filtered, priority-sorted pool `execute` would pick from and claims nothing. Group it into genuinely related stories, choose one group against the relatedness rules, and only then claim.
+- **No numbers given** — read the pick pool with `wf candidates --mode {mode}`, which returns the same filtered, priority-sorted pool `execute` would pick from and claims nothing. Group it into genuinely related stories, choose one group against the relatedness rules, and only then claim.
 - **A parent given** (`--parent N`, an Epic or Feature) — `wf candidates --parent N` returns the set the tree under it offers: one Feature's stories, only those a code agent may take, plus any Blocked story waiting only on another story in the set. Nothing is asked; what was left out is reported.
 
-Either way, **every story in the set gets a real atomic claim** before any code is written — the `refs/claims/issue-{number}` ref, plus the `@me` assignment and the board move to In Progress. A story built without its own claim is a story another agent can pick up underneath you.
+Either way, **every story in the set gets a real atomic claim** before any code is written — the `refs/claims/issue-{number}` ref, plus the `@me` assignment and the `In Progress` stage. A story built without its own claim is a story another agent can pick up underneath you.
 
 Phase 1 ends in one of three states:
 
@@ -173,7 +173,7 @@ Phase 1 ends in one of three states:
 
 ## Phase 2 — Start
 
-1. **Confirm the claims.** Every story in the set was claimed in Phase 1, with `@me` assigned and the card moved to In Progress. Re-run the claim (`wf claim --issue {number}`) for a story only if Phase 1's claim state was lost to compaction — its re-entry check makes a still-held claim a no-op. Do not issue a bare `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
+1. **Confirm the claims.** Every story in the set was claimed in Phase 1, with `@me` assigned and the stage set to `In Progress`. Re-run the claim (`wf claim --issue {number}`) for a story only if Phase 1's claim state was lost to compaction — its re-entry check makes a still-held claim a no-op. Do not issue a bare `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
 
 2. **Start clean.** Run the **Start clean** check in `templates/worktree-hygiene.md` before branching. A worktree provisioned dirty is inherited junk: reset it to a pristine baseline and report it, so it is never mistaken for this session's work.
 
@@ -186,7 +186,7 @@ Phase 1 ends in one of three states:
 
    Record the branch name in `.claude/bulk-set.json`.
 
-Board failures are loud but not fatal: report them ("Board update failed: {error}. Continuing.") and proceed. There is no no-board case to handle — preflight fails a project without one before this command runs, because the column is the issue's state and the Backlog column is the pool the set was chosen from.
+Stage failures are loud but not fatal: report them ("Stage update failed: {reason}. Continuing.") and proceed. A project board plays no part: preflight fails a project whose org has no `Stage` field before this command runs, because the stage is the issue's state and the pool the set was chosen from.
 
 ## Phase 3 — Plan the set as one change
 
@@ -249,7 +249,7 @@ Still failing after that, **stop**: on a per-story check do not start the next s
 
 ## Phase 7 — Finish
 
-When every story in the set is built, gated and committed, **read `references/bulk-finish.md`** and follow it end-to-end: push, per-story duplicate detection, one pull request closing every built story, PR labels, the label change and board move for each issue, claim release, and the progress note.
+When every story in the set is built, gated and committed, **read `references/bulk-finish.md`** and follow it end-to-end: push, per-story duplicate detection, one pull request closing every built story, PR labels, the `In Review` stage for each issue, claim release, and the progress note.
 
 **Do not review your own diff anywhere in this run.** You share every assumption the code was built on, so Phase 8 gets the verdict from a context that never saw the build. That decides whose judgement counts, not whether the run continues: you still spawn the reviewer, own what it returns, and hand the PR to nobody. The one exception is Phase 8's last-resort fallback, which is disclosed rather than silent.
 
@@ -284,5 +284,5 @@ Read `skills/execute/references/escape-hatches.md` when a run leaves the happy p
 
 - **Blocked.** One story blocking does not block the run. Drop that story from the set (`references/set-selection.md`, **Dropping a story**, then `/github-workflow:block-story` for it) and carry on with the rest. Block the whole run only when the set drops below one buildable story and no code exists yet.
 - **Dependency.** A dependency *inside* the set is the ordinary case here and needs no hatch: the dependency is built first, which Phase 1 already ordered. A dependency on an open issue *outside* the set drops that story from the set. Never chain a bulk branch off another feature branch: the pull request would then close several stories against a base that may never merge.
-- **Too large.** Shrink the set, do not slice a story. Drop stories until what remains fits, and leave the dropped ones in the Backlog column for their own run.
-- **Failure reporting.** Comment the failure on **every** claimed issue before exiting, and move each card to Needs attention. Once the pull request is open, comment on the PR instead and leave the cards in In Review.
+- **Too large.** Shrink the set, do not slice a story. Drop stories until what remains fits, and leave the dropped ones in the pool for their own run.
+- **Failure reporting.** Comment the failure on **every** claimed issue before exiting, and set each one's stage to `Needs attention`. Once the pull request is open, comment on the PR instead and leave the stages at `In Review`.

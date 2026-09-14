@@ -8,15 +8,15 @@ A single execute run loads a large instruction surface before any feature code i
 
 ## Why the 45-minute timeout check
 
-The harness can kill a long-running session mid-work. Checking elapsed time before each phase and, past ~45 minutes, getting to a committable state and exiting cleanly means the harness never kills the session with nothing saved. A partial PR with clear "remaining work" notes is worth more than an abandoned session with no artifact — which is why the timeout path ships a real PR when the work is shippable, and otherwise moves the card to Needs attention with a comment rather than opening a PR for incomplete work.
+The harness can kill a long-running session mid-work. Checking elapsed time before each phase and, past ~45 minutes, getting to a committable state and exiting cleanly means the harness never kills the session with nothing saved. A partial PR with clear "remaining work" notes is worth more than an abandoned session with no artifact — which is why the timeout path ships a real PR when the work is shippable, and otherwise sets the stage to `Needs attention` with a comment rather than opening a PR for incomplete work.
 
 ## Why the rate-limit pause
 
-GitHub's authenticated API allows 5,000 requests/hour. A long autonomous session accumulates many `gh` calls, and exhausting the quota mid-run leaves work in an unknown state. Pausing when remaining quota drops below ~100 — commit, push, move the card to Needs attention, exit — lets the next session resume from the pushed branch. Retrying rate-limited requests in a loop only deepens the hole, so the rule is to stop, not retry.
+GitHub's authenticated API allows 5,000 requests/hour. A long autonomous session accumulates many `gh` calls, and exhausting the quota mid-run leaves work in an unknown state. Pausing when remaining quota drops below ~100 — commit, push, set the stage to `Needs attention`, exit — lets the next session resume from the pushed branch. Retrying rate-limited requests in a loop only deepens the hole, so the rule is to stop, not retry.
 
 ## Why no draft PRs
 
-Every shippable exit opens a **real** PR, never a draft. A draft signals "not ready to look at," but the workflow's contract is that an opened PR is a finished, reviewable slice — even a partial slice is complete and self-contained, with follow-up issues filed for the remainder. Incomplete work that is *not* shippable does not get a PR at all; it stays on the pushed branch with the card in Needs attention.
+Every shippable exit opens a **real** PR, never a draft. A draft signals "not ready to look at," but the workflow's contract is that an opened PR is a finished, reviewable slice — even a partial slice is complete and self-contained, with follow-up issues filed for the remainder. Incomplete work that is *not* shippable does not get a PR at all; it stays on the pushed branch with the stage at `Needs attention`.
 
 ## Why one reviewer, and why the severity rubric
 
@@ -44,10 +44,10 @@ The order matters too. The fallback tries a general-purpose subagent before givi
 
 Filing was once the answer to everything a review round turned up. Phase 9 split findings into "objectively correct answer" and "needs human judgment" and said nothing about where the problem lived, so a non-blocking defect in the run's own diff was as easy to file as to fix. That reads as diligent — nothing is dropped, everything is tracked — and it is the wrong trade in three ways.
 
-It merges the defect. An issue on the board is not a fix; the pull request still lands with the problem in it, and the board carries a promise that somebody will come back. Multiply that by every run and the backlog fills with a workflow's own leftovers, each one costing another pick, branch, review and merge to settle what one edit on an already-checked-out branch would have settled.
+It merges the defect. An issue in the backlog is not a fix; the pull request still lands with the problem in it, and the backlog carries a promise that somebody will come back. Multiply that by every run and the backlog fills with a workflow's own leftovers, each one costing another pick, branch, review and merge to settle what one edit on an already-checked-out branch would have settled.
 
 It is also the cheapest possible moment to fix. The branch is checked out, the context that wrote the code is live, the reviewer has just read it, and the pull request has not merged. Every one of those advantages is gone by the time a filed issue is picked up.
 
 The two exceptions are narrow for the same reason. A question only a person can answer cannot be fixed by anyone in this run whatever the scope, so it is filed and the pull request is held open on that verdict rather than merged over it. Scope deliberately left out of a too-large story was never a defect: it is the remainder of the work, and filing it is how the next run finds it.
 
-Out-of-scope problems keep going to the board because fixing them here would be the opposite mistake. A pre-existing bug repaired mid-review widens a diff the reviewer has already read, and the wider the diff the less the review means.
+Out-of-scope problems keep going to the backlog because fixing them here would be the opposite mistake. A pre-existing bug repaired mid-review widens a diff the reviewer has already read, and the wider the diff the less the review means.

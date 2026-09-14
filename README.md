@@ -4,7 +4,7 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace containing de
 
 | Plugin | What it's for |
 |--------|----------------|
-| **`github-workflow`** | End-to-end GitHub development: pick a story from your backlog, plan the architecture, build it, test it, open a PR, and have that PR reviewed independently by agents in a fresh context — then merge it, on projects that opt into unattended merging. Board and label automation throughout. |
+| **`github-workflow`** | End-to-end GitHub development: pick a story from your backlog, plan the architecture, build it, test it, open a PR, and have that PR reviewed independently by agents in a fresh context — then merge it, on projects that opt into unattended merging. Issue state and label automation throughout. |
 | **`local-workflow`** | The same structured engineering methodology, but project-agnostic and with **no GitHub or platform dependencies**. Plan, build, verify, and commit locally. |
 
 Both plugins share a single canonical set of skills (architecture design, feature discovery, structured coding, code review, security audit, and more), so the two stay consistent. See [Repository layout](#repository-layout) below.

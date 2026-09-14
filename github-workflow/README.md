@@ -54,7 +54,7 @@ github-workflow/
 Run `/github-workflow:setup` to onboard your project. The wizard:
 
 1. Auto-detects your org, repo, default branch, and package manager.
-2. Discovers your project board and fetches field IDs automatically.
+2. Checks that the org defines the `Stage` issue field with its nine options, and records your project board if you have one.
 3. Checks for milestones to determine sprint vs flat backlog mode.
 4. Asks for your label scheme, branch convention, and quality gate.
 5. Generates `ClaudeProject.md` (project settings) and `CLAUDE.md` (project rules) at your repo root.
@@ -68,17 +68,17 @@ Tools the plugin expects on the host machine:
 
 | Tool | Needed for | Notes |
 | ---- | ---------- | ----- |
-| `gh` (GitHub CLI) | every issue, PR, label, and board operation | Must be authenticated: `gh auth login`. This is a **hard dependency by design** — the plugin has no REST-API fallback. |
+| `gh` (GitHub CLI) | every issue, PR, label, and field operation | Must be authenticated: `gh auth login`. This is a **hard dependency by design** — the plugin has no REST-API fallback. |
 | `git` | branching, claims, worktrees | Any recent version. |
-| Python ≥ 3.8 | the `wf` CLI (`scripts/wf.py`) | **Required** for `execute`, `bulk-execute` and issue creation. Selection, claiming, board moves, handoff and issue classification are all `wf` commands with no markdown fallback — without Python those commands fail naming the missing prerequisite. `code-review` still has its own PR-selection fallback. |
+| Python ≥ 3.8 | the `wf` CLI (`scripts/wf.py`) | **Required** for `execute`, `bulk-execute` and issue creation. Selection, claiming, stage writes, handoff and issue classification are all `wf` commands with no markdown fallback — without Python those commands fail naming the missing prerequisite. `code-review` still has its own PR-selection fallback. |
 
 The plugin also reads two files from the host project:
 
 **`ClaudeProject.md`** (required) — The single source of truth for all project-specific values. Every command and the skill read this file. Full format specification: [`docs/claudeproject-spec.md`](../docs/claudeproject-spec.md).
 
-Required sections: Identity, Package Manager, Quality Gate, Branch Convention, Label Map, Story Template, Issue Types & Fields, Project Board.
+Required sections: Identity, Package Manager, Quality Gate, Branch Convention, Label Map, Story Template, Issue Types & Fields.
 
-Optional sections: Reference Docs.
+Optional sections: Project Board, Reference Docs.
 
 **`CLAUDE.md`** (required) — Project rules, build principles, and session hygiene.
 
@@ -103,13 +103,13 @@ The plugin supports two backlog styles, auto-detected from milestones:
 
 - No milestones (or milestones without due dates).
 - Issues are picked by priority, then effort, then issue number.
-- The board's **Backlog** column is the pool: an unassigned issue sitting in it is available.
+- The pool is the open, unassigned issues whose `Stage` is blank or `Backlog`.
 
 Both modes use the same commands and skill — the pick logic adapts.
 
 ## Label map
 
-**Labels decide nothing.** State is the board column, and priority, effort and ownership are org-level issue fields — so there is one issue label left, the `claude-authored` provenance marker, plus the review-state labels a pull request carries. The map exists so a repository can call that marker whatever it already calls it:
+**Labels decide nothing.** State is the `Stage` field, and priority, effort and ownership are org-level issue fields — so there is one issue label left, the `claude-authored` provenance marker, plus the review-state labels a pull request carries. The map exists so a repository can call that marker whatever it already calls it:
 
 ```markdown
 | Purpose          | Label              |
@@ -119,39 +119,31 @@ Both modes use the same commands and skill — the pick logic adapts.
 
 A map row naming a label the workflow retired (`status-*`, `priority-*`, `needs-refinement`, `claude-ready`) is reported by `wf config-audit` as `label-deprecated`. Delete the row; the labels themselves can stay on old issues.
 
-## Project board
+## Stage and boards
 
-A project board is required. Which column a card sits in is the issue's state, and the Backlog column is the pick pool, so there is no useful behaviour left for a project that has no board — preflight fails the run rather than degrading quietly. The columns and what each means are below.
+An issue's state is its org `Stage` field, and nowhere else. There is no label to keep in step and no board column is read. The nine stages (Backlog, In Progress, In Review, Blocked, Non-code, Needs refinement, Parked, Needs attention, Done) and what each one means are in one place, `templates/default-labels.md` → Stages. They resolve by purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, …).
 
-Where the plugin does allow a best-effort step, the rule is that **"best-effort" never means "skip a configured feature."** It applies to one case: **inherently idempotent cleanup** — deleting a claim ref that may already be gone, or removing a label that may not be present. The "failure" is a no-op, not a swallowed error.
-
-When a feature **is** configured, its steps fail loudly: a board, label, or milestone operation that errors is reported to the user, never swallowed. The workflow continues past the failed step, but the failure is surfaced.
-
-The setup wizard auto-fetches:
-
-- Project number and node ID
-- Field IDs for Status, Start Date, End Date
-- Option IDs for each status column (see the canonical set below)
-
-### The board column *is* the state
-
-An issue's state is which column its card sits in, and nowhere else. There is no label to keep in step, so there is nothing for the board to drift from. The nine columns — Backlog, In Progress, In Review, Blocked, Non-code, Needs refinement, Parked, Needs attention, Done — and what each one means are in one place, `templates/default-labels.md` → Board Columns. Columns resolve by purpose key (`col-backlog`, `col-in-progress`, `col-in-review`, …) exactly as labels do, so a project that renamed a lane only edits `ClaudeProject.md`.
-
-| The issue is | Column |
-| ------------ | ------ |
-| available to pick | Backlog |
+| The issue is | Stage |
+| ------------ | ----- |
+| available to pick | Backlog, or blank |
 | claimed by an agent | In Progress |
 | waiting on a pull request | In Review |
-| pointing at an open blocked-by edge | Blocked |
+| waiting on an open blocked-by edge, or on something a person recorded | Blocked |
 | owned by a person or a browser agent | Non-code |
 | specced too thinly to start | Needs refinement |
 | deliberately set aside | Parked |
 | stopped part-way and needing a person | Needs attention |
 | closed | Done |
 
-**A board is required, and so is its Backlog column.** That column *is* the pick pool: `pick` and `candidates` read it and nothing else, so an issue with no card on the board cannot be selected — which is why every issue the plugin creates or updates is placed. The setup wizard creates any missing column (via `updateProjectV2Field`); preflight fails the run when the board or its Backlog column is absent, and warns for every other missing lane.
+**The `Stage` field is required, with all nine options.** The pick pool is the open, unassigned issues whose `Stage` is blank or `Backlog`, read from the repository's issues, so an issue with no board card is still pickable. Preflight fails the run when the org has no `Stage` field or when it lacks an option. Creating the field is a manual step in the GitHub UI: org settings → *Planning* → *Issue fields*.
 
-Approval is structural too. A person approves work by moving its card into Backlog and withholds approval by leaving it in Needs refinement or Parked — there is no `claude-ready` label and no gate setting to turn on.
+**Boards are for people to look at.** Set each board view's "Column by" to `Stage` and the board shows every issue's state. GitHub's built-in "Auto-add to project" workflow and the scheduled `board-sync` job keep cards on boards; agents never move cards. A `## Project Board` section in `ClaudeProject.md` is optional and informational.
+
+Where the plugin does allow a best-effort step, the rule is that **"best-effort" never means "skip a configured feature."** It applies to one case: **inherently idempotent cleanup** — deleting a claim ref that may already be gone, or removing a label that may not be present. The "failure" is a no-op, not a swallowed error.
+
+When a feature **is** configured, its steps fail loudly: a field, label, or milestone operation that errors is reported to the user, never swallowed. The workflow continues past the failed step, but the failure is surfaced.
+
+Approval is structural too. A person approves work by setting its stage to `Backlog` or leaving it blank, and withholds approval by setting `Needs refinement` or `Parked`. There is no `claude-ready` label and no gate setting to turn on.
 
 ## Auto-merge
 
@@ -160,7 +152,7 @@ Both entry points can merge a pull request, and **one setting decides whether ei
 | Setting | `/github-workflow:execute` ends at | `/github-workflow:code-review` ends at |
 | ------- | ---------------------------------- | -------------------------------------- |
 | `disabled` (default) | An approved PR, reviewed and waiting for you | An approved PR |
-| `enabled` | A merged PR, with its issues closed and the board moved to Done | A merged PR |
+| `enabled` | A merged PR, with its issues closed and set to Done | A merged PR |
 
 Keeping it to one switch is deliberate. The alternative — merging by default from `execute` and only on request from `code-review` — means the answer to "is this repository going to merge something without me" depends on which command happened to reach the PR, which is not a property anyone can hold in their head. Turn it on in `/github-workflow:setup`, which also runs the hardening step that makes "merge only after CI passes" actually enforceable.
 
@@ -176,7 +168,7 @@ Two ways to suppress a merge on a project that has it on: pass `--no-merge` for 
 
 Each agent follows least privilege — only the tools it needs. The builder is the default agent when the plugin is active.
 
-Unlike the skills, the agents are **plugin-specific and not shared or synced** from `_shared-skills/`: each agent's tool allowlist is least-privilege-scoped to this GitHub workflow (specific `gh` and `git` operations, board mutations), so the definitions would not transfer to a plugin with a different surface.
+Unlike the skills, the agents are **plugin-specific and not shared or synced** from `_shared-skills/`: each agent's tool allowlist is least-privilege-scoped to this GitHub workflow (specific `gh` and `git` operations, issue field writes), so the definitions would not transfer to a plugin with a different surface.
 
 ## Skills
 

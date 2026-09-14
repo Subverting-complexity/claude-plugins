@@ -109,10 +109,10 @@ This plugin is the counterpart to `github-workflow`. The key differences:
 | GitHub required?  | No                                 | Yes                                    |
 | Agents            | None (uses default)                | Builder, Reviewer, DocWriter           |
 | Commands          | None (skill-driven)                | 4 (`setup`, `guide`, `report-issue`, `block-story`) |
-| Board integration | None                               | Project board updates                  |
+| Issue state       | None                               | `Stage` field on each issue            |
 | Not in the other  | `build`, `mobile-audit`            | `execute`, `bulk-execute`, `writing-github-issues` |
 
-`code-review` and `preflight` exist in both under the same name but are different skills, not synced copies: this plugin reviews a diff and checks local config, github-workflow manages a PR's whole lifecycle and validates board, label and auth setup.
+`code-review` and `preflight` exist in both under the same name but are different skills, not synced copies: this plugin reviews a diff and checks local config, github-workflow manages a PR's whole lifecycle and validates issue field, label and auth setup.
 
 Everything else — fifteen skills, listed in `_shared-skills/MANIFEST.md` — is shared and identical in both. In `github-workflow`, `ecosystem-setup` also backs the `setup` wizard's ecosystem step; here it is invoked on its own.
 

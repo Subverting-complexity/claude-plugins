@@ -96,7 +96,7 @@ This repo is instruction text plus a small amount of tooling. What that means fo
 
 ## Architecture Rules
 
-- **Purpose keys, never literal names.** Labels and board columns resolve through `templates/default-labels.md`. A hardcoded label string in a skill is a finding: it silently breaks every project that renamed that label.
+- **Purpose keys, never literal names.** Labels and stages resolve through `templates/default-labels.md`. A hardcoded label string in a skill is a finding: it silently breaks every project that renamed that label.
 - **Nothing project-specific in a skill.** Repo names, board IDs, and label names belong in `ClaudeProject.md` or this file. The skills are generic.
 - **Shared skills stay plugin-agnostic.** Anything in `_shared-skills/` deploys to both plugins, so it must not assume GitHub, a board, or an issue tracker. Use `{{PLUGIN_NAME}}` for anything plugin-specific.
 - **References are cited, not duplicated.** See the canonical-specification rule above; this is its architectural form.

@@ -53,7 +53,7 @@ Read this at Phase 7 of the `execute` workflow (quality gate passed, work commit
 
 2b. Validate the PR body — read it back and apply the corruption test and retry in `templates/body-file-write.md` (**Validate** + **Retry**). For a PR body the test also requires a `Closes #N` line for every linked issue; if any is missing, add it via `gh pr edit --body-file` before proceeding.
 
-3. **Hand the story to review** — labels, board and claim in one call:
+3. **Hand the story to review** — labels, stage and claim in one call:
 
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" handoff --pr {pr_number} --issue {number}
@@ -61,9 +61,9 @@ Read this at Phase 7 of the `execute` workflow (quality gate passed, work commit
 
    Repeat `--issue N` for every issue the PR closes. Add `--gate-failed` when `.claude/gate-failed.flag` exists, which enters review as changes-requested rather than needs-review — the PR is real work, but it is not ready to approve and the label has to say so.
 
-   The command takes the PR's review claim (`refs/claims/pr-{pr_number}`), labels the PR `claude-authored` plus the review-state entry label, moves each issue's board item to In Review, releases the issue's claim ref, and deletes the session scratch files (`.claude/plan.md`, `preflight-passed.txt`, `label-cache.json`). The review claim comes first, so the work is never held by no lock: a scheduled `/github-workflow:code-review` run that fires before Phase 8 finds the PR claimed and moves on. `pr_claimed` in the payload says whether it was taken; `lost` means another agent already holds the review, which Phase 8 step 1 handles.
+   The command takes the PR's review claim (`refs/claims/pr-{pr_number}`), labels the PR `claude-authored` plus the review-state entry label, sets each issue's `Stage` to `In Review`, releases the issue's claim ref, and deletes the session scratch files (`.claude/plan.md`, `preflight-passed.txt`, `label-cache.json`). The review claim comes first, so the work is never held by no lock: a scheduled `/github-workflow:code-review` run that fires before Phase 8 finds the PR claimed and moves on. `pr_claimed` in the payload says whether it was taken; `lost` means another agent already holds the review, which Phase 8 step 1 handles.
 
-   It **always exits 0**, because none of these is a reason to stop once the PR exists. Read the payload instead: `pr_labelled` and `review_label`, and per issue `board_moved` with a `board` reason. Report anything false — a card that did not move is worth a line, not a halt, but it does mean the issue's state still says In Progress.
+   It **always exits 0**, because none of these is a reason to stop once the PR exists. Read the payload instead: `pr_labelled` and `review_label`, and per issue `stage_set` with a `stage_message`. Report anything false loudly ("Stage update failed: {reason}. Continuing.") — it is worth a line, not a halt, but it does mean the issue's state still says `In Progress`.
 
    Releasing the claim here is deliberate. The open PR plus the assignment are the ownership markers from this point on, so holding the ref longer only risks leaking it. The issue stays assigned to @me through review.
 
@@ -75,6 +75,6 @@ Read this at Phase 7 of the `execute` workflow (quality gate passed, work commit
 
 ## Why step 5 is the one that gets skipped
 
-Steps 3 and 4 read like the end of a run: claim released, scratch files deleted, board on In Review, PR labelled `review-needs-review`. All four are housekeeping done early, and that label marks a PR **this run is about to review**, not one queued for someone else. The failure has happened — a run posts its Phase 7 summary, says the PR is waiting on code review and on CI, and offers to review and merge it if the user says the word. Nothing here asks for that. An open, unreviewed PR is an unfinished story: the run ends at Phase 10 or at an exit Phases 8 to 10 name, nowhere else.
+Steps 3 and 4 read like the end of a run: claim released, scratch files deleted, stage at `In Review`, PR labelled `review-needs-review`. All four are housekeeping done early, and that label marks a PR **this run is about to review**, not one queued for someone else. The failure has happened — a run posts its Phase 7 summary, says the PR is waiting on code review and on CI, and offers to review and merge it if the user says the word. Nothing here asks for that. An open, unreviewed PR is an unfinished story: the run ends at Phase 10 or at an exit Phases 8 to 10 name, nowhere else.
 
 **Do not review your own diff on the way there.** An earlier version did, and it was removed: this session wrote the code, so it shares every assumption the code was built on and cannot judge it, and anything it files duplicates what the Phase 8 agents file minutes later. Note the limit. The diff goes to a reviewer **you** spawn and its findings come back to **you**. Your judgement of the code is set aside, never your ownership of the run.

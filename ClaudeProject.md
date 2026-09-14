@@ -40,7 +40,7 @@ Example: `feature/27/fix-wrong-board`
 
 ## Label Map
 
-No label decides anything here. An issue's state is the board column its card is in; its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. The repository still carries `status-*`, `priority-*` and scope labels from before 10.0.0 and they are deliberately absent from this map: `wf issue-apply` takes one off any issue it writes, and deleting them outright would strip them from every issue that ever carried them. Defaults and the resolution path: `github-workflow/templates/default-labels.md`.
+No label decides anything here. An issue's state is its `Stage` field; its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. The repository still carries `status-*`, `priority-*` and scope labels from before 10.0.0 and they are deliberately absent from this map: `wf issue-apply` takes one off any issue it writes, and deleting them outright would strip them from every issue that ever carried them. Defaults and the resolution path: `github-workflow/templates/default-labels.md`.
 
 ### Claude
 
@@ -64,10 +64,11 @@ An organisation with native issue types enabled: **Bug**, **Chore**, **Epic**, *
 
 ### Field names
 
-All seven resolve to their default names.
+All eight resolve to their default names.
 
 | Purpose key          | Field name       |
 | -------------------- | ---------------- |
+| field-stage          | `Stage`          |
 | field-priority       | `Priority`       |
 | field-effort         | `Effort`         |
 | field-ownership      | `Ownership`      |
@@ -76,9 +77,9 @@ All seven resolve to their default names.
 | field-start          | `Start date`     |
 | field-target         | `Target date`    |
 
-`Classification` is a **multi-select**; the rest are single-select, date or text as `wf_core.FIELD_DATA_TYPES` records.
+`Classification` is a **multi-select**; `Stage` and the rest are single-select, date or text as `wf_core.FIELD_DATA_TYPES` records.
 
-`field-priority`, `field-effort` and `field-ownership` are **required** on every issue: they are the pool's order, its size ceiling and whether a code agent may take the issue at all, so `wf issue-apply` refuses a spec that leaves one blank. `field-type` and `field-origin` are optional — nothing selects on them, and a create that leaves one unset gets a comment on the issue saying so.
+`field-priority`, `field-effort` and `field-ownership` are **required** on every issue: they are the pool's order, its size ceiling and whether a code agent may take the issue at all, so `wf issue-apply` refuses a spec that leaves one blank. `field-stage` is the issue's state, with nine options (`Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention`, `Done`); a blank `Stage` means available, the same as `Backlog`. `field-type` and `field-origin` are optional — nothing selects on them, and a create that leaves one unset gets a comment on the issue saying so.
 
 ### Missing
 
@@ -116,34 +117,10 @@ Board: **claude-plugins** (org project #8) —
 | project-number      | `8`                              |
 | project-title       | `claude-plugins`                 |
 | project-node-id     | `PVT_kwDODj6aos4BZkaL`           |
-| status-field-name   | `Status`                         |
-| status-field-id     | `PVTSSF_lADODj6aos4BZkaLzhUiKRs` |
 | start-date-field-id | `n/a`                            |
 | end-date-field-id   | `n/a`                            |
 
-`project-title` is recorded so workflow commands can verify the stored node ID still resolves to the intended board before writing to it (see issue #27). Always confirm the live board's title matches `claude-plugins` before mutating board state.
-
-### Status Options
-
-The board carries all nine lanes. A card's column *is* the issue's state — there is no label mirroring it — and what each lane means is in `github-workflow/templates/default-labels.md` → Board Columns.
-
-`col-backlog` used to map onto the board's default "Todo" option, which is why `BOARD_COLUMN_NAMES` said "Todo" for as long as it did. The column has since been renamed to "Backlog", keeping option id `f75ad846` so nothing in it moved, and the board and the plugin now use one name for it.
-
-| Column | Purpose Key | Option ID |
-| ------ | ----------- | --------- |
-| Backlog | `col-backlog` | `f75ad846` |
-| In Progress | `col-in-progress` | `47fc9ee4` |
-| In Review | `col-in-review` | `9b47c867` |
-| Blocked | `col-blocked` | `28e51b4e` |
-| Non-code | `col-non-code` | `1803d9dc` |
-| Needs refinement | `col-refinement` | `027ccf11` |
-| Parked | `col-parked` | `b4303d05` |
-| Needs attention | `col-attention` | `0976940f` |
-| Done | `col-done` | `98236657` |
-
-**Backlog is the pool.** `pick` and `candidates` read that column and nothing else, so an issue with no card on this board cannot be selected at all — which is why `issue-apply` places every issue it touches. Everything outside Backlog is out of the pool by virtue of being somewhere else, and no label is consulted to decide it.
-
-This table is a snapshot, and `wf preflight --fix` rewrites it from the live board. A recorded id the board no longer has, and a lane the board has that this table records as `n/a`, are both warnings: `board-move` resolves a column by name at write time, so a stale snapshot costs a lookup rather than the move.
+This section is informational. The board is a view for people, with its columns grouped by `Stage`, and it is recorded here for them and for the `board-sync` job. Nothing in the workflow reads a column from it or moves a card on it.
 
 ## Reference Docs
 

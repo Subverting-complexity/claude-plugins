@@ -12,14 +12,14 @@ Requires: a story in progress with a known blocker.
 
 ## What "blocked" means
 
-An issue is **blocked** when it cannot make progress because of something outside its own control: another unfinished issue, an external decision, missing access or credentials, or an upstream fix. Blocked is **not** "I gave up" and **not** "this needs more spec" — that second case is the Needs refinement column, a different state.
+An issue is **blocked** when it cannot make progress because of something outside its own control: another unfinished issue, an external decision, missing access or credentials, or an upstream fix. Blocked is **not** "I gave up" and **not** "this needs more spec" — that second case is the `Needs refinement` stage, a different state.
 
-A blocked issue sits in the board's **Blocked** column, and that column is the whole of the state. The pool is the Backlog column, so a card that has left it is out of the pool; there is no second record to apply, and nothing that can disagree with the board about whether an issue is blocked.
+A blocked issue has its `Stage` field set to **Blocked**, and that field is the whole of the state. The pool is the open, unassigned issues whose `Stage` is blank or `Backlog`, so a `Blocked` issue is out of it; there is no second record to apply, and nothing that can disagree with the field about whether an issue is blocked.
 
 **How it becomes unblocked:**
 
-- **Automatically** — when the blocker is another issue recorded as a native blocked-by edge, `wf unblock` reads the Blocked column, finds every one of that issue's edges closed, moves the card to Backlog, and comments. The move is the release. An issue with no edge is never released this way, which is deliberate: most blocked issues are waiting on the world rather than on an issue.
-- **Manually** — for non-issue blockers (a decision, access granted), a person drags the card back to Backlog. That is the entire act: being in Backlog is what available means.
+- **Automatically** — when the blocker is another issue recorded as a native blocked-by edge, `wf unblock` reads the `Blocked` issues, finds every one of that issue's edges closed, sets its `Stage` to `Backlog`, and comments. That write is the release. A `Blocked` issue with no edge at all was set by a person and is never changed by the plugin, which is deliberate: most blocked issues are waiting on the world rather than on an issue.
+- **Manually** — for non-issue blockers (a decision, access granted), a person sets `Stage` back to `Backlog` or clears it. That is the entire act: a blank or `Backlog` stage is what available means.
 
 ## Preflight
 
@@ -32,9 +32,8 @@ Before doing anything else, invoke `/github-workflow:preflight` to verify projec
 Read `ClaudeProject.md` and extract:
 
 - `org`, `repo` from Identity
-- Project board settings
 
-The board is not optional here: the block **is** a board move, so a project with no recorded board has nowhere to put the issue. If the Project Board section is missing, say so and stop rather than commenting on an issue that stays in the pool.
+No board is needed: the block is a write to the issue's own `Stage` field.
 
 ### 2. Comment the blocker
 
@@ -62,9 +61,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/block-spec.json
 
 `blocked_by` is the **complete set** of edges, not an addition to it: the issues it names are added and any the issue already carries that the list omits are removed. So name every issue this one waits on, not just the newest, and leave the key out altogether if you only mean to leave the existing edges alone.
 
-This writes the edge but **does not** move the card, and Step 4 is still required. `issue-apply` only places a card sitting in a lane it owns — no card at all, no Status value, Backlog, Blocked or Non-code — and a story being blocked is in In Progress, which it leaves alone and reports as `board_column_kept`. That is deliberate: updating an in-flight issue must not drag it out of the lane the run put it in. Read the exit code: **0** applied it; **22** (`spec-invalid`) means the spec is wrong, so fix it; **24** (`partial`) means some of it landed, so report what did not.
+This writes the edge but **does not** change the stage, and Step 4 is still required. `issue-apply` only writes a stage it owns (blank, `Backlog`, `Blocked` or `Non-code`), and a story being blocked is `In Progress`, which it keeps and reports as `stage_kept`. That is deliberate: updating an in-flight issue must not drag it out of the stage the run gave it. Read the exit code: **0** applied it; **22** (`spec-invalid`) means the spec is wrong, so fix it; **24** (`partial`) means some of it landed, so report what did not.
 
-Skip this step entirely when the blocker is not an issue: there is no edge to write, and Step 4 moves the card either way.
+Skip this step entirely when the blocker is not an issue: there is no edge to write, and Step 4 sets the stage either way.
 
 ### 3. Release the claim and unassign
 
@@ -87,17 +86,17 @@ gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 
 The claim-ref delete is idempotent — ignore an error if the ref is already gone.
 
-### 4. Move the card to the blocked lane
+### 4. Set the stage to Blocked
 
-This is the block. There is no label to apply alongside it: the column an issue's card sits in **is** its state, and until the card leaves Backlog the issue is still in the pick pool.
+This is the block. There is no label to apply alongside it: the issue's `Stage` **is** its state, and until it leaves `Backlog` the issue is still in the pick pool.
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-blocked
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-blocked
 ```
 
-The command verifies the board's identity and resolves the column **before** it adds the card, so a column the board does not have costs one query and writes nothing. It **always exits 0** so a board problem never costs the run its work — but read `moved` and `reason`, and if the move did not happen say so plainly: the issue is still available and the next `pick` will offer it.
+It **always exits 0** so a failed write never costs the run its work, but read `set` and `reason`. If the write did not happen, say so plainly ("Stage update failed: {reason}. Continuing."): the issue is still available and the next `pick` will offer it.
 
-**When the blocker is the work's own nature** — it needs a browser console, or a person with a device — do not use this step at all. Blocked means an open edge, and `wf unblock` releases it when that edge closes, which for non-code work would hand it back to an agent that cannot do it. Set `Ownership` instead, which is what actually routes the work, and put the card in Non-code:
+**When the blocker is the work's own nature** — it needs a browser console, or a person with a device — do not use this step at all. Blocked means an open edge, and `wf unblock` releases it when that edge closes, which for non-code work would hand it back to an agent that cannot do it. Set `Ownership` instead, which is what actually routes the work, and set the stage to `Non-code`:
 
 ```bash
 mkdir -p .claude
@@ -109,13 +108,13 @@ JSON
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/non-code-spec.json
 ```
 
-Then move the card, because the story is in In Progress and `issue-apply` leaves an in-flight card where it is:
+Then set the stage, because the story is `In Progress` and `issue-apply` keeps an in-flight stage:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-non-code
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-non-code
 ```
 
-The field is what keeps the issue out of the pool for good — `pick` refuses an issue whose `Ownership` is not `Code agent`, so it stays refused even if someone later drags the card back to Backlog. The prefix and the field have to agree, `[Manual] ` with `Human` and `[Browser] ` with `Browser agent`; a spec where they contradict each other is refused rather than applied, because one issue has one owner.
+The field is what keeps the issue out of the pool for good — `pick` refuses an issue whose `Ownership` is not `Code agent`, so it stays refused even if someone later sets its stage back to `Backlog`. The prefix and the field have to agree, `[Manual] ` with `Human` and `[Browser] ` with `Browser agent`; a spec where they contradict each other is refused rather than applied, because one issue has one owner.
 
 ### 5. Reconcile the working tree to clean
 
@@ -130,4 +129,4 @@ Do **not** `git stash` — the stash is shared across every worktree on this clo
 
 ### 6. Report
 
-Display what was blocked — naming the story by number **and** title together (e.g. `#42 Add login button`, never the number alone) — why, and which lane its card is now in. Suggest running `/github-workflow:execute` to continue with the next story.
+Display what was blocked — naming the story by number **and** title together (e.g. `#42 Add login button`, never the number alone) — why, and which stage it now has. Suggest running `/github-workflow:execute` to continue with the next story.

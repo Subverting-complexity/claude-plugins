@@ -30,7 +30,7 @@ This is opt-in and **off by default**. Merging a PR is otherwise forbidden (see 
 
 What differs is only naming. That caller records its own head SHA and posts its own consolidated review comment, so where this file says "the SHA you reviewed" or "the review comment from Step 9", its equivalents are the ones its own Phase 8 or Phase 9 produced. It carries that list of substitutions itself, and nothing here needs to read them, so the dependency runs one way only.
 
-When all conditions hold, drive the PR to a merged state. Conflicts and red CI are **blockers to clear, not reasons to give up** — fix them on the branch (the same auto-fix discipline as Step 7: fix concrete, objectively correct problems; never guess at changes that need product or design judgment), then merge. You are already on the PR branch from Step 3. Whenever a conflict or a failing check is genuinely **not yours to fix**, do not just pause for a human: file it to the board with `/github-workflow:report-issue` (autonomous, correct type, referencing this PR) so the fix is picked up automatically — it lands in Backlog available — then leave `approved` and exit. The fallbacks below say where.
+When all conditions hold, drive the PR to a merged state. Conflicts and red CI are **blockers to clear, not reasons to give up** — fix them on the branch (the same auto-fix discipline as Step 7: fix concrete, objectively correct problems; never guess at changes that need product or design judgment), then merge. You are already on the PR branch from Step 3. Whenever a conflict or a failing check is genuinely **not yours to fix**, do not just pause for a human: file it to the backlog with `/github-workflow:report-issue` (autonomous, correct type, referencing this PR) so the fix is picked up automatically — it lands at the `Backlog` stage, available — then leave `approved` and exit. The fallbacks below say where.
 
 1. **Confirm the PR is still what you reviewed.** Re-read its state:
    ```bash
@@ -41,7 +41,7 @@ When all conditions hold, drive the PR to a merged state. Conflicts and red CI a
 
 2. **Resolve merge conflicts if there are any.** When `mergeable` is `CONFLICTING`, do not bail: load `references/conflict-resolution.md` and follow it, with the PR branch (already checked out) as the working branch and `<baseRef>` as the incoming branch. On success, update your recorded SHA to the new `HEAD` and append a line to the review comment noting the conflict resolution.
 
-   If the reference **escalates** (it aborted the merge because the resolution genuinely needs human judgment), file the rebase to the board with `/github-workflow:report-issue` (autonomous, referencing this PR and the conflicting files) so it is picked up automatically — no human approval needed. Post a one-line comment naming the filed issue, leave the `approved` verdict, and exit. Do not guess at the merge.
+   If the reference **escalates** (it aborted the merge because the resolution genuinely needs human judgment), file the rebase to the backlog with `/github-workflow:report-issue` (autonomous, referencing this PR and the conflicting files) so it is picked up automatically — no human approval needed. Post a one-line comment naming the filed issue, leave the `approved` verdict, and exit. Do not guess at the merge.
 
 3. **Fix a failing pipeline if there is one.**
 
@@ -130,7 +130,7 @@ When all conditions hold, drive the PR to a merged state. Conflicts and red CI a
 
      **Fallback — only when the failure is not yours to fix** (flaky or
      infrastructure failures outside the diff, or a fix that needs design
-     judgment): file the failing check to the board with
+     judgment): file the failing check to the backlog with
      `/github-workflow:report-issue` (autonomous,
      referencing this PR and naming the check) so the fix is picked up
      automatically — no human approval needed. Post a one-line comment
@@ -243,15 +243,15 @@ When all conditions hold, drive the PR to a merged state. Conflicts and red CI a
    - You took the **Enqueue** path but `autoMergeRequest` is null and `state` is still `OPEN` → the `--auto` call did not take (repo auto-merge disabled). Pause per step 4: post the one-line comment, leave `approved`, and exit. Do not claim success.
    - Neither merged nor queued → report exactly why the merge did not complete. Do not claim success.
 
-6. **Settle the linked issues — close them and move the board to Done.** Run this **only when Step 5 confirmed `state` is `MERGED`** (the immediate path). On the **queued** path (`autoMergeRequest` non-null, still `OPEN`), the PR has not merged yet — skip this step; `wf post-merge` would correctly refuse with `not-merged`. The issue is settled when the queued merge lands (by GitHub's auto-close, and a later board reconcile or its built-in automation), not in this run.
+6. **Settle the linked issues — close them and set their stage to Done.** Run this **only when Step 5 confirmed `state` is `MERGED`** (the immediate path). On the **queued** path (`autoMergeRequest` non-null, still `OPEN`), the PR has not merged yet — skip this step; `wf post-merge` would correctly refuse with `not-merged`. The issue is settled when the queued merge lands (by GitHub's auto-close, and `wf post-merge` once the merge has landed for the stage), not in this run.
 
-   Do **not** assume the merge closed the issue. GitHub auto-closes a linked issue only when the PR carried a recognised closing keyword **and** merged into the default branch — a chained-story PR (non-default base) or an unparsed reference leaves the issue open, and even a clean auto-close never moves the board item out of In Review. Make both deterministic with one call (the branch was already deleted by the merge):
+   Do **not** assume the merge closed the issue. GitHub auto-closes a linked issue only when the PR carried a recognised closing keyword **and** merged into the default branch — a chained-story PR (non-default base) or an unparsed reference leaves the issue open, and even a clean auto-close never changes the stage from `In Review`. Make both deterministic with one call (the branch was already deleted by the merge):
 
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr <number>
    ```
 
-   It reads the PR's own `closingIssuesReferences`, force-closes any of those issues still open, and moves every one of them to the **Done** board column, which is where the issue's state is recorded. Report each entry in the returned `settled` array (`closed_now`, `board_moved_done`). If the PR body used a closing keyword GitHub did not parse, pass the issue explicitly: `... post-merge --pr <number> --issue <N>`.
+   It reads the PR's own `closingIssuesReferences`, force-closes any of those issues still open, and sets every one of them to the **Done** stage, which is where the issue's state is recorded. Report each entry in the returned `settled` array (`closed_now`, `stage_set`). If the PR body used a closing keyword GitHub did not parse, pass the issue explicitly: `... post-merge --pr <number> --issue <N>`.
 
    It then runs the **unblock sweep** and returns it as `unblocked`, because closing this PR's own issues is only half of a merge. Report all three of its parts: `released` (blocked issues whose native blocked-by edges have all closed — name each by number and title, they are back in the pool), `partials` (still held, but a blocker just merged something, so a person has to judge whether that freed them), and the `no_edges` count (labelled blocked with no dependency edge, so the sweep cannot speak to them either way — the number only, never the list). A `settled` array that came back empty does **not** mean there was nothing to do: a PR that deliberately closes nothing can still release work, and the sweep is what finds it. Use `--no-unblock` only when running `wf unblock` separately.
 
@@ -261,5 +261,5 @@ When all conditions hold, drive the PR to a merged state. Conflicts and red CI a
      --jq '.closingIssuesReferences[].number'
    # for each still-open issue:
    gh issue close <N> --repo <org>/<repo> --comment "Closing — resolved by merged PR #<number>."
-   # then move its board item with: wf board-move {number} --column col-done
+   # then set its stage with: wf stage-set {number} --stage stage-done
    ```

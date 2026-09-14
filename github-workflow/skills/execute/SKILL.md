@@ -35,7 +35,7 @@ Everything a person reads — plans, questions, findings, summaries, and anythin
 
 **This workflow is fully autonomous.** Every phase flows into the next without pausing for user input — except the **interactive discovery gate** before Phase 3 (user-present sessions only). The only reasons to stop are:
 
-- The issue is so underspecified that any implementation would be a guess — move its card to Needs refinement and pick the next one. Not blocked: blocked means an open blocked-by edge, and an issue put in Blocked without one is never released again.
+- The issue is so underspecified that any implementation would be a guess — set its stage to `Needs refinement` and pick the next one. Not blocked: the plugin releases `Blocked` only when every blocked-by edge has closed, and an issue set to `Blocked` without one is never released again.
 - The story needs to be broken into sub-stories before implementation can begin — run `/github-workflow:feature-discovery` to plan the breakdown with the user, then pick the first sub-story.
 
 Opening the pull request is **not** one of them. Phases 8 to 10 need no permission, no confirmation and no green CI: the moment the PR exists, keep going in the same turn. A run that reports its new PR and offers to review and merge it if asked has stopped half way, however finished it sounds.
@@ -71,7 +71,7 @@ If the file is absent and the block below did **not** print "ClaudeProject.md NO
 
 ## Project configuration (auto-loaded)
 
-This emits a **projection** of `ClaudeProject.md`: the hot-path config the pick/plan/build window needs (Identity, Branch Convention, Label Map, Quality Gate, Package Manager, Refinement), dropping the heavy sections needed only later and only sometimes (Issue Types & Fields, Project Board, Story Template, Session Budget, Reference Docs, Bundled Skills). When a later phase resolves the **board** (Phase 2, Phase 7) or **org issue fields**, read the omitted `## Project Board` / `## Issue Types & Fields` section straight from `ClaudeProject.md` then — the board/field templates already say they read it.
+This emits a **projection** of `ClaudeProject.md`: the hot-path config the pick/plan/build window needs (Identity, Branch Convention, Label Map, Quality Gate, Package Manager, Refinement), dropping the heavy sections needed only later and only sometimes (Issue Types & Fields, Project Board, Story Template, Session Budget, Reference Docs, Bundled Skills). When a later phase resolves the **org issue fields**, `Stage` included, read the omitted `## Issue Types & Fields` section straight from `ClaudeProject.md` then.
 
 ```!
 if [ -f .claude/projected-config.md ] && [ .claude/projected-config.md -nt ClaudeProject.md ] 2>/dev/null; then
@@ -128,7 +128,7 @@ Stay under ~100k tokens: **one story per session**, scoped to a shippable artifa
 **45-minute timeout.** Record the start time (`date +%s`); before each phase, check elapsed. Past 45 minutes:
 
 1. Commit and push everything now.
-2. **Shippable** → run Phase 7 for a **real** PR (never a draft), then carry on into Phases 8 to 10: a reviewed PR is the point of the run, and the reviewing happens in other agents' contexts. Start a rework round only if you can finish it. **Not shippable** → leave the branch pushed, run `wf board-move {number} --column col-attention` with a comment listing what remains; do **not** open a PR.
+2. **Shippable** → run Phase 7 for a **real** PR (never a draft), then carry on into Phases 8 to 10: a reviewed PR is the point of the run, and the reviewing happens in other agents' contexts. Start a rework round only if you can finish it. **Not shippable** → leave the branch pushed, run `wf stage-set {number} --stage stage-attention` with a comment listing what remains; do **not** open a PR.
 3. File follow-up issues for unfinished work.
 4. Run **Exit cleanup** (`references/exit-cleanup.md`).
 5. Exit — do not start a phase you may not finish.
@@ -141,7 +141,7 @@ Before a batch of `gh` calls, check remaining quota:
 gh api rate_limit --jq '.rate.remaining'
 ```
 
-If it is below **100**, pause: commit and push current work, run `wf board-move {number} --column col-attention` with a comment noting the pause, run **Exit cleanup**, then exit — the next session resumes from the pushed branch. **Once the PR is open (Phase 8 onward)** the same carve-out as the failure hatch applies: leave the card in In Review and note the pause on the PR instead, so the board and the PR's review state stay in agreement. Do **not** retry rate-limited requests in a loop. (design rationale: `docs/rationale/execute-rationale.md` — not read at runtime.)
+If it is below **100**, pause: commit and push current work, run `wf stage-set {number} --stage stage-attention` with a comment noting the pause, run **Exit cleanup**, then exit — the next session resumes from the pushed branch. **Once the PR is open (Phase 8 onward)** the same carve-out as the failure hatch applies: leave the stage at `In Review` and note the pause on the PR instead, so the stage and the PR's review state stay in agreement. Do **not** retry rate-limited requests in a loop. (design rationale: `docs/rationale/execute-rationale.md` — not read at runtime.)
 
 ## Mode selection
 
@@ -175,7 +175,7 @@ Every exit path — successful finish, block, failure, timeout, rate-limit pause
 
 ## Phase 1 — Pick
 
-`wf pick` collapses the whole select → claim → board-move → branch loop — Phase 1's selection *and* Phase 2's claim, board move and branch — into one deterministic call. It is the only way to pick a story. There is no inline procedure behind it: a `wf` that cannot run is a stop, not a detour.
+`wf pick` collapses the whole select → claim → stage → branch loop — Phase 1's selection *and* Phase 2's claim, `In Progress` stage and branch — into one deterministic call. It is the only way to pick a story. There is no inline procedure behind it: a `wf` that cannot run is a stop, not a detour.
 
 From the repo root:
 
@@ -183,7 +183,7 @@ From the repo root:
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout --mode {mode}
 ```
 
-`{mode}` is `$ARGUMENTS.mode`, default `story` (`audit` never reaches this phase). The command detects backlog mode (sprint or flat), reads the unassigned issues in the board's **Backlog** column, applies the mode filter, drops anything `Ownership` does not mark `Code agent`, sorts by `Priority` then `Effort` then issue number, **claims the top candidate before any side effect** and validates only that one — walking down the list on a lost claim, moving a genuinely blocked issue's card to Blocked, closing one a merged PR already resolved, and running the dependency unblock scan if the pool comes up empty. No label is read anywhere in that sequence.
+`{mode}` is `$ARGUMENTS.mode`, default `story` (`audit` never reaches this phase). The command detects backlog mode (sprint or flat), reads the open, unassigned issues whose `Stage` is blank or **Backlog**, applies the mode filter, drops anything `Ownership` does not mark `Code agent`, sorts by `Priority` then `Effort` then issue number, **claims the top candidate before any side effect** and validates only that one — walking down the list on a lost claim, setting a genuinely blocked issue to `Blocked`, closing one a merged PR already resolved, and running the dependency unblock scan if the pool comes up empty. No label is read anywhere in that sequence.
 
 Read the result by its `status`; the exit code mirrors it:
 
@@ -195,28 +195,28 @@ Read the result by its `status`; the exit code mirrors it:
 | `unsupported` | 30 | `wf` deferred this configuration (reserved; not expected). Stop and report what it named. |
 | `error` | 20, or the launcher reports Python is missing | `wf` cannot run here. Stop and name the prerequisite: `wf` needs Python 3.8+ on `PATH` and an authenticated `gh`. Do not select a story by hand. |
 
-On `ok` the JSON carries `number`, `title`, `url`, `labels`, `milestone`, `body`, `claim_ref`, `branch`, `checked_out`, `board_moved`, `start_date_set` and `side_effects`. The card is in In Progress, the `@me` assignment is applied, and the claim ref is held. Surface any `side_effects` (issues returned to blocked, or closed as already resolved), then do **only** the body-validation check at the end of this phase and go to Phase 2 — whose claim, board and branch steps are already done. If `checked_out` is false, read `branch_message` (e.g. a rebase conflict against the default branch) and run `/github-workflow:block-story` instead of building.
+On `ok` the JSON carries `number`, `title`, `url`, `labels`, `milestone`, `body`, `claim_ref`, `branch`, `checked_out`, `stage_set`, `stage_message`, `start_date_set` and `side_effects`. The stage is `In Progress`, the `@me` assignment is applied, and the claim ref is held. Surface any `side_effects` (issues returned to blocked, or closed as already resolved), then do **only** the body-validation check at the end of this phase and go to Phase 2 — whose claim, stage and branch steps are already done. If `checked_out` is false, read `branch_message` (e.g. a rebase conflict against the default branch) and run `/github-workflow:block-story` instead of building.
 
 ### An explicit story number
 
-With `$ARGUMENTS.story_number`, run the **already-in-flight guard** first. The auto-pick pool is the board's Backlog column minus what is assigned, but a named number bypasses that, and the claim ref is released the moment a PR opens — so a fresh claim on a story already in review would succeed and duplicate the work.
+With `$ARGUMENTS.story_number`, run the **already-in-flight guard** first. The auto-pick pool is the issues at a blank or `Backlog` stage minus what is assigned, but a named number bypasses that, and the claim ref is released the moment a PR opens — so a fresh claim on a story already in review would succeed and duplicate the work.
 
 ```bash
 gh issue view {number} --repo {org}/{repo} --json state,assignees
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
 ```
 
-No label is read: state is the card's column, and `pick --issue` refuses a story in In Progress, In Review, Non-code or Done. The guard below says why first.
+No label is read: state is the `Stage` field, and `pick --issue` refuses a story at `In Progress`, `In Review`, `Non-code` or `Done`. The guard below says why first.
 
 `sibling-pr` answers "which open PRs will close this issue on merge?" from GitHub's own parse of closing references — the same parse that auto-closes the issue — so every site that asks gets the same answer. Exit 0 with `found: 0` is the normal result; exit 20 means the lookup failed, so stop rather than assume there is no duplicate.
 
 - The issue is **closed** → report it and stop.
 - `found` is above zero → do not start fresh work. Report the existing PR by number **and** title and tell the user to run `/github-workflow:code-review`, which handles both review and rework. Stop — do not claim, branch or build.
-- The card sits in In Review but `found` is `0` → look for a **closed, unmerged** PR:
+- The stage is `In Review` but `found` is `0` → look for a **closed, unmerged** PR:
   ```
   gh pr list --repo {org}/{repo} --state closed --search "closes #{number}" --json number,title
   ```
-  If there is one the PR was abandoned — reset automatically: unassign, run `wf board-move {number} --column col-backlog` (that move is what returns it to the pool), and comment `"Resetting — PR #{N} closed without merge."` The issue re-enters the pick pool. If there is no closed PR either, surface the inconsistency and stop.
+  If there is one the PR was abandoned — reset automatically: unassign, run `wf stage-set {number} --stage stage-backlog` (that write is what returns it to the pool), and comment `"Resetting — PR #{N} closed without merge."` The issue re-enters the pick pool. If there is no closed PR either, surface the inconsistency and stop.
 - Otherwise claim it through the same engine, aimed at one issue:
   ```bash
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout
@@ -227,24 +227,24 @@ No label is read: state is the card's column, and `pick --issue` refuses a story
 
 - Enough guidance (body, comments, linked docs) → proceed to Phase 2.
 - Thin — a real topic, but not enough to implement without guessing at what was wanted → offer refinement, in a user-present session: "The next priority story (#{number}: {title}) needs refinement before it can be implemented. Would you like to refine it now?" Use `AskUserQuestion`:
-  - "Refine now (Recommended)" — run the refinement skill from `refinement-skill` (default `feature-discovery`). After refinement, continue with Phase 2 — the card is already in In Progress.
+  - "Refine now (Recommended)" — run the refinement skill from `refinement-skill` (default `feature-discovery`). After refinement, continue with Phase 2 — the stage is already `In Progress`.
   - "Skip and pick next" — send it to refinement as below.
 - Truly empty, or thin with nobody present to answer → send it to refinement and re-run the selection for the next story. Do **not** run `/github-workflow:block-story`: blocked means an open blocked-by edge, and this issue has none, so nothing would ever release it.
 
-Sending a story to refinement is a comment saying what is missing, the card into the refinement lane, and the assignment and claim given up so somebody can take it once it has been refined:
+Sending a story to refinement is a comment saying what is missing, the stage set to `Needs refinement`, and the assignment and claim given up so somebody can take it once it has been refined:
 
 ```bash
 gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-refinement
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-refinement
 gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
 ```
 
-Leaving Backlog takes it out of the pool. Write the comment to `skills/writing-github-issues/SKILL.md`: say what a person would have to add before it can be built, not that you could not build it.
+Leaving `Backlog` takes it out of the pool. Write the comment to `skills/writing-github-issues/SKILL.md`: say what a person would have to add before it can be built, not that you could not build it.
 
 ## Phase 2 — Start
 
-`wf pick --checkout` already did every step here. Read on only when the `ok` result says one did not happen — `board_moved` or `checked_out` false, or the claim state lost to compaction.
+`wf pick --checkout` already did every step here. Read on only when the `ok` result says one did not happen — `stage_set` or `checked_out` false, or the claim state lost to compaction.
 
 1. **The claim.** Held since Phase 1. Never issue a bare `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock. To re-take a claim whose state was lost — a claim you already hold is a no-op:
    ```bash
@@ -252,11 +252,11 @@ Leaving Backlog takes it out of the pool. Write the comment to `skills/writing-g
    ```
    Exit 0: you hold it. Exit 27 (`lost`): another agent does — stop and pick a different story. Exit 20: a broken environment, not a rival; report it.
 
-2. **The board.**
+2. **The stage.**
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-in-progress
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-in-progress
    ```
-   It decides for itself whether a board is configured (silent no-op when not), verifies the board's identity before writing, adds the issue if it is missing, and resolves the column by purpose key. It **always exits 0** so a board problem never costs the run its work — but the column *is* the issue's state, so a move that did not happen means the issue still reads as available. Read `moved` and `reason`, and report a failure loudly ("Board update failed: {reason}. Continuing.") rather than treating it as cosmetic.
+   It **always exits 0** so a failed write never costs the run its work — but the stage *is* the issue's state, so a write that did not happen means the issue still reads as available. Read `set` and `reason`, and report a failure loudly ("Stage update failed: {reason}. Continuing.") rather than treating it as cosmetic.
 
 3. **Start date.** Set by `wf pick --checkout`; `start_date_set` says whether the org defines the field. Nothing to do here.
 
@@ -268,7 +268,7 @@ Leaving Backlog takes it out of the pool. Write the comment to `skills/writing-g
    git checkout -b {branch} origin/{default-branch}
    ```
 
-**Claim–board consistency:** the claim from Phase 1 must never outlive the session's intent to build. If the board move fails and the run is abandoned rather than continued, release the claim (`wf claim-release --issue {number}`), remove the `@me` assignment, and move the card back to `col-backlog` — that last move is what actually returns the issue to the pool, so the claim does not leak and neither does the issue.
+**Claim–stage consistency:** the claim from Phase 1 must never outlive the session's intent to build. If the stage write fails and the run is abandoned rather than continued, release the claim (`wf claim-release --issue {number}`), remove the `@me` assignment, and set the stage back to `stage-backlog` — that last write is what actually returns the issue to the pool, so the claim does not leak and neither does the issue.
 
 ## Interactive discovery gate (before planning)
 
@@ -336,7 +336,7 @@ Run the quality gate command from `ClaudeProject.md`:
 
 ## Phase 7 — Finish
 
-When the quality gate has passed and the work is committed, **read `references/finish.md`** and follow it end-to-end: push, duplicate-PR detection, PR create, labels, board move, claim release, report.
+When the quality gate has passed and the work is committed, **read `references/finish.md`** and follow it end-to-end: push, duplicate-PR detection, PR create, labels, stage, claim release, report.
 
 **Do not review your own diff anywhere in this run.** The session that wrote the code shares every assumption it was built on, so its verdict is worth little; Phase 8 gets a real one from contexts that never saw the build. That governs **whose judgement decides this PR, not whether the run continues** — you still spawn the reviewer and own what it returns, and Phase 7 hands the PR to nobody: not the user, not a later session, not the standalone `/github-workflow:code-review` command. Going straight from PR creation to Phase 8 matters for a second reason too — see the claim window there.
 

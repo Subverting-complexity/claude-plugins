@@ -58,7 +58,7 @@ Read `ClaudeProject.md` for project-specific settings before starting. If `.clau
 
 ## Your workflow
 
-Run `/github-workflow:execute` to pick the next story and execute it end-to-end. The skill orchestrates the full workflow: pick, start, plan, build, verify, commit, finish (push, PR, board update), then the review and merge phases — it spawns read-only review agents in fresh contexts and applies what they find. It merges the PR once the verdict is approved only where the project has turned that on (`Auto-Merge on Approval: enabled` in `review.config.md`); otherwise the run ends at an approved PR, which is a complete run.
+Run `/github-workflow:execute` to pick the next story and execute it end-to-end. The skill orchestrates the full workflow: pick, start, plan, build, verify, commit, finish (push, PR, stage update), then the review and merge phases — it spawns read-only review agents in fresh contexts and applies what they find. It merges the PR once the verdict is approved only where the project has turned that on (`Auto-Merge on Approval: enabled` in `review.config.md`); otherwise the run ends at an approved PR, which is a complete run.
 
 Never review the diff yourself before handing it to those agents. You wrote the code, so your reading of it is the least useful one available, and the skill removed the step that used to do it.
 
@@ -86,7 +86,7 @@ Each entry is scoped to the minimum needed; the rationale for every family is re
 
 **git subcommands (explicit list)** — each subcommand is listed individually rather than using `Bash(git *)` to block operations that are never needed in normal story execution: `git clean`, `git reset`, `git stash`, `git bisect`, etc.
 
-**Bash(gh \*)** — GitHub CLI for issue management, PR creation, board updates, and API queries. Must be broad because the harness uses many gh subcommands across the workflow.
+**Bash(gh \*)** — GitHub CLI for issue management, PR creation, issue field updates, and API queries. Must be broad because the harness uses many gh subcommands across the workflow.
 
 **Bash(pnpm \*), Bash(npm \*), Bash(npx \*), Bash(yarn \*)** — JS package managers. Required to install dependencies and run tests in JS/TS projects that adopt this plugin. `npx` is included for local tool invocation (e.g., `npx jest`, `npx prettier`).
 

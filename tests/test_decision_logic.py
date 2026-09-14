@@ -147,11 +147,12 @@ class TestStorySelection(unittest.TestCase):
     def test_empty_pool_returns_none(self):
         self.assertIsNone(_story([]))
 
-    # Availability. The pool handed to `select_pool` is the board's Backlog
-    # column, and `Status` holds one value, so an issue that is parked, in
-    # progress, in review, blocked, done or awaiting refinement is in that
-    # column and never reaches here. What is left to exclude is the one thing
-    # a column cannot express: who can actually do the work.
+    # Availability. The pool handed to `select_pool` is the open issues whose
+    # `Stage` is blank or `Backlog`, and `Stage` holds one value, so an issue
+    # that is parked, in progress, in review, blocked, done or awaiting
+    # refinement is in another stage and never reaches here. What is left to
+    # exclude is the one thing a stage cannot express: who can actually do the
+    # work.
 
     def test_a_status_label_no_longer_takes_an_issue_out_of_the_pool(self):
         """There is no such label any more, and a leftover one decides nothing.
@@ -232,9 +233,9 @@ class TestStorySelection(unittest.TestCase):
         """The whole of the 10.0.0 selection change, stated once.
 
         `claude-ready` was the human-approval gate and the last label the
-        picker read. Approval is the card's column now: a person approves an
-        issue by moving it into Backlog and withholds approval by leaving it
-        elsewhere. Every label below used to decide something here and none of
+        picker read. Approval is the issue's `Stage` now: a person approves an
+        issue by leaving `Stage` blank or setting it to `Backlog`, and
+        withholds approval by setting it to something else. Every label below used to decide something here and none of
         them decides anything now.
         """
         candidates = [
@@ -263,7 +264,7 @@ class TestSelectionHonoursProjectLabelMap(unittest.TestCase):
         """Regression, twice over. A lifecycle filter that did not know the
         project's own names emptied this pool to no-candidates; then the filter
         itself went, because the label was never what parked an issue -- the
-        board column it sits in is, and a column has one value."""
+        `Stage` it carries is, and `Stage` holds one value."""
         candidates = [
             _issue(5, priority='High'),
             _issue(6, ['triage'], priority='Medium'),   # renamed needs-refinement
@@ -650,7 +651,7 @@ class TestRetiredLabelsOn(unittest.TestCase):
     """The labels a command strips off whatever issue it touches.
 
     There is no "current lifecycle label" to find any more: state lives in the
-    board column. What is left is a migration sweep -- an issue written under
+    `Stage` issue field. What is left is a migration sweep -- an issue written under
     the label workflow carries names nothing reads, and the write path takes
     them off as it goes so the backlog cleans itself without a bulk edit.
     """
@@ -871,7 +872,8 @@ class TestProjectBoardParsing(unittest.TestCase):
 
 
 class TestReadyGateIsGone(unittest.TestCase):
-    """There is one pool now — the board's Backlog column — and no gate.
+    """There is one pool now — the open issues whose `Stage` is blank or
+    `Backlog` — and no gate.
 
     A project that still carries a `## Ready Gate` section is out of date
     rather than broken, so parsing ignores it entirely. Reading it would be
@@ -909,8 +911,14 @@ class TestReadyGateIsGone(unittest.TestCase):
 
 
 class TestBoardConfigParsing(unittest.TestCase):
-    """parse_claude_project must read the board config including the new
-    status-field-name setting so wf.py queries the correct field."""
+    """parse_claude_project must read the board config: which project a run
+    adds an issue to, and nothing about state.
+
+    There is no `status-field-name` setting any more. The state lives in the
+    org's `Stage` issue field, whose name is a `field-stage` row in
+    `## Issue Types & Fields` like every other field, so the board config has
+    no say in it.
+    """
 
     def _board(self, table_rows):
         text = ("## Project Board\n\n"
@@ -919,17 +927,9 @@ class TestBoardConfigParsing(unittest.TestCase):
                 + table_rows)
         return parse_claude_project(text)['board']
 
-    def test_status_field_name_parsed(self):
+    def test_no_status_field_setting_is_read_any_more(self):
         board = self._board("| status-field-name   | `Estado`   |\n")
-        self.assertEqual(board['status_field_name'], 'Estado')
-
-    def test_status_field_name_defaults_to_status(self):
-        board = self._board("| project-node-id     | `PVT_abc`  |\n")
-        self.assertEqual(board['status_field_name'], 'Status')
-
-    def test_missing_board_section_defaults_to_status(self):
-        cfg = parse_claude_project('## Identity\n')
-        self.assertEqual(cfg['board']['status_field_name'], 'Status')
+        self.assertNotIn('status_field_name', board)
 
     def test_project_node_id_parsed(self):
         board = self._board("| project-node-id     | `PVT_abc`  |\n")
@@ -1226,7 +1226,7 @@ class TestGraphqlArgTyping(unittest.TestCase):
     """`gh api graphql` argv typing.
 
     Regression guard for the post-merge move-to-Done failure: a digit-only
-    single-select option id (e.g. the board's Done column `98236657`) was passed
+    single-select option id (e.g. the `Stage` field's `Done` `98236657`) was passed
     via `-F`, which coerces all-digit values to ints, so the `$o:String!` /
     `ID!` variable arrived as an Int and GitHub rejected it with "Variable $o of
     type String! was provided invalid value". String/ID fields must use `-f`;
@@ -2235,7 +2235,7 @@ class TestDeprecatedLabelFindings(unittest.TestCase):
 
     def test_a_mapped_status_label_is_reported_too(self):
         """The 10.0.0 addition: `status-*` joined `type-*` in being read by
-        nothing, because the board column is the state."""
+        nothing, because the `Stage` issue field is the state."""
         findings = wf_core.deprecated_label_findings(
             {'status-blocked': 'blocked'}, ['blocked'])
         self.assertEqual(_levels(findings), [wf_core.WARNING])
@@ -2280,17 +2280,49 @@ class TestUnmappedFieldFindings(unittest.TestCase):
             ['Urgency'], {'field-priority': 'Urgency'}), [])
 
 
-class TestBoardColumnFindings(unittest.TestCase):
+class TestStageFindings(unittest.TestCase):
+    """Whether the org's `Stage` field can hold every state the plugin writes.
 
-    def test_a_stale_option_id_warns(self):
-        findings = wf_core.board_column_findings(
-            {'col-in-progress': 'dead1234'}, {'47fc9ee4': 'In Progress'})
-        self.assertEqual(_levels(findings), [wf_core.WARNING])
-        self.assertIn('col-in-progress', findings[0]['detail'])
+    Both findings are critical, because both mean a transition silently does
+    not happen: with no field at all nothing records that an issue is in
+    progress, and with an option missing the write fails at GitHub and the
+    issue keeps the stage it had.
+    """
 
-    def test_a_live_option_id_is_clean(self):
-        self.assertEqual(wf_core.board_column_findings(
-            {'col-in-progress': '47fc9ee4'}, {'47fc9ee4': 'In Progress'}), [])
+    @staticmethod
+    def _field(*options):
+        return {'Stage': {'options': {name: 'o%d' % i
+                                      for i, name in enumerate(options)}}}
+
+    ALL = tuple(wf_core.STAGE_NAMES.values())
+
+    def test_a_field_holding_every_stage_is_clean(self):
+        self.assertEqual(wf_core.stage_findings(self._field(*self.ALL)), [])
+
+    def test_no_stage_field_at_all_is_critical(self):
+        findings = wf_core.stage_findings({'Priority': {'options': {}}})
+        self.assertEqual(_checks(findings), ['stage-absent'])
+        self.assertEqual(_levels(findings), [wf_core.CRITICAL])
+        self.assertIn('Stage', findings[0]['detail'])
+
+    def test_a_missing_option_is_critical_and_names_it(self):
+        findings = wf_core.stage_findings(
+            self._field(*[n for n in self.ALL if n != 'Blocked']))
+        self.assertEqual(_checks(findings), ['stage-options'])
+        self.assertEqual(_levels(findings), [wf_core.CRITICAL])
+        self.assertIn('Blocked', findings[0]['detail'])
+
+    def test_option_names_are_matched_without_regard_to_case(self):
+        """An org that typed `in review` has the option; only a missing one is
+        a finding."""
+        self.assertEqual(wf_core.stage_findings(
+            self._field(*[n.lower() for n in self.ALL])), [])
+
+    def test_a_renamed_field_is_looked_up_under_its_project_name(self):
+        findings = wf_core.stage_findings(
+            {'Fase': {'options': {n: 'o' for n in self.ALL}}},
+            {'field-stage': 'Fase'})
+        self.assertEqual(findings, [])
 
 
 class TestPreflightSummary(unittest.TestCase):
@@ -2384,7 +2416,7 @@ class TestReapVerdict(unittest.TestCase):
         """`pick` assigns `@me`, so an unassigned issue is one nobody holds.
 
         This read a `status-in-progress` label until 10.0.0. The label stopped
-        being applied when the state moved to the board, which would have made
+        being applied when the state moved to the `Stage` field, which would have made
         every healthy in-flight claim look abandoned."""
         verdict, reason = self._issue(assigned=False)
         self.assertEqual(verdict, wf_core.REAP)
@@ -2436,49 +2468,61 @@ class TestReapSummary(unittest.TestCase):
                          {'reaped': 2, 'suspect': 1, 'skipped': 0})
 
 
-class TestBoardColumnNames(unittest.TestCase):
+class TestStageNames(unittest.TestCase):
 
-    def test_every_lifecycle_state_has_a_column(self):
-        for key in ('col-backlog', 'col-in-progress', 'col-in-review',
-                    'col-blocked', 'col-non-code', 'col-refinement',
-                    'col-parked', 'col-attention', 'col-done'):
-            self.assertIn(key, wf_core.BOARD_COLUMN_NAMES)
+    def test_every_lifecycle_state_has_a_stage(self):
+        for key in ('stage-backlog', 'stage-in-progress', 'stage-in-review',
+                    'stage-blocked', 'stage-non-code', 'stage-refinement',
+                    'stage-parked', 'stage-attention', 'stage-done'):
+            self.assertIn(key, wf_core.STAGE_NAMES)
 
-    def test_every_lane_but_done_is_one_setup_creates(self):
-        """The board is the whole record of state, so a state with no lane is a
-        state an issue cannot be put into. `Done` is excluded because a new
-        board already has it."""
-        self.assertEqual(sorted(wf_core.LANE_COLUMNS),
-                         sorted(k for k in wf_core.BOARD_COLUMN_NAMES
-                                if k != 'col-done'))
-        self.assertNotIn('col-done', wf_core.LANE_COLUMNS)
-
-    def test_the_pool_column_is_backlog(self):
-        self.assertEqual(wf_core.POOL_COLUMN, 'col-backlog')
-        self.assertNotIn('col-ready', wf_core.BOARD_COLUMN_NAMES)
+    def test_the_pool_stage_is_backlog(self):
+        self.assertEqual(wf_core.POOL_STAGE, 'stage-backlog')
+        self.assertNotIn('stage-ready', wf_core.STAGE_NAMES)
 
     def test_each_key_resolves_to_the_name_the_rest_of_the_plugin_uses(self):
         """The values are the contract, not just the keys.
 
-        `board_move` looks the column up on the live board by this name, so a
-        value no board uses fails every move to that column, and fails
-        quietly: a board mirrors the labels, so a failed move is never fatal.
-        `col-backlog` read `Todo` for a long time, which is what GitHub calls
-        the column on a new Projects v2 board rather than what
+        A write names the option by this string, so a value the org's `Stage`
+        field does not carry fails at GitHub and the issue keeps the stage it
+        had. `stage-backlog` is `Backlog`, which is what
         `templates/default-labels.md`, the `ClaudeProject.md` template,
         `commands/report-issue.md` and the purpose key itself all call it.
         """
-        self.assertEqual(wf_core.BOARD_COLUMN_NAMES, {
-            'col-backlog':     'Backlog',
-            'col-in-progress': 'In Progress',
-            'col-in-review':   'In Review',
-            'col-blocked':     'Blocked',
-            'col-non-code':    'Non-code',
-            'col-refinement':  'Needs refinement',
-            'col-parked':      'Parked',
-            'col-attention':   'Needs attention',
-            'col-done':        'Done',
+        self.assertEqual(wf_core.STAGE_NAMES, {
+            'stage-backlog':     'Backlog',
+            'stage-in-progress': 'In Progress',
+            'stage-in-review':   'In Review',
+            'stage-blocked':     'Blocked',
+            'stage-non-code':    'Non-code',
+            'stage-refinement':  'Needs refinement',
+            'stage-parked':      'Parked',
+            'stage-attention':   'Needs attention',
+            'stage-done':        'Done',
         })
+
+    def test_a_purpose_key_a_name_or_any_casing_all_resolve(self):
+        """A caller passes whichever of the three it happens to hold."""
+        for value in ('stage-in-review', 'In Review', 'in review', 'IN REVIEW'):
+            self.assertEqual(wf_core.stage_name(value), 'In Review', value)
+
+    def test_anything_else_resolves_to_nothing(self):
+        """Not passed through: a write naming an option the field does not have
+        fails at GitHub, and saying so before the round trip is cheaper."""
+        for value in (None, '', 'Ready', 'col-in-review'):
+            self.assertIsNone(wf_core.stage_name(value), value)
+
+    def test_a_blank_stage_or_backlog_is_available(self):
+        """Both mean the same thing: nobody has decided anything about this
+        issue yet."""
+        for value in (None, '', '   ', 'Backlog', 'stage-backlog', 'backlog'):
+            self.assertTrue(wf_core.is_available_stage(value), value)
+
+    def test_every_other_stage_is_one_an_issue_is_not_available_from(self):
+        for value in ('In Progress', 'Blocked', 'Parked', 'Non-code',
+                      'Needs refinement', 'Needs attention', 'In Review',
+                      'Done'):
+            self.assertFalse(wf_core.is_available_stage(value), value)
 
 
 class TestChoreIsMaintenance(unittest.TestCase):
@@ -2623,63 +2667,85 @@ class TestWorkScope(unittest.TestCase):
                          wf_core.SCOPE_CODE)
 
     def test_non_code_wins_over_blocked(self):
-        """A blocker closing never makes browser work pickable, so the lane it
+        """A blocker closing never makes browser work pickable, so the stage it
         ends up in must be the one no sweep releases."""
-        self.assertEqual(wf_core.board_column_for(wf_core.SCOPE_BROWSER, [979]),
-                         'col-non-code')
+        self.assertEqual(wf_core.stage_for(wf_core.SCOPE_BROWSER, [979]),
+                         'stage-non-code')
 
     def test_code_work_with_an_open_edge_is_blocked(self):
-        self.assertEqual(wf_core.board_column_for(wf_core.SCOPE_CODE, [979]),
-                         'col-blocked')
+        self.assertEqual(wf_core.stage_for(wf_core.SCOPE_CODE, [979]),
+                         'stage-blocked')
 
     def test_code_work_with_nothing_open_goes_to_backlog(self):
-        """Which is exactly what pickable means: the pool is that column."""
-        self.assertEqual(wf_core.board_column_for(wf_core.SCOPE_CODE, []),
-                         'col-backlog')
+        """Which is exactly what pickable means: the pool is that stage, and a
+        blank `Stage` beside it."""
+        self.assertEqual(wf_core.stage_for(wf_core.SCOPE_CODE, []),
+                         'stage-backlog')
 
     def test_an_issue_nobody_owns_needs_refinement(self):
-        """Not Backlog: the picker refuses an unowned issue, so a Backlog card
-        with no owner is a card nothing will ever take."""
-        self.assertEqual(wf_core.board_column_for(None, []), 'col-refinement')
+        """Not Backlog: the picker refuses an unowned issue, so an issue in
+        Backlog with no owner is one nothing will ever take."""
+        self.assertEqual(wf_core.stage_for(None, []), 'stage-refinement')
 
     def test_an_explicit_state_wins_for_code_work(self):
         self.assertEqual(
-            wf_core.board_column_for(wf_core.SCOPE_CODE, [979], 'col-parked'),
-            'col-parked')
+            wf_core.stage_for(wf_core.SCOPE_CODE, [979], 'stage-parked'),
+            'stage-parked')
 
     def test_non_code_work_wins_even_over_an_explicit_state(self):
         """Non-code is what keeps it out of every agent's pool for good."""
         self.assertEqual(
-            wf_core.board_column_for(wf_core.SCOPE_HUMAN, [], 'col-backlog'),
-            'col-non-code')
+            wf_core.stage_for(wf_core.SCOPE_HUMAN, [], 'stage-backlog'),
+            'stage-non-code')
 
-    def test_a_spec_state_names_one_of_three_lanes(self):
-        self.assertEqual(wf_core.spec_state_column('parked'),
-                         ('col-parked', None))
-        self.assertEqual(wf_core.spec_state_column(None), (None, None))
-        key, err = wf_core.spec_state_column('ready')
+    def test_non_code_wins_over_an_unowned_issue_too(self):
+        """The ordering is one chain, so the top of it beats every rung below
+        rather than only the one under it."""
+        self.assertEqual(wf_core.stage_for(wf_core.SCOPE_BROWSER, [979],
+                                           'stage-parked'),
+                         'stage-non-code')
+
+    def test_a_spec_state_names_one_of_three_stages(self):
+        self.assertEqual(wf_core.spec_state_stage('parked'),
+                         ('stage-parked', None))
+        self.assertEqual(wf_core.spec_state_stage(None), (None, None))
+        key, err = wf_core.spec_state_stage('ready')
         self.assertIsNone(key)
         self.assertIn('ready', err)
 
+    def test_the_three_a_writer_can_know_are_the_only_three(self):
+        """In Progress, In Review and Done are written by the run doing the
+        work, so a spec naming one would describe something that has not
+        happened."""
+        self.assertEqual(sorted(wf_core.SPEC_STATE_STAGES),
+                         ['backlog', 'parked', 'refinement'])
 
-class TestMayPlaceCard(unittest.TestCase):
-    """Which lanes `issue-apply` may move a card out of."""
 
-    def test_no_card_or_no_lane_may_be_placed(self):
-        self.assertEqual(wf_core.may_place_card(None), (True, None))
-        self.assertEqual(wf_core.may_place_card(''), (True, None))
+class TestMaySetStage(unittest.TestCase):
+    """Which stages `issue-apply` may write over."""
 
-    def test_the_lanes_it_owns_may_be_rewritten(self):
-        for lane in ('Backlog', 'Blocked', 'Non-code'):
-            self.assertEqual(wf_core.may_place_card(lane), (True, None), lane)
+    def test_a_blank_stage_may_always_be_written(self):
+        self.assertEqual(wf_core.may_set_stage(None), (True, None))
+        self.assertEqual(wf_core.may_set_stage(''), (True, None))
 
-    def test_a_lane_a_person_or_a_run_chose_is_kept(self):
-        for lane in ('In Progress', 'In Review', 'Parked', 'Needs refinement',
-                     'Needs attention', 'Done'):
-            self.assertEqual(wf_core.may_place_card(lane), (False, lane), lane)
+    def test_the_stages_it_owns_may_be_rewritten(self):
+        for stage in ('Backlog', 'Blocked', 'Non-code'):
+            self.assertEqual(wf_core.may_set_stage(stage), (True, None), stage)
+
+    def test_the_three_it_owns_are_the_whole_list(self):
+        self.assertEqual(wf_core.AUTO_MANAGED_STAGES,
+                         frozenset({'Backlog', 'Blocked', 'Non-code'}))
+
+    def test_a_stage_a_person_or_a_run_chose_is_kept(self):
+        """`Needs refinement` is in here deliberately: it is both where this
+        phase puts an unroutable issue and where a person withholds approval,
+        and releasing one would release the other."""
+        for stage in ('In Progress', 'In Review', 'Parked', 'Needs refinement',
+                      'Needs attention', 'Done'):
+            self.assertEqual(wf_core.may_set_stage(stage), (False, stage), stage)
 
     def test_an_explicit_request_overrides_that(self):
-        self.assertEqual(wf_core.may_place_card('In Progress', 'col-parked'),
+        self.assertEqual(wf_core.may_set_stage('In Progress', 'stage-parked'),
                          (True, None))
 
 
@@ -2875,7 +2941,7 @@ class TestValidateSpecStructure(unittest.TestCase):
             [self._entry(state='refinement')], self.FIELDS,
             {'User Story': 's'})
         self.assertEqual(errors, [])
-        self.assertEqual(plans[0]['state'], 'col-refinement')
+        self.assertEqual(plans[0]['state'], 'stage-refinement')
 
     def test_an_unknown_state_is_an_error(self):
         errors, _, _ = wf_core.validate_spec(
@@ -2914,8 +2980,8 @@ class TestValidateSpecStructure(unittest.TestCase):
                            ownership_map={1: 'Code agent', 2: 'Code agent'})
         self.assertEqual([c['number'] for c in pool], [1, 2])
 
-    def test_the_board_has_a_column_for_it(self):
-        self.assertEqual(wf_core.BOARD_COLUMN_NAMES['col-non-code'], 'Non-code')
+    def test_the_stage_field_has_an_option_for_it(self):
+        self.assertEqual(wf_core.STAGE_NAMES['stage-non-code'], 'Non-code')
 
 
 class TestScopeFindings(unittest.TestCase):
@@ -3111,14 +3177,29 @@ class TestFixPlan(unittest.TestCase):
 
     def test_a_repairable_finding_is_separated_from_one_that_is_not(self):
         fixable, blocked = wf_core.fix_plan(
-            [{'check': 'board-lane'}, {'check': 'gh-auth'}])
-        self.assertEqual(fixable, [{'check': 'board-lane'}])
+            [{'check': 'label-retired'}, {'check': 'gh-auth'}])
+        self.assertEqual(fixable, [{'check': 'label-retired'}])
         self.assertEqual(blocked, [{'check': 'gh-auth'}])
 
     def test_nothing_that_needs_a_judgement_call_is_repairable(self):
         """Each of these has two defensible answers, so a run must not pick."""
-        for check in ('board-title', 'label-drift', 'config-section',
+        for check in ('stage-options', 'label-drift', 'config-section',
                       'field-absent', 'quality-gate', 'placeholders'):
+            self.assertNotIn(check, wf_core.FIXABLE_CHECKS, check)
+
+    def test_the_five_repairs_a_run_may_make_are_the_whole_list(self):
+        """A check absent from the map is one no run touches on its own, so the
+        list is the contract rather than a starting point."""
+        self.assertEqual(sorted(wf_core.FIXABLE_CHECKS),
+                         ['claude-md-ref', 'config-retired',
+                          'container-finished', 'label-deprecated',
+                          'label-retired'])
+
+    def test_neither_stage_finding_can_be_repaired_from_here(self):
+        """An org-level issue field, and its options, are created in the org
+        settings rather than through the API this runs on."""
+        for check in ('stage-absent', 'stage-options'):
+            self.assertIn(check, wf_core.UNFIXABLE_REASONS, check)
             self.assertNotIn(check, wf_core.FIXABLE_CHECKS, check)
 
     def test_every_unrepairable_check_says_why(self):
@@ -3197,112 +3278,8 @@ class TestStripLabelMapRows(unittest.TestCase):
                          ('# x\n', []))
 
 
-class TestBoardColumnFindings(unittest.TestCase):
-    """The snapshot and the board can disagree in either direction."""
-
-    LIVE = {'o1': 'Backlog', 'o2': 'In Progress'}
-
-    def _checks(self, columns):
-        return [f['detail'] for f in
-                wf_core.board_column_findings(columns, self.LIVE)]
-
-    def test_an_agreeing_snapshot_is_clean(self):
-        columns = {'col-backlog': 'o1', 'col-in-progress': 'o2'}
-        self.assertEqual(wf_core.board_column_findings(columns, self.LIVE), [])
-
-    def test_a_recorded_id_the_board_no_longer_has_is_reported(self):
-        details = self._checks({'col-backlog': 'gone'})
-        self.assertTrue(any('no longer has' in d for d in details))
-
-    def test_a_live_column_the_file_does_not_record_is_reported(self):
-        """The direction a repair creates: adding a lane leaves the file
-        recording it as `n/a`, and nothing said so until this checked."""
-        details = self._checks({'col-backlog': 'o1'})
-        self.assertTrue(any('In Progress' in d and 'no option id' in d
-                            for d in details))
-
-    def test_a_lane_the_board_does_not_have_is_not_reported_here(self):
-        """That is `board_lane_findings`, and for `Backlog` it is critical."""
-        details = self._checks({'col-backlog': 'o1', 'col-in-progress': 'o2'})
-        self.assertFalse(any('Blocked' in d for d in details))
-
-    def test_both_directions_warn_rather_than_failing(self):
-        found = wf_core.board_column_findings({'col-backlog': 'gone'}, self.LIVE)
-        self.assertEqual({f['level'] for f in found}, {wf_core.WARNING})
-
-
-class TestStatusOptionsTable(unittest.TestCase):
-
-    def test_every_canonical_column_gets_a_row_in_canonical_order(self):
-        rendered = wf_core.render_status_options({'col-backlog': 'abc123'})
-        rows = [l for l in rendered.splitlines() if l.startswith('| ')][2:]
-        self.assertEqual(len(rows), len(wf_core.BOARD_COLUMN_NAMES))
-        self.assertIn('| Backlog | `col-backlog` | `abc123` |', rows[0])
-
-    def test_a_column_the_board_does_not_have_is_recorded_as_absent(self):
-        self.assertIn('| `col-done` | n/a |', wf_core.render_status_options({}))
-
-    def test_the_same_board_always_produces_the_same_table(self):
-        columns = {'col-done': 'z', 'col-backlog': 'a'}
-        self.assertEqual(wf_core.render_status_options(columns),
-                         wf_core.render_status_options(dict(reversed(
-                             list(columns.items())))))
-
-    def test_replacing_the_table_leaves_the_rest_of_the_section_alone(self):
-        text = ('## Project Board\n\n| project-node-id | PVT_1 |\n\n'
-                '### Status Options\n\n| Column | Purpose Key | Option ID |\n'
-                '| --- | --- | --- |\n| Backlog | `col-backlog` | `old` |\n\n'
-                '## Reference Docs\n\nx\n')
-        out, changed = wf_core.replace_status_options(text,
-                                                      {'col-backlog': 'new'})
-        self.assertTrue(changed)
-        self.assertIn('| project-node-id | PVT_1 |', out)
-        self.assertIn('## Reference Docs', out)
-        self.assertIn('`new`', out)
-        self.assertNotIn('`old`', out)
-
-    def test_writing_the_same_table_twice_reports_no_change(self):
-        text = ('### Status Options\n\n'
-                + wf_core.render_status_options({'col-backlog': 'a'}) + '\n')
-        self.assertEqual(wf_core.replace_status_options(text,
-                                                        {'col-backlog': 'a'}),
-                         (text, False))
-
-    def test_the_prose_around_the_table_survives_the_rewrite(self):
-        """The first version replaced the whole section and ate four paragraphs
-        of this repository's own writing. Only the table's lines may move."""
-        text = ('### Status Options\n\nWhy this board is shaped this way.\n\n'
-                '| Column | Purpose Key | Option ID |\n| --- | --- | --- |\n'
-                '| Backlog | `col-backlog` | `old` |\n\n'
-                '**Backlog is the pool.** Nothing else is read.\n')
-        out, changed = wf_core.replace_status_options(text,
-                                                      {'col-backlog': 'new'})
-        self.assertTrue(changed)
-        self.assertIn('Why this board is shaped this way.', out)
-        self.assertIn('**Backlog is the pool.**', out)
-        self.assertIn('`new`', out)
-        self.assertNotIn('`old`', out)
-
-    def test_a_section_with_prose_but_no_table_is_left_alone(self):
-        text = '### Status Options\n\nNot configured yet.\n'
-        self.assertEqual(wf_core.replace_status_options(text, {'a': 'b'}),
-                         (text, False))
-
-    def test_a_file_with_no_table_is_left_alone_rather_than_given_one(self):
-        self.assertEqual(wf_core.replace_status_options('# x\n', {'a': 'b'}),
-                         ('# x\n', False))
-
-
 class TestRetiredWorkflowFindings(unittest.TestCase):
     """What preflight reports about the workflow this one replaced."""
-
-    def test_a_ready_column_on_the_board_warns(self):
-        findings = wf_core.board_retired_findings(['Backlog', 'Ready', 'Done'])
-        self.assertEqual(_checks(findings), ['board-retired'])
-        self.assertIn('Backlog', findings[0]['detail'])
-
-    def test_a_board_without_one_is_clean(self):
-        self.assertEqual(wf_core.board_retired_findings(['Backlog', 'Done']), [])
 
     def test_open_issues_carrying_retired_labels_are_named(self):
         findings = wf_core.retired_label_findings([
@@ -3313,7 +3290,7 @@ class TestRetiredWorkflowFindings(unittest.TestCase):
         self.assertNotIn('#4', findings[0]['detail'])
 
     def test_both_retired_repairs_are_fixable_and_the_rest_are_not(self):
-        for check in ('label-retired', 'board-retired'):
+        for check in ('label-retired', 'config-retired'):
             self.assertIn(check, wf_core.FIXABLE_CHECKS)
         for check in ('field-options', 'instructions-retired'):
             self.assertIn(check, wf_core.UNFIXABLE_REASONS)
@@ -3346,28 +3323,24 @@ class TestRetiredWorkflowFindings(unittest.TestCase):
         self.assertIn('line 2', joined)
         self.assertIn('line 3', joined)
 
+    def test_state_held_in_a_board_column_is_reported(self):
+        """The whole of 12.0.0: a file telling a session to move a card sends
+        it to do work nothing reads, because the `Stage` issue field is the
+        state now."""
+        for line in ('Run a board-move to In Progress.',
+                     'Move the card to Blocked.',
+                     'The board column is the state.',
+                     'Record the ids under Status Options.',
+                     'Set status-field-name to Status.'):
+            findings = wf_core.instruction_findings(
+                {'CLAUDE.md': 'Intro.\n%s\n' % line})
+            self.assertEqual(_checks(findings), ['instructions-retired'], line)
+            self.assertIn('`Stage`', findings[0]['detail'] + findings[0]['fix'])
+
     def test_a_current_instruction_file_is_clean(self):
         self.assertEqual(wf_core.instruction_findings({
-            'CLAUDE.md': 'The board column is the state. Backlog is the pool.\n'}),
+            'CLAUDE.md': "The `Stage` field is the state. Backlog is the pool.\n"}),
             [])
-
-
-class TestBoardColumnCreationValues(unittest.TestCase):
-    """A created column needs a colour and a description, and GitHub requires
-    both. They live beside the names so every creator writes the same board."""
-
-    def test_every_column_has_a_colour_and_a_description(self):
-        for name in wf_core.BOARD_COLUMN_NAMES.values():
-            self.assertIn(name, wf_core.BOARD_COLUMN_COLOURS)
-            self.assertTrue(wf_core.BOARD_COLUMN_DESCRIPTIONS.get(name))
-
-    def test_no_lane_an_issue_passes_through_shares_a_colour(self):
-        """The enum has eight colours to nine lanes, so `Parked` and `Done`
-        share the spare one and nothing on the way to done looks alike."""
-        working = [n for n in wf_core.BOARD_COLUMN_NAMES.values()
-                   if n not in ('Parked', 'Done')]
-        colours = [wf_core.BOARD_COLUMN_COLOURS[n] for n in working]
-        self.assertEqual(len(colours), len(set(colours)))
 
 
 class TestAddConfigPointer(unittest.TestCase):
@@ -3444,7 +3417,7 @@ class TestChooseParentSet(unittest.TestCase):
         root = _tree(10, 'Feature', _tree(11, 'User Story'), _tree(12, 'User Story'))
         choice = wf_core.choose_parent_set(
             root, [11], {11: []},
-            {12: 'in the `Non-code` column, owned by Human, not the code agent'})
+            {12: 'in the `Non-code` stage, owned by Human, not the code agent'})
         self.assertEqual(self._numbers(choice), [11])
         self.assertIn('Non-code', self._reason(choice, 12))
 
@@ -3457,7 +3430,7 @@ class TestChooseParentSet(unittest.TestCase):
 
     def test_the_size_cut_keeps_a_full_set_in_build_order(self):
         """13 waits on 12, which waits on 11, and the Blocked leaves arrive in
-        the order the column lists them. Cutting before ordering kept 11 and
+        the order the stage lists them. Cutting before ordering kept 11 and
         13, then had to drop 13 for waiting on 12: a set of one where a set
         of two fits. Ordering first keeps 11 and 12 and cuts only 13."""
         root = _tree(10, 'Feature', _tree(11, 'User Story'),
@@ -3495,7 +3468,7 @@ class TestChooseParentSet(unittest.TestCase):
 
     def test_nothing_ready_means_nothing_is_taken(self):
         root = _tree(10, 'Feature', _tree(11, 'User Story'))
-        choice = wf_core.choose_parent_set(root, [], {}, {11: 'in the `Parked` column'})
+        choice = wf_core.choose_parent_set(root, [], {}, {11: 'in the `Parked` stage'})
         self.assertIsNone(choice['group'])
         self.assertEqual(choice['selected'], [])
         self.assertIn('Parked', self._reason(choice, 11))

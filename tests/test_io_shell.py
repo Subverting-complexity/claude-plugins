@@ -63,13 +63,7 @@ def _capture(func, *args, **kwargs):
     Every command ends in `emit()`, which writes a single JSON object to stdout
     and calls `sys.exit(code)`. Redirect stdout, catch the SystemExit, and parse
     the captured object so a test can assert on both the status and the code.
-
-    The board's Status field is cached for the life of a `wf` process, which in
-    production is one command. In here it is one test, so the cache is cleared
-    on the way in rather than letting one test's fake board answer the next
-    test's question.
     """
-    wf._BOARD_FIELD_CACHE.clear()
     buf = io.StringIO()
     code = None
     with contextlib.redirect_stdout(buf):
@@ -97,13 +91,23 @@ _BASE_CFG = {
     'branch_convention': 'feature/{number}/{short-desc}',
     'labels': {}, 'review_labels': {}, 'fields': {},
     'type_capable': False,
-    # A board is no longer optional for selection: the pool *is* its Backlog
-    # column. The baseline carries one so every picker test exercises the real
-    # path; the tests that care about a board-less project override it.
+    # A board is a view and nothing more since 12.0.0: an issue's state is the
+    # org's `Stage` field, so nothing here reads or writes a board item. What
+    # is left of the section is the project's own id and its start-date field.
     'board': {'project_node_id': 'PVT_base', 'project_title': None,
-              'status_field_name': 'Status', 'status_field_id': None,
-              'start_date_field_id': None, 'columns': {}},
+              'start_date_field_id': None},
 }
+
+
+# The org's `Stage` field as the capability record carries it: every option the
+# plugin ever writes, with the id a mutation names.
+_STAGE_META = {
+    'id': 'F_stage', 'data_type': 'single-select',
+    'options': {name: 'o_stage_%d' % i
+                for i, name in enumerate(wf_core.STAGE_NAMES.values())},
+}
+
+_STAGE_BY_ID = {i: name for name, i in _STAGE_META['options'].items()}
 
 
 _UNSET = object()
@@ -116,9 +120,10 @@ def _cfg(**over):
     return cfg
 
 
-def _candidate(number, labels=(), milestone=None):
+def _candidate(number, labels=(), milestone=None, stage=None):
     return {'number': number, 'title': 'issue %d' % number,
-            'labels': list(labels), 'body': '', 'milestone': milestone, 'url': ''}
+            'labels': list(labels), 'body': '', 'milestone': milestone,
+            'url': '', 'stage': stage}
 
 
 class _CodeOwned(dict):
@@ -142,7 +147,7 @@ class _CodeOwned(dict):
 
 
 def _facets(types=None, priority=None, classification=None, effort=None,
-            ownership=_UNSET):
+            ownership=_UNSET, stage=None):
     """The `load_issue_facets` return shape.
 
     `cmd_pick` and `cmd_candidates` read the org's native types and field
@@ -154,6 +159,7 @@ def _facets(types=None, priority=None, classification=None, effort=None,
     """
     return {'types': types or {}, 'priority': priority or {},
             'classification': classification or {}, 'effort': effort or {},
+            'stage': stage or {},
             'ownership': _CodeOwned() if ownership is _UNSET
             else (ownership or {})}
 
@@ -206,17 +212,25 @@ class TestPickStatusContract(unittest.TestCase):
         # Each lost claim is reported as a side effect.
         self.assertEqual({s['issue'] for s in payload['side_effects']}, {1, 2})
 
-    def test_a_project_with_no_board_cannot_pick(self):
-        """The pool is the board's Backlog column, so no board means no pool.
-
-        An error rather than `no-candidates`: those look identical to the
-        caller, and one of them is a project nobody finished configuring.
-        """
-        self._use_cfg(_cfg(board={}))
-        code, payload = _capture(wf.cmd_pick, _pick_args())
+    def test_a_pool_read_that_failed_is_an_error_not_an_empty_pool(self):
+        """An unreadable pool and a finished backlog look identical to the
+        caller, so the one that is a failure says so."""
+        self._use_cfg(_cfg())
+        with mock.patch.object(wf, 'assemble_candidates',
+                               return_value=(False, None, 'HTTP 502')):
+            code, payload = _capture(wf.cmd_pick, _pick_args())
         self.assertEqual(code, wf.EXIT_ENV)
         self.assertEqual(payload['status'], 'error')
-        self.assertIn('project-node-id', payload['reason'])
+        self.assertIn('HTTP 502', payload['reason'])
+
+    def test_a_project_with_no_board_can_still_pick(self):
+        """The pool is the issues themselves since 12.0.0, so a project that
+        has never made a board has a pool exactly like any other."""
+        self._use_cfg(_cfg(board={}))
+        with mock.patch.object(wf, 'assemble_candidates', return_value=(True, [], '')):
+            code, payload = _capture(wf.cmd_pick, _pick_args())
+        self.assertEqual(code, wf.EXIT_NO_CANDIDATES)
+        self.assertEqual(payload['status'], 'no-candidates')
 
     def test_type_capable_feature_mode_uses_native_types(self):
         """feature mode on a type-capable org filters by native issueType."""
@@ -331,32 +345,33 @@ class TestBulkPickPaths(unittest.TestCase):
                 mock.patch.object(wf, 'merged_pr_closing', return_value=None), \
                 mock.patch.object(wf, 'issue_edges', return_value=edges), \
                 mock.patch.object(wf, 'gh_json', return_value=(True, [], '')), \
-                mock.patch.object(wf, 'board_move_in_progress',
-                                  return_value=(True, 'moved')) as board, \
+                mock.patch.object(wf, 'stage_in_progress',
+                                  return_value=(True, 'Stage set to In Progress')) as stage, \
                 mock.patch.object(wf, 'checkout_branch',
                                   return_value=('feature/1/x', True, 'created')) as branch:
-            yield board, branch
+            yield stage, branch
 
-    def test_no_branch_moves_the_board_but_creates_no_branch(self):
+    def test_no_branch_writes_the_stage_but_creates_no_branch(self):
         """Bulk runs share one branch the caller creates, so `pick` must not."""
         self._use_cfg(_cfg())
-        with self._claimable(_candidate(1)) as (board, branch):
+        with self._claimable(_candidate(1)) as (stage, branch):
             code, payload = _capture(wf.cmd_pick,
                                      _pick_args('--checkout', '--no-branch'))
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(payload['status'], 'ok')
-        board.assert_called_once()          # the board move still happens
+        stage.assert_called_once()          # the Stage write still happens
         branch.assert_not_called()          # the branch does not
+        self.assertTrue(payload['stage_set'])
         self.assertIsNone(payload['branch'])
         self.assertFalse(payload['checked_out'])
 
     def test_checkout_without_no_branch_still_branches(self):
         """The single-story path is unchanged by the new flag existing."""
         self._use_cfg(_cfg())
-        with self._claimable(_candidate(1)) as (board, branch):
+        with self._claimable(_candidate(1)) as (stage, branch):
             code, payload = _capture(wf.cmd_pick, _pick_args('--checkout'))
         self.assertEqual(code, wf.EXIT_OK)
-        board.assert_called_once()
+        stage.assert_called_once()
         branch.assert_called_once()
         self.assertEqual(payload['branch'], 'feature/1/x')
         self.assertTrue(payload['checked_out'])
@@ -403,7 +418,7 @@ class TestStartDateStamp(unittest.TestCase):
     and the mutation call is never reached. That is why unpacking two values
     from `set_issue_fields` -- which answers (ok, node, err) -- survived: the
     ValueError only fired on orgs that define the field, and only after the
-    claim, the label, the assignment and the board move had already landed.
+    claim, the label, the assignment and the `Stage` write had already landed.
     The run then looked failed and was not.
     """
 
@@ -454,7 +469,7 @@ class TestStartDateStamp(unittest.TestCase):
 class TestBestEffortSteps(unittest.TestCase):
     """A cosmetic side effect must never cost the run its branch.
 
-    The board move and the start-date stamp sit between the claim and the
+    The `Stage` write and the start-date stamp sit between the claim and the
     branch. If one of them raises, `checkout_branch` never runs and the story
     is left claimed with nowhere to work -- the one outcome the caller cannot
     recover from on its own.
@@ -492,7 +507,7 @@ class TestBestEffortSteps(unittest.TestCase):
 
     def test_a_raising_start_date_still_leaves_a_branch(self):
         code, payload, branch = self._pick_with(
-            board_move_in_progress={'return_value': (True, 'moved')},
+            stage_in_progress={'return_value': (True, 'Stage set to In Progress')},
             set_start_date={'side_effect': ValueError('boom')})
         self.assertEqual(code, wf.EXIT_OK)
         branch.assert_called_once()
@@ -501,14 +516,14 @@ class TestBestEffortSteps(unittest.TestCase):
         self.assertFalse(payload['start_date_set'])
         self.assertIn('set start date', payload['start_date_message'])
 
-    def test_a_raising_board_move_still_leaves_a_branch(self):
+    def test_a_raising_stage_write_still_leaves_a_branch(self):
         code, payload, branch = self._pick_with(
-            board_move_in_progress={'side_effect': RuntimeError('board down')},
+            stage_in_progress={'side_effect': RuntimeError('field API down')},
             set_start_date={'return_value': (True, 'stamped')})
         self.assertEqual(code, wf.EXIT_OK)
         branch.assert_called_once()
-        self.assertFalse(payload['board_moved'])
-        self.assertIn('board move in progress', payload['board_message'])
+        self.assertFalse(payload['stage_set'])
+        self.assertIn('stage in progress', payload['stage_message'])
 
 
 def _facet_node(number, type_name=None, values=()):
@@ -620,27 +635,24 @@ class TestIssueFacets(unittest.TestCase):
         self.assertEqual(facets['priority'], {1: 'High'})
 
 
-def _board_item(number, status='Backlog', labels=(), assignee=None, state='OPEN'):
-    return {'fieldValueByName': {'name': status} if status else None,
-            'content': {'number': number, 'title': 'story %d' % number,
-                        'body': '', 'state': state, 'url': '',
-                        'labels': {'nodes': [{'name': n} for n in labels]},
-                        'milestone': None,
-                        'assignees': {'nodes': ([{'login': assignee}]
-                                                if assignee else [])}}}
+def _open_issue(number, stage='Backlog', labels=(), assignee=None, edges=None):
+    """One issue as the open-issue `Stage` query returns it."""
+    node = {'number': number, 'title': 'story %d' % number, 'body': '',
+            'url': '',
+            'labels': {'nodes': [{'name': n} for n in labels]},
+            'milestone': None,
+            'assignees': {'nodes': [{'login': assignee}] if assignee else []},
+            'issueFieldValues': {'nodes': (
+                [{'field': {'name': 'Stage'}, 'name': stage}] if stage else [])}}
+    if edges is not None:
+        node['blockedBy'] = {'nodes': list(edges)}
+    return node
 
 
-_BOARD_OPTIONS = ('Backlog', 'In Progress', 'In Review', 'Blocked',
-                  'Non-code', 'Needs refinement', 'Parked', 'Needs attention',
-                  'Done')
-
-
-def _board_page(items, has_next=False, cursor=None, options=_BOARD_OPTIONS):
-    return {'node': {
-        'field': {'options': [{'name': n} for n in options]},
-        'items': {
-            'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
-            'nodes': list(items)}}}
+def _open_issue_page(nodes, has_next=False, cursor=None):
+    return {'repository': {'issues': {
+        'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
+        'nodes': list(nodes)}}}
 
 
 class TestSpecBodyFile(unittest.TestCase):
@@ -745,40 +757,42 @@ class TestTypedCreateInput(unittest.TestCase):
         self.assertEqual(dropped, [])
 
 
-class TestBoardColumnCandidates(unittest.TestCase):
-    """The pool read: every open unassigned issue in the Backlog column.
+class TestStageIssues(unittest.TestCase):
+    """The pool read: the repository's own open issues, filtered by `Stage`.
 
-    Two ways this has failed for real. It asked for 200 records on a connection
-    GitHub caps at 100, which is a hard error rather than a short answer -- so
-    it did not degrade, it failed the whole `pick` with `candidate fetch
-    failed`. And it treated a column the board does not have as an empty
-    column, so a misconfigured board and a finished backlog looked identical.
+    It read a board column until 12.0.0, which cost the pool two things no
+    amount of care could buy back: an issue with no card had no state and could
+    not be picked at all, and a board past its item limit could not be read. The
+    repository is the source now, so the only thing that can hide an issue is
+    the page cap -- and reaching that is an error rather than a short pool.
     """
 
-    CFG = None
-
-    def _run(self, pages):
+    def _run(self, pages, stages=('', 'Backlog'), **kwargs):
         calls = []
 
         def fake(query, **fields):
             calls.append((query, fields))
             return (True, pages[len(calls) - 1], '')
 
-        cfg = _cfg()
-        cfg['board'] = {'project_node_id': 'PVT_x', 'status_field_name': 'Status'}
         with mock.patch.object(wf, 'gh_graphql', side_effect=fake):
-            ok, issues, err = wf._board_column_candidates(cfg, 'Backlog')
+            ok, issues, err = wf.stage_issues(_cfg(), stages, **kwargs)
         return ok, issues, err, calls
 
     def test_the_page_size_is_within_githubs_connection_limit(self):
-        ok, _, _, calls = self._run([_board_page([])])
+        ok, _, _, calls = self._run([_open_issue_page([])])
         self.assertTrue(ok)
-        size = int(re.search(r'items\(first:(\d+)', calls[0][0]).group(1))
+        size = int(re.search(r'issues\(first:(\d+)', calls[0][0]).group(1))
         self.assertLessEqual(size, 100, 'GitHub rejects a page over 100 outright')
+        self.assertEqual(size, wf.STAGE_PAGE_SIZE)
+
+    def test_only_open_issues_are_asked_for(self):
+        """The state filter is the query's, so a closed issue never arrives."""
+        _, _, _, calls = self._run([_open_issue_page([])])
+        self.assertIn('states:OPEN', calls[0][0])
 
     def test_a_second_page_is_followed_with_the_cursor(self):
-        pages = [_board_page([_board_item(1)], has_next=True, cursor='CUR'),
-                 _board_page([_board_item(2)])]
+        pages = [_open_issue_page([_open_issue(1)], has_next=True, cursor='CUR'),
+                 _open_issue_page([_open_issue(2)])]
         ok, issues, _, calls = self._run(pages)
         self.assertTrue(ok)
         self.assertEqual(len(calls), 2)
@@ -788,54 +802,83 @@ class TestBoardColumnCandidates(unittest.TestCase):
 
     def test_the_first_page_declares_no_cursor_variable(self):
         """An unused non-null variable is a GraphQL error, not a no-op."""
-        _, _, _, calls = self._run([_board_page([])])
+        _, _, _, calls = self._run([_open_issue_page([])])
         self.assertNotIn('cursor', calls[0][0])
         self.assertNotIn('cursor', calls[0][1])
 
     def test_paging_stops_at_the_cap_and_says_so(self):
-        """The cards past the cap could be the whole of the Backlog column,
-        so a partial read is an unknown pool rather than a short one."""
-        pages = [_board_page([_board_item(n)], has_next=True, cursor='C%d' % n)
-                 for n in range(1, wf.BOARD_MAX_PAGES + 2)]
+        """The issues past the cap could be the whole of the pool, so a partial
+        read is an unknown pool rather than a short one."""
+        pages = [_open_issue_page([_open_issue(n)], has_next=True,
+                                  cursor='C%d' % n)
+                 for n in range(1, wf.STAGE_MAX_PAGES + 2)]
         ok, _, err, calls = self._run(pages)
-        self.assertEqual(len(calls), wf.BOARD_MAX_PAGES)
+        self.assertEqual(len(calls), wf.STAGE_MAX_PAGES)
         self.assertFalse(ok)
-        self.assertIn('Archive', err)
+        self.assertIn('more than', err)
 
-    def test_a_column_the_board_does_not_have_is_an_error(self):
-        """Not an empty pool. The two are indistinguishable to the caller, and
-        the misconfiguration is by far the likelier of the two."""
-        pages = [_board_page([_board_item(1)],
-                             options=('Todo', 'Doing', 'Done'))]
-        ok, _, err, _ = self._run(pages)
-        self.assertFalse(ok)
-        self.assertIn("no 'Backlog' column", err)
-        self.assertIn('Todo, Doing, Done', err)
-
-    def test_a_board_with_no_status_field_is_an_error(self):
-        ok, _, err, _ = self._run([_board_page([], options=())])
-        self.assertFalse(ok)
-        self.assertIn("no 'Status' field", err)
-
-    def test_a_board_that_is_not_configured_is_an_error(self):
-        """Selection reads the board, so a project without one has no pool."""
-        cfg = _cfg()
-        cfg['board'] = {}
-        ok, _, err = wf._board_column_candidates(cfg, 'Backlog')
-        self.assertFalse(ok)
-        self.assertIn('project-node-id', err)
-
-    def test_only_open_unassigned_items_in_the_named_column_are_returned(self):
-        pages = [_board_page([
-            _board_item(1),
-            _board_item(2, status='In Progress'),
-            _board_item(3, assignee='someone'),
-            _board_item(4, state='CLOSED'),
-            _board_item(5, status=None),
+    def test_only_the_wanted_stages_are_kept_and_blank_counts_as_one(self):
+        """`''` in the wanted set is a blank `Stage`, which means the same
+        thing as Backlog: nobody has decided anything about this issue yet."""
+        pages = [_open_issue_page([
+            _open_issue(1),
+            _open_issue(2, stage='In Progress'),
+            _open_issue(3, assignee='someone'),
+            _open_issue(4, stage=None),
+            _open_issue(5, stage='Done'),
         ])]
         ok, issues, _, _ = self._run(pages)
         self.assertTrue(ok)
-        self.assertEqual([i['number'] for i in issues], [1])
+        self.assertEqual([i['number'] for i in issues], [1, 4])
+        self.assertEqual([i['stage'] for i in issues], ['Backlog', None])
+
+    def test_an_assigned_issue_is_kept_when_the_caller_asks_for_it(self):
+        """`unblock` sweeps assigned issues too: a blocked issue can still
+        carry the assignee it had when it was blocked, and skipping it would
+        leave it blocked for good."""
+        pages = [_open_issue_page([_open_issue(3, stage='Blocked',
+                                               assignee='someone')])]
+        ok, issues, _, _ = self._run(pages, stages=('Blocked',),
+                                     unassigned_only=False)
+        self.assertTrue(ok)
+        self.assertEqual([i['number'] for i in issues], [3])
+        self.assertTrue(issues[0]['assigned'])
+        self.assertEqual(issues[0]['assignees'], ['someone'])
+
+    def test_an_extra_selection_rides_in_the_same_query(self):
+        """`unblock` asks for the native edges here, so reading every blocked
+        issue and reading each one's dependencies is one request."""
+        extra = 'blockedBy(first:20){ nodes { number state title } }'
+        pages = [_open_issue_page([_open_issue(
+            3, stage='Blocked', edges=[{'number': 9, 'state': 'OPEN'}])])]
+        ok, issues, _, calls = self._run(pages, stages=('Blocked',),
+                                         unassigned_only=False, extra=extra)
+        self.assertTrue(ok)
+        self.assertIn(extra, calls[0][0])
+        self.assertEqual(issues[0]['blockedBy']['nodes'],
+                         [{'number': 9, 'state': 'OPEN'}])
+
+    def test_a_failed_query_is_an_error_not_an_empty_pool(self):
+        with mock.patch.object(wf, 'gh_graphql', return_value=(False, None, 'boom')):
+            ok, issues, err = wf.stage_issues(_cfg(), ('', 'Backlog'))
+        self.assertFalse(ok)
+        self.assertIsNone(issues)
+        self.assertIn('boom', err)
+
+    def test_the_pool_is_blank_or_backlog(self):
+        """`assemble_candidates` is this read with the pool's own stages."""
+        with mock.patch.object(wf, 'stage_issues',
+                               return_value=(True, [], '')) as read:
+            wf.assemble_candidates(_cfg())
+        self.assertEqual(list(read.call_args[0][1]), ['', 'Backlog'])
+
+    def test_the_blocked_read_keeps_assigned_issues_and_asks_for_edges(self):
+        with mock.patch.object(wf, 'stage_issues',
+                               return_value=(True, [], '')) as read:
+            wf.blocked_issues(_cfg())
+        self.assertEqual(list(read.call_args[0][1]), ['Blocked'])
+        self.assertFalse(read.call_args[1]['unassigned_only'])
+        self.assertIn('blockedBy', read.call_args[1]['extra'])
 
 
 class TestCandidatesCommand(unittest.TestCase):
@@ -894,12 +937,12 @@ class TestCandidatesCommand(unittest.TestCase):
                                return_value=(True, [_candidate(1)], '')), \
                 mock.patch.object(wf, 'acquire_claim') as claim, \
                 mock.patch.object(wf, 'apply_in_progress') as marker, \
-                mock.patch.object(wf, 'board_move_in_progress') as board:
+                mock.patch.object(wf, 'set_stages') as stages:
             code, _ = _capture(wf.cmd_candidates, _candidates_args())
         self.assertEqual(code, wf.EXIT_OK)
         claim.assert_not_called()
         marker.assert_not_called()
-        board.assert_not_called()
+        stages.assert_not_called()
 
     def test_dependencies_come_from_the_native_edges(self):
         """The set chooser groups on real linkage, and it needs to know which
@@ -932,7 +975,7 @@ class TestCandidatesCommand(unittest.TestCase):
     def test_work_a_code_agent_cannot_do_is_not_listed(self):
         """`bulk-execute` reads this to decide what goes in one pull request,
         so an issue only a person or a browser agent can finish has no business
-        in the answer — whatever lane the board happens to have it in.
+        in the answer — whatever stage the issue happens to be in.
 
         `Ownership` decides it, not the `[Browser]` title and not a label. Both
         are on this issue and neither is read.
@@ -1120,9 +1163,14 @@ class TestShapeRegressionGuards(unittest.TestCase):
                 return 0, json.dumps({'state': 'OPEN', 'labels': []}), ''
             return 0, '', ''  # issue close, etc.
 
-        args = wf.build_parser().parse_args(['post-merge', '--pr', '50'])
+        args = wf.build_parser().parse_args(['post-merge', '--pr', '50',
+                                             '--no-unblock'])
         with mock.patch.object(wf, 'check_environment', return_value=None), \
                 mock.patch.object(wf, 'load_config', return_value=(True, cfg, '')), \
+                mock.patch.object(wf, 'set_stage',
+                                  return_value=(True, 'Stage set to Done')), \
+                mock.patch.object(wf, 'close_finished_ancestors',
+                                  return_value=([], [])), \
                 mock.patch.object(wf, 'run', side_effect=fake_run):
             code, payload = _capture(args.func, args)
         self.assertEqual(code, wf.EXIT_OK)
@@ -1164,7 +1212,8 @@ class TestPostMergeClosesFinishedContainers(unittest.TestCase):
         with mock.patch.object(wf, 'check_environment', return_value=None), \
                 mock.patch.object(wf, 'load_config', return_value=(True, cfg, '')), \
                 mock.patch.object(wf, 'run', side_effect=fake_run), \
-                mock.patch.object(wf, 'board_move', return_value=(True, 'moved')), \
+                mock.patch.object(wf, 'set_stage',
+                                  return_value=(True, 'Stage set to Done')), \
                 mock.patch.object(wf, 'fetch_parent_chain',
                                   return_value=(True, chain, '')):
             code, payload = _capture(args.func, args)
@@ -1748,6 +1797,10 @@ _APPLY_CAPS = {
         # missing one of those cannot have an issue filed against it at all.
         'Origin': {'id': 'F_org', 'data_type': 'single-select',
                    'options': {'Development': 'o_dev'}},
+        # Where an issue's state lives. Every transition writes it, so an org
+        # that does not define it is a `preflight` failure rather than a
+        # degraded run -- which is why it is part of the baseline here.
+        'Stage': _STAGE_META,
     },
     'denied': [], 'errors': [], 'cached': False,
 }
@@ -1765,18 +1818,16 @@ class _FakeHub(object):
 
     def __init__(self, issues=(), labels=None, swallow_fields=False,
                  fail_create=(), fail_link=False, closed_edges=(),
-                 board_lanes=None, type_map=None):
+                 stages=None, type_map=None):
         # Blocker numbers this hub reports as CLOSED on the batched edge read.
         # Everything else reads OPEN, which is what a freshly written edge is.
         self.closed_edges = set(closed_edges)
-        # The board this hub serves. Every lane the plugin can move a card to,
-        # so a test that expects a column to exist finds it.
-        self.board_columns = list(wf_core.BOARD_COLUMN_NAMES.values())
-        # Which lane each issue's card is in before the run. An issue absent
-        # here has no card at all, which is what a created issue looks like.
-        self.board_lanes = dict(board_lanes or {})
-        self.board_placed = {}
-        self.board_writes = []
+        # Each issue's `Stage` before the run. An issue absent here carries no
+        # value at all, which is what a created issue looks like.
+        self.stages = {int(n): s for n, s in (stages or {}).items()}
+        # Every `setIssueFieldValue` this hub served against the `Stage` field,
+        # as (issue number, option name) in the order they were sent.
+        self.stage_writes = []
         self.issues = {i['number']: i for i in issues}
         self.next_number = max(self.issues, default=100) + 1
         self.labels = dict(labels if labels is not None
@@ -1849,49 +1900,29 @@ class _FakeHub(object):
                      'state': 'CLOSED' if n in self.closed_edges else 'OPEN'}
                     for n in issue['blocked_by']]}} if issue else None
             return True, {'repository': repository}, ''
-        if re.search(r'c\d+: issue\(number:\d+\)', query):
-            # `board_current_columns` — the lane each card is in before the run.
+        if re.search(r'f\d+: issue\(number:\d+\)', query):
+            # `fetch_issue_facets` — the stage each issue is in before the run,
+            # which is how the lifecycle phase knows a stage it may not write.
             repository = {}
-            for alias, number in re.findall(r'(c\d+): issue\(number:(\d+)\)',
+            for alias, number in re.findall(r'(f\d+): issue\(number:(\d+)\)',
                                             query):
-                lane = self.board_lanes.get(int(number))
-                repository[alias] = {'projectItems': {'nodes': (
-                    [{'project': {'id': _cfg()['board']['project_node_id']},
-                      'fieldValueByName': {'name': lane} if lane else None}]
-                    if int(number) in self.board_lanes else [])}}
-            return True, {'repository': repository}, ''
-        if 'projectItems' in query:
-            repository = {}
-            for alias, number in re.findall(
-                    r'(b\d+): issue\(number:(\d+)\)', query):
                 issue = self.issues.get(int(number))
                 if not issue:
                     repository[alias] = None
                     continue
-                self.board_placed.setdefault(issue['number'], None)
-                repository[alias] = {'id': issue['id'],
-                                     'projectItems': {'nodes': []}}
+                stage = self.stages.get(int(number))
+                repository[alias] = {
+                    'number': issue['number'],
+                    'issueType': ({'name': issue['type']} if issue['type']
+                                  else None),
+                    'issueFieldValues': {'nodes': (
+                        [{'field': {'name': 'Stage'}, 'name': stage}]
+                        if stage else [])}}
             return True, {'repository': repository}, ''
         if 'issue(number:$number)' in query:
             issue = self.issues.get(int(fields['number']))
             return True, {'repository': {'issue': self._readback(issue)
                                          if issue else None}}, ''
-        # The board. `issue-apply` places every issue it touches, so these are
-        # part of the command's real traffic rather than incidental.
-        if 'ProjectV2SingleSelectField' in query:
-            return True, {'node': {'title': None, 'field': {
-                'id': 'F_status',
-                'options': [{'id': 'o_%s' % n.lower().replace(' ', '_'),
-                             'name': n}
-                            for n in self.board_columns]}}}, ''
-        if 'addProjectV2ItemById' in query:
-            return True, {alias: {'item': {'id': 'ITEM_%s' % alias}}
-                          for alias in re.findall(r'(a\d+):', query)}, ''
-        if 'updateProjectV2ItemFieldValue' in query:
-            for alias in re.findall(r'm(\d+):', query):
-                self.board_writes.append(fields['o%s' % alias])
-            return True, {'m%s' % alias: {'projectV2Item': {'id': 'ITEM_x'}}
-                          for alias in re.findall(r'm(\d+):', query)}, ''
         raise AssertionError('unexpected query: %s' % query)
 
     def read_issue(self, cfg, number, repo=None):
@@ -1952,6 +1983,22 @@ class _FakeHub(object):
                     errors.append({'path': [alias], 'message': 'nope'})
                     continue
                 data[alias] = {'issue': self._readback(self._create(arg))}
+            return 0, json.dumps({'data': data, 'errors': errors}), ''
+
+        staged = re.findall(r'(s\d+): setIssueFieldValue', query)
+        if staged:
+            # The one aliased `Stage` write the lifecycle phase sends for the
+            # whole spec. Recorded per issue, so a test can assert which option
+            # was written and which issue it was written for.
+            for alias in staged:
+                number = int(alias[1:])
+                issue = self._by_id(variables['%s_i' % alias])
+                spec = variables['%s_f' % alias][0]
+                name = _STAGE_BY_ID[spec['singleSelectOptionId']]
+                self.sent.append(('setStage', (issue['number'], name)))
+                self.stage_writes.append((issue['number'], name))
+                self.stages[number] = name
+                data[alias] = {'issue': {'id': issue['id']}}
             return 0, json.dumps({'data': data, 'errors': errors}), ''
 
         aliased = re.findall(r'(b\d+): (addBlockedBy|removeBlockedBy|updateIssue)',
@@ -2122,7 +2169,9 @@ class TestIssueApply(_ApplyCase):
         hub = _FakeHub()
         code, payload, _, _ = self._run([self._full()], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(hub.names_sent(), ['createIssue'])
+        # The create, and then the one `Stage` write every issue gets. Nothing
+        # between them: no create-then-patch sequence to half-fail.
+        self.assertEqual(hub.names_sent(), ['createIssue', 'setStage'])
         sent = hub.sent[0][1]
         self.assertEqual(sent['issueTypeId'], 'IT_story')
         self.assertEqual(len(sent['issueFields']), 4)
@@ -2136,15 +2185,21 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(written['issues'][0]['number'],
                          payload['applied'][0]['number'])
 
-    def test_re_applying_an_already_correct_issue_writes_nothing(self):
-        """Idempotence is what makes re-running a spec a safe recovery step."""
+    def test_re_applying_an_already_correct_issue_changes_nothing(self):
+        """Idempotence is what makes re-running a spec a safe recovery step.
+
+        The `Stage` restatement is the one write left, and it is idempotent by
+        construction: the issue is already in Backlog and is written to Backlog.
+        """
         hub = _FakeHub([_existing(42, type='User Story',
                                   fields={'Priority': 'High', 'Effort': 'Medium',
                                           'Ownership': 'Code agent',
-                                          'Classification': ['New Feature']})])
+                                          'Classification': ['New Feature']})],
+                       stages={42: 'Backlog'})
         code, payload, _, _ = self._run([self._full(number=42)], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(hub.mutations, [])
+        self.assertEqual(hub.names_sent(), ['setStage'])
+        self.assertEqual(hub.stage_writes, [(42, 'Backlog')])
         self.assertEqual(payload['applied'][0]['changed'], [])
 
     def test_an_update_sets_only_what_differs(self):
@@ -2153,7 +2208,7 @@ class TestIssueApply(_ApplyCase):
                                           'Ownership': 'Code agent',
                                           'Classification': ['New Feature']})])
         _, payload, _, _ = self._run([self._full(number=42)], hub)
-        self.assertEqual(hub.names_sent(), ['setIssueFieldValue'])
+        self.assertEqual(hub.names_sent(), ['setIssueFieldValue', 'setStage'])
         self.assertEqual(len(hub.sent[0][1]['f']), 1)
         self.assertEqual(payload['applied'][0]['changed'], ['fields'])
 
@@ -2259,17 +2314,21 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(created['blocked_by'], [7])
         self.assertNotIn('Dependencies', created['body'])
 
-    def test_an_issue_created_with_an_open_dependency_is_placed_in_blocked(self):
+    def test_an_issue_created_with_an_open_dependency_is_set_to_blocked(self):
         """Nothing did this before: a spec could write the edge and leave the
         issue sitting in the pool, so `pick` offered work whose dependency had
         not been built yet."""
         hub = _FakeHub([_existing(7)])
         code, payload, _, _ = self._run([self._full(blocked_by=[7])], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['applied'][0]['board_column'], 'Blocked')
+        applied = payload['applied'][0]
+        self.assertEqual(applied['stage'], 'Blocked')
+        self.assertTrue(applied['stage_set'])
+        # The mutation itself: the Blocked option, on the issue just created.
+        self.assertEqual(hub.stage_writes, [(applied['number'], 'Blocked')])
 
-    def test_browser_work_goes_to_the_non_code_lane_not_the_blocked_one(self):
-        """The lane a sweep never releases from. Blocked means a dependency is
+    def test_browser_work_is_set_to_non_code_not_to_blocked(self):
+        """The stage a sweep never releases from. Blocked means a dependency is
         open, and no dependency closing will make a code agent able to click
         through a console.
 
@@ -2283,10 +2342,12 @@ class TestIssueApply(_ApplyCase):
                                    'field-ownership': 'Browser agent'})
         code, payload, _, _ = self._run([entry], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['applied'][0]['board_column'], 'Non-code')
+        self.assertEqual(payload['applied'][0]['stage'], 'Non-code')
+        self.assertEqual(hub.stage_writes,
+                         [(payload['applied'][0]['number'], 'Non-code')])
 
     def test_ownership_wins_over_a_dependency(self):
-        """Both are true at once and only one can name a lane. The owner is a
+        """Both are true at once and only one can name a stage. The owner is a
         property of the work, and no dependency closing changes it."""
         hub = _FakeHub([_existing(7)])
         entry = self._full(title='[Manual] Device pass', blocked_by=[7],
@@ -2295,59 +2356,64 @@ class TestIssueApply(_ApplyCase):
                                    'field-ownership': 'Human'})
         code, payload, _, _ = self._run([entry], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['applied'][0]['board_column'], 'Non-code')
+        self.assertEqual(payload['applied'][0]['stage'], 'Non-code')
 
-    def test_a_pickable_issue_is_still_placed_in_backlog(self):
-        """The gap the Backlog pool cannot survive. This phase used to return
-        early for pickable work, so a created code issue got no board item at
-        all — and an issue with no card is an issue the picker cannot see."""
+    def test_a_pickable_issue_is_still_written_as_backlog(self):
+        """Backlog rather than left blank. Both mean available, and the written
+        value is the one a board groups under a column a person recognises."""
         hub = _FakeHub()
         code, payload, _, _ = self._run([self._full()], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['applied'][0]['board_column'], 'Backlog')
+        self.assertEqual(payload['applied'][0]['stage'], 'Backlog')
+        self.assertEqual(hub.stage_writes,
+                         [(payload['applied'][0]['number'], 'Backlog')])
 
     def test_an_update_whose_blockers_closed_returns_to_the_pool(self):
-        """The other half of the early return: an issue whose last dependency
-        closed resolved to pickable, so its card stayed in Blocked until a
-        separate sweep happened to scan it."""
+        """An issue whose last dependency closed resolved to pickable, so it
+        stayed Blocked until a separate sweep happened to scan it."""
         hub = _FakeHub([_existing(7, blocked_by=[6]), _existing(6)],
-                       closed_edges={6})
+                       closed_edges={6}, stages={7: 'Blocked'})
         code, payload, _, _ = self._run([self._full(number=7)], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['applied'][0]['board_column'], 'Backlog')
+        self.assertEqual(payload['applied'][0]['stage'], 'Backlog')
+        self.assertEqual(hub.stage_writes, [(7, 'Backlog')])
 
-    def test_an_update_leaves_an_in_flight_card_where_it_is(self):
+    def test_an_update_leaves_an_in_flight_issue_where_it_is(self):
         """Reproduced live: a spec setting one field on an issue in progress
-        moved its card back to Backlog, where a second agent could pick up
-        work already underway. A lane this phase does not own is kept."""
+        put it back in Backlog, where a second agent could pick up work already
+        underway. A stage this phase does not own is kept."""
         hub = _FakeHub([_existing(7, type='User Story')],
-                       board_lanes={7: 'In Progress'})
+                       stages={7: 'In Progress'})
         code, payload, _, _ = self._run([self._full(number=7)], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['applied'][0]['board_column_kept'], 'In Progress')
-        self.assertEqual(hub.board_writes, [])
+        self.assertEqual(payload['applied'][0]['stage_kept'], 'In Progress')
+        self.assertEqual(hub.stage_writes, [])
 
-    def test_a_parked_card_is_not_silently_unparked(self):
-        hub = _FakeHub([_existing(7, type='User Story')],
-                       board_lanes={7: 'Parked'})
+    def test_a_parked_issue_is_not_silently_unparked(self):
+        hub = _FakeHub([_existing(7, type='User Story')], stages={7: 'Parked'})
         _, payload, _, _ = self._run([self._full(number=7)], hub)
-        self.assertEqual(payload['applied'][0]['board_column_kept'], 'Parked')
+        self.assertEqual(payload['applied'][0]['stage_kept'], 'Parked')
+        self.assertEqual(hub.stage_writes, [])
 
-    def test_an_explicit_state_moves_even_an_in_flight_card(self):
-        """Asking for a lane is a decision, not an inference, so it wins."""
+    def test_an_explicit_state_overrules_even_an_in_flight_stage(self):
+        """Asking for a stage is a decision, not an inference, so it wins."""
         hub = _FakeHub([_existing(7, type='User Story')],
-                       board_lanes={7: 'In Progress'})
+                       stages={7: 'In Progress'})
         code, payload, _, _ = self._run([self._full(number=7, state='parked')],
                                         hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['applied'][0]['board_column'], 'Parked')
-        self.assertNotIn('board_column_kept', payload['applied'][0])
+        self.assertEqual(payload['applied'][0]['stage'], 'Parked')
+        self.assertNotIn('stage_kept', payload['applied'][0])
+        self.assertEqual(hub.stage_writes, [(7, 'Parked')])
 
     def test_a_thin_issue_can_be_filed_straight_into_needs_refinement(self):
         hub = _FakeHub()
         code, payload, _, _ = self._run([self._full(state='refinement')], hub)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['applied'][0]['board_column'], 'Needs refinement')
+        self.assertEqual(payload['applied'][0]['stage'], 'Needs refinement')
+        self.assertEqual(hub.stage_writes,
+                         [(payload['applied'][0]['number'],
+                           'Needs refinement')])
 
     def test_a_state_the_spec_does_not_know_is_refused(self):
         hub = _FakeHub()
@@ -2355,13 +2421,14 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(code, wf.EXIT_SPEC)
         self.assertEqual(hub.mutations, [])
 
-    def test_a_backlog_card_is_still_re_placed_by_its_state(self):
-        """Backlog is a lane this phase owns, so an edge written on an issue
+    def test_a_backlog_issue_is_still_re_staged_by_its_state(self):
+        """Backlog is a stage this phase owns, so an edge written on an issue
         sitting there moves it to Blocked."""
         hub = _FakeHub([_existing(7, type='User Story'), _existing(6)],
-                       board_lanes={7: 'Backlog'})
+                       stages={7: 'Backlog'})
         _, payload, _, _ = self._run([self._full(number=7, blocked_by=[6])], hub)
-        self.assertEqual(payload['applied'][0]['board_column'], 'Blocked')
+        self.assertEqual(payload['applied'][0]['stage'], 'Blocked')
+        self.assertEqual(hub.stage_writes, [(7, 'Blocked')])
 
     def test_restating_blocked_by_removes_an_edge_the_entry_left_out(self):
         """`blocked_by` is the whole set. An edge added by mistake had no way
@@ -2377,12 +2444,12 @@ class TestIssueApply(_ApplyCase):
 
     def test_an_empty_blocked_by_releases_every_edge(self):
         hub = _FakeHub([_existing(7, type='User Story', blocked_by=[6]),
-                        _existing(6)], board_lanes={7: 'Blocked'})
+                        _existing(6)], stages={7: 'Blocked'})
         code, payload, _, _ = self._run([self._full(number=7, blocked_by=[])],
                                         hub)
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(hub.issues[7]['blocked_by'], [])
-        self.assertEqual(payload['applied'][0]['board_column'], 'Backlog')
+        self.assertEqual(payload['applied'][0]['stage'], 'Backlog')
 
     def test_an_entry_without_blocked_by_leaves_the_edges_alone(self):
         hub = _FakeHub([_existing(7, type='User Story', blocked_by=[6]),
@@ -2647,8 +2714,9 @@ class TestEpicTreeBatching(_ApplyCase):
                                 'parent': 'f%d' % f, 'fields': dict(fields)})
         return entries
 
-    def test_thirteen_issues_take_four_round_trips(self):
-        """Three levels plus the link phase. Anything more is per-issue chatter."""
+    def test_thirteen_issues_take_five_round_trips(self):
+        """Three levels, the link phase and one `Stage` write for the whole
+        spec. Anything more is per-issue chatter."""
         hub = _FakeHub()
         entries = self._tree()
         # One edge, so the link phase runs and is counted.
@@ -2656,16 +2724,16 @@ class TestEpicTreeBatching(_ApplyCase):
         code, payload, _, _ = self._run(entries, hub)
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(len(payload['applied']), 13)
-        self.assertEqual(len(hub.mutations), 4)
-        # Seven requests for thirteen issues, and the number does not move when
-        # the tree grows. Three reads -- the prerequisite lookup (repo id and
-        # label ids together), one batched edge read, so the lifecycle phase
-        # knows which of the edges it just wrote point at something still open,
-        # and one batched read of the lane each card is in now, so an update
-        # never drags an in-flight card back to Backlog -- then the four the
-        # board costs: its Status field, the cards that already exist, the
-        # cards that have to be added, the column write.
-        self.assertEqual(len(hub.queries), 7)
+        self.assertEqual(len(hub.mutations), 5)
+        self.assertEqual(len(hub.stage_writes), 13)
+        # Four reads for thirteen issues, and the number does not move when the
+        # tree grows: the prerequisite lookup (repo id and label ids together),
+        # one batched edge read, so the lifecycle phase knows which of the edges
+        # it just wrote point at something still open, one batched read of the
+        # stage each issue is in now, so an update never drags an in-flight
+        # issue back to Backlog, and one batched read of the node ids the
+        # `Stage` mutation names.
+        self.assertEqual(len(hub.queries), 4)
 
     def test_children_are_created_after_their_parents(self):
         hub = _FakeHub()
@@ -2687,7 +2755,7 @@ class TestEpicTreeBatching(_ApplyCase):
         code, payload, _, _ = self._run(entries, hub)
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(len(payload['applied']), wf_core.BATCH_MAX_NODES + 3)
-        self.assertEqual(len(hub.mutations), 2)
+        self.assertEqual(len([m for m in hub.mutations if 'createIssue' in m]), 2)
 
     def test_an_edge_may_point_at_any_level_because_links_come_last(self):
         hub = _FakeHub()
@@ -2854,9 +2922,9 @@ class TestHandoffAndClaims(unittest.TestCase):
 
     def _cfg(self):
         return _cfg(board={'project_node_id': None, 'project_title': None,
-                           'status_field_name': 'Status', 'columns': {}})
+                           'start_date_field_id': None})
 
-    def _run(self, argv, calls, moved=(True, 'moved to In Review'), rc=0):
+    def _run(self, argv, calls, written=(True, 'Stage set to In Review'), rc=0):
         args = wf.build_parser().parse_args(argv)
 
         def fake_run(cmd, input_text=None):
@@ -2865,23 +2933,28 @@ class TestHandoffAndClaims(unittest.TestCase):
 
         with mock.patch.object(wf, 'prepare_cfg', self._cfg), \
                 mock.patch.object(wf, 'run', fake_run), \
-                mock.patch.object(wf, 'board_move', lambda *a: moved), \
+                mock.patch.object(wf, 'set_stages',
+                                  lambda cfg, wanted: {int(n): written
+                                                       for n in wanted}), \
+                mock.patch.object(wf, 'set_stage', lambda *a: written), \
                 mock.patch.object(wf, 'repo_root', lambda: tempfile.mkdtemp()), \
                 contextlib.redirect_stderr(io.StringIO()):
             return _capture(args.func, args)
 
-    def test_handoff_labels_the_pr_moves_the_card_and_frees_the_claim(self):
+    def test_handoff_labels_the_pr_sets_the_stage_and_frees_the_claim(self):
         calls = []
         code, payload = self._run(['handoff', '--pr', '7', '--issue', '3'], calls)
         self.assertEqual(code, wf.EXIT_OK)
         joined = [' '.join(c) for c in calls]
         self.assertTrue(any('pr edit 7' in c and 'claude-authored' in c
                             and 'review-needs-review' in c for c in joined))
-        # No `issue edit` at all: the column is the state, so the move is
-        # the whole hand-off and there is no label to swap.
+        # No `issue edit` at all: `Stage` is the state, so the write is the
+        # whole hand-off and there is no label to swap.
         self.assertFalse(any('issue edit' in c for c in joined))
         self.assertTrue(any('refs/claims/issue-3' in c for c in joined))
-        self.assertEqual(payload['issues'][0]['board_moved'], True)
+        self.assertEqual(payload['issues'][0]['stage_set'], True)
+        self.assertEqual(payload['issues'][0]['stage_message'],
+                         'Stage set to In Review')
 
     def test_handoff_takes_the_pr_claim_before_freeing_the_issue_claim(self):
         """#164: the PR is locked from the moment it is handed to review, so a
@@ -2956,19 +3029,34 @@ class TestHandoffAndClaims(unittest.TestCase):
             ['handoff', '--pr', '7', '--issue', '3', '--gate-failed'], calls)
         self.assertEqual(payload['review_label'], 'review-changes-requested')
 
-    def test_handoff_reports_an_unmoved_board_without_failing(self):
-        """A failed move leaves the card where it was; the PR still exists and
-        the claim is still freed, so the run reports it rather than dying."""
+    def test_handoff_reports_an_unwritten_stage_without_failing(self):
+        """A failed write leaves the issue in the stage it was in; the PR still
+        exists and the claim is still freed, so the run reports it rather than
+        dying."""
         code, payload = self._run(['handoff', '--pr', '7', '--issue', '3'], [],
-                                  moved=(False, 'no board configured'))
+                                  written=(False, wf.NO_STAGE_FIELD))
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['issues'][0]['board_moved'], False)
+        self.assertEqual(payload['issues'][0]['stage_set'], False)
+        self.assertEqual(payload['issues'][0]['stage_message'],
+                         wf.NO_STAGE_FIELD)
 
-    def test_board_move_accepts_a_purpose_key_as_well_as_a_column_name(self):
-        code, payload = self._run(['board-move', '3', '--column', 'col-done'], [],
-                                  moved=(True, 'moved to Done'))
+    def test_stage_set_accepts_a_purpose_key_as_well_as_an_option_name(self):
+        code, payload = self._run(['stage-set', '3', '--stage', 'stage-done'],
+                                  [], written=(True, 'Stage set to Done'))
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['column'], 'Done')
+        self.assertEqual(payload['stage'], 'Done')
+        self.assertTrue(payload['set'])
+        self.assertIn('Done', payload['reason'])
+
+    def test_stage_set_reports_a_failed_write_and_still_exits_zero(self):
+        """`Stage` is the state, so a failed write leaves the issue where it
+        was — said out loud, and never fatal to the caller."""
+        code, payload = self._run(['stage-set', '3', '--stage', 'In Review'],
+                                  [], written=(False, wf.NO_STAGE_FIELD))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertFalse(payload['set'])
+        self.assertEqual(payload['stage'], 'In Review')
+        self.assertIn(wf.NO_STAGE_FIELD, payload['reason'])
 
     def test_claim_release_names_everything_it_freed(self):
         calls = []
@@ -3036,15 +3124,11 @@ class TestConfigAudit(unittest.TestCase):
     """Preflight's drift checks: what fails, what warns, and what it costs."""
 
     _SECTIONS = list(wf_core.REQUIRED_CONFIG_SECTIONS)
-    _PINNED = ['Priority', 'Effort', 'Classification', 'Origin', 'Ownership']
+    # `Stage` sits beside the mandatory fields here because every transition
+    # writes it, and a value on an unpinned field is invisible on the form.
+    _PINNED = ['Priority', 'Effort', 'Classification', 'Origin', 'Ownership',
+               'Stage']
     _LABELS = ['status-blocked', 'status-in-progress', 'type-bug']
-    # A board carrying every lane the workflow writes to. Since 9.0.0 the pool
-    # *is* the Backlog column, so a project with no board, or a board missing
-    # that column, is a critical finding rather than a clean run — which makes
-    # a live board part of the baseline every other check is measured against.
-    _LIVE_BOARD = {'title': None, 'field': {'options': [
-        {'id': 'opt%d' % i, 'name': name}
-        for i, name in enumerate(sorted(wf_core.BOARD_COLUMN_NAMES.values()))]}}
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -3059,51 +3143,36 @@ class TestConfigAudit(unittest.TestCase):
             for name in sections:
                 fh.write('## %s\n\nbody\n\n' % name)
 
-    @staticmethod
-    def _snapshot(board):
-        """The `### Status Options` a project would record for this board."""
-        live = {(o.get('name') or '').strip().lower(): o['id']
-                for o in ((board or {}).get('field') or {}).get('options') or ()}
-        return {purpose: live[name.strip().lower()]
-                for purpose, name in wf_core.BOARD_COLUMN_NAMES.items()
-                if name.strip().lower() in live}
-
     def _write_instruction(self, name, text):
         with open(os.path.join(self.scan, name), 'w', encoding='utf-8') as fh:
             fh.write(text)
 
-    def _run(self, sections=None, labels=None, types=None, board=_UNSET,
-             cfg_over=None, argv=(), caps=None, pins_ok=True, orphans=()):
-        if board is _UNSET:
-            board = copy.deepcopy(self._LIVE_BOARD)
+    def _run(self, sections=None, labels=None, types=None,
+             cfg_over=None, argv=(), caps=None, pins_ok=True, labelled=()):
         self._write_config(self._SECTIONS if sections is None else sections)
         cfg = _cfg(**(cfg_over or {}))
-        if not (cfg_over or {}).get('board'):
-            # Record exactly what the live board has. A recorded id the board
-            # dropped and a live column the file never recorded are both
-            # `board-column` warnings, so a baseline that records nothing --
-            # or records a lane the test just deleted -- would put nine of them
-            # under every other assertion.
-            cfg['board']['columns'] = self._snapshot(board)
         args = wf.build_parser().parse_args(
             ['config-audit', '--scan', self.scan, *argv])
         sent = []
 
         def gh_graphql(query, **fields):
-            if 'projectItems' in query:
-                sent.append('orphans')
+            if 'issues(states:OPEN' in query:
+                # `fetch_open_issue_state` — the open issues' labels and
+                # sub-issues. Nothing here asks about a board card any more.
+                sent.append('open-issues')
                 return True, {'repository': {'issues': {
                     'pageInfo': {'hasNextPage': False, 'endCursor': None},
                     'nodes': [{'number': n, 'title': 'issue %d' % n,
-                               'assignees': {'totalCount': 0},
-                               'projectItems': {'nodes': []}}
-                              for n in orphans]}}}, ''
+                               'state': 'OPEN', 'issueType': None,
+                               'subIssues': {'nodes': []},
+                               'labels': {'nodes': [{'name': name}
+                                                    for name in names]}}
+                              for n, names in labelled]}}}, ''
             sent.append('repo')
             return True, {'repository': {'labels': {
                 'pageInfo': {'hasNextPage': False, 'endCursor': None},
                 'nodes': [{'name': n} for n
-                          in (self._LABELS if labels is None else labels)]}},
-                'board': board}, ''
+                          in (self._LABELS if labels is None else labels)]}}}, ''
 
         def gh_graphql_partial(query, **fields):
             sent.append('pins')
@@ -3172,7 +3241,7 @@ class TestConfigAudit(unittest.TestCase):
     def test_an_unpinned_mandatory_field_fails_the_run(self):
         code, payload, _ = self._run(types=[
             {'name': 'User Story', 'enabled': True,
-             'pinned': ['Priority', 'Effort', 'Classification']}])
+             'pinned': ['Priority', 'Effort', 'Classification', 'Stage']}])
         self.assertEqual(code, wf.EXIT_DRIFT)
         self.assertEqual(self._checks(payload), ['field-unpinned'])
         self.assertIn('Ownership', payload['findings'][0]['detail'])
@@ -3191,7 +3260,8 @@ class TestConfigAudit(unittest.TestCase):
             n: m for n, m in _APPLY_CAPS['field_map'].items() if n != 'Ownership'})
         code, payload, _ = self._run(caps=caps, types=[
             {'name': 'User Story', 'enabled': True,
-             'pinned': ['Priority', 'Effort', 'Classification', 'Origin']}])
+             'pinned': ['Priority', 'Effort', 'Classification', 'Origin',
+                        'Stage']}])
         self.assertEqual(code, wf.EXIT_DRIFT)
         self.assertEqual(self._checks(payload), ['field-absent'])
         self.assertIn('Ownership', payload['findings'][0]['detail'])
@@ -3249,60 +3319,49 @@ class TestConfigAudit(unittest.TestCase):
         self.assertEqual(code, wf.EXIT_OK)
         self.assertIn('field-unmapped', self._checks(payload))
 
-    def test_a_board_column_that_no_longer_resolves_warns(self):
-        board = copy.deepcopy(self._LIVE_BOARD)
-        board['title'] = 'widgets'
-        board['field']['options'].append({'id': 'live1234', 'name': 'In Progress'})
-        columns = dict(self._snapshot(board), **{'col-in-progress': 'dead1234'})
-        code, payload, _ = self._run(
-            board=board,
-            cfg_over={'board': {'project_node_id': 'PVT_1',
-                                'project_title': 'widgets',
-                                'status_field_name': 'Status',
-                                'columns': columns}})
-        self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(self._checks(payload), ['board-column'])
+    # ── the Stage field ──────────────────────────────────────────────────────
 
-    def test_a_board_without_the_pool_column_fails_the_run(self):
-        """The pool is a board column, so this is not a display problem."""
-        board = copy.deepcopy(self._LIVE_BOARD)
-        board['field']['options'] = [
-            o for o in board['field']['options'] if o['name'] != 'Backlog']
-        code, payload, _ = self._run(board=board)
+    def test_an_org_with_no_stage_field_fails_the_run(self):
+        """Every transition writes `Stage`. With no such field nothing records
+        whether an issue is in progress, blocked or done, so a second agent
+        picks up work already underway."""
+        caps = dict(_APPLY_CAPS, field_map={
+            n: m for n, m in _APPLY_CAPS['field_map'].items() if n != 'Stage'})
+        code, payload, _ = self._run(caps=caps, types=[
+            {'name': 'User Story', 'enabled': True,
+             'pinned': [n for n in self._PINNED if n != 'Stage']}])
         self.assertEqual(code, wf.EXIT_DRIFT)
-        self.assertEqual(self._checks(payload), ['board-lane'])
-        self.assertEqual(payload['summary']['critical'], 1)
+        self.assertEqual(self._checks(payload), ['stage-absent'])
+        self.assertIn('Stage', payload['findings'][0]['detail'])
 
-    def test_a_missing_lane_that_is_not_the_pool_only_warns(self):
-        board = copy.deepcopy(self._LIVE_BOARD)
-        board['field']['options'] = [
-            o for o in board['field']['options'] if o['name'] != 'Parked']
-        code, payload, _ = self._run(board=board)
-        self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(self._checks(payload), ['board-lane'])
-
-    def test_a_project_with_no_board_cannot_pick_at_all(self):
-        code, payload, _ = self._run(cfg_over={'board': {}})
+    def test_a_stage_field_missing_an_option_fails_the_run(self):
+        """A transition to an option the field does not have fails at GitHub,
+        and the issue keeps whatever stage it had — which for a claim is the
+        pool."""
+        options = {n: i for n, i in _STAGE_META['options'].items()
+                   if n != 'In Review'}
+        caps = dict(_APPLY_CAPS, field_map=dict(
+            _APPLY_CAPS['field_map'],
+            **{'Stage': dict(_STAGE_META, options=options)}))
+        code, payload, _ = self._run(caps=caps)
         self.assertEqual(code, wf.EXIT_DRIFT)
-        self.assertEqual(self._checks(payload), ['board-lane'])
-        self.assertIn('board-lane', payload['checked'])
-        self.assertIn('board-column', payload['skipped'])
+        self.assertEqual(self._checks(payload), ['stage-options'])
+        self.assertIn('In Review', payload['findings'][0]['detail'])
 
-    def test_a_node_id_that_resolves_to_nothing_fails_the_run(self):
-        code, payload, _ = self._run(board=None)
+    def test_an_unpinned_stage_field_fails_the_run(self):
+        """A value on an unpinned field is invisible on the issue form, so
+        nobody can see the state the workflow is writing."""
+        code, payload, _ = self._run(types=[
+            {'name': 'User Story', 'enabled': True,
+             'pinned': [n for n in self._PINNED if n != 'Stage']}])
         self.assertEqual(code, wf.EXIT_DRIFT)
-        self.assertEqual(self._checks(payload), ['board-lane'])
+        self.assertEqual(self._checks(payload), ['field-unpinned'])
+        self.assertIn('Stage', payload['findings'][0]['detail'])
 
-    def test_a_node_id_pointing_at_a_different_board_warns(self):
-        board = copy.deepcopy(self._LIVE_BOARD)
-        board['title'] = 'something else'
-        _, payload, _ = self._run(
-            board=board,
-            cfg_over={'board': {'project_node_id': 'PVT_1',
-                                'project_title': 'widgets',
-                                'status_field_name': 'Status',
-                                'columns': self._snapshot(board)}})
-        self.assertEqual(self._checks(payload), ['board-title'])
+    def test_the_stage_checks_are_named_in_a_clean_run(self):
+        _, payload, _ = self._run()
+        for check in ('stage-absent', 'stage-options'):
+            self.assertIn(check, payload['checked'])
 
     def test_unreadable_pinning_is_reported_rather_than_assumed_correct(self):
         """Not knowing is not the same as being fine."""
@@ -3316,29 +3375,25 @@ class TestConfigAudit(unittest.TestCase):
     def test_the_api_checks_cost_three_round_trips(self):
         """Preflight runs at the top of every session, so this is a budget.
 
-        Three, not two, since 9.0.0: labels and the board share one query, the
-        issue-type pins are a second, and reading which open issues have no
-        board card is the third. That last one is the price of the pool being a
-        board column, and it is paid once per audit rather than per issue.
+        The repo's labels are one query, one walk of the open issues answers
+        both the retired-label and the finished-container check, and the
+        issue-type pins are the third.
         """
-        _, _, sent = self._run(
-            cfg_over={'board': {'project_node_id': 'PVT_1', 'project_title': None,
-                                'status_field_name': 'Status', 'columns': {}}},
-            board={'title': None, 'field': {'options': []}})
-        self.assertEqual(sent, ['repo', 'orphans', 'pins'])
+        _, _, sent = self._run()
+        self.assertEqual(sent, ['repo', 'open-issues', 'pins'])
 
-    def test_an_open_issue_with_no_board_card_fails_the_run(self):
-        """The check that makes the Backlog pool safe to adopt: an issue with
-        no card is invisible to `pick`, and nothing else would say so."""
-        code, payload, _ = self._run(orphans=(164, 224))
-        self.assertEqual(code, wf.EXIT_DRIFT)
-        self.assertEqual(self._checks(payload), ['board-orphan'])
-        self.assertIn('#164, #224', payload['findings'][0]['detail'])
+    def test_an_open_issue_still_carrying_a_retired_label_is_reported(self):
+        """How an existing backlog migrates: no label decides anything any
+        more, so one left on an issue only misleads the person reading it."""
+        code, payload, _ = self._run(labelled=[(164, ['status-blocked'])])
+        self.assertEqual(self._checks(payload), ['label-retired'])
+        self.assertIn('#164', payload['findings'][0]['detail'])
+        self.assertEqual(code, wf.EXIT_OK)
 
-    def test_a_board_that_holds_every_open_issue_is_clean(self):
+    def test_a_backlog_carrying_no_retired_label_is_clean(self):
         code, payload, _ = self._run()
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertIn('board-orphan', payload['checked'])
+        self.assertIn('label-retired', payload['checked'])
 
     def test_offline_runs_the_checks_that_need_no_network(self):
         def explode(*a, **k):
@@ -3374,91 +3429,260 @@ class TestConfigAudit(unittest.TestCase):
         self.assertEqual(self._checks(payload), [])
 
 
-class TestBoardMoveOrdering(unittest.TestCase):
-    """The column is resolved before the card is added, and that order matters.
+class _StageHub(object):
+    """A recording transport for the `Stage` write, and nothing else.
 
-    The other way round, an issue destined for a column the board does not have
-    was added to the board and *then* found to have nowhere to go: the add
-    succeeded, the status write did not, and the card landed in the board's
-    `No Status` bucket while the caller was told `moved: false`. That is how a
-    `report-issue` run aimed at a `Ready` column no board had put issues on the
-    board with no status at all.
+    Two round trips make one transition: the aliased node-id read, then the
+    aliased `setIssueFieldValue`. Both are recorded, so a test can assert the
+    option that was written and the issue it was written for rather than only
+    the JSON the command reported.
     """
 
-    OPTIONS = [{'id': 'O_back', 'name': 'Backlog'},
-               {'id': 'O_done', 'name': 'Done'}]
+    def __init__(self, missing_field=False, fail=()):
+        self.missing_field = missing_field
+        self.fail = {int(n) for n in fail}
+        self.writes = []      # (issue number, option name), in order
+        self.queries = []
+        self.mutations = []
 
-    def _cfg(self):
-        return _cfg(board={'project_node_id': 'PVT_1',
-                           'project_title': 'board', 'columns': {},
-                           'status_field_name': 'Status'})
+    def caps(self, cfg, refresh=False, root=None):
+        field_map = dict(_APPLY_CAPS['field_map'])
+        if self.missing_field:
+            del field_map['Stage']
+        return True, dict(_APPLY_CAPS, field_map=field_map), ''
 
-    def _move(self, column, on_board=True, options=None):
-        """Drive `board_move`, recording every query and mutation it sends."""
-        sent = []
+    def gh_graphql(self, query, **fields):
+        self.queries.append(query)
+        numbers = re.findall(r'n(\d+): issue\(number:\d+\)', query)
+        if numbers:
+            return True, {'repository': {'n%s' % n: {'id': 'I_%s' % n,
+                                                     'number': int(n)}
+                                         for n in numbers}}, ''
+        # Anything else this run happens to ask for is not what is under test
+        # here, and answering it wrongly is safer than raising: the command
+        # reports the failure and the assertions below stay about the write.
+        return False, None, 'not stubbed'
 
-        def fake_graphql(query, **fields):
-            sent.append(query)
-            if 'ProjectV2SingleSelectField' in query:
-                return True, {'node': {
-                    'title': 'board',
-                    'field': {'id': 'F_1',
-                              'options': self.OPTIONS if options is None
-                              else options}}}, ''
-            if 'projectItems' in query:
-                items = [{'id': 'ITEM_1', 'project': {'id': 'PVT_1'}}] \
-                    if on_board else []
-                return True, {'repository': {'b3': {
-                    'id': 'I_1', 'projectItems': {'nodes': items}}}}, ''
-            if 'addProjectV2ItemById' in query:
-                return True, {'a3': {'item': {'id': 'ITEM_NEW'}}}, ''
-            if 'updateProjectV2ItemFieldValue' in query:
-                return True, {'m3': {'projectV2Item': {'id': 'ITEM_1'}}}, ''
-            raise AssertionError('unexpected query: %s' % query)
+    def graphql_json(self, query, variables):
+        self.mutations.append(query)
+        data, errors = {}, []
+        for alias in re.findall(r'(s\d+): setIssueFieldValue', query):
+            number = int(alias[1:])
+            spec = variables['%s_f' % alias][0]
+            if spec['fieldId'] != _STAGE_META['id']:
+                raise AssertionError('a Stage write named field %s'
+                                     % spec['fieldId'])
+            if variables['%s_i' % alias] != 'I_%d' % number:
+                raise AssertionError('alias %s carried node id %s'
+                                     % (alias, variables['%s_i' % alias]))
+            if number in self.fail:
+                data[alias] = None
+                errors.append({'path': [alias], 'message': 'field is read-only'})
+                continue
+            self.writes.append((number, _STAGE_BY_ID[spec['singleSelectOptionId']]))
+            data[alias] = {'issue': {'id': 'I_%d' % number}}
+        return 0, json.dumps({'data': data, 'errors': errors}), ''
 
-        wf._BOARD_FIELD_CACHE.clear()
-        with mock.patch.object(wf, 'gh_graphql', fake_graphql):
-            moved, message = wf.board_move(self._cfg(), 3, column)
-        return moved, message, sent
+    @contextlib.contextmanager
+    def wired(self, calls=None):
+        """Patch every seam a transition touches, and record the `gh` calls."""
+        def fake_run(cmd, input_text=None):
+            if calls is not None:
+                calls.append(list(cmd))
+            return 0, '', ''
 
-    def test_an_unknown_column_never_touches_the_board(self):
-        moved, message, sent = self._move('Ready', on_board=False)
-        self.assertFalse(moved)
-        self.assertIn("no 'Ready' column", message)
-        self.assertFalse([q for q in sent if 'addProjectV2ItemById' in q])
-        self.assertFalse([q for q in sent if 'updateProjectV2ItemFieldValue' in q])
+        with mock.patch.object(wf, 'resolve_org_capabilities', self.caps), \
+                mock.patch.object(wf, 'gh_graphql', self.gh_graphql), \
+                mock.patch.object(wf, '_graphql_json', self.graphql_json), \
+                mock.patch.object(wf, 'run', fake_run), \
+                contextlib.redirect_stderr(io.StringIO()):
+            yield
 
-    def test_an_unknown_column_names_the_ones_that_exist(self):
-        """A report that only says no is a report someone has to go and check."""
-        _, message, _ = self._move('Ready')
-        self.assertIn('Backlog, Done', message)
 
-    def test_an_unknown_column_costs_one_query(self):
-        """Resolving first is also cheaper: the item lookup never happens."""
-        _, _, sent = self._move('Ready')
-        self.assertEqual(len(sent), 1)
+class TestStageWrites(unittest.TestCase):
+    """`set_stages` itself: what it sends, how it batches, and what it refuses.
 
-    def test_a_known_column_still_adds_a_missing_card(self):
-        moved, _, sent = self._move('Backlog', on_board=False)
-        self.assertTrue(moved)
-        self.assertTrue([q for q in sent if 'addProjectV2ItemById' in q])
-        self.assertTrue([q for q in sent if 'updateProjectV2ItemFieldValue' in q])
+    Every transition below goes through this one function, so the shape of the
+    mutation is asserted once here rather than in each of them.
+    """
 
-    def test_identity_and_column_share_one_query(self):
-        """The safer order is a round trip cheaper than the one it replaced."""
-        moved, _, sent = self._move('Done')
-        self.assertTrue(moved)
-        self.assertEqual(len(sent), 3)
+    def test_one_write_names_the_field_the_option_and_the_issue(self):
+        hub = _StageHub()
+        with hub.wired():
+            written, message = wf.set_stage(_cfg(), 7, 'In Review')
+        self.assertTrue(written, message)
+        self.assertEqual(hub.writes, [(7, 'In Review')])
+        self.assertEqual(message, 'Stage set to In Review')
 
-    def test_a_board_that_resolves_to_another_project_is_skipped(self):
-        def fake_graphql(query, **fields):
-            return True, {'node': {'title': 'somebody else', 'field': None}}, ''
+    def test_a_purpose_key_names_the_same_option(self):
+        hub = _StageHub()
+        with hub.wired():
+            wf.set_stage(_cfg(), 7, 'stage-in-review')
+        self.assertEqual(hub.writes, [(7, 'In Review')])
 
-        wf._BOARD_FIELD_CACHE.clear()
-        with mock.patch.object(wf, 'gh_graphql', fake_graphql):
-            moved, message = wf.board_move(self._cfg(), 3, 'Backlog')
-        self.assertFalse(moved)
-        self.assertIn('somebody else', message)
+    def test_the_whole_set_is_two_round_trips_however_many_issues(self):
+        """One aliased id read and one aliased mutation, not one pair each."""
+        hub = _StageHub()
+        wanted = {n: 'Backlog' for n in range(1, wf.STAGE_BATCH + 1)}
+        with hub.wired():
+            out = wf.set_stages(_cfg(), wanted)
+        self.assertEqual(len(hub.queries), 1)
+        self.assertEqual(len(hub.mutations), 1)
+        self.assertEqual(len(out), wf.STAGE_BATCH)
+        self.assertTrue(all(ok for ok, _ in out.values()))
+
+    def test_a_set_past_the_batch_cap_is_split(self):
+        hub = _StageHub()
+        wanted = {n: 'Backlog' for n in range(1, wf.STAGE_BATCH + 3)}
+        with hub.wired():
+            wf.set_stages(_cfg(), wanted)
+        self.assertEqual(len(hub.mutations), 2)
+        self.assertEqual(len(hub.writes), wf.STAGE_BATCH + 2)
+
+    def test_one_refused_write_does_not_cost_the_others_theirs(self):
+        hub = _StageHub(fail=[2])
+        with hub.wired():
+            out = wf.set_stages(_cfg(), {1: 'Backlog', 2: 'Backlog',
+                                         3: 'Backlog'})
+        self.assertEqual([n for n, _ in hub.writes], [1, 3])
+        self.assertFalse(out[2][0])
+        self.assertIn('read-only', out[2][1])
+        self.assertTrue(out[1][0])
+
+    def test_an_org_with_no_stage_field_says_so_in_one_message(self):
+        """So a caller can tell a configuration gap from a failed write
+        without parsing the reason."""
+        hub = _StageHub(missing_field=True)
+        with hub.wired():
+            written, message = wf.set_stage(_cfg(), 7, 'Done')
+        self.assertFalse(written)
+        self.assertEqual(message, wf.NO_STAGE_FIELD)
+        self.assertEqual(hub.mutations, [])
+
+    def test_a_value_that_is_not_a_stage_never_reaches_github(self):
+        hub = _StageHub()
+        with hub.wired():
+            written, message = wf.set_stage(_cfg(), 7, 'Ready')
+        self.assertFalse(written)
+        self.assertIn("'Ready' is not a stage", message)
+        self.assertEqual(hub.mutations, [])
+
+
+class TestStageTransitions(unittest.TestCase):
+    """Every transition the workflow makes, against the recorded transport.
+
+    One issue's state is one field value, so each of these is one mutation
+    naming one option — and the test asserts the mutation, not only the JSON
+    the command reported afterwards.
+    """
+
+    def test_a_claim_sets_the_issue_to_in_progress(self):
+        hub, calls = _StageHub(), []
+        with hub.wired(calls):
+            wf.apply_in_progress(_cfg(), {'number': 7, 'labels': []})
+        self.assertEqual(hub.writes, [(7, 'In Progress')])
+        # The other half of taking ownership, and the only `gh` call.
+        joined = ' '.join(' '.join(c) for c in calls)
+        self.assertIn('--add-assignee @me', joined)
+        self.assertNotIn('--add-label', joined)
+
+    def test_giving_a_claim_back_returns_the_issue_to_the_pool(self):
+        hub, calls = _StageHub(), []
+        with hub.wired(calls):
+            restored, _ = wf.revert_in_progress(_cfg(), 7)
+        self.assertTrue(restored)
+        self.assertEqual(hub.writes, [(7, 'Backlog')])
+        self.assertIn('--remove-assignee @me',
+                      ' '.join(' '.join(c) for c in calls))
+
+    def test_an_open_blocked_by_edge_sets_the_issue_to_blocked(self):
+        hub, calls = _StageHub(), []
+        with hub.wired(calls):
+            written, _ = wf.mark_blocked(_cfg(), {'number': 7}, '#9')
+        self.assertTrue(written)
+        self.assertEqual(hub.writes, [(7, 'Blocked')])
+        body = [c for c in calls if 'comment' in c][0][-1]
+        self.assertIn('#9', body)
+
+    def test_a_pull_request_hands_its_issues_to_in_review(self):
+        hub, calls = _StageHub(), []
+        args = wf.build_parser().parse_args(['handoff', '--pr', '7',
+                                             '--issue', '3'])
+        with hub.wired(calls), \
+                mock.patch.object(wf, 'prepare_cfg', lambda: _cfg()), \
+                mock.patch.object(wf, 'repo_root', lambda: tempfile.mkdtemp()):
+            code, payload = _capture(args.func, args)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(hub.writes, [(3, 'In Review')])
+        self.assertTrue(payload['issues'][0]['stage_set'])
+
+    def test_a_merge_settles_its_issues_as_done(self):
+        hub, calls = _StageHub(), []
+
+        def fake_run(cmd, input_text=None):
+            calls.append(list(cmd))
+            if cmd[:3] == ['gh', 'pr', 'view']:
+                return 0, json.dumps({
+                    'number': 50, 'state': 'MERGED',
+                    'mergedAt': '2026-09-10T00:00:00Z', 'baseRefName': 'main',
+                    'closingIssuesReferences': [{'number': 5}]}), ''
+            if cmd[:3] == ['gh', 'issue', 'view']:
+                return 0, json.dumps({'state': 'OPEN', 'labels': []}), ''
+            return 0, '', ''
+
+        args = wf.build_parser().parse_args(['post-merge', '--pr', '50',
+                                             '--no-unblock'])
+        with hub.wired(), \
+                mock.patch.object(wf, 'run', fake_run), \
+                mock.patch.object(wf, 'check_environment', lambda: None), \
+                mock.patch.object(wf, 'load_config', lambda: (True, _cfg(), '')), \
+                mock.patch.object(wf, 'close_finished_ancestors',
+                                  lambda cfg, numbers: ([], [])):
+            code, payload = _capture(args.func, args)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(hub.writes, [(5, 'Done')])
+        self.assertTrue(payload['settled'][0]['stage_set'])
+        self.assertTrue(payload['settled'][0]['closed_now'])
+
+    def test_an_unblock_returns_a_released_issue_to_backlog(self):
+        hub, calls = _StageHub(), []
+        with hub.wired(calls):
+            result = wf.release_issue(_cfg(), {'number': 1313,
+                                               'title': 'Device pass'}, [1311])
+        self.assertEqual(hub.writes, [(1313, 'Backlog')])
+        self.assertTrue(result['stage_set'])
+        body = [c for c in calls if 'comment' in c][0][-1]
+        self.assertIn('#1311', body)
+
+    def test_non_code_ownership_moves_an_issue_out_of_blocked_without_releasing_it(self):
+        """Non-code, never Backlog: no dependency closing will make a code
+        agent able to do the work, so it must not pass through the pool."""
+        hub, calls = _StageHub(), []
+        with hub.wired(calls):
+            result = wf.rescope_issue(_cfg(), {'number': 1368, 'title': 't'},
+                                      'human')
+        self.assertEqual(hub.writes, [(1368, 'Non-code')])
+        self.assertEqual(result['stage'], 'Non-code')
+        self.assertIn('Non-code', [c for c in calls if 'comment' in c][0][-1])
+
+    def test_a_resolved_issue_is_closed_and_set_to_done(self):
+        hub, calls = _StageHub(), []
+        with hub.wired(calls):
+            written, _ = wf.close_resolved(_cfg(), {'number': 7, 'labels': []}, 42)
+        self.assertTrue(written)
+        self.assertEqual(hub.writes, [(7, 'Done')])
+        self.assertTrue(any(c[:3] == ['gh', 'issue', 'close'] for c in calls))
+
+    def test_a_failed_transition_is_reported_rather_than_swallowed(self):
+        """`Stage` is the state, so an issue whose write failed keeps the one
+        it had — for a claim, that is the pool, and the next run picks it up
+        again."""
+        hub, calls = _StageHub(fail=[7]), []
+        with hub.wired(calls):
+            written, message = wf.mark_blocked(_cfg(), {'number': 7}, '#9')
+        self.assertFalse(written)
+        self.assertIn('read-only', message)
+        self.assertEqual(hub.writes, [])
 
 
 class TestUnblockSweep(unittest.TestCase):
@@ -3475,44 +3699,34 @@ class TestUnblockSweep(unittest.TestCase):
     SCOPED = (1368, '[Manual] Device pass on iOS',
               [{'number': 1362, 'state': 'CLOSED'}])
 
-    def _cfg(self):
-        return _cfg(board={'project_node_id': 'PVT_1', 'project_title': 'Board',
-                           'status_field_name': 'Status', 'columns': {}})
-
     def _sweep(self, issues, calls, dry_run=False, deliveries=None,
                ownership=None, moves=None, queries=None):
         """Drive `unblock_scan` over `issues` with every network call stubbed.
 
-        Each entry is `(number, title, blocked_by)`, laid out the way the board
-        query returns it: the sweep reads the Blocked column, so a fixture that
-        hands it a search result would be testing a path that no longer exists.
+        Each entry is `(number, title, blocked_by)`, laid out the way the
+        open-issue query returns it: the sweep reads the issues whose `Stage`
+        is Blocked, so a fixture that hands it a search result or a board page
+        would be testing a path that no longer exists.
         """
-        nodes = [{'fieldValueByName': {'name': 'Blocked'},
-                  'content': {'number': n, 'title': t, 'body': '',
-                              'state': 'OPEN', 'url': '',
-                              'labels': {'nodes': []}, 'milestone': None,
-                              'assignees': {'nodes': []},
-                              'blockedBy': {'nodes': list(edges)}}}
-                 for n, t, edges in issues]
+        nodes = [_open_issue(n, stage='Blocked', edges=list(edges))
+                 for n, _t, edges in issues]
+        for node, (_n, title, _e) in zip(nodes, issues):
+            node['title'] = title
         owned = {n: 'Code agent' for n, _t, _e in issues}
         owned.update(ownership or {})
 
         def fake_graphql(query, **fields):
             if queries is not None:
                 queries.append(query)
-            return True, {'node': {
-                'field': {'options': [{'name': 'Backlog'}, {'name': 'Blocked'},
-                                      {'name': 'Non-code'}]},
-                'items': {'pageInfo': {'hasNextPage': False},
-                          'nodes': nodes}}}, ''
+            return True, _open_issue_page(nodes), ''
 
         def fake_run(cmd, input_text=None):
             calls.append(list(cmd))
             return 0, '', ''
 
-        def fake_move(cfg, number, column):
-            (moves if moves is not None else []).append((number, column))
-            return True, 'moved to %s' % column
+        def fake_stage(cfg, number, stage):
+            (moves if moves is not None else []).append((number, stage))
+            return True, 'Stage set to %s' % stage
 
         with mock.patch.object(wf, 'gh_graphql', fake_graphql), \
                 mock.patch.object(wf, 'run', fake_run), \
@@ -3521,39 +3735,39 @@ class TestUnblockSweep(unittest.TestCase):
                                       ownership=owned), '')), \
                 mock.patch.object(wf, 'blocker_deliveries',
                                   lambda *a, **k: deliveries or {}), \
-                mock.patch.object(wf, 'board_move', fake_move):
-            return wf.unblock_scan(self._cfg(), dry_run=dry_run)
+                mock.patch.object(wf, 'set_stage', fake_stage):
+            return wf.unblock_scan(_cfg(), dry_run=dry_run)
 
-    def test_the_sweep_reads_the_blocked_column_not_a_label(self):
-        """The 10.0.0 change, and the reason the sweep can be trusted at all.
+    def test_the_sweep_reads_the_stage_field_not_a_label_and_not_a_board(self):
+        """The reason the sweep can be trusted at all.
 
-        It searched for `status-blocked` until then, so an issue whose card sat
-        in Blocked with no such label was invisible to it and stayed blocked
-        for good -- and an issue carrying the label whose card had already
-        moved on was swept anyway. One question, one answer, and the board is
-        where it lives.
+        It searched for `status-blocked` until 10.0.0 and read a board column
+        until 12.0.0, and either could disagree with the other record of the
+        same fact. One field holds one value per issue, so there is one answer.
         """
         queries = []
         self._sweep([self.RELEASED], [], queries=queries)
         self.assertTrue(queries)
         self.assertFalse([q for q in queries if 'search(' in q])
-        self.assertIn('ProjectV2', queries[0])
+        self.assertFalse([q for q in queries if 'ProjectV2' in q])
+        self.assertIn('states:OPEN', queries[0])
+        self.assertIn('blockedBy', queries[0])
 
     def test_an_issue_whose_blockers_all_closed_is_released(self):
         moves = []
         report = self._sweep([self.RELEASED], [], moves=moves)
         self.assertEqual([r['issue'] for r in report['released']], [1313])
         self.assertEqual(report['released'][0]['closed_blockers'], [1311])
-        self.assertTrue(report['released'][0]['board_moved'])
+        self.assertTrue(report['released'][0]['stage_set'])
         self.assertEqual(moves, [(1313, 'Backlog')])
 
-    def test_the_release_is_the_move_into_the_pool(self):
+    def test_the_release_is_the_write_into_the_pool(self):
         """Backlog is the pick pool, so arriving there *is* being released.
 
         There is no second write for the two to disagree about, which is what
         the label version could never promise: an issue could carry no
-        `status-blocked` label and still sit in the Blocked lane, out of the
-        pool, with nothing to notice it.
+        `status-blocked` label and still be out of the pool, with nothing to
+        notice it.
         """
         moves = []
         self._sweep([self.RELEASED], [], moves=moves)
@@ -3606,8 +3820,8 @@ class TestUnblockSweep(unittest.TestCase):
                          [{'issue': 1313, 'title': 'Device pass'}])
         self.assertEqual(moves, [])
 
-    def test_scoped_work_is_moved_to_the_non_code_lane_not_released(self):
-        """The bug this lane exists to close. Both issues the first real sweep
+    def test_scoped_work_is_set_to_the_non_code_stage_not_released(self):
+        """The bug this stage exists to close. Both issues the first real sweep
         would have released were `[Manual]` device-pass work whose blockers
         happened to close."""
         moves = []
@@ -3616,7 +3830,7 @@ class TestUnblockSweep(unittest.TestCase):
         self.assertEqual(report['released'], [])
         self.assertEqual([r['issue'] for r in report['rescoped']], [1368])
         self.assertEqual(report['rescoped'][0]['scope'], 'human')
-        self.assertEqual(report['rescoped'][0]['column'], 'Non-code')
+        self.assertEqual(report['rescoped'][0]['stage'], 'Non-code')
         self.assertEqual(moves, [(1368, 'Non-code')])
 
     def test_a_rescope_says_on_the_issue_what_changed_and_what_did_not(self):
@@ -3667,12 +3881,12 @@ class TestUnblockSweep(unittest.TestCase):
 
 
 class TestMarkBlocked(unittest.TestCase):
-    """Returning an issue to blocked moves its card, and that is the whole act.
+    """Returning an issue to blocked writes its `Stage`, and that is the act.
 
-    The board is how a person sees the state of the work, and until 10.0.0 it
-    was also given a `status-blocked` label to agree with. Two records of one
-    fact is one record too many: a card in In Progress carrying a blocked label
-    is two answers, and the one a human reads is the wrong one.
+    The state of an issue is one field value, and until 10.0.0 it was also
+    given a `status-blocked` label to agree with. Two records of one fact is
+    one record too many: an issue In Progress carrying a blocked label is two
+    answers, and the one a human reads is the wrong one.
     """
 
     def _mark(self):
@@ -3680,13 +3894,13 @@ class TestMarkBlocked(unittest.TestCase):
         with mock.patch.object(wf, 'run',
                                lambda c, input_text=None:
                                (calls.append(list(c)), (0, '', ''))[1]), \
-                mock.patch.object(wf, 'board_move',
-                                  lambda cfg, number, column:
-                                  (moves.append((number, column)), (True, ''))[1]):
+                mock.patch.object(wf, 'set_stage',
+                                  lambda cfg, number, stage:
+                                  (moves.append((number, stage)), (True, ''))[1]):
             wf.mark_blocked(_cfg(), {'number': 7}, '#9')
         return calls, moves
 
-    def test_the_card_moves_to_the_blocked_lane(self):
+    def test_the_stage_is_set_to_blocked(self):
         _calls, moves = self._mark()
         self.assertEqual(moves, [(7, 'Blocked')])
 
@@ -3716,10 +3930,6 @@ class TestPreflight(unittest.TestCase):
     they disagreed about what counted as critical. These tests pin the answer.
     """
 
-    _LIVE_BOARD = {'title': 'Board', 'field': {'options': [
-        {'id': 'opt%d' % i, 'name': name}
-        for i, name in enumerate(sorted(wf_core.BOARD_COLUMN_NAMES.values()))]}}
-
     _CONFIG = '\n'.join([
         '# Project', '',
         '## Identity', '', '| org | acme |', '| repo | widgets |', '',
@@ -3729,14 +3939,10 @@ class TestPreflight(unittest.TestCase):
         '## Label Map', '', '| Purpose | Label |', '| --- | --- |',
         '| claude-authored | `claude-authored` |', '',
         '## Issue Types & Fields', '', '| type-capable | yes |', '',
+        # What is left of the board section since 12.0.0: the project's own id,
+        # and no Status field or column table, because nothing writes to a card.
         '## Project Board', '', '| project-node-id | PVT_1 |',
-        '| project-title | Board |', '',
-        '### Status Options', '',
-        '| Column | Purpose Key | Option ID |', '| ------ | ----------- | --------- |',
-    ] + ['| %s | `%s` | `opt%d` |'
-         % (name, purpose,
-            sorted(wf_core.BOARD_COLUMN_NAMES.values()).index(name))
-         for purpose, name in wf_core.BOARD_COLUMN_NAMES.items()] + [''])
+        '| project-title | Board |', ''])
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -3794,62 +4000,45 @@ class TestPreflight(unittest.TestCase):
                             for line in payload['unfixed']))
         self.assertFalse(any('could not close' in line for line in payload['unfixed']))
 
-    def _run(self, argv=(), board=_UNSET, orphans=(), unset=(), env_err=None,
-             mutation=None, moves=None, finished=()):
-        if board is _UNSET:
-            board = copy.deepcopy(self._LIVE_BOARD)
+    def _run(self, argv=(), env_err=None, finished=(), labelled=(), caps=None):
         args = wf.build_parser().parse_args(
             ['preflight', '--scan', self.scan, *argv])
         cfg = _cfg(board={'project_node_id': 'PVT_1', 'project_title': 'Board',
-                          'status_field_name': 'Status',
-                          'status_field_id': 'FIELD_1',
-                          'columns': {p: 'opt%d' % i for i, p
-                                      in enumerate(wf_core.BOARD_COLUMN_NAMES)}})
+                          'start_date_field_id': None})
 
         def gh_graphql(query, **fields):
-            if 'projectItems' in query:
-                nodes = ([{'number': n, 'title': 't', 'assignees': {'totalCount': 0},
-                           'projectItems': {'nodes': []}} for n in orphans]
-                         + [{'number': n, 'title': 't', 'assignees': {'totalCount': 1},
-                             'projectItems': {'nodes': [
-                                 {'project': {'id': 'PVT_1'},
-                                  'fieldValueByName': None}]}} for n in unset]
-                         # An Epic whose only sub-issue is closed, carded in a
-                         # lane, so it is finished and nothing else (#240).
+            if 'issues(states:OPEN' in query:
+                nodes = ([{'number': n, 'title': 't', 'state': 'OPEN',
+                           'issueType': None, 'subIssues': {'nodes': []},
+                           'labels': {'nodes': [{'name': name}
+                                                for name in names]}}
+                          for n, names in labelled]
+                         # An Epic whose only sub-issue is closed, so it is
+                         # finished and nothing else (#240).
                          + [{'number': n, 'title': 'container %d' % n,
                              'state': 'OPEN', 'issueType': {'name': 'Epic'},
                              'subIssues': {'nodes': [
                                  {'number': n + 1, 'state': 'CLOSED'}]},
-                             'assignees': {'totalCount': 0},
-                             'projectItems': {'nodes': [
-                                 {'project': {'id': 'PVT_1'},
-                                  'fieldValueByName': {'name': 'Backlog'}}]}}
+                             'labels': {'nodes': []}}
                             for n in finished])
                 return True, {'repository': {'issues': {
                     'pageInfo': {'hasNextPage': False, 'endCursor': None},
                     'nodes': nodes}}}, ''
-            if 'labels(' in query:
-                return True, {'repository': {'labels': {
-                    'pageInfo': {'hasNextPage': False, 'endCursor': None},
-                    'nodes': [{'name': 'claude-authored'}]}}, 'board': board}, ''
-            if not board:
-                return False, None, 'no board'
-            return True, {'node': {'title': board.get('title'),
-                                   'field': dict(board['field'],
-                                                 id='FIELD_1')}}, ''
+            return True, {'repository': {'labels': {
+                'pageInfo': {'hasNextPage': False, 'endCursor': None},
+                'nodes': [{'name': 'claude-authored'}]}}}, ''
 
         def gh_graphql_partial(query, **fields):
             return {'organization': {'issueTypes': {'nodes': [
                 {'name': 'User Story', 'isEnabled': True,
                  'pinnedFields': [{'name': n} for n
-                                  in ('Priority', 'Effort', 'Ownership')]}]}}}, [], ''
+                                  in ('Priority', 'Effort', 'Ownership',
+                                      'Stage')]}]}}}, [], ''
 
         calls = []
 
         def fake_run(cmd, input_text=None):
             calls.append(list(cmd))
-            if mutation is not None and 'graphql' in cmd:
-                return mutation
             return 0, '{}', ''
 
         with mock.patch.object(wf, 'load_config',
@@ -3858,13 +4047,12 @@ class TestPreflight(unittest.TestCase):
                 mock.patch.object(wf, 'check_environment', lambda: env_err), \
                 mock.patch.object(wf, 'resolve_org_capabilities',
                                   lambda cfg, refresh=False, root=None:
-                                  (True, _APPLY_CAPS, '')), \
+                                  (True, caps or _APPLY_CAPS, '')), \
                 mock.patch.object(wf, 'gh_graphql', gh_graphql), \
                 mock.patch.object(wf, 'gh_graphql_partial', gh_graphql_partial), \
+                mock.patch.object(wf, 'set_stage',
+                                  return_value=(True, 'Stage set to Done')), \
                 mock.patch.object(wf, 'run', fake_run), \
-                mock.patch.object(wf, 'board_move',
-                                  lambda c, n, col: (moves if moves is not None
-                                                     else (True, 'moved'))), \
                 contextlib.redirect_stderr(io.StringIO()):
             code, payload = _capture(wf.cmd_preflight, args)
         return code, payload, calls
@@ -3883,8 +4071,8 @@ class TestPreflight(unittest.TestCase):
 
     def test_the_checks_that_ran_are_named_so_silence_can_be_read(self):
         _, payload, _ = self._run()
-        for check in ('gh-auth', 'file-config', 'config-section', 'board-lane',
-                      'quality-gate', 'claude-md-ref'):
+        for check in ('gh-auth', 'file-config', 'config-section', 'stage-absent',
+                      'stage-options', 'quality-gate', 'claude-md-ref'):
             self.assertIn(check, payload['checked'], check)
 
     # ── the critical cases ───────────────────────────────────────────────────
@@ -3902,10 +4090,14 @@ class TestPreflight(unittest.TestCase):
         self.assertEqual(self._checks(payload), ['file-config'])
         self.assertEqual(calls, [])
 
-    def test_an_orphaned_issue_is_critical_because_nothing_can_select_it(self):
-        code, payload, _ = self._run(orphans=[41])
+    def test_an_org_with_no_stage_field_blocks_every_command(self):
+        """No field, nowhere for an issue to record that it is in progress —
+        so two agents can take the same story."""
+        caps = dict(_APPLY_CAPS, field_map={
+            n: m for n, m in _APPLY_CAPS['field_map'].items() if n != 'Stage'})
+        code, payload, _ = self._run(caps=caps)
         self.assertEqual(code, wf.EXIT_DRIFT)
-        self.assertIn('board-orphan', self._checks(payload))
+        self.assertIn('stage-absent', self._checks(payload))
 
     # ── the warning cases ────────────────────────────────────────────────────
 
@@ -3982,67 +4174,18 @@ class TestPreflight(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.dir, 'CLAUDE.md')))
         self.assertIn('file-claude-md', self._checks(payload))
 
-    def test_fix_places_an_orphaned_issue_in_the_backlog(self):
-        _, payload, _ = self._run(['--fix'], orphans=[41, 42])
-        self.assertTrue(any('#41' in line and '#42' in line
-                            for line in payload['fixed']))
-
-    def test_a_card_in_no_lane_is_placed_too(self):
-        _, payload, _ = self._run(['--fix'], unset=[7])
-        self.assertTrue(any('#7' in line for line in payload['fixed']))
-
-    def test_a_placement_that_fails_is_reported_rather_than_claimed(self):
-        _, payload, _ = self._run(['--fix'], orphans=[41],
-                                  moves=(False, 'no board'))
-        self.assertEqual(payload['fixed'], [])
-        self.assertTrue(any('#41' in line for line in payload['unfixed']))
-
-    def test_fix_creates_a_missing_lane_and_records_its_id(self):
-        board = {'title': 'Board', 'field': {'options': [
-            {'id': 'o1', 'name': 'Backlog'}, {'id': 'o2', 'name': 'Done'}]}}
-        created = json.dumps({'data': {'updateProjectV2Field': {
-            'projectV2Field': {'options': [
-                {'id': 'o1', 'name': 'Backlog'}, {'id': 'o2', 'name': 'Done'},
-                {'id': 'o3', 'name': 'In Progress'}]}}}})
-        _, payload, calls = self._run(['--fix'], board=board,
-                                      mutation=(0, created, ''))
-        mutations = [c for c in calls if 'graphql' in c]
-        self.assertTrue(mutations)
-        self.assertIn('In Progress', ' '.join(mutations[0]))
-        self.assertIn('`o3`', self._read('ClaudeProject.md'))
-
-    def test_creating_a_lane_passes_back_every_existing_option(self):
-        """`updateProjectV2Field` replaces the option list. Omit one and the
-        column is deleted along with every card sitting in it."""
-        board = {'title': 'Board', 'field': {'options': [
-            {'id': 'o1', 'name': 'Backlog'}, {'id': 'o2', 'name': 'Done'}]}}
-        _, _, calls = self._run(
-            ['--fix'], board=board,
-            mutation=(0, json.dumps({'data': {'updateProjectV2Field': {
-                'projectV2Field': {'options': []}}}}), ''))
-        sent = ' '.join([c for c in calls if 'graphql' in c][0])
-        self.assertIn('"o1"', sent)
-        self.assertIn('"o2"', sent)
-
-    def test_a_failed_mutation_is_reported_and_nothing_is_recorded(self):
-        board = {'title': 'Board', 'field': {'options': [
-            {'id': 'o1', 'name': 'Backlog'}]}}
-        before = self._read('ClaudeProject.md')
-        code, payload, _ = self._run(['--fix'], board=board,
-                                     mutation=(1, '', 'insufficient scope'))
-        self.assertEqual(code, wf.EXIT_OK)
-        self.assertTrue(any('insufficient scope' in line
-                            for line in payload['unfixed']))
-        self.assertEqual(self._read('ClaudeProject.md'), before)
-
-    def test_a_graphql_error_body_is_a_failure_even_with_exit_zero(self):
-        """GraphQL returns HTTP 200 with an `errors` array."""
-        board = {'title': 'Board', 'field': {'options': [
-            {'id': 'o1', 'name': 'Backlog'}]}}
-        _, payload, _ = self._run(
-            ['--fix'], board=board,
-            mutation=(0, json.dumps({'errors': [{'message': 'nope'}]}), ''))
-        self.assertTrue(any('nope' in line for line in payload['unfixed']))
+    def test_fix_takes_a_retired_label_off_the_issues_carrying_it(self):
+        """The one write this command makes to an issue's own content, and it
+        is safe because the labels decide nothing: `pick` and `unblock` read
+        fields."""
+        _, payload, calls = self._run(['--fix'],
+                                      labelled=[(41, ['status-blocked'])])
+        edits = [c for c in calls if c[:3] == ['gh', 'issue', 'edit']]
+        self.assertEqual(len(edits), 1)
+        self.assertIn('41', edits[0])
+        self.assertIn('--remove-label', edits[0])
+        self.assertIn('status-blocked', edits[0])
+        self.assertTrue(any('status-blocked' in line for line in payload['fixed']))
 
     def test_fix_leaves_a_critical_it_must_not_decide_alone(self):
         """A missing `## Identity` is a project nobody configured, not drift."""
@@ -4062,10 +4205,11 @@ def _node(number, kind, *children, title=None):
             'children': list(children)}
 
 
-def _blocked_card(number, *blockers):
+def _blocked_leaf(number, *blockers):
+    """One issue as `blocked_issues` returns it: Blocked, with its edges."""
     return {'number': number, 'title': 'issue %d' % number, 'body': '',
             'labels': [], 'milestone': None, 'url': '', 'assigned': False,
-            'assignees': [],
+            'assignees': [], 'stage': 'Blocked',
             'blockedBy': {'nodes': [{'number': b, 'state': 'OPEN'} for b in blockers]}}
 
 
@@ -4080,16 +4224,16 @@ class TestCandidatesUnderParent(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def _run(self, tree, pool, blocked=(), lanes=None, ownership=None, argv=(),
+    def _run(self, tree, pool, blocked=(), stages=None, ownership=None, argv=(),
              types=None, priority=None):
-        facets = (_facets(types=types, priority=priority, ownership=ownership)
-                  if ownership else _facets(types=types, priority=priority))
+        facets = (_facets(types=types, priority=priority, ownership=ownership,
+                          stage=stages)
+                  if ownership else _facets(types=types, priority=priority,
+                                            stage=stages))
         with mock.patch.object(wf, 'fetch_container_tree', return_value=(True, tree, '')), \
                 mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')), \
                 mock.patch.object(wf, 'load_issue_facets', return_value=facets), \
-                mock.patch.object(wf, 'blocked_issues', return_value=(list(blocked), None)), \
-                mock.patch.object(wf, 'board_current_columns',
-                                  return_value=(True, lanes or {}, '')):
+                mock.patch.object(wf, 'blocked_issues', return_value=(list(blocked), None)):
             return _capture(wf.cmd_candidates,
                             _candidates_args('--parent', str(tree['number']), *argv))
 
@@ -4097,12 +4241,13 @@ class TestCandidatesUnderParent(unittest.TestCase):
         tree = _node(50, 'Feature', _node(51, 'User Story'), _node(52, 'User Story'),
                      _node(53, 'User Story'))
         code, payload = self._run(
-            tree, [_candidate(51)], blocked=[_blocked_card(52, 51)],
-            lanes={53: 'Non-code'},
+            tree, [_candidate(51, stage='Backlog')],
+            blocked=[_blocked_leaf(52, 51)],
+            stages={53: 'Non-code'},
             ownership={51: 'Code agent', 52: 'Code agent', 53: 'Human'})
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual([c['number'] for c in payload['candidates']], [51, 52])
-        self.assertEqual([c['column'] for c in payload['candidates']],
+        self.assertEqual([c['stage'] for c in payload['candidates']],
                          ['Backlog', 'Blocked'])
         self.assertEqual(payload['feature'], 50)
         reason = next(e['reason'] for e in payload['excluded'] if e['number'] == 53)
@@ -4111,7 +4256,7 @@ class TestCandidatesUnderParent(unittest.TestCase):
 
     def test_a_blocked_leaf_waiting_on_other_work_is_not_offered(self):
         tree = _node(50, 'Feature', _node(51, 'User Story'), _node(52, 'User Story'))
-        _, payload = self._run(tree, [_candidate(51)], blocked=[_blocked_card(52, 99)])
+        _, payload = self._run(tree, [_candidate(51)], blocked=[_blocked_leaf(52, 99)])
         self.assertEqual([c['number'] for c in payload['candidates']], [51])
         self.assertIn('#99', payload['excluded'][0]['reason'])
 
@@ -4122,7 +4267,7 @@ class TestCandidatesUnderParent(unittest.TestCase):
         with mock.patch.object(wf, 'load_config',
                                return_value=(True, _cfg(type_capable=True), '')):
             _, payload = self._run(tree, [_candidate(51)],
-                                   blocked=[_blocked_card(52, 51)],
+                                   blocked=[_blocked_leaf(52, 51)],
                                    types={51: 'Bug', 52: 'User Story'},
                                    argv=('--mode', 'maintenance'))
         self.assertEqual([c['number'] for c in payload['candidates']], [51])
@@ -4135,7 +4280,7 @@ class TestCandidatesUnderParent(unittest.TestCase):
         offered nor lead the run, however high its priority."""
         tree = _node(40, 'Epic', _node(50, 'Feature', _node(51, 'User Story')),
                      _node(60, 'Feature', _node(61, 'User Story')))
-        _, payload = self._run(tree, [_candidate(51)], blocked=[_blocked_card(61)],
+        _, payload = self._run(tree, [_candidate(51)], blocked=[_blocked_leaf(61)],
                                priority={51: 'Low', 61: 'High'})
         self.assertEqual(payload['feature'], 50)
         self.assertEqual([c['number'] for c in payload['candidates']], [51])
@@ -4149,10 +4294,10 @@ class TestCandidatesUnderParent(unittest.TestCase):
                      _node(53, 'User Story'))
         priority = {51: 'Low', 52: 'Medium', 53: 'High'}
         pool = [_candidate(52), _candidate(51)]
-        _, payload = self._run(tree, pool, blocked=[_blocked_card(53, 52)],
+        _, payload = self._run(tree, pool, blocked=[_blocked_leaf(53, 52)],
                                priority=priority)
         self.assertEqual([c['number'] for c in payload['candidates']], [52, 53, 51])
-        _, payload = self._run(tree, pool, blocked=[_blocked_card(53, 52)],
+        _, payload = self._run(tree, pool, blocked=[_blocked_leaf(53, 52)],
                                priority=priority, argv=('--size', '2'))
         self.assertEqual([c['number'] for c in payload['candidates']], [52, 53])
 
@@ -4175,7 +4320,7 @@ class TestCandidatesUnderParent(unittest.TestCase):
 
     def test_nothing_available_still_says_why(self):
         tree = _node(50, 'Feature', _node(51, 'User Story'))
-        code, payload = self._run(tree, [], lanes={51: 'Parked'})
+        code, payload = self._run(tree, [], stages={51: 'Parked'})
         self.assertEqual(code, wf.EXIT_NO_CANDIDATES)
         self.assertIn('Parked', payload['excluded'][0]['reason'])
 
@@ -4202,16 +4347,19 @@ class TestContainerTreeRead(unittest.TestCase):
 
 class TestPickBlockedSibling(unittest.TestCase):
     """`pick --issue N --sibling M` claims a Blocked leaf whose only open
-    blocker is M, which is how `--parent`'s Blocked leaves get claimed."""
+    blocker is M, which is how `--parent`'s Blocked leaves get claimed.
+
+    Blocked is a stage an explicitly named issue may be picked from: the edge
+    check runs anyway, and an issue whose blockers have all closed is workable.
+    """
 
     def test_a_blocked_card_is_accepted_and_a_sibling_does_not_block_it(self):
         data = {'number': 52, 'title': 't', 'labels': [], 'body': '',
                 'milestone': None, 'url': '', 'state': 'OPEN', 'assignees': []}
         cfg = _cfg()
         with mock.patch.object(wf, 'gh_json', return_value=(True, data, '')), \
-                mock.patch.object(wf, 'load_issue_facets', return_value=_facets()), \
-                mock.patch.object(wf, 'board_current_columns',
-                                  return_value=(True, {52: 'Blocked'}, '')):
+                mock.patch.object(wf, 'load_issue_facets',
+                                  return_value=_facets(stage={52: 'Blocked'})):
             self.assertEqual(wf.fetch_issue_candidate(cfg, 52)['number'], 52)
         with mock.patch.object(wf, 'issue_edges',
                                return_value=[{'number': 51, 'state': 'OPEN'}]), \
