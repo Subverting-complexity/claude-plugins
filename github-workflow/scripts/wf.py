@@ -5416,7 +5416,7 @@ def add_cards(pairs):
     return added, failed
 
 
-def sync_plan(issues, is_open, projects, claims, stage_field):
+def sync_plan(issues, is_open, projects, claims, stage_field, ownership_field=None):
     """What one repository needs. Returns (cards, stages, ids).
 
     `cards` is [(project id, issue node id)] for each open issue missing from a
@@ -5450,9 +5450,11 @@ def sync_plan(issues, is_open, projects, claims, stage_field):
         prs = [pr for pr in ((node.get('closedByPullRequestsReferences')
                               or {}).get('nodes') or [])
                if pr and (pr.get('state') or '').upper() == 'OPEN']
+        values = issue_field_values(node)
         target = wf_core.reconcile_stage(
             is_open,
-            issue_field_values(node).get(stage_field) or '',
+            values.get(stage_field) or '',
+            scope=wf_core.ownership_scope(values.get(ownership_field)),
             blockers=len(edges),
             open_blockers=open_blockers,
             assigned=bool((node.get('assignees') or {}).get('nodes')),
@@ -5466,6 +5468,7 @@ def sync_plan(issues, is_open, projects, claims, stage_field):
 def cmd_board_sync(args):
     cfg = prepare_cfg()
     stage_field = field_name(cfg, 'field-stage')
+    ownership_field = field_name(cfg, 'field-ownership')
     ok, _meta, err = stage_field_meta(cfg)
     if not ok:
         emit('error', EXIT_CAPABILITY if err == NO_STAGE_FIELD else EXIT_ENV,
@@ -5511,9 +5514,9 @@ def cmd_board_sync(args):
         totals['issues_read'] += len(open_issues) + len(closed_issues)
 
         cards, stages, ids = sync_plan(open_issues, True, projects, claims,
-                                       stage_field)
+                                       stage_field, ownership_field)
         _, closed_stages, closed_ids = sync_plan(closed_issues, False, [],
-                                                 claims, stage_field)
+                                                 claims, stage_field, ownership_field)
         stages.update(closed_stages)
         ids.update(closed_ids)
 
