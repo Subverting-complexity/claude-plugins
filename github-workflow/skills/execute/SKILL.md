@@ -192,7 +192,7 @@ Read the result by its `status`; the exit code mirrors it:
 | `ok` | 0 | A story is claimed and you are on its branch. **Stop selecting — do not re-derive anything.** |
 | `no-candidates` | 10 | Nothing was pickable. Stop with "No stories available for pickup". |
 | `all-blocked` | 11 | Every candidate was blocked or already claimed. Stop the same way. |
-| `needs-refinement` | 12 | The next pick is too unclear to build; nothing was claimed and `detail` says why. Run `/github-workflow:grill` on issue `number` with the user (`refinement-skill` for an Epic or Feature with no sub-issues), then `pick --issue {number} --checkout`. If they skip it, send it to refinement as below and re-run `pick`. |
+| `needs-refinement` | 12 | The next pick is too unclear to build; nothing was claimed and `detail` says why. Run `/github-workflow:grill` on issue `number` with the user then `pick --issue {number} --checkout`; for an Epic or Feature, run `refinement-skill` and re-run `pick`. If they skip it, send it to refinement as below and re-run `pick`. |
 | `unsupported` | 30 | `wf` deferred this configuration (reserved; not expected). Stop and report what it named. |
 | `error` | 20, or the launcher reports Python is missing | `wf` cannot run here. Stop and name the prerequisite: `wf` needs Python 3.8+ on `PATH` and an authenticated `gh`. Do not select a story by hand. |
 

@@ -139,6 +139,11 @@ class TestEvaluatePool(unittest.TestCase):
         self.assertIn('nearly empty', reasons[1])
         self.assertIn('acceptance criteria', reasons[2])
 
+    def test_a_verification_section_counts_as_criteria(self):
+        verdict = judge([issue(1, body='Make the export include archived rows.\n\n'
+                                        '## Verification\n\nExport and count them.')])
+        self.assertEqual([c['number'] for c in verdict['pool']], [1])
+
     def test_the_pool_is_ordered_by_priority_then_effort(self):
         verdict = judge([issue(1), issue(2), issue(3)],
                         priority_map={1: 'Low', 2: 'High', 3: 'High'},

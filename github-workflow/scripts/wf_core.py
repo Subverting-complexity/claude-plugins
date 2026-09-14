@@ -354,9 +354,9 @@ UNCLEAR_MIN_BODY = 40
 
 # Acceptance criteria, as a body carries them: a heading naming them, or a
 # task-list item. `Requirements` is the story template's name for the same
-# section.
+# section and `Verification` the issue standard's.
 _CRITERIA_RE = re.compile(
-    r'^\s*(#{1,6}\s*(acceptance criteria|requirements)\b|[-*]\s+\[[ xX]\])',
+    r'^\s*(#{1,6}\s*(acceptance criteria|requirements|verification)\b|[-*]\s+\[[ xX]\])',
     re.IGNORECASE | re.MULTILINE)
 
 

@@ -4620,12 +4620,13 @@ def candidates_under_parent(args, cfg, pool, maps, verdict=None, by_num=None):
     # The fields and the Blocked issues are read only for leaves the pool did
     # not already answer for.
     out_maps = {'priority': {}, 'effort': {}, 'ownership': {}}
-    out_stages = {}
+    out_stages, out_types = {}, {}
     blocked, refused = {}, {}
     if outside:
         facets = load_issue_facets(cfg, outside)
         out_maps = {k: facets.get(k) or {} for k in out_maps}
         out_stages = facets.get('stage') or {}
+        out_types = facets.get('types') or {}
         blocked_now, berr = blocked_issues(cfg)
         if berr:
             emit('error', EXIT_ENV,
@@ -4656,7 +4657,8 @@ def candidates_under_parent(args, cfg, pool, maps, verdict=None, by_num=None):
         # what #239 lets a leaf through with, so it is never the reason.
         for card in cards:
             n = card['number']
-            if n in blocked or (wf_core.ownership_scope(out_maps['ownership'].get(n))
+            if n in blocked or (wf_core.effective_scope(out_maps['ownership'].get(n),
+                                                        out_types.get(n))
                                 != wf_core.SCOPE_CODE):
                 continue
             if n in heavy:
@@ -4698,7 +4700,7 @@ def candidates_under_parent(args, cfg, pool, maps, verdict=None, by_num=None):
             why = []
             if not wf_core.is_available_stage(stage):
                 why.append('`%s` is `%s`' % (field_name(cfg, 'field-stage'), stage))
-            if wf_core.ownership_scope(owner) != wf_core.SCOPE_CODE:
+            if wf_core.effective_scope(owner, out_types.get(n)) != wf_core.SCOPE_CODE:
                 why.append('owned by %s, not the code agent' % (owner or 'nobody'))
             reasons[n] = (', '.join(why)
                           or ((verdict or {}).get('excluded') or {}).get(n)
@@ -4724,7 +4726,7 @@ def candidates_under_parent(args, cfg, pool, maps, verdict=None, by_num=None):
         else:
             entry = _candidate_entry(blocked[n], blocked_edges[n], False,
                                      out_maps, args.body_chars)
-            entry['stage'] = wf_core.STAGE_NAMES['stage-blocked']
+            entry['stage'] = blocked[n].get('stage') or wf_core.STAGE_NAMES['stage-blocked']
         listed.append(entry)
 
     unread = _tree_unread(tree)
