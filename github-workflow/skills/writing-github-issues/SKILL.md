@@ -64,7 +64,7 @@ The title belongs in GitHub's title field. Do not repeat it in the body.
 
 An issue says what kind of work it is **once**, through GitHub's native issue type (`Bug`, `User Story`, `Chore`, `Feature`, `Epic`, …) and the org's `Classification` field. Not through a title prefix, and not through a `type-*` label — neither is written any more, and `wf pick` reads neither. A spec that still names one has it stripped on the way in.
 
-**Nor through any other label.** An issue's state is the board column its card is in; how urgent, how big and whose it is are the org's `Priority`, `Effort` and `Ownership` fields. You do not write any of those four when filing: `wf issue-apply` sets the three fields from the spec and places the card from the issue's own state. The only label an issue gets is `claude-authored`.
+**Nor through any other label.** An issue's state is its `Stage` field; how urgent, how big and whose it is are the org's `Priority`, `Effort` and `Ownership` fields. You do not write any of those four when filing: `wf issue-apply` sets the three fields from the spec and writes the stage from the issue's own state. The only label an issue gets is `claude-authored`.
 
 `[Manual]` and `[Browser]` are not classifications and are not covered by that rule. They say who has to do the work, not what kind of work it is, and nothing native records either. See **Scope: one issue, one party** below.
 
@@ -100,10 +100,10 @@ Three parties do work on a backlog, and they cannot substitute for each other.
 
 Both scoped parties take two things together, both or neither:
 
-1. **The `Ownership` field**, set to `Browser agent` or `Human`. This is the one that does the work: it is the only thing selection reads, so it is what keeps the issue out of the code agent's pool. `wf issue-apply` puts the card in the board's **Non-code** column from it, without being asked.
+1. **The `Ownership` field**, set to `Browser agent` or `Human`. This is the one that does the work: it is the only thing selection reads, so it is what keeps the issue out of the code agent's pool. `wf issue-apply` sets its stage to **Non-code** from it, without being asked.
 2. **The prefix**, exactly as spelled above, at the very start, followed by one space. `[Manual] Grant the Cloudflare GitHub App access to the org`. `[Browser] Set the authorised redirect URIs on the web OAuth client`. This is for a person reading a list; nothing selects on it.
 
-**Non-code is not Blocked.** Blocked means one thing only — an open native blocked-by edge — and `wf unblock` releases anything sitting there once those edges close. Non-code work parked in Blocked is one sweep away from being handed to an agent that cannot do it, which is exactly what happened: both issues the first sweep would have released were `[Manual]` device passes whose blockers had closed.
+**Non-code is not Blocked.** The plugin's `Blocked` means one thing only — an open native blocked-by edge — and `wf unblock` releases anything with edges once they all close. Non-code work parked at `Blocked` is one sweep away from being handed to an agent that cannot do it, which is exactly what happened: both issues the first sweep would have released were `[Manual]` device passes whose blockers had closed.
 
 Include a `## Manual step` section saying what has to happen and why the other two parties cannot do it.
 
@@ -111,7 +111,7 @@ Include a `## Manual step` section saying what has to happen and why the other t
 
 **This is the rule that replaces the old one.** An issue that is mostly automatable with one human prerequisite used to be marked `[Manual]` and left whole. Do not do that. Raise the other party's work as its own issue, scope it, and link the two with a native blocked-by edge.
 
-The old shape looks finished and is not. A code story that does its half and says "then a person sets the value" sits in Backlog, gets picked up, gets a merged pull request, and the console step is never done because it never had a card of its own.
+The old shape looks finished and is not. A code story that does its half and says "then a person sets the value" sits in Backlog, gets picked up, gets a merged pull request, and the console step is never done because it never had an issue of its own.
 
 Ask what the issue produces: a commit, a saved console form, or neither. **Two answers means two issues.**
 

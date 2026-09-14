@@ -58,4 +58,4 @@ A dependency is a **native blocked-by edge**, written from a spec's `blocked_by`
 - File-by-file narration of the intended implementation.
 - Alternatives, when the approach is already settled. Where it is not settled, keep the uncertainty in the words the discovery used ("this will likely need either...").
 
-A story too vague to implement gets refined, or its card moved to the board's Needs refinement column so nothing picks it up. Never pad a thin story with invented detail to make it look complete.
+A story too vague to implement gets refined, or its stage set to `Needs refinement` so nothing picks it up. Never pad a thin story with invented detail to make it look complete.

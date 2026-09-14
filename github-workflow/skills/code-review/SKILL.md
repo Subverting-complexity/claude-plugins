@@ -299,7 +299,7 @@ Is every changed line necessary for the PR's stated purpose? Flag unrelated refa
 
 ### Step 7 — Fix issues (blocking-first, then non-blocking)
 
-Fix concrete, objectively wrong problems directly on the PR branch. Fix **both** tiers (blocking and non-blocking) before approving — non-blocking cleanups are pushed, not deferred. Anything you cannot fix in place is filed to the board in Step 7e; nothing is silently dropped.
+Fix concrete, objectively wrong problems directly on the PR branch. Fix **both** tiers (blocking and non-blocking) before approving — non-blocking cleanups are pushed, not deferred. Anything you cannot fix in place is filed to the backlog in Step 7e; nothing is silently dropped.
 
 #### 7a — Triage findings into tiers
 
@@ -321,7 +321,7 @@ Neither tier includes stylistic preferences where several approaches are valid, 
 
 #### 7b — Fix the blocking tier
 
-Fix every blocking finding. Commit each fix (or a small logical group) with a clear message. These are non-negotiable. If a blocking issue genuinely cannot be auto-fixed (needs human or design judgment), do not guess — leave it for the verdict in Step 8 and file it to the board in Step 7e.
+Fix every blocking finding. Commit each fix (or a small logical group) with a clear message. These are non-negotiable. If a blocking issue genuinely cannot be auto-fixed (needs human or design judgment), do not guess — leave it for the verdict in Step 8 and file it to the backlog in Step 7e.
 
 #### 7c — Fix the non-blocking tier
 
@@ -337,21 +337,21 @@ git push
 
 After pushing fixes, update the recorded commit SHA to the new `HEAD`.
 
-#### 7e — File anything you could not fix to the board
+#### 7e — File anything you could not fix to the backlog
 
-For every problem you detected but did **not** fix on the branch, run `/github-workflow:report-issue` (autonomous — do not pause for confirmation). Apply the actual issue type (bug, security, architecture, or tech debt), and in the body name the source PR (`Detected during review of #<pr-number>`) and the `file:line` location. `report-issue` places the card itself, in the lane the fields it wrote name: Backlog, which is what makes it available, unless `Ownership` sends it to Non-code or a blocked-by edge sends it to Blocked. Read the column it reports back rather than assuming Backlog.
+For every problem you detected but did **not** fix on the branch, run `/github-workflow:report-issue` (autonomous — do not pause for confirmation). Apply the actual issue type (bug, security, architecture, or tech debt), and in the body name the source PR (`Detected during review of #<pr-number>`) and the `file:line` location. `report-issue` writes the stage itself, from the fields it wrote: `Backlog`, which is what makes it available, unless `Ownership` sends it to `Non-code` or a blocked-by edge sends it to `Blocked`. Read the stage it reports back rather than assuming `Backlog`.
 
-Record each created issue's number, title, and type — Step 9 lists them under "Issues remaining (filed to board)" and the **Final report format** names them. Filing a non-blocking issue does **not** force a "Changes Requested" verdict.
+Record each created issue's number, title, and type — Step 9 lists them under "Issues remaining (filed to backlog)" and the **Final report format** names them. Filing a non-blocking issue does **not** force a "Changes Requested" verdict.
 
 ### Step 8 — Determine the verdict
 
-Re-evaluate the PR state **after** Step 7 fixes. Issues that were auto-fixed do not count as remaining issues. Non-blocking problems you could not fix in place have been filed to the board in Step 7e, so they are tracked for automatic pickup and do **not** count against the verdict either.
+Re-evaluate the PR state **after** Step 7 fixes. Issues that were auto-fixed do not count as remaining issues. Non-blocking problems you could not fix in place have been filed to the backlog in Step 7e, so they are tracked for automatic pickup and do **not** count against the verdict either.
 
-- **Approved** — Zero hard non-compliance failures and zero remaining *blocking* issues. All blocking problems were either absent or auto-fixed. Non-blocking problems were either fixed and pushed (Step 7c) or filed to the board (Step 7e); neither blocks approval. PR is ready to merge.
-- **Changes Requested** — Any hard non-compliance failure, or any remaining *blocking* problem that could not be auto-fixed and needs human judgment (it was also filed to the board in Step 7e for automatic pickup).
+- **Approved** — Zero hard non-compliance failures and zero remaining *blocking* issues. All blocking problems were either absent or auto-fixed. Non-blocking problems were either fixed and pushed (Step 7c) or filed to the backlog (Step 7e); neither blocks approval. PR is ready to merge.
+- **Changes Requested** — Any hard non-compliance failure, or any remaining *blocking* problem that could not be auto-fixed and needs human judgment (it was also filed to the backlog in Step 7e for automatic pickup).
 - **Needs Discussion** — No hard failures, but architectural questions or ambiguities need human judgment before merge.
 
-If every blocking issue found in Step 6 was resolved in Step 7, the verdict is **Approved** — not "Changes Requested with observations" — even though non-blocking cleanups may have been filed to the board. The fixes are already pushed; nothing blocking is left for the builder to do.
+If every blocking issue found in Step 6 was resolved in Step 7, the verdict is **Approved** — not "Changes Requested with observations" — even though non-blocking cleanups may have been filed to the backlog. The fixes are already pushed; nothing blocking is left for the builder to do.
 
 ### Step 9 — Post the review
 
@@ -390,7 +390,7 @@ Reference specific file:line locations.]
 ### Fixes applied
 [List of commits pushed, or "None" if no fixes were needed.]
 
-### Issues remaining (filed to board)
+### Issues remaining (filed to backlog)
 [Numbered list of problems that could not be auto-fixed, each naming the
 issue filed for it in Step 7e by its actual type and number — e.g.
 "bug #45: null deref in `parse()` (`src/parse.ts:12`)". These are queued
@@ -424,7 +424,7 @@ The `Reviewed at <SHA>` line must contain the commit SHA from Step 3 (or the upd
 
 4. Check out the original branch you were on before the review.
 
-5. Report `Reviewed PR #<number> <title> — <verdict>` (always name the PR by number **and** title together, never the number alone), followed by the **Changed** / **Added to the board** outline from the **Final report format** below, then exit. If the verdict is Approved, Step 11 runs first and produces the merged/queued lead line instead.
+5. Report `Reviewed PR #<number> <title> — <verdict>` (always name the PR by number **and** title together, never the number alone), followed by the **Changed** / **Added to the backlog** outline from the **Final report format** below, then exit. If the verdict is Approved, Step 11 runs first and produces the merged/queued lead line instead.
 
 **Next step by verdict:**
 - **Approved** → proceed to Step 11 (auto-merge).
@@ -449,11 +449,11 @@ Approved and merged PR #<number>: <title>
 Changed:
 - <each fix you pushed in Step 7 / 11, one line each — or "Nothing; the PR was already correct.">
 
-Added to the board:
+Added to the backlog:
 - <each issue filed in Step 7e / 11, named by its actual type and number — e.g. "bug #45: null deref in parse()" — or "Nothing.">
 ```
 
-Always name added items by their **actual issue type** (bug, security, architecture, tech debt, feature, user story, or epic), never just "issue". If the verdict was not Approved (Step 11 did not run), use the Step 10 line `Reviewed PR #<number> <title> — <verdict>` followed by the same **Changed** / **Added to the board** outline.
+Always name added items by their **actual issue type** (bug, security, architecture, tech debt, feature, user story, or epic), never just "issue". If the verdict was not Approved (Step 11 did not run), use the Step 10 line `Reviewed PR #<number> <title> — <verdict>` followed by the same **Changed** / **Added to the backlog** outline.
 
 This shape is the one `skills/user-facing-communication/SKILL.md` asks for: outcome and state in the first line, then only what changed and what is now outstanding. Keep it that way. Do not append the reasoning behind each fix, a file list, or a note that the review was thorough. If something is still blocked, or you had to assume something to reach the verdict, add an **Outstanding** or **Assumptions** section under the outline rather than burying it in the lines above.
 
@@ -467,7 +467,7 @@ If anything goes wrong (gh commands fail, branch checkout fails, a changed file 
 2. Remove the `reviewing` state label.
 3. Apply the `failed` review-state label (purpose key `failed`, default name `review-failed`).
 4. Post a comment explaining what failed, including the review footer so the failure is tied to a specific commit and future runs will retry.
-5. **If the failure represents fixable work** rather than a transient infrastructure problem (for example the PR is too large to review in one pass and should be split, or a structural issue blocks review), file it to the board best-effort with `/github-workflow:report-issue` (autonomous, referencing this PR) so it is picked up automatically — no human approval needed. Skip this for transient failures (auth, network, rate limit) where filing would also fail.
+5. **If the failure represents fixable work** rather than a transient infrastructure problem (for example the PR is too large to review in one pass and should be split, or a structural issue blocks review), file it to the backlog best-effort with `/github-workflow:report-issue` (autonomous, referencing this PR) so it is picked up automatically — no human approval needed. Skip this for transient failures (auth, network, rate limit) where filing would also fail.
 6. Exit immediately. Do not attempt to recover, retry, or continue.
 
 ---
@@ -495,6 +495,6 @@ Rationale files (maintainers only — not read at runtime): `docs/rationale/code
 - **Do not close a PR** except to reconcile duplicates in Step 2b, per `references/duplicate-reconciliation.md` — the one sanctioned close. Never close a PR for any other reason, and never in read-only mode.
 - Do not make discretionary refactors or stylistic changes.
 - Push fixes for all concrete, objectively wrong problems — both blocking and non-blocking — before approving or merging. Non-blocking cleanups are no longer deferred for budget.
-- File any problem you cannot fix in place — blocking, non-blocking, an unresolvable conflict, or a failing check that is not yours to fix — to the board with `/github-workflow:report-issue` (autonomous, correct type) so it is picked up automatically. No human approval is needed, and no detected problem is ever silently dropped.
-- Report merged PRs as `Approved and merged PR #<number>: <title>` followed by the **Changed** and **Added to the board** outline.
+- File any problem you cannot fix in place — blocking, non-blocking, an unresolvable conflict, or a failing check that is not yours to fix — to the backlog with `/github-workflow:report-issue` (autonomous, correct type) so it is picked up automatically. No human approval is needed, and no detected problem is ever silently dropped.
+- Report merged PRs as `Approved and merged PR #<number>: <title>` followed by the **Changed** and **Added to the backlog** outline.
 - Handle one PR per invocation (rework + re-review counts as one), then exit.

@@ -20,19 +20,23 @@ The complete label inventory is created **once** at setup (`/github-workflow:set
 
 The guarded create-if-missing pattern in `default-labels.md` is idempotent and safe: it only creates if the label is absent, and it warns when it does so (setup should have created everything; a missing label is a setup gap, not a normal flow).
 
-## Why the column is the state and the fields are the ranking
+## Why the `Stage` field is the state and the fields are the ranking
 
 ### One record per fact
 
-An issue's state is the board column its card sits in. Its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. Neither is also recorded anywhere else, and that is the whole design.
+An issue's state is its org `Stage` field. Its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. Neither is also recorded anywhere else, and that is the whole design.
 
-The version this replaced kept a second copy of both. A `status-*` label mirrored the column, and priority was **dual-tracked** — the `Priority` field for the value, a `priority-*` label so the picker's sort could be a cheap label read instead of a field query. Both second copies drift the moment anyone edits either one, and the drift is silent: the picker preferring one issue over another on a `priority-high` somebody set months ago, while the field said `Low`; a card dragged into Blocked on a board while the label still said in progress. There is no reconciliation rule that survives a person moving a card, so the second copy was removed rather than defended. The field query the label was avoiding costs one round trip, which is cheaper than being wrong.
+The version before 10.0.0 kept a second copy of both. A `status-*` label mirrored the state, and priority was **dual-tracked** — the `Priority` field for the value, a `priority-*` label so the picker's sort could be a cheap label read instead of a field query. Both second copies drift the moment anyone edits either one, and the drift is silent: the picker preferring one issue over another on a `priority-high` somebody set months ago, while the field said `Low`. There is no reconciliation rule that survives a person editing one copy, so the second copy was removed rather than defended. The field query the label was avoiding costs one round trip, which is cheaper than being wrong.
+
+### Why a field on the issue, not a board column
+
+From 10.0.0 until 12.0.0 the state was the `Status` column of the issue's card on a project board. That had three costs nothing could engineer away. An issue with no card had no state and could not be picked. Every transition was a board write, with a board identity to verify first. And an issue on two boards had two states. `Stage` lives on the issue, so every issue has exactly one, a blank one means available, and a board groups its columns by `Stage` to show it. Boards are for people to look at; agents never move cards.
 
 `Ownership` came out of the same argument in the other direction: it never had a label, because `browser-agent` and `human-required` labels would have been a third record of something the field already says, and the field is what `pick` refuses on.
 
-### The lanes
+### The stages
 
-An issue moves between nine columns and is in exactly one of them.
+An issue moves between nine stages and is at exactly one of them, or at none, which means the same as `Backlog`.
 
 ```
                                     ┌──► Needs refinement ──┐  (too thin to build)
@@ -40,22 +44,24 @@ An issue moves between nine columns and is in exactly one of them.
 (new issue) ──► Backlog ──────────► In Progress ──────► In Review ──► Done
                   ▲  ▲               │                     (PR open)
                   │  │               └──► Needs attention   (run failed, work still in flight)
-                  │  └── Blocked  ◄────── (an open blocked-by edge; wf unblock returns it)
+                  │  └── Blocked  ◄────── (an open blocked-by edge, or a person; wf unblock returns only the first)
                   │
                   └───── Parked   ◄────── (a person set it aside)
 
 Non-code  ◄────── Ownership is Human or Browser agent  (never enters the pool)
 ```
 
-Backlog is the pool, and it is the only opt-out: `pick` and `candidates` read that column and nothing else, so every other lane holds an issue out of the pool simply by holding the card.
+A blank or `Backlog` stage is the pool, and it is the only opt-in: `pick` and `candidates` read the repository's open, unassigned issues at those stages and nothing else, so every other stage holds an issue out of the pool. An issue with no board card is still in it.
 
-### Why assignment plus the column, not the claim ref
+A `Blocked` issue with no blocked-by edge was set by a person, and the plugin never changes it. Releasing it on "no open blockers" would hand work waiting on the world to an agent that cannot do it.
 
-The durable owner of in-flight work is the **assignment plus the column**, *not* the atomic claim ref (which is a short-lived race-protector — see `claim-procedure-rationale.md`). This is what lets a person pause an issue for days and resume it without another agent grabbing it: the picker only ever selects unassigned issues in Backlog, so an assigned card in In Progress or Parked is excluded twice over, regardless of whether the claim ref has expired.
+### Why assignment plus the stage, not the claim ref
 
-### Required columns
+The durable owner of in-flight work is the **assignment plus the stage**, *not* the atomic claim ref (which is a short-lived race-protector — see `claim-procedure-rationale.md`). This is what lets a person pause an issue for days and resume it without another agent grabbing it: the picker only ever selects unassigned issues at a blank or `Backlog` stage, so an assigned issue at `In Progress` or `Parked` is excluded twice over, regardless of whether the claim ref has expired.
 
-A board is required, and `Backlog` is required on it: that column is the pick pool. Preflight emits `CRITICAL board-lane` for a missing board, an unresolvable `project-node-id`, or a missing Backlog column, and `WARNING board-lane` for any other missing lane; setup creates them all.
+### The required field
+
+The org must define `Stage` with all nine options. Preflight emits `CRITICAL stage-absent` when the field is missing, because no state can be written or read, and `CRITICAL stage-options` naming any missing option, because a transition to it fails. Setup cannot create an org issue field, so it asks a person to add it in the org settings. A project board is not required.
 
 ## Native issue types beyond GitHub's five defaults
 

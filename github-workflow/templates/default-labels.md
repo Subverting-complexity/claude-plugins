@@ -4,7 +4,7 @@ This file is the **single source of truth** for how every skill and command reso
 
 ## The single resolution path
 
-> **You usually do not need to open this file.** Every workflow command auto-loads the full `ClaudeProject.md` (label map included) before it runs. When that map is in context — the normal case — resolve purpose keys directly from it and do **not** read this file. Open it only as a fallback: a purpose key is missing from the project map, or you need the default inventory / colours / native-type / board-column tables below.
+> **You usually do not need to open this file.** Every workflow command auto-loads the full `ClaudeProject.md` (label map included) before it runs. When that map is in context — the normal case — resolve purpose keys directly from it and do **not** read this file. Open it only as a fallback: a purpose key is missing from the project map, or you need the default inventory / colours / native-type / stage tables below.
 
 A label is identified by its **purpose key**, never by a hardcoded concrete name. Purpose keys are stable; concrete names are project-configurable. To get the concrete name for one: look it up in the `ClaudeProject.md` label map (or, for a **review-state purpose**, the `review.config.md` Labels table, matched by the Purpose column and never by guessing a prefix); use that name if it is configured; use the default from the inventory below if it is not.
 
@@ -34,13 +34,13 @@ Surface any other failure — especially a permission denial — with the real s
 
 ## What labels decide: nothing
 
-An issue's state, priority, size and owner are **structured fields and the board column**, and a label is none of those things. Two records of one fact drift the moment anyone edits either, and the drift is silent — the picker preferring one issue over another on a `priority-high` somebody set months ago, while the `Priority` field said Low.
+An issue's state, priority, size and owner are **structured fields**, and a label is none of those things. Two records of one fact drift the moment anyone edits either, and the drift is silent — the picker preferring one issue over another on a `priority-high` somebody set months ago, while the `Priority` field said Low.
 
 So there is no `status-*` label, no `priority-*` label, no `scope-*` label and no `type-*` label in this inventory. The four questions they used to answer are answered once each:
 
 | Question | Where the answer lives | Who reads it |
 |----------|------------------------|--------------|
-| What state is this in? | the board's `Status` column | `pick`, `candidates`, `unblock`, every board move |
+| What state is this in? | the org's `Stage` field | `pick`, `candidates`, `unblock`, every stage write |
 | How urgent is it? | the org's `Priority` field | the pool's sort order |
 | How big is it? | the org's `Effort` field | `--max-effort`, and the tie-break inside a priority band |
 | Who has to do it? | the org's `Ownership` field | whether a code agent may pick it up at all |
@@ -99,47 +99,43 @@ A project overrides any **field name** in `ClaudeProject.md` → `## Issue Types
 |-------------|-------------|-------|-------------|
 | `claude-authored` | `claude-authored` | `5319E7` | Built or created by Claude (issues and PRs) |
 
-## Board Columns
+## Stages
 
-**Where an issue is *is* its state.** There is no second record to keep in step: the column is the answer, and every command that touches an issue leaves its card in the lane its own state names.
+**An issue's `Stage` field is its state.** There is no second record to keep in step, and no board column is read: every command that touches an issue writes the stage its own state names. A blank `Stage` means available, the same as `Backlog`.
 
-Columns are resolved by **purpose key** through the same path as labels: read from `ClaudeProject.md` → `## Project Board` → `### Status Options`; fall back to the default name below. A move to a column the board does not have is reported and skipped, never applied blind. Design rationale: `docs/rationale/default-labels-rationale.md`.
+Stages are resolved by **purpose key**: the field name through `field-stage` in `ClaudeProject.md` → `## Issue Types & Fields` (default `Stage`), and the option by its default name below. Design rationale: `docs/rationale/default-labels-rationale.md`.
 
-| Purpose key      | Default Name  | Option color | What being here means |
-|------------------|---------------|--------------|-----------------------|
-| `col-backlog`    | `Backlog`     | GREEN        | available — this is the pick pool |
-| `col-refinement` | `Needs refinement` | BLUE    | not ready to start; needs a refinement session |
-| `col-in-progress`| `In Progress` | YELLOW       | an agent is working it now |
-| `col-in-review`  | `In Review`   | ORANGE       | a pull request is open against it |
-| `col-attention`  | `Needs attention` | PURPLE   | a run failed or timed out; a person has to look |
-| `col-blocked`    | `Blocked`     | RED          | an open dependency edge; a sweep releases it when that closes |
-| `col-non-code`   | `Non-code`    | PINK         | a browser agent or a person owns it; no sweep ever releases it |
-| `col-parked`     | `Parked`      | GRAY         | deliberately set aside; will resume |
-| `col-done`       | `Done`        | GRAY         | the issue is closed |
+| Purpose key         | Stage              | What it means |
+|---------------------|--------------------|---------------|
+| `stage-backlog`     | `Backlog` (or blank) | available: the pick pool |
+| `stage-refinement`  | `Needs refinement` | not ready to start; needs a refinement session |
+| `stage-in-progress` | `In Progress`      | an agent is working it now |
+| `stage-in-review`   | `In Review`        | a pull request is open against it |
+| `stage-attention`   | `Needs attention`  | a run failed or timed out; a person has to look |
+| `stage-blocked`     | `Blocked`          | waiting on something; the plugin releases it only when every blocked-by edge has closed |
+| `stage-non-code`    | `Non-code`         | a browser agent or a person owns it; no sweep ever releases it |
+| `stage-parked`      | `Parked`           | deliberately set aside; will resume |
+| `stage-done`        | `Done`             | the issue is closed |
 
-> Option `color` values come from the GitHub enum `ProjectV2SingleSelectFieldOptionColor`: `GRAY`, `BLUE`, `GREEN`, `YELLOW`, `ORANGE`, `RED`, `PINK`, `PURPLE`. These name the *board* option color and are distinct from the hex label colors above.
+**Which command writes which stage (the single mapping every command follows):**
 
-> Eight colours, nine lanes: `Parked` and `Done` share `GRAY`, because nothing happens in either and work is never picked from or moved through them.
+| Stage | Command(s) |
+|-------|------------|
+| In Progress (`stage-in-progress`) | `wf pick --checkout`, `wf claim --issue` |
+| In Review (`stage-in-review`)  | `wf handoff`, when the pull request opens |
+| Blocked (`stage-blocked`)      | `wf pick` (an open blocked-by edge), `wf issue-apply` (an open blocked-by edge), block-story |
+| Non-code (`stage-non-code`)    | `wf issue-apply`, `wf unblock` (`Ownership` is `Human` or `Browser agent`) |
+| Needs refinement (`stage-refinement`) | `wf issue-apply` (`"state": "refinement"` on the entry), feature-discovery (a deferred story), execute (a story too thin to build) |
+| Parked (`stage-parked`)        | a person, or `wf issue-apply` (`"state": "parked"` on the entry) |
+| Needs attention (`stage-attention`) | execute and bulk-execute, when a run gives up |
+| Backlog (`stage-backlog`)      | `wf issue-apply` (`"state": "backlog"`), `wf unblock` (every blocked-by edge closed), a reverted claim |
+| Done (`stage-done`)            | `wf post-merge` (at merge), `wf pick` (closing an issue already resolved) |
 
-**Which command moves a card where (the single mapping every command follows):**
+`issue-apply` writes only an issue whose `Stage` is blank, `Backlog`, `Blocked` or `Non-code`, unless the entry names a `"state"`. Any other stage is kept (`stage_kept`), so an update never drags in-flight work back into the pool.
 
-| Move to | Command(s) |
-|---------|------------|
-| In Progress (`col-in-progress`) | `wf pick`, execute |
-| In Review (`col-in-review`)  | execute |
-| Blocked (`col-blocked`)      | block-story, `wf issue-apply` (an open dependency edge), `wf pick` (returning a blocked issue) |
-| Non-code (`col-non-code`)    | `wf issue-apply`, `wf unblock` (`Ownership` is not `Code agent`) |
-| Needs refinement (`col-refinement`) | `wf issue-apply` (`"state": "refinement"` on the entry), feature-discovery (a deferred story), execute (a story too thin to build) |
-| Parked (`col-parked`)        | a person, or `wf issue-apply` (`"state": "parked"` on the entry) |
-| Needs attention (`col-attention`) | execute (error / timeout) |
-| Backlog (`col-backlog`)      | `wf issue-apply` (nothing on the entry says otherwise), `wf unblock` (every blocker closed) |
-| Done (`col-done`)            | `wf pick` (already-resolved), `wf post-merge` (after merge), code-review auto-merge |
+**`Blocked` with no blocked-by edge was set by a person**, and the plugin never changes it. `wf unblock` only releases a `Blocked` issue that has edges, and only once every one of them is closed.
 
-`issue-apply` moves only a card with no lane or one in Backlog, Blocked or Non-code, unless the entry names a `"state"`. Any other card stays put (`board_column_kept`), so an update never drags in-flight work back into the pool.
-
-Done is the one move with no decision behind it: the GitHub closed state is authoritative, and the commands above move the card so a finished story leaves the In Review column.
-
-**A board is required, and Backlog is required on it.** It is the pool `pick` and `candidates` read, so without it selection has nowhere to look. Preflight reports a missing Backlog column, an unrecorded board, or a `project-node-id` that resolves to nothing as `CRITICAL board-lane`; an open issue with no card at all as `CRITICAL board-orphan`; and a card sitting in no lane as `CRITICAL board-unset`. Every other column warns — a lane that does not exist costs one state's board move, which is visible on the board and which no command depends on. Setup creates them all.
+**The `Stage` field is required, with all nine options.** Preflight reports an org with no `Stage` field as `CRITICAL stage-absent`, and a `Stage` missing an option as `CRITICAL stage-options`, naming it. A project board is not required: boards are views for people, grouped by `Stage`, and GitHub's "Auto-add to project" workflow keeps cards on them. Agents never move cards.
 
 ## Review State Labels
 

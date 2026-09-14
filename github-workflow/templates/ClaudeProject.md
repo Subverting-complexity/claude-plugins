@@ -39,7 +39,7 @@ Example: `feature/{number}/{short-desc}`
 
 Map workflow purposes to your repository's actual label names. Only include labels your project uses — remove unused rows. Defaults and the resolution path: `templates/default-labels.md`.
 
-**No label decides anything.** An issue's state is the board column its card is in; its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. If your project still has `status-*`, `priority-*`, `browser-agent`, `human-required`, `needs-refinement` or `claude-ready` labels, leave them out of this map: `wf config-audit` reports a map row for one (`label-deprecated`), and `wf issue-apply` takes the label off any issue it writes. The labels themselves can stay in the repository — deleting one strips it from every issue that ever carried it.
+**No label decides anything.** An issue's state is its `Stage` field; its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. If your project still has `status-*`, `priority-*`, `browser-agent`, `human-required`, `needs-refinement` or `claude-ready` labels, leave them out of this map: `wf config-audit` reports a map row for one (`label-deprecated`), and `wf issue-apply` takes the label off any issue it writes. The labels themselves can stay in the repository — deleting one strips it from every issue that ever carried it.
 
 ### Claude
 
@@ -79,6 +79,7 @@ Every purpose key the workflow writes, mapped to the field name **this** owner u
 
 | Purpose key          | Field name       |
 | -------------------- | ---------------- |
+| field-stage          | `Stage`          |
 | field-priority       | `Priority`       |
 | field-effort         | `Effort`         |
 | field-type           | `Classification` |
@@ -91,7 +92,7 @@ Every purpose key the workflow writes, mapped to the field name **this** owner u
 
 `field-type` (`Classification`) and `field-origin` are **optional**: nothing selects on them, so a create that leaves one unset gets a comment on the issue naming it and carries on. The rest are set where they apply.
 
-There is a fourth required answer and it is not a field: **state**, which is the board column the card sits in. Every write places the card, and preflight fails on an open issue with no card or a card in no lane.
+`field-stage` answers a different question: **state**. The org must define it, but an issue may leave it blank. It is a single-select with nine options, `Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention` and `Done`, and a blank `Stage` means available, the same as `Backlog`. Preflight fails the run when the org has no `Stage` field (`stage-absent`) or when it lacks one of the nine options (`stage-options`), because a transition to a missing option fails.
 
 ### Missing
 
@@ -101,7 +102,7 @@ Fields the owner does not define, and what the workflow does instead:
 | ----- | ----------- |
 | _(none)_ | — |
 
-A missing optional field is skipped at runtime, not an error. A missing **required** field is refused: `wf issue-apply` will not create an issue the picker cannot rank, size or route, and `wf config-audit` reports it as `CRITICAL field-absent`. Create it in the owner's *Issue fields* settings and pin it to every enabled issue type. `Ownership` (single-select: Code agent, Browser agent, Human) and `Origin` (single-select: Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request) are the two GitHub does not create by default.
+A missing optional field is skipped at runtime, not an error. A missing **required** field is refused: `wf issue-apply` will not create an issue the picker cannot rank, size or route, and `wf config-audit` reports it as `CRITICAL field-absent`. Create it in the owner's *Issue fields* settings and pin it to every enabled issue type. `Stage` (single-select, the nine options above), `Ownership` (single-select: Code agent, Browser agent, Human) and `Origin` (single-select: Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request) are the three GitHub does not create by default. Create them in the org settings under *Planning* → *Issue fields*.
 
 The purpose→value maps — which native type each kind of work becomes, and the Priority, Effort and Origin option names — are Python data in `github-workflow/scripts/wf_core.py`, not prose here. Run `wf org-capabilities` for the live option ids rather than copying them into this file, where they would go stale.
 
@@ -111,7 +112,7 @@ The purpose→value maps — which native type each kind of work becomes, and th
 | ---------------- | ------------------- |
 | refinement-skill | `feature-discovery` |
 
-Skill the execute flow offers when a story is too thin to implement: `feature-discovery` (default). It runs the `grill` interview and turns the answers into a fuller spec with acceptance criteria. A story a person has not approved yet belongs in the board's Needs refinement column, which keeps it out of the pool without needing a label.
+Skill the execute flow offers when a story is too thin to implement: `feature-discovery` (default). It runs the `grill` interview and turns the answers into a fuller spec with acceptance criteria. A story a person has not approved yet belongs at `Stage` `Needs refinement`, which keeps it out of the pool without needing a label.
 
 ## Session Budget
 
@@ -121,35 +122,17 @@ Target ~100k tokens per session. One story per session, run start-to-finish. Com
 
 Issues should include at minimum: **Context** (what/why), **Requirements** (acceptance criteria + constraints), and optionally **Notes** (dependencies, references, edge cases).
 
-## Project Board
+## Project Board (optional)
 
-**Required.** The column a card sits in is the issue's state, and the Backlog column is the pick pool, so a project with no board here selects nothing and preflight fails the run. `project-title` is re-checked against `project-node-id` before any board write, so a stale id fails loudly instead of mutating the wrong board.
+Informational only. A board is a view for people: group its columns by `Stage` and it shows each issue's state. It is recorded here for them and for GitHub's own "Auto-add to project" workflow, which keeps cards on it. Nothing in the workflow reads a column from it or moves a card on it, so remove this section if the project has no board.
 
 | Setting             | Value      |
 | ------------------- | ---------- |
 | project-number      | `{n}`      |
 | project-title       | `{title}`  |
 | project-node-id     | `{id}`     |
-| status-field-name   | `Status`   |
-| status-field-id     | `{id}`     |
 | start-date-field-id | `{id}`     |
 | end-date-field-id   | `{id}`     |
-
-### Status Options
-
-The canonical nine columns. **Backlog is not optional**: it is the pool `pick` and `candidates` read, so a board without it can select nothing and preflight fails the run. The rest are lanes an issue is moved into and out of; a missing one warns. Setup creates them all, preflight flags any missing. What each column means: `templates/default-labels.md` → Board Columns.
-
-| Status           | Purpose key       | Option ID |
-| ---------------- | ----------------- | --------- |
-| Backlog          | `col-backlog`     | `{id}`    |
-| In Progress      | `col-in-progress` | `{id}`    |
-| In Review        | `col-in-review`   | `{id}`    |
-| Blocked          | `col-blocked`     | `{id}`    |
-| Non-code         | `col-non-code`    | `{id}`    |
-| Needs refinement | `col-refinement`  | `{id}`    |
-| Parked           | `col-parked`      | `{id}`    |
-| Needs attention  | `col-attention`   | `{id}`    |
-| Done             | `col-done`        | `{id}`    |
 
 ## Reference Docs (optional)
 

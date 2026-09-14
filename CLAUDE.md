@@ -2,7 +2,7 @@
 
 This repo contains multiple Claude Code plugins that share skills.
 
-> **Dogfooding note:** This repo is itself configured as a `github-workflow` target. Project settings (org/repo, labels, quality gate, board) live in [`ClaudeProject.md`](ClaudeProject.md); workflow commands (`/github-workflow:execute`, `:code-review`, etc.) read it. The open backlog of plugin-hardening work is tracked on the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8).
+> **Dogfooding note:** This repo is itself configured as a `github-workflow` target. Project settings (org/repo, labels, quality gate, issue fields) live in [`ClaudeProject.md`](ClaudeProject.md); workflow commands (`/github-workflow:execute`, `:code-review`, etc.) read it. The open backlog of plugin-hardening work can be viewed on the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8), grouped by each issue's `Stage`.
 
 ## CRITICAL RULES
 
@@ -147,7 +147,7 @@ These files provide context for specific workflows. You don't need to read all o
 
 | File | When to consult |
 | ---- | --------------- |
-| `ClaudeProject.md` | Project identity, labels, quality gate, branch convention, board config. Read at the start of any workflow command. |
+| `ClaudeProject.md` | Project identity, labels, quality gate, branch convention, issue fields. Read at the start of any workflow command. |
 | `docs/consumers.md` | Which repos depend on these plugins. Read before cutting a major or otherwise breaking release, to judge the blast radius. |
 | `docs/review.config.md` | Review-state labels, the non-compliance gates a PR must clear, tech-stack review rules, and the auto-merge settings. Read when reviewing a PR or when asking why a run did or did not merge. Auto-merge is enabled here, so a finished `execute` run merges its own PR once the review approves. |
 | `.claude/ecosystem.md` | Installed Claude Code companion tool cheat-sheet (Graphify, RTK, ccusage, ecc-agentshield). Read before searching the codebase or running an audit/review: prefer `graphify query` over blind file search; run `ecc-agentshield scan` when touching config files; use `npx ccusage` to check token spend. |

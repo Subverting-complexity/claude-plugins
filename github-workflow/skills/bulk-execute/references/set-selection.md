@@ -13,7 +13,7 @@ Two things hold throughout:
 
 `$ARGUMENTS.story_numbers` is present, e.g. `/github-workflow:bulk-execute 41 43 47`. The choice has been made, so do not re-litigate relatedness: a person who names three issues is asserting they belong together, and that assertion outranks the heuristics below. Two things still apply — the size cap, and the fact that a story which cannot be worked cannot be built.
 
-**1. Validate each named story in one batch.** Read the pool once — it is the answer to "is this story available", because it *is* the Backlog column with the unavailable already filtered out:
+**1. Validate each named story in one batch.** Read the pool once — it is the answer to "is this story available", because it *is* the blank-or-`Backlog` stage issues with the unavailable already filtered out:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --mode {mode} --limit 0
@@ -25,23 +25,23 @@ Then read each named number for its own content:
 gh issue view {number} --repo {org}/{repo} --json state,assignees,title,body,milestone
 ```
 
-That JSON deliberately does not ask for labels. No label says which lane a card is in, how urgent the story is or who owns it, so there is nothing in a label list to decide on — the lane is the board's answer, which `wf candidates` has already given.
+That JSON deliberately does not ask for labels. No label says what stage an issue is at, how urgent the story is or who owns it, so there is nothing in a label list to decide on — the stage is the `Stage` field's answer, which `wf candidates` has already given.
 
 Drop a named story, with a one-line reason in your report, when it is:
 
 - **closed** — nothing to build;
-- **already in flight** — its card is in the In Review column, or an open pull request already closes it. Ask once per number:
+- **already in flight** — its stage is `In Review`, or an open pull request already closes it. Ask once per number:
   ```bash
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
   ```
   Exit 0 with `found: 0` means nothing closes it; exit 20 means the lookup failed, so say so rather than assuming it is free. Report any PR found by number and title and say `/github-workflow:code-review` handles it;
 - **assigned to someone else** — another agent or person owns it;
 - **empty** — no Context and no Requirements anywhere in the body, comments or linked docs, so any implementation would be a guess;
-- **not in the pool** — the number came back in none of the `wf candidates` entries, so it is not an unassigned Backlog card a code agent may take. Its card is in Needs refinement, Parked, Blocked or Non-code, or its `Ownership` is not `Code agent`. Read the reason off the board or the issue's fields and name it; `pick --issue` refuses the same story anyway, so claiming it would only fail later.
+- **not in the pool** — the number came back in none of the `wf candidates` entries, so it is not an unassigned, available issue a code agent may take. Its stage is `Needs refinement`, `Parked`, `Blocked` or `Non-code`, or its `Ownership` is not `Code agent`. Read the reason off the issue's fields and name it; `pick --issue` refuses the same story anyway, so claiming it would only fail later.
 
-If a named story sits in In Review but **no** open PR is found, check for a **closed, unmerged** PR (`closingIssuesReferences`, `states: CLOSED`). If there is one, the PR was abandoned: reset the issue automatically — unassign, move the card to Backlog, comment `"Resetting — PR #{N} closed without merge."` — and keep it in the set. If there is no closed PR either, surface the inconsistency and drop it.
+If a named story is at `In Review` but **no** open PR is found, check for a **closed, unmerged** PR (`closingIssuesReferences`, `states: CLOSED`). If there is one, the PR was abandoned: reset the issue automatically — unassign, set the stage to `Backlog` (`wf stage-set {number} --stage stage-backlog`), comment `"Resetting — PR #{N} closed without merge."` — and keep it in the set. If there is no closed PR either, surface the inconsistency and drop it.
 
-**2. Cap the size.** More than `--size` stories (default 5, which is also the maximum) were named. Keep the first `--size` in the order the user gave them, and say which were left out and that their cards stay in the Backlog column. Do not silently build more than the cap: the cap is what keeps the pull request reviewable.
+**2. Cap the size.** More than `--size` stories (default 5, which is also the maximum) were named. Keep the first `--size` in the order the user gave them, and say which were left out and that they stay in the pool. Do not silently build more than the cap: the cap is what keeps the pull request reviewable.
 
 **3. Warn, but obey, on a set that looks unrelated.** If the named stories share nothing by the rules in Path B, say so in one sentence in your report and build them anyway. The user's instruction stands; your job is to make the consequence visible, not to override it.
 
@@ -59,7 +59,7 @@ Then go to **Claiming the set**.
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --mode {mode}
 ```
 
-This returns the same pool `execute` picks from — the board's Backlog column, sprint narrowed, the mode filter applied, anything `Ownership` does not mark `Code agent` removed, sorted by `Priority` then `Effort` then issue number — and claims nothing. Each entry carries `number`, `title`, `priority`, `scope`, `milestone`, a truncated `body`, and the `dependencies` read from the native blocked-by edges. `total` is the unclipped pool size, `listed` is how many came back, and `unprioritised_count` is how many carry no `Priority` and therefore sort last.
+This returns the same pool `execute` picks from — the open, unassigned issues at a blank or `Backlog` stage, sprint narrowed, the mode filter applied, anything `Ownership` does not mark `Code agent` removed, sorted by `Priority` then `Effort` then issue number — and claims nothing. Each entry carries `number`, `title`, `priority`, `scope`, `milestone`, a truncated `body`, and the `dependencies` read from the native blocked-by edges. `total` is the unclipped pool size, `listed` is how many came back, and `unprioritised_count` is how many carry no `Priority` and therefore sort last.
 
 Interpret the result by its `status`:
 
@@ -111,14 +111,14 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --mode {mode} --parent {N}
 
 It walks N's sub-issues down through its Features to the leaves (every open descendant that is not an Epic or Feature) and applies the rules settled on #239:
 
-- **Only work a code agent may take.** A leaf is taken only when its card is in Backlog and its `Ownership` is `Code agent`. Non-code, Parked, Needs refinement, In Progress and In Review leaves are never taken.
+- **Only work a code agent may take.** A leaf is taken only when its stage is blank or `Backlog` and its `Ownership` is `Code agent`. `Non-code`, `Parked`, `Needs refinement`, `In Progress` and `In Review` leaves are never taken.
 - **One exception for Blocked.** A leaf in Blocked is taken when it has an open blocker and every one is another leaf taken in the same run. A leaf blocked by anything else, or by no issue at all, stays out.
 - **One Feature per run.** Under an Epic, only the Feature holding the highest-priority leaf is taken.
 - **Capped by `--size`**, highest priority first, and returned in build order.
 
 Interpret the result by its `status`: **`ok`** — the `candidates` are the set, in build order; **`no-candidates`** — nothing under N is available, so report the `excluded` list and stop; **`usage`** — N is not an Epic or Feature, so say so and stop; **`error`** — `wf` cannot run, so name the prerequisite and stop.
 
-**2. Report what was left out.** `excluded` names every other leaf with its reason. Say in one line per Feature or column what was not taken, so the next run can be pointed at it. The container itself is never claimed, moved or closed.
+**2. Report what was left out.** `excluded` names every other leaf with its reason. Say in one line per Feature or stage what was not taken, so the next run can be pointed at it. The container itself is never claimed, given a stage or closed.
 
 **3. Name the lead.** The first story in `candidates` is the lead. Then go to **Claiming the set**, passing `--sibling` for every other story exactly as for the other paths: that is also what lets a Blocked leaf be claimed, because its blocker is a sibling.
 
@@ -137,11 +137,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout --no
 
 Pass `--sibling` once for **every other story in the set**. That is what lets a dependency chain be built at all: `wf` normally refuses a story whose dependency is still open, because you cannot build on unmerged work you cannot see, and a sibling is the exception — it is work this same run is about to write, in the same commit series, on the same branch. A dependency that is open and **not** a sibling still blocks, exactly as it does for a single-story run.
 
-`--checkout --no-branch` applies the board move to In Progress without creating a branch. Every story in the set shares the one branch Phase 2 creates; branching per story here would give each its own.
+`--checkout --no-branch` sets the stage to `In Progress` without creating a branch. Every story in the set shares the one branch Phase 2 creates; branching per story here would give each its own.
 
 Interpret each result by `status`:
 
-- **`ok`** — claimed. The card is in In Progress, the `@me` assignment is applied and the claim ref is held. Surface any `side_effects`.
+- **`ok`** — claimed. The stage is `In Progress`, the `@me` assignment is applied and the claim ref is held. Surface any `side_effects`.
 - **`all-blocked`** — this story could not be claimed: taken by another agent, blocked by an open dependency outside the set, or already resolved by a merged PR. Drop it from the set, say which and why, and carry on with the rest. It is not a reason to abandon the run.
 - **`error`**, or Python is missing — `wf` cannot run here. Stop the run and name the prerequisite; every story already claimed is released by the dropping procedure below.
 
@@ -185,11 +185,11 @@ If it **was claimed**, return it to the backlog properly, in this order:
    ```
    gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
    ```
-3. Move the card back to Backlog — **this is the step that returns the issue to the pool**, because the pool is that column:
+3. Set the stage back to `Backlog` — **this is the step that returns the issue to the pool**, because the pool is that stage:
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-backlog
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-backlog
    ```
-   It exits 0 whether or not a board is configured; read `moved`.
+   It always exits 0; read `set`, and report a failed write as "Stage update failed: {reason}. Continuing."
 4. Comment on the issue saying it was claimed for a bulk run and returned unbuilt, and why, so the next run does not have to infer it:
    ```
    gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}

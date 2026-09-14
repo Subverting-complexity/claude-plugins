@@ -42,7 +42,7 @@ Work on **one story at a time** in a **fresh session per story**. Complete it (P
 
 ### Chaining Stories
 
-A dependency between two stories is a **native blocked-by edge** on the dependent one, and nothing else. Not a sentence in the body, not a label: the edge is what keeps the dependent story out of the pick pool, what puts its card in the Blocked column, and what `wf unblock` reads to release it once the dependency closes.
+A dependency between two stories is a **native blocked-by edge** on the dependent one, and nothing else. Not a sentence in the body, not a label: the edge is what keeps the dependent story out of the pick pool, what sets its stage to `Blocked`, and what `wf unblock` reads to release it once the dependency closes.
 
 When a story depends on another unmerged story:
 
@@ -51,7 +51,7 @@ When a story depends on another unmerged story:
 3. Set the dependent PR's base to the dependency branch.
 4. After merge, rebase onto the default branch and update the PR base.
 
-Chaining like this is only possible while the dependency's branch is published. Where it is not, the dependent story is blocked instead: its card goes to Blocked and stays out of the pool until the edge closes.
+Chaining like this is only possible while the dependency's branch is published. Where it is not, the dependent story is blocked instead: its stage is set to `Blocked` and it stays out of the pool until the edge closes.
 
 ## Bug, Security, and Maintenance Workflow
 
@@ -63,7 +63,7 @@ When a bug, security issue, architecture violation, or tech debt is found during
 
 Every issue and pull request body this project writes follows one standard, `_shared/body-standard.md`, through the entry point for the thing being written: `writing-github-issues` for an issue, `pr-body` for a pull request. Both mean the same body: open with the actual problem or the actual change, use the standard section names and only the sections that carry information, leave out the investigation that found it, keep any uncertainty the source had, and write each paragraph on **one unwrapped line**.
 
-An issue that a person has to finish, because it needs a permission or an approval no agent can give, is marked three ways together: `[Manual]` at the front of the title, `Ownership` set to `Human`, and a `## Manual step` section saying what has to be done and why. The field is the part that decides anything — it keeps the issue out of the code agent's pool and puts its card in the Non-code column.
+An issue that a person has to finish, because it needs a permission or an approval no agent can give, is marked three ways together: `[Manual]` at the front of the title, `Ownership` set to `Human`, and a `## Manual step` section saying what has to be done and why. The field is the part that decides anything — it keeps the issue out of the code agent's pool and sets its stage to `Non-code`.
 
 `/github-workflow:report-issue` and `/github-workflow:execute` apply all of this for you. Ask for `writing-github-issues` or `pr-body` directly when you want an existing issue or pull request rewritten.
 
@@ -80,7 +80,7 @@ These files provide context for specific workflows. You don't need to read all o
 
 | File | When to consult |
 | ---- | --------------- |
-| `ClaudeProject.md` | Project identity, labels, quality gate, branch convention, board config. Read at the start of any workflow command. |
+| `ClaudeProject.md` | Project identity, labels, quality gate, branch convention, issue fields. Read at the start of any workflow command. |
 | `docs/review.config.md` | (Optional — created by setup step 7.) Review label definitions, non-compliance gates, tech-stack review rules. Read when performing or preparing for code review. |
 
 Add your own reference docs to this table as needed — architecture decisions, coding standards, API specs, etc. — so future sessions know where to look.

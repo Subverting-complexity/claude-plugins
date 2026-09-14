@@ -172,13 +172,13 @@ def filter_by_native_type(candidates, mode, type_map, classification_map=None,
 def _filter_unavailable(candidates, project_map=None, ownership_map=None):
     """Exclude backlog issues that a code agent must not be handed.
 
-    The pool is the board's Backlog column, so the board's own `Status` field
-    has already excluded everything in another lane: an issue that is in
-    progress, in review, blocked, parked or done is in that column and not this
-    one. `Status` is single-valued, which is what makes the pool an exclusion
-    in its own right.
+    The pool is the open issues whose `Stage` is blank or `Backlog`, so `Stage`
+    has already excluded everything in another stage: an issue that is in
+    progress, in review, blocked, parked or done says so and is not here.
+    `Stage` is single-valued, which is what makes the pool an exclusion in its
+    own right.
 
-    What remains is the one thing a column cannot express, because it is a
+    What remains is the one thing a stage cannot express, because it is a
     property of the work rather than a position in a workflow: **who can do
     it**. An issue scoped to a person or a browser agent is not work a code
     agent can finish, and one can sit in Backlog perfectly legitimately — a
@@ -196,9 +196,9 @@ def _filter_unavailable(candidates, project_map=None, ownership_map=None):
 
     This used to read six lifecycle labels and treat `status-ready` as the only
     one meaning "pick me". That was the opt-in model: an issue was invisible
-    until somebody remembered to mark it. The board column is the opt-out
-    replacement, and it cannot be forgotten, because putting the card somewhere
-    is how an issue gets onto the board at all.
+    until somebody remembered to mark it. A blank `Stage` is the opt-out
+    replacement, and it cannot be forgotten, because an issue nobody has
+    decided anything about is available by default.
     """
     ownership_map = ownership_map or {}
     return [c for c in candidates
@@ -278,9 +278,9 @@ def select_pool(candidates, mode='story', project_map=None,
     No filter here reads a label, and there is no `agent_gating` argument any
     more. Human approval used to be a `claude-ready` label a person applied
     during triage, and it was the last label with a say in what gets picked;
-    it is now the card's column, which is the same answer in the place every
-    other state already lives. A person approves an issue by moving its card
-    into Backlog, and withholds approval by leaving it in Needs refinement or
+    it is now the issue's `Stage`, which is the same answer in the place every
+    other state already lives. A person approves an issue by leaving `Stage`
+    blank or setting `Backlog`, and withholds approval with Needs refinement or
     Parked. `project_map` survives for the label names the *writers* resolve.
 
     `type_map` is a dict of ``{issue_number: native_type_name}`` built from a
@@ -349,11 +349,11 @@ _DEFAULT_LABELS = {
 # an existing issue and take it off -- and so `deprecated_label_findings` can
 # name a project still carrying them. Nothing reads one to make a decision.
 #
-# `status-*` and `needs-refinement` said what state an issue was in. The board's
-# `Status` field says it now, and says it once: a label and a column are two
-# records of one fact, and on a real board they disagreed often enough that
-# `wf unblock` had to be written to reconcile them. `Status` holds one value and
-# a card sits in one column, so there is nothing left to reconcile.
+# `status-*` and `needs-refinement` said what state an issue was in. The
+# `Stage` issue field says it now, and says it once: a label and a stage are
+# two records of one fact, and they disagreed often enough that `wf unblock`
+# had to be written to reconcile them. `Stage` holds one value, so there is
+# nothing left to reconcile.
 #
 # `browser-agent` and `human-required` said who owned the work. The `Ownership`
 # field says it now, and unlike the labels it can be grouped by in a board view,
@@ -365,9 +365,9 @@ _DEFAULT_LABELS = {
 # said the same thing and disagreed. See `_priority_rank`.
 #
 # `claude-ready` was the human-approval gate, and the last label with a say in
-# what got picked. Approval is the card's column now: a person approves an
-# issue by moving it into Backlog and withholds approval by leaving it in Needs
-# refinement or Parked. That is the same answer in the place every other state
+# what got picked. Approval is the issue's `Stage` now: a person approves an
+# issue by leaving it blank or setting Backlog, and withholds approval with
+# Needs refinement or Parked. That is the same answer in the place every other state
 # already lives, and it removes the mode where a fully configured backlog
 # selected nothing because nobody had applied a label.
 RETIRED_LABELS = {
@@ -571,6 +571,7 @@ FIELD_NAME_DEFAULTS = {
     'field-origin':        'Origin',
     'field-start':         'Start date',
     'field-target':        'Target date',
+    'field-stage':         'Stage',
 }
 
 FIELD_DATA_TYPES = {
@@ -581,6 +582,7 @@ FIELD_DATA_TYPES = {
     'field-origin':        'single-select',
     'field-start':         'date',
     'field-target':        'date',
+    'field-stage':         'single-select',
 }
 
 # The fields a decision reads. An issue missing one of these is an issue the
@@ -592,12 +594,12 @@ FIELD_DATA_TYPES = {
 #              within a priority band
 #   Ownership  whether a code agent may pick the issue up at all
 #
-# There is a fourth required answer and it is not an org field: **state**,
-# which is the board column the card sits in. It is required the same way and
-# checked the same way -- every write places the card, and `config-audit` fails
-# on an open issue with no card (`board-orphan`) or a card in no lane
-# (`board-unset`). It is not in this tuple because nothing writes it through
-# the field path.
+# There is a fourth answer and it is deliberately not required: **state**, the
+# `Stage` field. A blank `Stage` means available, so an issue nobody has
+# decided anything about is already in a state. The plugin writes `Stage` on
+# every transition it makes, and `config-audit` fails when the org does not
+# define the field (`stage-absent`) or lacks an option a transition writes
+# (`stage-options`).
 MANDATORY_FIELD_KEYS = ('field-priority', 'field-effort', 'field-ownership')
 
 # Fields the tooling fills in when it can and does not require. Nothing selects
@@ -811,64 +813,73 @@ def reap_summary(results):
             'skipped': counts[SKIP]}
 
 
-# Board column purpose key → the column's name on the board. `ClaudeProject.md`
-# records the purpose key and the option id; the live board is addressed by
-# name, and `wf board-move` accepts either.
+# Stage purpose key → the option's name on the org's `Stage` issue field.
 #
-# `col-backlog` is `Backlog`, which is what every other reference in this plugin
-# already calls it: the purpose key itself, `templates/default-labels.md`, the
-# `ClaudeProject.md` template, and `commands/report-issue.md`. It read `Todo`
-# for a long time, which is the name GitHub gives the column on a new Projects
-# v2 board rather than the name this plugin uses for it, so `board-move` failed
-# on every board that had been renamed to match its own configuration — and
-# failed quietly, because a board is a mirror and a failed move is never fatal.
-# `setup` now renames a default `Todo` rather than adopting it.
-BOARD_COLUMN_NAMES = {
-    'col-backlog':     'Backlog',
-    'col-in-progress': 'In Progress',
-    'col-in-review':   'In Review',
-    'col-blocked':     'Blocked',
-    'col-non-code':    'Non-code',
-    'col-refinement':  'Needs refinement',
-    'col-parked':       'Parked',
-    'col-attention':   'Needs attention',
-    'col-done':        'Done',
+# The state of an issue lives on the issue, in one org field, since 12.0.0. It
+# lived in the `Status` field of a board card until then, which had three
+# costs nobody could engineer away: an issue with no card had no state and
+# could not be picked, every transition was a board write, and an issue on two
+# boards had two states. A board now groups its columns by `Stage`, so every
+# board shows the same value and no agent ever moves a card.
+STAGE_NAMES = {
+    'stage-backlog':     'Backlog',
+    'stage-in-progress': 'In Progress',
+    'stage-in-review':   'In Review',
+    'stage-blocked':     'Blocked',
+    'stage-non-code':    'Non-code',
+    'stage-refinement':  'Needs refinement',
+    'stage-parked':      'Parked',
+    'stage-attention':   'Needs attention',
+    'stage-done':        'Done',
 }
 
-# The one column the picker selects from. Everything else on the board is a
-# lane an issue is *not* available from, which is why the pool needs no
-# exclusion list of its own: `Status` holds one value, so a card in any other
-# column is already out.
-POOL_COLUMN = 'col-backlog'
+# The stage the picker selects from, beside a blank `Stage`, which means the
+# same thing: nobody has decided anything about this issue yet. Every other
+# stage is one an issue is *not* available from.
+POOL_STAGE = 'stage-backlog'
 
-BOARD_COLUMN_COLOURS = {
-    'Backlog':          'GREEN',
-    'Needs refinement': 'BLUE',
-    'In Progress':      'YELLOW',
-    'In Review':        'ORANGE',
-    'Needs attention':  'PURPLE',
-    'Blocked':          'RED',
-    'Non-code':         'PINK',
-    'Parked':           'GRAY',
-    'Done':             'GRAY',
-}
 
-BOARD_COLUMN_DESCRIPTIONS = {
-    'Backlog':          'Available to pick',
-    'Needs refinement': 'Specced too thinly to start',
-    'In Progress':      'Claimed by an agent',
-    'In Review':        'Waiting on a pull request',
-    'Needs attention':  'Stopped part-way and needs a person',
-    'Blocked':          'Waiting on an open blocked-by edge',
-    'Non-code':         'Owned by a person or a browser agent',
-    'Parked':           'Deliberately set aside',
-    'Done':             'Closed',
-}
+def stage_name(value):
+    """The `Stage` option a purpose key or name refers to, or None.
 
-# The lanes `setup` creates and `board-lane` checks for. Every state an issue
-# can be in is one of these, because since 10.0.0 the column *is* the state:
-# there is no lifecycle label left to hold a state the board has no lane for.
-LANE_COLUMNS = tuple(k for k in BOARD_COLUMN_NAMES if k != 'col-done')
+    Accepts `stage-in-review`, `In Review` or `in review`, so a caller can pass
+    whichever it holds. Anything else is None rather than passed through: a
+    write naming an option the field does not have fails at GitHub, and saying
+    so before the round trip is cheaper.
+    """
+    if not value:
+        return None
+    text = str(value).strip()
+    if text in STAGE_NAMES:
+        return STAGE_NAMES[text]
+    lowered = text.lower()
+    for name in STAGE_NAMES.values():
+        if name.lower() == lowered:
+            return name
+    return None
+
+
+def is_available_stage(value):
+    """Whether an issue whose `Stage` is `value` is in the pick pool."""
+    return not (value or '').strip() or stage_name(value) == STAGE_NAMES[POOL_STAGE]
+
+
+def option_spelling(field_meta, name):
+    """The live option's own spelling of `name`, matched case-insensitively.
+
+    `stage_findings` passes an org whose option is spelled `backlog`, so the
+    write has to accept that spelling too. Without this the audit reports the
+    field clean and every transition then fails at GitHub on a name it was
+    just told is valid.
+    """
+    options = (field_meta or {}).get('options') or {}
+    if name in options:
+        return name
+    wanted = str(name).strip().lower()
+    for live in options:
+        if str(live).strip().lower() == wanted:
+            return live
+    return name
 
 
 # ── work scope: who can actually do this issue ───────────────────────────────
@@ -1023,20 +1034,20 @@ def scope_findings(issues, ownership_map=None):
     return findings
 
 
-# What a spec entry may ask for in `state`, and the column each asks for. Three
+# What a spec entry may ask for in `state`, and the stage each asks for. Three
 # and not nine: these are the states a *writer* can know. In Progress, In
 # Review and Done are written by the run that does the work, and Needs
 # attention by the run that gives up on it, so a spec naming one of those would
 # be describing something that has not happened.
-SPEC_STATE_COLUMNS = {
-    'backlog':    'col-backlog',
-    'refinement': 'col-refinement',
-    'parked':     'col-parked',
+SPEC_STATE_STAGES = {
+    'backlog':    'stage-backlog',
+    'refinement': 'stage-refinement',
+    'parked':     'stage-parked',
 }
 
-# The lanes `issue-apply` may move a card out of on its own. Everything else is
-# a state some other run, or a person, put the card in, and an update that is
-# about a field value has no business overruling it: an issue in progress that
+# The stages `issue-apply` may change on its own. Everything else is a state
+# some other run, or a person, set, and an update that is about a field value
+# has no business overruling it: an issue in progress that
 # was moved back to Backlog is offered to a second agent, and one a person
 # parked or held for refinement is approved by the update that released it.
 #
@@ -1044,26 +1055,26 @@ SPEC_STATE_COLUMNS = {
 # issue nothing can route, and it is also where a person withholds approval;
 # the two are indistinguishable from the outside, so releasing one releases the
 # other. A spec says `"state": "backlog"` to release it deliberately.
-AUTO_MANAGED_COLUMNS = frozenset({'Backlog', 'Blocked', 'Non-code'})
+AUTO_MANAGED_STAGES = frozenset({'Backlog', 'Blocked', 'Non-code'})
 
 
-def spec_state_column(value):
-    """The column purpose key a spec's `state` names. Returns (key, err)."""
+def spec_state_stage(value):
+    """The stage purpose key a spec's `state` names. Returns (key, err)."""
     if value is None:
         return None, None
     key = str(value).strip().lower()
-    if key in SPEC_STATE_COLUMNS:
-        return SPEC_STATE_COLUMNS[key], None
+    if key in SPEC_STATE_STAGES:
+        return SPEC_STATE_STAGES[key], None
     return None, ("'%s' is not a state a spec may ask for (it reads: %s)"
-                  % (value, ', '.join(sorted(SPEC_STATE_COLUMNS))))
+                  % (value, ', '.join(sorted(SPEC_STATE_STAGES))))
 
 
-def board_column_for(scope, open_blockers, requested=None):
-    """The board column purpose key an issue in this state belongs in.
+def stage_for(scope, open_blockers, requested=None):
+    """The stage purpose key an issue in this state belongs in.
 
     Five inputs in one order, and the order is the whole rule:
 
-      non-code    `scope` is a browser agent or a person, so the card goes in
+      non-code    `scope` is a browser agent or a person, so the stage is
                   Non-code. This wins over everything below it: the owner is a
                   property of the work, it survives every blocker closing, and
                   no sweep may release it into a pool that cannot do it.
@@ -1074,43 +1085,35 @@ def board_column_for(scope, open_blockers, requested=None):
                   this workflow recognises. Nothing can route the issue -- the
                   picker will not offer it to a code agent and no view groups
                   it -- so it goes to Needs refinement rather than into a pool
-                  it would sit in unpickable. Until 10.1.2 it landed in
-                  Backlog, on a title-prefix fallback, which is how a card can
-                  look available and never be picked.
+                  it would sit in unpickable.
       blocked     at least one native edge points at an open issue.
       pickable    none of the above, so Backlog, which is what available means.
 
-    `col-backlog` is an answer rather than an absence -- there is no state an
-    issue can be in that this does not name a column for, which is what lets
-    the board be the whole record of state.
-
-    This used to have a twin, `lifecycle_for`, returning the label that
-    mirrored the column. The label is gone; `Status` holds one value and a card
-    sits in one column, so there is nothing for a second record to disagree
-    with.
+    `stage-backlog` is written rather than left blank. Both mean available, and
+    the written value is the one a board groups under a column a person
+    recognises instead of `No Stage`.
     """
     if scope in (SCOPE_BROWSER, SCOPE_HUMAN):
-        return 'col-non-code'
+        return 'stage-non-code'
     if requested:
         return requested
     if scope is None:
-        return 'col-refinement'
-    return 'col-blocked' if open_blockers else 'col-backlog'
+        return 'stage-refinement'
+    return 'stage-blocked' if open_blockers else 'stage-backlog'
 
 
-def may_place_card(current_column, requested=None):
-    """Whether `issue-apply` may write this card's lane. (allowed, why_not).
+def may_set_stage(current_stage, requested=None):
+    """Whether `issue-apply` may write this issue's `Stage`. (allowed, why_not).
 
-    A card with no lane at all -- no card on the board, or a card sitting in
-    the board's `No Status` bucket -- is always placed: an issue in no lane is
-    in no state, and it is invisible to every command that reads one.
+    A blank `Stage` is always written: it is available, and writing the stage
+    the rule names is only saying so explicitly.
     """
     if requested:
         return True, None
-    current = (current_column or '').strip()
+    current = (current_stage or '').strip()
     if not current:
         return True, None
-    if current in AUTO_MANAGED_COLUMNS:
+    if current in AUTO_MANAGED_STAGES:
         return True, None
     return False, current
 
@@ -1430,11 +1433,11 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
                 errors.append('%s: issue appears more than once in this spec' % name)
             seen_numbers.add(number)
 
-        # The lane the entry asks for, when it asks for one at all.
-        state_column, err = spec_state_column(entry.get('state'))
+        # The stage the entry asks for, when it asks for one at all.
+        state_stage, err = spec_state_stage(entry.get('state'))
         if err:
             errors.append('%s: %s' % (name, err))
-        plan['state'] = state_column
+        plan['state'] = state_stage
 
         # Native type.
         type_name, err = resolve_entry_type(entry, type_map)
@@ -1994,8 +1997,7 @@ def audit_summary(audited):
 # The severity split is deliberate, and comes from one question — does the
 # workflow produce a *wrong* result or a *degraded* one? A missing section, or a
 # label an agent is told to apply that does not exist, produce wrong behaviour,
-# so they fail. An org field nobody mapped, or a board snapshot that has gone
-# stale, degrade gracefully, so they warn.
+# so they fail. An org field nobody mapped degrades gracefully, so it warns.
 
 CRITICAL, WARNING = 'critical', 'warning'
 
@@ -2152,7 +2154,7 @@ def deprecated_label_findings(project_map, live_labels, path='ClaudeProject.md')
     Three families, all retired for the same reason: a structured field answers
     the question and the label was a second copy of the answer. `type-*` was
     replaced by the native issue type, `status-*` and `needs-refinement` by the
-    board's `Status` field, the scope labels by `Ownership`, and `priority-*`
+    `Stage` field, the scope labels by `Ownership`, and `priority-*`
     by `Priority`.
 
     A row left in the label map is a standing invitation to hand-label an issue
@@ -2306,76 +2308,40 @@ def unmapped_field_findings(field_names, project_fields=None,
     return out
 
 
-def board_column_findings(columns, live_options, path='ClaudeProject.md'):
-    """Where the recorded snapshot and the live board disagree, either way.
+def stage_findings(field_map, project_fields=None, path='ClaudeProject.md'):
+    """Whether the org's `Stage` field can hold every state the plugin writes.
 
-    `columns` is `{purpose key: option id}`, `live_options` is
-    `{option id: name}`. Two disagreements, both warnings, because a stale
-    snapshot costs the recorded shortcut and not the move -- `board-move`
-    resolves a column by name at write time. Whether the column exists at all
-    is `board_lane_findings`, and that one is critical for `Backlog`.
+    Both findings are critical. With no `Stage` field nothing records whether
+    an issue is in progress, blocked or done, so a second agent picks up work
+    already underway; with an option missing, the transition to it fails at
+    GitHub and the issue keeps whatever stage it had, which for a claim is the
+    pool.
 
-    The second direction is the one a repair creates. Adding a lane to the
-    board fixes `board-lane` and leaves the file recording that lane as `n/a`,
-    which nothing reported until this checked for it -- so the run that created
-    three columns looked clean while the file still said the board had none of
-    them.
+    `field_map` is the capability record's `{field name: meta}`, where `meta`
+    carries `options` as `{option name: id}`.
     """
-    live = live_options or {}
-    recorded = columns or {}
-    out = []
-    for purpose, option_id in sorted(recorded.items()):
-        if option_id in live:
-            continue
-        out.append(finding(
-            WARNING, 'board-column',
-            '`%s` is recorded as option `%s`, which the board no longer has, so '
-            'that move is skipped' % (purpose, option_id),
-            'refresh the `### Status Options` table from the live board',
-            path))
-    names = {(name or '').strip().lower() for name in live.values()}
-    for purpose, name in sorted(BOARD_COLUMN_NAMES.items()):
-        if purpose in recorded or name.strip().lower() not in names:
-            continue
-        out.append(finding(
-            WARNING, 'board-column',
-            'the board has a `%s` column and `%s` records no option id for it, '
-            'so every move to that lane costs a lookup it should not have to '
-            'make' % (name, path),
-            'refresh the `### Status Options` table from the live board',
-            path))
-    return out
-
-
-def board_lane_findings(live_option_names, path='ClaudeProject.md'):
-    """Lanes the workflow moves issues into that the live board does not have.
-
-    The pool column is the severe one, and it is severe because selection reads
-    it: a board with no `Backlog` column gives `pick` nowhere to look. Until
-    9.0.0 that came back as an empty pool rather than an error, so a board
-    nobody had configured and a backlog nobody had filled produced the same
-    answer — and the misconfiguration was the likelier of the two. The rest
-    warn: a missing lane loses one state's board move, which a person notices
-    on the board and no command depends on.
-    """
-    live = {(name or '').strip().lower() for name in live_option_names or ()}
-    out = []
-    for purpose, name in sorted(BOARD_COLUMN_NAMES.items()):
-        if name.strip().lower() in live:
-            continue
-        if purpose == POOL_COLUMN:
-            out.append(finding(
-                CRITICAL, 'board-lane',
-                'the board has no `%s` column, and that column *is* the pick '
-                'pool, so selection has nothing to read' % name,
-                "add a `%s` option to the board's status field" % name, path))
-        else:
-            out.append(finding(
-                WARNING, 'board-lane',
-                'the board has no `%s` column, so an issue that reaches that '
-                'state stays in whichever lane it was already in' % name,
-                "add a `%s` option to the board's status field" % name, path))
-    return out
+    name = resolve_field_name('field-stage', project_fields or {})
+    meta = (field_map or {}).get(name)
+    if not meta:
+        return [finding(
+            CRITICAL, 'stage-absent',
+            'the org defines no `%s` field, so no issue can record whether it '
+            'is available, in progress, blocked or done' % name,
+            'create `%s` as a single-select org issue field (Planning -> Issue '
+            'fields) with the options %s, and pin it to every enabled issue type'
+            % (name, _names(STAGE_NAMES.values())), path)]
+    have = {str(o).strip().lower() for o in (meta.get('options') or {})}
+    missing = [n for n in STAGE_NAMES.values() if n.lower() not in have]
+    if not missing:
+        return []
+    return [finding(
+        CRITICAL, 'stage-options',
+        '`%s` has no %s option%s, so a transition to %s fails and the issue '
+        'keeps the stage it had' % (name, _names(missing),
+                                    '' if len(missing) == 1 else 's',
+                                    'it' if len(missing) == 1 else 'them'),
+        'add %s to the `%s` field in the org settings' % (_names(missing), name),
+        path)]
 
 
 def absent_field_findings(defined_names, project_fields=None,
@@ -2433,13 +2399,6 @@ def absent_field_findings(defined_names, project_fields=None,
     return out
 
 
-# Board columns a previous version of the workflow selected from. `Ready` was
-# the opt-in pool: an issue was invisible until somebody moved it there or
-# labelled it. Backlog is the pool now, and a board that still carries a Ready
-# lane has a column whose cards nothing will ever look at.
-RETIRED_BOARD_COLUMNS = ('Ready',)
-
-
 def retired_label_findings(issues, project_map=None, path='ClaudeProject.md'):
     """Open issues still carrying a label the workflow retired.
 
@@ -2474,26 +2433,6 @@ def retired_label_findings(issues, project_map=None, path='ClaudeProject.md'):
         'run `wf preflight --fix`, which takes them off, or leave them and let '
         'the write path clear each issue the next time a command touches it',
         path)]
-
-
-def board_retired_findings(live_option_names, path='ClaudeProject.md'):
-    """A lane on the board that this workflow no longer selects from."""
-    live = {(name or '').strip().lower(): name for name in live_option_names or ()}
-    out = []
-    for retired in RETIRED_BOARD_COLUMNS:
-        name = live.get(retired.strip().lower())
-        if not name:
-            continue
-        out.append(finding(
-            WARNING, 'board-retired',
-            'the board still has a `%s` column, which nothing selects from: the '
-            'pool is `%s`, and a card left in `%s` is invisible to every command'
-            % (name, BOARD_COLUMN_NAMES[POOL_COLUMN], name),
-            'run `wf preflight --fix`, which moves any card still in it to `%s` '
-            'and then removes the column'
-            % BOARD_COLUMN_NAMES[POOL_COLUMN],
-            path))
-    return out
 
 
 # The option names each mandatory field's decision is defined against. A value
@@ -2569,8 +2508,12 @@ def field_option_findings(field_map, project_fields=None,
 # reports that.
 _RETIRED_INSTRUCTION_PATTERNS = (
     (r'status[-:_ ]ready|claude-ready|`?Ready`? (?:label|column|gate|status)|##\s*Ready Gate',
-     'the `Ready` opt-in, which no longer exists -- the pool is the board\'s '
-     '`Backlog` column'),
+     'the `Ready` opt-in, which no longer exists -- the pool is every issue '
+     'whose `Stage` is blank or `Backlog`'),
+    (r'(?i)board-move|move (?:the|its) card|board column is the state|'
+     r'Status Options|status-field-(?:name|id)',
+     'an issue\'s state held in a board column, which nothing reads or writes '
+     'any more: the `Stage` issue field is the state'),
     (r'status[-:_](?:in-progress|blocked|parked|non-code|in-review|needs-attention)|'
      r'\bneeds-refinement\b|\bhuman-required\b|\bbrowser-agent\b|priority[-:](?:critical|high|medium|low)',
      'a lifecycle, scope or priority label that decided something and no '
@@ -2608,69 +2551,12 @@ def instruction_findings(files, path=None):
                 '%s describes %s (line%s %s), so a session reading it is told '
                 'to do something the tooling no longer does'
                 % (name, why, '' if len(lines) == 1 else 's', shown),
-                'rewrite those lines against the current workflow: the board '
-                'column is the state, `Priority`, `Effort` and `Ownership` are '
+                'rewrite those lines against the current workflow: the `Stage` '
+                'field is the state, `Priority`, `Effort` and `Ownership` are '
                 'the fields every decision reads, and a dependency is a native '
                 'blocked-by edge',
                 name))
     return out
-
-
-def board_unset_findings(numbers, path='ClaudeProject.md'):
-    """Open issues whose board card holds no `Status` value.
-
-    Critical for the same reason as `board_orphan_findings`, and separate from
-    it because the fix is a different one: the card exists, so nothing needs
-    adding, but it sits in the board's `No Status` bucket rather than in a
-    lane. Since the column *is* the state, an issue there is in no state at
-    all -- not available, not blocked, not in progress, and invisible to every
-    command that reads a lane.
-
-    A card lands there when somebody adds an issue to the board by hand, which
-    is the one path that does not go through `board-move`.
-    """
-    numbers = sorted(set(numbers or ()))
-    if not numbers:
-        return []
-    shown = ', '.join('#%d' % n for n in numbers[:10])
-    if len(numbers) > 10:
-        shown += ' and %d more' % (len(numbers) - 10)
-    return [finding(
-        CRITICAL, 'board-unset',
-        '%d open issue%s a board card with no `Status` value (%s), so %s in no '
-        'lane at all -- the column is the state, and these have none'
-        % (len(numbers), ' has' if len(numbers) == 1 else 's have', shown,
-           'it is' if len(numbers) == 1 else 'they are'),
-        'run `wf board-move <number> --column col-backlog` for each, or move '
-        'the card into whichever lane matches its real state',
-        path)]
-
-
-def board_orphan_findings(numbers, path='ClaudeProject.md'):
-    """Open unassigned issues with no card on the board.
-
-    Critical, and this is the check that makes the 9.0.0 pool safe to adopt.
-    The pool is the board's `Backlog` column, so an issue with no card is
-    invisible to `pick` whatever it carries — and an upgrade silently shrinks
-    the backlog to whatever happened to be on the board already. New issues
-    cannot land in this state (`issue-apply` places every issue it touches);
-    every issue filed before that did can.
-    """
-    numbers = sorted(set(numbers or ()))
-    if not numbers:
-        return []
-    shown = ', '.join('#%d' % n for n in numbers[:10])
-    if len(numbers) > 10:
-        shown += ' and %d more' % (len(numbers) - 10)
-    return [finding(
-        CRITICAL, 'board-orphan',
-        '%d open unassigned issue%s no card on the board (%s), and the pick '
-        'pool is a board column, so nothing can select %s'
-        % (len(numbers), ' has' if len(numbers) == 1 else 's have', shown,
-           'it' if len(numbers) == 1 else 'them'),
-        'run `wf board-move <number> --column col-backlog` for each, which '
-        'adds the card as well as setting the column',
-        path)]
 
 
 def preflight_summary(findings):
@@ -3249,7 +3135,7 @@ def choose_parent_set(root, pool_order, deps, reasons=None, max_size=BULK_MAX,
     -- Backlog, owned by the code agent, unassigned -- with the Blocked
     leaves the code agent owns ranked in among it, so a waiting leaf keeps
     its priority. `deps` maps each of them to its **open** blockers.
-    `reasons` is the caller's explanation for any other leaf: its column, its
+    `reasons` is the caller's explanation for any other leaf: its stage, its
     owner. Nothing else is ever taken, so Non-code work never is.
 
     - **One group per run.** The Feature (or the root, for leaves hanging off
@@ -3332,7 +3218,7 @@ def choose_parent_set(root, pool_order, deps, reasons=None, max_size=BULK_MAX,
 # ── closing a finished container (#240) ──────────────────────────────────────
 # GitHub's native sub-issues never close a parent, and a merge closes only the
 # issues its pull request names. So an Epic or Feature whose last story merged
-# stayed open, in a column nobody routinely looks at, until somebody noticed.
+# stayed open, in a stage nobody routinely looks at, until somebody noticed.
 
 def container_finished(node, closed=()):
     """Whether an Epic or Feature is finished: open, and every sub-issue closed.
@@ -3396,8 +3282,7 @@ def finished_container_findings(containers, path='ClaudeProject.md'):
 
 
 # ── preflight: the file-level checks, and what `--fix` may repair ────────────
-# `config-audit` compares `ClaudeProject.md` against the live repo, board and
-# org. It never looked at the file's own contents beyond its headings, so the
+# `config-audit` compares `ClaudeProject.md` against the live repo and org. It never looked at the file's own contents beyond its headings, so the
 # checks below lived in shell blocks inside `skills/preflight/SKILL.md` -- a
 # second implementation, in a second language, of the same idea. They are here
 # now because a check that decides whether a workflow runs has to be as
@@ -3413,10 +3298,10 @@ _PLACEHOLDER_RE = re.compile(
 # file that still carries one is not misconfigured, it is out of date -- but
 # leaving it in place means the next person to read the file believes it.
 RETIRED_CONFIG_SECTIONS = {
-    'Ready Gate': ("the pool is the board's `Backlog` column, which no setting "
-                   'turns off'),
-    'Agent Gating': ('approval is the card being in `Backlog`, so there is no '
-                     'gate to enable'),
+    'Ready Gate': ('the pool is every issue whose `Stage` is blank or '
+                   '`Backlog`, which no setting turns off'),
+    'Agent Gating': ('approval is an issue\'s `Stage` being blank or `Backlog`, '
+                     'so there is no gate to enable'),
 }
 
 
@@ -3486,7 +3371,7 @@ def claude_md_findings(exists, references_config, path='CLAUDE.md',
 
     `CLAUDE.md` is what a plain session reads. If it does not point at
     `ClaudeProject.md`, everything in there -- the branch convention, the
-    quality gate, the board -- is invisible outside the slash commands.
+    quality gate, the fields -- is invisible outside the slash commands.
     """
     if not exists:
         return [finding(
@@ -3529,18 +3414,12 @@ def review_config_findings(referenced, exists, path='ClaudeProject.md'):
 # without `--fix` can tell a person, per finding, whether running it again with
 # `--fix` would change anything.
 FIXABLE_CHECKS = {
-    'board-lane': 'create the missing column on the live board',
-    'board-column': 'refresh the recorded option ids from the live board',
-    'board-orphan': 'add the card and put it in `Backlog`',
-    'board-unset': 'put the card in `Backlog`',
     'label-deprecated': 'delete the row from the label map',
     'label-retired': 'take the retired labels off the open issues carrying them',
-    'board-retired': 'move any card still in the retired column to `Backlog`, '
-                     'then remove the column',
     'config-retired': 'delete the section',
     'claude-md-ref': 'add the pointer to CLAUDE.md',
     'container-finished': 'close each finished container as completed and '
-                          'move it to `Done`',
+                          'set its `Stage` to `Done`',
 }
 
 UNFIXABLE_REASONS = {
@@ -3548,8 +3427,10 @@ UNFIXABLE_REASONS = {
     'config-section': 'the section holds decisions no run can make for a project',
     'file-config': 'there is nothing to repair until the file exists',
     'file-claude-md': "writing a project's CLAUDE.md is the project's call",
-    'board-title': 'the title and the node id disagree and either could be the '
-                   'right one',
+    'stage-absent': 'an org-level issue field is created in the org settings, '
+                    'not through the API this runs on',
+    'stage-options': "adding an option to an org field is done in the org "
+                     'settings',
     'field-absent': 'an org-level issue field is created in the org settings, '
                     'not through the API this runs on',
     'field-absent-optional': 'an org-level issue field is created in the org '
@@ -3673,61 +3554,9 @@ def strip_label_map_rows(text, labels):
     return '\n'.join(lines[:start] + kept + lines[end:]), removed
 
 
-STATUS_OPTIONS_HEADING = 'Status Options'
-
-
-def render_status_options(columns):
-    """The `### Status Options` table, rebuilt from `{purpose key: option id}`.
-
-    Written in the canonical column order rather than whatever order the live
-    board returns, so the same board always produces the same table and a
-    refresh that changes nothing changes nothing in the file either.
-    """
-    rows = ['| Column | Purpose Key | Option ID |',
-            '| ------ | ----------- | --------- |']
-    for purpose, name in BOARD_COLUMN_NAMES.items():
-        option_id = (columns or {}).get(purpose)
-        rows.append('| %s | `%s` | %s |'
-                    % (name, purpose, '`%s`' % option_id if option_id else 'n/a'))
-    return '\n'.join(rows)
-
-
-def replace_status_options(text, columns):
-    """Swap the table inside `### Status Options` for one built from `columns`.
-
-    Returns `(text, changed)`. Only the table's own lines are replaced. The
-    first version of this replaced the whole section, which ate the paragraphs
-    a project had written around the table -- on the repository this plugin is
-    developed in, four of them, including the one recording why `col-backlog`
-    kept its old option id through a rename. A repair that destroys the
-    project's own writing is not a repair.
-
-    A section with no table is left alone, and so is a file with no section:
-    the table is written by `setup`, and inventing one here would put a heading
-    into a `## Project Board` section that may not exist either.
-    """
-    lines = (text or '').split('\n')
-    bounds = _section_bounds(lines, STATUS_OPTIONS_HEADING, level=3)
-    if not bounds:
-        return text, False
-    start, end = bounds
-    first = next((i for i in range(start + 1, end)
-                  if lines[i].strip().startswith('|')), None)
-    if first is None:
-        return text, False
-    last = first
-    while last + 1 < end and lines[last + 1].strip().startswith('|'):
-        last += 1
-    block = render_status_options(columns).split('\n')
-    if lines[first:last + 1] == block:
-        return text, False
-    lines[first:last + 1] = block
-    return '\n'.join(lines), True
-
-
 CLAUDE_MD_POINTER = (
     'Project configuration -- org and repo, branch convention, quality gate, '
-    'label map and project board -- lives in [`ClaudeProject.md`]'
+    'label map and issue fields -- lives in [`ClaudeProject.md`]'
     '(ClaudeProject.md). Read it before running a workflow command.')
 
 

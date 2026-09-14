@@ -101,62 +101,24 @@ gh repo view --json owner,name,defaultBranchRef --jq '{org: .owner.login, repo: 
 - `Makefile` targets (test, check, lint)
 - `dotnet test`
 
-**Project board:**
+**The `Stage` field:**
 
-A project board can be owned by an **organization** or by a **user**. Query both so user-owned boards are not missed (the org query errors or returns empty when `{org}` is a personal account):
+An issue's state is the org issue field `Stage`, a single-select with nine options: `Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention` and `Done` (see `templates/default-labels.md` → Stages). A blank `Stage` means available, the same as `Backlog`. Setup does not create the field and does not create or rename board columns. Step 5e reads whether the org has it.
+
+When the field or an option is missing, stop and ask the user to add it by hand, because the API this runs on cannot create an org issue field: org settings → *Planning* → *Issue fields* → create `Stage` as a single-select with the nine options, then pin it to every enabled issue type. Without it no transition can be written and preflight fails with `stage-absent` or `stage-options`.
+
+**Project board (optional):**
+
+A board is a view for people. Nothing in the workflow reads a column from it or moves a card on it, so a project without one works the same. If the user has one, record it for them and for GitHub's own "Auto-add to project" workflow. A board can be owned by an **organization** or by a **user**, so query both (the org query errors or returns empty when `{org}` is a personal account):
 
 ```
 gh api graphql -f query='query { organization(login: "{org}") { projectsV2(first: 20) { nodes { id number title } } } }'
 gh api graphql -f query='query { user(login: "{org}") { projectsV2(first: 20) { nodes { id number title } } } }'
 ```
 
-Merge the results. **Zero boards returned does not prove none exists** — the token may lack the `read:project` scope, or the board may be private and invisible to it. Say so, suggest checking `gh auth status` (scopes) and the board's visibility, and get the user's explicit confirmation that there is no board before configuring the project boardless. If boards are found, list them by **title** (and number) and ask which to use (or none). Record the chosen board's `number` as `project-number`, its `id` as `project-node-id`, and its `title` as `project-title` — `project-title` lets later commands confirm the stored node id still points at the intended board before they mutate it, which `wf board-move` does on every write. When a board is selected, auto-fetch its field IDs and status option IDs:
+List what comes back by **title** (and number) and ask which to record, or none. Zero boards returned can also mean the token lacks the `read:project` scope, so mention `gh auth status` if the user expected one. Record the chosen board's `number` as `project-number`, its `id` as `project-node-id` and its `title` as `project-title`.
 
-```
-gh api graphql -f query='query { node(id: "{project_id}") { ... on ProjectV2 { fields(first: 20) { nodes { ... on ProjectV2SingleSelectField { id name options { id name color description } } ... on ProjectV2Field { id name } } } } } }'
-```
-
-Record the Status single-select field's `id` as `status-field-id`, and keep the full list of its existing `options` (each with `id`, `name`, `color`, `description`) — you need them verbatim for the column-creation step below.
-
-**Ensure the board's lifecycle columns exist:**
-
-The board's `Status` field **is** the issue's state, so every lane the workflow moves a card into has to exist (see `templates/default-labels.md` → Board Columns). Compare the Status field's existing option names against the canonical set and decide what is missing:
-
-- **Required, and the one nothing works without:** Backlog (`col-backlog`). It is the pick pool — `pick` and `candidates` read that column and nothing else — so a board without it can select no work at all, and preflight reports it as critical.
-- **Required:** In Progress (`col-in-progress`), In Review (`col-in-review`), Blocked (`col-blocked`) — the three active workflow columns.
-- **Created, and warned about when missing:** Non-code (`col-non-code`), Needs refinement (`col-refinement`), Parked (`col-parked`), Needs attention (`col-attention`). Each is a lane an issue is moved into; a board without one loses that state's move and nothing else.
-- Backlog (`col-backlog`) and Done (`col-done`) usually already exist, as the board's default Todo/Done options. Done is already named right; **Todo is not**, and it is renamed rather than adopted — see below. Never create a second column for either.
-
-Match case-insensitively. For each **missing** column, ask the user what to name it, suggesting the default (`In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention`). If every column already exists, skip creation.
-
-**Rename a default `Todo` to `Backlog`.** A new Projects v2 board names its first column `Todo`; this plugin calls that column `Backlog` everywhere else, including the `col-backlog` purpose key, and `board-move` resolves a purpose key to a column by name. A board left as `Todo` therefore takes every board move except the one to the backlog, and that one fails quietly. Rename it in the same mutation that creates the missing columns: pass the existing option back with its `id` and the new `name`, which preserves the option and every item sitting in it. Do the same for any other spelling the board happens to use for the same column.
-
-Then create the missing columns in **one** mutation.
-
-> **Critical:** `updateProjectV2Field`'s `singleSelectOptions` is a **full replace**, not additive — whatever list you pass becomes the complete option set. You **must** pass back every existing option with its `id` (preserving it) plus each new option **without** an `id`. Omit an existing option and it is **deleted** (along with any items in that column). Each option needs `name`, `color` (`GRAY`/`BLUE`/`GREEN`/`YELLOW`/`ORANGE`/`RED`/`PINK`/`PURPLE`), and a `description` (all required).
-
-Build the `singleSelectOptions` list as: the existing options (each `{id, name, color, description}` exactly as fetched) followed by the new ones (no `id`). Suggested colors: Backlog `GREEN`, Needs refinement `BLUE`, In Progress `YELLOW`, In Review `ORANGE`, Needs attention `PURPLE`, Blocked `RED`, Non-code `PINK`, Parked `GRAY`, Done `GRAY`. The enum has eight colours and the board has nine lanes, so `Parked` and `Done` share the spare one; every lane an issue passes through on its way to being done differs from its neighbours.
-
-`gh api graphql` only binds **scalar** variables (`-f`/`-F`), so the option-list input cannot be passed as a variable — **inline the full `singleSelectOptions` array directly into the query text**. The `color` values are enum literals (unquoted); `name`/`description` are quoted strings. Existing options keep their `id`; new ones omit it:
-
-```
-gh api graphql -f query='mutation {
-  updateProjectV2Field(input: {
-    fieldId: "{status_field_id}"
-    singleSelectOptions: [
-      { id: "<existing-id-1>", name: "Backlog",     color: GREEN,  description: "" },
-      { id: "<existing-id-2>", name: "In Progress", color: YELLOW, description: "" },
-      { id: "<existing-id-3>", name: "Done",        color: GRAY,   description: "" },
-      { name: "In Review", color: ORANGE, description: "PR open, awaiting review" },
-      { name: "Blocked",   color: RED,    description: "Has an open blocked-by edge — out of the pick pool" }
-    ]
-  }) {
-    projectV2Field { ... on ProjectV2SingleSelectField { options { id name } } }
-  }
-}'
-```
-
-(The example works on a default Todo/In Progress/Done board: it adds In Review and Blocked, and renames `Todo` to `Backlog` by passing that option's existing `id` with the new name. Pass back **all** pre-existing options or they are deleted.) The mutation returns the full option list (existing + new) with their ids. Read the returned `options` to capture the option id for every canonical column — these become the Status Options values written to `ClaudeProject.md` in Step 5. This step is best-effort: if the mutation fails (non-zero exit, or a response with an `errors` array — GraphQL can return HTTP 200 with errors), warn the user that the columns must be created manually in the board UI, record the option ids that do exist, and continue.
+Then tell the user the one manual step that makes the board show state: add the `Stage` field to the board, and set each view's "Column by" to `Stage`. GitHub's built-in "Auto-add to project" workflow keeps new issues on it.
 
 **Milestones:**
 
@@ -176,9 +138,9 @@ For anything not auto-detected, ask the user interactively:
 - **Quality gate command** — if not auto-detected
 - **Refinement skill** — which skill to use when a story is too thin to implement. Default: `feature-discovery` (runs the `grill` interview, then writes the fuller spec and acceptance criteria). Store as `refinement-skill` in ClaudeProject.md.
 
-**Do not ask about priority, type, status or scope labels, and do not create any.** None of them decides anything: an issue's state is the board column its card is in, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields Step 6 configures. A repository that already has such labels keeps them — deleting a label strips it from every issue that ever carried it — but they stay out of the label map, and `wf issue-apply` takes one off any issue it writes.
+**Do not ask about priority, type, status or scope labels, and do not create any.** None of them decides anything: an issue's state is its `Stage` field, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields Step 6 configures. A repository that already has such labels keeps them — deleting a label strips it from every issue that ever carried it — but they stay out of the label map, and `wf issue-apply` takes one off any issue it writes.
 
-**Do not ask about agent gating.** There is no approval label. A person approves an issue for autonomous pickup by moving its card into Backlog, and withholds approval by leaving it in Needs refinement or Parked.
+**Do not ask about agent gating.** There is no approval label. A person approves an issue for autonomous pickup by setting its `Stage` to `Backlog` or leaving it blank, and withholds approval by setting `Needs refinement` or `Parked`.
 
 For each setting, show the detected or suggested default and let the user confirm or override. For labels, also list any existing labels found on the repo (`gh label list`) so the user can incorporate them.
 
@@ -281,7 +243,7 @@ Then write `## Issue Types & Fields` into `ClaudeProject.md` following `template
 
 An org without types and fields cannot run this workflow at all, because the fields are the only inputs the picker has — but "this org has none" and "nobody wrote this section" must not look the same, which is the failure this step exists to prevent. `wf config-audit` reports a missing section as CRITICAL, so leaving it out breaks preflight in the consumer's repo.
 
-Flag the three mandatory fields — `field-priority`, `field-effort`, `field-ownership` — if any is missing, because `wf issue-apply` refuses to create an issue without them: they are the pool's order, its size ceiling, and whether a code agent may take the issue at all. `field-type` (`Classification`) and `field-origin` are optional; an issue created without one gets a comment on it saying so, and nothing else changes. `Origin` is the one the workflow populates that GitHub does not create by default; point the user at the owner's *Issue fields* settings to add it as a single-select (Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request).
+Flag `field-stage` if it is missing or lacks one of its nine options, because no transition can be written without it; it is the manual step described in Step 3. Flag the three mandatory fields — `field-priority`, `field-effort`, `field-ownership` — if any is missing, because `wf issue-apply` refuses to create an issue without them: they are the pool's order, its size ceiling, and whether a code agent may take the issue at all. `field-type` (`Classification`) and `field-origin` are optional; an issue created without one gets a comment on it saying so, and nothing else changes. `Stage` and `Origin` are the ones the workflow populates that GitHub does not create by default. For `Origin`, point the user at the owner's *Issue fields* settings to add it as a single-select (Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request).
 
 On exit **20** the capability read failed (auth, network, no `wf`). Say so and leave any existing section alone — do not overwrite a good section with a guess.
 
@@ -343,7 +305,8 @@ Confirm all required sections are present in `ClaudeProject.md`. Display a summa
 - Package manager
 - Quality gate
 - Backlog mode (sprint or flat)
-- Board (configured or skipped)
+- `Stage` field (present with all nine options, or what is missing)
+- Board (recorded or none)
 - Labels configured
 - Ecosystem tools enabled (if any)
 
