@@ -19,7 +19,7 @@ This repo contains multiple Claude Code plugins that share skills.
 
 ## Shared Skills
 
-Fourteen skills live in `_shared-skills/` and are deployed to both plugins, alongside `_shared/` (wording standard, banned patterns and body standard) and `references/` (story template). The list, and what is deliberately *not* shared, are in `_shared-skills/MANIFEST.md`.
+Fifteen skills live in `_shared-skills/` and are deployed to both plugins, alongside `_shared/` (wording standard, banned patterns and body standard) and `references/` (story template). The list, and what is deliberately *not* shared, are in `_shared-skills/MANIFEST.md`.
 
 `_shared/body-standard.md` is the single standard for every body written into a tracker or forge: an issue, a pull request description, a comment. It holds the wording, the bullet and title rules, the style and the no-hard-wrapping rule. Its entry points carry only the part that differs, which is which sections a body has: `writing-github-issues` for a GitHub issue, `pr-body` in github-workflow and `pr-description` in local-workflow for a pull request.
 

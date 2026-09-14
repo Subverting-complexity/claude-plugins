@@ -152,4 +152,4 @@ This table is a snapshot, and `wf preflight --fix` rewrites it from the live boa
 
 ## Bundled Skills
 
-Available as `/github-workflow:*`: acceptance-criteria, bulk-execute, code-architect, code-review, debugging, doc-writer, ecosystem-setup, execute, feature-discovery, pr-body, preflight, repo-scaffolding, security-audit, structured-coding, support-request, tone, user-story, user-facing-communication, verify-feature, writing-github-issues.
+Available as `/github-workflow:*`: acceptance-criteria, bulk-execute, code-architect, code-review, debugging, doc-writer, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, repo-scaffolding, security-audit, structured-coding, support-request, tone, user-story, user-facing-communication, verify-feature, writing-github-issues.

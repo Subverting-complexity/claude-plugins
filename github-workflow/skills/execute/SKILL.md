@@ -272,7 +272,7 @@ Leaving Backlog takes it out of the pool. Write the comment to `skills/writing-g
 
 ## Interactive discovery gate (before planning)
 
-When **interactive** (user present, not an agent/cron run) and mode is `story` or `feature`: run `/github-workflow:feature-discovery --mode validation` to stress-test requirements before planning.
+When **interactive** (user present, not an agent/cron run) and mode is `story` or `feature`: run `/github-workflow:grill` on the story's requirements to stress-test them before planning.
 
 **Skip** when: autonomous/agent session, `maintenance`/`audit` mode, or the issue body already has discovery output (`## Stories` / `## Architecture` from a prior session).
 

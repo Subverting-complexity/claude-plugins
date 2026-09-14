@@ -174,7 +174,7 @@ For anything not auto-detected, ask the user interactively:
 - **Claude label** — the provenance marker on Claude-authored PRs and issues. Suggest `claude-authored`. It is the only label the issue workflow applies, and it is separate from the review-state labels set up in Step 7.
 - **Custom labels** — ask if the user has any additional labels they want workflow commands to apply or respect. For each, ask the name and when it should be applied. Examples: `breaking-change`, `docs-needed`, `frontend`, `backend`. Store these in the Custom section of the label map. (The code-review skill supports its own custom labels — configured separately in `review.config.md` during Step 7.)
 - **Quality gate command** — if not auto-detected
-- **Refinement skill** — which skill to use when a story is too thin to implement. Default: `feature-discovery` (runs in validation mode for lightweight Q&A, or discovery mode for full spec+AC). Store as `refinement-skill` in ClaudeProject.md.
+- **Refinement skill** — which skill to use when a story is too thin to implement. Default: `feature-discovery` (runs the `grill` interview, then writes the fuller spec and acceptance criteria). Store as `refinement-skill` in ClaudeProject.md.
 
 **Do not ask about priority, type, status or scope labels, and do not create any.** None of them decides anything: an issue's state is the board column its card is in, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields Step 6 configures. A repository that already has such labels keeps them — deleting a label strips it from every issue that ever carried it — but they stay out of the label map, and `wf issue-apply` takes one off any issue it writes.
 

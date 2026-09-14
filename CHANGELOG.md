@@ -7,6 +7,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 11.3.0 and local-workflow 2.15.0
+
+**New shared `grill` skill, and every interview now runs through it.** `/github-workflow:grill` and `/local-workflow:grill` question a plan until each open question is answered or deferred with a reason: they look for where the plan will break before asking, take the hardest topic first, lead every question with a recommendation, and ask bounded questions through `AskUserQuestion` pop-ups. With nobody present to answer, the grill never guesses: it records the open questions and, under github-workflow, moves the issue's card to Needs refinement.
+
+`feature-discovery` and `repo-scaffolding` no longer carry interview rules of their own. Each states its scope tier and carries on rather than asking for confirmation, runs the grill, and uses its section list as a coverage check at the end. `feature-discovery` has lost its validation mode: a request to stress-test a plan without producing stories goes to `grill`, as do `code-architect`'s design interview and `execute`'s interactive discovery gate.
+
 ## github-workflow 11.2.2
 
 **`bulk-execute`'s Phase 1 spells out what `wf` means before using it bare.** The bare `wf candidates` / `wf claim` / `wf post-merge` mentions in `SKILL.md` used to assume the reader had already opened `references/set-selection.md`, which carries the real invocation (`bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh"`). A run that acted on the bullet summary without opening that file could mistake `wf` for a system-installed CLI and go looking for it with `which`, `find`, `npm`, or `gh extension list`. Phase 1 now says up front that `wf` is always the bundled launcher, never a PATH lookup.
