@@ -864,6 +864,24 @@ def is_available_stage(value):
     return not (value or '').strip() or stage_name(value) == STAGE_NAMES[POOL_STAGE]
 
 
+def option_spelling(field_meta, name):
+    """The live option's own spelling of `name`, matched case-insensitively.
+
+    `stage_findings` passes an org whose option is spelled `backlog`, so the
+    write has to accept that spelling too. Without this the audit reports the
+    field clean and every transition then fails at GitHub on a name it was
+    just told is valid.
+    """
+    options = (field_meta or {}).get('options') or {}
+    if name in options:
+        return name
+    wanted = str(name).strip().lower()
+    for live in options:
+        if str(live).strip().lower() == wanted:
+            return live
+    return name
+
+
 # ── work scope: who can actually do this issue ───────────────────────────────
 # Three parties touch a backlog and only one of them writes code. An issue that
 # needs a browser console, or a person with a device in their hand, is not work

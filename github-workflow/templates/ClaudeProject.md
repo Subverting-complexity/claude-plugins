@@ -124,7 +124,7 @@ Issues should include at minimum: **Context** (what/why), **Requirements** (acce
 
 ## Project Board (optional)
 
-Informational only. A board is a view for people: group its columns by `Stage` and it shows each issue's state. It is recorded here for them and for the `board-sync` job, which keeps cards on it. Nothing in the workflow reads a column from it or moves a card on it, so remove this section if the project has no board.
+Informational only. A board is a view for people: group its columns by `Stage` and it shows each issue's state. It is recorded here for them and for GitHub's own "Auto-add to project" workflow, which keeps cards on it. Nothing in the workflow reads a column from it or moves a card on it, so remove this section if the project has no board.
 
 | Setting             | Value      |
 | ------------------- | ---------- |

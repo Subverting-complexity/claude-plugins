@@ -2280,6 +2280,30 @@ class TestUnmappedFieldFindings(unittest.TestCase):
             ['Urgency'], {'field-priority': 'Urgency'}), [])
 
 
+class TestOptionSpelling(unittest.TestCase):
+    """The audit accepts the org's own casing, so the write has to resolve it.
+
+    Otherwise `stage_findings` reports a field clean and every transition then
+    fails at GitHub on a name it was just told is valid.
+    """
+
+    META = {'options': {'backlog': 'OPT_B', 'In Progress': 'OPT_P'}}
+
+    def test_an_exact_name_is_returned_unchanged(self):
+        self.assertEqual(wf_core.option_spelling(self.META, 'In Progress'),
+                         'In Progress')
+
+    def test_another_casing_resolves_to_the_live_spelling(self):
+        self.assertEqual(wf_core.option_spelling(self.META, 'Backlog'),
+                         'backlog')
+
+    def test_a_name_no_option_matches_is_left_alone_to_be_refused(self):
+        self.assertEqual(wf_core.option_spelling(self.META, 'Done'), 'Done')
+
+    def test_no_options_at_all_is_not_an_error_here(self):
+        self.assertEqual(wf_core.option_spelling({}, 'Done'), 'Done')
+
+
 class TestStageFindings(unittest.TestCase):
     """Whether the org's `Stage` field can hold every state the plugin writes.
 

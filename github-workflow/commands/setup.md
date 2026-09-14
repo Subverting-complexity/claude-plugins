@@ -109,7 +109,7 @@ When the field or an option is missing, stop and ask the user to add it by hand,
 
 **Project board (optional):**
 
-A board is a view for people. Nothing in the workflow reads a column from it or moves a card on it, so a project without one works the same. If the user has one, record it for them and for the `board-sync` job. A board can be owned by an **organization** or by a **user**, so query both (the org query errors or returns empty when `{org}` is a personal account):
+A board is a view for people. Nothing in the workflow reads a column from it or moves a card on it, so a project without one works the same. If the user has one, record it for them and for GitHub's own "Auto-add to project" workflow. A board can be owned by an **organization** or by a **user**, so query both (the org query errors or returns empty when `{org}` is a personal account):
 
 ```
 gh api graphql -f query='query { organization(login: "{org}") { projectsV2(first: 20) { nodes { id number title } } } }'

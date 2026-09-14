@@ -3567,6 +3567,28 @@ class TestStageWrites(unittest.TestCase):
         self.assertIn("'Ready' is not a stage", message)
         self.assertEqual(hub.mutations, [])
 
+    def test_an_issue_whose_node_id_never_came_back_is_refused_not_written(self):
+        """`resolve_issue_ids` reports nothing when the id query fails or is
+        refused, so this is also what an unauthorised read looks like."""
+        hub = _StageHub()
+        with hub.wired(), mock.patch.object(wf, 'resolve_issue_ids',
+                                            lambda cfg, numbers: {1: 'I_1'}):
+            out = wf.set_stages(_cfg(), {1: 'Backlog', 2: 'Backlog'})
+        self.assertTrue(out[1][0])
+        self.assertFalse(out[2][0])
+        self.assertEqual(out[2][1], 'could not read the issue node id')
+        self.assertEqual([n for n, _ in hub.writes], [1])
+
+    def test_an_option_spelled_in_another_case_is_still_written(self):
+        """`stage_findings` accepts the org's own casing, so a write must too."""
+        hub = _StageHub()
+        lower = {n.lower(): i for n, i in _STAGE_META['options'].items()}
+        with hub.wired(), mock.patch.dict(_STAGE_META, {'options': lower},
+                                          clear=False):
+            written, message = wf.set_stage(_cfg(), 7, 'Backlog')
+        self.assertTrue(written, message)
+        self.assertEqual(hub.writes, [(7, 'Backlog')])
+
 
 class TestStageTransitions(unittest.TestCase):
     """Every transition the workflow makes, against the recorded transport.

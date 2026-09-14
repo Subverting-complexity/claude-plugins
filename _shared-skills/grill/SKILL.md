@@ -26,7 +26,7 @@ A grill needs somebody to answer it. When nobody is there, because the session i
 
 1. Do the research and the mapping below as normal.
 2. Write down every question you would have asked, each with your recommendation and why, grouped by topic.
-3. Put that record where the next person will see it, and stop. Under github-workflow, when the subject is an issue: post the questions as a comment on it (written to the `writing-github-issues` standard and `_shared/body-standard.md`), then move its card into the `Needs refinement` stage so no code agent picks it up before a person has answered: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" board-move {number} --column col-refinement`. Under local-workflow, or when there is no issue, the record is the reply that ends the session.
+3. Put that record where the next person will see it, and stop. Under github-workflow, when the subject is an issue: post the questions as a comment on it (written to the `writing-github-issues` standard and `_shared/body-standard.md`), then set its `Stage` to `Needs refinement` so no code agent picks it up before a person has answered: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-refinement`. Under local-workflow, or when there is no issue, the record is the reply that ends the session.
 
 A calling skill that is itself running unattended inherits this rule: it stops at the same point and reports the open questions rather than producing stories from guesses.
 

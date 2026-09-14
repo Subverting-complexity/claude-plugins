@@ -120,7 +120,7 @@ Board: **claude-plugins** (org project #8) —
 | start-date-field-id | `n/a`                            |
 | end-date-field-id   | `n/a`                            |
 
-This section is informational. The board is a view for people, with its columns grouped by `Stage`, and it is recorded here for them and for the `board-sync` job. Nothing in the workflow reads a column from it or moves a card on it.
+This section is informational. The board is a view for people, with its columns grouped by `Stage`, and it is recorded here for them and for GitHub's own "Auto-add to project" workflow. Nothing in the workflow reads a column from it or moves a card on it.
 
 ## Reference Docs
 

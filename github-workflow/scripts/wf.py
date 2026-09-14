@@ -397,7 +397,7 @@ def _stage_issues_query(paged, extra=''):
         '    labels(first:20){ nodes { name } }'
         '    milestone { title }'
         '    assignees(first:1){ nodes { login } }'
-        '    issueFieldValues(first:20){ nodes {'
+        '    issueFieldValues(first:50){ nodes {'
         '     ... on IssueFieldSingleSelectValue {'
         '      field { ... on IssueFieldSingleSelect { name } } name } } }'
         '    %s'
@@ -3374,7 +3374,8 @@ def set_stages(cfg, wanted):
             out[int(number)] = (False, "'%s' is not a stage (it reads: %s)"
                                 % (stage, ', '.join(wf_core.STAGE_NAMES.values())))
             continue
-        value, verr = wf_core.field_value_input(meta, name)
+        value, verr = wf_core.field_value_input(
+            meta, wf_core.option_spelling(meta, name))
         if verr:
             out[int(number)] = (False, verr)
             continue
