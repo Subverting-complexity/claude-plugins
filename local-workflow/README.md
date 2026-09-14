@@ -23,7 +23,8 @@ Run both from a normal shell, not inside a Claude Code session, then restart the
 | `/local-workflow:code-architect`          | Architecture design, audit, or documentation  |
 | `/local-workflow:structured-coding`       | 5-step structured coding methodology          |
 | `/local-workflow:code-review`             | Deep code review and analysis                 |
-| `/local-workflow:feature-discovery`       | Break features into stories + stress-test plans |
+| `/local-workflow:feature-discovery`       | Break features into stories                   |
+| `/local-workflow:grill`                   | Stress-test a plan or design                  |
 | `/local-workflow:repo-scaffolding`        | Scaffold a new repository                     |
 | `/local-workflow:user-story`             | Write or format a single user story           |
 | `/local-workflow:acceptance-criteria`     | Generate testable acceptance criteria         |
@@ -59,7 +60,8 @@ local-workflow/
 | Skill                | What it does                                       |
 | -------------------- | -------------------------------------------------- |
 | `code-architect`     | Design new codebases, audit existing, document architecture |
-| `feature-discovery`  | Explore and decompose features, or stress-test plans |
+| `feature-discovery`  | Explore and decompose features into stories        |
+| `grill`              | Interview you hard about a plan until nothing is left open |
 | `repo-scaffolding`   | Scaffold a new repository from requirements        |
 
 ### Implementation

@@ -1,13 +1,14 @@
 ---
 name: repo-scaffolding
-description: "Scaffold a brand-new project from scratch: discovery, architecture, and decomposition into epics and user stories with acceptance criteria. Use to plan a greenfield project, set up a new repo, or turn a product idea into buildable work. Do NOT use for adding features to an existing codebase (use feature-discovery) or implementing code (use execute)."
+description: "Scaffold a brand-new project from scratch: discovery, architecture, and decomposition into epics and user stories with acceptance criteria. Use to plan a greenfield project, set up a new repo, or turn a product idea into buildable work. Do NOT use for adding features to an existing codebase (use feature-discovery), stress-testing a plan without producing stories (use grill), or implementing code (use execute)."
 depends-on:
+  - grill
   - code-architect
 ---
 
 # Repo Scaffolding
 
-Plan and decompose a new project into epics and user stories. Get to the core of the design as fast as possible. The interview should be relentless: probe every vague answer, challenge weak reasoning, surface conflicts between answers, and don't move on until each question has a concrete answer or a conscious deferral with a stated reason.
+Plan a new project and decompose it into epics and user stories. The interview that gets there is the `grill` skill's; this skill decides what the interview must cover and what gets built from its answers.
 
 ## Output standard
 
@@ -17,123 +18,55 @@ Everything a person reads — plans, questions, findings, summaries, and anythin
 
 Read each skill's SKILL.md when you reach the phase that needs it.
 
+- **grill** (`/{{PLUGIN_NAME}}:grill`) — The interview: how questions are asked, paced and closed, and what happens when nobody is present to answer.
 - **code-architect** (`/{{PLUGIN_NAME}}:code-architect`) — Architecture design and validation.
 
 ## Scope Detection
 
-Determine the project scope before starting. This drives interview depth.
+Determine the project scope before starting. It decides which coverage topics apply.
 
-| Tier | Signal | Interview depth |
-|------|--------|----------------|
-| **Small** | Simple tool, script, single-purpose utility, CLI app | 5-8 questions. Scope, stack, core stories. |
-| **Medium** | Multi-module app, API + frontend, 2-4 major concerns | 10-18 questions. Scope, journeys, data, API, architecture, dependencies. |
-| **Large** | Platform, multi-service system, 5+ sprints of work | Full interview. All sections. |
+| Tier | Signal | Coverage |
+|------|--------|----------|
+| **Small** | Simple tool, script, single-purpose utility, CLI app | Vision and scope, tech stack. |
+| **Medium** | Multi-module app, API + frontend, 2-4 major concerns | Adds journeys, data, API, architecture, dependencies, DevOps. |
+| **Large** | Platform, multi-service system, 5+ sprints of work | Every topic. |
 
-State the tier after initial research: "This looks like a medium-scope project, so I'll focus on scope, data model, API surface, and architecture." The user can override.
+After the research, state the tier and the topics it brings in, and continue: "This looks like a medium-scope project, so the interview will cover vision and scope, tech stack, user journeys, data model, API surface, architecture, dependencies and DevOps." Do not stop to ask for confirmation. The user can correct the tier at any point, and a correction changes the coverage list.
 
 ---
 
 ## Phase 1: Research
 
-Before asking the user anything, gather what you can from whatever they've provided. The more you learn here, the fewer questions you need to ask.
+Gather what you can from whatever the user has provided before the interview starts.
 
 1. Read any existing documentation, specs, reference materials, wireframes, or design docs the user has shared.
 2. If a repo already exists (even empty with just a README or config), read what's there.
 3. If similar projects or reference codebases are mentioned, review them.
 4. Search for relevant patterns, frameworks, or prior art if it helps narrow the interview.
 
-### Research output
-
-Present a brief summary of what you found, then state the scope tier and which interview sections you plan to cover. Use `AskUserQuestion` to confirm:
-
-- "Agree with scope (Recommended)" — proceed with the detected tier
-- "This is bigger than that" — bump up a tier
-- "This is smaller" — bump down a tier
+Present a brief summary of what you found, then state the scope tier as above.
 
 ---
 
 ## Phase 2: Interview
 
-### Interview posture
+Read `skills/grill/SKILL.md` and run it with the project as the plan. Its posture, question wording, `AskUserQuestion` rules, pacing and no-person-present rule govern the whole interview; this skill adds none of its own. Every resolved question informs the stories, and every deferred one becomes an open item in Phase 5.
 
-Be relentless. The goal is shared understanding with every open question resolved. Don't accept hand-waving. If the user gives a surface-level answer, dig deeper. If they say "probably" or "it depends", that's your cue to probe until the answer is concrete or the user explicitly defers (with a reason). Every resolved question informs the stories. Every deferred question becomes a noted open issue.
+### Coverage topics
 
-### Interview mechanics
+Hand the grill the topics for the tier. They are not a script to read out: the grill asks about them in its own order and batches, and uses this list at the end as a check that nothing was missed. A topic the provided documentation already answers counts as covered.
 
-- **Lead with recommendations.** For every question, state what you'd recommend and why before asking. Don't just interrogate. Give your best answer, then ask if the user agrees or wants to change it.
-- **Batch related questions.** Group questions that belong to the same topic into a single turn. Don't artificially slow the interview down.
-- **Push back on vague answers.** "It depends", "probably X", "we'll figure it out later" are not answers. Probe until concrete or explicitly deferred.
-- **Flag conflicts.** If a later answer contradicts an earlier one, surface it immediately. Don't silently accept the contradiction.
-- **Defer consciously.** If something genuinely can't be decided yet, note it as an open issue with a stated reason and move on. Never silently skip.
-- **Track context.** Maintain a running internal record of resolved questions and deferrals as you go. This ensures nothing falls through the cracks during decomposition.
+1. **Vision and scope** (all tiers): what is being built and the problem it solves, who the users are, what is out of scope for v1, what "done" means for the first usable version.
+2. **User journeys** (medium + large): the happy path for the primary user, secondary users and their flows, failure modes and error states.
+3. **Data model** (medium + large): core entities and relationships, storage strategy (database, hosting, migrations), data lifecycle (creation, change, deletion, archival).
+4. **API surface** (medium + large): what the product exposes, service-to-service APIs if there are several services, the auth and permission model, third-party integrations.
+5. **Tech stack** (all tiers): language, framework and runtime, infrastructure and hosting, CI/CD, key libraries or tools.
+6. **Architecture** (medium + large): monolith or services, monorepo or several repos, patterns and trade-offs, constraints (budget, timeline, team size, compliance).
+7. **Dependencies and ordering** (medium + large): what must exist before other things can be built, external dependencies (APIs, services, accounts, licences), build order for epics.
+8. **Testing strategy** (large, or when raised): testing approach, critical paths needing integration tests, test infrastructure (databases, mocks, fixtures).
+9. **DevOps and deployment** (medium + large): environments, deployment targets, monitoring and observability.
 
-### Using AskUserQuestion
-
-Use the `AskUserQuestion` tool for any question with a bounded answer set: binary choices, picking from discovered patterns, confirming recommendations, scope in/out decisions, phase-gate confirmations.
-
-- 2-4 options per question, short labels.
-- Your recommended answer should be the first option with "(Recommended)" appended to the label.
-- Batch up to 4 related questions in a single `AskUserQuestion` call.
-- The user can always select "Other" to type a custom answer. If you find yourself wanting to add an "Other" option manually, just ask in plain text instead.
-
-### Interview sections
-
-**Only cover sections relevant to the scope tier.** Skip questions already answered by provided documentation.
-
-#### 1. Vision and scope (all tiers)
-- What is being built? What problem does it solve?
-- Who are the users?
-- What's explicitly out of scope for v1?
-- What does "done" look like for the first usable version?
-
-#### 2. User journeys (medium + large)
-- Happy path end-to-end for primary user type
-- Secondary user types and their flows
-- Critical failure modes and error states
-
-#### 3. Data model (medium + large)
-- Core entities and relationships
-- Storage strategy (DB type, hosting, migrations)
-- Data lifecycle (creation, mutation, deletion, archival)
-
-#### 4. API surface (medium + large)
-- External APIs (what the product exposes)
-- Internal APIs (service-to-service if multi-service)
-- Auth/permission model
-- Third-party integrations
-
-#### 5. Tech stack (all tiers)
-- Language, framework, runtime
-- Infrastructure and hosting
-- CI/CD approach
-- Key libraries or tools
-
-#### 6. Architecture (medium + large)
-- Monolith vs services, monorepo vs multi-repo
-- Patterns and trade-offs
-- Constraints (budget, timeline, team size, compliance)
-
-#### 7. Dependencies and ordering (medium + large)
-- What needs to exist before other things can be built?
-- External dependencies (APIs, services, accounts, licenses)
-- Build order for epics
-
-#### 8. Testing strategy (large, or when raised)
-- Testing philosophy (TDD, integration-first, etc.)
-- Critical paths needing integration tests
-- Infrastructure for testing (test DBs, mocks, fixtures)
-
-#### 9. DevOps and deployment (medium + large)
-- Environment strategy (dev, staging, prod)
-- Deployment targets
-- Monitoring and observability
-
-### Interview completion
-
-When all relevant sections are covered, use `AskUserQuestion`:
-
-- "Show me the breakdown (Recommended)"
-- "I have more to add"
+When the grill closes with every applicable topic covered, go straight to Phase 3.
 
 ---
 

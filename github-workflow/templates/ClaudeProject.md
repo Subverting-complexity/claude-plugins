@@ -111,7 +111,7 @@ The purpose→value maps — which native type each kind of work becomes, and th
 | ---------------- | ------------------- |
 | refinement-skill | `feature-discovery` |
 
-Skill the execute flow offers when a story is too thin to implement: `feature-discovery` (default). Runs in validation mode for lightweight Q&A or discovery mode for full spec+AC. A story a person has not approved yet belongs in the board's Needs refinement column, which keeps it out of the pool without needing a label.
+Skill the execute flow offers when a story is too thin to implement: `feature-discovery` (default). It runs the `grill` interview and turns the answers into a fuller spec with acceptance criteria. A story a person has not approved yet belongs in the board's Needs refinement column, which keeps it out of the pool without needing a label.
 
 ## Session Budget
 
@@ -159,4 +159,4 @@ Paths to architecture docs or specs consulted for cross-cutting concerns not cov
 
 ## Bundled Skills
 
-Available as `/github-workflow:*`: acceptance-criteria, code-architect, code-review, debugging, doc-writer, ecosystem-setup, execute, feature-discovery, pr-body, preflight, repo-scaffolding, security-audit, structured-coding, user-story, verify-feature.
+Available as `/github-workflow:*`: acceptance-criteria, code-architect, code-review, debugging, doc-writer, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, repo-scaffolding, security-audit, structured-coding, user-story, verify-feature.

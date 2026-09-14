@@ -1,6 +1,6 @@
 # Shared Skills Manifest
 
-Canonical source for the 14 skills shared across multiple plugins. **Never edit plugin copies directly** — edit here, then sync. The edit procedure is in [`CLAUDE.md`](../CLAUDE.md#how-to-edit).
+Canonical source for the 15 skills shared across multiple plugins. **Never edit plugin copies directly** — edit here, then sync. The edit procedure is in [`CLAUDE.md`](../CLAUDE.md#how-to-edit).
 
 ## Shared skills
 
@@ -11,8 +11,9 @@ Canonical source for the 14 skills shared across multiple plugins. **Never edit 
 | `debugging` | github-workflow, local-workflow | Systematic reproduce → hypothesize → isolate → fix → verify cycle |
 | `doc-writer` | github-workflow, local-workflow | README, API docs, architecture guides, migration guides, changelogs |
 | `ecosystem-setup` | github-workflow, local-workflow | Detect/install/configure companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and write `.claude/ecosystem.md`. github-workflow's `setup` Step 8 delegates here |
-| `feature-discovery` | github-workflow, local-workflow | Discovery mode (stories) + validation mode (plan stress-test). Uses `references/story-template.md` |
-| `repo-scaffolding` | github-workflow, local-workflow | Uses `references/story-template.md`, no spec docs |
+| `feature-discovery` | github-workflow, local-workflow | Plans a feature and decomposes it into epics, features and stories. Runs `grill` for its interview. Uses `references/story-template.md` |
+| `grill` | github-workflow, local-workflow | The one interview procedure: where to push, pacing, recommendation-first questions through `AskUserQuestion`, the closing recap, and the rule for when nobody is present to answer. `feature-discovery`, `repo-scaffolding` and `code-architect` run it rather than carrying their own |
+| `repo-scaffolding` | github-workflow, local-workflow | Runs `grill` for its interview. Uses `references/story-template.md`, no spec docs |
 | `security-audit` | github-workflow, local-workflow | Dependency scanning, secrets detection, OWASP Top 10, input validation |
 | `structured-coding` | github-workflow, local-workflow | Autonomous workflow escape hatch |
 | `support-request` | github-workflow, local-workflow | Support request / incident documentation in a fixed two-block format |

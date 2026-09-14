@@ -278,6 +278,37 @@ for f in _shared-skills/*/SKILL.md; do
     fi
 done
 
+# Interview wiring: grill is the one interview procedure. feature-discovery and
+# repo-scaffolding run it rather than carrying their own posture and mechanics,
+# and feature-discovery no longer has a validation mode to route a stress-test
+# into. Checked on the canonical sources, so a regression is caught before it is
+# synced, and on each plugin, so the skill the other two cite is deployed.
+GRILL="_shared-skills/grill/SKILL.md"
+if [ ! -f "$GRILL" ]; then
+    echo "FAIL: $GRILL is missing — the interview procedure feature-discovery and repo-scaffolding run"
+    status=1
+fi
+for plugin in github-workflow local-workflow; do
+    if [ ! -f "$plugin/skills/grill/SKILL.md" ]; then
+        echo "FAIL: $plugin/skills/grill/SKILL.md is missing — run sync-skills to deploy grill"
+        status=1
+    fi
+done
+for f in _shared-skills/feature-discovery/SKILL.md _shared-skills/repo-scaffolding/SKILL.md; do
+    if ! grep -qF 'skills/grill/SKILL.md' "$f"; then
+        echo "FAIL: $f interviews the user but does not cite skills/grill/SKILL.md"
+        status=1
+    fi
+    if grep -qE '^#+ (Interview posture|Interview mechanics|Using AskUserQuestion|Wording and Clarity)' "$f"; then
+        echo "FAIL: $f carries its own interview posture or mechanics; they belong in $GRILL"
+        status=1
+    fi
+done
+if grep -qiE 'validation mode|\*\*validation\*\*' _shared-skills/feature-discovery/SKILL.md; then
+    echo "FAIL: _shared-skills/feature-discovery/SKILL.md still describes a validation mode; stress-testing a plan is grill's job"
+    status=1
+fi
+
 # The SessionStart hook is what makes the standard apply outside a workflow
 # command. Without it, a plain question in a fresh session gets none of this.
 for plugin in github-workflow local-workflow; do
