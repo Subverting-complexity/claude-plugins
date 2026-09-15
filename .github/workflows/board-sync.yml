@@ -40,4 +40,4 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: python3 github-workflow/scripts/wf.py board-sync
+        run: python3 synergy/scripts/wf.py board-sync

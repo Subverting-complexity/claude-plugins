@@ -1,13 +1,13 @@
 # Subverting Complexity — Claude Plugins
 
-A [Claude Code](https://claude.com/claude-code) plugin marketplace with one development-workflow plugin by **Subverting Complexity**, `github-workflow`. It covers two ways of working:
+A [Claude Code](https://claude.com/claude-code) plugin marketplace with one development-workflow plugin by **Subverting Complexity**, `synergy`. It covers two ways of working:
 
 - **GitHub story work:** pick a story from your backlog, plan it, build it, test it, open a PR, and have that PR reviewed independently by agents in a fresh context, then merge it on projects that opt into unattended merging.
 - **Local work:** plan, build, verify and commit on your machine, with no issue tracker and no pull request.
 
-Both share one set of planning, review and writing skills. Until 13.0.0 these were two plugins, `github-workflow` and `local-workflow`, with fifteen skills copied into each. They are now one plugin, so every skill is listed once. A new name for it is still to be chosen.
+Both share one set of planning, review and writing skills. Until 13.0.0 these were two plugins, `synergy` and `local-workflow`, with fifteen skills copied into each. They are now one plugin, so every skill is listed once. A new name for it is still to be chosen.
 
-> **Upgrading from `local-workflow`:** uninstall it (`claude plugin uninstall local-workflow@subverting-complexity`) and install `github-workflow`. `/local-workflow:build` is now `/github-workflow:build`, local review is `/github-workflow:code-review`, and `/local-workflow:pr-description` is `/github-workflow:pr-body`.
+> **Upgrading from `local-workflow`:** uninstall it (`claude plugin uninstall local-workflow@subverting-complexity`) and install `synergy`. `/local-workflow:build` is now `/synergy:build`, local review is `/synergy:pr-review`, and `/local-workflow:pr-description` is `/synergy:pr-body`.
 
 ---
 
@@ -20,7 +20,7 @@ Add the marketplace, then install whichever plugin(s) you want:
 claude plugin marketplace add Subverting-complexity/claude-plugins
 
 # 2. Install the plugin
-claude plugin install github-workflow@subverting-complexity
+claude plugin install synergy@subverting-complexity
 ```
 
 Or run `/plugin` inside Claude Code (after step 1) to browse and install interactively. Restart your session afterward so the plugins' skills, commands, agents, and hooks load.
@@ -31,23 +31,23 @@ An installed plugin does not update itself, and the failure mode is silence: `cl
 
 ```bash
 claude plugin marketplace update subverting-complexity
-claude plugin update github-workflow@subverting-complexity
+claude plugin update synergy@subverting-complexity
 ```
 
 Then restart the session, so the new skills, commands, agents and hooks load.
 
 Run these from a normal shell, not inside a Claude Code session — the CLI blocks nested sessions. If you need to run one from inside, prefix it with `env -u CLAUDECODE`. The command is `claude plugin`, singular.
 
-Check what you actually have with `claude plugin list`, and compare against the version in [`github-workflow/.claude-plugin/plugin.json`](github-workflow/.claude-plugin/plugin.json). [`CHANGELOG.md`](CHANGELOG.md) says what changed and what breaks.
+Check what you actually have with `claude plugin list`, and compare against the version in [`synergy/.claude-plugin/plugin.json`](synergy/.claude-plugin/plugin.json). [`CHANGELOG.md`](CHANGELOG.md) says what changed and what breaks.
 
 **Install per machine, not per project.** Add the marketplace and install the plugin once on each machine, and do not commit `enabledPlugins` or `extraKnownMarketplaces` into a project's `.claude/settings.json`. A committed entry stops resolving without any error when the plugin is renamed. See [`CLAUDE.md`](CLAUDE.md#installing-the-plugin-for-a-project).
 
-### Configuring `github-workflow`
+### Configuring `synergy`
 
-`github-workflow` exposes a few user-config options. The only **required** one is the GitHub org/owner of the repos you'll work against:
+`synergy` exposes a few user-config options. The only **required** one is the GitHub org/owner of the repos you'll work against:
 
 ```bash
-claude plugin install github-workflow@subverting-complexity \
+claude plugin install synergy@subverting-complexity \
   --config github_org=YOUR_ORG_OR_USERNAME
 ```
 
@@ -58,7 +58,7 @@ claude plugin install github-workflow@subverting-complexity \
 | `branch_prefix` | | `feat` | Prefix for feature branches |
 | `quality_gate_command` | | — | Command to run before PRs (e.g. `npm test`, `dotnet test`) |
 
-You can also configure interactively with `/plugin configure github-workflow@subverting-complexity`, or run the plugin's own setup wizard by asking Claude to *"set up my project"*.
+You can also configure interactively with `/plugin configure synergy@subverting-complexity`, or run the plugin's own setup wizard by asking Claude to *"set up my project"*.
 
 ---
 
@@ -85,7 +85,7 @@ The plugin and the tooling that checks it:
 
 ```
 .
-├── github-workflow/      # the plugin
+├── synergy/      # the plugin
 ├── bootstrap.sh /.ps1    # one-time per-clone setup (LF line endings + hook)
 ├── lint-skills.sh        # validate skill frontmatter and wiring
 ├── check-budgets.sh      # cap description length and skill body size
@@ -94,7 +94,7 @@ The plugin and the tooling that checks it:
 └── CLAUDE.md             # contributor guide (read this before editing)
 ```
 
-The plugin has its own README: [`github-workflow/README.md`](github-workflow/README.md).
+The plugin has its own README: [`synergy/README.md`](synergy/README.md).
 
 ### Running parallel agents
 

@@ -35,7 +35,7 @@ A worktree is auto-removed by the harness **only when it is clean** (`docs/workt
 Every one, without exception:
 
 - Phase 7 completes successfully (claim already released in its step 4; the re-run here is a harmless no-op).
-- Blocked via `/github-workflow:block-story` (which releases the claim for you — the re-run here is a no-op).
+- Blocked via `/synergy:block-story` (which releases the claim for you — the re-run here is a no-op).
 - Unrecoverable error (after leaving the failure comment).
 - Session-budget or 45-minute timeout exit.
 - API rate-limit pause.
@@ -43,4 +43,4 @@ Every one, without exception:
 
 ## When cleanup cannot run from inside the session
 
-A crash, hard kill, or machine reboot can skip this cleanup entirely and orphan a claim ref. That residue cannot be prevented from inside a session — run `/github-workflow:setup reap` to scan and free stale refs automatically, or see **Reaping orphaned claims** in `docs/rationale/claim-procedure-rationale.md` for the manual one-liner. (Within-session context compaction is unaffected — no exit occurs, so the files remain on disk for the duration of the run.)
+A crash, hard kill, or machine reboot can skip this cleanup entirely and orphan a claim ref. That residue cannot be prevented from inside a session — run `/synergy:setup reap` to scan and free stale refs automatically, or see **Reaping orphaned claims** in `docs/rationale/claim-procedure-rationale.md` for the manual one-liner. (Within-session context compaction is unaffected — no exit occurs, so the files remain on disk for the duration of the run.)

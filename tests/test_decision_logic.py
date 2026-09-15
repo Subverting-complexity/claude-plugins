@@ -8,7 +8,7 @@ Covers the three pure-logic areas described in the workflow templates:
   - Backlog-mode detection (sprint vs flat from milestone presence)
 
 No GitHub API calls, no file I/O.  Feed fixture data in, assert outputs.
-Reference: github-workflow/scripts/wf_core.py
+Reference: synergy/scripts/wf_core.py
 """
 import datetime
 import os
@@ -17,14 +17,14 @@ import unittest
 
 # ── Subject under test ───────────────────────────────────────────────────────
 # The decision rules now live in the `wf` CLI's pure core
-# (github-workflow/scripts/wf_core.py), which is the single canonical,
+# (synergy/scripts/wf_core.py), which is the single canonical,
 # executable encoding of the logic the workflow templates describe. The CLI's
 # I/O shell (wf.py) imports the same module, so these offline tests exercise
 # exactly the code that runs in production — no second copy to drift.
 
 sys.path.insert(
     0,
-    os.path.join(os.path.dirname(__file__), '..', 'github-workflow', 'scripts'),
+    os.path.join(os.path.dirname(__file__), '..', 'synergy', 'scripts'),
 )
 from wf_core import (  # noqa: E402
     BULK_MAX,
@@ -705,7 +705,7 @@ class TestReviewLabelResolution(unittest.TestCase):
 
 
 class TestUpdatePool(unittest.TestCase):
-    """code-review rework pool: my PRs with actionable feedback, prioritised."""
+    """pr-review rework pool: my PRs with actionable feedback, prioritised."""
 
     def test_changes_requested_beats_needs_re_review(self):
         prs = [
@@ -739,7 +739,7 @@ class TestUpdatePool(unittest.TestCase):
 
 
 class TestReviewPool(unittest.TestCase):
-    """code-review pool: open PRs needing review, re-review first."""
+    """pr-review pool: open PRs needing review, re-review first."""
 
     def test_needs_re_review_before_needs_review(self):
         prs = [
@@ -3375,6 +3375,21 @@ class TestRetiredWorkflowFindings(unittest.TestCase):
         joined = ' '.join(f['detail'] for f in findings)
         self.assertIn('line 2', joined)
         self.assertIn('line 3', joined)
+
+    def test_the_plugin_under_its_old_name_is_reported(self):
+        """#283: `setup` wrote `/github-workflow:` commands into every
+        consuming project, and they stopped resolving at 14.0.0."""
+        findings = wf_core.instruction_findings({
+            'ClaudeProject.md': 'Intro.\nRun /github-workflow:execute.\n',
+            'CLAUDE.md': 'claude plugin install github-workflow@subverting-complexity\n'})
+        self.assertEqual(sorted(f['where'] for f in findings),
+                         ['CLAUDE.md', 'ClaudeProject.md'])
+        self.assertTrue(all('synergy' in f['detail'] for f in findings))
+        # The review was renamed in the same release, so a straight swap of
+        # the prefix would name a command that does not exist.
+        self.assertTrue(all('/synergy:pr-review' in f['detail'] for f in findings))
+        self.assertEqual(wf_core.instruction_findings(
+            {'CLAUDE.md': 'Run /synergy:execute.\n'}), [])
 
     def test_how_a_project_describes_a_board_is_not_looked_at(self):
         """Nothing reads or writes a board, so preflight has no business with

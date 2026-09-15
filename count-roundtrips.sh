@@ -7,7 +7,7 @@
 # and to catch regression before they ship.
 #
 # Usage:
-#   bash count-roundtrips.sh github-workflow/skills/execute/SKILL.md
+#   bash count-roundtrips.sh synergy/skills/execute/SKILL.md
 #   bash count-roundtrips.sh --workflow execute
 #   bash count-roundtrips.sh --workflow bulk-execute
 #   bash count-roundtrips.sh --workflow pick
@@ -37,31 +37,31 @@ for wf in "${workflows[@]:-}"; do
     case "$wf" in
         execute)
             files+=(
-                "github-workflow/skills/execute/SKILL.md"
-                "github-workflow/skills/execute/references/shared-phases.md"
-                "github-workflow/skills/execute/references/finish.md"
-                "github-workflow/skills/execute/references/review-and-merge.md"
-                "github-workflow/skills/execute/references/merge.md"
-                "github-workflow/skills/code-review/references/auto-merge.md"
-                "github-workflow/templates/worktree-hygiene.md"
+                "synergy/skills/execute/SKILL.md"
+                "synergy/skills/execute/references/shared-phases.md"
+                "synergy/skills/execute/references/finish.md"
+                "synergy/skills/execute/references/review-and-merge.md"
+                "synergy/skills/execute/references/merge.md"
+                "synergy/skills/pr-review/references/auto-merge.md"
+                "synergy/templates/worktree-hygiene.md"
             )
             ;;
         bulk-execute)
             files+=(
-                "github-workflow/skills/bulk-execute/SKILL.md"
-                "github-workflow/skills/execute/references/shared-phases.md"
-                "github-workflow/skills/bulk-execute/references/set-selection.md"
-                "github-workflow/skills/bulk-execute/references/bulk-finish.md"
-                "github-workflow/skills/execute/references/review-and-merge.md"
-                "github-workflow/skills/execute/references/merge.md"
-                "github-workflow/skills/code-review/references/auto-merge.md"
-                "github-workflow/templates/worktree-hygiene.md"
+                "synergy/skills/bulk-execute/SKILL.md"
+                "synergy/skills/execute/references/shared-phases.md"
+                "synergy/skills/bulk-execute/references/set-selection.md"
+                "synergy/skills/bulk-execute/references/bulk-finish.md"
+                "synergy/skills/execute/references/review-and-merge.md"
+                "synergy/skills/execute/references/merge.md"
+                "synergy/skills/pr-review/references/auto-merge.md"
+                "synergy/templates/worktree-hygiene.md"
             )
             ;;
         pick)
             files+=(
-                "github-workflow/skills/execute/SKILL.md"
-                "github-workflow/skills/execute/references/pick-paths.md"
+                "synergy/skills/execute/SKILL.md"
+                "synergy/skills/execute/references/pick-paths.md"
             )
             ;;
         *)

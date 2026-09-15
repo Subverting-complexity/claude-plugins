@@ -1,16 +1,16 @@
 # Claude Plugins Monorepo
 
-This repo contains one Claude Code plugin, `github-workflow`, which covers GitHub story work and work that stays on your machine. It used to be two plugins (`github-workflow` and `local-workflow`) sharing fifteen skills through a sync step; 13.0.0 merged them, so every skill now has exactly one copy and there is nothing to sync. A new name for the merged plugin is still to be chosen.
+This repo contains one Claude Code plugin, `synergy`, which covers GitHub story work and work that stays on your machine. It used to be two plugins (`github-workflow` and `local-workflow`) sharing fifteen skills through a sync step; 13.0.0 merged them, so every skill now has exactly one copy and there is nothing to sync. 14.0.0 renamed it from `github-workflow`, because it no longer covers only GitHub work.
 
-> **Dogfooding note:** This repo is itself configured as a `github-workflow` target. Project settings (org/repo, quality gate, issue fields) live in [`ClaudeProject.md`](ClaudeProject.md); workflow commands (`/github-workflow:execute`, `:code-review`, etc.) read it. The open backlog of plugin-hardening work can be viewed on the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8), grouped by each issue's `Stage`.
+> **Dogfooding note:** This repo is itself configured as a `synergy` target. Project settings (org/repo, quality gate, issue fields) live in [`ClaudeProject.md`](ClaudeProject.md); workflow commands (`/synergy:execute`, `:pr-review`, etc.) read it. The open backlog of plugin-hardening work can be viewed on the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8), grouped by each issue's `Stage`.
 
 ## CRITICAL RULES
 
 1. **Keep what loads into every session small.** Every skill, command and agent description, and the `SessionStart` hook, is in context for every session whether or not the plugin is used. `check-budgets.sh` caps a description at 240 characters, and CI caps the total with `count-tokens.sh --every-chat`. Put detail in the skill body or in a `references/` file loaded on demand, never in the description.
 
-   A skill that only a person ever runs by name, and that no skill, command or agent needs Claude to invoke, sets `disable-model-invocation: true` in its frontmatter. Claude Code then leaves its description out of context entirely while `/github-workflow:<name>` still works; the cost is that Claude can no longer invoke it, and asking in plain words no longer triggers it. `tone`, `support-request`, `acceptance-criteria` and `ecosystem-setup` carry it. A workflow that needs one of them reads its `SKILL.md` and follows it, as `setup` does for `ecosystem-setup`.
+   A skill that only a person ever runs by name, and that no skill, command or agent needs Claude to invoke, sets `disable-model-invocation: true` in its frontmatter. Claude Code then leaves its description out of context entirely while `/synergy:<name>` still works; the cost is that Claude can no longer invoke it, and asking in plain words no longer triggers it. `tone`, `support-request`, `acceptance-criteria`, `ecosystem-setup` and `verify-feature` carry it. A workflow that needs one of them reads its `SKILL.md` and follows it, as `setup` does for `ecosystem-setup`.
 
-2. **Always bump the plugin version before merging.** If you changed any file under `github-workflow/`, bump its version in `github-workflow/.claude-plugin/plugin.json`:
+2. **Always bump the plugin version before merging.** If you changed any file under `synergy/`, bump its version in `synergy/.claude-plugin/plugin.json`:
    - **Patch** (x.y.Z): bug fixes, typo corrections, minor wording
    - **Minor** (x.Y.0): new skills, commands, behavioral changes
    - **Major** (X.0.0): breaking changes, removed skills
@@ -19,11 +19,11 @@ This repo contains one Claude Code plugin, `github-workflow`, which covers GitHu
 
 ## Standards the skills share
 
-`github-workflow/skills/_shared/` holds the wording standard, the banned patterns and the body standard, and `github-workflow/references/` holds the story template. Skills cite them by path.
+`synergy/skills/_shared/` holds the wording standard, the banned patterns and the body standard, and `synergy/references/` holds the story template. Skills cite them by path.
 
 `_shared/body-standard.md` is the single standard for every body written into a tracker or forge: an issue, a pull request description, a comment. It holds the wording, the bullet and title rules, the style and the no-hard-wrapping rule. Its entry points carry only the part that differs, which is which sections a body has: `writing-github-issues` for a GitHub issue, `pr-body` for a pull request.
 
-`pr-body` has two formats and the repository chooses between them, never the writer. A repository with a `ClaudeProject.md` always gets the fixed shape (`## Summary` → `## Changes` → `## Test plan`, then `Closes #N`), because `execute`, `bulk-execute` and `code-review` read and extend those bodies. Any other repository, or another platform, gets the component-section format in `pr-body/references/component-format.md`.
+`pr-body` has two formats and the repository chooses between them, never the writer. A repository with a `ClaudeProject.md` always gets the fixed shape (`## Summary` → `## Changes` → `## Test plan`, then `Closes #N`), because `execute`, `bulk-execute` and `pr-review` read and extend those bodies. Any other repository, or another platform, gets the component-section format in `pr-body/references/component-format.md`.
 
 `writing-github-issues` and `user-story` stay separate on purpose: one is the standard for a GitHub issue body, the other writes a story for pasting into any project management tool.
 
@@ -41,7 +41,7 @@ This is not cosmetic. These files are the examples the model learns the house st
 
 | Plugin | Description |
 |--------|-------------|
-| `github-workflow` | GitHub story work end to end (`execute`, `bulk-execute`, `code-review`), local work that stops at a commit (`build`), and the planning, review and writing skills both use |
+| `synergy` | GitHub story work end to end (`execute`, `bulk-execute`, `pr-review`), local work that stops at a commit (`build`), and the planning, review and writing skills both use |
 ## Running parallel agents
 
 These workflows spawn parallel/background agents, each of which the harness places in its own git worktree. When running agents in parallel — especially on Windows, where per-worktree `node_modules` duplication causes file-lock cleanup failures — follow the recommended harness configuration and manual reap routine in [`docs/worktree-config.md`](docs/worktree-config.md).
@@ -59,7 +59,7 @@ These workflows spawn parallel/background agents, each of which the harness plac
 | `count-roundtrips.sh` | Count `gh`/`git` network calls described in instruction files (informational, no gate) |
 | `hooks/pre-commit` | Git hook that blocks CRLF line endings |
 | `.github/workflows/ci.yml` | CI: skill lint, decision-logic tests, version-bump check, token-footprint budgets, plugin.json validation |
-| `.claude/ecosystem.md` | Cheat-sheet for installed Claude Code companion tools (graphify, RTK, ccusage, ecc-agentshield) and when the workflow uses each. Consult it before searching the codebase blind or running an audit/review. Generated by the `ecosystem-setup` skill — regenerate via `/github-workflow:setup ecosystem`. |
+| `.claude/ecosystem.md` | Cheat-sheet for installed Claude Code companion tools (graphify, RTK, ccusage, ecc-agentshield) and when the workflow uses each. Consult it before searching the codebase blind or running an audit/review. Generated by the `ecosystem-setup` skill — regenerate via `/synergy:setup ecosystem`. |
 
 ### Bootstrapping your clone
 
@@ -78,7 +78,7 @@ After merging changes to main, the local Claude Code marketplace cache is stale.
 
 ```powershell
 claude plugin marketplace update subverting-complexity
-claude plugin update github-workflow@subverting-complexity
+claude plugin update synergy@subverting-complexity
 ```
 
 Without the marketplace refresh, `plugin update` reports "already at latest" against the cached version — not the actual latest on main.
@@ -103,7 +103,7 @@ A committed entry pins the plugin by name, so a rename or a merge in this market
 
 ```bash
 claude plugin marketplace add Subverting-complexity/claude-plugins
-claude plugin install github-workflow@subverting-complexity
+claude plugin install synergy@subverting-complexity
 ```
 
 ## Supplementary Files

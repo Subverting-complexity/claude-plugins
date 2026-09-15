@@ -15,7 +15,7 @@
 # defaults below. Re-measure and re-calibrate (never just raise to silence a
 # failure) if a deliberate, reviewed change grows a file.
 #
-# Checks the plugin's skills and commands under github-workflow/.
+# Checks the plugin's skills and commands under synergy/.
 #
 # Usage:
 #   bash check-budgets.sh              # enforce budgets; exit 1 if any exceeded
@@ -35,7 +35,7 @@ CHARS_PER_TOKEN_X10=35
 
 # --- Budgets (calibrated from measured baselines) --------------------------
 # Description: every description loads into every session, so they are kept
-# short. The longest is 229 chars (code-review, which covers pull requests and
+# short. The longest is 229 chars (pr-review, which covers pull requests and
 # local changes); 240 sits ~5% above it, so a longer one has to trim first.
 DESC_BUDGET_CHARS=240
 # Body: the Anthropic ≤500-line guideline; every skill sits under it.
@@ -125,8 +125,8 @@ check_body() {
 
 run_gate() {
     local skill_files command_files
-    mapfile -t skill_files < <(find github-workflow -name 'SKILL.md' 2>/dev/null | sort)
-    mapfile -t command_files < <(find github-workflow -path '*/commands/*.md' 2>/dev/null | sort)
+    mapfile -t skill_files < <(find synergy -name 'SKILL.md' 2>/dev/null | sort)
+    mapfile -t command_files < <(find synergy -path '*/commands/*.md' 2>/dev/null | sort)
 
     for f in "${skill_files[@]:-}"; do
         [ -z "$f" ] && continue
