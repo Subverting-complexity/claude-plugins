@@ -105,12 +105,12 @@ jobs:
 
       - name: Check setup every-run load
         shell: bash
-        # Lowered in 14.0.0 (#277), when each setup mode began reading only its own steps.
+        # Lowered in 13.3.0 (#277), when each setup mode began reading only its own steps.
         run: bash count-tokens.sh github-workflow/commands/setup.md --budget 7240
 
       - name: Check tone every-run load
         shell: bash
-        # Added in 14.0.0 (#278), when the voice examples were cut; the story caps it at 6,000.
+        # Added in 13.3.0 (#278), when the voice examples were cut; the story caps it at 6,000.
         run: bash count-tokens.sh github-workflow/skills/tone/SKILL.md --budget 5790
 
       - name: Check description and body budgets (ratchet)
