@@ -21,7 +21,7 @@ import sys
 
 from command_parse import (HTTP_TOOLS, WRITE_VERBS, expand, flag_value,
                            has_flag, host, http_writes, mcp_writes,
-                           name_words, push_url, remote_url, walk)
+                           name_words, not_read, push_url, remote_url, walk)
 
 # Hosts of the platforms the plugin must not post to on its own.
 FORGE_HOSTS = re.compile(
@@ -36,10 +36,6 @@ WRITE_HINT = re.compile(
     r'\b(create|merge|comment|edit|close|reopen|delete|push|post|patch|put|'
     r'add|set|fork|mutation|review|transfer|claim|pick|stage-set|post-merge|'
     r'handoff|upload|write|update|remove)\b', re.I)
-
-
-def _not_read(method):
-    return bool(method) and method.upper() not in ('GET', 'HEAD', 'OPTIONS')
 
 
 def _subcommand(toks, start):
@@ -58,14 +54,14 @@ def _az(toks, text):
     if toks[1] == 'rest':
         if FORGE_HOSTS.search(text) and (
                 has_flag(toks, ['--body', '-b'])
-                or _not_read(flag_value(toks, ['--method', '-m']))):
+                or not_read(flag_value(toks, ['--method', '-m']))):
             return 'an Azure DevOps REST call (`az rest`)'
         return None
     if toks[1] not in AZ_GROUPS:
         return None
     words = _subcommand(toks, 2)
     if 'invoke' in words:
-        if _not_read(flag_value(toks, ['--http-method'])):
+        if not_read(flag_value(toks, ['--http-method'])):
             return 'an Azure DevOps API call (`az devops invoke`)'
         return None
     if any(w in WRITE_VERBS for w in words):
@@ -77,7 +73,7 @@ def _glab(toks):
     words = _subcommand(toks, 1)
     if words[:1] == ['api']:
         if (has_flag(toks, ['-f', '-F', '--field', '--raw-field', '--input'])
-                or _not_read(flag_value(toks, ['-X', '--method']))):
+                or not_read(flag_value(toks, ['-X', '--method']))):
             return 'a GitLab API call (`glab api`)'
         return None
     if any(w in WRITE_VERBS for w in words):

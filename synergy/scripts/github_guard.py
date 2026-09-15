@@ -23,9 +23,10 @@ import os
 import re
 import subprocess
 
-from command_parse import (HTTP_TOOLS, READ_METHODS, WRITE_VERBS, expand,
-                           flag_value, has_flag, http_data, http_writes,
-                           mcp_writes, name_words, push_url, remote_url, walk)
+from command_parse import (HTTP_TOOLS, READ_METHODS, WRITE_VERBS,
+                           closing_paren, expand, flag_value, has_flag,
+                           http_data, http_writes, mcp_writes, name_words,
+                           push_url, remote_url, tokens, walk)
 
 ALLOWLIST_ENV = 'SYNERGY_GITHUB_ALLOWLIST'
 
@@ -55,6 +56,10 @@ GH_WRITES = {
 GH_NESTED = {('repo', 'deploy-key'): {'add', 'delete'},
              ('repo', 'autolink'): {'create', 'delete'}}
 ACCOUNT_GROUPS = {'gist', 'ssh-key', 'gpg-key'}
+# gh's own aliases for write actions: `gh pr new` is `gh pr create`.
+GH_ALIASES = {'new': 'create', 'remove': 'delete'}
+GH_VIEW_VALUE_FLAGS = {'--json', '-q', '--jq', '-t', '--template', '-b',
+                       '--branch'}
 
 # `wf` subcommands that only read, and those that only read with a flag.
 WF_READS = {'setup', 'candidates', 'config', 'org-capabilities', 'issue-audit',
@@ -265,22 +270,52 @@ def _spec_owner(spec):
     return parts[0] if len(parts) == 2 and parts[0] else None
 
 
-def _unresolved(text, ctx):
+def _substitutions(command):
+    """The text of every `$( )` in `command`, nested ones included."""
+    found, start = [], command.find('$(')
+    while start != -1:
+        end = closing_paren(command, start + 1, '\\')
+        found.append(command[start + 2:end])
+        start = command.find('$(', start + 2)
+    return found
+
+
+def _views_current(sub, env, ctx):
+    """Whether a `$( )` is `gh repo view` of the current repository: no
+    repository named, and no GH_REPO to name one."""
+    toks = tokens(sub.strip())
+    if toks[:3] != ['gh', 'repo', 'view']:
+        return False
+    if env.get('gh_repo') or ctx['environ'].get('GH_REPO'):
+        return False
+    return not _positionals(toks[3:], GH_VIEW_VALUE_FLAGS)
+
+
+def _unresolved(text, env, ctx):
     """The owner behind a variable the command never set to text: the current
-    repository when it came from `gh repo view`, otherwise unknown."""
+    repository when it came from `gh repo view` of that repository, otherwise
+    unknown."""
     m = re.search(r'\$\{?(?:env:)?(\w+)', text)
-    view = r'\$\(\s*gh\s+repo\s+view\b'
-    if m and m.group(1).startswith('__sub'):
-        return CURRENT if re.search(view, ctx['command']) else None
-    if m and re.search(r'\$?%s\s*=\s*["\']?%s' % (re.escape(m.group(1)), view),
-                       ctx['command'], re.I):
-        return CURRENT
+    if not m:
+        return None
+    command = ctx['command']
+    if m.group(1).startswith('__sub'):
+        subs = _substitutions(command)
+        return CURRENT if subs and all(
+            _views_current(s, env, ctx) for s in subs) else None
+    assigned = re.search(r'(?<![\w$])\$?%s\s*=\s*["\']?\$\(' % re.escape(m.group(1)),
+                         command, re.I)
+    if assigned:
+        start = assigned.end() - 1
+        body = command[start + 1:closing_paren(command, start, '\\')]
+        if _views_current(body, env, ctx):
+            return CURRENT
     return None
 
 
 def _owner_of_spec(spec, env, ctx):
     spec = expand(spec, env, ctx['environ'])
-    return _unresolved(spec, ctx) if '$' in spec else _spec_owner(spec)
+    return _unresolved(spec, env, ctx) if '$' in spec else _spec_owner(spec)
 
 
 def _positionals(toks, value_flags):
@@ -350,14 +385,19 @@ def _api_fields(toks):
     return values
 
 
-def _gh_graphql(toks, cwd, what):
+def _gh_graphql(toks, cwd, env, ctx, what):
     query, blobs = None, []
     for value in _api_fields(toks):
         key, _, val = value.partition('=')
         if key == 'query':
             query = val
         else:
-            blobs.append(val)
+            blobs.append(expand(val, env, ctx['environ']))
+    bare = r'^\$\{?(?:env:)?\w+\}?$'
+    if query and re.match(bare, query):
+        query = expand(query, env, ctx['environ'])
+        if re.match(bare, query):
+            return [(None, 'a GitHub GraphQL call whose query synergy cannot read')]
     source = flag_value(toks, ['--input'], False)
     if source:
         try:
@@ -378,16 +418,21 @@ def _gh_graphql(toks, cwd, what):
         except (OSError, ValueError):
             return [(None, 'a GitHub GraphQL call whose query synergy cannot read')]
     owner = _graphql(query, blobs, what)
-    return [] if owner is None else [(owner, what)]
+    if owner is None:
+        return []
+    if any('$' in blob for blob in blobs):
+        return [(None, 'a GitHub GraphQL mutation whose variables synergy '
+                       'cannot read')]
+    return [(owner, what)]
 
 
-def _rest_owner(path, env, ctx):
+def _rest_owner(path, env, ctx, placeholder=CURRENT):
     m = re.match(r'(?:repos|orgs)/([^/?]+)', path)
     if m:
         owner = m.group(1)
         if owner in ('{owner}', ':owner'):
-            return CURRENT
-        return _unresolved(owner, ctx) if '$' in owner else owner
+            return placeholder
+        return _unresolved(owner, env, ctx) if '$' in owner else owner
     if re.match(r'(?:user|gists)(?:/|$|\?)', path):
         return ACCOUNT
     return None
@@ -399,8 +444,13 @@ def _gh_api(toks, cwd, env, ctx):
     endpoint = expand(positionals[0], env, ctx['environ']) if positionals else ''
     path = re.sub(r'^https?://api\.github\.com/', '', endpoint, flags=re.I)
     path = path.lstrip('/')
+    # gh fills {owner} and :owner, and picks the repository, from GH_REPO.
+    override = env.get('gh_repo') or ctx['environ'].get('GH_REPO')
+    placeholder = _owner_of_spec(override, env, ctx) if override else CURRENT
     if path.split('?')[0] == 'graphql':
-        return _gh_graphql(toks, cwd, 'a GitHub GraphQL mutation')
+        return [(placeholder if owner is CURRENT else owner, what)
+                for owner, what in _gh_graphql(toks, cwd, env, ctx,
+                                               'a GitHub GraphQL mutation')]
     method = flag_value(toks, ['-X', '--method'], False)
     if method:
         writes = method.upper() not in READ_METHODS
@@ -408,7 +458,7 @@ def _gh_api(toks, cwd, env, ctx):
         writes = bool(_api_fields(toks)) or has_flag(toks, ['--input'])
     if not writes:
         return []
-    return [(_rest_owner(path, env, ctx),
+    return [(_rest_owner(path, env, ctx, placeholder),
              'a GitHub API write (`gh api %s`)' % endpoint)]
 
 
@@ -417,10 +467,11 @@ def _gh(toks, cwd, env, ctx):
     group = words[0] if words else ''
     if group == 'api':
         return _gh_api(toks, cwd, env, ctx)
-    action = words[1] if len(words) > 1 else ''
+    action = GH_ALIASES.get(words[1], words[1]) if len(words) > 1 else ''
     first = words[2] if len(words) > 2 else ''
     nested = GH_NESTED.get((group, action))
     if nested is not None:
+        first = GH_ALIASES.get(first, first)
         if first not in nested:
             return []
         what, first = '`gh %s %s %s`' % (group, action, first), ''

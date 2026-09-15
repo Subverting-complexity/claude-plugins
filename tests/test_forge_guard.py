@@ -213,6 +213,8 @@ class TestParserGaps(unittest.TestCase):
             "# Don't forget the review\naz repos pr create --title x",
             "echo ok # it's done\ngit push",
             'git commit -m "explain <<EOF"\naz repos pr create --title x',
+            'grep -q x <<< foo\naz repos pr create --title x',
+            'echo $((1<<2))\naz repos pr create --title x',
         ):
             with self.subTest(command=command):
                 self.assertIsNotNone(bash(command))

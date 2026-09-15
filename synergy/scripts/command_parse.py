@@ -106,6 +106,11 @@ def _prepare(text, powershell):
             out.append(c + nxt)
             i += 2
             continue
+        if c == '$' and nxt == '(' and text[i + 2:i + 3] == '(':
+            end = closing_paren(text, i + 1, escape)  # $(( )), where << shifts
+            out.append(text[i:end + 1])
+            i = end + 1
+            continue
         if c == '$' and nxt == '(':
             out.append('$(')
             stack.append([quote, 0])
@@ -117,6 +122,17 @@ def _prepare(text, powershell):
             if c == '"':
                 quote = None
             i += 1
+            continue
+        if c == '$' and nxt == "'" and not powershell:
+            end = _ansi_quote_end(text, i + 2)
+            out.append(text[i:end + 1])
+            i = end + 1
+            continue
+        if (c == '(' and nxt == '(' and not powershell
+                and (i == 0 or text[i - 1] in ' \t\n;|&')):
+            end = closing_paren(text, i, escape)  # (( )) arithmetic
+            out.append(text[i:end + 1])
+            i = end + 1
             continue
         if c == '@' and nxt in ('\'', '"') and text[i + 2:i + 3] == '\n':
             close = text.find('\n' + nxt + '@', i + 2)
@@ -145,7 +161,8 @@ def _prepare(text, powershell):
             close = text.find('#>', i + 2)
             i = n if close == -1 else close + 2
             continue
-        elif not powershell and c == '<' and nxt == '<' and text[i + 2:i + 3] != '<':
+        elif (not powershell and c == '<' and nxt == '<'
+              and text[i + 2:i + 3] != '<' and (i == 0 or text[i - 1] != '<')):
             m = HEREDOC.match(text, i)
             if m:
                 pending.append(m.group(2))
@@ -173,10 +190,26 @@ def _prepare(text, powershell):
             line_start = i + 1
         out.append(c)
         i += 1
+    if quote or stack:
+        raise ValueError('a quote or $( is never closed')
     return ''.join(out), scripts
 
 
-def _closing_paren(text, start, escape):
+def _ansi_quote_end(text, start):
+    """The index of the quote that closes a Bash $'...' string, in which a
+    backslash escapes the next character."""
+    j = start
+    while j < len(text):
+        if text[j] == '\\':
+            j += 2
+        elif text[j] == "'":
+            return j
+        else:
+            j += 1
+    raise ValueError('a quote is never closed')
+
+
+def closing_paren(text, start, escape):
     depth, quote, j = 0, None, start
     while j < len(text):
         c = text[j]
@@ -221,8 +254,18 @@ def _split(text, powershell):
             buf.append(c + nxt)
             i += 2
             continue
+        if c == '$' and nxt == "'" and quote is None and not powershell:
+            end = _ansi_quote_end(text, i + 2)
+            buf.append(text[i:end + 1])
+            i = end + 1
+            continue
+        if c == '$' and nxt == '(' and text[i + 2:i + 3] == '(':
+            end = closing_paren(text, i + 1, escape)
+            buf.append(text[i:end + 1])
+            i = end + 1
+            continue
         if c == '$' and nxt == '(':
-            end = _closing_paren(text, i + 1, escape)
+            end = closing_paren(text, i + 1, escape)
             subs.append(text[i + 2:end])
             buf.append(SUB)
             i = end + 1
@@ -250,6 +293,8 @@ def _split(text, powershell):
             continue
         buf.append(c)
         i += 1
+    if quote:
+        raise ValueError('a quote is never closed')
     parts.append((''.join(buf), piped))
     return parts, subs
 
@@ -377,6 +422,12 @@ def _walk(command, cwd, variables, found, depth, powershell):
             if (len(words) >= 4 and words[0] == 'remote'
                     and words[1] in ('add', 'set-url')):
                 variables['remote:' + words[2].lower()] = words[3]
+            if words[:2] == ['config', 'set']:
+                words = words[:1] + words[2:]
+            setting = (re.match(r'^remote\.(.+)\.(?:push)?url$', words[1], re.I)
+                       if len(words) >= 3 and words[0] == 'config' else None)
+            if setting:
+                variables['remote:' + setting.group(1).lower()] = words[2]
         _command(toks, cwd, env, found, depth, powershell, fed)
 
 
@@ -503,7 +554,7 @@ def has_flag(toks, names):
                for t in toks if t.startswith('-'))
 
 
-def _not_read(method):
+def not_read(method):
     return bool(method) and method.upper() not in READ_METHODS
 
 
@@ -525,9 +576,9 @@ def http_writes(toks):
                     method = cluster.group(1) or after
                 elif re.match(r'^-[%s]*[dFT]' % CURL_BARE, token):
                     data = True
-        return data or _not_read(method)
+        return data or not_read(method)
     return (has_flag(toks, ['-Body', '-InFile'])
-            or _not_read(flag_value(toks, ['-Method'])))
+            or not_read(flag_value(toks, ['-Method'])))
 
 
 def http_data(toks):
