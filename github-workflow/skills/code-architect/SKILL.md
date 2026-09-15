@@ -1,13 +1,6 @@
 ---
 name: code-architect
-description: >-
-  Design, audit, or document a codebase using Clean Architecture, GoF patterns, and
-  architecture fundamentals. Three modes: design new systems (SOLID, boundaries,
-  style selection; auto-triggers the grill interview), audit
-  existing code for SOLID/dependency/testability violations with a refactor plan,
-  or produce architecture docs and coding standards. Trigger on design/architect/
-  audit architecture, SOLID violations, dependency inversion, document the
-  architecture, or the "/code-a" shortcut.
+description: 'Design a new system, audit a codebase for SOLID, dependency and testability problems with a refactor plan, or write architecture docs and coding standards.'
 depends-on:
   - grill
 allowed-tools:
@@ -20,8 +13,6 @@ allowed-tools:
   - Bash(head *)
   - Bash(tail *)
 ---
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
-
 # Code Architect Skill
 
 Design, audit, and document codebases using principles from Clean Architecture, Design Patterns, and Fundamentals of Software Architecture.
@@ -80,7 +71,7 @@ When user asks to review, audit, or improve existing code:
    - Test coverage and testability
 
 2. **Audit against principles** - Check for violations of:
-   - **SOLID Principles** (read `references/clean-architecture.md` for definitions)
+   - **SOLID Principles**
    - **Component Principles** (REP, CCP, CRP, ADP, SDP, SAP)
    - **Dependency Rule** - Do dependencies point toward business logic?
    - **Boundaries** - Are database, UI, frameworks separated from business rules?
@@ -268,14 +259,6 @@ A subagent or reviewer should check:
    - Every boundary rule should name specific directories or modules
    - Every pattern rule should include when to apply and when not to
    - A subagent reading only this document should know where to put new code
-
-## Reference Documents
-
-Three reference books are embedded in `references/`. Read the relevant file when you need principle definitions, pattern details, or architecture style trade-offs:
-
-- **`references/clean-architecture.md`** — SOLID principles, component principles, Clean Architecture pattern, boundaries, testability.
-- **`references/design-patterns.md`** — All 23 GoF patterns with intent, when to use, and architecture relevance.
-- **`references/fundamentals-of-software-architecture.md`** — Architecture characteristics, all styles with ratings, choosing a style, ADRs, risk analysis.
 
 ## Output Guidelines
 

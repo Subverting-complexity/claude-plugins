@@ -1,5 +1,5 @@
 ---
-description: 'Mark the current story as blocked. Trigger: "blocked", "I''m stuck", "can''t continue", "blocked by a dependency".'
+description: 'Mark the current story as blocked. Trigger: "blocked", "I''m stuck", "can''t continue".'
 ---
 
 # Block Story

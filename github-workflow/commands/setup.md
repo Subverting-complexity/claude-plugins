@@ -1,5 +1,5 @@
 ---
-description: 'Set up or configure a project for this plugin. Trigger: "set up my project", "configure this repo", "harden auto-merge", "set up ecosystem tools", "reap claims", "audit my issues".'
+description: 'Set up or configure a project for this plugin, harden auto-merge, set up companion tools, reap claims or audit issues.'
 argument-hint: '[harden|ecosystem|reap|wf|issues]'
 ---
 
@@ -291,7 +291,7 @@ This is where a project actually starts *using* the companion tools, so present 
 
 Offer to set up commonly used Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and record what was enabled in `.claude/ecosystem.md` — the cheat-sheet that `/github-workflow:execute` and `/github-workflow:code-review` read to use those tools automatically. If the user declines everything, the step is a clean no-op: it leaves a small opt-out marker so onboarding never nags again, and nothing is blocked.
 
-This is handled by the shared **`ecosystem-setup`** skill (`skills/ecosystem-setup/SKILL.md`), so the github-workflow and local-workflow plugins stay in lockstep instead of each carrying their own copy of the tool list. Run that skill now: it asks once whether the user wants any tools, detects/installs/configures each one they choose, offers the optional commit-reminder hook, and writes `.claude/ecosystem.md` (adding a row to the CLAUDE.md Supplementary Files table from Step 6 when one exists). If the user wants nothing, it writes no file — zero impact on future context windows.
+This is handled by the **`ecosystem-setup`** skill (`skills/ecosystem-setup/SKILL.md`), which `build` also points to, so the tool list lives in one place. Run that skill now: it asks once whether the user wants any tools, detects/installs/configures each one they choose, offers the optional commit-reminder hook, and writes `.claude/ecosystem.md` (adding a row to the CLAUDE.md Supplementary Files table from Step 6 when one exists). If the user wants nothing, it writes no file — zero impact on future context windows.
 
 The focused mode `/github-workflow:setup ecosystem` is just this step on its own — equivalent to invoking the `ecosystem-setup` skill directly.
 

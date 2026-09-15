@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 # Writing Examples
 
 These are real examples of correspondence. Study them closely before editing any draft. They are the ground truth for tone, structure, and voice.

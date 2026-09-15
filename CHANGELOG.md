@@ -1,11 +1,24 @@
 # Changelog
 
-Notable changes to the plugins in this marketplace. Both plugins version
-independently; each entry says which one it applies to.
+Notable changes to the plugins in this marketplace. Until 13.0.0 there were two plugins, versioned independently; each older entry says which one it applies to.
 
 See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
+
+## github-workflow 13.0.0
+
+**One plugin instead of two.** `local-workflow` is merged into `github-workflow`, and the fifteen skills the two plugins shared through a sync step now exist once. The plugin loads far less into every session: the skill, command and agent descriptions went from about 17,000 characters across both plugins to about 3,000, each is capped at 240 characters, and the `SessionStart` hook is one short paragraph.
+
+- **Added:** `build`, the local plan, build, verify and commit run that was `/local-workflow:build`.
+- **Merged into `code-review`:** reviewing a local change with no pull request (was local-workflow's `code-review` and `verify-feature`), and the React Native and Expo checklist (was `mobile-audit`).
+- **Merged into `feature-discovery`:** planning a new project's vision, tech stack and deployment (was `repo-scaffolding`).
+- **Merged into `pr-body`:** the component-section format, used where a repository has no `ClaudeProject.md` (was `pr-description`).
+- **Merged into `preflight`:** the local environment checks for a project with no `ClaudeProject.md`.
+- **Folded into the orchestrators:** `structured-coding` and `debugging` are replaced by a short `templates/coding-method.md` that `execute`, `bulk-execute` and `build` follow.
+- **Removed:** `security-audit`, `doc-writer` and the DocWriter agent, and `code-architect`'s three textbook reference files.
+
+**Upgrading.** This is a breaking release. If you used `local-workflow`, uninstall it (`claude plugin uninstall local-workflow@subverting-complexity`) and install or update `github-workflow`. `/local-workflow:*` commands become `/github-workflow:*`: `pr-description` is `pr-body`, `mobile-audit` and `verify-feature` are `code-review`, and `repo-scaffolding` is `feature-discovery`. A project that named a removed skill in its own `CLAUDE.md` should drop the reference.
 
 ## github-workflow 12.6.2
 

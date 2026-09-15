@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 # Tone Glossary
 
 Project-specific terms, proper nouns, and dictation corrections. The tone skill reads this file before editing text.

@@ -1,15 +1,8 @@
 ---
 name: bulk-execute
-description: >-
-  Build two to five related GitHub stories together on one branch behind one
-  pull request: pick the set, plan, build story by story, test, open one PR,
-  have it reviewed independently in a fresh context, merge where enabled.
-  Trigger on "bulk execute", "batch these stories", "do the next few related
-  stories together", or several issue numbers to build as one change. Use
-  execute instead when there is only one story.
+description: 'Build two to five related GitHub stories on one branch behind one pull request, reviewed and merged like execute. Trigger on "bulk execute", "batch these stories" or several issue numbers.'
 depends-on:
   - code-architect
-  - structured-coding
   - code-review
 argument-hint: '[issue# issue# ... | --parent N] [--mode feature|maintenance] [--size N] [--no-merge] [--bypass-ci]'
 arguments:
@@ -217,7 +210,7 @@ If requirements have gaps, make reasonable assumptions and note them in the plan
 
 ## Phase 4 — Build, story by story
 
-Use `/github-workflow:structured-coding` to implement, working through the set **in build order**, one story at a time. Do not interleave them: a reviewer has to be able to see which commit answers which story, and so does anyone reverting one of them later.
+Implement by `templates/coding-method.md`, working through the set **in build order**, one story at a time. Do not interleave them: a reviewer has to be able to see which commit answers which story, and so does anyone reverting one of them later.
 
 For each story in order:
 

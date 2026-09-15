@@ -1,6 +1,6 @@
 ---
 name: Reviewer
-description: Autonomous PR review agent. Reviews open PRs, fixes concrete issues (blocking and non-blocking) in place, pushes, resolves conflicts and CI failures when merging, files anything it cannot fix to the backlog for automatic pickup, and applies state labels.
+description: 'Reviews a pull request in a fresh context, fixes concrete issues in place, resolves conflicts and CI failures when merging, files what it cannot fix, and applies review-state labels.'
 color: blue
 tools:
   - Read
@@ -104,7 +104,7 @@ Each entry is scoped to the minimum needed; the rationale for every family is re
 
 **Bash(make \*)** — Make-based build systems used across many project types.
 
-**Bash(bash \*.sh), Bash(bash \*.sh \*)** — run quality gate and project shell scripts by name (e.g., `bash sync-skills.sh --verify`, `bash lint-skills.sh`). Intentionally restricted to `.sh` filenames — this blocks `bash -c "arbitrary code"` and process substitution (`bash <(curl ...)`) while allowing any named script.
+**Bash(bash \*.sh), Bash(bash \*.sh \*)** — run quality gate and project shell scripts by name (e.g., `bash lint-skills.sh`, `bash run-tests.sh`). Intentionally restricted to `.sh` filenames — this blocks `bash -c "arbitrary code"` and process substitution (`bash <(curl ...)`) while allowing any named script.
 
 ## Error recovery
 

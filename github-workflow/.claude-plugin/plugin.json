@@ -1,7 +1,7 @@
 {
   "name": "github-workflow",
-  "version": "12.6.2",
-  "description": "Community plugin for GitHub-based development workflows. Say 'start the next story' and the plugin picks an issue from your backlog, plans the architecture, builds it, runs tests, opens a PR, has that PR reviewed independently by agents in a fresh context, and applies the fixes the review asks for. It merges the PR too on projects that turn on auto-merge, which is one setting governing every command that can merge. Selection is structured rather than textual: Stage, Priority, Effort and Ownership are org issue fields, so a run never reads a label, a board card or an issue body to decide anything. An issue carries its own state, so it is pickable whether or not anybody added it to a board, and every board that groups by Stage shows the same answer. A scheduled `board-sync` workflow adds any board card GitHub's auto-add missed and keeps every issue's Stage in step with its real state, moving work owned by a person or a browser agent to `Non-code` and filing an issue with no Stage in `Backlog`. It reads the Epic and Feature tree too: an Epic or Feature can be picked and expands to the stories under it, parking one sets aside everything beneath it, a bulk run can take its set from the stories under one Epic or Feature, and an Epic or Feature is closed once its last sub-issue closes. An issue too unclear to build is sent to refinement rather than guessed at. Every interview, from stress-testing a plan to scoping a feature, runs through one shared `grill` skill, which leads each question with a recommendation and never guesses an answer when nobody is there to give it. Supports sprint-based and flat backlogs. Bundles skills, commands and agents with least-privilege tool access, plus a setup wizard that auto-detects your project configuration and a preflight check that repairs what it safely can.",
+  "version": "13.0.0",
+  "description": "Development workflow plugin for GitHub story work and for work that stays on your machine. Say 'start the next story' and it picks an issue from your backlog, plans it, builds it, runs tests, opens a PR, has the PR reviewed independently by agents in a fresh context, and merges it on projects that turn on auto-merge. Selection reads org issue fields (Stage, Priority, Effort, Ownership) and the Epic and Feature tree, never labels or board cards, and a scheduled board-sync keeps every issue's Stage in step. For local work, 'build this' plans, builds, verifies and commits with no issue or PR, and code-review reviews a local change as well as a PR. One grill skill runs every interview. Keeps what loads into each session small.",
   "author": {
     "name": "Subverting Complexity"
   },
@@ -13,10 +13,10 @@
     "automation",
     "code-review",
     "backlog",
-    "project-board",
     "issue-fields",
-    "sprint",
     "story",
-    "pr"
+    "pr",
+    "local-development",
+    "build"
   ]
 }

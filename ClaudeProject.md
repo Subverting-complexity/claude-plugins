@@ -21,10 +21,10 @@ Settings for the `github-workflow` plugin. All commands and the execute skill re
 Command to run before each commit:
 
 ```
-bash sync-skills.sh --verify && bash lint-skills.sh && bash run-tests.sh
+bash lint-skills.sh && bash run-tests.sh
 ```
 
-This mirrors CI: verifies shared skills are in sync (no drift between `_shared-skills/` and the deployed plugin copies), lints skill frontmatter for unreplaced placeholders, and runs the offline decision logic tests. Plugin version-bump and manifest validation are enforced at PR time by `.github/workflows/ci.yml`.
+This mirrors CI: lints skill frontmatter and the wiring between skills, and runs the offline decision logic tests. Plugin version-bump and manifest validation are enforced at PR time by `.github/workflows/ci.yml`.
 
 `run-tests.sh` automatically picks the right Python interpreter (`python3`, then the Windows Python Launcher `py -3`, then `python`). On Windows, you can also run `.\run-tests.ps1` directly from PowerShell — it does the same detection and prints a `winget` install hint if Python is not found.
 
@@ -129,4 +129,4 @@ This section is informational. The board is a view for people, with its columns 
 
 ## Bundled Skills
 
-Available as `/github-workflow:*`: acceptance-criteria, bulk-execute, code-architect, code-review, debugging, doc-writer, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, repo-scaffolding, security-audit, structured-coding, support-request, tone, user-story, user-facing-communication, verify-feature, writing-github-issues.
+Available as `/github-workflow:*`: acceptance-criteria, build, bulk-execute, code-architect, code-review, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, support-request, tone, user-story, user-facing-communication, writing-github-issues.

@@ -1,6 +1,5 @@
 # Normalize line endings: store LF in the repo, check out LF everywhere.
-# The sync-skills scripts use LF-only writes ([System.IO.File]::WriteAllText
-# in PS1, plain redirects in sh), so checked-out files must also be LF to
-# prevent phantom diffs after a sync run.
+# Scripts and hooks write LF only, so checked-out files must also be LF to
+# prevent phantom diffs.
 
 * text=auto eol=lf

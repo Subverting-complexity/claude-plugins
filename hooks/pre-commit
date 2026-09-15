@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
-# Pre-commit hook:
-#   1. blocks commits that directly edit synced skill copies, and
-#   2. blocks CRLF line endings from being committed (keeps the repo LF-only,
-#      matching .gitattributes; stops the Windows CRLF churn documented in
-#      docs/worktree-config.md).
+# Pre-commit hook: blocks CRLF line endings from being committed (keeps the
+# repo LF-only, matching .gitattributes; stops the Windows CRLF churn
+# documented in docs/worktree-config.md).
 # Install via ./bootstrap.sh (or ./bootstrap.ps1), or by hand:
 #   cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
-
-SYNC_MARKER='<!-- SYNCED from _shared-skills/'
 
 staged_files=$(git diff --cached --name-only --diff-filter=AM)
 
@@ -62,27 +58,3 @@ if [ ${#crlf_blocked[@]} -gt 0 ]; then
     exit 1
 fi
 # ------------------------------------------------------------------------
-
-violations=()
-for file in $staged_files; do
-    if [[ "$file" != _shared-skills/* ]] && [[ -f "$file" ]]; then
-        # The banner sits at column 0 on its own line. In SKILL.md it follows
-        # the YAML frontmatter rather than leading the file, so match it
-        # anchored at line-start anywhere (not just line 1). Anchoring avoids
-        # false positives on docs that quote the marker inline (e.g. CLAUDE.md).
-        grep -q "^${SYNC_MARKER}" "$file" 2>/dev/null && violations+=("$file")
-    fi
-done
-
-if [ ${#violations[@]} -gt 0 ]; then
-    echo "ERROR: The following staged files are synced copies."
-    echo "       Edit the canonical source in _shared-skills/ instead,"
-    echo "       then run ./sync-skills.ps1 (or ./sync-skills.sh)."
-    echo ""
-    for v in "${violations[@]}"; do
-        echo "  $v"
-    done
-    echo ""
-    echo "If you intentionally need to override, use --no-verify."
-    exit 1
-fi

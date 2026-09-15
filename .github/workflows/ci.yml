@@ -7,16 +7,6 @@ on:
     branches: [main]
 
 jobs:
-  sync-check:
-    name: Verify shared skills are in sync
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run sync verification
-        shell: bash
-        run: bash sync-skills.sh --verify
-
   lint-skills:
     name: Lint skill metadata
     runs-on: ubuntu-latest
@@ -53,7 +43,7 @@ jobs:
         run: |
           status=0
           base="${{ github.event.pull_request.base.sha }}"
-          for plugin in github-workflow local-workflow; do
+          for plugin in github-workflow; do
             changed=$(git diff --name-only "$base"...HEAD -- "$plugin/" | grep -v '.claude-plugin/plugin.json' | head -1 || true)
             if [ -n "$changed" ]; then
               old_version=$(git show "$base:$plugin/.claude-plugin/plugin.json" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
@@ -88,13 +78,20 @@ jobs:
       # last) and the pointer to the standard behind it, which is a decision the
       # run has to make and could not make from the old "a section per
       # component" wording.
+      #
+      # All four orchestrator windows were raised in 13.0.0: the
+      # structured-coding and debugging skills were removed and their few rules
+      # moved into templates/coding-method.md, which this counter follows. A
+      # run used to invoke structured-coding as a separate skill (~3.1k tokens
+      # this counter never saw), so the real load went down even though the
+      # measured windows went up by ~500 tokens.
       - name: Check execute build-window footprint
         shell: bash
         run: |
           bash count-tokens.sh github-workflow/skills/execute/SKILL.md \
             --exclude github-workflow/skills/execute/references/review-and-merge.md \
             --exclude github-workflow/skills/code-review/references/auto-merge.md \
-            --budget 20100
+            --budget 20900
 
       # Raised in the non-code lane change: `default-labels.md` is the
       # inventory every one of these windows loads, and it gained a
@@ -107,7 +104,7 @@ jobs:
       # claim (#164), which review-and-merge and exit cleanup must describe.
       - name: Check execute whole-run footprint
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 34300
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 35400
 
       - name: Check bulk-execute build-window footprint
         shell: bash
@@ -115,15 +112,21 @@ jobs:
           bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md \
             --exclude github-workflow/skills/execute/references/review-and-merge.md \
             --exclude github-workflow/skills/code-review/references/auto-merge.md \
-            --budget 23700
+            --budget 24600
 
       - name: Check bulk-execute whole-run footprint
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 37900
+        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 39100
 
+      # The pull request path. local-review.md and react-native.md load only
+      # for a change with no pull request, so they are left out of this window.
       - name: Check code-review skill footprint
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 31270
+        run: |
+          bash count-tokens.sh github-workflow/skills/code-review/SKILL.md \
+            --exclude github-workflow/skills/code-review/references/local-review.md \
+            --exclude github-workflow/skills/code-review/references/react-native.md \
+            --budget 31100
 
       - name: Check description and body budgets (ratchet)
         shell: bash

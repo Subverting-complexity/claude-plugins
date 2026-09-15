@@ -5,13 +5,13 @@
     "url": "https://github.com/Subverting-complexity"
   },
   "metadata": {
-    "description": "Development workflow plugins by Subverting Complexity: one for GitHub-backed work, one for work that stays on your machine."
+    "description": "Development workflow plugin by Subverting Complexity, for GitHub-backed work and for work that stays on your machine."
   },
   "plugins": [
     {
       "name": "github-workflow",
       "source": "./github-workflow",
-      "description": "Takes a GitHub story end to end: picks it off the backlog, plans, builds, runs the quality gate, opens a pull request, has that pull request reviewed by agents in a fresh context, and merges it where auto-merge is enabled. Every decision reads structured GitHub state — Stage, Priority, Effort and Ownership are org issue fields — so no label, no board card and no line of an issue body changes what gets picked. The state lives on the issue, so nothing has to be on a board to be picked up, and every board grouped by Stage shows the same answer. A scheduled `board-sync` workflow adds any board card GitHub's auto-add missed and keeps every issue's Stage in step with its real state, moving work owned by a person or a browser agent to `Non-code` and filing an issue with no Stage in `Backlog`. It reads the Epic and Feature tree too: an Epic or Feature can be picked and expands to the stories under it, parking one sets aside everything beneath it, a bulk run can take its set from the stories under one Epic or Feature, and an Epic or Feature is closed once its last sub-issue closes. An issue too unclear to build is sent to refinement rather than guessed at. Every interview, from stress-testing a plan to scoping a feature, runs through one shared `grill` skill, which leads each question with a recommendation and never guesses an answer when nobody is there to give it.",
+      "description": "Development workflow plugin for GitHub story work and for work that stays on your machine. Say 'start the next story' and it picks an issue from your backlog, plans it, builds it, runs tests, opens a PR, has the PR reviewed independently by agents in a fresh context, and merges it on projects that turn on auto-merge. Selection reads org issue fields (Stage, Priority, Effort, Ownership) and the Epic and Feature tree, never labels or board cards, and a scheduled board-sync keeps every issue's Stage in step. For local work, 'build this' plans, builds, verifies and commits with no issue or PR, and code-review reviews a local change as well as a PR. One grill skill runs every interview. Keeps what loads into each session small.",
       "author": {
         "name": "Subverting Complexity"
       },
@@ -25,32 +25,11 @@
         "automation",
         "code-review",
         "backlog",
-        "project-board",
         "issue-fields",
-        "sprint",
         "story",
-        "pr"
-      ]
-    },
-    {
-      "name": "local-workflow",
-      "source": "./local-workflow",
-      "description": "Plans, writes, verifies and commits a task on your machine. No issue tracker, no pull request and no platform to configure, plus architecture design and audit, feature discovery, a shared `grill` interview that stress-tests plans, debugging, security audit, user stories, PR descriptions, documentation and tone-matched correspondence.",
-      "author": {
-        "name": "Subverting Complexity"
-      },
-      "homepage": "https://github.com/Subverting-complexity/claude-plugins/blob/main/local-workflow/README.md",
-      "repository": "https://github.com/Subverting-complexity/claude-plugins",
-      "license": "MIT",
-      "category": "workflow",
-      "keywords": [
-        "workflow",
-        "coding",
-        "architecture",
-        "code-review",
-        "user-story",
-        "documentation",
-        "tone"
+        "pr",
+        "local-development",
+        "build"
       ]
     }
   ]

@@ -1,21 +1,12 @@
 ---
 name: grill
-description: >-
-  Interview the user hard about a plan, design, change or requirement until
-  every open question is answered or deliberately deferred with a reason. The
-  interview engine feature-discovery and repo-scaffolding run on. Trigger on
-  "grill me", "stress-test this", "poke holes in this", "challenge my plan",
-  "validate this design", or a plan the user wants questioned rather than
-  built. Do NOT use to break work into stories (use feature-discovery) or to
-  plan a new project (use repo-scaffolding).
+description: 'Interview the user hard about a plan until every open question is answered or deferred. Trigger on "grill me", "stress-test this" or "poke holes in this".'
 ---
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
-
 # Grill
 
 Question a plan until its weak points are found and each open question has an answer or has been parked on purpose. The interview is worth running only if it changes something: a session in which the user agrees with everything and never has to stop and think has not found the parts of the plan nobody has decided yet.
 
-This skill is the one interview procedure in this plugin. Run it directly to stress-test a plan, or let `feature-discovery` and `repo-scaffolding` run it as their interview. When another skill runs it, that skill supplies the subject and a list of topics that must be covered before the grill closes; everything about how the questions are asked lives here.
+This skill is the one interview procedure in this plugin. Run it directly to stress-test a plan, or let `feature-discovery` run it as its interview. When another skill runs it, that skill supplies the subject and a list of topics that must be covered before the grill closes; everything about how the questions are asked lives here.
 
 ## Output standard
 
@@ -27,7 +18,7 @@ A grill needs somebody to answer it. When nobody is there, because the session i
 
 1. Do the research and the mapping below as normal.
 2. Write down every question you would have asked, each with your recommendation and why, grouped by topic.
-3. Put that record where the next person will see it, and stop. Under github-workflow, when the subject is an issue: post the questions as a comment on it (written to the `writing-github-issues` standard and `_shared/body-standard.md`), then set its `Stage` to `Needs refinement` so no code agent picks it up before a person has answered: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-refinement`. Under local-workflow, or when there is no issue, the record is the reply that ends the session.
+3. Put that record where the next person will see it, and stop. When the subject is a GitHub issue: post the questions as a comment on it (written to the `writing-github-issues` standard and `_shared/body-standard.md`), then set its `Stage` to `Needs refinement` so no code agent picks it up before a person has answered: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-refinement`. When there is no issue, the record is the reply that ends the session.
 
 A calling skill that is itself running unattended inherits this rule: it stops at the same point and reports the open questions rather than producing stories from guesses.
 

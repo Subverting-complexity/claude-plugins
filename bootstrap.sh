@@ -6,8 +6,7 @@
 #     default `core.autocrlf=true` fights that and leaves files (notably
 #     CLAUDE.md) as phantom "modified", which blocks worktree cleanup and
 #     keeps branches checked out. See docs/worktree-config.md.
-#   - Install the pre-commit hook (blocks edits to synced skill copies and
-#     blocks CRLF from being committed).
+#   - Install the pre-commit hook (blocks CRLF from being committed).
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"

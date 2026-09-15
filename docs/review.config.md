@@ -60,9 +60,8 @@ Two configurations can make "merge only after CI passes" enforceable. The plugin
 
 Configuration (b) is what currently guards this repo, and it is sufficient: CI runs on every PR, and the review pauses rather than merges when it is not green. It is, however, enforced by the agent rather than by GitHub, so it does not constrain a human pushing directly to `main`.
 
-To add (a) as well — belt and braces, and the only thing that also binds humans — apply protection requiring these six contexts, which are the job names in `.github/workflows/ci.yml`:
+To add (a) as well — belt and braces, and the only thing that also binds humans — apply protection requiring these five contexts, which are the job names in `.github/workflows/ci.yml`:
 
-- `Verify shared skills are in sync`
 - `Lint skill metadata`
 - `Test workflow decision logic and wf.py I/O shell`
 - `Check plugin versions are bumped`
@@ -77,11 +76,10 @@ Leave `required_pull_request_reviews` unset. The review records its verdict as a
 
 Any of these forces a `Changes Requested` verdict regardless of all other findings. They are the repo's `CLAUDE.md` critical rules, restated as things a reviewer checks on a diff.
 
-1. **A synced skill copy was edited directly.** Any changed file carrying the `<!-- SYNCED from _shared-skills/ -->` banner is generated output. The canonical source in `_shared-skills/` is the only editable copy. The pre-commit hook blocks this, so seeing it in a diff means the hook was bypassed.
-2. **A shared skill changed without its synced copies.** If the diff touches `_shared-skills/`, every deployed copy must change in the same commit. `sync-skills.sh --verify` returning non-zero is the test.
-3. **A plugin changed without a version bump.** Any diff touching files under `github-workflow/` or `local-workflow/` — directly or through a sync — must bump that plugin's `version` in `.claude-plugin/plugin.json`. Patch for fixes and wording, minor for new skills or behaviour changes, major for breaking changes.
-4. **CRLF line endings.** The repo is pinned to LF via `.gitattributes`. CRLF leaves worktrees permanently dirty on Windows and blocks their cleanup, so it is a correctness problem here, not a style one.
-5. **An unreplaced template placeholder shipped.** `{{PLUGIN_NAME}}`, `{{PLUGIN_VERSION}}`, or a `{PLACEHOLDER}` left in a deployed skill or command. `lint-skills.sh` catches these.
+1. **A plugin changed without a version bump.** Any diff touching files under `github-workflow/` must bump the `version` in `github-workflow/.claude-plugin/plugin.json`. Patch for fixes and wording, minor for new skills or behaviour changes, major for breaking changes.
+2. **A description over the cap.** Every skill, command and agent description loads into every session, so `check-budgets.sh` caps each at 240 characters. A diff that raises the cap to fit a longer description is a finding.
+3. **CRLF line endings.** The repo is pinned to LF via `.gitattributes`. CRLF leaves worktrees permanently dirty on Windows and blocks their cleanup, so it is a correctness problem here, not a style one.
+4. **An unreplaced template placeholder shipped.** `{{PLUGIN_NAME}}`, `{{PLUGIN_VERSION}}`, or a `{PLACEHOLDER}` left in a deployed skill or command. `lint-skills.sh` catches these.
 
 ## Tech Stack Review Rules
 
@@ -98,7 +96,7 @@ This repo is instruction text plus a small amount of tooling. What that means fo
 
 - **Purpose keys, never literal names.** Labels and stages resolve through `templates/default-labels.md`. A hardcoded label string in a skill is a finding: it silently breaks every project that renamed that label.
 - **Nothing project-specific in a skill.** Repo names, board IDs, and label names belong in `ClaudeProject.md` or this file. The skills are generic.
-- **Shared skills stay plugin-agnostic.** Anything in `_shared-skills/` deploys to both plugins, so it must not assume GitHub, a board, or an issue tracker. Use `{{PLUGIN_NAME}}` for anything plugin-specific.
+- **Local paths must not need GitHub.** `build`, `code-review`'s `references/local-review.md` and `preflight`'s `references/local-checks.md` serve projects with no `ClaudeProject.md` and no tracker. Anything they load must not assume GitHub, a board or an issue.
 - **References are cited, not duplicated.** See the canonical-specification rule above; this is its architectural form.
 
 ## Security Specifics
@@ -113,7 +111,7 @@ This repo is instruction text plus a small amount of tooling. What that means fo
 - **Decision logic changes need tests.** Anything altering how `wf_core.py` selects, filters, sorts, or classifies belongs in `tests/test_decision_logic.py`, and I/O-shell behaviour in `tests/test_io_shell.py`. Both run offline.
 - **Bug fixes need a regression test** that fails before the fix.
 - **Instruction-only changes need no unit test**, since there is nothing to execute. What they need instead is the consistency check above: every file citing the changed thing was updated in the same commit.
-- **The quality gate must pass** — `bash sync-skills.sh --verify && bash lint-skills.sh && bash run-tests.sh` — and CI additionally enforces version bumps, token budgets, and manifest validity.
+- **The quality gate must pass** — `bash lint-skills.sh && bash run-tests.sh` — and CI additionally enforces version bumps, token budgets, and manifest validity.
 
 ## Review Comment Footer
 

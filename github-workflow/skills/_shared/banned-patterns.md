@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 # Banned Output Patterns
 
 These patterns must never appear in output. Every skill and command that produces text a person reads references this file, alongside `_shared/wording-standard.md`.
