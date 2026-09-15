@@ -3083,6 +3083,49 @@ class TestIssueAudit(_ApplyCase):
         self.assertEqual(payload['status'], 'no-capabilities')
 
 
+class TestConfigCacheFreshness(unittest.TestCase):
+    """#289: the cache carries the review-label names, so a review config
+    written after it makes it stale."""
+
+    def _root(self, cache_age, review_age):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        os.makedirs(os.path.join(root, '.claude'))
+        os.makedirs(os.path.join(root, 'docs'))
+        paths = {
+            'project': os.path.join(root, 'ClaudeProject.md'),
+            'cache': os.path.join(root, '.claude', 'wf-config.json'),
+            'review': os.path.join(root, 'docs', 'review.config.md'),
+        }
+        with open(paths['project'], 'w', encoding='utf-8') as fh:
+            fh.write('# Project Configuration\n')
+        with open(paths['cache'], 'w', encoding='utf-8') as fh:
+            json.dump({'org': 'cached', 'repo': 'r',
+                       'review_labels': {'approved': 'old-approved'}}, fh)
+        with open(paths['review'], 'w', encoding='utf-8') as fh:
+            fh.write('| Purpose | Label |\n|---|---|\n| approved | `new-approved` |\n')
+        now = time.time()
+        for key, age in (('project', 600), ('cache', cache_age), ('review', review_age)):
+            os.utime(paths[key], (now - age, now - age))
+        return root
+
+    def _load(self, root):
+        with mock.patch.object(wf, 'repo_root', lambda: root):
+            return wf.load_config()
+
+    def test_a_review_config_newer_than_the_cache_is_read_again(self):
+        ok, cfg, _ = self._load(self._root(cache_age=300, review_age=60))
+        self.assertTrue(ok)
+        self.assertNotEqual(cfg.get('org'), 'cached')
+        self.assertEqual(cfg['review_labels'].get('approved'), 'new-approved')
+
+    def test_a_cache_newer_than_both_sources_is_trusted(self):
+        ok, cfg, _ = self._load(self._root(cache_age=60, review_age=300))
+        self.assertTrue(ok)
+        self.assertEqual(cfg['org'], 'cached')
+        self.assertEqual(cfg['review_labels']['approved'], 'old-approved')
+
+
 class TestHandoffAndClaims(unittest.TestCase):
     """The commands that replaced the mechanism templates."""
 

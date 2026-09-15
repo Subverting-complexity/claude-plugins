@@ -148,7 +148,7 @@ def load_review_labels(root):
     purpose key, mapping it to the next backtick-stripped cell. Absent file →
     empty map, and the resolver falls back to the `review-` prefixed defaults.
     """
-    path = os.path.join(root, 'docs', 'review.config.md')
+    path = review_config_path(root)
     if not os.path.isfile(path):
         return {}
     with open(path, encoding='utf-8') as fh:
@@ -161,18 +161,28 @@ def load_review_labels(root):
     return out
 
 
+def review_config_path(root):
+    return os.path.join(root, 'docs', 'review.config.md')
+
+
 def config_paths(root):
     return (os.path.join(root, '.claude', 'wf-config.json'),
             os.path.join(root, 'ClaudeProject.md'))
 
 
 def load_config():
-    """Load config: JSON cache if fresh, else parse ClaudeProject.md. (ok, cfg, err)."""
+    """Load config: JSON cache if fresh, else parse ClaudeProject.md. (ok, cfg, err).
+
+    The cache holds the review-label names too, so it is stale when either
+    `ClaudeProject.md` or `docs/review.config.md` is newer than it (#289).
+    Setup writes the review config late, after the cache may already exist.
+    """
     root = repo_root()
     cache, source = config_paths(root)
     if os.path.isfile(cache):
-        fresh = (not os.path.isfile(source)
-                 or os.path.getmtime(cache) >= os.path.getmtime(source))
+        built = os.path.getmtime(cache)
+        fresh = all(not os.path.isfile(p) or built >= os.path.getmtime(p)
+                    for p in (source, review_config_path(root)))
         if fresh:
             try:
                 with open(cache, encoding='utf-8') as fh:
