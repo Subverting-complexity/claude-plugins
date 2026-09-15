@@ -130,7 +130,7 @@ Mutations to the **winning** issue (claim, assign, the `In Progress` stage) are 
 
 ## Org capabilities — `org-capabilities`
 
-Resolves what the org can actually classify an issue with: its **enabled native issue types** and every **org issue field** with the option ids needed to write single-select and multi-select values. One GraphQL round trip, cached to `.claude/issue-fields-cache.json`; `--refresh` re-queries and rewrites its own keys while preserving any other key in that file.
+Resolves what the org can actually classify an issue with: its **enabled native issue types** and every **org issue field** with the option ids needed to write single-select and multi-select values. One GraphQL round trip, cached to `.claude/issue-fields-cache.json`; `--refresh` re-queries and rewrites its own keys while preserving any other key in that file. The record carries `fetched_at` and is trusted for an hour, or for five minutes when it lacks `Priority`, `Effort`, `Ownership`, `Stage` or a `Stage` option, because an org's fields change and the file outlives the run that wrote it — a new worktree can start with a copy of the main checkout's.
 
 The command is GraphQL and not REST because REST (`/orgs/{org}/issue-fields`) returns `null` for every option id, which makes those fields readable but not writable.
 

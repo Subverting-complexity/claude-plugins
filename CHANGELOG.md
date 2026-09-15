@@ -7,6 +7,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 12.6.2
+
+**The cached org field list expires.** `.claude/issue-fields-cache.json` used to be trusted forever once it held a type or a field, so an org that changed its fields after the file was written went on being read as it was. On CadenceReader, preflight failed a bulk run with `stage-absent` although the org had defined `Stage` for days: the main checkout's cache predated it, and the new worktree started with a copy of that file. A record is now stamped with `fetched_at` and re-queried after an hour, and after five minutes when it lacks `Priority`, `Effort`, `Ownership`, `Stage` or one of `Stage`'s options. A record with no stamp, or one stamped in the future, is re-queried on the next call, so an existing stale cache heals without `--refresh`.
+
 ## github-workflow 12.5.0
 
 **`board-sync` moves work for a person or a browser agent to `Non-code`.** An open issue whose `Ownership` is `Human` or `Browser agent` and whose `Stage` is blank, `Backlog` or `Blocked` is set to `Non-code`, the stage `issue-apply` already gives it. Abandoned work of that kind goes to `Non-code` rather than back to `Backlog`. `Parked`, `Needs refinement`, `Needs attention` and work somebody is still doing are left alone.
