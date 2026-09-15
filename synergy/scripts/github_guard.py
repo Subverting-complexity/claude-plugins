@@ -58,8 +58,8 @@ GH_NESTED = {('repo', 'deploy-key'): {'add', 'delete'},
 ACCOUNT_GROUPS = {'gist', 'ssh-key', 'gpg-key'}
 # gh's own aliases for write actions: `gh pr new` is `gh pr create`.
 GH_ALIASES = {'new': 'create', 'remove': 'delete'}
-GH_VIEW_VALUE_FLAGS = {'--json', '-q', '--jq', '-t', '--template', '-b',
-                       '--branch'}
+# What `gh repo view -q` may print for its output to be the repository's own.
+VIEW_OUTPUTS = {'.nameWithOwner', '.owner.login', '.url'}
 
 # `wf` subcommands that only read, and those that only read with a flag.
 WF_READS = {'setup', 'candidates', 'config', 'org-capabilities', 'issue-audit',
@@ -281,8 +281,9 @@ def _substitutions(command):
 
 
 def _views_current(sub, env, ctx):
-    """Whether a `$( )` is `gh repo view` of the current repository: no
-    repository named, and no GH_REPO to name one."""
+    """Whether a `$( )` prints the current repository: `gh repo view` with no
+    repository named, no GH_REPO to name one, and output that is only its
+    name, owner or URL."""
     if re.search(r'GH_REPO', sub, re.I):
         return False
     toks = tokens(sub.strip())
@@ -290,7 +291,14 @@ def _views_current(sub, env, ctx):
         return False
     if env.get('gh_repo') or ctx['environ'].get('GH_REPO'):
         return False
-    return not _positionals(toks[3:], GH_VIEW_VALUE_FLAGS)
+    rest = toks[3:]
+    for flag, value in zip(rest[::2], rest[1::2] + [None] * (len(rest) % 2)):
+        if flag in ('-q', '--jq') and value in VIEW_OUTPUTS:
+            continue
+        if flag == '--json' and value and re.match(r'^[\w,]+$', value):
+            continue
+        return False
+    return True
 
 
 def _unresolved(text, env, ctx):
@@ -305,14 +313,23 @@ def _unresolved(text, env, ctx):
         subs = _substitutions(command)
         return CURRENT if subs and all(
             _views_current(s, env, ctx) for s in subs) else None
-    assigned = re.search(r'(?<![\w$])\$?%s\s*=\s*["\']?\$\(' % re.escape(m.group(1)),
-                         command, re.I)
-    if assigned:
-        start = assigned.end() - 1
-        body = command[start + 1:closing_paren(command, start, '\\')]
-        if _views_current(body, env, ctx):
-            return CURRENT
-    return None
+    name = re.escape(m.group(1))
+    assigned = list(re.finditer(r'(?<![\w$])\$?%s\s*=\s*["\']?\$\(' % name,
+                                command, re.I))
+    if len(assigned) != 1:
+        return None
+    start = assigned[0].end() - 1
+    end = closing_paren(command, start, '\\')
+    if not _views_current(command[start + 1:end], env, ctx):
+        return None
+    # Any other mention of the variable, such as `read slug`, could change it.
+    flags = re.I if assigned[0].group().startswith('$') else 0
+    rest = command[:assigned[0].start()] + command[end + 1:]
+    rest = re.sub(r'\$(?:\{(?:env:)?%s\}|(?:env:)?%s(?!\w))' % (name, name),
+                  '', rest, flags=flags)
+    if re.search(r'(?<![\w$])%s(?!\w)' % name, rest, flags):
+        return None
+    return CURRENT
 
 
 def _owner_of_spec(spec, env, ctx):
@@ -387,6 +404,24 @@ def _api_fields(toks):
     return values
 
 
+def _reads_file(toks):
+    """Whether a `-F`/`--field` value other than the query is read from a file
+    (`key=@path`); `-f` values are always literal."""
+    for i, token in enumerate(toks):
+        if token in ('-F', '--field') and i + 1 < len(toks):
+            value = toks[i + 1]
+        elif token.startswith('--field='):
+            value = token.split('=', 1)[1]
+        elif re.match(r'^-F.', token):
+            value = token[2:]
+        else:
+            continue
+        key, _, val = value.partition('=')
+        if key != 'query' and val.startswith('@'):
+            return True
+    return False
+
+
 def _gh_graphql(toks, cwd, env, ctx, what):
     query, blobs = None, []
     for value in _api_fields(toks):
@@ -422,9 +457,13 @@ def _gh_graphql(toks, cwd, env, ctx, what):
     owner = _graphql(query, blobs, what)
     if owner is None:
         return []
-    declared = set(re.findall(r'\$(\w+)\s*:', query))
-    if (any('$' in blob or blob.startswith('@') for blob in blobs)
-            or set(re.findall(r'\$\{?(\w+)', query)) - declared):
+    declared = set()
+    for signature in re.findall(r'\bmutation\b[^({]*\(([^)]*)\)', query):
+        declared.update(re.findall(r'\$(\w+)\s*:', signature))
+    used = set(re.findall(r'\$\{?(\w+)', query))
+    shell = {k.lower() for k in env} | {k.lower() for k in ctx['environ']}
+    if (any('$' in blob for blob in blobs) or _reads_file(toks)
+            or used - declared or {u.lower() for u in used} & shell):
         return [(None, 'a GitHub GraphQL mutation whose values synergy '
                        'cannot read')]
     return [(owner, what)]

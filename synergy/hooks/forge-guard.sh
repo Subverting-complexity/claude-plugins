@@ -7,8 +7,10 @@ input=$(cat)
 
 # Look only at the tool name and its input: the working directory and the
 # transcript path would otherwise match a repository whose path says "gitlab".
-subject=$(printf '%s' "$input" | sed -E 's/"(cwd|transcript_path|session_id|permission_mode|hook_event_name|tool_use_id)"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"//g')
-pattern='\baz\b|glab|dev\.azure|visualstudio|gitlab|bitbucket|devops|push|[_-]ado[_-]|invoke-(restmethod|webrequest)|\birm\b|\biwr\b|[[:space:]](--?|/)(ec|en|enc|enco|encod|encode|encoded|encodedc[a-z]*)[[:space:]]|(pwsh|powershell)[^|;&]*[[:space:]](--?|/)e[[:space:]]'
+# JSON writes a line break as \n, which would join `gh` on a new line to the
+# n before it, so escaped breaks and tabs become spaces.
+subject=$(printf '%s' "$input" | sed -E 's/"(cwd|transcript_path|session_id|permission_mode|hook_event_name|tool_use_id)"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"//g; s/\\[nrt]/ /g')
+pattern='\baz\b|glab|dev\.azure|visualstudio|gitlab|bitbucket|devops|push|[_-]ado[_-]|invoke-(restmethod|webrequest)|\birm\b|\biwr\b|(pwsh|powershell)(\.exe)?([^"[:alnum:]_]|$)|(^|[^[:alnum:]_])(--?|/)(ec|en[a-z]*)\b'
 allowlist="${SYNERGY_GITHUB_ALLOWLIST:-$HOME/.claude/synergy/github-allowlist.json}"
 [ -f "$allowlist" ] && pattern="$pattern|\\bgh\\b|\\bhub\\b|github|wf\\.(sh|ps1|py)|\"owner\"[[:space:]]*:"
 printf '%s' "$subject" | grep -qiE "$pattern" || exit 0

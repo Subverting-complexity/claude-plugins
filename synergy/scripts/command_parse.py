@@ -92,7 +92,6 @@ def _prepare(text, powershell):
     out, scripts, stack, pending = [], [], [], []
     quote, line_start = None, 0
     escape = '`' if powershell else '\\'
-    arith = [] if powershell else _arithmetic_spans(text, escape)
     i, n = 0, len(text)
     while i < n:
         c = text[i]
@@ -108,10 +107,13 @@ def _prepare(text, powershell):
             i += 2
             continue
         if c == '$' and nxt == '(':
-            out.append('$(')
-            stack.append([quote, 0])
+            # Each open $( ), $(( )), (( )) or $[ ] is [quote outside it,
+            # depth, kind]; inside arithmetic, << shifts bits.
+            arith = not powershell and text[i + 2:i + 3] == '('
+            out.append('$((' if arith else '$(')
+            stack.append([quote, 1 if arith else 0, '((' if arith else None])
             quote = None
-            i += 2
+            i += 3 if arith else 2
             continue
         if quote == '"':
             out.append(c)
@@ -123,6 +125,16 @@ def _prepare(text, powershell):
             end = _ansi_quote_end(text, i + 2)
             out.append(text[i:end + 1])
             i = end + 1
+            continue
+        if not powershell and c == '(' and nxt == '(':
+            out.append('((')
+            stack.append([quote, 1, '(('])
+            i += 2
+            continue
+        if not powershell and c == '$' and nxt == '[':
+            out.append('$[')
+            stack.append([quote, 0, '['])
+            i += 2
             continue
         if c == '@' and nxt in ('\'', '"') and text[i + 2:i + 3] == '\n':
             close = text.find('\n' + nxt + '@', i + 2)
@@ -136,9 +148,9 @@ def _prepare(text, powershell):
                 continue
         if c in '\'"':
             quote = c
-        elif c == '(' and stack:
+        elif c in '([' and stack and (c == '[') == (stack[-1][2] == '['):
             stack[-1][1] += 1
-        elif c == ')' and stack:
+        elif c in ')]' and stack and (c == ']') == (stack[-1][2] == '['):
             if stack[-1][1] == 0:
                 quote = stack.pop()[0]
             else:
@@ -153,7 +165,7 @@ def _prepare(text, powershell):
             continue
         elif (not powershell and c == '<' and nxt == '<'
               and text[i + 2:i + 3] != '<' and (i == 0 or text[i - 1] != '<')
-              and not any(s < i < e for s, e in arith)):
+              and not (stack and stack[-1][2])):
             m = HEREDOC.match(text, i)
             if m:
                 pending.append(m.group(2))
@@ -184,27 +196,6 @@ def _prepare(text, powershell):
     if quote or stack:
         raise ValueError('a quote or $( is never closed')
     return ''.join(out), scripts
-
-
-def _arithmetic_spans(text, escape):
-    """(start, end) of each Bash arithmetic span, `((...))`, `$((...))` or
-    `$[...]`, in which `<<` shifts bits rather than opening a heredoc."""
-    spans = []
-    for m in re.finditer(r'\(\(|\$\[', text):
-        if m.group() == '((':
-            spans.append((m.start(), closing_paren(text, m.start(), escape)))
-            continue
-        depth, j = 0, m.start() + 1
-        while j < len(text):
-            if text[j] == '[':
-                depth += 1
-            elif text[j] == ']':
-                depth -= 1
-                if depth == 0:
-                    break
-            j += 1
-        spans.append((m.start(), j))
-    return spans
 
 
 def _ansi_quote_end(text, start):
@@ -424,14 +415,40 @@ def _walk(command, cwd, variables, found, depth, powershell):
             if args:
                 cwd = resolve_dir(cwd, expand(args[0], env))
             continue
+        if head in READ_WORDS or head == 'for' or (head == 'printf' and '-v' in toks):
+            # A variable these set holds text the command cannot see.
+            if head == 'for':
+                names = toks[1:2]
+            elif head == 'printf':
+                names = toks[toks.index('-v') + 1:toks.index('-v') + 2]
+            else:
+                names = toks[1:]
+            for token in names:
+                if re.match(r'^[A-Za-z_]\w*$', token):
+                    variables[token.lower()] = '$__unknown'
         if head == 'git':
-            words = [t for t in toks[1:] if not t.startswith('-')]
+            rest = _git_subcommand(toks)
+            words = [t for t in rest if not t.startswith('-')]
             if (len(words) >= 4 and words[0] == 'remote'
                     and words[1] in ('add', 'set-url')):
                 variables['remote:' + words[2].lower()] = words[3]
-            if words[:1] == ['config']:
-                _git_config(toks[toks.index('config') + 1:], variables)
+            if rest[:1] == ['config']:
+                _git_config(rest[1:], variables)
         _command(toks, cwd, env, found, depth, powershell, fed)
+
+
+READ_WORDS = {'read', 'mapfile', 'readarray', 'getopts'}
+# git's own options that take a value, before the subcommand.
+GIT_VALUE_FLAGS = {'-C', '-c', '--git-dir', '--work-tree', '--namespace',
+                   '--config-env'}
+
+
+def _git_subcommand(toks):
+    """A `git` command's subcommand and its arguments."""
+    i = 1
+    while i < len(toks) and toks[i].startswith('-'):
+        i += 2 if toks[i] in GIT_VALUE_FLAGS else 1
+    return toks[i:]
 
 
 GIT_CONFIG_VALUE_FLAGS = {'-f', '--file', '--blob', '--type', '--default',
@@ -517,7 +534,8 @@ def _shell_script(toks):
             if token[:1] in '-/' and flag and (
                     flag == 'ec' or 'encodedcommand'.startswith(flag)):
                 try:
-                    return base64.b64decode(toks[i + 1]).decode('utf-16-le')
+                    return base64.b64decode(toks[i + 1]).decode(
+                        'utf-16-le', errors='replace')
                 except (IndexError, ValueError):
                     return None
             if low in ('-f', '-file'):

@@ -616,6 +616,60 @@ class TestGapsFoundInReReview(unittest.TestCase):
                     'pwsh -NoProfile %s %s' % (flag, script)))
 
 
+class TestGapsFoundInThirdReview(unittest.TestCase):
+    """Writes the third review of PR #297 found still passing."""
+
+    def test_quoted_or_commented_arithmetic_hides_no_heredoc(self):
+        for command in (
+            'echo "((" ; cat <<EOF\nit\'s\nEOF\ngh pr create -R SomeoneElse/r --fill #\'',
+            "echo '$[' ; cat <<EOF\nit's\nEOF\ngh pr create -R SomeoneElse/r --fill #'",
+            "# ((\ncat <<EOF\nit's\nEOF\ngh pr create -R SomeoneElse/r --fill #'",
+        ):
+            with self.subTest(command=command):
+                self.assertIn('SomeoneElse', check(command))
+        for command in (
+            "gh pr create --title \"Handle (( in the parser\" --body \"$(cat <<'EOF'\nIt's fixed.\nEOF\n)\"",
+            "gh pr create --fill --body \"$(cat <<'EOF'\nuse $[ here, it's fine\nEOF\n)\"",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(check(command))
+
+    def test_an_encoded_script_python_cannot_decode_cleanly(self):
+        import base64
+        raw = 'gh pr create -R SomeoneElse/r --fill'.encode('utf-16-le')
+        for extra in (b'\x00', b'\x00\xd8'):
+            with self.subTest(extra=extra):
+                script = base64.b64encode(raw + extra).decode()
+                self.assertIn('SomeoneElse', pwsh('pwsh -NoProfile -enc ' + script))
+
+    def test_a_graphql_declaration_must_be_in_the_signature(self):
+        self.assertIsNotNone(check(
+            'ID=$(gh api repos/SomeoneElse/r/issues/1 -q .node_id); gh api graphql -f query="mutation { addComment(input: {subjectId: \\"$ID\\", body: \\"$ID: x\\"}) { clientMutationId } }"'))
+
+    def test_a_graphql_variable_named_like_a_shell_variable(self):
+        self.assertIsNotNone(check(
+            'ID=$(gh api repos/SomeoneElse/r/issues/1 -q .node_id); gh api graphql -f query="mutation(\\$ID: ID) { addComment(input: {subjectId: \\"$ID\\", body: \\"x\\"}) { clientMutationId } }"'))
+
+    def test_git_config_after_git_options(self):
+        for command in (
+            'git -C . config remote.origin.pushurl https://github.com/SomeoneElse/r.git && git push origin main',
+            'git -c core.x=y config remote.origin.pushurl https://github.com/SomeoneElse/r.git && git push origin main',
+        ):
+            with self.subTest(command=command):
+                self.assertIn('SomeoneElse', check(command))
+
+    def test_a_view_whose_output_is_rewritten_or_replaced(self):
+        for command in (
+            'slug=$(gh repo view --json nameWithOwner -q \'"SomeoneElse/r"\'); gh api repos/$slug/issues -f title=t',
+            'slug=$(gh repo view --json nameWithOwner -q .nameWithOwner); read slug <<< SomeoneElse/r; gh api repos/$slug/issues -f title=t',
+            'slug=$(gh repo view --json nameWithOwner -q .nameWithOwner | sed s/Subverting-complexity/SomeoneElse/); gh api repos/$slug/issues -f title=t',
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(check(command))
+        self.assertIsNone(check(
+            'REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner); gh api repos/$REPO/issues -f title=t'))
+
+
 BASH = shutil.which('bash')
 HOOK = os.path.join(os.path.dirname(__file__), '..', 'synergy', 'hooks',
                     'forge-guard.sh')
@@ -624,6 +678,26 @@ HOOK = os.path.join(os.path.dirname(__file__), '..', 'synergy', 'hooks',
 @unittest.skipIf(not BASH or 'system32' in (BASH or '').lower(),
                  'needs a POSIX bash')
 class TestHookInterpreter(unittest.TestCase):
+    def test_the_hook_starts_the_guard_for_a_write_on_a_later_line(self):
+        with tempfile.TemporaryDirectory() as data:
+            data = data.replace('\\', '/')
+            allow = data + '/allow.json'
+            with open(allow, 'w') as f:
+                json.dump({'owners': ['Subverting-complexity']}, f)
+            env = dict(os.environ, CLAUDE_PLUGIN_DATA=data,
+                       SYNERGY_GITHUB_ALLOWLIST=allow)
+            for command in (
+                'echo ok\ngh pr create -R SomeoneElse/r --fill',
+                'cat <<EOF\nhello\nEOF\ngh pr create -R SomeoneElse/r --fill',
+                'echo ok\n\tgh issue create -R SomeoneElse/r -t t',
+            ):
+                event = json.dumps({'tool_name': 'Bash', 'cwd': '.',
+                                    'tool_input': {'command': command}})
+                out = subprocess.run([BASH, HOOK.replace('\\', '/')], input=event,
+                                     capture_output=True, text=True, env=env,
+                                     timeout=120)
+                self.assertIn('"deny"', out.stdout, command)
+
     def test_the_hook_starts_the_guard_for_an_encoded_powershell_command(self):
         import base64
         script = base64.b64encode(
@@ -635,7 +709,7 @@ class TestHookInterpreter(unittest.TestCase):
                 json.dump({'owners': ['Subverting-complexity']}, f)
             env = dict(os.environ, CLAUDE_PLUGIN_DATA=data,
                        SYNERGY_GITHUB_ALLOWLIST=allow)
-            for flag in ('-EncodedCommand', '-enco'):
+            for flag in ('-EncodedCommand', '-enco', "'-enc'", '"-EncodedCommand"'):
                 event = json.dumps({
                     'tool_name': 'PowerShell', 'cwd': '.',
                     'tool_input': {'command': 'pwsh -NoProfile %s %s' % (flag, script)}})
