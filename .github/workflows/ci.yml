@@ -104,12 +104,12 @@ jobs:
         shell: bash
         run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 5960
 
-      - name: Check setup every-run load
+      - name: Check onboard every-run load
         shell: bash
-        # Lowered in 13.3.0 (#277), when each setup mode began reading only its own steps.
+        # Lowered in 13.3.0 (#277), when each onboarding mode began reading only its own steps.
         run: bash count-tokens.sh synergy/commands/onboard.md --budget 7240
 
-      - name: Check tone every-run load
+      - name: Check correspondence every-run load
         shell: bash
         # Added in 13.3.0 (#278), when the voice examples were cut; the story caps it at 6,000.
         run: bash count-tokens.sh synergy/skills/correspondence/SKILL.md --budget 5790

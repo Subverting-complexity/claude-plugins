@@ -9,8 +9,8 @@ The built-in list changes between Claude Code releases. The comparison below was
 ## What counts as a clash
 
 - **Exact.** The part after the colon is the name of a built-in command, a bundled skill or an Anthropic skill. Always renamed.
-- **Near.** The names share their distinctive word, or one is the other with a word added, and the two do the same kind of job. Renamed.
-- **Distinct.** The names differ, or they share only a generic word and the jobs differ. Kept, with the reason.
+- **Near.** The plugin's name is the other name with a word taken away, and the two do the same kind of job. Typing the plugin's bare name then matches the other one as well. Renamed.
+- **Distinct.** The names differ, or the plugin's name is the longer one: it adds a qualifier to a generic word such as "review", "verify" or "setup", so typing it does not reach the other. Kept, with the reason.
 
 ## Renamed
 
@@ -34,8 +34,8 @@ The `setup` command's step files were renamed with it: `references/onboarding.md
 | Name | Nearest other name | Why it stays |
 | ---- | ------------------ | ------------ |
 | `bulk-execute` | built-in `/batch` | Different name. `/batch` makes one large change across many files in parallel worktrees; `bulk-execute` builds two to five GitHub stories on one branch behind one pull request. Its description no longer says "batch", so a request to batch something does not match both. |
-| `verify-feature` | built-in `/verify` | Different name, decided in Issue #287 — Restore verify-feature as a report a person reads. It runs by name only. |
-| `pr-review` | built-in `/review` | Different name, and the plugin's review posts labels and can merge. Chosen in 14.0.0 knowing `/review` exists. |
+| `verify-feature` | built-in `/verify` | The plugin's name is the longer one, adding "feature" to a generic verb. Decided in Issue #287 — Restore verify-feature as a report a person reads. It runs by name only. |
+| `pr-review` | built-in `/review`, bundled `code-review` | The plugin's name is the longer one, adding "pr" to a generic verb, and the plugin's review posts labels and can merge. Chosen in 14.0.0 knowing `/review` exists. |
 | `ecosystem-setup` | Anthropic skill `setup-claude` | Shares only the generic word "setup". It installs companion tools such as Graphify and RTK, not plugins or connectors, and runs by name only or through `/synergy:onboard ecosystem`. |
 | `code-architect` | `code-architect` agent in Anthropic's `feature-dev` plugin | Not a built-in, and not installed alongside this plugin. Revisit if `feature-dev` is installed next to `synergy`. |
 | `build`, `execute`, `guide`, `report-issue`, `preflight`, `block-story`, `feature-discovery`, `user-story`, `acceptance-criteria`, `writing-github-issues`, `pr-body`, `support-request`, `user-facing-communication`, `interview`, `correspondence`, `onboard` | none found | No built-in command, bundled skill or installed Anthropic skill uses or nearly uses these names. |
