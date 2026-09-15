@@ -200,6 +200,69 @@ class TestNoFalsePrompts(unittest.TestCase):
                 self.assertIsNone(bash(command))
 
 
+def pwsh(command, urls=None):
+    return outbound_post('PowerShell', {'command': command}, '.',
+                         remotes({'origin': AZURE} if urls is None else urls))
+
+
+class TestParserGaps(unittest.TestCase):
+    """Inputs that hid a write from the parser, found after 14.1.0."""
+
+    def test_comments_and_quoted_markers_do_not_hide_what_follows(self):
+        for command in (
+            "# Don't forget the review\naz repos pr create --title x",
+            "echo ok # it's done\ngit push",
+            'git commit -m "explain <<EOF"\naz repos pr create --title x',
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(bash(command))
+        for command in (
+            'Set-Location "C:\\work\\repo\\"\naz repos pr create --title x',
+            "<# it's a note #>\naz boards work-item create --title x",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(pwsh(command))
+
+    def test_commands_run_through_a_wrapper_ask(self):
+        for command in (
+            'bash -lc "az repos pr create --title x"',
+            'eval "az repos pr create --title x"',
+            'echo 5 | xargs az repos pr update --status completed --id',
+            "bash <<'EOF'\naz repos pr create --title x\nEOF",
+            "cat <<'EOF' | bash\naz repos pr create --title x\nEOF",
+            'echo "az repos pr create --title x" | sh',
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(bash(command))
+        for command in (
+            'Invoke-Expression "az repos pr create --title x"',
+            "'az repos pr create --title x' | iex",
+            "@'\naz repos pr create --title x\n'@ | Invoke-Expression",
+            'pwsh -NoProfile -Command "az repos pr create --title x"',
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(pwsh(command))
+
+    def test_push_targets_set_in_the_same_command_ask(self):
+        for command in (
+            'git remote add gl https://gitlab.com/o/r.git && git push gl main',
+            'url=https://gitlab.com/o/r.git; git push "$url" main',
+            'git -c remote.origin.pushurl=https://gitlab.com/o/r.git push origin main',
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(bash(command, {'origin': GITHUB}))
+
+    def test_text_no_shell_runs_still_passes(self):
+        for command in (
+            "cat > run.sh <<'EOF'\naz repos pr create --title x\nEOF",
+            'git commit -m "# not a comment; az repos pr create"',
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(bash(command))
+        self.assertIsNone(pwsh(
+            "$body = @'\naz repos pr create --title x\n'@\ngh pr comment 1 --body $body"))
+
+
 class TestDecision(unittest.TestCase):
     def test_the_hook_asks_and_never_denies(self):
         out = decision('a push to dev.azure.com')['hookSpecificOutput']
