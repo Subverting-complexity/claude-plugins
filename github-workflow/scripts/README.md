@@ -2,7 +2,48 @@
 
 `wf` collapses the mechanical "select the next story, claim it, validate it" loop into a single process call that returns one already-claimed work item as JSON. It exists so the workflow commands don't have to drive a dozen sequential `gh` round-trips through the model on the hot path.
 
-The selection rules are **not** duplicated here: the pure decision logic lives in [`wf_core.py`](wf_core.py) (priority sort, mode/refinement/gating filters, dependency parsing, branch naming), which is the single canonical, offline-testable encoding of what the `templates/` describe in prose. The offline suite (`tests/test_decision_logic.py`) imports that module directly, so the rules the CLI runs are the rules the tests check — no second copy to drift. [`wf.py`](wf.py) is the thin I/O shell that talks to `gh`/`git` around that core.
+The selection rules are **not** duplicated here: the pure decision logic lives in the `wf_core_*` modules behind [`wf_core.py`](wf_core.py) (priority sort, mode/refinement/gating filters, dependency parsing, branch naming), which is the single canonical, offline-testable encoding of what the `templates/` describe in prose. The offline suite (`tests/test_decision_logic.py`) imports `wf_core` directly, so the rules the CLI runs are the rules the tests check, with no second copy to drift. The `wf_*` modules are the I/O shell that talks to `gh`/`git` around that core, and [`wf.py`](wf.py) is its entry point.
+
+## Module layout
+
+Code is split by concern into flat modules in this directory. Two rules hold the split together: no `wf_core_*` module runs a subprocess, reads a file or calls GitHub, and no `wf_*` shell module holds a decision rule that the tests would need a network to check.
+
+`wf.py` builds the argument parser, dispatches to a subcommand and re-exports every name the shell modules define, so `wf.X` keeps working. It also passes any assignment to `wf.X` on to each shell module that binds `X`, which is what lets the tests replace `wf.run` or `wf.gh_graphql` once for every caller. `wf_core.py` re-exports every name the `wf_core_*` modules define in the same way. New code goes in the module whose concern it belongs to, never in either facade.
+
+| Module | Responsibility | Lines |
+|--------|----------------|-------|
+| `wf.py` | Entry point: argument parser, dispatch, re-exports | 419 |
+| `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 123 |
+| `wf_config.py` | Repo root, `ClaudeProject.md` parsing, the config cache, `config` | 225 |
+| `wf_capabilities.py` | Org issue types, fields and type pins, repo labels, the capability cache, `org-capabilities` | 446 |
+| `wf_issue_io.py` | Reading, writing and verifying single issues; batched mutations | 422 |
+| `wf_stage.py` | `Stage` writes, the start date, branch checkout, `stage-set` | 213 |
+| `wf_candidates.py` | Open issues by stage, their facets, the candidate list | 470 |
+| `wf_claim.py` | Claim refs and markers, `claim`, `claim-release`, `claim-reap` | 344 |
+| `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 220 |
+| `wf_unblock.py` | The unblock sweep, `unblock` | 288 |
+| `wf_pick.py` | The claim and validate walk, container trees, `pick`, `candidates` | 780 |
+| `wf_post_merge.py` | Closing finished containers, `post-merge` | 243 |
+| `wf_review.py` | PR pools and review labels, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 387 |
+| `wf_issue_apply.py` | `issue-apply` | 777 |
+| `wf_issue_audit.py` | `issue-audit` | 166 |
+| `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 654 |
+| `wf_board_sync.py` | `board-sync` | 287 |
+| `wf_core.py` | Facade: re-exports the rules below | 50 |
+| `wf_core_findings.py` | The finding record and the helpers findings are worded with | 46 |
+| `wf_core_fields.py` | Label resolution, native issue types, field vocabularies and ranks | 419 |
+| `wf_core_stage.py` | `Stage` names, work scope, which stage an issue belongs in, stage drift targets | 452 |
+| `wf_core_select.py` | Candidate filter and sort, native type filtering, backlog mode | 308 |
+| `wf_core_pool.py` | The verdict on every open issue in the pool | 251 |
+| `wf_core_refs.py` | Parent parsing, closing references, branch names, dependency edges, unblock verdicts | 268 |
+| `wf_core_bulk.py` | Ordering a bulk set and choosing one from a container | 225 |
+| `wf_core_claims.py` | Sibling PRs that would duplicate a claim, claim reaping | 110 |
+| `wf_core_spec.py` | The issue hierarchy, spec validation, value shaping and batching | 562 |
+| `wf_core_audit.py` | What an existing issue is missing or contradicts | 344 |
+| `wf_core_review.py` | Review-state label names, pools and reconciliation | 192 |
+| `wf_core_drift.py` | Finished containers and stage drift findings | 96 |
+| `wf_core_preflight.py` | Config sections, label and field drift, instruction files | 579 |
+| `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 307 |
 
 ## Commands
 
