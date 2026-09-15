@@ -1,19 +1,19 @@
 ---
 name: bulk-execute
-description: 'Build two to five related GitHub stories on one branch behind one pull request, reviewed and merged like execute. Trigger on "bulk execute", "batch these stories" or several issue numbers.'
+description: 'Build 2 to 7 connected GitHub stories on one branch and one pull request, blockers first, reviewed and merged like execute. Trigger on "bulk execute", "batch these stories" or several issue numbers.'
 depends-on:
   - code-architect
   - pr-review
 argument-hint: '[issue# issue# ... | --parent N] [--mode feature|maintenance] [--size N] [--no-merge] [--bypass-ci]'
 arguments:
   - name: story_numbers
-    description: 'Optional list of issue numbers to build together, e.g. "41 43 47". Naming them is the precise way to choose the set. If omitted, the pick pool is read and a related group is chosen from it deliberately.'
+    description: 'Optional list of issue numbers to build together, e.g. "41 43 47". Their open prerequisites that this run can build join the set. If omitted, a connected set is planned from the pick pool.'
   - name: parent
-    description: 'An Epic or Feature number. The set is chosen from the stories under it: one Feature per run, only stories a code agent may take. Cannot be combined with story numbers.'
+    description: 'An Epic or Feature number. The set is planned from the stories under it. Cannot be combined with story numbers.'
   - name: mode
-    description: 'Selection mode for the lead story: story (default), feature (feature stories only), maintenance (bug/security/architecture/debt). A set never mixes modes.'
+    description: 'Selection mode: story (default), feature (feature stories only), maintenance (bug/security/architecture/debt). A set never mixes modes.'
   - name: size
-    description: 'Maximum stories in the set, 2 to 5 (default 5). The cap is a ceiling, not a target: only genuinely related stories belong in one set.'
+    description: 'Maximum stories in the set, prerequisites included, 2 to 7 (default 7). A ceiling, not a target.'
   - name: no-merge
     description: 'Stop after the independent review and rework instead of merging. The PR is left open carrying the reviewer verdict.'
   - name: bypass-ci
@@ -22,9 +22,9 @@ arguments:
 
 # Bulk Execute
 
-Take **two to five related stories** and land them as **one change**: one branch, one set of commits, one pull request, one independent review, one merge. The saving is narrow: the same subsystem planned once, the same files opened once, one reviewer reading one coherent diff. It disappears when the stories are unrelated, and then this command produces a pull request nobody can review or revert cleanly. **Choosing the set is the hard part**, and so is shrinking it when it turns out to be wrong.
+Take **two to seven connected stories** and land them as **one change**: one branch, one pull request, one independent review, one merge. Stories are connected when one waits on another, when they wait on the same prerequisite, or when they share a parent. A story that waits on another story in the set is built after it, never left out. Independent stories in the same wave may be built in parallel.
 
-**Use `/synergy:execute` instead** when there is one story, when the stories touch different subsystems, or when any one of them is large enough to fill a session on its own.
+**Use `/synergy:execute` instead** when there is one story, or when any one story is large enough to fill a session on its own.
 
 ## Output standard
 
@@ -34,9 +34,7 @@ Everything a person reads — plans, questions, findings, summaries, and anythin
 
 Once, at the start, read `skills/execute/references/shared-phases.md` and follow it: autonomy, invocation flags (including its `bulk-set.json` line), the preflight and configuration checks, API quota, session budget, fix in scope, exit cleanup, and the plan, build, verify, commit and review hand-off rules. This file holds what differs for a set. None of it is narrated to the user between phases.
 
-The one thing this workflow stops for is a **set it cannot justify**. If nothing in the backlog is genuinely related to the lead story, say so and run the lead on its own rather than padding the set.
-
-`--size` caps the set at 2 to 5 stories, default 5. Clamp a value outside that range and report the clamp. Five is a ceiling: a set reaches it only when five stories are genuinely one change and each is small enough to leave room for the review.
+`--size` caps the set at 2 to 7 stories, prerequisites included, default 7. `wf plan-set` clamps a value outside that range and reports it.
 
 ## Project configuration (auto-loaded)
 
@@ -67,92 +65,77 @@ fi
 
 ## Session budget
 
-A bulk run makes more `gh` calls than a single story, because it claims, labels, moves and settles several issues. If the API quota read at the start is below **300**, do not start: say so and suggest `/synergy:execute` for a single story.
+If the API quota read at the start is below **300**, do not start: say so and suggest `/synergy:execute` for a single story.
 
-Stay under ~150k tokens for the whole set, and let that decide how many stories the set holds. (Design rationale for this and every decision below: `docs/rationale/bulk-execute-rationale.md`, not read at runtime.)
+Stay under ~150k tokens in this context for the whole set; builders spawned for a wave spend their own. (Design rationale: `docs/rationale/bulk-execute-rationale.md`, not read at runtime.)
 
-- **Size the set to the budget at Phase 1, and re-size it at Phase 3.** If the plan does not fit, drop stories before writing any code (`references/set-selection.md`, **Dropping a story**).
+- **Re-size the set at Phase 3.** If the plan does not fit, drop stories before writing any code (`references/set-selection.md`, **Dropping a story**).
 - **Commit per story, push after each**, so an unexpected end leaves whole stories on the branch.
-- **The pull request only ever closes stories it actually implements.** If the budget runs out with stories unbuilt, release those claims back to the backlog and open the PR for what was built. Never write `Closes #N` for a story this run did not finish.
-- **Stop short of the cap when the stories are not small.** Running out of budget before the review strands every story in the set at once.
-- **60-minute timeout.** Before each story and each phase, check the elapsed time. Past 60 minutes: commit and push, release the claims of the unbuilt stories, then run Phase 7 for a real pull request, never a draft, covering the built ones and carry on into Phases 8 to 10. If nothing is shippable, leave the branch pushed, set every claimed issue to `stage-attention` with a comment listing what remains, file follow-ups, and run **Exit cleanup**.
+- **The pull request only ever closes stories it built.** If the budget runs out with stories unbuilt, drop them and open the PR for what was built.
+- **90-minute timeout.** Before each wave and each phase, check the elapsed time. Past 90 minutes: commit and push, drop the unbuilt stories, then run Phase 7 for a real pull request covering the built ones and carry on into Phases 8 to 10. If nothing is shippable, leave the branch pushed, set every claimed issue to `stage-attention` with a comment listing what remains, file follow-ups, and run **Exit cleanup**.
 
 ## Mode selection
 
-Default mode is `story`. Override with `$ARGUMENTS.mode`: `feature` (feature stories only) or `maintenance` (bug, security, architecture, tech debt).
-
-**A set never mixes modes.** A feature bundled with an unrelated bug fix cannot be reverted without losing one or the other, so the lead story's mode fixes the mode of the whole set. There is no `audit` mode: an audit changes no code, so use `/synergy:execute --mode audit`.
+Default mode is `story`. Override with `$ARGUMENTS.mode`: `feature` or `maintenance`. **A set never mixes modes**, because a feature bundled with an unrelated bug fix cannot be reverted without losing one or the other. There is no `audit` mode: use `/synergy:execute --mode audit`.
 
 ## Exit cleanup
 
-Run `skills/execute/references/exit-cleanup.md` with one substitution: its step 1 releases **one** issue claim, and this run holds one per story. Release every `refs/claims/issue-{number}` and delete every `.claude/claim-issue-{number}.sha`, reading `.claude/bulk-set.json` for the list if the set is no longer in context. Its step 2 also deletes `.claude/bulk-set.json`. Everything else applies unchanged.
+Run `skills/execute/references/exit-cleanup.md` with one substitution: its step 1 releases **one** issue claim, and this run holds one per story. Release them all in one `wf claim-release` call with `--issue` once per story in `.claude/bulk-set.json`, and delete every `.claude/claim-issue-{number}.sha`. Its step 2 also deletes `.claude/bulk-set.json`. Everything else applies unchanged.
 
 ---
 
-## Phase 1 — Choose the set, then claim every story in it
+## Phase 1 — Plan and claim the set
 
-The set is **chosen**, never taken off the top of the backlog. Priority says which story is worth doing next, not which stories belong in one pull request. Whichever path applies, the reason for each story being in the set is recorded.
+**Read `references/set-selection.md` and follow it.** `wf plan-set` chooses a connected set, puts every blocker before the stories that wait on it, groups the set into waves, and with `--claim` claims, assigns and sets `In Progress` for every story in one call. Phase 1 ends in one of three states:
 
-**Read `references/set-selection.md` and follow it.** It covers three paths:
-
-- **Named stories** (`$ARGUMENTS.story_numbers`, e.g. `/synergy:bulk-execute 41 43 47`) — the user has made the choice. Validate each, check none is already in flight, and claim them all. Relatedness is not re-litigated; a named story is dropped only when it cannot be worked at all.
-- **No numbers given** — `wf candidates --mode {mode}` returns the same filtered, priority-sorted pool `execute` would pick from and claims nothing. Group it into genuinely related stories, choose one group against the relatedness rules, and only then claim.
-- **A parent given** (`--parent N`, an Epic or Feature) — `wf candidates --parent N` returns one Feature's stories a code agent may take, plus any Blocked story waiting only on another story in the set. Nothing is asked; what was left out is reported.
-
-Every story in the set gets a real atomic claim before any code is written: the `refs/claims/issue-{number}` ref, the `@me` assignment and the `In Progress` stage. Phase 1 ends in one of three states:
-
-- **Two or more stories claimed** — continue to Phase 2 in build order.
-- **One story claimed** — nothing was related enough, or only one named story survived validation. Say so plainly and run the rest of this workflow for that story: a single-story pull request is a correct outcome.
+- **Two or more stories claimed** — continue to Phase 2.
+- **One story claimed** — say so plainly and run the rest of this workflow for that story: a single-story pull request is a correct outcome.
 - **Nothing claimed** — report why and stop.
 
 ## Phase 2 — Start
 
 1. **Confirm the claims.** Re-run `wf claim --issue {number}` for a story only if Phase 1's claim state was lost to compaction; a still-held claim is a no-op. Never issue a bare `--add-assignee @me` as a claim.
 2. **Start clean.** Run the **Start clean** check in `templates/worktree-hygiene.md` before branching. A worktree provisioned dirty is inherited junk: reset it to a pristine baseline and report it.
-3. **Create the one shared branch.** Render the `branch-convention` from `ClaudeProject.md` with `{number}` = the **lead** story's number and a slug describing what the **set** has in common (`feature/41/label-resolution`, not `feature/41/fix-missing-status-label`):
+3. **Create the one shared branch.** Render the `branch-convention` from `ClaudeProject.md` with `{number}` = the **lead** story's number and a slug describing what the **set** has in common (`feature/41/label-resolution`, not `feature/41/fix-missing-status-label`), then record it:
 
    ```
    git fetch origin {default-branch}
    git checkout -b {branch} origin/{default-branch}
+   git push -u origin {branch}
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" bulk-mark --branch {branch}
    ```
-
-   Record the branch name in `.claude/bulk-set.json`.
-
-Stage failures are loud but not fatal: report them ("Stage update failed: {reason}. Continuing.") and proceed.
 
 ## Phase 3 — Plan the set as one change
 
-Use `/synergy:code-architect` **once**, over the whole set: every story's requirements together, the relevant codebase context, and any reference docs listed in `ClaudeProject.md`. Structure `.claude/plan.md` by story in **build order**, with a shared section for anything more than one story touches:
+Use `/synergy:code-architect` **once**, over the whole set: every story's requirements together, the relevant codebase context, and any reference docs listed in `ClaudeProject.md`. Structure `.claude/plan.md` by wave and story in build order, listing the files each story touches, with a shared section for anything more than one story touches:
 
 ```
 ## Shared
-- [ ] src/labels/resolve.ts — the lookup all three stories build on
+- [ ] src/labels/resolve.ts — the lookup two stories build on
 
-## Story #41 — Resolve labels by purpose key
+## Wave 0 — Story #41 — Resolve labels by purpose key
 - [ ] src/labels/resolve.ts — add the purpose-key path
-- [ ] tests/labels/resolve.test.ts — purpose-key cases
 ```
 
 **Then re-check the set against the plan.** This is the last cheap moment to shrink it. If the set will not fit the budget, or two stories pull the same code in different directions, drop the weakest story now (`references/set-selection.md`, **Dropping a story**) and re-plan without it. A story so underspecified that any implementation would be a guess is dropped, not the run.
 
-## Phase 4 — Build, story by story
+## Phase 4 — Build, wave by wave
 
-Work through the set **in build order**, one story at a time, never interleaved: a reviewer, and anyone reverting one story later, has to see which commit answers which story. For each story:
+Build the waves in order. Shared code is written once, with the first story that needs it, and that commit says so.
 
-1. Implement it as the shared rules specify.
-2. Run Phase 5's per-story checks.
-3. Commit it (Phase 6).
-4. Push, then move to the next story.
+**Serially**, in build order, when a wave holds one story, when its stories share any file in the plan, or when no separate agent context can be spawned. For each story: implement it as the shared rules specify, run Phase 5's per-story checks, commit it (Phase 6), push, then run `wf bulk-mark --built {number}`.
 
-Shared code is written once, with the first story that needs it, and that commit says so. After the last story, run Phase 5's full gate for the set before Phase 7.
+**In parallel** when a wave holds two or more stories whose planned files do not overlap. Push the branch first, then spawn one `synergy:Builder` agent per story in a single message, each with `isolation: "worktree"`. Give each its story's number, title, body and plan section, the shared branch name, and these instructions: start from `origin/{branch}`, create `{branch}--{number}`, implement only this story, run the checks covering what it touched, commit with the message Phase 6 describes, push `{branch}--{number}`, and report the commit SHAs and the check results. When they have all returned, for each story in build order: `git fetch origin {branch}--{number}`, `git cherry-pick` its commits onto the shared branch, push, run `wf bulk-mark --built {number}`, and delete the temporary branch. A cherry-pick that conflicts is aborted (`git cherry-pick --abort`) and that story is rebuilt serially on the shared branch. A builder that failed its checks is treated as Phase 5's red check for that story.
+
+After the last wave, run Phase 5's full gate for the set before Phase 7.
 
 ## Phase 5 — Verify (after each story, and once for the set)
 
 **After each story**, run the checks covering what it touched: linter, type check, and the test suites for the changed areas, or the whole gate when that is cheap.
 
-**Once, after the last story**, run the full quality gate whatever ran during the build. That run is the gate the shared rules describe: it sets `gate-failed.flag`, and the per-story checks never replace it.
+**Once, after the last wave**, run the full quality gate whatever ran during the build. That run is the gate the shared rules describe: it sets `gate-failed.flag`, and the per-story checks never replace it.
 
-If a check is still failing after the shared retry limit, **stop**: on a per-story check do not start the next story, because more code on a red tree makes the failure harder to attribute. Either way, commit what you have, set the gate-failed flag, release the claims of the unbuilt stories (`references/set-selection.md`, **Dropping a story**), and go to Phase 7. The pull request closes only the stories that were built.
+If a check is still failing after the shared retry limit, **stop**: do not start the next wave, because more code on a red tree makes the failure harder to attribute. Commit what you have, set the gate-failed flag, drop the unbuilt stories (`references/set-selection.md`, **Dropping a story**), and go to Phase 7. The pull request closes only the stories that were built.
 
 ## Phase 6 — Commit (per story)
 
@@ -182,6 +165,6 @@ Read `skills/execute/references/review-and-merge.md` as the shared rules say, wi
 Read `skills/execute/references/escape-hatches.md` when a run leaves the happy path, with these substitutions for a set:
 
 - **Blocked.** One story blocking does not block the run. Drop it (`references/set-selection.md`, **Dropping a story**, then `/synergy:block-story` for it) and carry on. Block the whole run only when the set drops below one buildable story and no code exists yet.
-- **Dependency.** A dependency *inside* the set needs no hatch: it is built first, as Phase 1 ordered. A dependency on an open issue *outside* the set drops that story. Never chain a bulk branch off another feature branch.
+- **Dependency.** A dependency *inside* the set needs no hatch: `plan-set` already built it into the waves. A dependency on an open issue *outside* the set that appears mid-run drops that story. Never chain a bulk branch off another feature branch.
 - **Too large.** Shrink the set, do not slice a story. Leave the dropped ones in the pool for their own run.
 - **Failure reporting.** Comment the failure on **every** claimed issue before exiting and set each to `Needs attention`. Once the pull request is open, comment on the PR instead and leave the stages at `In Review`.

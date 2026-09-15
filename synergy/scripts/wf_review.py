@@ -10,7 +10,7 @@ import os
 
 import wf_core
 from wf_capabilities import fetch_repo_state
-from wf_claim import acquire_claim, holds_claim, release_claim
+from wf_claim import acquire_claim, holds_claim, release_claims
 from wf_config import prepare_cfg, repo_root
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, emit, eprint,
@@ -385,17 +385,19 @@ def cmd_handoff(args):
     numbers = list(args.issue or [])
     in_review = wf_core.STAGE_NAMES['stage-in-review']
     outcomes = set_stages(cfg, {n: in_review for n in numbers})
+    # Reported rather than fatal, like the stage: the PR exists either way,
+    # but a claim left behind keeps the issue locked until claim-reap. One
+    # push for every issue claim (#300).
+    releases = release_claims(['issue-%d' % n for n in numbers])
     issues = []
     for number in numbers:
         written, message = outcomes.get(int(number), (False, 'not attempted'))
         if not written:
             eprint('wf: warning - could not set #%d to In Review (%s)'
                    % (number, message))
-        # Reported rather than fatal, like the stage: the PR exists either way,
-        # but a claim left behind keeps the issue locked until claim-reap.
-        released = release_claim('issue-%d' % number)
         issues.append({'number': number, 'stage_set': written,
-                       'stage_message': message, 'claim_released': released})
+                       'stage_message': message,
+                       'claim_released': releases.get('issue-%d' % number, False)})
 
     for name in ('plan.md', 'preflight-passed.txt', 'label-cache.json'):
         try:

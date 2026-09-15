@@ -6,6 +6,7 @@ Moved verbatim out of wf_core.py; `scripts/README.md` has the module map.
 
 import re
 
+from wf_core_fields import _priority_rank
 from wf_core_select import (
     HIERARCHY_CONTAINER_TYPES, NATIVE_FEATURE_TYPES, NATIVE_MAINTENANCE_TYPES,
     _filter_effort, _sort_candidates, is_maintenance_classification,
@@ -241,11 +242,134 @@ def evaluate_pool(issues, mode='story', type_map=None, classification_map=None,
         else:
             excluded[n] = 'no Feature under it can be picked'
 
-    pool = ordered([entry(i) for i in leaves.values()]
-                   + list(features.values()) + list(epics.values()))
-    ranked = ordered(pool + list(unclear.values()))
     for n, e in unclear.items():
         excluded[n] = 'needs refinement: %s' % e['unclear']
+
+    # Waiting work and what it waits on. A story held back only by an open
+    # edge is still work a run could take once its blocker lands, so the
+    # blocker inherits its priority: the pool puts a low-priority issue that
+    # unblocks an urgent one ahead of the rest of its own band, which is what
+    # finishes the urgent one soonest. `waiting` also feeds `plan-set`, which
+    # builds a blocker and the stories behind it in one run.
+    waiting = _waiting_work(issues, by_num, kind, ancestors, nearest_feature,
+                            mode, classification_map, effort_map, max_effort,
+                            ownership_map, claimed)
+    effective = dict(priority_map)
+    unblocks = {}
+    for w, blockers in waiting.items():
+        wanted = priority_map.get(w)
+        frontier, seen = list(blockers), set()
+        while frontier:
+            b = frontier.pop()
+            if b in seen or b == w:
+                continue
+            seen.add(b)
+            unblocks.setdefault(b, set()).add(w)
+            if wanted and _priority_rank(wanted) < _priority_rank(effective.get(b)):
+                effective[b] = wanted
+            frontier.extend(waiting.get(b) or ())
+
+    def ordered(entries):
+        return _sort_candidates(entries, None, effective, effort_map)
+
+    def with_unblocks(e):
+        n = e['number']
+        if n in unblocks:
+            e = dict(e, unblocks=sorted(unblocks[n]))
+            if effective.get(n) != priority_map.get(n):
+                e['inherited_priority'] = effective[n]
+        return e
+
+    leaf_entries = [with_unblocks(entry(i)) for i in leaves.values()]
+    for f in list(features.values()) + list(epics.values()):
+        f['stories'] = [e['number'] for e in ordered([leaves[s] for s in f['stories']])]
+    pool = ordered(leaf_entries + list(features.values()) + list(epics.values()))
+    ranked = ordered(pool + list(unclear.values()))
     return {'ranked': ranked, 'pool': pool, 'excluded': excluded,
             'blocked': blocked, 'unclassified': unclassified,
-            'oversized': oversized}
+            'oversized': oversized, 'waiting': waiting,
+            'effective_priority': effective}
+
+
+def plan_universe(verdict, issues, claimed=()):
+    """What `plan_set` chooses from, read off one `evaluate_pool` verdict.
+
+    Returns (universe, rank, reasons). `universe` holds every story in the
+    pool, which is ready now, and every waiting story a person does not have to
+    clarify first, with its open blockers and its parent. `rank` orders them by
+    the priority each carries, inherited from what it unblocks. `reasons` says
+    why each other open issue cannot be taken, so a plan that needs one names
+    the reason rather than calling it unknown.
+    """
+    by_num = {i['number']: i for i in issues}
+    effective = verdict.get('effective_priority') or {}
+    universe, position = {}, {}
+    for index, entry in enumerate(verdict.get('pool') or ()):
+        if entry.get('stories') is not None:
+            continue
+        n = entry['number']
+        universe[n] = {'blockers': [], 'parent': (by_num.get(n) or {}).get('parent')}
+        position[n] = index
+    for n, blockers in (verdict.get('waiting') or {}).items():
+        issue = by_num.get(n)
+        if issue is None or n in universe or unclear_reason(issue, issue.get('type')):
+            continue
+        universe[n] = {'blockers': list(blockers), 'parent': issue.get('parent')}
+    rank = sorted(universe, key=lambda n: (_priority_rank(effective.get(n)),
+                                           position.get(n, len(position)), n))
+    reasons = dict(verdict.get('excluded') or {})
+    claimed = set(claimed or ())
+    for issue in issues:
+        n = issue['number']
+        if n in universe or n in reasons:
+            continue
+        stage = stage_name(issue.get('stage'))
+        if issue.get('assigned'):
+            reasons[n] = 'assigned to %s' % (', '.join(issue.get('assignees') or ())
+                                             or 'somebody')
+        elif n in claimed:
+            reasons[n] = 'claimed by another run'
+        elif issue.get('open_prs'):
+            reasons[n] = 'open pull request %s already closes it' % ', '.join(
+                '#%d' % p for p in issue['open_prs'])
+        elif stage and not is_available_stage(stage):
+            reasons[n] = 'its Stage is %s' % stage
+    return universe, rank, reasons
+
+
+def _waiting_work(issues, by_num, kind, ancestors, nearest_feature, mode,
+                  classification_map, effort_map, max_effort, ownership_map,
+                  claimed):
+    """`{number: [open blockers]}` for every story a code agent could take
+    but for an open blocked-by edge.
+
+    Its `Stage` is blank, `Backlog` or `Blocked`, nobody holds it, it is code
+    work in `--mode` under no Parked container, and every edge was read. An
+    issue in `Blocked` with no open edge waits on a person, not an issue, so
+    it is not here.
+    """
+    blocked_stage = STAGE_NAMES['stage-blocked']
+    out = {}
+    for issue in issues:
+        n = issue['number']
+        type_name = kind(n)
+        stage = issue.get('stage')
+        if not (is_available_stage(stage) or stage_name(stage) == blocked_stage):
+            continue
+        if (issue.get('assigned') or n in claimed or issue.get('open_prs')
+                or type_name in HIERARCHY_CONTAINER_TYPES
+                or effective_scope(ownership_map.get(n), type_name) != SCOPE_CODE):
+            continue
+        blockers = _open_blockers(issue)
+        if not blockers:
+            continue
+        if not _leaf_in_mode(n, mode, kind, nearest_feature, classification_map)[0]:
+            continue
+        if not _filter_effort([issue], effort_map, max_effort):
+            continue
+        if any(kind(p) in HIERARCHY_CONTAINER_TYPES
+               and stage_name(by_num[p].get('stage')) == STAGE_NAMES['stage-parked']
+               for p in ancestors(n)):
+            continue
+        out[n] = blockers
+    return out

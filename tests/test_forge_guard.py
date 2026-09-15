@@ -460,6 +460,41 @@ class TestHookFilter(unittest.TestCase):
                 self.assertEqual(out, '')
                 self.assertFalse(os.path.exists(data + '/ran'))
 
+    def test_look_alike_words_and_flags_do_not_start_python(self):
+        """pushd, Push-Location and flags that only share a prefix with
+        -EncodedCommand used to start Python on every call."""
+        for index, (tool, command) in enumerate((
+            ('Bash', 'pushd src && ls && popd'),
+            ('PowerShell', 'Push-Location src; Get-ChildItem; Pop-Location'),
+            ('PowerShell', 'Get-Content notes.txt -Encoding utf8'),
+            ('Bash', 'docker run --env A=b image'),
+            ('Bash', 'systemctl --enable thing'),
+            ('Bash', 'git config --get remote.origin.pushurl'),
+        )):
+            with self.subTest(command=command):
+                data = self.data_dir('look-alike-%d' % index, cache=self.logger)
+                out = self.run_hook(data, hook_event(tool, {'command': command}, data))
+                self.assertEqual(out, '')
+                self.assertFalse(os.path.exists(data + '/ran'))
+
+    def test_push_and_every_encoded_command_flag_still_start_python(self):
+        for index, (tool, command) in enumerate((
+            ('Bash', 'git push origin main'),
+            ('Bash', 'rtk git push'),
+            ('mcp__someserver__push_files', None),
+            ('PowerShell', '& $shell -ec AAAA'),
+            ('PowerShell', '& $shell -en AAAA'),
+            ('PowerShell', '& $shell -enc AAAA'),
+            ('PowerShell', '& $shell -enco AAAA'),
+            ('PowerShell', '& $shell -EncodedCommand AAAA'),
+            ('PowerShell', '& $shell /ec AAAA'),
+        )):
+            with self.subTest(tool=tool, command=command):
+                data = self.data_dir('starts-%d' % index, cache=self.logger)
+                tool_input = {'files': []} if command is None else {'command': command}
+                self.run_hook(data, hook_event(tool, tool_input, data))
+                self.assertTrue(os.path.exists(data + '/ran'))
+
     def test_a_camel_case_forge_mcp_tool_starts_python(self):
         data = self.data_dir('camel', cache=self.logger)
         out = self.run_hook(data, hook_event(

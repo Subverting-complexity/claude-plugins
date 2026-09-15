@@ -1340,12 +1340,12 @@ class TestBulkSetOrdering(unittest.TestCase):
         self.assertEqual(notes, [])
 
     def test_oversized_set_is_trimmed_and_the_cut_reported(self):
-        stories = [self._story(n) for n in range(1, 8)]
+        stories = [self._story(n) for n in range(1, BULK_MAX + 3)]
         ordered, notes = plan_bulk_order(stories)
         self.assertEqual(len(ordered), BULK_MAX)
-        self.assertEqual(self._numbers(ordered), [1, 2, 3, 4, 5])
+        self.assertEqual(self._numbers(ordered), list(range(1, BULK_MAX + 1)))
         self.assertEqual([(n['number'], n['reason']) for n in notes],
-                         [(6, 'trimmed'), (7, 'trimmed')])
+                         [(BULK_MAX + 1, 'trimmed'), (BULK_MAX + 2, 'trimmed')])
 
     def test_explicit_max_size_overrides_the_default(self):
         stories = [self._story(n) for n in range(1, 5)]
@@ -1418,6 +1418,20 @@ class TestIssueValueMaps(unittest.TestCase):
     def test_every_classification_is_a_valid_option(self):
         for kind, entry in wf_core.NATIVE_TYPE_MAP.items():
             self.assertIn(entry['classification'], wf_core.CLASSIFICATION_OPTIONS, kind)
+
+    def test_every_area_is_a_valid_option(self):
+        self.assertEqual(
+            set(wf_core.AREA_CLASSIFICATION_OPTIONS),
+            {'Front end', 'Back end', 'API', 'Database', 'Mobile',
+             'Infrastructure', 'Build and deploy', 'Testing'})
+        for area in wf_core.AREA_CLASSIFICATION_OPTIONS:
+            self.assertIn(area, wf_core.CLASSIFICATION_OPTIONS)
+
+    def test_no_kind_defaults_to_an_area(self):
+        """An area is set beside a kind value, never in place of one."""
+        for kind, entry in wf_core.NATIVE_TYPE_MAP.items():
+            self.assertNotIn(entry['classification'],
+                             wf_core.AREA_CLASSIFICATION_OPTIONS, kind)
 
     def test_no_kind_names_a_fallback_label(self):
         """There is no label path left to fall back to."""

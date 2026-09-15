@@ -1,6 +1,6 @@
 ---
 name: build
-description: 'Build a task locally: plan, write the code, run the quality gate, commit. No issue and no pull request. Trigger on "build this", "implement this" or "fix this" outside GitHub story work.'
+description: 'Build a task locally with no issue or pull request: plan, write the code, run the quality gate, commit. Trigger on "build this" or "implement this" outside GitHub story work.'
 depends-on:
   - code-architect
   - feature-discovery

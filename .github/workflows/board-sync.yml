@@ -11,6 +11,9 @@ name: Board sync
 on:
   schedule:
     - cron: '17 */6 * * *'
+    # Once a day, every closed issue rather than the last week's, so one closed
+    # before the window does not keep a stale Stage for good.
+    - cron: '47 3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -40,4 +43,11 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: python3 synergy/scripts/wf.py board-sync
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$SCHEDULE" = '47 3 * * *' ]; then
+            python3 synergy/scripts/wf.py board-sync --closed-days 0
+          else
+            python3 synergy/scripts/wf.py board-sync
+          fi

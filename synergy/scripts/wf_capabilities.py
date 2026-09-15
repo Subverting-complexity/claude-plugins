@@ -54,20 +54,41 @@ CAPABILITY_CACHE_GAP_RECHECK = 300
 # single-select or multi-select field impossible to write -- you can read the
 # option names but never name one in a mutation. Do not "simplify" this back to
 # REST.
-ORG_CAPABILITY_QUERY = (
-    'query($login:String!){'
-    ' organization(login:$login){'
-    '  issueTypes(first:50){ nodes { id name isEnabled } }'
-    '  issueFields(first:50){ nodes {'
-    '   __typename'
-    '   ... on IssueFieldSingleSelect { id name options { id name } }'
-    '   ... on IssueFieldMultiSelect { id name options { id name } }'
-    '   ... on IssueFieldDate { id name }'
-    '   ... on IssueFieldText { id name }'
-    '   ... on IssueFieldNumber { id name }'
-    '  } }'
-    ' } }'
+#
+# The selection is shared with preflight's pin check, which needs the same
+# issue types and which fields each pins. `_capability_query(pins=True)` asks
+# for both at once, so preflight makes one request where it made two (#300).
+_ISSUE_TYPE_PINS = (
+    '   pinnedFields {'
+    '    __typename'
+    '    ... on IssueFieldSingleSelect { name }'
+    '    ... on IssueFieldMultiSelect { name }'
+    '    ... on IssueFieldDate { name }'
+    '    ... on IssueFieldText { name }'
+    '    ... on IssueFieldNumber { name }'
+    '   }'
 )
+
+
+def _capability_query(pins=False):
+    return (
+        'query($login:String!){'
+        ' organization(login:$login){'
+        '  issueTypes(first:50){ nodes { id name isEnabled%s } }'
+        '  issueFields(first:50){ nodes {'
+        '   __typename'
+        '   ... on IssueFieldSingleSelect { id name options { id name } }'
+        '   ... on IssueFieldMultiSelect { id name options { id name } }'
+        '   ... on IssueFieldDate { id name }'
+        '   ... on IssueFieldText { id name }'
+        '   ... on IssueFieldNumber { id name }'
+        '  } }'
+        ' } }'
+    ) % (_ISSUE_TYPE_PINS if pins else '')
+
+
+ORG_CAPABILITY_QUERY = _capability_query()
+ORG_CAPABILITY_PINS_QUERY = _capability_query(pins=True)
 
 _FIELD_TYPENAMES = {
     'IssueFieldSingleSelect': 'single-select',
@@ -251,14 +272,21 @@ def _capability_record_is_usable(cached, project_fields=None, now=None):
     return True
 
 
-def resolve_org_capabilities(cfg, refresh=False, root=None):
+def resolve_org_capabilities(cfg, refresh=False, root=None, pins=False):
     """Resolve the org's issue types and fields, through the cache.
 
     Returns (ok, capabilities, err). `capabilities` carries `type_capable`,
     `type_map` and `field_map`. A cache hit skips the round trip entirely;
     `refresh=True` forces the query and rewrites those three keys.
+
+    `pins=True` reads which fields each issue type pins in the same request
+    and returns them as `capabilities['pins']`, shaped as
+    `fetch_issue_type_pins` answers: (ok, types, err). Pins are never cached:
+    preflight tells a person to fix pinning and re-run, and a cached answer
+    would report the fix as not done. So asking for them skips the cache read,
+    and the capability half is written to the cache exactly as a refresh is.
     """
-    if not refresh:
+    if not refresh and not pins:
         cached = load_capability_cache(root)
         if 'type_capable' in cached and 'field_map' in cached and (
                 _capability_record_is_usable(cached, cfg.get('fields'))):
@@ -268,7 +296,31 @@ def resolve_org_capabilities(cfg, refresh=False, root=None):
                           'owner_kind': cached.get('owner_kind') or '',
                           'cached': True}, ''
 
-    data, errors, err = gh_graphql_partial(ORG_CAPABILITY_QUERY, login=cfg['org'])
+    data, errors, err = gh_graphql_partial(
+        ORG_CAPABILITY_PINS_QUERY if pins else ORG_CAPABILITY_QUERY,
+        login=cfg['org'])
+    pin_result = None
+    if pins:
+        # A refusal to read `pinnedFields` leaves the pin check unverified. It
+        # says nothing about the types or fields, so it must never become a
+        # denied capability.
+        pin_errors = [e for e in errors if 'pinnedFields' in (e.get('path') or [])]
+        errors = [e for e in errors if 'pinnedFields' not in (e.get('path') or [])]
+        if data is None:
+            # A schema without `pinnedFields` refuses the whole request. That
+            # has to cost the pin check only, as it did when pins were a
+            # request of their own, so the capabilities are asked for alone.
+            pin_result = (False, [], err or (json.dumps(errors) if errors else '')
+                          or 'the pin query failed')
+            data, errors, err = gh_graphql_partial(ORG_CAPABILITY_QUERY,
+                                                   login=cfg['org'])
+        elif not data.get('organization'):
+            pin_result = (False, [], err or (json.dumps(errors) if errors else '')
+                          or 'no issue types returned for %s' % cfg['org'])
+        elif pin_errors:
+            pin_result = (False, [], json.dumps(pin_errors))
+        else:
+            pin_result = (True, _parse_type_pins(data['organization']), '')
     if data is None:
         return False, None, 'org capability query failed: %s' % (
             err or json.dumps(errors))
@@ -281,6 +333,8 @@ def resolve_org_capabilities(cfg, refresh=False, root=None):
             'owner_kind': owner_kind,
             'denied': sorted(denied),
             'errors': [e.get('message', '') for e in errors]}
+    if pins:
+        caps['pins'] = pin_result
 
     # Never cache a capability the token was refused. A cached `type_capable:
     # false` that really meant "not allowed to look" would make every later run
@@ -379,14 +433,7 @@ PINNED_FIELD_QUERY = (
     ' organization(login:$login){'
     '  issueTypes(first:50){ nodes {'
     '   name isEnabled'
-    '   pinnedFields {'
-    '    __typename'
-    '    ... on IssueFieldSingleSelect { name }'
-    '    ... on IssueFieldMultiSelect { name }'
-    '    ... on IssueFieldDate { name }'
-    '    ... on IssueFieldText { name }'
-    '    ... on IssueFieldNumber { name }'
-    '   }'
+    + _ISSUE_TYPE_PINS +
     '  } }'
     ' } }'
 )
@@ -416,6 +463,11 @@ def fetch_issue_type_pins(cfg):
     if not org:
         return False, [], (err or json.dumps(errors)
                            or 'no issue types returned for %s' % cfg['org'])
+    return True, _parse_type_pins(org), ''
+
+
+def _parse_type_pins(org):
+    """Each issue type's name, whether it is enabled, and the fields it pins."""
     types = []
     for node in (org.get('issueTypes') or {}).get('nodes') or []:
         if not node or not node.get('name'):
@@ -424,7 +476,7 @@ def fetch_issue_type_pins(cfg):
                       'enabled': bool(node.get('isEnabled')),
                       'pinned': [f['name'] for f in node.get('pinnedFields') or []
                                  if f and f.get('name')]})
-    return True, types, ''
+    return types
 
 
 def fetch_repo_state(cfg, repo=None):

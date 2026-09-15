@@ -15,7 +15,7 @@ from wf_config import check_environment, prepare_cfg, repo_root
 from wf_io import (
     EXIT_ENV, EXIT_LOST, EXIT_OK, EXIT_USAGE, emit, eprint, gh_json, run,
 )
-from wf_stage import set_stage
+from wf_stage import set_stage, set_stages, start_date_input
 
 
 # ── claim + markers ──────────────────────────────────────────────────────────
@@ -109,7 +109,63 @@ def release_claim(target):
     return True
 
 
-def apply_in_progress(cfg, issue):
+def release_claims(targets):
+    """Delete many claim refs in one push. Returns {target: released}.
+
+    `release_claim` for a list, at the cost of one push however many refs
+    there are, rather than a push each (#300): `handoff` for a bulk run of
+    five stories paid five. The outcome per target means what it means there,
+    so an already-gone ref still counts as released.
+
+    A push naming several refs deletes each it can and fails if any one
+    failed, so a non-zero push says nothing about which. One `ls-remote` over
+    all of them settles it: a ref still listed was not released. `--exit-code`
+    makes ls-remote exit 2 when it reached the remote and found none of them;
+    any other failure leaves every ref's fate unknown, and none is reported as
+    released. Only a released target's marker is removed, for the reason
+    `release_claim` gives.
+    """
+    targets = list(dict.fromkeys(targets or ()))
+    if not targets:
+        return {}
+    refs = {target: 'refs/claims/%s' % target for target in targets}
+    released = dict.fromkeys(targets, True)
+    code, _, err = run(['git', 'push', 'origin']
+                       + [':%s' % refs[target] for target in targets])
+    if code != 0:
+        probe, out, _ = run(['git', 'ls-remote', '--exit-code', 'origin']
+                            + [refs[target] for target in targets])
+        if probe == 2:
+            present = set()
+        elif probe == 0:
+            present = {parts[1] for parts in (line.split() for line in
+                                              (out or '').splitlines())
+                       if len(parts) == 2}
+        else:
+            present = None
+        failed = [target for target in targets
+                  if present is None or refs[target] in present]
+        for target in failed:
+            released[target] = False
+        if failed:
+            eprint('wf: warning - could not release %s (%s); %s claimed until '
+                   'this is re-run or claim-reap frees %s'
+                   % (', '.join(refs[t] for t in failed),
+                      err.strip() or 'no detail',
+                      'it stays' if len(failed) == 1 else 'they stay',
+                      'it' if len(failed) == 1 else 'them'))
+    root = repo_root()
+    for target in targets:
+        if not released[target]:
+            continue
+        try:
+            os.remove(_claim_marker_path(root, target))
+        except OSError:
+            pass
+    return released
+
+
+def apply_in_progress(cfg, issue, start_date=False):
     """Take durable ownership: assign @me and set `Stage` to In Progress.
 
     Neither is a label any more -- an issue in progress is one that is assigned
@@ -117,7 +173,41 @@ def apply_in_progress(cfg, issue):
     itself keeps them rather than in a name somebody has to remember to change.
     The `Stage` write is what takes the issue out of the pool, so a failed one
     is said out loud.
+
+    With `start_date`, today's `Start date` is written in the same mutation as
+    the `Stage`, using the node id the pool read already holds, and both
+    results are left on the issue as `_stage_result` and `_date_result` so
+    `finish_pick` does not write either a second time. A combined write the
+    date makes fail is retried with the `Stage` alone.
     """
+    if start_date:
+        _assign(cfg, issue)
+        number = int(issue['number'])
+        stage = wf_core.STAGE_NAMES['stage-in-progress']
+        ids = {number: issue['id']} if issue.get('id') else None
+        value, date_msg = start_date_input(cfg)
+        extra = {number: [value]} if value is not None else None
+        written, message = set_stages(cfg, {number: stage}, ids, extra)[number]
+        dated = written and extra is not None
+        if not written and extra is not None:
+            date_msg = 'not set: the combined write failed (%s)' % message
+            written, message = set_stages(cfg, {number: stage}, ids)[number]
+        issue['_stage_result'] = (written, message)
+        issue['_date_result'] = (dated, date_msg)
+        if not written:
+            eprint('wf: warning — could not set #%s to In Progress (%s)'
+                   % (issue['number'], message))
+        return
+    _assign(cfg, issue)
+    written, message = set_stage(cfg, issue['number'],
+                                 wf_core.STAGE_NAMES['stage-in-progress'])
+    if not written:
+        eprint('wf: warning — could not set #%s to In Progress (%s)'
+               % (issue['number'], message))
+
+
+def _assign(cfg, issue):
+    """Assign @me, removing any retired workflow label in the same call."""
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     args = ['issue', 'edit', str(issue['number']), '--repo', repo,
             '--add-assignee', '@me']
@@ -129,11 +219,6 @@ def apply_in_progress(cfg, issue):
     if code != 0:
         eprint('wf: warning — could not assign #%s (%s)'
                % (issue['number'], err.strip()))
-    written, message = set_stage(cfg, issue['number'],
-                                 wf_core.STAGE_NAMES['stage-in-progress'])
-    if not written:
-        eprint('wf: warning — could not set #%s to In Progress (%s)'
-               % (issue['number'], message))
 
 
 def revert_in_progress(cfg, number):
@@ -250,9 +335,9 @@ def cmd_claim_release(args):
     if not targets:
         emit('usage', EXIT_USAGE,
              reason='name what to release: --issue N and/or --pr N')
-    released, failed = [], []
-    for target in targets:
-        (released if release_claim(target) else failed).append(target)
+    outcomes = release_claims(targets)
+    released = [target for target in targets if outcomes.get(target)]
+    failed = [target for target in targets if not outcomes.get(target)]
     # Still exit 0, as the command always has, so a caller tidying up is never
     # stopped by it; but a ref that is still there is named in `failed` and in
     # the reason, never listed as released.

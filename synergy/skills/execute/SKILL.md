@@ -106,6 +106,8 @@ On `ok` the JSON carries `number`, `title`, `url`, `labels`, `milestone`, `body`
 
 When the pick came through an Epic or Feature, `container` names it and `offered` lists its other pickable stories. Decide in Phase 3 whether they belong in this PR: to add one, claim it with `pick --issue {n} --checkout --no-branch --sibling {number}` and build the set as `bulk-execute` does; otherwise leave them in the pool.
 
+`unblocks` lists the stories waiting on this one: name them in the final report, because this merge frees them. `prerequisite_for` means the story you asked for waits on open work this run can build, so `wf` claimed its first prerequisite instead and set the requested story to `Blocked`; `build_order` is the whole chain. Build and merge the prerequisite as a normal run. Then, if the session budget and the timeout leave room, run `pick --issue {prerequisite_for.number} --checkout` and carry on with what it returns; otherwise report the requested story as next.
+
 **When `$ARGUMENTS.story_number` is given**, do not run the pick above. Follow **An explicit story number** in `references/pick-paths.md`, which guards against a story already in flight and then claims it.
 
 **Then, on the claimed story**, read the full issue body and confirm it has **Context** and **Requirements**. Enough guidance (body, comments, linked docs) → Phase 2. If it is thin or empty, follow **A thin or empty story** in `references/pick-paths.md`.

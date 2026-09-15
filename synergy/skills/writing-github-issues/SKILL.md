@@ -45,7 +45,7 @@ Good:
 
 > Remove stale accessibility comments
 
-> Board column write fails when the project has over 100 items
+> Report export fails when a report has over 100 rows
 
 Not this:
 
@@ -60,6 +60,8 @@ An issue says what kind of work it is **once**, through GitHub's native issue ty
 **Nor through any other label.** An issue's state is its `Stage` field; how urgent, how big and whose it is are the org's `Priority`, `Effort` and `Ownership` fields. You do not write any of those four when filing: `wf issue-apply` sets the three fields from the spec and writes the stage from the issue's own state. The workflow puts no label on an issue.
 
 **Choosing a `Classification`.** `kind` sets a default; name a better one in `fields` when it fits. For a bug, prefer **Regression** when something previously worked and broke, or **Performance** when the defect is speed or memory. For a feature, prefer **Enhancement** when it improves something that already exists, **Integration** when it connects an external system, **Documentation** when it tracks docs only, or **Performance** when speed is the point.
+
+**Adding areas.** Also add each area the work touches (`Front end`, `Back end`, `API`, `Database`, `Mobile`, `Infrastructure`, `Build and deploy`, `Testing`), but only options the org's `Classification` field defines: `wf.sh org-capabilities` lists them under `field_map`, and `wf issue-apply` refuses an option the org does not have. Always name one kind-of-change value beside them, for example `"field-type": ["Bug Fix", "Front end"]`. A `field-type` in `fields` replaces the `kind` default, and an issue carrying only areas is left out of maintenance mode.
 
 `[Manual]` and `[Browser]` are not classifications and are not covered by that rule. They say who has to do the work, not what kind of work it is, and nothing native records either. See **Scope: one issue, one party** below.
 

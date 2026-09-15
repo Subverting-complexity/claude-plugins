@@ -284,7 +284,9 @@ def collect_config_findings(cfg, args, root):
         context['stage_drift'] = drifted
 
     # ── the org: field pinning, and fields nothing maps ──────────────────────
-    ok, caps, err = resolve_org_capabilities(cfg, refresh=args.refresh)
+    # The pins come back in the same request as the types and fields (#300);
+    # they were a second request of their own.
+    ok, caps, err = resolve_org_capabilities(cfg, refresh=args.refresh, pins=True)
     if not ok:
         emit('error', EXIT_ENV, reason=err, org=cfg['org'])
     if caps.get('denied'):
@@ -329,7 +331,10 @@ def collect_config_findings(cfg, args, root):
                     (field_name(cfg, k) for k
                      in tuple(wf_core.MANDATORY_FIELD_KEYS) + ('field-stage',))
                     if name in defined]
-        ok, types, err = fetch_issue_type_pins(cfg)
+        # Capabilities that arrived without pins are still checked, at the
+        # cost of the separate read.
+        pins = caps.get('pins')
+        ok, types, err = pins if pins is not None else fetch_issue_type_pins(cfg)
         if ok:
             findings.extend(wf_core.pinned_field_findings(types, required))
             checked.append('field-unpinned')

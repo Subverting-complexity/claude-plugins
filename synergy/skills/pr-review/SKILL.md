@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: 'Review a pull request (the next one needing review, or a number) or a local change (uncommitted work, a branch, a commit, "is this ready?"). Fixes concrete issues; for a PR posts the review and labels. --read-only evaluates only.'
+description: 'Synergy review of a GitHub pull request (the next needing review, or a number) or a local branch or commit: fixes concrete issues, and for a PR posts the review and labels. --read-only evaluates only.'
 arguments:
   - name: mode
     description: 'Review mode: full (default) — evaluate and fix; read-only — evaluate only, no edits or pushes'

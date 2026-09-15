@@ -238,10 +238,14 @@ def cmd_board_sync(args):
         ok_open, open_issues, _ = _paged_nodes(
             lambda paged: _sync_issues_query('OPEN', paged),
             ('repository', 'issues'), repo_args)
+        # `--closed-days 0` reads every closed issue. The window alone left an
+        # issue closed before it with whatever Stage it had, In Review or
+        # Backlog, for good; the scheduled full sweep is what corrects those.
         ok_closed, closed_issues, _ = _paged_nodes(
             lambda paged: _sync_issues_query('CLOSED', paged),
             ('repository', 'issues'), repo_args,
-            stop=lambda node: (node.get('updatedAt') or '') < since)
+            stop=(None if args.closed_days <= 0
+                  else lambda node: (node.get('updatedAt') or '') < since))
         if not (ok_open and ok_closed):
             totals['repos_failed'] += 1
             continue

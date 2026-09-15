@@ -1,6 +1,6 @@
 # Bulk Execute — design rationale
 
-Background for the decisions in `SKILL.md` and `references/set-selection.md`. **Not read at runtime** — it exists so a later change does not silently undo a decision that was made for a reason.
+Background for the decisions in `SKILL.md`, `references/set-selection.md` and `wf plan-set`. **Not read at runtime** — it exists so a later change does not silently undo a decision that was made for a reason.
 
 ## Why a separate command rather than a flag on `execute`
 
@@ -14,9 +14,13 @@ What the two **do** share is everything after the pull request exists. `bulk-exe
 
 The first version of this command claimed the highest-priority story and then gathered relatives around it. That is a cheaper procedure and it is wrong in a specific way: the pool's priority order answers "what is worth doing next", and the set needs an answer to "what belongs in one pull request". Those are different questions, and letting the first stand in for the second produces sets whose only common property is that they were near each other in a sorted list.
 
-So selection now reads the pool first (`wf candidates`, which claims nothing), groups it, and chooses a group. Priority still decides **which** group — the group holding the highest-priority story wins when it has two members — so the most important work still goes first. It just brings its relatives with it rather than its neighbours.
+Selection then read the pool (`wf candidates`), and Claude grouped it by reading the listing. That was too strict in a way that mattered: `pick` set every story with an open blocker to `Blocked`, which took it out of the listing, so a story waiting on another story was never offered beside it, and a named story in `Blocked` was dropped as "not in the pool" even when its blocker was named too. The pair that most needed one run became two runs a merge apart.
 
-The user naming issue numbers is the precise form of the same thing, which is why Path A does not re-run the heuristics. Someone naming three issues is asserting the relationship directly, and a heuristic overriding that would be the tool second-guessing the person holding the context.
+So since 17.0.0 the set is planned in `wf plan-set` (`wf_core.plan_set`) from structure rather than prose. A story waiting on work this run can build is in the universe, a connection is an edge, a shared blocker or a shared parent, and a dependency decides where a story goes in the build order, never whether it is in. Priority still decides which group leads, and a blocker inherits the priority of what waits on it, so the most important work still finishes first. Claude's judgement is kept for what structure cannot see: `nearby` lists unlinked ready stories, and one joins only when it plainly shares the set's files or objective.
+
+The user naming issue numbers is the precise form of the same thing, which is why a named set is not re-grouped. Someone naming three issues is asserting the relationship directly; `plan-set` only adds the prerequisites they need and flags `unrelated` when they fall into separate groups.
+
+The same rule reaches `execute`: `pick --issue N` on a story whose blockers this run can build claims the first blocker and reports `prerequisite_for`, instead of refusing the story the user asked for.
 
 ## Why `wf candidates` exists
 
@@ -46,9 +50,11 @@ Hence `built` in `.claude/bulk-set.json`, flipped per story at commit time, and 
 
 The mirror of the same rule is that a story which cannot be finished goes **back to the backlog properly** — claim released, unassigned, stage set back to `Backlog`, and a comment saying what happened. The stage write is the part that returns it to the pool; the rest is bookkeeping. A story left assigned at `In Progress` after the run ends is invisible to the picker and to the person who wrote it.
 
-## Why the build is serial and one commit per story
+## Why stories build wave by wave, one commit per story
 
-Nothing technical requires it. It is for the reviewer and for whoever reverts one story later. A bulk pull request's specific failure mode is that its diff cannot be attributed — a reviewer cannot tell which change answers which requirement, so they either approve it wholesale or reject it wholesale, and the second review is no better than the first. One commit per story, each naming its issue number, makes the diff readable in the order it was written and makes `git revert` a real option.
+A wave holds only stories that do not wait on each other, so building them at once cannot put a story ahead of its blocker. They are built in parallel only when their planned files do not overlap, each by a builder in its own worktree on a temporary branch, and cherry-picked onto the shared branch in build order. A conflict falls back to a serial rebuild rather than a hand merge, because a merge resolved without the story's context is where a parallel build goes wrong. Everything else is serial.
+
+One commit per story is for the reviewer and for whoever reverts one story later. A bulk pull request's specific failure mode is that its diff cannot be attributed — a reviewer cannot tell which change answers which requirement, so they either approve it wholesale or reject it wholesale, and the second review is no better than the first. One commit per story, each naming its issue number, makes the diff readable in the order it was written and makes `git revert` a real option.
 
 The same reasoning is behind stopping the build when the quality gate stays red rather than moving on to the next story. Code stacked on a broken tree is harder to attribute, not easier, and the run has a better outcome available: ship what is green, release the rest.
 
@@ -58,9 +64,9 @@ A reviewer with the usual lens catches what it catches in a single-story diff. A
 
 ## Budget and size
 
-The ~150k token budget is ~1.5x `execute`'s, for up to five stories, because the shared costs — the plan, the review, the merge, the configuration read — are paid once. The saving is in the shared work, not in the per-story work, so the number does not scale with the set.
+The ~150k token budget is ~1.5x `execute`'s, for up to seven stories, because the shared costs — the plan, the review, the merge, the configuration read — are paid once, and builders spawned for a parallel wave spend their own contexts. The saving is in the shared work, not in the per-story work, so the number does not scale with the set.
 
-The `--size` default is that same 5, so the flag only ever lowers the ceiling. That puts the size judgement in the relatedness rules and in the Phase 3 re-check rather than in a conservative default, which is where it belongs: five small stories against one module fit comfortably, while three large ones spread across three subsystems do not, and a fixed lower default cannot tell those apart. A set that reaches the cap is still worth a second look before any code is written. The set being re-checked against the plan in Phase 3 exists because that judgement is much better informed after planning than before it, and dropping a story then costs one release rather than a failed run.
+The cap rose from five to seven in 17.0.0 because a set now includes the prerequisites a story needs, and a chain of three plus its dependents passed five quickly. The `--size` default is the cap, so the flag only ever lowers the ceiling. That puts the size judgement in the relatedness rules and in the Phase 3 re-check rather than in a conservative default, which is where it belongs: five small stories against one module fit comfortably, while three large ones spread across three subsystems do not, and a fixed lower default cannot tell those apart. A set that reaches the cap is still worth a second look before any code is written. The set being re-checked against the plan in Phase 3 exists because that judgement is much better informed after planning than before it, and dropping a story then costs one release rather than a failed run.
 
 ## Why the disclosed self-review carries over unchanged
 

@@ -4,27 +4,23 @@ Read the section `execute`'s `SKILL.md` sends you to: an explicit story number, 
 
 ## An explicit story number
 
-Run the **already-in-flight guard** first. A named number bypasses the auto-pick pool, and the claim ref is released the moment a PR opens, so a fresh claim on a story already in review would succeed and duplicate the work.
+Claim it through the same engine, aimed at one issue. The in-flight guard is part of the call: it refuses, with `all-blocked` and the reason, an issue that is closed, already closed by an open pull request, assigned, owned by a person, or at `In Progress`, `In Review`, `Non-code` or `Done`.
 
 ```bash
-gh issue view {number} --repo {org}/{repo} --json state,assignees
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout
 ```
 
-No label is read: state is the `Stage` field, and `pick --issue` refuses a story at `In Progress`, `In Review`, `Non-code` or `Done`. `sibling-pr` answers "which open PRs will close this issue on merge?" from GitHub's own closing-reference parse. Exit 0 with `found: 0` is the normal result; exit 20 means the lookup failed, so stop rather than assume there is no duplicate.
+Read the result as Phase 1 does, plus:
 
-- The issue is **closed** → report it and stop.
-- `found` is above zero → do not start fresh work. Report the existing PR by number **and** title and tell the user to run `/synergy:pr-review`, which handles review and rework. Stop: do not claim, branch or build.
-- The stage is `In Review` but `found` is `0` → look for a **closed, unmerged** PR:
+- `open_prs` is present → do not start fresh work. Report the existing PR by number **and** title and tell the user to run `/synergy:pr-review`, which handles review and rework. Stop.
+- `assignees` is present or `stage` is `In Review`, with no `open_prs` → look for a **closed, unmerged** PR:
   ```
   gh pr list --repo {org}/{repo} --state closed --search "closes #{number}" --json number,title
   ```
-  If there is one, the PR was abandoned: unassign, run `wf stage-set {number} --stage stage-backlog` (that write returns it to the pool), and comment `"Resetting — PR #{N} closed without merge."` If there is none either, surface the inconsistency and stop.
-- Otherwise claim it through the same engine, aimed at one issue:
-  ```bash
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout
-  ```
-  Read the result exactly as Phase 1 does. A `closed-already-resolved` side effect followed by `all-blocked` means the story was already finished: report that and pick the **next** story rather than stopping.
+  If there is one, the PR was abandoned: unassign, run `wf stage-set {number} --stage stage-backlog` (that write returns it to the pool), comment `"Resetting — PR #{N} closed without merge."`, and pick it again. If there is none, report who holds it and stop.
+- `ok` with `prerequisite_for` → the story waits on open work this run can build, so `number` is its first prerequisite, already claimed. `SKILL.md` Phase 1 says how to go on.
+- `all-blocked` whose reason names a blocker → the story waits on work nobody here may build. Report the reason and stop.
+- A `closed-already-resolved` side effect followed by `all-blocked` → the story was already finished: report that and pick the **next** story rather than stopping.
 
 ## A thin or empty story
 

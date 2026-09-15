@@ -1,5 +1,5 @@
 ---
-description: 'Orientation and help. Trigger: "help", "how do I use this", "get started", "what can you do".'
+description: 'Orientation for the synergy plugin: its commands and where to start. Trigger on asking how to use synergy.'
 ---
 
 # Guide
@@ -8,7 +8,7 @@ Help the user understand the plugin and figure out where to start.
 
 **Output standard.** Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `../skills/_shared/wording-standard.md` for how it reads, `../skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `../skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
-Trigger: when the user asks "how do I use this", "how do I get started", "what can you do", "help", or similar orientation questions.
+Trigger: when the user asks how to use synergy, how to get started with it, what it can do, or a similar orientation question about this plugin. A general "help" about something else is not this command.
 
 ## Project state (auto-detected)
 
@@ -52,8 +52,8 @@ gh auth status 2>&1 | head -3
 > - `/synergy:execute 42` → Work on a specific issue.
 > - `/synergy:execute --mode feature` → Pick only feature stories.
 > - `/synergy:execute --mode maintenance` → Pick and fix the next bug, security issue, architecture problem, or tech debt item. (Shorthand: `--mode bug` also works.)
-> - `/synergy:bulk-execute` → Build two to five **related** stories as one change: one branch, one pull request, one review. It reads the pick pool, groups the stories that genuinely belong together, and builds that group. Worth it when the stories touch the same code, or when one is waiting on another; not worth it when they are unrelated, because the pull request then gets hard to review.
-> - `/synergy:bulk-execute 41 43 47` → Build exactly those stories together, when you already know they belong in one change.
+> - `/synergy:bulk-execute` → Build two to seven **connected** stories as one change: one branch, one pull request, one review. Stories are connected when one waits on another, when they wait on the same issue, or when they share a parent. Blockers are built first and independent stories can be built in parallel.
+> - `/synergy:bulk-execute 41 43 47` → Build exactly those stories together, plus any open issue they wait on that can be built in the same run.
 >
 > **Local work (no issue, no pull request):**
 >

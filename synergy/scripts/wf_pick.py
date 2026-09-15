@@ -7,16 +7,14 @@ Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 
 import wf_core
 from wf_candidates import (
-    _norm_issue, _prefilter_numbers, assemble_candidates,
-    claimed_issue_numbers, load_issue_facets, pool_verdict,
-    report_unprioritised,
+    _norm_issue, _prefilter_numbers, load_issue_facets, pool_verdict,
+    read_pool, report_unprioritised,
 )
-from wf_claim import (
-    acquire_claim, apply_in_progress, release_claim, revert_in_progress,
-)
+from wf_claim import acquire_claim, apply_in_progress, release_claim
 from wf_config import check_environment, field_name, load_config
 from wf_deps import (
-    close_resolved, issue_edges_map, mark_blocked, validate_issue,
+    close_resolved, issue_dependency_facts, issue_edges_map, known_edges,
+    mark_blocked, validate_issue,
 )
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_CAPABILITY, EXIT_ENV, EXIT_NEEDS_REFINEMENT,
@@ -30,19 +28,25 @@ from wf_stage import (
 from wf_unblock import auto_unblock_scan, blocked_issues
 
 
-def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
+def claim_validate_walk(cfg, pool, backlog_mode, siblings=(), start_date=False):
     """Walk the ordered pool: claim the top, validate only that one, act.
 
     The single claim-first/validate-lazily loop shared by auto-pick and the
     explicit `--issue` path. For each candidate it acquires the atomic claim,
-    applies the in-progress marker, then validates: a dependency-blocked issue
-    is set to Blocked, an already-resolved one is closed **and set to Done**,
-    and the claim is released in both cases before walking on.
-    The first valid claim is returned as the selection.
+    then validates, and only a valid candidate is assigned and set to In
+    Progress: a dependency-blocked issue is set to Blocked, an already-resolved
+    one is closed **and set to Done**, and the claim is released in both cases
+    before walking on. The first valid claim is returned as the selection.
+
+    Validating before the In Progress write, rather than after, is what spares
+    a blocked candidate four writes: the assignment and the stage it used to
+    get, and the unassignment and stage change that undid them. The claim ref
+    already keeps every other run off the issue while it is checked.
 
     `siblings` is passed straight to `validate_issue` — the other stories of a
     bulk set, whose still-open state does not block a candidate that is being
-    built alongside them.
+    built alongside them. `start_date` stamps `Start date` in the same write
+    as the stage.
 
     Returns (selected_or_None, side_effects). Emits + exits on a hard claim
     error (no push access / remote failure), never on a lost claim.
@@ -59,29 +63,27 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
         if outcome == 'lost':
             side_effects.append({'issue': cand['number'], 'action': 'claim-lost'})
             continue
-        apply_in_progress(cfg, cand)
         verdict, detail = validate_issue(cfg, cand, siblings)
         if verdict == 'unknown':
             # Nothing is known about this issue's dependencies, so nothing may
-            # be written about them. The claim and the In Progress write are
-            # undone and the run stops: retrying the next candidate would
-            # almost certainly hit the same failure, one issue at a time.
-            restored, message = revert_in_progress(cfg, cand['number'])
+            # be written about them. Nothing has been written yet either, so
+            # only the claim is let go, and the run stops: retrying the next
+            # candidate would almost certainly hit the same failure.
             released = release_claim(target)
             side_effects.append({'issue': cand['number'],
                                  'action': 'released-unverified',
-                                 'detail': detail, 'restored': restored,
-                                 'stage_message': None if restored else message,
+                                 'detail': detail, 'restored': True,
+                                 'stage_message': None,
                                  'claim_released': released})
             emit('error', EXIT_ENV,
                  reason='could not read the blocked-by edges of #%d, so whether '
                         'it is blocked is unknown and nothing was decided from '
-                        'it. The claim and the In Progress write were undone. '
-                        'Check the token and the network, then re-run.'
+                        'it. The claim was released and nothing else was '
+                        'written. Check the token and the network, then re-run.'
                         % cand['number'],
                  backlog_mode=backlog_mode, side_effects=side_effects)
         if verdict == 'blocked':
-            written, message = mark_blocked(cfg, cand, detail)
+            written, message = mark_blocked(cfg, cand, detail, assigned=False)
             # A release that failed leaves the ref holding the issue out of
             # every pool until claim-reap, so it is reported beside the rest.
             released = release_claim(target)
@@ -97,6 +99,7 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
                                  'pr': detail, 'stage_set': done_set,
                                  'claim_released': released})
             continue
+        apply_in_progress(cfg, cand, start_date)
         return cand, side_effects
     return None, side_effects
 
@@ -200,6 +203,18 @@ def fetch_issue_candidate(cfg, number):
              reason='issue #%d is already closed — nothing to pick' % number,
              number=number)
 
+    # The edges and the closing pull requests in one read, first, so an issue
+    # already in review is reported by its pull request rather than by the
+    # assignee it still carries, and so the claim walk validates without
+    # reading either again.
+    facts = issue_dependency_facts(cfg, number)
+    if facts.get('open_prs'):
+        emit('all-blocked', EXIT_ALL_BLOCKED,
+             reason='open pull request %s already closes issue #%d, so a fresh '
+                    'build would duplicate it. Review it with /synergy:pr-review.'
+                    % (', '.join('#%d' % p for p in facts['open_prs']), number),
+             number=number, open_prs=facts['open_prs'])
+
     assignees = [a.get('login') for a in data.get('assignees') or []]
     if assignees:
         emit('all-blocked', EXIT_ALL_BLOCKED,
@@ -229,7 +244,88 @@ def fetch_issue_candidate(cfg, number):
                     % (number, field_name(cfg, 'field-stage'), stage,
                        wf_core.STAGE_NAMES[wf_core.POOL_STAGE]),
              number=number, stage=stage)
-    return _norm_issue(data)
+    cand = _norm_issue(data)
+    cand.update(facts)
+    return cand
+
+
+def read_plan_pool(cfg, args, extra=()):
+    """The pool, judged, with what `plan_set` chooses from.
+
+    One read of every open issue and the claim refs at once, field values
+    taken from that same read, and the verdict of `evaluate_pool` for `--mode`.
+    `extra` names issues outside the pool whose fields are wanted too, such as
+    stories a person named. Returns a dict: `issues`, `by_num`, `claimed`,
+    `facets`, `verdict`, and `universe`, `rank` and `reasons` from
+    `wf_core.plan_universe`.
+    """
+    ok, issues, err, claimed = read_pool(cfg)
+    if not ok:
+        emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
+    present = {i['number'] for i in issues}
+    numbers = sorted(set(_prefilter_numbers(issues, claimed))
+                     | {int(n) for n in extra if int(n) in present})
+    facets = load_issue_facets(cfg, numbers, issues=issues)
+    type_map, classification_map = _mode_maps(cfg, args.mode, facets)
+    verdict = wf_core.evaluate_pool(
+        issues, mode=args.mode, type_map=type_map,
+        classification_map=classification_map, priority_map=facets['priority'],
+        effort_map=facets['effort'], ownership_map=facets['ownership'],
+        claimed=claimed, max_effort=getattr(args, 'max_effort', None))
+    universe, rank, reasons = wf_core.plan_universe(verdict, issues, claimed)
+    return {'issues': issues, 'by_num': {i['number']: i for i in issues},
+            'claimed': claimed, 'facets': facets, 'verdict': verdict,
+            'universe': universe, 'rank': rank, 'reasons': reasons}
+
+
+def prerequisite_pick(args, cfg, cand, blockers):
+    """`pick --issue N` for an issue that waits on open issues: build the
+    first prerequisite instead of refusing.
+
+    A named issue blocked by work this run can build is not a dead end. The
+    plan puts every prerequisite before it; this claims the first one that is
+    ready, sets N to Blocked so the sweep releases it when the last blocker
+    merges, and reports the whole order under `prerequisite_for`, so the caller
+    can go on to N afterwards. Only a blocker nobody here may build (owned by a
+    person, somebody else's, or waiting on such an issue itself) ends the pick,
+    and the reason names it.
+    """
+    pool = read_plan_pool(cfg, args)
+    by_num, universe = pool['by_num'], pool['universe']
+    number = cand['number']
+    universe[number] = {'blockers': list(blockers),
+                        'parent': (by_num.get(number) or {}).get('parent')}
+    plan = wf_core.plan_set(universe, pool['rank'], seeds=[number], max_size=None,
+                            reasons=pool['reasons'])
+    side_effects = []
+    if (wf_core.stage_name((by_num.get(number) or {}).get('stage'))
+            != wf_core.STAGE_NAMES['stage-blocked']):
+        block_in_pool(cfg, {number: list(blockers)}, side_effects)
+    left_out = {e['number']: e['reason'] for e in plan['excluded']}
+    if number in left_out:
+        emit('all-blocked', EXIT_ALL_BLOCKED, number=number,
+             blocked_by=list(blockers), side_effects=side_effects,
+             reason='issue #%d %s' % (number, left_out[number]))
+    order = [s['number'] for s in plan['selected']]
+    ready = [by_num[s['number']] for s in plan['selected']
+             if not s['blocked_by'] and s['number'] != number
+             and s['number'] in by_num]
+    selected, effects = claim_validate_walk(cfg, ready, None, (),
+                                            start_date=args.checkout)
+    side_effects.extend(effects)
+    if not selected:
+        emit('all-blocked', EXIT_ALL_BLOCKED, number=number,
+             blocked_by=list(blockers), build_order=order,
+             side_effects=side_effects,
+             reason='issue #%d waits on %s, and every prerequisite that could '
+                    'start was claimed away, blocked or already resolved'
+                    % (number, ', '.join('#%d' % b for b in blockers)))
+    entry = next(s for s in plan['selected'] if s['number'] == selected['number'])
+    finish_pick(args, cfg, selected, side_effects, None,
+                unblocks=[{'number': m, 'title': (by_num.get(m) or {}).get('title', '')}
+                          for m in entry['unblocks']],
+                prerequisite_for={'number': number, 'title': cand['title'],
+                                  'build_order': order})
 
 
 def cmd_pick(args):
@@ -253,7 +349,15 @@ def cmd_pick(args):
     # path auto-closes an already-resolved story exactly like auto-pick does.
     if getattr(args, 'issue', None):
         cand = fetch_issue_candidate(cfg, args.issue)
-        selected, side_effects = claim_validate_walk(cfg, [cand], None, siblings)
+        edges = known_edges(cand)
+        if edges is not None and not siblings:
+            # A bulk claim names its siblings and must claim exactly the story
+            # it asked for, so only a single-story pick is redirected.
+            waiting_on = wf_core.edge_states(edges)[0]
+            if waiting_on and len(waiting_on) <= wf_core.DEP_LIMIT:
+                prerequisite_pick(args, cfg, cand, waiting_on)
+        selected, side_effects = claim_validate_walk(cfg, [cand], None, siblings,
+                                                     start_date=args.checkout)
         if not selected:
             emit('all-blocked', EXIT_ALL_BLOCKED,
                  reason='issue #%d is not workable (claimed away, blocked, or '
@@ -296,7 +400,8 @@ def cmd_pick(args):
              backlog_mode=backlog_mode, side_effects=side_effects)
 
     finish_pick(args, cfg, outcome['selected'], side_effects, backlog_mode,
-                container=outcome['container'], offered=outcome['offered'])
+                container=outcome['container'], offered=outcome['offered'],
+                unblocks=outcome['unblocks'])
 
 
 REFINEMENT_COMMENT = (
@@ -341,14 +446,15 @@ def block_in_pool(cfg, blocked, side_effects):
 def _pick_round(cfg, args, siblings, side_effects):
     """Read the pool, judge it, and walk it once. Emits and exits on a hard
     stop; otherwise returns what it chose and what it read."""
-    ok, issues, err = assemble_candidates(cfg)
+    ok, issues, err, claimed = read_pool(cfg)
     if not ok:
         emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
-    claimed = claimed_issue_numbers()
 
     # The org's own view of the issues still in the running: native type,
-    # Priority, Effort, Ownership, Classification. All five decide the pool.
-    facets = load_issue_facets(cfg, _prefilter_numbers(issues, claimed))
+    # Priority, Effort, Ownership, Classification. All five decide the pool,
+    # and the pool read already carries them.
+    facets = load_issue_facets(cfg, _prefilter_numbers(issues, claimed),
+                               issues=issues)
     type_map = facets['types'] or None
     classification_map = None
     if args.mode != 'story':
@@ -370,7 +476,7 @@ def _pick_round(cfg, args, siblings, side_effects):
     by_num = {i['number']: i for i in issues}
     outcome = {'verdict': verdict, 'backlog_mode': backlog_mode,
                'priority': facets['priority'], 'selected': None,
-               'container': None, 'offered': []}
+               'container': None, 'offered': [], 'unblocks': []}
 
     tried = set()
     for entry in verdict['ranked']:
@@ -395,11 +501,18 @@ def _pick_round(cfg, args, siblings, side_effects):
         tried.update(c['number'] for c in walk)
         if not walk:
             continue
-        selected, effects = claim_validate_walk(cfg, walk, backlog_mode, siblings)
+        selected, effects = claim_validate_walk(cfg, walk, backlog_mode, siblings,
+                                                start_date=args.checkout)
         side_effects.extend(effects)
         if not selected:
             continue
         outcome['selected'] = selected
+        # The waiting stories this one frees, so the caller knows what its
+        # merge releases and which story the sweep will offer next.
+        outcome['unblocks'] = [
+            {'number': w, 'title': (by_num.get(w) or {}).get('title', '')}
+            for w, blockers in sorted((verdict.get('waiting') or {}).items())
+            if selected['number'] in blockers]
         if stories is not None:
             outcome['container'] = {'number': entry['number'], 'title': entry['title'],
                                     'type': entry.get('type'),
@@ -412,12 +525,15 @@ def _pick_round(cfg, args, siblings, side_effects):
 
 
 def finish_pick(args, cfg, selected, side_effects, backlog_mode, container=None,
-                offered=()):
+                offered=(), unblocks=(), prerequisite_for=None):
     """Build the `ok` result for a selected story, optionally checking out, and emit.
 
     `container` and `offered` are set when the pick came through an Epic or
     Feature: the story claimed is the first of the stories it offers, and
     `offered` is the rest, which the caller may build alongside it.
+    `unblocks` lists the waiting stories this one frees, and
+    `prerequisite_for` is set when the story was claimed in place of a named
+    issue that waits on it.
     """
     result = {
         'number': selected['number'],
@@ -438,15 +554,26 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode, container=None,
     if container:
         result['container'] = container
         result['offered'] = list(offered)
+    if unblocks:
+        result['unblocks'] = list(unblocks)
+    if prerequisite_for:
+        result['prerequisite_for'] = prerequisite_for
 
     if args.checkout:
-        written, stage_msg = best_effort(stage_in_progress, cfg,
-                                         selected['number'])
+        # The claim walk wrote both already, in one mutation, when it could.
+        if '_stage_result' in selected:
+            written, stage_msg = selected['_stage_result']
+        else:
+            written, stage_msg = best_effort(stage_in_progress, cfg,
+                                             selected['number'])
         result['stage_set'] = written
         result['stage_message'] = stage_msg
         if not written:
             eprint('wf: Stage not set — %s' % stage_msg)
-        dated, date_msg = best_effort(set_start_date, cfg, selected['number'])
+        if '_date_result' in selected:
+            dated, date_msg = selected['_date_result']
+        else:
+            dated, date_msg = best_effort(set_start_date, cfg, selected['number'])
         result['start_date_set'] = dated
         result['start_date_message'] = date_msg
         if getattr(args, 'no_branch', False):
@@ -482,7 +609,7 @@ def cmd_candidates(args):
 
     `pick` collapses select-claim-branch into one call, which is exactly right
     when the caller wants *a* story. `bulk-execute` needs the opposite: it has
-    to see the pool before it can decide which two to five stories belong in
+    to see the pool before it can decide which two to seven stories belong in
     one pull request, and that decision is a judgement about relatedness that
     no sort order can make. This command gives it the same filtered, sorted
     pool `pick` would walk — blank or Backlog `Stage`, sprint narrowing,
@@ -506,12 +633,12 @@ def cmd_candidates(args):
     if not cfg.get('org') or not cfg.get('repo'):
         emit('error', EXIT_ENV, reason='org/repo missing from config')
 
-    ok, issues, err = assemble_candidates(cfg)
+    ok, issues, err, claimed = read_pool(cfg)
     if not ok:
         emit('error', EXIT_ENV, reason='candidate fetch failed: %s' % err)
-    claimed = claimed_issue_numbers()
 
-    facets = load_issue_facets(cfg, _prefilter_numbers(issues, claimed))
+    facets = load_issue_facets(cfg, _prefilter_numbers(issues, claimed),
+                               issues=issues)
     priority_map = facets['priority']
     type_map, classification_map = _mode_maps(cfg, args.mode, facets)
     backlog_mode, verdict = pool_verdict(cfg, args, issues, claimed, facets,
@@ -548,7 +675,7 @@ def cmd_candidates(args):
     if args.limit and args.limit > 0:
         pool = pool[:args.limit]
 
-    edge_map, edges_unknown = issue_edges_map(cfg, [c['number'] for c in pool])
+    edge_map, edges_unknown = pool_edges(cfg, [c['number'] for c in pool], by_num)
     listed = []
     for cand in pool:
         item = _candidate_entry(cand, edge_map.get(cand['number']) or [],
@@ -576,6 +703,26 @@ def cmd_candidates(args):
          # caller reading a long tail of unranked work knows why.
          unprioritised_count=len([c for c in pool
                                   if not priority_map.get(c['number'])]))
+
+
+def pool_edges(cfg, numbers, by_num):
+    """The blocked-by edges of `numbers`. (found, unknown), as `issue_edges_map`.
+
+    The pool read already holds every issue's edges, so only an issue whose
+    read could not see all of them is asked for again.
+    """
+    found, again = {}, []
+    for n in numbers:
+        edges = known_edges(by_num.get(n) or {})
+        if edges is None:
+            again.append(n)
+        else:
+            found[n] = edges
+    unknown = []
+    if again:
+        more, unknown = issue_edges_map(cfg, again)
+        found.update(more)
+    return found, unknown
 
 
 def _candidate_entry(cand, edges, edges_unknown, maps, body_chars):
@@ -660,7 +807,8 @@ def candidates_under_parent(args, cfg, pool, maps, verdict=None, by_num=None):
     out_stages, out_types = {}, {}
     blocked, refused = {}, {}
     if outside:
-        facets = load_issue_facets(cfg, outside)
+        facets = load_issue_facets(cfg, outside,
+                                   issues=list((by_num or {}).values()))
         out_maps = {k: facets.get(k) or {} for k in out_maps}
         out_stages = facets.get('stage') or {}
         out_types = facets.get('types') or {}
@@ -715,7 +863,7 @@ def candidates_under_parent(args, cfg, pool, maps, verdict=None, by_num=None):
                               % wf_core.STAGE_NAMES['stage-blocked'])
                 del blocked[n]
 
-    edge_map, edges_unknown = issue_edges_map(cfg, list(pool_by))
+    edge_map, edges_unknown = pool_edges(cfg, list(pool_by), by_num or {})
     blocked_edges = {n: ((i.get('blockedBy') or {}).get('nodes')) or []
                      for n, i in blocked.items()}
     deps = {}

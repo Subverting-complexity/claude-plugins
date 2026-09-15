@@ -8,13 +8,14 @@ from wf_core_select import HIERARCHY_CONTAINER_TYPES
 
 
 # ── Bulk set planning (bulk-execute) ─────────────────────────────────────────
-# `bulk-execute` builds two to five related stories on one branch behind one
-# pull request. Two of its decisions are pure enough to live here rather than
-# in prose: which dependencies still block a story that is being built
-# alongside its own dependency, and what order the set has to be built in.
+# `bulk-execute` builds two to seven connected stories on one branch behind
+# one pull request. Its decisions are pure enough to live here rather than in
+# prose: which dependencies still block a story that is being built alongside
+# its own dependency, which stories are connected at all, and what order and
+# which parallel waves the set has to be built in.
 
 BULK_MIN = 2
-BULK_MAX = 5
+BULK_MAX = 7
 
 
 def blocking_dependencies(deps, open_numbers, siblings=()):
@@ -223,3 +224,230 @@ def choose_parent_set(root, pool_order, deps, reasons=None, max_size=BULK_MAX,
     excluded += [{'number': n, 'reason': 'in another repository'}
                  for n in foreign]
     return {'group': group, 'selected': kept, 'excluded': excluded}
+
+
+# ── a connected set, dependencies first (`plan-set`) ─────────────────────────
+# The rules that decide which stories are one change and in what order, for
+# every way a set is chosen: named stories, the open pool, and `execute`
+# asking what a blocked story is waiting on. Two stories are connected when a
+# blocked-by edge joins them, directly or through a shared prerequisite, or
+# when they share a parent. A dependency never removes a story from a set; it
+# decides where in the order the story goes. Only a blocker this run cannot
+# build does, because then nothing in the set can finish the story.
+
+
+def dependency_waves(stories):
+    """Group a set already in build order into waves that can run in parallel.
+
+    `stories` carry `number` and `blocked_by` (blockers inside the set). A
+    story's wave is one more than the latest wave of anything it waits on, so
+    every story in a wave depends only on earlier waves and the stories inside
+    one wave are independent of each other. Returns a list of number lists.
+    """
+    present = {s['number'] for s in stories}
+    level = {}
+    for story in stories:
+        inside = [b for b in story.get('blocked_by') or () if b in present]
+        level[story['number']] = 1 + max((level.get(b, 0) for b in inside),
+                                         default=-1)
+    waves = []
+    for story in stories:
+        index = level[story['number']]
+        while len(waves) <= index:
+            waves.append([])
+        waves[index].append(story['number'])
+    return waves
+
+
+def plan_set(universe, rank, seeds=None, max_size=BULK_MAX, reasons=None,
+             within=None):
+    """Choose a connected set of stories and the order and waves to build it in.
+
+    `universe` is every story a run could take, `{number: {'blockers': [open
+    blocker numbers] or None when the edges could not all be read, 'parent':
+    number or None}}`. A story with no open blocker is ready; one with open
+    blockers waits, and it is still takeable when every blocker is takeable
+    too. `rank` is the universe in priority order. `reasons` explains any
+    other open issue (`{number: why it cannot be taken}`), so a blocker or a
+    named story outside the universe is excluded with the reason it is out.
+
+    - **Named** (`seeds`): each named story plus every prerequisite it needs
+      that this run can build, even one nobody named. A named story waiting on
+      something the run cannot build is excluded. Nothing else is added.
+    - **Open** (no seeds): the lead is the highest-ranked story whose whole
+      prerequisite chain fits in `max_size`, ready or waiting, so a
+      high-priority story pulls in the lower-priority issue that blocks it
+      instead of being passed over. The rest of the lead's connected group
+      joins in priority order while it fits, each with its own chain.
+
+    Returns `{'lead', 'selected', 'waves', 'excluded', 'components',
+    'unrelated'}`. `selected` is in build order: a story always follows every
+    story it waits on, and otherwise keeps priority (or named) order. Each
+    entry carries `number`, `wave`, `blocked_by` and `unblocks` (inside the
+    set) and `why`. `components` groups the set by connection, and `unrelated`
+    is True when a named set falls into more than one group.
+
+    `within`, in open mode, limits which stories may lead or join the set, as
+    `--parent` does to the stories under one container. A prerequisite outside
+    it is still built when a story inside needs it.
+    """
+    reasons = reasons or {}
+    rank_index = {n: i for i, n in enumerate(rank)}
+    seeds = [int(s) for s in (seeds or ())]
+    cap = max_size if max_size and max_size > 0 else None
+    excluded = {}
+    verdicts = {}
+
+    def cannot_build(n, trail=()):
+        """Why `n` cannot be built by this run, or None when it can."""
+        if n in verdicts:
+            return verdicts[n]
+        if n in trail:
+            return 'a dependency cycle runs through it (%s)' % ' -> '.join(
+                '#%d' % t for t in trail + (n,))
+        if n not in universe:
+            verdicts[n] = reasons.get(n) or 'not open, or not an issue this run may take'
+            return verdicts[n]
+        blockers = universe[n].get('blockers')
+        why = None
+        if blockers is None:
+            why = 'its blocked-by edges could not all be read'
+        else:
+            for b in blockers:
+                inner = cannot_build(b, trail + (n,))
+                if inner:
+                    why = 'waits on #%d, which this run cannot build: %s' % (b, inner)
+                    break
+        verdicts[n] = why
+        return why
+
+    def chain(n, out=None):
+        """`n` and every prerequisite under it, blockers first."""
+        out = [] if out is None else out
+        for b in universe[n].get('blockers') or ():
+            if b not in out:
+                chain(b, out)
+        if n not in out:
+            out.append(n)
+        return out
+
+    chosen, why = [], {}
+
+    def take(n, reason):
+        needed = [c for c in chain(n) if c not in chosen]
+        if cap is not None and len(chosen) + len(needed) > cap:
+            return False
+        for c in needed:
+            chosen.append(c)
+            why.setdefault(c, reason if c == n else 'prerequisite of #%d' % n)
+        return True
+
+    lead = None
+    if seeds:
+        for s in seeds:
+            reason = cannot_build(s)
+            if reason:
+                excluded[s] = reason
+            elif s not in chosen and not take(s, 'named'):
+                excluded[s] = ('left out by the size cap: it and its prerequisites '
+                               'do not fit beside the stories named before it')
+    else:
+        ordered_rank = sorted((n for n in universe if within is None or n in within),
+                              key=lambda n: rank_index.get(n, len(rank)))
+        for n in ordered_rank:
+            if cannot_build(n) is None and (cap is None or len(chain(n)) <= cap):
+                lead = n
+                break
+        if lead is not None:
+            take(lead, 'lead')
+            group = _connected(universe, lead, lambda n: cannot_build(n) is None)
+            for n in ordered_rank:
+                if n in group and n not in chosen:
+                    take(n, _link_reason(universe, n, chosen))
+        for n in ordered_rank:
+            if n not in chosen:
+                reason = cannot_build(n)
+                if reason:
+                    excluded[n] = reason
+
+    order_key = {s: i for i, s in enumerate(seeds)} if seeds else rank_index
+    placed, ordered = set(), []
+    remaining = sorted(chosen, key=lambda n: (order_key.get(n, len(order_key)),
+                                              rank_index.get(n, len(rank))))
+    while remaining:
+        nxt = next(n for n in remaining
+                   if set(universe[n].get('blockers') or ()) <= placed)
+        ordered.append(nxt)
+        placed.add(nxt)
+        remaining.remove(nxt)
+
+    stories = []
+    for n in ordered:
+        stories.append({
+            'number': n,
+            'blocked_by': list(universe[n].get('blockers') or ()),
+            'unblocks': [m for m in ordered
+                         if n in (universe[m].get('blockers') or ())],
+            'why': why.get(n, 'named')})
+    waves = dependency_waves(stories)
+    wave_of = {n: i for i, wave in enumerate(waves) for n in wave}
+    for story in stories:
+        story['wave'] = wave_of[story['number']]
+
+    components = _components(universe, ordered)
+    return {'lead': ordered[0] if ordered else None, 'selected': stories,
+            'waves': waves,
+            'excluded': [{'number': n, 'reason': r}
+                         for n, r in sorted(excluded.items())],
+            'components': components,
+            'unrelated': bool(seeds) and len(components) > 1}
+
+
+def _linked(universe, n, m):
+    """Whether a direct link joins two stories: an edge, a shared
+    prerequisite, or a shared parent."""
+    mine, other = universe[n], universe[m]
+    mine_b, other_b = set(mine.get('blockers') or ()), set(other.get('blockers') or ())
+    return bool(m in mine_b or n in other_b or mine_b & other_b
+                or (mine.get('parent') and mine.get('parent') == other.get('parent')))
+
+
+def _connected(universe, start, allowed):
+    """Every story reachable from `start` through links, within `allowed`."""
+    members = [n for n in universe if n == start or allowed(n)]
+    seen, frontier = {start}, [start]
+    while frontier:
+        n = frontier.pop()
+        for m in members:
+            if m not in seen and _linked(universe, n, m):
+                seen.add(m)
+                frontier.append(m)
+    return seen
+
+
+def _components(universe, numbers):
+    """The set split into groups joined by links, in build order."""
+    left, groups = list(numbers), []
+    while left:
+        group = _connected(universe, left[0], lambda n: n in numbers)
+        groups.append([n for n in numbers if n in group])
+        left = [n for n in left if n not in group]
+    return groups
+
+
+def _link_reason(universe, n, chosen):
+    """Why `n` belongs beside the stories already chosen, in words."""
+    mine = universe[n]
+    for m in chosen:
+        if m in (mine.get('blockers') or ()):
+            return 'depends on #%d' % m
+        if n in (universe[m].get('blockers') or ()):
+            return 'prerequisite of #%d' % m
+    for m in chosen:
+        other = universe[m]
+        shared = set(mine.get('blockers') or ()) & set(other.get('blockers') or ())
+        if shared:
+            return 'shares prerequisite #%d with #%d' % (min(shared), m)
+        if mine.get('parent') and mine.get('parent') == other.get('parent'):
+            return 'same parent (#%d) as #%d' % (mine['parent'], m)
+    return 'connected to the set'

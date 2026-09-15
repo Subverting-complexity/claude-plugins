@@ -212,6 +212,19 @@ class TestRepoHost(unittest.TestCase):
             self.assertEqual(spec['hookEventName'], 'SubagentStart')
             self.assertIn('Azure DevOps', spec['additionalContext'])
 
+    def test_a_subagent_in_a_github_repository_is_told_nothing(self):
+        """GitHub is what every workflow assumes, so the line would cost every
+        subagent context and change nothing; the session is still told."""
+        with tempfile.TemporaryDirectory() as root:
+            self.repo(root, 'https://github.com/Subverting-complexity/claude-plugins.git')
+            self.assertEqual(self.run_hook(root.replace('\\', '/'), 'SubagentStart'), '')
+            self.assertIn('Repository host: GitHub.', self.run_hook(root.replace('\\', '/')))
+        for url in ('https://gitlab.com/g/r.git', 'https://git.example.com/repo.git'):
+            with self.subTest(url=url), tempfile.TemporaryDirectory() as root:
+                self.repo(root, url)
+                out = json.loads(self.run_hook(root.replace('\\', '/'), 'SubagentStart'))
+                self.assertIn('GitHub', out['hookSpecificOutput']['additionalContext'])
+
 
 if __name__ == '__main__':
     unittest.main()
