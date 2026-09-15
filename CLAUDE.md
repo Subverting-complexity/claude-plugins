@@ -93,31 +93,16 @@ Without the marketplace refresh, `plugin update` reports "already at latest" aga
 
 CI checks both, plus the accepted top-level and per-entry keys, in the *Validate plugin manifests* job. Claude Code silently ignores a key it does not recognise, which is why the gate rejects one rather than warning.
 
-## Declaring a plugin in a consuming project
+## Installing the plugin for a project
 
-A project can commit its plugin dependency to `.claude/settings.json`, so that sessions opened in that repository enable the plugin without anyone installing it by hand:
+Install the plugin per machine, at user scope, and never commit it into a consuming project. A project's `.claude/settings.json` must not carry `enabledPlugins` or `extraKnownMarketplaces` for this marketplace, and `claude plugin install --scope project` must not be used, because it writes `enabledPlugins` into that file.
 
-```bash
-claude plugin install github-workflow@subverting-complexity --scope project
-```
-
-Be aware of how that install splits itself across two files, because the split is easy to misread. The command writes `enabledPlugins` into the **project** settings, which is the part that gets committed, but it records the marketplace under `extraKnownMarketplaces` in the **user** settings, which stays on the machine that ran it.
-
-The consequence is that a committed `enabledPlugins` entry names a marketplace the repository never declares. Adding `extraKnownMarketplaces` to the project settings alongside it looks like the fix, and it is harmless, but it does **not** work: a config that has never registered the marketplace does not fetch it on the strength of a project-level declaration. Verified against v2.1.220, in a repository whose committed settings declared both keys:
-
-| User config | Project settings | Result |
-| ----------- | ---------------- | ------ |
-| Marketplace never added | Both keys | `No plugins installed` — nothing fetched |
-| Marketplace added | `enabledPlugins` only | Resolves, `Scope: project` |
-| Marketplace added | Both keys | Resolves, `Scope: project` |
-
-So the marketplace registration is a per-machine step that cannot be committed. Each developer runs this once, ever, and it covers every repository they subsequently clone:
+A committed entry pins the plugin by name, so a rename or a merge in this marketplace makes it stop resolving in every repository that carries it, and the failure is silence rather than an error. It also does not fetch anything on a machine that has never added the marketplace. Each developer runs these once, and they cover every repository:
 
 ```bash
 claude plugin marketplace add Subverting-complexity/claude-plugins
+claude plugin install github-workflow@subverting-complexity
 ```
-
-After that one command, a repository's committed `enabledPlugins` is enough on its own — no `plugin install` per project. That is the real benefit of committing the declaration, and it is worth saying plainly in a consuming project's own README, because the failure mode when the marketplace is missing is silence rather than an error.
 
 ## Supplementary Files
 
@@ -126,6 +111,6 @@ These files provide context for specific workflows. You don't need to read all o
 | File | When to consult |
 | ---- | --------------- |
 | `ClaudeProject.md` | Project identity, labels, quality gate, branch convention, issue fields. Read at the start of any workflow command. |
-| `docs/consumers.md` | Which repos depend on these plugins. Read before cutting a major or otherwise breaking release, to judge the blast radius. |
+| `docs/consumers.md` | Which repos depend on the plugin. Read before cutting a major or otherwise breaking release, to judge the blast radius. |
 | `docs/review.config.md` | Review-state labels, the non-compliance gates a PR must clear, tech-stack review rules, and the auto-merge settings. Read when reviewing a PR or when asking why a run did or did not merge. Auto-merge is enabled here, so a finished `execute` run merges its own PR once the review approves. |
 | `.claude/ecosystem.md` | Installed Claude Code companion tool cheat-sheet (Graphify, RTK, ccusage, ecc-agentshield). Read before searching the codebase or running an audit/review: prefer `graphify query` over blind file search; run `ecc-agentshield scan` when touching config files; use `npx ccusage` to check token spend. |

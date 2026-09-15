@@ -40,7 +40,7 @@ Run these from a normal shell, not inside a Claude Code session — the CLI bloc
 
 Check what you actually have with `claude plugin list`, and compare against the version in [`github-workflow/.claude-plugin/plugin.json`](github-workflow/.claude-plugin/plugin.json). [`CHANGELOG.md`](CHANGELOG.md) says what changed and what breaks.
 
-**Registering the marketplace is a per-machine step, once ever.** A repo can commit `enabledPlugins` to its own `.claude/settings.json`, so sessions opened there enable the plugin without anyone installing it by hand — but a machine that has never run `claude plugin marketplace add` fetches nothing and reports *No plugins installed*, with no error explaining why. See [`CLAUDE.md`](CLAUDE.md#declaring-a-plugin-in-a-consuming-project) for the verified behaviour matrix.
+**Install per machine, not per project.** Add the marketplace and install the plugin once on each machine, and do not commit `enabledPlugins` or `extraKnownMarketplaces` into a project's `.claude/settings.json`. A committed entry stops resolving without any error when the plugin is renamed. See [`CLAUDE.md`](CLAUDE.md#installing-the-plugin-for-a-project).
 
 ### Configuring `github-workflow`
 
