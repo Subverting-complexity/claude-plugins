@@ -6,6 +6,20 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 14.1.0
+
+**Nothing is posted outside GitHub without asking.** The plugin posts only to GitHub, through `gh`. A new hook checks every shell and MCP tool call, and anything that would write to Azure DevOps, GitLab or Bitbucket becomes a permission prompt: their CLIs (`az repos`, `az boards`, `glab`), a REST call to their hosts, a push to a remote they host, or one of their MCP tools. It finds a write inside `$( )`, behind `if`, `timeout` or `bash -c`, after a `cd`, or aimed at a URL held in a variable, and ignores text inside quotes and heredocs. Reads pass untouched, and the check adds nothing to what a chat loads.
+
+**GitHub writes only where this machine allows.** Each person can keep their own list, on their own machine and never in a repository, at `~/.claude/synergy/github-allowlist.json`:
+
+```json
+{ "account": "AdrienneBosch", "owners": ["Subverting-complexity"] }
+```
+
+With the file present, a GitHub write (a push, a pull request, an issue, a comment, a label, a merge, a `gh api` write, a `wf` command that writes, a GitHub MCP write) is blocked outright when its owner is not listed, when its owner cannot be worked out, or when `gh` is signed in as a different account. A personal account is not allowed unless it is listed. Reads and clones anywhere still work. Without the file nothing changes.
+
+**Reviews outside GitHub stay in the chat.** `verify-feature` and the local review in `pr-review` return their report in the conversation only, never as a comment or vote on any platform, and no longer remark on where the repository is hosted. Asked to review a pull request on another platform, `pr-review` reviews its branch locally.
+
 ## synergy 14.0.0
 
 **Renamed from `github-workflow` to `synergy`** (Issue #283). Since 13.0.0 the plugin also covers local work with no GitHub at all, so the old name no longer described it. Every command is now `/synergy:*`, the agents are `synergy:Builder` and `synergy:Reviewer`, and an install named `github-workflow@subverting-complexity` no longer resolves. `preflight` warns about a project `CLAUDE.md` or `ClaudeProject.md` that still names `/github-workflow:` commands, and `wf` keeps using a virtualenv set up under the old name.

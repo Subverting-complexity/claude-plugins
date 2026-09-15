@@ -37,6 +37,8 @@ allowed-tools:
 
 **Pull request or local change.** Review a pull request when a PR number is given, when asked to review PRs, from `execute` or `bulk-execute`, or from a scheduled routine: that is the workflow in this file. For anything else (uncommitted work, a branch with no PR, a commit, named files, "verify this feature", "is this ready?") follow `references/local-review.md` instead and skip everything below; add `references/react-native.md` when the change is React Native or Expo code.
 
+Pull requests are reviewed only on GitHub. On a repository hosted anywhere else (Azure DevOps, GitLab, Bitbucket), a request to review a pull request becomes a local review of its branch, and nothing is posted to that platform.
+
 Review one open pull request end to end: find it, claim it, read the code in context, fix what can be fixed, post one structured comment, apply labels, exit. If no PR needs review or anything goes wrong, exit.
 
 ## Prerequisites

@@ -95,6 +95,12 @@ Without the marketplace refresh, `plugin update` reports "already at latest" aga
 
 CI checks both, plus the accepted top-level and per-entry keys, in the *Validate plugin manifests* job. Claude Code silently ignores a key it does not recognise, which is why the gate rejects one rather than warning.
 
+## Posting only to GitHub
+
+The plugin posts only to GitHub. Only the GitHub workflows (`execute`, `bulk-execute`, pull request review in `pr-review`, `writing-github-issues`, `report-issue`) post anything, and a skill a person runs on any repository, such as `verify-feature` or a local review, returns its result in the chat. `hooks/forge-guard.sh` enforces it: a tool call that would write to Azure DevOps, GitLab or Bitbucket becomes a permission prompt. The decision lives in `scripts/forge_guard.py` and is tested in `tests/test_forge_guard.py`; `lint-skills.sh` fails if `hooks.json` stops running the guard.
+
+The same hook also limits GitHub writes to what each machine allows. The list is personal and lives at `~/.claude/synergy/github-allowlist.json` (`account` and `owners`), never in a repository, so each developer sets their own. With it present, a GitHub write to an owner not listed, or made while `gh` is signed in as another account, is denied outright; without it nothing is restricted. That check is `scripts/github_guard.py`, tested in `tests/test_github_guard.py`. Both guards split commands with `scripts/command_parse.py`.
+
 ## Installing the plugin for a project
 
 Install the plugin per machine, at user scope, and never commit it into a consuming project. A project's `.claude/settings.json` must not carry `enabledPlugins` or `extraKnownMarketplaces` for this marketplace, and `claude plugin install --scope project` must not be used, because it writes `enabledPlugins` into that file.
