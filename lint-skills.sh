@@ -289,6 +289,12 @@ for plugin in synergy; do
         echo "FAIL: $hooks_file does not run hooks/forge-guard.sh — a run could post outside GitHub without asking"
         status=1
     fi
+    # Without the host hook a session in an Azure DevOps repository is not
+    # told it is not on GitHub, and reaches for gh and the GitHub workflows.
+    if [ -f "$hooks_file" ] && ! grep -q 'repo-host.sh' "$hooks_file"; then
+        echo "FAIL: $hooks_file does not run hooks/repo-host.sh — a session would not be told which platform hosts the repository"
+        status=1
+    fi
 done
 
 echo ""

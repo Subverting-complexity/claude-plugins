@@ -32,7 +32,7 @@ gh auth status 2>&1 | head -3
 
 > This plugin runs your entire GitHub development workflow — from picking a story off your backlog to opening a PR. But first we need to set up your project.
 >
-> Run `/synergy:setup` and I'll walk you through it. I'll auto-detect your repo, package manager, and org issue fields, then ask you a few questions about your labels and branch convention. Takes about 2 minutes.
+> Run `/synergy:setup` and I'll walk you through it. I'll auto-detect your repo, package manager, and org issue fields, then ask you a few questions about your branch convention and quality gate. Takes about 2 minutes.
 
 **Config files exist but incomplete:**
 

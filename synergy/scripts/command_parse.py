@@ -704,10 +704,11 @@ def remote_url(cwd, remote):
     def git(*args):
         try:
             out = subprocess.run(['git'] + list(args), cwd=cwd or None,
-                                 capture_output=True, text=True, timeout=5)
+                                 capture_output=True, text=True,
+                                 encoding='utf-8', errors='replace', timeout=5)
         except (OSError, subprocess.SubprocessError):
             return ''
-        return out.stdout.strip() if out.returncode == 0 else ''
+        return (out.stdout or '').strip() if out.returncode == 0 else ''
 
     if remote is None:
         push = git('rev-parse', '--abbrev-ref', '--symbolic-full-name',

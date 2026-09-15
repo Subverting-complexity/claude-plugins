@@ -120,6 +120,10 @@ class TestMcpTools(unittest.TestCase):
             'mcp__azure-devops__repo_create_pull_request', {}))
         self.assertIsNotNone(outbound_post(
             'mcp__ado__wit_add_work_item_comment', {}))
+        self.assertIsNotNone(outbound_post(
+            'mcp__AzureDevOps__create_pull_request', {}))
+        self.assertIsNotNone(outbound_post(
+            'mcp__azdo__create_pull_request', {}))
         self.assertIsNone(outbound_post(
             'mcp__azure-devops__repo_list_pull_requests', {}))
         self.assertIsNone(outbound_post('mcp__github__create_issue', {}))

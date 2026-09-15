@@ -39,10 +39,9 @@ synergy/
 ├── skills/                    # See "Skills" below
 ├── commands/                  # block-story, guide, report-issue, setup
 ├── agents/                    # builder, reviewer
-├── references/
-│   └── story-template.md      # Shared story issue template
+├── references/                # Story template and the setup procedures
 ├── templates/                 # Canonical procedures + project-config templates
-├── hooks/                     # Quality-gate commit hook
+├── hooks/                     # Reply standard, repository host, write guard
 ├── settings.json              # Default agent = builder
 └── README.md                  # This file
 ```
@@ -56,7 +55,7 @@ Run `/synergy:setup` to onboard your project. The wizard:
 1. Auto-detects your org, repo, default branch, and package manager.
 2. Checks that the org defines the `Stage` issue field with its nine options, and records your project board if you have one.
 3. Checks for milestones to determine sprint vs flat backlog mode.
-4. Asks for your label scheme, branch convention, and quality gate.
+4. Asks for your branch convention and quality gate.
 5. Generates `ClaudeProject.md` (project settings) and `CLAUDE.md` (project rules) at your repo root.
 6. Optionally sets up Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and writes `.claude/ecosystem.md` so `execute` and `pr-review` use them automatically. This step is the shared `ecosystem-setup` skill — run it again any time with `/synergy:setup ecosystem`.
 
@@ -76,9 +75,11 @@ The plugin also reads two files from the host project:
 
 **`ClaudeProject.md`** (required) — The single source of truth for all project-specific values. Every command and the skill read this file. Full format specification: [`docs/claudeproject-spec.md`](../docs/claudeproject-spec.md).
 
-Required sections: Identity, Package Manager, Quality Gate, Branch Convention, Story Template, Issue Types & Fields.
+Required sections: Identity, Package Manager, Quality Gate, Branch Convention, Issue Types & Fields.
 
-Optional sections: Project Board, Reference Docs.
+Recommended sections: Story Template, Session Budget, Refinement.
+
+Optional sections: Project Board, Reference Docs, Bundled Skills.
 
 **`CLAUDE.md`** (required) — Project rules, build principles, and session hygiene.
 
@@ -154,7 +155,7 @@ Two ways to suppress a merge on a project that has it on: pass `--no-merge` for 
 
 ## Where it writes
 
-The plugin posts only to GitHub. A hook checks every shell and MCP tool call before it runs, and anything that would write to Azure DevOps, GitLab or Bitbucket asks you first. `verify-feature` and a local review return their report in the chat.
+The plugin posts only to GitHub. A hook checks every shell and MCP tool call before it runs, and anything that would write to Azure DevOps, GitLab or Bitbucket asks you first. `verify-feature` and a local review return their report in the chat. At the start of each session and each subagent, another hook reads the repository's remote and tells Claude whether it is on GitHub, Azure DevOps, GitLab or Bitbucket, so it does not use `gh` in a repository that is not on GitHub.
 
 To limit GitHub writes to your own organisations, create `~/.claude/synergy/github-allowlist.json` on your machine:
 

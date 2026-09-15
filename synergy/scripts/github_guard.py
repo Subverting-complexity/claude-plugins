@@ -162,7 +162,7 @@ def ssh_hostname(alias):
     """The host an SSH alias from ~/.ssh/config connects to, or None."""
     try:
         out = subprocess.run(['ssh', '-G', alias], capture_output=True,
-                             text=True, timeout=5)
+                             text=True, encoding='utf-8', errors='replace', timeout=5)
     except (OSError, subprocess.SubprocessError):
         return None
     m = re.search(r'^hostname\s+(\S+)', out.stdout or '', re.M)
@@ -188,10 +188,11 @@ def github_owner(url, ssh_host=None):
 def _git(cwd, *args):
     try:
         out = subprocess.run(['git'] + list(args), cwd=cwd or None,
-                             capture_output=True, text=True, timeout=5)
+                             capture_output=True, text=True,
+                             encoding='utf-8', errors='replace', timeout=5)
     except (OSError, subprocess.SubprocessError):
         return ''
-    return out.stdout.strip() if out.returncode == 0 else ''
+    return (out.stdout or '').strip() if out.returncode == 0 else ''
 
 
 def repo_owner(cwd):
@@ -230,7 +231,8 @@ def node_owners(ids):
     for node in ids:
         args += ['-f', 'ids[]=' + node]
     try:
-        out = subprocess.run(args, capture_output=True, text=True, timeout=15)
+        out = subprocess.run(args, capture_output=True, text=True,
+                             encoding='utf-8', errors='replace', timeout=15)
         nodes = (json.loads(out.stdout or '{}').get('data') or {}).get('nodes')
     except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
         nodes = None

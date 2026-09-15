@@ -6,6 +6,20 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 16.1.0
+
+**Claude is told where the repository is hosted.** A new `SessionStart` and `SubagentStart` hook, `hooks/repo-host.sh`, reads the remote from the git config file and says whether the repository is on GitHub, Azure DevOps, GitLab or Bitbucket. In a repository that is not on GitHub it tells Claude not to use `gh` or the GitHub workflows. It reads the file rather than running `git`, so it still works in a repository git refuses to open because another Windows user owns it, and it never prints the remote URL.
+
+**The write guard is faster and misses less.** The check that runs before every shell and MCP call now uses bash built-ins only, which took it from about 270 ms to about 110 ms per call on Windows with the same decisions. It now also checks Azure DevOps MCP tools named `azdo` or `AzureDevOps`. An allowed GitHub write is no longer denied when the repository path holds a letter such as Ł or č, which Windows could not decode.
+
+**Less is loaded on every run.** Branches most runs never reach now live in reference files read only when they apply: issue creation in `feature-discovery`, the CI bypass steps in auto-merge, each set-selection path in `bulk-execute`, audit mode and failure handling in `build`, and Phase 9 rework in `execute`. Every-run load falls from 15,826 to 14,527 tokens for `execute`, 22,126 to 17,983 for `bulk-execute`, 5,828 to 4,865 for `build` and 10,320 to 4,875 for `feature-discovery`. No instruction was dropped or changed. Every-chat load is 984 tokens, including the new host message.
+
+**Removed: the two `gh issue create` and `gh pr create` warning hooks.** Their matchers named a command, but a hook matcher only ever matches the tool name, so they never ran.
+
+**`wf.ps1` fixes.** It exits 20 again when Python is missing (it exited 1), it no longer runs `python python` when `python` is the only interpreter, it skips the Microsoft Store stub, and a failed virtualenv or requirements install is reported instead of "setup complete".
+
+**Documentation.** The root README no longer describes install-time options the plugin does not have, and the setup steps, required `ClaudeProject.md` sections, hooks folder and bundled skill list now match the plugin.
+
 ## synergy 16.0.0
 
 **The 15.0.0 skill renames are reverted.** `interview` is `grill` again, `correspondence` is `tone` again, and the `onboard` command is `setup` again, with its modes unchanged. The clashes are resolved by removing the other skills from the account instead, so projects keep the names they have always used. `docs/skill-names.md` and the preflight warning about the old names are gone with the rename.

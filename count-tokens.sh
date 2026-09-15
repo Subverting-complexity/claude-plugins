@@ -92,11 +92,13 @@ frontmatter_name() {
 
 # Characters of text every SessionStart hook puts into context. hooks.json
 # keeps one "command" per line; a command of the form echo '...' puts its
-# quoted text into context, so the echo and quotes are not counted.
+# quoted text into context, so the echo and quotes are not counted. A command
+# that runs hooks/<name>.sh counts as the longest say '...' line in that
+# script, since the script prints one of those messages.
 session_start_chars() {
     local hooks="$1"
     [ -f "$hooks" ] || { echo 0; return; }
-    awk '
+    awk -v dir="$(dirname "$hooks")" '
         # The SessionStart block ends at the next event key at its own indent
         # or shallower; the nested "hooks": [ inside it does not end it.
         /"SessionStart"[[:space:]]*:/ { inside = 1; match($0, /^[[:space:]]*/); indent = RLENGTH; next }
@@ -109,6 +111,15 @@ session_start_chars() {
             sub(/^[^:]*:[[:space:]]*"/, "", cmd)
             sub(/"[[:space:]]*,?[[:space:]]*$/, "", cmd)
             if (cmd ~ /^echo \047/) { sub(/^echo \047/, "", cmd); sub(/\047$/, "", cmd) }
+            else if (match(cmd, /hooks\/[A-Za-z0-9_-]+\.sh/)) {
+                script = dir "/" substr(cmd, RSTART + 6, RLENGTH - 6)
+                longest = 0
+                while ((getline line < script) > 0)
+                    if (match(line, /say \047[^\047]*\047/) && RLENGTH - 6 > longest) longest = RLENGTH - 6
+                close(script)
+                total += longest
+                next
+            }
             total += length(cmd)
         }
         END { print total + 0 }
@@ -406,6 +417,10 @@ EOF
           {
             "type": "command",
             "command": "echo 'five!'"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/host.sh\""
           }
         ]
       }
@@ -423,6 +438,7 @@ EOF
   }
 }
 EOF
+    printf '%s\n' "say 'abc'" "say 'seven!!'" > "$p/hooks/host.sh"
 
     REPO_ROOT="$tmp"
     PLUGIN_DIR="plug"
@@ -452,9 +468,10 @@ EOF
     budget="$saved_budget"
 
     # main: "plug:main" (9) + quoted description (22); cmd: "plug:cmd" (8) +
-    # quoted description (12); SessionStart: "five!" (5). hidden is left out.
+    # quoted description (12); SessionStart: "five!" (5) and
+    # host.sh's longest say, "seven!!" (7). hidden is left out.
     measure_every_chat
-    local expected=$(( 9 + 22 + 8 + 12 + 5 ))
+    local expected=$(( 9 + 22 + 8 + 12 + 5 + 7 ))
     [ "$every_chat_total" -eq "$expected" ] || { echo "self-test FAIL: every-chat total $every_chat_total chars, expected $expected"; fail=1; }
 
     if [ "$fail" -eq 0 ]; then

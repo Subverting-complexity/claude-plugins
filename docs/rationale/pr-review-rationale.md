@@ -3,7 +3,7 @@ name: pr-review-rationale
 description: Rationale behind the pr-review skill's design decisions. Not read at runtime. Maintainers read this; the runtime workflow does not load it.
 ---
 
-# Code-review skill — rationale (not read at runtime)
+# pr-review skill — rationale (not read at runtime)
 
 The "why" behind the imperative rules in `SKILL.md`. Maintainers and contributors read this; the runtime review workflow does **not** load it. Keep `SKILL.md` imperative; keep the reasoning here.
 
