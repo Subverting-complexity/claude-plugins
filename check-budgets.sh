@@ -193,6 +193,11 @@ self_test() {
 
 # --- Main -------------------------------------------------------------------
 
+# Sourced by count-tokens.sh for description_chars: define, never run.
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then
+    return 0
+fi
+
 if [ "${1:-}" = "--self-test" ]; then
     self_test
     exit $?

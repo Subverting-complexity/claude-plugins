@@ -6,7 +6,7 @@ This repo contains one Claude Code plugin, `github-workflow`, which covers GitHu
 
 ## CRITICAL RULES
 
-1. **Keep what loads into every session small.** Every skill, command and agent description, and the `SessionStart` hook, is in context for every session whether or not the plugin is used. `check-budgets.sh` caps a description at 240 characters. Put detail in the skill body or in a `references/` file loaded on demand, never in the description.
+1. **Keep what loads into every session small.** Every skill, command and agent description, and the `SessionStart` hook, is in context for every session whether or not the plugin is used. `check-budgets.sh` caps a description at 240 characters, and CI caps the total with `count-tokens.sh --every-chat`. Put detail in the skill body or in a `references/` file loaded on demand, never in the description.
 
    A skill that only a person ever runs by name, and that no skill, command or agent needs Claude to invoke, sets `disable-model-invocation: true` in its frontmatter. Claude Code then leaves its description out of context entirely while `/github-workflow:<name>` still works; the cost is that Claude can no longer invoke it, and asking in plain words no longer triggers it. `tone`, `support-request`, `acceptance-criteria` and `ecosystem-setup` carry it. A workflow that needs one of them reads its `SKILL.md` and follows it, as `setup` does for `ecosystem-setup`.
 
@@ -54,7 +54,7 @@ These workflows spawn parallel/background agents, each of which the harness plac
 | `lint-skills.sh` | Validate skill frontmatter and the wiring between skills and the standards they cite |
 | `run-tests.sh` | Run the offline decision-logic tests; auto-detects `python3`, `py -3` (Windows Launcher), or `python` |
 | `run-tests.ps1` | Windows PowerShell equivalent of `run-tests.sh`; prints a `winget` install hint if no Python is found |
-| `count-tokens.sh` | Estimate instruction-token footprint of a skill's hot path (file + cited templates/references, two levels deep); `--exclude PATH` narrows it to a subset, e.g. one workflow's build window |
+| `count-tokens.sh` | Report instruction load in three tiers: every chat (`--every-chat`: descriptions and the `SessionStart` hook), every run of a skill (its file plus references it cites without a condition, two levels deep), and on a trigger (references cited on a stated condition). `--budget` gates tier 1 or tier 2; tier 3 is never gated. A citation counts as conditional when its sentence, its paragraph's first sentence, or its list item says if, unless, when, whenever, only or except, so write "once" for a step every run reaches |
 | `check-budgets.sh` | Enforce per-file description-char and body-line budgets on skills and commands (ratchet gate) |
 | `count-roundtrips.sh` | Count `gh`/`git` network calls described in instruction files (informational, no gate) |
 | `hooks/pre-commit` | Git hook that blocks CRLF line endings |

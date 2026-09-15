@@ -89,6 +89,7 @@ The plugin and the tooling that checks it:
 ├── bootstrap.sh /.ps1    # one-time per-clone setup (LF line endings + hook)
 ├── lint-skills.sh        # validate skill frontmatter and wiring
 ├── check-budgets.sh      # cap description length and skill body size
+├── count-tokens.sh       # report and budget load: every chat, every run, on a trigger
 ├── hooks/pre-commit      # blocks CRLF line endings
 └── CLAUDE.md             # contributor guide (read this before editing)
 ```
