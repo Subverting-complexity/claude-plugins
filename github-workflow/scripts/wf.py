@@ -536,8 +536,25 @@ CAPABILITY_CACHE_NAME = 'issue-fields-cache.json'
 # `--refresh`. Version 2: before it, a capability query that failed with a
 # NOT_FOUND error was recorded as `owner_kind: user` -- an org read as a
 # personal account, cached forever, every issue thereafter created with no
-# type and no field values and no error anywhere.
-CAPABILITY_CACHE_SCHEMA = 2
+# type and no field values and no error anywhere. Version 3: records carry
+# `fetched_at`, so a record written before it has no age and is re-queried.
+CAPABILITY_CACHE_SCHEMA = 3
+
+# How long a successful answer is trusted. Before this, any record carrying a
+# type or a field was trusted forever, and the org's fields are not fixed: an
+# org that created `Stage` after the cache was written went on being reported
+# as having no `Stage`, and a field deleted since was still offered. The file
+# also outlives the run that wrote it -- a main checkout never runs Exit
+# cleanup, and a new worktree can start with a copy of that checkout's
+# `.claude/` -- so the age is stamped inside the record rather than read from
+# the file's mtime, which a copy resets.
+CAPABILITY_CACHE_MAX_AGE = 3600
+
+# A record missing a field the workflow cannot run without is re-queried once
+# it is older than this, whatever `CAPABILITY_CACHE_MAX_AGE` says. The short
+# grace stops an org that genuinely lacks the field from paying a round trip on
+# every call, while an org that has since created it is seen within minutes.
+CAPABILITY_CACHE_GAP_RECHECK = 300
 
 # Both halves of the org's capability surface in one round trip: the enabled
 # native issue types, and every issue field with its option ids.
@@ -685,7 +702,27 @@ def _denied_paths(errors):
     return denied
 
 
-def _capability_record_is_usable(cached):
+def _capability_record_gaps(cached, project_fields=None):
+    """What a workflow cannot run without and the cached record does not hold.
+
+    The mandatory fields, `Stage`, and every `Stage` option a transition
+    writes. Each one missing is a critical preflight finding, so a cached
+    record that lacks one is worth a round trip to confirm before reporting it.
+    Returns a list of names; empty when nothing is missing.
+    """
+    field_map = cached.get('field_map') or {}
+    keys = tuple(wf_core.MANDATORY_FIELD_KEYS) + ('field-stage',)
+    gaps = [n for n in (wf_core.resolve_field_name(k, project_fields or {})
+                        for k in keys) if n not in field_map]
+    stage = field_map.get(
+        wf_core.resolve_field_name('field-stage', project_fields or {})) or {}
+    have = {str(o).strip().lower() for o in (stage.get('options') or {})}
+    if stage:
+        gaps.extend(n for n in wf_core.STAGE_NAMES.values() if n.lower() not in have)
+    return gaps
+
+
+def _capability_record_is_usable(cached, project_fields=None, now=None):
     """Whether a cached capability record can be trusted without re-querying.
 
     A record carrying no types and no fields is indistinguishable from never
@@ -698,11 +735,30 @@ def _capability_record_is_usable(cached):
     conclusion is no longer trusted, has no claim to being empty on purpose, so
     it is re-queried once and rewritten -- which is how a cache poisoned by an
     earlier version heals without anyone knowing to pass `--refresh`.
+
+    A populated record is not trusted forever either. It expires after
+    `CAPABILITY_CACHE_MAX_AGE`, and sooner -- after
+    `CAPABILITY_CACHE_GAP_RECHECK` -- when it lacks a field or `Stage` option
+    the workflow needs, because that is exactly what an org that has changed
+    its fields since the record was written looks like. A record with no
+    `fetched_at`, or one stamped in the future, has no trustworthy age.
     """
-    if cached.get('type_map') or cached.get('field_map'):
+    if cached.get('schema') != CAPABILITY_CACHE_SCHEMA:
+        return False
+    fetched = cached.get('fetched_at')
+    if not isinstance(fetched, (int, float)):
+        return False
+    age = (time.time() if now is None else now) - fetched
+    if age < 0 or age >= CAPABILITY_CACHE_MAX_AGE:
+        return False
+    if cached.get('owner_kind') == 'user':
         return True
-    return (cached.get('owner_kind') == 'user'
-            and cached.get('schema') == CAPABILITY_CACHE_SCHEMA)
+    if not (cached.get('type_map') or cached.get('field_map')):
+        return False
+    if age >= CAPABILITY_CACHE_GAP_RECHECK and _capability_record_gaps(
+            cached, project_fields):
+        return False
+    return True
 
 
 def resolve_org_capabilities(cfg, refresh=False, root=None):
@@ -715,7 +771,7 @@ def resolve_org_capabilities(cfg, refresh=False, root=None):
     if not refresh:
         cached = load_capability_cache(root)
         if 'type_capable' in cached and 'field_map' in cached and (
-                _capability_record_is_usable(cached)):
+                _capability_record_is_usable(cached, cfg.get('fields'))):
             return True, {'type_capable': cached['type_capable'],
                           'type_map': cached.get('type_map') or {},
                           'field_map': cached.get('field_map') or {},
@@ -756,6 +812,7 @@ def resolve_org_capabilities(cfg, refresh=False, root=None):
         merge_capability_cache({'type_capable': type_capable, 'type_map': type_map,
                                 'field_map': field_map,
                                 'owner_kind': owner_kind,
+                                'fetched_at': int(time.time()),
                                 'schema': CAPABILITY_CACHE_SCHEMA}, root)
     return True, caps, ''
 

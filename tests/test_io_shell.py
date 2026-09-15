@@ -36,6 +36,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime, timezone
 from unittest import mock
@@ -1531,17 +1532,132 @@ class TestEmptyCapabilityRecord(unittest.TestCase):
         with open(wf.capability_cache_path(self.root), encoding='utf-8') as fh:
             self.assertEqual(json.load(fh)['owner_kind'], 'user')
 
-    def test_populated_legacy_record_is_still_trusted(self):
-        """Records written before `owner_kind` existed carry types or fields,
-        so they stay a cache hit and nobody pays for the new key."""
+    def test_populated_record_with_no_age_is_re_queried(self):
+        """A populated record written before `fetched_at` existed was trusted
+        forever, which is how an org that later created `Stage` went on being
+        reported as having none. It has no age, so it costs one round trip."""
         wf.merge_capability_cache({'type_capable': True,
                                    'type_map': {'Bug': 'IT_bug'},
                                    'field_map': {}}, root=self.root)
         with mock.patch.object(wf, 'gh_graphql_partial', self._stub(_ORG_CAPS_RESPONSE)):
             ok, caps, _ = wf.resolve_org_capabilities(_cfg(org='acme'), root=self.root)
         self.assertTrue(ok)
+        self.assertFalse(caps['cached'])
+        self.assertEqual(len(self.calls), 1)
+        self.assertIsInstance(wf.load_capability_cache(self.root)['fetched_at'], int)
+
+
+def _stage_field(options=None):
+    names = options if options is not None else list(wf_core.STAGE_NAMES.values())
+    return {'id': 'IFSS_stage', 'data_type': 'single-select',
+            'options': {n: 'o_%d' % i for i, n in enumerate(names)}}
+
+
+def _complete_field_map():
+    single = {'data_type': 'single-select', 'options': {}}
+    return {'Priority': dict(single, id='IFSS_pri'),
+            'Effort': dict(single, id='IFSS_eff'),
+            'Ownership': dict(single, id='IFSS_own'),
+            'Stage': _stage_field()}
+
+
+class TestCapabilityCacheAge(unittest.TestCase):
+    """A successful answer is still only true of the org when it was fetched.
+
+    The org's fields change: `Stage` is created after a run has cached the
+    field list, a field is deleted, an option is added. A record trusted
+    forever reports the org as it was, and preflight then fails a project on a
+    field the org has had for days. The file also outlives its run -- a new
+    worktree can start with a copy of the main checkout's `.claude/` -- so the
+    age has to travel inside the record.
+    """
+
+    NOW = 1_800_000_000
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.calls = []
+
+    def _clock(self, now):
+        return mock.patch.object(wf, 'time', mock.Mock(time=lambda: now))
+
+    def _record(self, age, field_map):
+        wf.merge_capability_cache({'type_capable': True,
+                                   'type_map': {'Bug': 'IT_bug'},
+                                   'field_map': field_map,
+                                   'owner_kind': 'organization',
+                                   'fetched_at': self.NOW - age,
+                                   'schema': wf.CAPABILITY_CACHE_SCHEMA}, self.root)
+
+    def _resolve(self, response=_ORG_CAPS_RESPONSE, now=None):
+        def fake(query, **fields):
+            self.calls.append(fields)
+            return response, [], ''
+        with self._clock(self.NOW if now is None else now), \
+                mock.patch.object(wf, 'gh_graphql_partial', fake):
+            return wf.resolve_org_capabilities(_cfg(org='acme'), root=self.root)
+
+    def test_a_query_stamps_when_it_was_fetched(self):
+        self._resolve()
+        self.assertEqual(wf.load_capability_cache(self.root)['fetched_at'], self.NOW)
+
+    def test_a_complete_recent_record_costs_no_round_trip(self):
+        self._record(wf.CAPABILITY_CACHE_MAX_AGE - 1, _complete_field_map())
+        ok, caps, _ = self._resolve()
+        self.assertTrue(ok)
         self.assertTrue(caps['cached'])
         self.assertEqual(self.calls, [])
+
+    def test_a_record_past_its_age_is_re_queried(self):
+        self._record(wf.CAPABILITY_CACHE_MAX_AGE, _complete_field_map())
+        ok, caps, _ = self._resolve()
+        self.assertFalse(caps['cached'])
+        self.assertEqual(len(self.calls), 1)
+
+    def test_a_record_stamped_in_the_future_is_re_queried(self):
+        """A record copied from a machine whose clock runs ahead has no age."""
+        self._record(-60, _complete_field_map())
+        ok, caps, _ = self._resolve()
+        self.assertFalse(caps['cached'])
+
+    def test_a_record_missing_stage_heals_once_the_org_creates_it(self):
+        """The reported failure: `Stage` was created after the record was
+        written, and preflight kept reporting `stage-absent` from the cache."""
+        stale = _complete_field_map()
+        del stale['Stage']
+        self._record(wf.CAPABILITY_CACHE_GAP_RECHECK, stale)
+        now_has_stage = json.loads(json.dumps(_ORG_CAPS_RESPONSE))
+        now_has_stage['organization']['issueFields']['nodes'].append(
+            {'__typename': 'IssueFieldSingleSelect', 'id': 'IFSS_stage', 'name': 'Stage',
+             'options': [{'id': 'o_b', 'name': 'Backlog'}]})
+        ok, caps, _ = self._resolve(now_has_stage)
+        self.assertFalse(caps['cached'], 'a record lacking Stage was trusted')
+        self.assertIn('Stage', caps['field_map'])
+        self.assertIn('Stage', wf.load_capability_cache(self.root)['field_map'])
+
+    def test_a_record_missing_a_stage_option_is_re_queried(self):
+        fields = _complete_field_map()
+        fields['Stage'] = _stage_field(['Backlog', 'In Progress'])
+        self._record(wf.CAPABILITY_CACHE_GAP_RECHECK, fields)
+        self._resolve()
+        self.assertEqual(len(self.calls), 1)
+
+    def test_a_just_written_record_with_a_gap_is_not_re_queried(self):
+        """An org that genuinely lacks a field must not pay on every call."""
+        stale = _complete_field_map()
+        del stale['Stage']
+        self._record(wf.CAPABILITY_CACHE_GAP_RECHECK - 1, stale)
+        ok, caps, _ = self._resolve()
+        self.assertTrue(caps['cached'])
+        self.assertEqual(self.calls, [])
+
+    def test_a_renamed_stage_field_is_looked_up_by_its_configured_name(self):
+        fields = _complete_field_map()
+        fields['Workflow state'] = fields.pop('Stage')
+        self.assertEqual(wf._capability_record_gaps(
+            {'field_map': fields}, {'field-stage': 'Workflow state'}), [])
+        self.assertEqual(wf._capability_record_gaps({'field_map': fields}), ['Stage'])
 
 
 class TestOrgCapabilitiesCommand(unittest.TestCase):
@@ -1781,6 +1897,7 @@ class TestDeniedCapability(unittest.TestCase):
     def test_a_current_schema_user_record_costs_no_round_trip(self):
         wf.merge_capability_cache({'type_capable': False, 'type_map': {},
                                    'field_map': {}, 'owner_kind': 'user',
+                                   'fetched_at': int(time.time()),
                                    'schema': wf.CAPABILITY_CACHE_SCHEMA}, self.root)
 
         def _boom(q, **f):
