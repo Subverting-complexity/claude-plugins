@@ -2464,7 +2464,7 @@ def collect_config_findings(cfg, args, root):
     checked.append('label-reference')
 
     if args.offline:
-        skipped = ['label-reference', 'config-label', 'label-drift',
+        skipped = ['label-reference', 'config-label', 'review-label', 'label-drift',
                    'field-unpinned', 'field-unmapped', 'field-absent',
                    'field-options', 'stage-absent', 'stage-options',
                    'label-retired', 'container-finished', 'stage-drift']
@@ -2480,11 +2480,15 @@ def collect_config_findings(cfg, args, root):
     findings.extend(wf_core.label_reference_findings(references, live,
                                                      cfg.get('labels')))
     findings.extend(wf_core.config_label_findings(
-        cfg.get('labels'), cfg.get('review_labels'), live, source_rel))
+        cfg.get('labels'), live, source_rel))
+    findings.extend(wf_core.review_label_findings(
+        wf_core.review_names(cfg.get('review_labels')), live))
     findings.extend(wf_core.label_drift_findings(live, cfg.get('labels')))
     findings.extend(wf_core.deprecated_label_findings(
         cfg.get('labels'), live, source_rel))
-    checked.extend(['config-label', 'label-drift', 'label-deprecated'])
+    checked.extend(['config-label', 'review-label', 'label-drift',
+                    'label-deprecated'])
+    context['labels'] = live
 
     # One walk of the open issues answers three questions: which still carry a
     # label that decides nothing, which Epic or Feature is finished with
@@ -2819,6 +2823,13 @@ def cmd_preflight(args):
             cfg, context.get('stage_drift'))
         done.extend(drift_done)
         blocked.extend(drift_blocked)
+        if any(f['check'] == 'review-label' for f in fixable):
+            created, failed, lerr = ensure_review_labels(
+                cfg, context.get('labels'), args.repo)
+            done.extend('created the `%s` label' % name for name in created)
+            blocked.extend('could not create the %s label' % f for f in failed)
+            if lerr:
+                blocked.append("could not read the repo's labels (%s)" % lerr)
 
     # Re-run against the state the repairs left behind, so the findings a
     # person reads are the ones that are still true. A `--fix` that reported
@@ -3690,23 +3701,6 @@ def assemble_prs(cfg, mine):
     if not ok:
         return False, None, err
     return True, [_norm_pr(r) for r in data or []], ''
-
-
-# Color + description for each review-state purpose, mirroring
-# `templates/default-labels.md` → Review State Labels. Used only by the
-# review-finish readback to recreate a verdict label the repo is missing
-# (guarded create, never `--force`).
-REVIEW_LABEL_META = {
-    'needs-review': ('C2E0C6', 'Open PR awaiting its first review'),
-    'reviewing': ('0E8A16', 'Review in progress'),
-    'approved': ('1D76DB', 'Ready for human merge'),
-    'changes-requested': ('E4E669', 'Issues need human action'),
-    'needs-discussion': ('D93F0B', 'Architectural questions'),
-    'needs-re-review': ('FBCA04', 'New commits since last review'),
-    'failed': ('B60205', 'Review could not complete'),
-    'updating': ('0E8A16', 'Builder addressing feedback'),
-    'fixes-applied': ('5319E7', 'Claude pushed fix commits (sticky)'),
-}
 
 
 def pr_label_names(cfg, number):
@@ -4930,7 +4924,7 @@ def cmd_review_finish(args):
     created_label = False
     after, _ = pr_label_names(cfg, args.pr)
     if after is not None and wf_core.review_label_missing(after, args.verdict, names):
-        color, desc = REVIEW_LABEL_META.get(args.verdict, ('ededed', 'review-state label'))
+        color, desc = wf_core.REVIEW_LABEL_META[args.verdict]
         run(['gh', 'label', 'create', target, '--repo', repo,
              '--description', desc, '--color', color])
         run(['gh', 'pr', 'edit', str(args.pr), '--repo', repo, '--add-label', target])
@@ -4943,6 +4937,52 @@ def cmd_review_finish(args):
     emit('ok', EXIT_OK, pr=args.pr, verdict=args.verdict, verdict_label=target,
          added=add, removed=remove, created_label=created_label,
          verified=verified, labels=after)
+
+
+def ensure_review_labels(cfg, live=None, repo=None):
+    """Create every review label the repo lacks. Returns (created, failed, err).
+
+    Guarded: a label that exists is never touched, so there is no `--force` to
+    churn a colour somebody chose, and a create that loses a race to another
+    agent ("already exists") counts as created rather than failed. `err` is
+    set only when the repo's labels could not be read at all.
+    """
+    repo = repo or '%s/%s' % (cfg['org'], cfg['repo'])
+    if live is None:
+        ok, state, err = fetch_repo_state(cfg, repo)
+        if not ok:
+            return [], [], err
+        live = state['labels']
+    names = wf_core.review_names(cfg.get('review_labels'))
+    created, failed = [], []
+    for _, name, colour, description in wf_core.missing_review_labels(names, live):
+        code, _, cerr = run(['gh', 'label', 'create', name, '--repo', repo,
+                             '--description', description, '--color', colour])
+        if code == 0 or 'already exists' in (cerr or ''):
+            created.append(name)
+        else:
+            failed.append('%s (%s)' % (name, (cerr or '').strip() or 'gh failed'))
+    return created, failed, ''
+
+
+def cmd_labels_ensure(args):
+    """Create the review-state labels a repo lacks, and nothing else.
+
+    These are the only labels the workflow applies (#275), so this is the whole
+    of label setup: `setup` runs it, `preflight --fix` runs it for a
+    `review-label` finding, and a person can run it any time.
+    """
+    cfg = prepare_cfg()
+    created, failed, err = ensure_review_labels(cfg)
+    if err:
+        emit('error', EXIT_ENV, reason="could not read the repo's labels: %s" % err)
+    names = wf_core.review_names(cfg.get('review_labels'))
+    fields = dict(created=created, failed=failed,
+                  labels=[names[k] for k in wf_core.REVIEW_DEFAULT_LABELS])
+    if failed:
+        emit('error', EXIT_ENV, reason='could not create %d review label%s'
+             % (len(failed), '' if len(failed) == 1 else 's'), **fields)
+    emit('ok', EXIT_OK, **fields)
 
 
 # ── closing a finished container (#240) ──────────────────────────────────────
@@ -5746,7 +5786,6 @@ def cmd_handoff(args):
                % (args.pr, pr_claimed))
 
     code, _, perr = run(['gh', 'pr', 'edit', str(args.pr), '--repo', repo,
-                         '--add-label', label(cfg, 'claude-authored'),
                          '--add-label', state_label])
     pr_labelled = code == 0
     if not pr_labelled:
@@ -5904,6 +5943,11 @@ def build_parser():
                      help='also ensure the sticky fixes-applied label is present '
                           '(set when Step 7 pushed fix commits)')
     fin.set_defaults(func=cmd_review_finish)
+
+    le = sub.add_parser('labels-ensure',
+                        help='create each review-state label the repo lacks '
+                             '(guarded: never overwrites an existing label)')
+    le.set_defaults(func=cmd_labels_ensure)
 
     cfg = sub.add_parser('config', help='emit .claude/wf-config.json from ClaudeProject.md')
     cfg.set_defaults(func=cmd_config)

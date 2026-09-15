@@ -48,7 +48,7 @@ Then settle the three field values every issue must carry. They are written in S
 - **`Effort`** — **Low** for a targeted fix in a few files, **Medium** for moderate scope with some investigation, **High** for broad impact, architectural change or significant unknowns.
 - **`Ownership`** — **Code agent** unless the fix needs a browser (**Browser agent**) or a person (**Human**). This is what keeps work a code agent cannot finish out of the pool. When the report covers both kinds of work, file two issues rather than choosing one owner for both halves: `../skills/writing-github-issues/SKILL.md` → **Scope: one issue, one party**.
 
-**No label carries any of this.** There is no priority label, no type label and no state label to choose — `wf issue-apply` writes the fields, sets the native issue type from `kind`, and writes the stage. The only label to pass is `claude-authored`, the provenance marker.
+**No label carries any of this.** There is no priority label, no type label and no state label to choose — `wf issue-apply` writes the fields, sets the native issue type from `kind`, and writes the stage. The issue gets no label.
 
 An issue too vague to implement without a refinement session is not filed into the pool: file it with `"state": "refinement"` on the spec entry, which sets its stage to `Needs refinement` instead of `Backlog` and is what keeps it out.
 
@@ -68,7 +68,7 @@ Follow `templates/issue-template-resolution.md` to find out whether the target r
 
 If a template applies, the body you write in Step 5 uses **its** headings and order. If none does, which is the common case, use the standard's own sections. Either way this is best-effort: a lookup failure falls back to the standard sections and never blocks the issue.
 
-If a template carries frontmatter labels, add them to the label list assembled in Step 3, minus any `type-*` label — the native type says that. Ignore any assignees it names, for the same reason Step 5 leaves the assignee blank.
+If a template carries frontmatter labels, add them as a `labels` list on the spec entry, minus any `type-*` label — the native type says that. They are the only labels an issue filed here carries. Ignore any assignees it names, for the same reason Step 5 leaves the assignee blank.
 
 ### 5. Create the issue
 
@@ -83,7 +83,6 @@ cat > .claude/report-spec.json <<'JSON'
              "body_file": ".claude/report-body.md",
              "kind": "{bug|security|architecture|tech debt}",
              "milestone": "{current_milestone}",
-             "labels": ["claude-authored"],
              "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                         "field-effort": "{Low|Medium|High}",
                         "field-ownership": "{Code agent|Browser agent|Human}",
@@ -100,7 +99,7 @@ Drop the `milestone` key entirely in flat-backlog mode, or whenever Step 4 found
 
 The exceptions are `[Manual] `, for an issue a person has to do, and `[Browser] `, for one a browser agent has to do (Step 3). They are kept because nothing native says who has to do the work. The prefix and `field-ownership` must agree — `[Manual] ` with `Human`, `[Browser] ` with `Browser agent` — and `issue-apply` refuses a spec where they contradict each other rather than filing an issue two things claim to own.
 
-**The labels carry no type, no priority and no state.** `kind` supplies the native issue type and the `Classification` value together, and the three required fields carry the rest. `wf issue-apply` drops any retired label in the list. Pass `claude-authored` and nothing else.
+**Pass no labels** beyond a template's own. `kind` supplies the native issue type and the `Classification` value together, and the three required fields carry the rest. `wf issue-apply` drops any retired label a spec does name.
 
 **You do not choose the stage.** `issue-apply` decides it from the issue's own fields and writes it itself, in this order: `Ownership` of `Human` or `Browser agent` goes to Non-code; an explicit `"state"` on the spec entry (`backlog`, `refinement` or `parked`) goes to that stage; an `Ownership` that is missing or unrecognised goes to Needs refinement, because nothing can route it; an open blocked-by edge goes to Blocked; everything else goes to Backlog.
 

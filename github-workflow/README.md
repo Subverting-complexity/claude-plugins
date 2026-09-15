@@ -76,7 +76,7 @@ The plugin also reads two files from the host project:
 
 **`ClaudeProject.md`** (required) — The single source of truth for all project-specific values. Every command and the skill read this file. Full format specification: [`docs/claudeproject-spec.md`](../docs/claudeproject-spec.md).
 
-Required sections: Identity, Package Manager, Quality Gate, Branch Convention, Label Map, Story Template, Issue Types & Fields.
+Required sections: Identity, Package Manager, Quality Gate, Branch Convention, Story Template, Issue Types & Fields.
 
 Optional sections: Project Board, Reference Docs.
 
@@ -107,21 +107,15 @@ The plugin supports two backlog styles, auto-detected from milestones:
 
 Both modes use the same commands and skill — the pick logic adapts.
 
-## Label map
+## Labels
 
-**Labels decide nothing.** State is the `Stage` field, and priority, effort and ownership are org-level issue fields — so there is one issue label left, the `claude-authored` provenance marker, plus the review-state labels a pull request carries. The map exists so a repository can call that marker whatever it already calls it:
+**Labels decide nothing, and the workflow puts none on an issue.** State is the `Stage` field, and priority, effort and ownership are org-level issue fields. The only labels it applies are the review-state labels a pull request carries, named in `docs/review.config.md` and created by `wf labels-ensure`.
 
-```markdown
-| Purpose          | Label              |
-| ---------------- | ------------------ |
-| claude-authored  | `claude:authored`  |
-```
-
-A map row naming a label the workflow retired (`status-*`, `priority-*`, `needs-refinement`, `claude-ready`) is reported by `wf config-audit` as `label-deprecated`. Delete the row; the labels themselves can stay on old issues.
+A `## Label Map` left in an older `ClaudeProject.md` is still read. A row naming a label the workflow retired (`status-*`, `priority-*`, `needs-refinement`, `claude-ready`) is reported by `wf config-audit` as `label-deprecated`. Delete the row; the labels themselves can stay on old issues.
 
 ## Stage and boards
 
-An issue's state is its org `Stage` field, and nowhere else. There is no label to keep in step and no board column is read. The nine stages (Backlog, In Progress, In Review, Blocked, Non-code, Needs refinement, Parked, Needs attention, Done) and what each one means are in one place, `templates/default-labels.md` → Stages. They resolve by purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, …).
+An issue's state is its org `Stage` field, and nowhere else. There is no label to keep in step and no board column is read. The nine stages (Backlog, In Progress, In Review, Blocked, Non-code, Needs refinement, Parked, Needs attention, Done) and what each one means are in one place, [`docs/issue-fields.md`](../docs/issue-fields.md). They resolve by purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, …).
 
 | The issue is | Stage |
 | ------------ | ----- |

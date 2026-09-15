@@ -94,7 +94,8 @@ jobs:
 
       - name: Check code-review every-run load
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 14420
+        # Lowered in 13.2.0 (#275), when the label inventory stopped loading.
+        run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 10350
 
       - name: Check build every-run load
         shell: bash
@@ -102,7 +103,8 @@ jobs:
 
       - name: Check setup every-run load
         shell: bash
-        run: bash count-tokens.sh github-workflow/commands/setup.md --budget 16520
+        # Lowered in 13.2.0 (#275), when the label inventory stopped loading.
+        run: bash count-tokens.sh github-workflow/commands/setup.md --budget 11500
 
       - name: Check description and body budgets (ratchet)
         shell: bash

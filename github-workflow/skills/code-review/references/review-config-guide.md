@@ -89,27 +89,18 @@ Best-effort: if it fails (permissions/org policy), tell the user an admin must t
 
 **Review comment footer:** Offer a default and let them customise.
 
-## Step 3 — Create the labels
-
-For each label defined in the config, check if it exists on the repo. If not, create it:
-
-```bash
-gh label create "<label-name>" --description "<description>" --color "<hex>"
-```
-
-Use these default colours (adjustable by the user):
-- Needs review (entry state): `#C2E0C6` (pale green)
-- Reviewing: `#0E8A16` (green)
-- Updating: `#0E8A16` (green)
-- Approved: `#1D76DB` (blue)
-- Changes requested: `#E4E669` (yellow)
-- Needs re-review: `#FBCA04` (gold)
-- Needs discussion: `#D93F0B` (orange)
-- Failed (`{prefix}-failed`): `#B60205` (red)
-- Fixes applied: `#5319E7` (purple)
-
-## Step 4 — Write the config
+## Step 3 — Write the config
 
 Write the completed `review.config.md` to `./docs/review.config.md` (create the `docs/` directory if needed). Use the template structure from `references/review.config.template.md` and fill in all the gathered values.
 
 Show the user the final file and confirm before proceeding.
+
+## Step 4 — Create the labels
+
+Once the config is written, create any review label the repo lacks:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" labels-ensure
+```
+
+It reads the names from the config just written, takes colours and descriptions from `wf_core.REVIEW_LABEL_META`, and never overwrites an existing label. If it exits non-zero, report its `reason` and continue.

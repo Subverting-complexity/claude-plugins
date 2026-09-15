@@ -38,18 +38,6 @@ feature/{number}/{short-desc}
 
 Example: `feature/27/fix-wrong-board`
 
-## Label Map
-
-No label decides anything here. An issue's state is its `Stage` field; its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. The repository still carries `status-*`, `priority-*` and scope labels from before 10.0.0 and they are deliberately absent from this map: `wf issue-apply` takes one off any issue it writes, and deleting them outright would strip them from every issue that ever carried them. Defaults and the resolution path: `github-workflow/templates/default-labels.md`.
-
-### Claude
-
-`claude-authored` is a provenance marker applied by workflow commands to Claude-authored PRs and Claude-created issues. It is the only label the issue workflow applies. It is **not** part of the PR review-state machine. Review-state labels are defined in [`docs/review.config.md`](docs/review.config.md), which keeps the plugin's own `review-` prefix, so they resolve to the same names the defaults in `github-workflow/templates/default-labels.md` produce.
-
-| Purpose          | Label             | Applied by                    |
-| ---------------- | ----------------- | ----------------------------- |
-| claude-authored  | `claude-authored` | execute, report-issue         |
-
 ## Issue Types & Fields
 
 Written from `wf org-capabilities` against `Subverting-complexity`. Re-run `/github-workflow:setup` after enabling a type or adding a field.

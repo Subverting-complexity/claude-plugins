@@ -57,7 +57,6 @@ for wf in "${workflows[@]:-}"; do
         pick)
             files+=(
                 "github-workflow/skills/execute/SKILL.md"
-                "github-workflow/templates/default-labels.md"
             )
             ;;
         *)

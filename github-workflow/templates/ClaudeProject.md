@@ -35,28 +35,6 @@ Pattern for feature branches:
 
 Example: `feature/{number}/{short-desc}`
 
-## Label Map
-
-Map workflow purposes to your repository's actual label names. Only include labels your project uses — remove unused rows. Defaults and the resolution path: `templates/default-labels.md`.
-
-**No label decides anything.** An issue's state is its `Stage` field; its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. If your project still has `status-*`, `priority-*`, `browser-agent`, `human-required`, `needs-refinement` or `claude-ready` labels, leave them out of this map: `wf config-audit` reports a map row for one (`label-deprecated`), and `wf issue-apply` takes the label off any issue it writes. The labels themselves can stay in the repository — deleting one strips it from every issue that ever carried it.
-
-### Claude
-
-`claude-authored` is a provenance marker applied to Claude-authored PRs and Claude-created issues. It is the only label this workflow puts on an issue, and it decides nothing. (PR review-state labels are separate — see `docs/review.config.md`.)
-
-| Purpose          | Label    | Applied by                     |
-| ---------------- | -------- | ------------------------------ |
-| claude-authored  | `{name}` | execute (PRs), report-issue / execute (issues) |
-
-### Custom (optional)
-
-Additional labels your project uses. Remove if not needed.
-
-| Label    | When to apply |
-| -------- | ------------- |
-| `{name}` | {criteria}    |
-
 ## Issue Types & Fields
 
 **Required.** Not because every org has native issue types — many do not — but because "this org has none" and "nobody wrote this section" look identical at runtime, and the second one silently produced a whole backlog of unclassified issues. So the section is always present and always says which of the two it is. `wf config-audit` reports a missing one as **CRITICAL**.

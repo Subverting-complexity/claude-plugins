@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'WARNING: Off-workflow PR creation. Prefer /github-workflow:execute, which validates the body (--body-file), applies and verifies the claude-authored label, releases the atomic claim, and sets the issue Stage to In Review. If you are already inside the execute skill, proceed.'"
+            "command": "echo 'WARNING: Off-workflow PR creation. Prefer /github-workflow:execute, which validates the body (--body-file), applies the review-state entry label, releases the atomic claim, and sets the issue Stage to In Review. If you are already inside the execute skill, proceed.'"
           }
         ]
       }

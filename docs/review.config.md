@@ -10,7 +10,7 @@ Read by `/github-workflow:code-review`, and by the merge phase that ends a `/git
 
 ## Labels
 
-The prefix is `review`, which is also the plugin's default, so these names match what `templates/default-labels.md` resolves to when no config exists. That is deliberate: the labels already on this repo keep working, and nothing had to be renamed to introduce this file.
+The prefix is `review`, which is also the plugin's default, so these names match what the plugin resolves to when no config exists. That is deliberate: the labels already on this repo keep working, and nothing had to be renamed to introduce this file.
 
 The **Purpose** column is the stable identity skills resolve against. Every producer and consumer looks a label up by purpose, so the name set here is what gets applied and filtered on.
 
@@ -28,7 +28,7 @@ State labels are mutually exclusive — exactly one is applied per review.
 | `updating` | `review-updating` | State | A builder agent is addressing review feedback — prevents concurrent updates |
 | `fixes-applied` | `review-fixes-applied` | Action | Claude pushed fix commits to the PR branch (sticky across runs) |
 
-`claude-authored` in `ClaudeProject.md` is a separate provenance marker and takes no part in this state machine.
+These are the only labels the workflow applies; an issue gets none.
 
 ## Auto-Merge on Approval
 
@@ -94,7 +94,7 @@ This repo is instruction text plus a small amount of tooling. What that means fo
 
 ## Architecture Rules
 
-- **Purpose keys, never literal names.** Labels and stages resolve through `templates/default-labels.md`. A hardcoded label string in a skill is a finding: it silently breaks every project that renamed that label.
+- **Purpose keys, never literal names.** Review labels resolve through this file's Labels table, and stages through `wf_core.STAGE_NAMES`. A hardcoded label string in a skill is a finding: it silently breaks every project that renamed that label.
 - **Nothing project-specific in a skill.** Repo names, board IDs, and label names belong in `ClaudeProject.md` or this file. The skills are generic.
 - **Local paths must not need GitHub.** `build`, `code-review`'s `references/local-review.md` and `preflight`'s `references/local-checks.md` serve projects with no `ClaudeProject.md` and no tracker. Anything they load must not assume GitHub, a board or an issue.
 - **References are cited, not duplicated.** See the canonical-specification rule above; this is its architectural form.

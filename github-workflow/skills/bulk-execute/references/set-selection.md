@@ -78,7 +78,7 @@ Ask for a bigger read only if you need it: `--limit 0` for the whole pool, `--bo
 
 **Weak — both are needed:**
 
-- **Same milestone and the same area.** The same sprint plus a shared area, named by whatever custom `area-*` or `component-*` label the project happens to keep, or by both bodies pointing at the same part of the system.
+- **Same milestone and the same area.** The same sprint plus a shared area, shown by both bodies pointing at the same part of the system.
 - **Same kind of change against the same subject.** Three bugs in one importer; two stories adding fields to one form.
 
 **None of these counts as relatedness**, however tempting: both are small, both are high priority, both are typed `Bug`, both are in this repo, both are in this sprint on their own, or the pool happens to hold exactly three stories.
