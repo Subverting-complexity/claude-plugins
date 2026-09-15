@@ -3694,8 +3694,9 @@ class TestReconcileStage(unittest.TestCase):
                                  'Non-code')
             self.assertEqual(self.r(stage='Blocked', blockers=1, open_blockers=1,
                                     scope=scope), 'Non-code')
-            self.assertEqual(self.r(stage='In Progress', scope=scope), 'Non-code')
-            self.assertIsNone(self.r(stage='In Progress', assigned=True, scope=scope))
+            for stage in ('In Progress', 'In Review'):
+                self.assertIsNone(self.r(stage=stage, scope=scope))
+                self.assertIsNone(self.r(stage=stage, assigned=True, scope=scope))
             self.assertIsNone(self.r(stage='Parked', scope=scope))
             self.assertEqual(self.r(is_open=False, scope=scope), 'Done')
 

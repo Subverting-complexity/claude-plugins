@@ -1402,8 +1402,10 @@ def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
       closed      a closed issue is Done.
       non-code    work owned by a browser agent or a person that is blank,
                   Backlog or Blocked goes to Non-code, as `stage_for` puts it
-                  when the issue is written. Abandoned work of that kind goes
-                  there too rather than back to Backlog.
+                  when the issue is written. Once a person has moved such work
+                  on to In Progress or In Review it stays there, with or
+                  without an assignee, because nothing the sync reads records
+                  that manual work has started.
       started     a blank or Backlog issue somebody has started goes to In
                   Review for a ready pull request, or In Progress for a draft
                   one or an assignee. This is `stage_drift_target`, the rule
@@ -1449,7 +1451,7 @@ def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
     if current == in_progress and any(not pr.get('isDraft') for pr in prs):
         return in_review
     if current in (in_progress, in_review) and not (assigned or claimed or prs):
-        return non_code or (blocked if open_blockers else backlog)
+        return None if non_code else (blocked if open_blockers else backlog)
     if current in ('', backlog) and open_blockers:
         return blocked
     if current == blocked and blockers and not open_blockers:
