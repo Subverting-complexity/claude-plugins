@@ -8,7 +8,7 @@ Covers the three pure-logic areas described in the workflow templates:
   - Backlog-mode detection (sprint vs flat from milestone presence)
 
 No GitHub API calls, no file I/O.  Feed fixture data in, assert outputs.
-Reference: github-workflow/templates/default-labels.md
+Reference: github-workflow/scripts/wf_core.py
 """
 import datetime
 import os
@@ -2052,19 +2052,48 @@ class TestConfigLabelFindings(unittest.TestCase):
 
     def test_a_mapped_label_the_repo_lacks_fails(self):
         findings = wf_core.config_label_findings(
-            {'claude-ready': 'claude-ready'}, {}, ['type-bug'])
+            {'claude-ready': 'claude-ready'}, ['type-bug'])
         self.assertEqual(_levels(findings), [wf_core.CRITICAL])
         self.assertIn('claude-ready', findings[0]['detail'])
 
-    def test_review_labels_are_checked_against_their_own_file(self):
-        findings = wf_core.config_label_findings(
-            {}, {'review-approved': 'approved'}, [])
-        self.assertIn('review.config.md', findings[0]['detail'])
-
     def test_a_fully_present_map_is_clean(self):
         self.assertEqual(wf_core.config_label_findings(
-            {'type-bug': 'type-bug'}, {'review-approved': 'review-approved'},
-            ['type-bug', 'review-approved']), [])
+            {'type-bug': 'type-bug'}, ['type-bug']), [])
+
+
+class TestReviewLabels(unittest.TestCase):
+    """The only labels the workflow applies, and the only ones it creates (#275)."""
+
+    _ALL = list(wf_core.REVIEW_DEFAULT_LABELS.values())
+
+    def test_the_workflow_defines_no_issue_label(self):
+        self.assertEqual(wf_core._DEFAULT_LABELS, {})
+
+    def test_every_review_label_has_a_colour_and_description(self):
+        self.assertEqual(set(wf_core.REVIEW_LABEL_META),
+                         set(wf_core.REVIEW_DEFAULT_LABELS))
+
+    def test_only_the_missing_labels_are_returned(self):
+        live = [n for n in self._ALL if n != 'review-failed']
+        self.assertEqual(
+            wf_core.missing_review_labels(wf_core.review_names(), live),
+            [('failed', 'review-failed', 'B60205', 'Review could not complete')])
+
+    def test_a_renamed_label_is_checked_by_its_configured_name(self):
+        names = wf_core.review_names({'approved': 'lgtm'})
+        missing = wf_core.missing_review_labels(names, self._ALL)
+        self.assertEqual([m[1] for m in missing], ['lgtm'])
+
+    def test_one_warning_names_every_missing_label_and_can_be_fixed(self):
+        findings = wf_core.review_label_findings(
+            wf_core.review_names(), ['review-approved'])
+        self.assertEqual(_levels(findings), [wf_core.WARNING])
+        self.assertIn('review-failed', findings[0]['detail'])
+        self.assertIn('review-label', wf_core.FIXABLE_CHECKS)
+
+    def test_a_repo_with_every_review_label_is_clean(self):
+        self.assertEqual(wf_core.review_label_findings(
+            wf_core.review_names(), self._ALL), [])
 
 
 class TestLabelDriftFindings(unittest.TestCase):
@@ -2510,7 +2539,7 @@ class TestStageNames(unittest.TestCase):
         A write names the option by this string, so a value the org's `Stage`
         field does not carry fails at GitHub and the issue keeps the stage it
         had. `stage-backlog` is `Backlog`, which is what
-        `templates/default-labels.md`, the `ClaudeProject.md` template,
+        the `ClaudeProject.md` template,
         `commands/report-issue.md` and the purpose key itself all call it.
         """
         self.assertEqual(wf_core.STAGE_NAMES, {
@@ -3211,13 +3240,13 @@ class TestFixPlan(unittest.TestCase):
                       'field-absent', 'quality-gate', 'placeholders'):
             self.assertNotIn(check, wf_core.FIXABLE_CHECKS, check)
 
-    def test_the_six_repairs_a_run_may_make_are_the_whole_list(self):
+    def test_the_repairs_a_run_may_make_are_the_whole_list(self):
         """A check absent from the map is one no run touches on its own, so the
         list is the contract rather than a starting point."""
         self.assertEqual(sorted(wf_core.FIXABLE_CHECKS),
                          ['claude-md-ref', 'config-retired',
                           'container-finished', 'label-deprecated',
-                          'label-retired', 'stage-drift'])
+                          'label-retired', 'review-label', 'stage-drift'])
 
     def test_neither_stage_finding_can_be_repaired_from_here(self):
         """An org-level issue field, and its options, are created in the org

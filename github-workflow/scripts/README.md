@@ -209,7 +209,7 @@ A JSON object with an `issues` list (a bare list is accepted too). An entry with
 | `body_file` | A path to read the body from, used when `body` is absent. A body is prose — fenced code, backticks, `$`, quotes — and building that into a JSON string by hand in a shell is where bodies get mangled. The spec file keeps saying `body_file` after a write-back; the body is never inlined into it. |
 | `kind` | One of `wf_core.NATIVE_TYPE_MAP`'s keys (`story`, `feature`, `epic`, `bug`, `spike`, …). Supplies both the native type and a default `Classification`. |
 | `type` | An explicit native type name, overriding what `kind` implies. |
-| `labels` | Purpose keys or literal names; resolved through the project's label map. Labels decide nothing: a `type-*` label or a retired one (`status-*`, `priority-*`, a scope label) is dropped, and in practice the only label a spec names is `claude-authored`. |
+| `labels` | Literal names, or purpose keys a surviving label map resolves. Labels decide nothing and the workflow passes none: a `type-*` label or a retired one (`status-*`, `priority-*`, a scope label) is dropped. |
 | `parent` | An issue number, or another entry's `key`. A `User Story` needs a `Feature` parent; a `Feature` that has a parent needs an `Epic` one (see below). |
 | `blocked_by` | A list of issue numbers and/or `key`s. **The complete set**: an issue already carrying an edge the list omits has it removed, and `[]` removes them all. Leave the key out to leave the edges alone. |
 | `state` | `backlog`, `refinement` or `parked`: the stage to write, overriding the one the issue's fields name. Absent means the fields decide. It never moves `Browser agent` or `Human` work out of Non-code. |
@@ -334,13 +334,14 @@ Three things describe how a project works, and they drift apart quietly: `Claude
 | ------- | ----- | ------- |
 | `config-section` | critical | `ClaudeProject.md` is missing a section the plugin reads, so its values fall back to defaults silently. |
 | `label-missing` | critical | An instruction file tells an agent to apply a label the repo does not have. |
-| `config-label` | critical | The project's own label map names a label the repo does not have. |
+| `config-label` | critical | A `## Label Map` left in `ClaudeProject.md` names a label the repo does not have. |
 | `field-unpinned` | critical | An enabled issue type is not pinned to a field the tooling writes, `Stage` included. |
 | `field-absent` | critical | The org defines no `Priority`, `Effort` or `Ownership` field, and the picker reads all three. |
 | `stage-absent` | critical | The org defines no `Stage` field, so no issue's state can be written or read. |
 | `stage-options` | critical | `Stage` lacks one of its nine options, named, so a transition to it fails. |
 | `field-options` | critical / warning | An option on a mandatory field that no decision knows. Critical on `Ownership`, where nothing can route the issue; a warning on `Priority` (sorts last) and `Effort` (sized as `Medium`). |
 | `label-deprecated` | warning | The label map still names a label nothing reads. |
+| `review-label` | warning | A review-state label the repo lacks, so a pull request cannot carry that state. `--fix` creates it, as `labels-ensure` does. |
 | `label-retired` | warning | Open issues still carry a label the fields replaced. `--fix` takes it off. |
 | `field-absent-optional` | warning | The org defines no `Classification` or `Origin`, so issues are filed with less on them. |
 | `label-drift` | warning | Two live labels mean the same thing (`type:bug` beside `type-bug`, `bug` beside `type-bug`). A pair of retired labels is `label-retired`'s, whose advice is the opposite: take both off. |
@@ -501,9 +502,13 @@ It **always exits 0**, so a failed write never costs a run its work. Read `set`,
 
 `sibling-pr N` returns the open PRs that close issue N, oldest first, using GitHub's own parse of closing references rather than a free-text body search. `--exclude-branch` drops your own PR, so anything returned is someone else's. Exit 0 with `found: 0` is the expected answer before starting work; exit 20 means the lookup failed, which is not the same as "no duplicate" and must be reported as such.
 
+### `labels-ensure`
+
+`labels-ensure` creates each of the nine review-state labels the repo lacks, named through `docs/review.config.md` with the `review-` defaults, with the colours and descriptions in `wf_core.REVIEW_LABEL_META`. These are the only labels the workflow applies. It never passes `--force`, so an existing label keeps its colour, and a create that loses a race ("already exists") counts as created. Read `created`, `failed` and `labels`; it exits non-zero when the labels cannot be read or a create fails.
+
 ### `handoff`
 
-`handoff --pr P --issue N [--issue M …]` ends a build: it takes the PR's review claim (`refs/claims/pr-P`) first, so the work is never unlocked between the build and its review, and reports that as `pr_claimed` (`won`, `lost` or `error`). A later `claim --pr P --keep-held` from the same checkout keeps the claim it holds; without `--keep-held` it reports `lost`, so a second session sharing the checkout cannot take the PR. Then it labels the PR `claude-authored` plus the review-state entry label, then for each issue sets its `Stage` to `In Review` and releases its claim ref. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`. `--gate-failed` enters review as changes-requested rather than needs-review.
+`handoff --pr P --issue N [--issue M …]` ends a build: it takes the PR's review claim (`refs/claims/pr-P`) first, so the work is never unlocked between the build and its review, and reports that as `pr_claimed` (`won`, `lost` or `error`). A later `claim --pr P --keep-held` from the same checkout keeps the claim it holds; without `--keep-held` it reports `lost`, so a second session sharing the checkout cannot take the PR. Then it labels the PR with the review-state entry label, then for each issue sets its `Stage` to `In Review` and releases its claim ref. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`. `--gate-failed` enters review as changes-requested rather than needs-review.
 
 It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read `pr_labelled` and the per-issue `stage_set` and `stage_message` instead. A failure on one issue does not affect the others.
 

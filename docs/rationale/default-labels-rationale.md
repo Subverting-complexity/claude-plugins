@@ -1,12 +1,12 @@
 # Label Resolver Rationale
 
-> **Not read at runtime.** This file explains the design decisions behind `default-labels.md`. Consult it for background; the data tables and resolution directives live in `default-labels.md`.
+> **Not read at runtime.** This file explains the design decisions behind label resolution and the `Stage` field. The data lives in `github-workflow/scripts/wf_core.py`, the review labels are described in `github-workflow/skills/code-review/references/review-workflow.md`, and the field and stage tables are in [`../issue-fields.md`](../issue-fields.md).
 
 ## Why purpose keys
 
-A label is identified by its **purpose key**, never by a hardcoded concrete name. Purpose keys are stable; concrete names are project-configurable. The bare names that appear in workflow prose (`reviewing`, `updating`, `approved`, `changes-requested`, `needs-discussion`, `claude-authored`, …) **are purpose keys** — they are resolved to a concrete name through the resolution path, and are never applied literally. This means every workflow works correctly when a project renames a label (e.g. `reviewing` → `wip`), as long as the project config maps the purpose key to the new name.
+A label is identified by its **purpose key**, never by a hardcoded concrete name. Purpose keys are stable; concrete names are project-configurable. The bare names that appear in workflow prose (`reviewing`, `updating`, `approved`, `changes-requested`, `needs-discussion`, …) **are purpose keys** — they are resolved to a concrete name through the resolution path, and are never applied literally. This means every workflow works correctly when a project renames a label (e.g. `reviewing` → `wip`), as long as the project config maps the purpose key to the new name.
 
-The keys that survive are all review-state labels on a pull request plus the `claude-authored` provenance marker. No issue label decides anything any more, and the section below is why.
+The keys that survive are the review-state labels on a pull request. The `claude-authored` provenance marker went in 13.2.0: it recorded who built a change, which the pull request's author and commits already say, and it decided nothing. No issue label decides anything any more, and the section below is why.
 
 ## Why the single resolution path (apply == filter invariant)
 
@@ -16,9 +16,9 @@ The moment two skills each independently decide "this must be the `reviewing` la
 
 ## Why no --force at runtime (pre-creation contract)
 
-The complete label inventory is created **once** at setup (`/github-workflow:setup`, step 5b). Skills at runtime must **not** `--force`-overwrite labels — that causes colour/description churn when two skills disagree on metadata, and it overwrites any human-customised label colour with the default.
+The review labels are created at setup (`/github-workflow:setup`, step 5b) by `wf labels-ensure`. Nothing may `--force`-overwrite a label — that causes colour/description churn when two callers disagree on metadata, and it overwrites any human-customised label colour with the default.
 
-The guarded create-if-missing pattern in `default-labels.md` is idempotent and safe: it only creates if the label is absent, and it warns when it does so (setup should have created everything; a missing label is a setup gap, not a normal flow).
+The guarded create in `wf labels-ensure`, and the same one in `wf review-finish`'s readback, is idempotent and safe: it only creates a label that is absent, and a create that loses a race to another agent counts as done. `wf preflight` reports a missing one as `review-label`, and `--fix` runs the same create.
 
 ## Why the `Stage` field is the state and the fields are the ranking
 

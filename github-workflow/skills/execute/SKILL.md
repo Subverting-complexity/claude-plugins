@@ -63,7 +63,7 @@ If the file is absent and the block below did **not** print "ClaudeProject.md NO
 
 ## Project configuration (auto-loaded)
 
-This emits a **projection** of `ClaudeProject.md`: the hot-path config the pick/plan/build window needs (Identity, Branch Convention, Label Map, Quality Gate, Package Manager, Refinement), dropping the heavy sections needed only later and only sometimes (Issue Types & Fields, Project Board, Story Template, Session Budget, Reference Docs, Bundled Skills). When a later phase resolves the **org issue fields**, `Stage` included, read the omitted `## Issue Types & Fields` section straight from `ClaudeProject.md` then.
+This emits a **projection** of `ClaudeProject.md`: the hot-path config the pick/plan/build window needs (Identity, Branch Convention, Quality Gate, Package Manager, Refinement), dropping the heavy sections needed only later and only sometimes (Issue Types & Fields, Project Board, Story Template, Session Budget, Reference Docs, Bundled Skills). When a later phase resolves the **org issue fields**, `Stage` included, read the omitted `## Issue Types & Fields` section straight from `ClaudeProject.md` then.
 
 ```!
 if [ -f .claude/projected-config.md ] && [ .claude/projected-config.md -nt ClaudeProject.md ] 2>/dev/null; then

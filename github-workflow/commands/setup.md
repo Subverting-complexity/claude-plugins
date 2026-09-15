@@ -103,7 +103,7 @@ gh repo view --json owner,name,defaultBranchRef --jq '{org: .owner.login, repo: 
 
 **The `Stage` field:**
 
-An issue's state is the org issue field `Stage`, a single-select with nine options: `Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention` and `Done` (see `templates/default-labels.md` → Stages). A blank `Stage` means available, the same as `Backlog`. Setup does not create the field and does not create or rename board columns. Step 5e reads whether the org has it.
+An issue's state is the org issue field `Stage`, a single-select with nine options: `Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention` and `Done`. A blank `Stage` means available, the same as `Backlog`. Setup does not create the field and does not create or rename board columns. Step 5e reads whether the org has it.
 
 When the field or an option is missing, stop and ask the user to add it by hand, because the API this runs on cannot create an org issue field: org settings → *Planning* → *Issue fields* → create `Stage` as a single-select with the nine options, then pin it to every enabled issue type. Without it no transition can be written and preflight fails with `stage-absent` or `stage-options`.
 
@@ -133,16 +133,14 @@ If milestones with due dates exist, note that sprint mode is available.
 For anything not auto-detected, ask the user interactively:
 
 - **Branch convention** — suggest `feature/{number}/{short-desc}` as default
-- **Claude label** — the provenance marker on Claude-authored PRs and issues. Suggest `claude-authored`. It is the only label the issue workflow applies, and it is separate from the review-state labels set up in Step 7.
-- **Custom labels** — ask if the user has any additional labels they want workflow commands to apply or respect. For each, ask the name and when it should be applied. Examples: `breaking-change`, `docs-needed`, `frontend`, `backend`. Store these in the Custom section of the label map. (The code-review skill supports its own custom labels — configured separately in `review.config.md` during Step 7.)
 - **Quality gate command** — if not auto-detected
 - **Refinement skill** — which skill to use when a story is too thin to implement. Default: `feature-discovery` (runs the `grill` interview, then writes the fuller spec and acceptance criteria). Store as `refinement-skill` in ClaudeProject.md.
 
-**Do not ask about priority, type, status or scope labels, and do not create any.** None of them decides anything: an issue's state is its `Stage` field, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields Step 6 configures. A repository that already has such labels keeps them — deleting a label strips it from every issue that ever carried it — but they stay out of the label map, and `wf issue-apply` takes one off any issue it writes.
+**Do not ask about labels, and create none except the review-state labels in Step 5b.** No label decides anything: an issue's state is its `Stage` field, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields Step 6 configures. A repository that already has priority, type, status or scope labels keeps them — deleting a label strips it from every issue that ever carried it — and `wf issue-apply` takes one off any issue it writes.
 
 **Do not ask about agent gating.** There is no approval label. A person approves an issue for autonomous pickup by setting its `Stage` to `Backlog` or leaving it blank, and withholds approval by setting `Needs refinement` or `Parked`.
 
-For each setting, show the detected or suggested default and let the user confirm or override. For labels, also list any existing labels found on the repo (`gh label list`) so the user can incorporate them.
+For each setting, show the detected or suggested default and let the user confirm or override.
 
 ### 5. Generate ClaudeProject.md
 
@@ -150,24 +148,17 @@ Use the template from `templates/ClaudeProject.md`. Fill in all detected and use
 
 If enhancing an existing file, merge new sections into the existing content without removing sections that are already there.
 
-### 5b. Create the complete label inventory on GitHub
+### 5b. Create the review-state labels
 
-Setup is the **only** place the full label inventory is created. Skills at runtime rely on these already existing and only create-if-missing as a guarded fallback (see the pre-creation contract in `templates/default-labels.md`). Create the **complete** inventory now — both the workflow labels and the review-state mutex labels — so no skill has to lazily create labels mid-workflow.
-
-1. **Workflow labels** — the `claude-authored` marker, plus any Custom labels configured in ClaudeProject.md. That is the whole issue-side inventory: there are no priority, type, status or scope labels to create, because none of them decides anything.
-2. **Review-state labels** — the nine review-state labels (including the `needs-review` entry state and `failed`). If the user set up `docs/review.config.md` (step 7) or chose a label prefix, resolve each name from its Purpose row there; otherwise use the `review-` defaults from `templates/default-labels.md`. Create these even if the user defers full review-config setup, so the code-review skill never has to create them at runtime.
-
-First fetch existing labels, then create only the missing ones — **without `--force`**, so existing labels keep their colour and description (no churn):
+The nine review-state labels on a pull request are the only labels the workflow applies, so creating them is the whole of label setup. Create them even if the user defers the review config in Step 7, so the code-review skill never has to create one mid-run:
 
 ```
-existing=$(gh label list --repo {org}/{repo} --json name --jq '.[].name')
-# for each resolved <name> not in $existing:
-gh label create "<name>" --repo {org}/{repo} --description "<description>" --color "<color>"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" labels-ensure
 ```
 
-Use the colours from the inventory tables in `templates/default-labels.md`. The user may override any colour during setup.
+It names each label through `docs/review.config.md` when that exists, falling back to the `review-` defaults, and creates only the ones the repo lacks, never with `--force`, so an existing label keeps its colour and description.
 
-This step is best-effort. If label creation fails (permissions, etc.), log a warning and continue.
+This step is best-effort. If `failed` is not empty (permissions, etc.), log a warning and continue.
 
 ### 5c. Ignore plugin scratch files
 
@@ -273,11 +264,11 @@ Ask the user if they plan to use the code-review skill for automated PR reviews.
    - Ask whether to **auto-merge approved PRs** (squash-merge once Claude approves and posts its comment). This defaults to **off**; enable it only for repos that should merge approved reviews unattended. Stored as `auto-merge-on-approval` in `docs/review.config.md`. Say plainly what it covers, because it is the **only** switch that decides this: it governs `/github-workflow:code-review` **and** the merge phase at the end of a `/github-workflow:execute` run. Left off, an execute run ends at an approved pull request waiting for a person, which is a complete run. **If the user enables it, run Step 7b** (Harden auto-merge enforcement) before finishing — that step turns on repo-level auto-merge, attempts branch protection with required checks, and sets the `require-ci-before-merge` fallback when GitHub can't enforce them.
    - Ask, **only if auto-merge was enabled**, what to do when CI can't run because of a GitHub Actions **billing or account** problem (out of minutes, spending limit hit, a failed payment): should an approved PR merge anyway? Default **no**. Stored as `bypass-ci-on-billing-failure` in `docs/review.config.md` — `true` merges an approved PR only when a billing/account failure is the sole blocker (a real test/build/lint failure is never bypassed). It covers billing stopping the pipeline from being created at all, not only one that runs and fails; in that case the merge also requires the project's quality gate to have passed locally. It is the persistent, per-project form of the one-off `--bypass-ci` flag.
    - Ask, **only if auto-merge was enabled and the repo has zero active GitHub Actions workflows** (count them first — the question is meaningless otherwise): its PRs will never report a check, so should an approved PR merge anyway, on the strength of the local quality gate? Default **no**. Stored as `bypass-ci-when-no-pipeline` in `docs/review.config.md` — `true` merges an approved PR only when the rollup is completely empty, the repo really has no active workflows, and the project's quality gate passed locally on that SHA. Any check at all, in any state, is gated normally. This is the setting for a project whose CI lives where GitHub cannot see it (Buildkite, Jenkins, CircleCI) as much as for one with no CI; left `false`, every approved PR on such a repo pauses at the no-checks guard. It is mutually exclusive with `bypass-ci-on-billing-failure`, which needs workflows to exist.
-   - Create the labels on the GitHub repo
+   - Run `labels-ensure` again (Step 5b), so a renamed label exists before anything applies it
    - Write `docs/review.config.md`
 3. If the user declines, note that the code-review skill will prompt for this config on first run.
 
-Review state labels are separate from the Claude labels in ClaudeProject.md. The Claude labels are simple workflow markers; review state labels are a mutex managed by the code-review skill.
+Review state labels are a mutex managed by the code-review skill, and the only labels the workflow applies.
 
 ### 7b. Harden auto-merge enforcement
 

@@ -80,7 +80,7 @@ These files provide context for specific workflows. You don't need to read all o
 
 | File | When to consult |
 | ---- | --------------- |
-| `ClaudeProject.md` | Project identity, labels, quality gate, branch convention, issue fields. Read at the start of any workflow command. |
+| `ClaudeProject.md` | Project identity, quality gate, branch convention, issue fields. Read at the start of any workflow command. |
 | `docs/review.config.md` | (Optional — created by setup step 7.) Review label definitions, non-compliance gates, tech-stack review rules. Read when performing or preparing for code review. |
 
 Add your own reference docs to this table as needed — architecture decisions, coding standards, API specs, etc. — so future sessions know where to look.

@@ -95,6 +95,7 @@ Named here so a finding can be acted on without reading the source. `wf prefligh
 | `field-unpinned` | critical | An issue type does not pin a field the tooling writes (`Stage` included), so values written to it never appear on the issue form. |
 | `config-retired` | warning | A `## Ready Gate` or `## Agent Gating` section survives. Nothing reads it, and leaving it there means the next person believes it. |
 | `label-deprecated` | warning | The label map names a label nothing applies any more. |
+| `review-label` | warning | A review-state label the repo lacks, so a pull request cannot carry that state. |
 | `placeholders` | warning | Template placeholders nobody replaced. |
 | `quality-gate` | warning | No pre-commit command, so nothing checks a change before it is committed. |
 | `claude-md-ref` | warning | `CLAUDE.md` never mentions `ClaudeProject.md`, so a session that runs no workflow command never finds the configuration. |
@@ -107,7 +108,7 @@ Named here so a finding can be acted on without reading the source. `wf prefligh
 
 ## What `--fix` will and will not do
 
-It repairs six things, all idempotent: it deletes a retired section, deletes a deprecated label-map row, adds the `ClaudeProject.md` pointer to an existing `CLAUDE.md`, takes retired labels off the open issues carrying them, closes an open Epic or Feature whose sub-issues are all closed, as completed, setting its `Stage` to `Done`, and sets a drifted issue's `Stage` to `In Review` when a ready pull request closes it, or to `In Progress` when a draft pull request closes it or somebody is assigned.
+It repairs seven things, all idempotent: it deletes a retired section, deletes a deprecated label-map row, creates any missing review-state label without overwriting one that exists, adds the `ClaudeProject.md` pointer to an existing `CLAUDE.md`, takes retired labels off the open issues carrying them, closes an open Epic or Feature whose sub-issues are all closed, as completed, setting its `Stage` to `Done`, and sets a drifted issue's `Stage` to `In Review` when a ready pull request closes it, or to `In Progress` when a draft pull request closes it or somebody is assigned.
 
 It will not create a `CLAUDE.md` that does not exist, invent an `## Identity` section, create or delete an org-level issue field (`Stage` included), add or rename a field's options, pin a field to an issue type, choose between two disagreeing values, rewrite a sentence in somebody's `CLAUDE.md`, or write a quality gate. Each of those is either a decision only the project can make or a change that happens in the GitHub org settings rather than through the API this runs on. A finding it leaves alone comes back with `auto: false` and a reason, and after `--fix` it is still in `findings` — which is the point: what the command reports is the state it leaves behind.
 

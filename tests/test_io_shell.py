@@ -3112,8 +3112,10 @@ class TestHandoffAndClaims(unittest.TestCase):
         code, payload = self._run(['handoff', '--pr', '7', '--issue', '3'], calls)
         self.assertEqual(code, wf.EXIT_OK)
         joined = [' '.join(c) for c in calls]
-        self.assertTrue(any('pr edit 7' in c and 'claude-authored' in c
-                            and 'review-needs-review' in c for c in joined))
+        self.assertTrue(any('pr edit 7' in c and 'review-needs-review' in c
+                            for c in joined))
+        # The review label is the only one: no provenance marker (#275).
+        self.assertFalse(any('claude-authored' in c for c in joined))
         # No `issue edit` at all: `Stage` is the state, so the write is the
         # whole hand-off and there is no label to swap.
         self.assertFalse(any('issue edit' in c for c in joined))
@@ -3286,6 +3288,53 @@ class TestClaimReap(unittest.TestCase):
         self.assertEqual(payload['summary']['suspect'], 1)
 
 
+class TestLabelsEnsure(unittest.TestCase):
+    """`wf labels-ensure` creates the review labels a repo lacks (#275)."""
+
+    def _run(self, live, create_err=''):
+        calls = []
+
+        def fake_run(cmd, input_text=None):
+            calls.append(list(cmd))
+            if cmd[:3] == ['gh', 'label', 'create'] and create_err:
+                return 1, '', create_err
+            return 0, '', ''
+
+        args = wf.build_parser().parse_args(['labels-ensure'])
+        with mock.patch.object(wf, 'prepare_cfg', lambda: _cfg()), \
+                mock.patch.object(wf, 'run', fake_run), \
+                mock.patch.object(wf, 'fetch_repo_state',
+                                  lambda cfg, repo=None:
+                                  (True, {'labels': live}, '')), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code, payload = _capture(args.func, args)
+        return code, payload, [c for c in calls
+                               if c[:3] == ['gh', 'label', 'create']]
+
+    def test_only_the_missing_labels_are_created(self):
+        live = [n for n in wf_core.REVIEW_DEFAULT_LABELS.values()
+                if n != 'review-failed']
+        code, payload, creates = self._run(live)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual([c[3] for c in creates], ['review-failed'])
+        self.assertEqual(payload['created'], ['review-failed'])
+
+    def test_a_create_never_forces(self):
+        _, _, creates = self._run([])
+        self.assertEqual(len(creates), len(wf_core.REVIEW_DEFAULT_LABELS))
+        self.assertFalse(any('--force' in c for c in creates))
+
+    def test_losing_a_race_to_another_agent_is_not_a_failure(self):
+        code, payload, _ = self._run([], create_err='label already exists')
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['failed'], [])
+
+    def test_a_create_that_fails_for_real_is_reported(self):
+        code, payload, _ = self._run([], create_err='HTTP 403')
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertEqual(len(payload['failed']), len(wf_core.REVIEW_DEFAULT_LABELS))
+
+
 class TestConfigAudit(unittest.TestCase):
     """Preflight's drift checks: what fails, what warns, and what it costs."""
 
@@ -3294,7 +3343,13 @@ class TestConfigAudit(unittest.TestCase):
     # writes it, and a value on an unpinned field is invisible on the form.
     _PINNED = ['Priority', 'Effort', 'Classification', 'Origin', 'Ownership',
                'Stage']
-    _LABELS = ['status-blocked', 'status-in-progress', 'type-bug']
+    _REVIEW = list(wf_core.REVIEW_DEFAULT_LABELS.values())
+    _LABELS = ['status-blocked', 'status-in-progress', 'type-bug'] + _REVIEW
+
+    def test_a_missing_review_label_is_a_warning_the_fix_can_repair(self):
+        code, payload, _ = self._run(labels=['status-blocked'])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertIn('review-label', self._checks(payload))
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -3393,7 +3448,7 @@ class TestConfigAudit(unittest.TestCase):
         self._write_instruction(
             'set-selection.md',
             'Mark it ready:\n\n    gh issue edit $n --add-label status-ready\n')
-        code, payload, _ = self._run(labels=['status-in-progress'])
+        code, payload, _ = self._run(labels=['status-in-progress'] + self._REVIEW)
         self.assertEqual(code, wf.EXIT_DRIFT)
         self.assertEqual(self._checks(payload), ['label-missing'])
         self.assertIn('set-selection.md', payload['findings'][0]['detail'])
@@ -3567,7 +3622,7 @@ class TestConfigAudit(unittest.TestCase):
 
         with mock.patch.object(wf, 'gh_graphql', explode):
             code, payload, _ = self._run(
-                sections=[s for s in self._SECTIONS if s != 'Label Map'],
+                sections=[s for s in self._SECTIONS if s != 'Branch Convention'],
                 argv=['--offline'])
         self.assertEqual(code, wf.EXIT_DRIFT)
         self.assertEqual(self._checks(payload), ['config-section'])
@@ -3590,7 +3645,7 @@ class TestConfigAudit(unittest.TestCase):
     def test_a_placeholder_in_an_instruction_file_is_not_a_label(self):
         self._write_instruction(
             'claim.md', 'gh issue edit $n --add-label "{status_ready_label}"\n')
-        code, payload, _ = self._run(labels=[])
+        code, payload, _ = self._run(labels=self._REVIEW)
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(self._checks(payload), [])
 
@@ -4228,7 +4283,8 @@ class TestPreflight(unittest.TestCase):
                     'nodes': nodes}}}, ''
             return True, {'repository': {'labels': {
                 'pageInfo': {'hasNextPage': False, 'endCursor': None},
-                'nodes': [{'name': 'claude-authored'}]}}}, ''
+                'nodes': [{'name': n} for n
+                          in wf_core.REVIEW_DEFAULT_LABELS.values()]}}}, ''
 
         def gh_graphql_partial(query, **fields):
             return {'organization': {'issueTypes': {'nodes': [

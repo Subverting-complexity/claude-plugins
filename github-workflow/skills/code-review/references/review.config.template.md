@@ -10,7 +10,7 @@
 
 Replace `{PREFIX}` with your label prefix (e.g., `claude`, `review`, `cr`). All state labels use this prefix so they're easy to filter.
 
-The **Purpose** column is the stable identity skills resolve against — it never changes even when you pick a custom prefix. Producers and consumers look a label up by purpose (see the resolution path in `templates/default-labels.md`), so the name you set here is what every skill applies and filters on.
+The **Purpose** column is the stable identity skills resolve against — it never changes even when you pick a custom prefix. Producers and consumers look a label up by purpose, falling back to the `review-` default for a purpose this table does not list, so the name you set here is what every skill applies and filters on.
 
 State labels are mutually exclusive — exactly one is applied per review.
 
@@ -26,7 +26,7 @@ State labels are mutually exclusive — exactly one is applied per review.
 | `updating` | `{PREFIX}-updating` | State | A builder agent is addressing review feedback — prevents concurrent updates |
 | `fixes-applied` | `{PREFIX}-fixes-applied` | Action | Claude pushed fix commits to the PR branch (sticky across runs) |
 
-These labels are managed by the `/github-workflow:code-review` skill and form the single source of truth for PR review state. Claude labels in `ClaudeProject.md` (like `claude-authored`) are separate workflow markers that do not participate in this state machine.
+These labels are managed by the `/github-workflow:code-review` skill and form the single source of truth for PR review state. They are the only labels the workflow applies; an issue gets none.
 
 ## Custom Labels
 

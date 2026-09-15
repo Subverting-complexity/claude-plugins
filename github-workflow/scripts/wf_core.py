@@ -13,7 +13,7 @@ to `gh`/`git` lives in `wf.py`; the offline test suite
 stay verifiable without a network.
 
 Reference templates (the prose these functions encode):
-  - github-workflow/templates/default-labels.md
+  - github-workflow/skills/code-review/references/review-workflow.md  (review labels)
   - github-workflow/skills/execute/SKILL.md  (branch convention)
 """
 
@@ -61,7 +61,7 @@ def _priority_rank(field_value):
 # native issue types cannot answer a feature/maintenance question at all, and
 # `wf pick` says so rather than guessing.
 #
-# Native type map (from templates/default-labels.md):
+# Native type map (NATIVE_TYPE_MAP below):
 #   feature mode  → keep User Story
 #   maintenance   → keep Bug + Chore + Feature (with Classification filter
 #                   if available)
@@ -593,16 +593,16 @@ def evaluate_pool(issues, mode='story', type_map=None, classification_map=None,
 
 
 # ── Label resolution ─────────────────────────────────────────────────────────
-# github-workflow/templates/default-labels.md — "The single resolution path".
-
-# `type-*` is deliberately absent. The native issue type is what classifies an
-# issue; a label that repeats it is a second answer nothing reads, and a
-# project that still maps one is told to drop the row by
-# `deprecated_label_findings`. The names survive in `TYPE_LABEL_KINDS` only so
-# the write path can recognise and remove them.
-_DEFAULT_LABELS = {
-    'claude-authored': 'claude-authored',
-}
+# The workflow puts no label on an issue, and none on a pull request except the
+# review-state labels, which resolve through `REVIEW_DEFAULT_LABELS` below. The
+# `claude-authored` marker went in 13.2.0 (#275): it recorded who built a
+# change, which the PR's author and commits already say, and it decided
+# nothing. A project map that still names labels keeps resolving through
+# `resolve_label`, so an older `## Label Map` is read rather than broken.
+#
+# `type-*` is absent for the same reason. The names survive in
+# `TYPE_LABEL_KINDS` only so the write path can recognise and remove them.
+_DEFAULT_LABELS = {}
 
 # Every label that used to answer a question the structured fields now answer.
 # They are kept here, and nowhere else, so the write path can recognise one on
@@ -670,9 +670,9 @@ def retired_label_variants(labels, project_map=None):
 def resolve_label(purpose_key, project_map, defaults=None):
     """Resolve a purpose key to a concrete label name.
 
-    Resolution order (from default-labels.md — "The single resolution path"):
-    1. Project map (ClaudeProject.md label map, already in context at runtime).
-    2. Default inventory (the table in default-labels.md).
+    Resolution order:
+    1. Project map (a `## Label Map` in ClaudeProject.md, where one survives).
+    2. `defaults`, when the caller passes a table (`RETIRED_LABELS`).
     3. The key itself as a last resort so callers never get an empty string.
     """
     if defaults is None:
@@ -2355,7 +2355,6 @@ REQUIRED_CONFIG_SECTIONS = (
     'Package Manager',
     'Quality Gate',
     'Branch Convention',
-    'Label Map',
     'Issue Types & Fields',
 )
 
@@ -2475,23 +2474,44 @@ def label_reference_findings(references, live_labels, project_map=None):
     return out
 
 
-def config_label_findings(project_map, review_labels, live_labels,
-                          path='ClaudeProject.md'):
-    """Labels the project's own config names that the repo does not carry."""
+def config_label_findings(project_map, live_labels, path='ClaudeProject.md'):
+    """Labels a surviving `## Label Map` names that the repo does not carry.
+
+    The review-state labels are `review_label_findings`', because the plugin
+    knows their colours and can create them; a project's own label it cannot.
+    """
     live = set(live_labels or ())
     out = []
-    for source, mapping in (('`## Label Map` in %s' % path, project_map or {}),
-                            ('`docs/review.config.md`', review_labels or {})):
-        for purpose, name in sorted(mapping.items()):
-            if name in live:
-                continue
-            out.append(finding(
-                CRITICAL, 'config-label',
-                '%s maps `%s` to `%s`, which does not exist in this repo'
-                % (source, purpose, name),
-                'create the label, or correct the mapping to the name the repo '
-                'actually uses', path))
+    for purpose, name in sorted((project_map or {}).items()):
+        if name in live:
+            continue
+        out.append(finding(
+            CRITICAL, 'config-label',
+            '`## Label Map` in %s maps `%s` to `%s`, which does not exist in '
+            'this repo' % (path, purpose, name),
+            'create the label, or correct the mapping to the name the repo '
+            'actually uses', path))
     return out
+
+
+def review_label_findings(names, live_labels):
+    """Review-state labels the repo does not carry, one finding for all of them.
+
+    A warning, because nothing fails for want of one: `wf review-finish`
+    creates a missing verdict label on the spot. It is still worth repairing
+    before a run, since `wf handoff` would open a pull request with no entry
+    label and the review picker would never see it.
+    """
+    missing = [name for _, name, _, _ in missing_review_labels(names, live_labels)]
+    if not missing:
+        return []
+    return [finding(
+        WARNING, 'review-label',
+        'the repo has no %s, so a pull request cannot carry that review state'
+        % _names(missing),
+        'run `wf labels-ensure`, which creates each one with its colour and '
+        'description and leaves existing labels alone',
+        'docs/review.config.md')]
 
 
 def deprecated_label_findings(project_map, live_labels, path='ClaudeProject.md'):
@@ -2562,12 +2582,12 @@ def label_drift_findings(live_labels, project_map=None):
             'to a query for the other' % _names(names),
             'move every issue onto one of them and delete the rest'))
 
-    # Every name the workflow applies, plus every name it used to: a project
-    # part-way through the 10.0.0 migration still has `status-blocked` on real
-    # issues, and `blocked` sitting beside it still splits what a person sees
-    # when they filter the list by hand.
+    # Every issue label the workflow used to apply: a project part-way through
+    # the 10.0.0 migration still has `status-blocked` on real issues, and
+    # `blocked` sitting beside it still splits what a person sees when they
+    # filter the list by hand.
     present = set(live)
-    known = dict(RETIRED_LABELS, **_DEFAULT_LABELS)
+    known = dict(RETIRED_LABELS)
     for purpose in sorted(known):
         name = resolve_label(purpose, project_map or {}, known)
         if name not in present or '-' not in name:
@@ -2912,9 +2932,10 @@ def preflight_summary(findings):
 
 
 # ── PR review-state labels + selection ───────────────────────────────────────
-# Mirrors the code-review
-# skill (Step 1). Review-state names default to the `review-` prefix
-# (templates/default-labels.md) and are overridden by review.config.md.
+# Mirrors the code-review skill (Step 1). These are the only labels the
+# workflow applies. Names default to the `review-` prefix and are overridden
+# by the Labels table in review.config.md; the colours and descriptions are
+# what `wf labels-ensure` and the review-finish readback create them with.
 
 REVIEW_DEFAULT_LABELS = {
     'needs-review': 'review-needs-review',
@@ -2927,6 +2948,35 @@ REVIEW_DEFAULT_LABELS = {
     'updating': 'review-updating',
     'fixes-applied': 'review-fixes-applied',
 }
+
+REVIEW_LABEL_META = {
+    'needs-review': ('C2E0C6', 'Open PR awaiting its first review'),
+    'reviewing': ('0E8A16', 'Review in progress'),
+    'approved': ('1D76DB', 'Review passed'),
+    'changes-requested': ('E4E669', 'Problems remain to be addressed'),
+    'needs-discussion': ('D93F0B', 'Needs a person to decide'),
+    'needs-re-review': ('FBCA04', 'New commits since last review'),
+    'failed': ('B60205', 'Review could not complete'),
+    'updating': ('0E8A16', 'Builder addressing feedback'),
+    'fixes-applied': ('5319E7', 'Claude pushed fix commits (sticky)'),
+}
+
+
+def missing_review_labels(names, live_labels):
+    """Review labels the repo lacks, as `(purpose, name, colour, description)`.
+
+    `names` is `review_names(...)`. In `REVIEW_DEFAULT_LABELS` order, so a
+    create loop and a finding name them the same way every run.
+    """
+    live = set(live_labels or ())
+    out = []
+    for purpose in REVIEW_DEFAULT_LABELS:
+        name = names.get(purpose) or REVIEW_DEFAULT_LABELS[purpose]
+        if name in live:
+            continue
+        colour, description = REVIEW_LABEL_META[purpose]
+        out.append((purpose, name, colour, description))
+    return out
 
 
 def resolve_review_label(purpose_key, review_map=None, defaults=None):
@@ -3820,6 +3870,8 @@ FIXABLE_CHECKS = {
                           'set its `Stage` to `Done`',
     'stage-drift': 'set each issue\'s `Stage` to the one its open pull request '
                    'or assignee says it is in',
+    'review-label': 'create each missing review label with its colour and '
+                    'description, never overwriting one that exists',
 }
 
 UNFIXABLE_REASONS = {

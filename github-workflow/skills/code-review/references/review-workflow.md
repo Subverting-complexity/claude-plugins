@@ -8,7 +8,7 @@ For background on the feedback loop (how builders address review comments, how c
 
 ## Label Reference for Agents
 
-Any agent encountering these labels on a PR should understand what they mean and what action (if any) to take. Labels use the prefix defined in `review.config.md`. The bare names below (`reviewing`, `updating`, `approved`, …) are **purpose keys** — resolve each to its concrete name through the single path in `templates/default-labels.md` before applying or filtering. Never apply a bare name literally.
+Any agent encountering these labels on a PR should understand what they mean and what action (if any) to take. They are the only labels the workflow applies: an issue gets none. The bare names below (`reviewing`, `updating`, `approved`, …) are **purpose keys**. Resolve each through the Labels table in `review.config.md`, matched by its Purpose column; a purpose the file does not list, or a project with no file, uses the `review-` default (`review-approved` for `approved`). Never apply a bare name literally. `wf labels-ensure` creates any the repo lacks.
 
 ### State labels (mutually exclusive — exactly one per PR)
 
@@ -46,7 +46,7 @@ The real lock is an atomic claim ref, **not** a label. Both reviewing and updati
 
 ## Label reconciliation fallback (Step 10)
 
-Use this **only** when `wf review-finish` errors or Python is absent. Apply the verdict label and remove the other state labels with plain `gh`, resolving each name by purpose key through `templates/default-labels.md` (review-state purposes via `review.config.md` when present):
+Use this **only** when `wf review-finish` errors or Python is absent. Apply the verdict label and remove the other state labels with plain `gh`, resolving each name by purpose key as **Label Reference for Agents** above describes:
 
 ```bash
 gh pr edit <number> --repo <org>/<repo> --add-label <verdict-label> \
