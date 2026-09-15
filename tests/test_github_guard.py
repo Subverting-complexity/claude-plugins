@@ -559,6 +559,63 @@ class TestGapsFoundInReview(unittest.TestCase):
         self.assertIn('SomeoneElse', pwsh('pwsh -NoProfile -EncodedCommand ' + script))
 
 
+class TestGapsFoundInReReview(unittest.TestCase):
+    """Writes the second review of PR #297 found still passing."""
+
+    def test_substitutions_inside_arithmetic_are_read(self):
+        for command in (
+            'echo $((echo x) | gh pr create -R SomeoneElse/r --fill)',
+            'echo $(( $(gh pr create -R SomeoneElse/r --fill >/dev/null; echo 1) + 1 ))',
+        ):
+            with self.subTest(command=command):
+                self.assertIn('SomeoneElse', check(command))
+        self.assertIn('SomeoneElse', pwsh(
+            'Write-Output $((gh pr create -R SomeoneElse/r --fill))'))
+
+    def test_every_arithmetic_form_is_not_a_heredoc(self):
+        for command in (
+            'echo $[x<<y]\ngh pr create -R SomeoneElse/r --fill',
+            'if((x<<y)); then :; fi\ngh pr create -R SomeoneElse/r --fill',
+            'while((x<<y)); do :; done\ngh pr create -R SomeoneElse/r --fill',
+        ):
+            with self.subTest(command=command):
+                self.assertIn('SomeoneElse', check(command))
+        self.assertIsNone(check('(( n++ ))\ngh pr create --fill'))
+        self.assertIsNone(check(
+            "gh pr create --fill --body \"$(cat <<'EOF'\nx << y\nEOF\n)\""))
+
+    def test_a_view_given_gh_repo_is_not_current(self):
+        for command in (
+            'slug=$(GH_REPO=SomeoneElse/r gh repo view --json nameWithOwner -q .nameWithOwner); gh api repos/$slug/issues -f title=t',
+            'slug=$(env GH_REPO=SomeoneElse/r gh repo view --json nameWithOwner -q .nameWithOwner); gh api repos/$slug/issues -f title=t',
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(check(command))
+
+    def test_graphql_values_from_the_shell_or_a_file_cannot_be_judged(self):
+        for command in (
+            'ID=$(gh api repos/SomeoneElse/r/issues/1 -q .node_id); gh api graphql -f query="mutation { addComment(input: {subjectId: \\"$ID\\", body: \\"x\\"}) { clientMutationId } }"',
+            "gh api graphql -f query='mutation($id: ID!) { addComment(input: {subjectId: $id, body: \"x\"}) { clientMutationId } }' -F id=@id.txt",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(check(command))
+
+    def test_git_config_with_a_file_or_an_insteadof_rewrite(self):
+        self.assertIn('SomeoneElse', check(
+            'git config -f .git/config remote.origin.pushurl https://github.com/SomeoneElse/r.git && git push origin main'))
+        self.assertIsNotNone(check(
+            'git config url.https://github.com/SomeoneElse/.pushInsteadOf https://github.com/Subverting-complexity/ && git push origin main'))
+
+    def test_every_prefix_of_the_encoded_command_flag(self):
+        import base64
+        script = base64.b64encode(
+            'gh pr create -R SomeoneElse/r --fill'.encode('utf-16-le')).decode()
+        for flag in ('-en', '-enco', '-encoded', '/ec', '--EncodedCommand'):
+            with self.subTest(flag=flag):
+                self.assertIn('SomeoneElse', pwsh(
+                    'pwsh -NoProfile %s %s' % (flag, script)))
+
+
 BASH = shutil.which('bash')
 HOOK = os.path.join(os.path.dirname(__file__), '..', 'synergy', 'hooks',
                     'forge-guard.sh')
@@ -578,13 +635,14 @@ class TestHookInterpreter(unittest.TestCase):
                 json.dump({'owners': ['Subverting-complexity']}, f)
             env = dict(os.environ, CLAUDE_PLUGIN_DATA=data,
                        SYNERGY_GITHUB_ALLOWLIST=allow)
-            event = json.dumps({
-                'tool_name': 'PowerShell', 'cwd': '.',
-                'tool_input': {'command': 'pwsh -NoProfile -EncodedCommand ' + script}})
-            out = subprocess.run([BASH, HOOK.replace('\\', '/')], input=event,
-                                 capture_output=True, text=True, env=env,
-                                 timeout=120)
-            self.assertIn('"deny"', out.stdout)
+            for flag in ('-EncodedCommand', '-enco'):
+                event = json.dumps({
+                    'tool_name': 'PowerShell', 'cwd': '.',
+                    'tool_input': {'command': 'pwsh -NoProfile %s %s' % (flag, script)}})
+                out = subprocess.run([BASH, HOOK.replace('\\', '/')], input=event,
+                                     capture_output=True, text=True, env=env,
+                                     timeout=120)
+                self.assertIn('"deny"', out.stdout, flag)
 
     def test_a_cached_interpreter_that_does_not_run_the_script_is_replaced(self):
         with tempfile.TemporaryDirectory() as data:

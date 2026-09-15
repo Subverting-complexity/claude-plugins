@@ -92,6 +92,7 @@ def _prepare(text, powershell):
     out, scripts, stack, pending = [], [], [], []
     quote, line_start = None, 0
     escape = '`' if powershell else '\\'
+    arith = [] if powershell else _arithmetic_spans(text, escape)
     i, n = 0, len(text)
     while i < n:
         c = text[i]
@@ -105,11 +106,6 @@ def _prepare(text, powershell):
         if c == escape and nxt:
             out.append(c + nxt)
             i += 2
-            continue
-        if c == '$' and nxt == '(' and text[i + 2:i + 3] == '(':
-            end = closing_paren(text, i + 1, escape)  # $(( )), where << shifts
-            out.append(text[i:end + 1])
-            i = end + 1
             continue
         if c == '$' and nxt == '(':
             out.append('$(')
@@ -125,12 +121,6 @@ def _prepare(text, powershell):
             continue
         if c == '$' and nxt == "'" and not powershell:
             end = _ansi_quote_end(text, i + 2)
-            out.append(text[i:end + 1])
-            i = end + 1
-            continue
-        if (c == '(' and nxt == '(' and not powershell
-                and (i == 0 or text[i - 1] in ' \t\n;|&')):
-            end = closing_paren(text, i, escape)  # (( )) arithmetic
             out.append(text[i:end + 1])
             i = end + 1
             continue
@@ -162,7 +152,8 @@ def _prepare(text, powershell):
             i = n if close == -1 else close + 2
             continue
         elif (not powershell and c == '<' and nxt == '<'
-              and text[i + 2:i + 3] != '<' and (i == 0 or text[i - 1] != '<')):
+              and text[i + 2:i + 3] != '<' and (i == 0 or text[i - 1] != '<')
+              and not any(s < i < e for s, e in arith)):
             m = HEREDOC.match(text, i)
             if m:
                 pending.append(m.group(2))
@@ -193,6 +184,27 @@ def _prepare(text, powershell):
     if quote or stack:
         raise ValueError('a quote or $( is never closed')
     return ''.join(out), scripts
+
+
+def _arithmetic_spans(text, escape):
+    """(start, end) of each Bash arithmetic span, `((...))`, `$((...))` or
+    `$[...]`, in which `<<` shifts bits rather than opening a heredoc."""
+    spans = []
+    for m in re.finditer(r'\(\(|\$\[', text):
+        if m.group() == '((':
+            spans.append((m.start(), closing_paren(text, m.start(), escape)))
+            continue
+        depth, j = 0, m.start() + 1
+        while j < len(text):
+            if text[j] == '[':
+                depth += 1
+            elif text[j] == ']':
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        spans.append((m.start(), j))
+    return spans
 
 
 def _ansi_quote_end(text, start):
@@ -256,11 +268,6 @@ def _split(text, powershell):
             continue
         if c == '$' and nxt == "'" and quote is None and not powershell:
             end = _ansi_quote_end(text, i + 2)
-            buf.append(text[i:end + 1])
-            i = end + 1
-            continue
-        if c == '$' and nxt == '(' and text[i + 2:i + 3] == '(':
-            end = closing_paren(text, i + 1, escape)
             buf.append(text[i:end + 1])
             i = end + 1
             continue
@@ -422,13 +429,34 @@ def _walk(command, cwd, variables, found, depth, powershell):
             if (len(words) >= 4 and words[0] == 'remote'
                     and words[1] in ('add', 'set-url')):
                 variables['remote:' + words[2].lower()] = words[3]
-            if words[:2] == ['config', 'set']:
-                words = words[:1] + words[2:]
-            setting = (re.match(r'^remote\.(.+)\.(?:push)?url$', words[1], re.I)
-                       if len(words) >= 3 and words[0] == 'config' else None)
-            if setting:
-                variables['remote:' + setting.group(1).lower()] = words[2]
+            if words[:1] == ['config']:
+                _git_config(toks[toks.index('config') + 1:], variables)
         _command(toks, cwd, env, found, depth, powershell, fed)
+
+
+GIT_CONFIG_VALUE_FLAGS = {'-f', '--file', '--blob', '--type', '--default',
+                          '--comment', '--value', '--url'}
+
+
+def _git_config(toks, variables):
+    """Record a remote URL or an insteadOf rewrite that `git config` sets."""
+    args, skip = [], False
+    for token in toks:
+        if skip:
+            skip = False
+        elif token.startswith('-'):
+            skip = token in GIT_CONFIG_VALUE_FLAGS
+        else:
+            args.append(token)
+    if args[:1] == ['set']:
+        args = args[1:]
+    if len(args) < 2:
+        return
+    setting = re.match(r'^remote\.(.+)\.(?:push)?url$', args[0], re.I)
+    if setting:
+        variables['remote:' + setting.group(1).lower()] = args[1]
+    elif re.match(r'^url\..+\.(?:push)?insteadof$', args[0], re.I):
+        variables['url:insteadof'] = args[1]
 
 
 def _literal(segment, toks, env):
@@ -485,7 +513,9 @@ def _shell_script(toks):
         if head in POWERSHELLS:
             if re.match(r'^[-/]c(o(m(m(a(n(d)?)?)?)?)?)?$', low):
                 return rest
-            if low in ('-e', '-ec', '-enc') or low.startswith('-encodedc'):
+            flag = re.sub(r'^(?:--?|/)', '', low)
+            if token[:1] in '-/' and flag and (
+                    flag == 'ec' or 'encodedcommand'.startswith(flag)):
                 try:
                     return base64.b64decode(toks[i + 1]).decode('utf-16-le')
                 except (IndexError, ValueError):
@@ -676,7 +706,7 @@ def push_url(toks, cwd, lookup=remote_url, variables=None):
         return None
     remote, where, config = target
     variables = variables or {}
-    if any(k.startswith('url.') for k in config):
+    if variables.get('url:insteadof') or any(k.startswith('url.') for k in config):
         return ''  # an insteadOf rewrite can send the push anywhere
     if remote:
         remote = expand(remote, variables)

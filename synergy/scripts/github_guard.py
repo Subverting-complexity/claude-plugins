@@ -283,6 +283,8 @@ def _substitutions(command):
 def _views_current(sub, env, ctx):
     """Whether a `$( )` is `gh repo view` of the current repository: no
     repository named, and no GH_REPO to name one."""
+    if re.search(r'GH_REPO', sub, re.I):
+        return False
     toks = tokens(sub.strip())
     if toks[:3] != ['gh', 'repo', 'view']:
         return False
@@ -420,8 +422,10 @@ def _gh_graphql(toks, cwd, env, ctx, what):
     owner = _graphql(query, blobs, what)
     if owner is None:
         return []
-    if any('$' in blob for blob in blobs):
-        return [(None, 'a GitHub GraphQL mutation whose variables synergy '
+    declared = set(re.findall(r'\$(\w+)\s*:', query))
+    if (any('$' in blob or blob.startswith('@') for blob in blobs)
+            or set(re.findall(r'\$\{?(\w+)', query)) - declared):
+        return [(None, 'a GitHub GraphQL mutation whose values synergy '
                        'cannot read')]
     return [(owner, what)]
 
