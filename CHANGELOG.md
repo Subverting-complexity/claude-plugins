@@ -6,6 +6,16 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 13.3.0
+
+**A smaller plugin to run.** The workflows read much less on each run, and the `wf` scripts are split by concern. No command, skill name or `wf` subcommand changed.
+
+- **Merge mechanics load only when a run can merge.** `execute` reads the new `references/merge.md` only when auto-merge is enabled and nothing stops the merge, and `code-review` checks `Auto-Merge on Approval` before it loads `auto-merge.md`.
+- **Shorter orchestrator bodies.** The phases `execute` and `bulk-execute` share live in `execute/references/shared-phases.md`, and paths only some runs take moved into references read when needed. Every-run load: `execute` about 28,500 to 15,900 tokens, `bulk-execute` 32,600 to 22,200, `code-review` 10,100 to 5,400.
+- **Setup reads only the mode it runs.** `harden`, `reap`, `issues` and the full onboarding each have their own reference. A full setup no longer runs reap or the backlog audit; it suggests them at the end. Every-run load for a full setup went from about 11,300 to 7,100 tokens.
+- **Smaller writing skills.** `tone` keeps 9 of its 32 voice examples (about 11,300 to 5,700 tokens), and `writing-github-issues` reads the issue template only when creating an issue.
+- **`wf.py` and `wf_core.py` split into modules.** Each module has one concern, the decision logic stays free of I/O, and both files still export every name they did, so callers and tests are unchanged. The module map is in `scripts/README.md`.
+
 ## github-workflow 13.0.0
 
 **One plugin instead of two.** `local-workflow` is merged into `github-workflow`, and the fifteen skills the two plugins shared through a sync step now exist once. The plugin loads far less into every session: the skill, command and agent descriptions went from about 17,000 characters across both plugins to about 3,000, each is capped at 240 characters, and the `SessionStart` hook is one short paragraph.
