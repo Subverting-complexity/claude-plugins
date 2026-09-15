@@ -152,6 +152,18 @@ Keeping it to one switch is deliberate. The alternative — merging by default f
 
 Two ways to suppress a merge on a project that has it on: pass `--no-merge` for a single `execute` run, or leave the PR at a non-approved verdict. And several conditions stop a merge on their own — a red quality gate, a possible duplicate PR, a review that could not run independently, a moved head SHA, absent or red CI. Each of those leaves the PR open with a comment saying why.
 
+## Where it writes
+
+The plugin posts only to GitHub. A hook checks every shell and MCP tool call before it runs, and anything that would write to Azure DevOps, GitLab or Bitbucket asks you first. `verify-feature` and a local review return their report in the chat.
+
+To limit GitHub writes to your own organisations, create `~/.claude/synergy/github-allowlist.json` on your machine:
+
+```json
+{ "account": "your-github-login", "owners": ["your-org"] }
+```
+
+With it in place, a push, pull request, issue, comment, label, merge or other GitHub write is blocked outright when it targets an owner not listed, including your personal account unless you list it, or when `gh` is signed in as a different account. Reading and cloning anywhere still work. The list is personal: never commit it to a repository, and each developer keeps their own. Without the file nothing is restricted.
+
 ## Agents
 
 | Agent         | Role                          | Constraint             |

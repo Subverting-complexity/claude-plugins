@@ -125,6 +125,81 @@ class TestMcpTools(unittest.TestCase):
         self.assertIsNone(outbound_post('mcp__github__create_issue', {}))
 
 
+class TestHiddenWrites(unittest.TestCase):
+    """Writes written the way a run usually writes them, found in review."""
+
+    def test_writes_inside_substitutions_wrappers_and_variables_ask(self):
+        for command in (
+            'pr=$(az repos pr create --title x --query pullRequestId -o tsv)',
+            'resp=$(curl -s -X POST https://dev.azure.com/o/p/_apis/wit/workitems -d @b.json)',
+            '$r = Invoke-RestMethod -Method Post -Uri https://dev.azure.com/o/_apis/x -Body $b',
+            '(Invoke-RestMethod -Uri https://dev.azure.com/o/_apis/x -Method Post -Body $b).id',
+            'curl -d@body.json https://dev.azure.com/o/_apis/x',
+            'curl -sXPOST https://dev.azure.com/o/_apis/x',
+            'Invoke-RestMethod -Uri https://dev.azure.com/o/_apis/x -Method:Post',
+            '$uri = "https://dev.azure.com/o/_apis/x"\nInvoke-RestMethod -Uri $uri -Method Patch -Body $json',
+            'timeout 30 git push origin main',
+            'bash -c "az repos pr create --title x"',
+            'pwsh -Command "Invoke-RestMethod -Method Post -Uri https://dev.azure.com/o/_apis/x"',
+            'if git push; then echo ok; fi',
+            'C:\\tools\\az.cmd repos pr create --title x',
+            'Invoke-RestMethod -Uri https://dev.azure.com/o/_apis/x `\n  -Method Post',
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(bash(command))
+
+    def test_a_push_after_cd_uses_that_repository(self):
+        lookup = (lambda cwd, remote:
+                  AZURE if 'azrepo' in (cwd or '') else GITHUB)
+        self.assertIsNotNone(outbound_post(
+            'Bash', {'command': 'cd ../azrepo && git push'}, '.', lookup))
+        self.assertIsNotNone(outbound_post(
+            'Bash', {'command': '(cd ../azrepo && git push)'}, '.', lookup))
+        self.assertIsNone(outbound_post(
+            'Bash', {'command': 'git push'}, '.', lookup))
+
+    def test_camel_case_mcp_writes_ask(self):
+        self.assertIsNotNone(outbound_post('mcp__gitlab__createMergeRequest', {}))
+        self.assertIsNotNone(outbound_post('mcp__bitbucket__createPullRequest', {}))
+
+
+class TestNoFalsePrompts(unittest.TestCase):
+    def test_mcp_reads_and_azure_cloud_tools_pass(self):
+        for name in (
+            'mcp__gitlab__list_merge_requests',
+            'mcp__gitlab__get_merge_request',
+            'mcp__gitlab__get_merge_request_diffs',
+            'mcp__gitlab__get_merge_request_notes',
+            'mcp__gitlab__get_issue_link',
+            'mcp__ado__pipelines_get_run',
+            'mcp__bitbucket__get_pull_request_comment',
+            'mcp__azure__storage_blob_upload',
+            'mcp__azure-mcp__appservice_create',
+        ):
+            with self.subTest(name=name):
+                self.assertIsNone(outbound_post(name, {}))
+
+    def test_pushes_to_github_and_other_hosts_pass(self):
+        for command, urls in (
+            ('git push git@github.com-work:org/repo.git main', None),
+            ('git push', {'origin': 'git@github.com-personal:me/r.git'}),
+            ('git push', {'origin': 'https://github.mycorp.com/o/r.git'}),
+            ('git push heroku main', {'heroku': 'https://git.heroku.com/app.git'}),
+        ):
+            with self.subTest(command=command, urls=urls):
+                self.assertIsNone(bash(command, urls))
+
+    def test_text_inside_quotes_and_heredocs_passes(self):
+        for command in (
+            'git commit -m "fix: tidy; git push later"',
+            "cat > doc.md <<'EOF'\naz repos pr create --title x\nEOF",
+            'gh pr create --body "line one\naz boards work-item update --id 1"',
+            "gh pr create --body \"$(cat <<'EOF'\nthen git push to azure\nEOF\n)\"",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(bash(command))
+
+
 class TestDecision(unittest.TestCase):
     def test_the_hook_asks_and_never_denies(self):
         out = decision('a push to dev.azure.com')['hookSpecificOutput']
