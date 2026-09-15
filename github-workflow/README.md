@@ -38,7 +38,7 @@ github-workflow/
 │   └── plugin.json            # Plugin manifest
 ├── skills/                    # See "Skills" below
 ├── commands/                  # block-story, guide, report-issue, setup
-├── agents/                    # builder, reviewer, doc-writer
+├── agents/                    # builder, reviewer
 ├── references/
 │   └── story-template.md      # Shared story issue template
 ├── templates/                 # Canonical procedures + project-config templates
@@ -164,36 +164,30 @@ Two ways to suppress a merge on a project that has it on: pass `--no-merge` for 
 | ------------- | ----------------------------- | ---------------------- |
 | **Builder**   | Implements stories end-to-end | Full tool access       |
 | **Reviewer**  | Validates PRs against issues  | Fixes and merges in full mode; read-only when `execute` spawns it for an independent review |
-| **DocWriter** | Updates documentation         | Restricted to `docs/`  |
 
 Each agent follows least privilege — only the tools it needs. The builder is the default agent when the plugin is active.
 
-Unlike the skills, the agents are **plugin-specific and not shared or synced** from `_shared-skills/`: each agent's tool allowlist is least-privilege-scoped to this GitHub workflow (specific `gh` and `git` operations, issue field writes), so the definitions would not transfer to a plugin with a different surface.
+Each agent's tool allowlist is scoped to the GitHub workflow (specific `gh` and `git` operations, issue field writes). A local `build` run uses no agent of its own.
 
 ## Skills
 
-The plugin bundles the following skills. The orchestrators (`execute`, `bulk-execute`, `code-review`) drive the workflow; the rest are invoked by them or directly.
+The plugin bundles the following skills. The orchestrators (`execute`, `bulk-execute`, `code-review`, `build`) drive the workflow; the rest are invoked by them or directly.
 
 | Skill                 | What it does                                       |
 | --------------------- | ------------------------------------------------- |
 | `execute`             | Orchestrator: pick → build → PR → review → merge   |
 | `bulk-execute`        | The same loop for 2-5 related stories at once     |
 | `code-architect`      | Architecture design and audit (SOLID + Clean)     |
-| `structured-coding`   | Structured coding methodology                     |
-| `code-review`         | Deep PR review, labels, optional auto-merge       |
+| `build`               | Orchestrator for local work: plan → build → verify → commit, no issue or PR |
+| `code-review`         | Deep PR review, labels, optional auto-merge; also reviews a local change, with a React Native checklist |
 | `preflight`           | Checks project-config health before a run; `wf preflight --fix` repairs what it safely can |
-| `feature-discovery`   | Breaks features into stories                      |
+| `feature-discovery`   | Breaks features into stories; plans a new project's foundations |
 | `grill`               | Stress-tests a plan or design by interviewing you |
-| `verify-feature`      | Verifies a change against its story in context    |
-| `security-audit`      | Security-focused codebase audit                   |
-| `debugging`           | Systematic root-cause debugging methodology       |
-| `repo-scaffolding`    | Repository structure and scaffolding              |
 | `user-story`          | Authors user stories                              |
 | `writing-github-issues` | Standard for every issue title and body         |
 | `user-facing-communication` | Standard for every reply the user reads    |
 | `acceptance-criteria` | Authors acceptance criteria                       |
-| `pr-body`             | Authors PR bodies to the fixed shape              |
-| `doc-writer`          | Writes and updates documentation                  |
+| `pr-body`             | Authors PR bodies to the fixed shape, or the component format where there is no `ClaudeProject.md` |
 | `ecosystem-setup`     | Sets up companion tools, writes `ecosystem.md`    |
 | `support-request`     | Support-request and incident write-ups            |
 | `tone`                | Polishes correspondence in the user's voice       |

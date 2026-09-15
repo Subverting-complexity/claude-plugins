@@ -69,7 +69,7 @@ Treat this as a best-effort safety net, not a substitute for `symlinkDirectories
 
 A worktree is only auto-removed when it is **clean**. On Windows the most common reason a worktree stays "dirty" — and so never gets reaped, leaving its branch checked out — is a **line-ending mismatch**, not a real edit.
 
-The repo's `.gitattributes` pins every text file to LF (`* text=auto eol=lf`), because the `sync-skills` scripts write LF-only. But Git for Windows installs with `core.autocrlf=true` at the **system** level, which fights that attribute: a file can end up with CRLF in the working tree while the committed blob is LF. `CLAUDE.md` is the usual victim (it is loaded and rewritten often), and it then shows as perpetually "modified" even though no content changed. Confirm with:
+The repo's `.gitattributes` pins every text file to LF (`* text=auto eol=lf`), because the plugin's shell scripts and hooks must run under Git Bash and break on CRLF. But Git for Windows installs with `core.autocrlf=true` at the **system** level, which fights that attribute: a file can end up with CRLF in the working tree while the committed blob is LF. `CLAUDE.md` is the usual victim (it is loaded and rewritten often), and it then shows as perpetually "modified" even though no content changed. Confirm with:
 
 ```bash
 # A healthy text file reads "w/lf"; a churned one reads "w/crlf".

@@ -1,11 +1,10 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 # Story Template
 
 Each story is a single-session unit of work for an autonomous agent.
 
 A story is an issue, so it is written the way every other issue is written: open with the actual point, and include only what someone needs to understand the work, make the change and verify it. Prefer a short story over a comprehensive record of the discovery session.
 
-Where the plugin provides a `writing-github-issues` skill (github-workflow does), that skill is the full standard and this template is its story shape. Read it before writing stories destined for GitHub.
+The `writing-github-issues` skill is the full standard and this template is its story shape. Read it before writing stories destined for GitHub.
 
 ## The usual shape
 

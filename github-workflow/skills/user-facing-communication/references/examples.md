@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 # Worked examples
 
 These examples show the expected level of detail. The aim is not to report everything that happened; it is to give the user the smallest clear handover.

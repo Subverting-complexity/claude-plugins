@@ -6,9 +6,7 @@
 # by default — they are marked "not read at runtime" throughout the codebase.
 #
 # A citation naming another skill's references directory
-# (skills/<skill>/references/<file>.md) resolves against that skill. A citation
-# of a canonical _shared-skills/ source is skipped: those files carry
-# {{PLUGIN_NAME}} placeholders and are never loaded at runtime.
+# (skills/<skill>/references/<file>.md) resolves against that skill.
 #
 # Usage:
 #   bash count-tokens.sh github-workflow/skills/execute/SKILL.md
@@ -130,11 +128,6 @@ add_file() {
 # against that skill, not the citing one. Without this the path would fall
 # through to the plugin-level references/ directory and report "(missing)",
 # hiding a real dependency from the budget.
-#
-# The optional `_shared-` prefix in the pattern is what keeps a
-# _shared-skills/<skill>/references/<file>.md citation from being mistaken for a
-# deployed skills/ path: grep matches from the earlier position, and the loop
-# then skips it as a canonical source that is never loaded at runtime.
 scan_deps() {
     local f="$1"
     [ -f "$f" ] || return 0
@@ -146,14 +139,12 @@ scan_deps() {
         */references/*) citer_ref_base="${f%/*}" ;;
         */skills/*)     citer_ref_base="${f%/*}/references" ;;
     esac
-    grep -oE '((_shared-)?skills/[a-zA-Z0-9_-]+/)?(templates|references)/[a-zA-Z0-9_-]+\.md' "$f" 2>/dev/null \
+    grep -oE '(skills/[a-zA-Z0-9_-]+/)?(templates|references)/[a-zA-Z0-9_-]+\.md' "$f" 2>/dev/null \
         | sort -u \
         | while IFS= read -r ref; do
             local name="${ref##*/}"
             local skill
             case "$ref" in
-                _shared-skills/*)
-                    continue ;;
                 skills/*/references/*)
                     skill="${ref#skills/}"
                     skill="${skill%%/*}"

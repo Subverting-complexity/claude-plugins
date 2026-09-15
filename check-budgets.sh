@@ -15,9 +15,7 @@
 # defaults below. Re-measure and re-calibrate (never just raise to silence a
 # failure) if a deliberate, reviewed change grows a file.
 #
-# Checks the DEPLOYED plugin copies only (github-workflow/, local-workflow/);
-# the _shared-skills/ canonical templates carry {{PLUGIN_NAME}} placeholders and
-# are not loaded into context, so they are excluded.
+# Checks the plugin's skills and commands under github-workflow/.
 #
 # Usage:
 #   bash check-budgets.sh              # enforce budgets; exit 1 if any exceeded
@@ -37,39 +35,16 @@ cd "$REPO_ROOT"
 CHARS_PER_TOKEN_X10=35
 
 # --- Budgets (calibrated from measured baselines) --------------------------
-# Description: current max is 503 chars (verify-feature, after it took on
-# duplication, complexity and regressions); 510 sits ~1.4% above it, so a
-# further description edit there has to trim before it adds. (Block-scalar
-# descriptions like verify-feature's run longer than the single-line ones, so
-# the binding max is well above debugging's 434.)
-DESC_BUDGET_CHARS=510
-# Body: the Anthropic ≤500-line guideline; most skills sit well under it.
+# Description: every description loads into every session, so they are kept
+# short. The longest is 229 chars (code-review, which covers pull requests and
+# local changes); 240 sits ~5% above it, so a longer one has to trim first.
+DESC_BUDGET_CHARS=240
+# Body: the Anthropic ≤500-line guideline; every skill sits under it.
 BODY_BUDGET_LINES=500
 
-# Per-file body overrides for legitimately large orchestrators. Each value sits
-# just above the file's current measured body with a few % headroom, mirroring
-# the footprint-check convention — tight enough to catch regression, loose
-# enough not to block normal edits. Key = repo-relative path.
-declare -A BODY_OVERRIDE=(
-    # PR-review orchestrator; body is 745 lines after the pinned-PR path, the
-    # read-only carve-outs, and the sanctioned-caller note. 771 is ~3.5%.
-    ["github-workflow/skills/code-review/SKILL.md"]=771
-    # Story orchestrator, the other legitimately large one: it now covers 11
-    # phases (pick through merge) rather than stopping at the PR, and the
-    # post-PR detail already lives in references/. Body is 576 lines after the
-    # cross-phase "Fix in scope, file out of scope" rule, which has to sit in
-    # the hot path because it governs the build and every review round; 600 is
-    # ~4.2% headroom, matching the calibration above.
-    ["github-workflow/skills/execute/SKILL.md"]=600
-    # The multi-story orchestrator. Same 11 phases as execute, plus set
-    # selection and the substitutions that let it reuse execute's review,
-    # merge and cleanup references rather than copy them. Body is 522 lines
-    # after narrowing the start-of-run claim sweep, whose two safety rules
-    # (untracked files only, issue claims only) have to sit beside the
-    # destructive command they constrain; 530 is ~1.5% headroom, tighter than
-    # the calibration above because this file has no slack left to give.
-    ["github-workflow/skills/bulk-execute/SKILL.md"]=530
-)
+# Per-file body overrides for a file that legitimately needs more than the
+# default. None does at present. Key = repo-relative path.
+declare -A BODY_OVERRIDE=()
 
 # --- Helpers ----------------------------------------------------------------
 
@@ -151,8 +126,8 @@ check_body() {
 
 run_gate() {
     local skill_files command_files
-    mapfile -t skill_files < <(find github-workflow local-workflow -name 'SKILL.md' 2>/dev/null | sort)
-    mapfile -t command_files < <(find github-workflow local-workflow -path '*/commands/*.md' 2>/dev/null | sort)
+    mapfile -t skill_files < <(find github-workflow -name 'SKILL.md' 2>/dev/null | sort)
+    mapfile -t command_files < <(find github-workflow -path '*/commands/*.md' 2>/dev/null | sort)
 
     for f in "${skill_files[@]:-}"; do
         [ -z "$f" ] && continue

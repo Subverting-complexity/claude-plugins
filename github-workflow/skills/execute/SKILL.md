@@ -1,16 +1,8 @@
 ---
 name: execute
-description: >-
-  End-to-end GitHub story execution: pick → plan → build → test → PR →
-  independent review → merge (where enabled). Trigger when the user wants
-  development work done — "next story", "work on story N", "start story N",
-  "pick a story", "pick story N", "what's next", a bare issue number,
-  "build this", "implement", "run the workflow", or a pasted GitHub issue
-  URL. Use mode=feature for features, mode=maintenance for
-  bugs/security/debt, mode=audit for a no-code-change codebase audit.
+description: 'Take a GitHub story end to end: pick, plan, build, test, open a PR, independent review, merge where enabled. Trigger on "next story", "work on story N", a bare issue number or an issue URL. Modes: feature, maintenance, audit.'
 depends-on:
   - code-architect
-  - structured-coding
   - feature-discovery
   - code-review
 argument-hint: '[issue#] [--mode feature|maintenance|audit] [--no-merge] [--bypass-ci]'
@@ -304,9 +296,8 @@ If the file does **not** exist, the project opted out — skip this whole step s
 
 ## Phase 4 — Build
 
-Use `/github-workflow:structured-coding` to implement:
+Implement the Phase 3 plan by `templates/coding-method.md`:
 
-- Pass the architecture plan from Phase 3 and the issue requirements.
 - Do not pause for user confirmation — the issue requirements and Phase 3 plan are the approved specification.
 - Write code and tests together. Do not defer tests to a later phase.
 - Follow build principles from `CLAUDE.md`:

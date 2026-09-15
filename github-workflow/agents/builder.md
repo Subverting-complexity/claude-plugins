@@ -104,7 +104,7 @@ Each entry is scoped to the minimum needed; the rationale for every family is re
 
 **Bash(make \*)** — Make-based build systems used across many project types.
 
-**Bash(bash \*.sh), Bash(bash \*.sh \*)** — run quality gate and project shell scripts by name (e.g., `bash sync-skills.sh --verify`, `bash lint-skills.sh`). Intentionally restricted to `.sh` filenames — this blocks `bash -c "arbitrary code"` and process substitution (`bash <(curl ...)`) while allowing any named script.
+**Bash(bash \*.sh), Bash(bash \*.sh \*)** — run quality gate and project shell scripts by name (e.g., `bash lint-skills.sh`, `bash run-tests.sh`). Intentionally restricted to `.sh` filenames — this blocks `bash -c "arbitrary code"` and process substitution (`bash <(curl ...)`) while allowing any named script.
 
 **Agent** — the subagent-spawning tool, under the name the current CLI uses. It exists here to spawn the read-only review agents the `execute` skill's Phase 8 and Phase 9 depend on. Without it the independent review cannot happen in a separate context and the workflow falls back to reviewing its own work in this one, which is the thing those phases exist to avoid. The spawned agents carry their own least-privilege allowlists, so this does not widen what the builder itself can do.
 

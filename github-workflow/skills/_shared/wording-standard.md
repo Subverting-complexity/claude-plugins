@@ -1,4 +1,3 @@
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
 # Plain-English Wording Standard
 
 This is the shared standard for **every piece of text a person reads**, in any skill or command in this plugin. That includes the plan you print before building, progress notes while you work, the final summary, interview questions, `AskUserQuestion` options, pull request descriptions, code review comments, and the explanation in any chat reply. If a human will read it, this standard applies.
@@ -41,7 +40,7 @@ This applies to `AskUserQuestion` option **labels and descriptions** as much as 
 
 Anything written into a tracker or forge field — an issue body, a pull request description, a comment on one — follows `_shared/body-standard.md` instead. It decides the sections, the length, the title, and the rule that each paragraph is one unwrapped line. Such a body is read by someone about to do or review the work, so it is shorter than this standard would otherwise produce, and it leaves out the investigation that found the problem.
 
-Entry points sit on that standard and hold only what differs. For a pull request: `skills/pr-body/SKILL.md` in github-workflow, `skills/pr-description/SKILL.md` in local-workflow. For a GitHub issue: `writing-github-issues`, which only github-workflow ships. Each has its own slash command, because the two pull request formats are deliberately different.
+Entry points sit on that standard and hold only what differs. For a pull request: `skills/pr-body/SKILL.md`, which picks the fixed or the component format by repository. For a GitHub issue: `writing-github-issues`.
 
 Everything else you write still follows this standard, including what you tell the person about the issue you filed or the pull request you opened. `_shared/banned-patterns.md` applies to all of it, and `skills/user-facing-communication/SKILL.md` still shapes the reply.
 

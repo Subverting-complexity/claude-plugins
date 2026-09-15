@@ -1,16 +1,13 @@
 ---
 name: preflight
-description: >-
-  Check project configuration health before running workflow commands.
-  Verifies critical files exist, required sections are present, and
-  settings are consistent. Invoked automatically by other commands —
-  can also be run directly as a diagnostic. Trigger on "check my
-  config", "preflight", or "validate setup".
+description: 'Check a project is ready to work in: workflow configuration, or git state and quality gate for a local project. Trigger on "preflight" or "check my config".'
 ---
 
 # Preflight Check
 
 Verify project configuration is complete and consistent before running workflow commands.
+
+**A local project.** When a person runs this directly in a project with no `ClaudeProject.md`, the project is not set up for GitHub story work and that is not a fault. Ignore the `wf preflight` result below and run `references/local-checks.md` instead.
 
 ## Output standard
 

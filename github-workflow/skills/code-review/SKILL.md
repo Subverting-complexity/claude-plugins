@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review open pull requests — find the next PR needing review, check out its branch, review in full codebase context, fix concrete issues, post a structured review comment, and apply state labels. One PR per invocation. Trigger on review/check PRs, run a review, code review, "/code-review", or a scheduled routine. Pass --read-only to evaluate without making fixes (used by the Reviewer agent).
+description: 'Review a pull request (the next one needing review, or a number) or a local change (uncommitted work, a branch, a commit, "is this ready?"). Fixes concrete issues; for a PR posts the review and labels. --read-only evaluates only.'
 arguments:
   - name: mode
     description: 'Review mode: full (default) — evaluate and fix; read-only — evaluate only, no edits or pushes'
@@ -33,7 +33,9 @@ allowed-tools:
   - Bash(make *)
 ---
 
-# PR Review
+# Code Review
+
+**Pull request or local change.** Review a pull request when a PR number is given, when asked to review PRs, from `execute` or `bulk-execute`, or from a scheduled routine: that is the workflow in this file. For anything else (uncommitted work, a branch with no PR, a commit, named files, "verify this feature", "is this ready?") follow `references/local-review.md` instead and skip everything below; add `references/react-native.md` when the change is React Native or Expo code.
 
 Review one open pull request end-to-end: find it, claim it, read the code in context, fix what can be fixed, post a structured comment, apply labels. Exit when done. If no PRs need review or anything goes wrong, exit immediately.
 

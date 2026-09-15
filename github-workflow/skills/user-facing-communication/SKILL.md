@@ -1,12 +1,7 @@
 ---
 name: user-facing-communication
-description: >-
-  Governs every user-facing reply. Be concise, self-contained, and explicit
-  about outcomes, current state, outstanding work, blockers, and meaningful
-  assumptions. Assume the user did not follow the session.
+description: 'The standard for every reply to the user: outcome and current state first, then anything outstanding, blocked or assumed.'
 ---
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
-
 # User-Facing Communication
 
 Write for someone who has not followed the session, read the issue or PR, seen tool output, or memorised work-item numbers.

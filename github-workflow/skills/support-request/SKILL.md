@@ -1,9 +1,7 @@
 ---
 name: support-request
-description: Write, format, or polish support request documentation. Use when the user mentions support requests or incident reports, or wants to document a technical issue and its resolution. Also trigger when the user pastes raw notes, logs, or ticket content to clean up into a support format. Covers internal and client-facing summaries. Do NOT use for user stories or feature specs (use user-story) or pull request bodies.
+description: 'Write or polish a support request or incident write-up from notes, logs or ticket content, for internal or client readers.'
 ---
-<!-- SYNCED from _shared-skills/ -- edit the source, not this copy -->
-
 # Support Request Documentation
 
 Read `_shared/banned-patterns.md` before writing. All banned patterns apply to support documentation.

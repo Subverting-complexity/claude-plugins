@@ -1,42 +1,33 @@
 # Claude Plugins Monorepo
 
-This repo contains multiple Claude Code plugins that share skills.
+This repo contains one Claude Code plugin, `github-workflow`, which covers GitHub story work and work that stays on your machine. It used to be two plugins (`github-workflow` and `local-workflow`) sharing fifteen skills through a sync step; 13.0.0 merged them, so every skill now has exactly one copy and there is nothing to sync. A new name for the merged plugin is still to be chosen.
 
 > **Dogfooding note:** This repo is itself configured as a `github-workflow` target. Project settings (org/repo, labels, quality gate, issue fields) live in [`ClaudeProject.md`](ClaudeProject.md); workflow commands (`/github-workflow:execute`, `:code-review`, etc.) read it. The open backlog of plugin-hardening work can be viewed on the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8), grouped by each issue's `Stage`.
 
 ## CRITICAL RULES
 
-1. **NEVER edit a synced skill copy directly.** If the file contains a line starting with `<!-- SYNCED from _shared-skills/ -->`, it is generated. (In a `SKILL.md` the banner sits just below the YAML frontmatter — which must stay on line 1 — so it is not always the first line.) Edit the canonical source in `_shared-skills/` instead. See the shared skills list in `_shared-skills/MANIFEST.md`. Before editing ANY skill file, check whether it exists in `_shared-skills/` — if it does, that is the only file you may edit.
+1. **Keep what loads into every session small.** Every skill, command and agent description, and the `SessionStart` hook, is in context for every session whether or not the plugin is used. `check-budgets.sh` caps a description at 240 characters. Put detail in the skill body or in a `references/` file loaded on demand, never in the description.
 
-2. **Always run `./sync-skills.ps1` (or `./sync-skills.sh`) after editing a shared skill.** This deploys the change to all plugins. Commit the canonical file AND the synced copies together in the same commit.
-
-3. **Always bump plugin versions before merging.** If you changed any file in a plugin (directly or via sync), bump that plugin's version in `{plugin}/.claude-plugin/plugin.json`:
+2. **Always bump the plugin version before merging.** If you changed any file under `github-workflow/`, bump its version in `github-workflow/.claude-plugin/plugin.json`:
    - **Patch** (x.y.Z): bug fixes, typo corrections, minor wording
    - **Minor** (x.Y.0): new skills, commands, behavioral changes
    - **Major** (X.0.0): breaking changes, removed skills
 
-4. **Always commit and open a PR when work is complete.** This is the default and it **overrides** the generic "only commit/push when asked" caution — finishing a unit of work here *means* committing it on a feature branch and opening a pull request against `main`, without waiting to be told. Only skip this if the user explicitly says not to (e.g. "don't commit", "just show me the diff"). Never leave completed changes uncommitted in the working tree. Before committing: branch off `main` if on it, run the quality gate, sync shared skills (rule 2), and bump versions (rule 3). End commit messages and PR bodies with the standard co-author / generation trailers.
+3. **Always commit and open a PR when work is complete.** This is the default and it **overrides** the generic "only commit/push when asked" caution — finishing a unit of work here *means* committing it on a feature branch and opening a pull request against `main`, without waiting to be told. Only skip this if the user explicitly says not to (e.g. "don't commit", "just show me the diff"). Never leave completed changes uncommitted in the working tree. Before committing: branch off `main` if on it, run the quality gate, and bump the version (rule 2). End commit messages and PR bodies with the standard co-author / generation trailers.
 
-## Shared Skills
+## Standards the skills share
 
-Fifteen skills live in `_shared-skills/` and are deployed to both plugins, alongside `_shared/` (wording standard, banned patterns and body standard) and `references/` (story template). The list, and what is deliberately *not* shared, are in `_shared-skills/MANIFEST.md`.
+`github-workflow/skills/_shared/` holds the wording standard, the banned patterns and the body standard, and `github-workflow/references/` holds the story template. Skills cite them by path.
 
-`_shared/body-standard.md` is the single standard for every body written into a tracker or forge: an issue, a pull request description, a comment. It holds the wording, the bullet and title rules, the style and the no-hard-wrapping rule. Its entry points carry only the part that differs, which is which sections a body has: `writing-github-issues` for a GitHub issue, `pr-body` in github-workflow and `pr-description` in local-workflow for a pull request.
+`_shared/body-standard.md` is the single standard for every body written into a tracker or forge: an issue, a pull request description, a comment. It holds the wording, the bullet and title rules, the style and the no-hard-wrapping rule. Its entry points carry only the part that differs, which is which sections a body has: `writing-github-issues` for a GitHub issue, `pr-body` for a pull request.
 
-The two pull request skills are deliberately **not** shared, and they have separate slash commands (`/github-workflow:pr-body`, `/local-workflow:pr-description`) so neither format can be reached by mistake. github-workflow's is fixed (`## Summary` → `## Changes` → `## Test plan`, then `Closes #N`) because `execute`, `bulk-execute` and `code-review` read and extend those bodies. local-workflow's keeps the component-section format. Do not re-merge them into `_shared-skills/`.
+`pr-body` has two formats and the repository chooses between them, never the writer. A repository with a `ClaudeProject.md` always gets the fixed shape (`## Summary` → `## Changes` → `## Test plan`, then `Closes #N`), because `execute`, `bulk-execute` and `code-review` read and extend those bodies. Any other repository, or another platform, gets the component-section format in `pr-body/references/component-format.md`.
+
+`writing-github-issues` and `user-story` stay separate on purpose: one is the standard for a GitHub issue body, the other writes a story for pasting into any project management tool.
 
 `lint-skills.sh` asserts that every entry point, the wording standard and `templates/body-file-write.md` still cite the body standard, so they cannot drift apart again.
 
-`user-facing-communication` is the standard for every reply either plugin writes to a person: what was done and the current state first, then anything outstanding, blocked or assumed. It reaches a session three ways, so it holds whether or not a workflow command is running: each plugin's `SessionStart` hook injects it, `_shared/wording-standard.md` cites it (and every skill cites that), and every skill, command and agent that writes to the user names it directly. `lint-skills.sh` asserts that last part, so the wiring cannot be dropped one file at a time.
-
-### How to edit
-
-1. Edit the file in `_shared-skills/{skill}/SKILL.md`
-2. Use `{{PLUGIN_NAME}}` for plugin-specific references (e.g., `/{{PLUGIN_NAME}}:execute`) and `{{PLUGIN_VERSION}}` for version references
-3. Run `./sync-skills.ps1` (or `./sync-skills.sh`) to deploy
-4. Run `./sync-skills.ps1 -Verify` to confirm zero drift
-5. Commit canonical + synced copies together
-6. Bump affected plugin versions
+`user-facing-communication` is the standard for every reply the plugin writes to a person: what was done and the current state first, then anything outstanding, blocked or assumed. It reaches a session three ways, so it holds whether or not a workflow command is running: the `SessionStart` hook injects it, `_shared/wording-standard.md` cites it (and every skill cites that), and every skill, command and agent that writes to the user names it directly. `lint-skills.sh` asserts that last part, so the wiring cannot be dropped one file at a time.
 
 ### Never hard-wrap an instruction file
 
@@ -44,22 +35,11 @@ Every markdown file in this repo is written one paragraph per line, however long
 
 This is not cosmetic. These files are the examples the model learns the house style from, and while they were wrapped it wrapped the issue and pull request bodies it wrote — which trackers then reflowed, putting the breaks where they suited nobody. `_shared/body-standard.md` states the rule for bodies; this section states it for the files that teach it.
 
-### Checking for drift
-
-```powershell
-./sync-skills.ps1 -Verify    # PowerShell
-./sync-skills.sh --verify     # Bash (macOS/Linux)
-```
-
-Returns exit code 1 if any plugin copy has drifted from the canonical source.
-
-## Plugins
+## Plugin
 
 | Plugin | Description |
 |--------|-------------|
-| `github-workflow` | GitHub-based development workflows (stories, PRs, reviews) |
-| `local-workflow` | Project-agnostic local development (coding, architecture, discovery) |
-
+| `github-workflow` | GitHub story work end to end (`execute`, `bulk-execute`, `code-review`), local work that stops at a commit (`build`), and the planning, review and writing skills both use |
 ## Running parallel agents
 
 These workflows spawn parallel/background agents, each of which the harness places in its own git worktree. When running agents in parallel — especially on Windows, where per-worktree `node_modules` duplication causes file-lock cleanup failures — follow the recommended harness configuration and manual reap routine in [`docs/worktree-config.md`](docs/worktree-config.md).
@@ -69,16 +49,15 @@ These workflows spawn parallel/background agents, each of which the harness plac
 | Tool | What it does |
 |------|-------------|
 | `bootstrap.ps1` / `bootstrap.sh` | One-time per-clone setup: pin LF line endings, renormalize, install the pre-commit hook, check Python is available |
-| `sync-skills.ps1` / `sync-skills.sh` | Sync shared skills to plugins, clean up orphans |
-| `lint-skills.sh` | Validate skill frontmatter and detect unreplaced placeholders |
+| `lint-skills.sh` | Validate skill frontmatter and the wiring between skills and the standards they cite |
 | `run-tests.sh` | Run the offline decision-logic tests; auto-detects `python3`, `py -3` (Windows Launcher), or `python` |
 | `run-tests.ps1` | Windows PowerShell equivalent of `run-tests.sh`; prints a `winget` install hint if no Python is found |
 | `count-tokens.sh` | Estimate instruction-token footprint of a skill's hot path (file + cited templates/references, two levels deep); `--exclude PATH` narrows it to a subset, e.g. one workflow's build window |
-| `check-budgets.sh` | Enforce per-file description-char and body-line budgets on deployed skills and commands (ratchet gate) |
+| `check-budgets.sh` | Enforce per-file description-char and body-line budgets on skills and commands (ratchet gate) |
 | `count-roundtrips.sh` | Count `gh`/`git` network calls described in instruction files (informational, no gate) |
-| `hooks/pre-commit` | Git hook that blocks commits editing synced copies directly and blocks CRLF line endings |
-| `.github/workflows/ci.yml` | CI: drift check, skill lint, decision-logic tests, version-bump check, token-footprint budgets, plugin.json validation |
-| `.claude/ecosystem.md` | Cheat-sheet for installed Claude Code companion tools (graphify, RTK, ccusage, ecc-agentshield) and when the workflow uses each. Consult it before searching the codebase blind or running an audit/review. Generated by the shared `ecosystem-setup` skill — regenerate via `/github-workflow:setup ecosystem` or `/local-workflow:ecosystem-setup`. |
+| `hooks/pre-commit` | Git hook that blocks CRLF line endings |
+| `.github/workflows/ci.yml` | CI: skill lint, decision-logic tests, version-bump check, token-footprint budgets, plugin.json validation |
+| `.claude/ecosystem.md` | Cheat-sheet for installed Claude Code companion tools (graphify, RTK, ccusage, ecc-agentshield) and when the workflow uses each. Consult it before searching the codebase blind or running an audit/review. Generated by the `ecosystem-setup` skill — regenerate via `/github-workflow:setup ecosystem`. |
 
 ### Bootstrapping your clone
 
@@ -98,7 +77,6 @@ After merging changes to main, the local Claude Code marketplace cache is stale.
 ```powershell
 claude plugin marketplace update subverting-complexity
 claude plugin update github-workflow@subverting-complexity
-claude plugin update local-workflow@subverting-complexity
 ```
 
 Without the marketplace refresh, `plugin update` reports "already at latest" against the cached version — not the actual latest on main.
