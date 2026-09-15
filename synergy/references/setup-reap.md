@@ -1,6 +1,6 @@
-# Onboard: reap orphaned claim refs
+# Setup: reap orphaned claim refs
 
-Read by `/synergy:onboard reap`. Read `ClaudeProject.md` for org and repo first.
+Read by `/synergy:setup reap`. Read `ClaudeProject.md` for org and repo first.
 
 The workflow locks each in-flight issue or PR with a git ref under `refs/claims/`. These refs are released on every normal exit, but a crash or hard kill can leave an orphaned ref that silently blocks future pickup of that item. This step scans active claim refs, frees those that no longer back live work, and flags anything that needs manual review.
 
@@ -12,7 +12,7 @@ Add `--threshold N` to change the age below which a ref is left alone (default *
 
 It always exits 0 and reports three lists. `reaped` are the refs it freed: the issue is closed, no longer marked in progress, or already has a PR open; the PR is closed, merged, or open with no review under way. `suspect` are the refs it deliberately left, because the evidence does not say the work has stopped: an issue still in progress with no PR, a PR under active review, or a target it could not read. `skipped` are refs younger than the threshold. Report the counts, and name every `suspect` ref with its reason so a person can decide.
 
-It is safe to run at any time, because it never reaps a ref that still backs a running session, and is schedulable via `/schedule` calling `/synergy:onboard reap`.
+It is safe to run at any time, because it never reaps a ref that still backs a running session, and is schedulable via `/schedule` calling `/synergy:setup reap`.
 
 ## Freeing a suspect ref by hand
 

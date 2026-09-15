@@ -98,7 +98,7 @@ Read the result by its `status`; the exit code mirrors it:
 | `ok` | 0 | A story is claimed and you are on its branch. **Stop selecting — do not re-derive anything.** |
 | `no-candidates` | 10 | Nothing was pickable. Stop with "No stories available for pickup". |
 | `all-blocked` | 11 | Every candidate was blocked or already claimed. Stop the same way. |
-| `needs-refinement` | 12 | The next pick is too unclear to build; nothing was claimed and `detail` says why. Run `/synergy:interview` on issue `number` with the user, then `pick --issue {number} --checkout`; for an Epic or Feature, run `refinement-skill` and re-run `pick`. If they skip it, send it to refinement (`references/pick-paths.md`) and re-run `pick`. |
+| `needs-refinement` | 12 | The next pick is too unclear to build; nothing was claimed and `detail` says why. Run `/synergy:grill` on issue `number` with the user, then `pick --issue {number} --checkout`; for an Epic or Feature, run `refinement-skill` and re-run `pick`. If they skip it, send it to refinement (`references/pick-paths.md`) and re-run `pick`. |
 | `unsupported` | 30 | `wf` deferred this configuration (reserved). Stop and report what it named. |
 | `error` | 20, or Python is missing | `wf` cannot run here. Stop and name the prerequisite: Python 3.8+ on `PATH` and an authenticated `gh`. Do not select a story by hand. |
 
@@ -114,7 +114,7 @@ When the pick came through an Epic or Feature, `container` names it and `offered
 
 `wf pick --checkout` already took the claim, set the stage and start date, and created the branch. Only when its `ok` result says a step did not happen (`stage_set` or `checked_out` false), or the claim state was lost to compaction, follow **Phase 2 recovery** in `references/pick-paths.md`.
 
-**Interactive discovery gate.** When a user is present and mode is `story` or `feature`, run `/synergy:interview` on the story's requirements before planning. Skip it in an autonomous session, in `maintenance` or `audit` mode, or when the issue body already has discovery output (`## Stories` or `## Architecture`).
+**Interactive discovery gate.** When a user is present and mode is `story` or `feature`, run `/synergy:grill` on the story's requirements before planning. Skip it in an autonomous session, in `maintenance` or `audit` mode, or when the issue body already has discovery output (`## Stories` or `## Architecture`).
 
 ## Phase 3 — Plan
 

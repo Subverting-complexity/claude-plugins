@@ -33,7 +33,7 @@ fi
 **React to the token, do not re-derive it.**
 
 - `PREFLIGHT_ALREADY_PASSED` — preflight passed earlier this session. **Return silently and immediately**; the calling command proceeds.
-- `PREFLIGHT_SUPPRESSED` — the user dismissed preflight reminders. Return silently; the calling command proceeds. They re-enable by deleting `.claude/preflight-dismiss.md` or running `/synergy:onboard`.
+- `PREFLIGHT_SUPPRESSED` — the user dismissed preflight reminders. Return silently; the calling command proceeds. They re-enable by deleting `.claude/preflight-dismiss.md` or running `/synergy:setup`.
 - `PREFLIGHT_UNAVAILABLE` — the plugin's scripts are not on disk, so nothing was checked. Say so in one line and let the command proceed; do not substitute a hand-run version of the checks.
 - Otherwise read the JSON object it printed. `PREFLIGHT_EXIT` is `0` when nothing blocks and `26` when something does.
 
@@ -51,7 +51,7 @@ mkdir -p .claude
 echo "preflight-passed" > .claude/preflight-passed.txt
 ```
 
-If `summary.warning` is above zero, print **one** line first naming what is running on a default (e.g. "Quality gate not configured; run `/synergy:onboard` to set one") and then do exactly the same. A warning is a thing that still works, so it never prompts and never blocks.
+If `summary.warning` is above zero, print **one** line first naming what is running on a default (e.g. "Quality gate not configured; run `/synergy:setup` to set one") and then do exactly the same. A warning is a thing that still works, so it never prompts and never blocks.
 
 **If `summary.critical` is above zero.** Go to Section 3. Report every critical finding's `detail` and `fix` **verbatim** rather than paraphrasing — the fix for an unpinned field is a specific form in the org settings, and a paraphrase loses it.
 
@@ -66,7 +66,7 @@ Show a brief summary using these markers:
 Then use `AskUserQuestion`. Offer the repair option **only when at least one critical finding has `auto: true`**; a run that would repair nothing must not offer to:
 
 - **"Fix what can be fixed (Recommended)"** — run `wf preflight --fix`. It repairs every finding it can repair without guessing, re-runs the checks, and reports the state it leaves behind rather than the state it found. Read the `fixed` and `unfixed` arrays it returns and say what changed. If `summary.critical` is then `0`, write the pass marker and continue.
-- **"Configure now"** — run `/synergy:onboard`. Afterwards, tell the user to re-run the command they originally asked for, because the configuration loaded at the start of that command is now stale.
+- **"Configure now"** — run `/synergy:setup`. Afterwards, tell the user to re-run the command they originally asked for, because the configuration loaded at the start of that command is now stale.
 - **"Continue anyway"** — return immediately. The calling command proceeds on whatever configuration exists. Preflight runs again next time.
 - **"Don't remind me"** — write `.claude/preflight-dismiss.md`, then return:
 
@@ -76,7 +76,7 @@ Then use `AskUserQuestion`. Offer the repair option **only when at least one cri
 Configuration checks have been suppressed. To re-enable:
 
 - Delete this file, OR
-- Run `/synergy:onboard`
+- Run `/synergy:setup`
 ```
 
 ## What each check means

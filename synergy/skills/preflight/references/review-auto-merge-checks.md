@@ -23,7 +23,7 @@ if [ "$automerge" = "enabled" ]; then
     if [ "$allowed" = "true" ]; then
       echo "OK review-auto-merge-repo: repo allows auto-merge"
     else
-      echo "WARNING review-auto-merge-repo: auto-merge-on-approval is enabled but the repo's 'Allow auto-merge' setting is off — queued merges will not fire. Enable it with 'gh api -X PATCH repos/$slug -F allow_auto_merge=true' or re-run /synergy:onboard harden"
+      echo "WARNING review-auto-merge-repo: auto-merge-on-approval is enabled but the repo's 'Allow auto-merge' setting is off — queued merges will not fire. Enable it with 'gh api -X PATCH repos/$slug -F allow_auto_merge=true' or re-run /synergy:setup harden"
     fi
     requireci=$(grep -E 'require-ci-before-merge' "$path" 2>/dev/null | grep -oiE 'if-present|true|false|enabled|disabled' | head -1)
     if [ "$requireci" = "true" ] || [ "$requireci" = "enabled" ]; then
@@ -36,7 +36,7 @@ if [ "$automerge" = "enabled" ]; then
       if [ -n "$reqchecks" ] && [ "$reqchecks" -gt 0 ] 2>/dev/null; then
         echo "OK review-auto-merge-ci: $reqchecks required status check(s) gate '$branch' — GitHub enforces CI before merge"
       else
-        echo "WARNING review-auto-merge-ci: auto-merge-on-approval is enabled but NEITHER GitHub required status checks NOR require-ci-before-merge is configured — an approved PR can merge with no CI guarantee. Run /synergy:onboard harden to wire up the gate."
+        echo "WARNING review-auto-merge-ci: auto-merge-on-approval is enabled but NEITHER GitHub required status checks NOR require-ci-before-merge is configured — an approved PR can merge with no CI guarantee. Run /synergy:setup harden to wire up the gate."
       fi
     fi
     nopipe=$(grep -E 'bypass-ci-when-no-pipeline' "$path" 2>/dev/null | grep -oiE 'true|false' | head -1)
@@ -56,4 +56,4 @@ elif [ -n "$automerge" ]; then
 fi
 ```
 
-Classify the output: a `WARNING` here is informational (reviews still run; only the queued-merge step is affected) — it never escalates to the wizard. `/synergy:onboard harden` wires up the gate.
+Classify the output: a `WARNING` here is informational (reviews still run; only the queued-merge step is affected) — it never escalates to the wizard. `/synergy:setup harden` wires up the gate.

@@ -25,7 +25,7 @@ Run both from a normal shell, not inside a Claude Code session, then restart the
 | `/synergy:pr-review`          | Review (or rework + re-review) the next PR |
 | `/synergy:block-story`          | Mark current story as blocked            |
 | `/synergy:report-issue`         | Create a bug/arch/debt issue             |
-| `/synergy:onboard`              | Interactive project onboarding wizard    |
+| `/synergy:setup`                | Interactive project onboarding wizard    |
 | `/synergy:guide`                | How to get started / what can I do?      |
 
 The **builder** agent is set as the default via `settings.json`. When the plugin is active, Claude operates as the builder unless you switch agents.
@@ -51,16 +51,16 @@ synergy/
 
 ### First-time setup
 
-Run `/synergy:onboard` to onboard your project. The wizard:
+Run `/synergy:setup` to onboard your project. The wizard:
 
 1. Auto-detects your org, repo, default branch, and package manager.
 2. Checks that the org defines the `Stage` issue field with its nine options, and records your project board if you have one.
 3. Checks for milestones to determine sprint vs flat backlog mode.
 4. Asks for your label scheme, branch convention, and quality gate.
 5. Generates `ClaudeProject.md` (project settings) and `CLAUDE.md` (project rules) at your repo root.
-6. Optionally sets up Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and writes `.claude/ecosystem.md` so `execute` and `pr-review` use them automatically. This step is the shared `ecosystem-setup` skill — run it again any time with `/synergy:onboard ecosystem`.
+6. Optionally sets up Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and writes `.claude/ecosystem.md` so `execute` and `pr-review` use them automatically. This step is the shared `ecosystem-setup` skill — run it again any time with `/synergy:setup ecosystem`.
 
-If you already have these files, the onboarding wizard detects them and offers to fill in missing sections rather than overwrite.
+If you already have these files, the setup wizard detects them and offers to fill in missing sections rather than overwrite.
 
 ### Prerequisites
 
@@ -148,7 +148,7 @@ Both entry points can merge a pull request, and **one setting decides whether ei
 | `disabled` (default) | An approved PR, reviewed and waiting for you | An approved PR |
 | `enabled` | A merged PR, with its issues closed and set to Done | A merged PR |
 
-Keeping it to one switch is deliberate. The alternative — merging by default from `execute` and only on request from `pr-review` — means the answer to "is this repository going to merge something without me" depends on which command happened to reach the PR, which is not a property anyone can hold in their head. Turn it on in `/synergy:onboard`, which also runs the hardening step that makes "merge only after CI passes" actually enforceable.
+Keeping it to one switch is deliberate. The alternative — merging by default from `execute` and only on request from `pr-review` — means the answer to "is this repository going to merge something without me" depends on which command happened to reach the PR, which is not a property anyone can hold in their head. Turn it on in `/synergy:setup`, which also runs the hardening step that makes "merge only after CI passes" actually enforceable.
 
 Two ways to suppress a merge on a project that has it on: pass `--no-merge` for a single `execute` run, or leave the PR at a non-approved verdict. And several conditions stop a merge on their own — a red quality gate, a possible duplicate PR, a review that could not run independently, a moved head SHA, absent or red CI. Each of those leaves the PR open with a comment saying why.
 
@@ -189,7 +189,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | `verify-feature`      | A report to read before merging: what a branch or PR touches, concerns, nitpicks, acceptance criteria. Changes nothing |
 | `preflight`           | Checks project-config health before a run; `wf preflight --fix` repairs what it safely can |
 | `feature-discovery`   | Breaks features into stories; plans a new project's foundations |
-| `interview`           | Stress-tests a plan or design by interviewing you |
+| `grill`               | Stress-tests a plan or design by interviewing you |
 | `user-story`          | Authors user stories                              |
 | `writing-github-issues` | Standard for every issue title and body         |
 | `user-facing-communication` | Standard for every reply the user reads    |
@@ -197,12 +197,12 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | `pr-body`             | Authors PR bodies to the fixed shape, or the component format where there is no `ClaudeProject.md` |
 | `ecosystem-setup`     | Sets up companion tools, writes `ecosystem.md`    |
 | `support-request`     | Support-request and incident write-ups            |
-| `correspondence`      | Polishes correspondence in the user's voice       |
+| `tone`                | Polishes correspondence in the user's voice       |
 
 ## Adapting for a new project
 
 1. Install the plugin (see [Install](#install)).
-2. Run `/synergy:onboard` to generate config files.
+2. Run `/synergy:setup` to generate config files.
 3. Say "start the next story" or run `/synergy:execute`.
 
 That's it. The plugin reads your config and adapts.

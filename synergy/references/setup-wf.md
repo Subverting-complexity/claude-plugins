@@ -1,6 +1,6 @@
-# Onboard: the `wf` picker runtime
+# Setup: the `wf` picker runtime
 
-Read by `/synergy:onboard` as Step 1b of the full onboarding, and on its own by `/synergy:onboard wf`.
+Read by `/synergy:setup` as Step 1b of the full onboarding, and on its own by `/synergy:setup wf`.
 
 `execute` has a **fast path**: a bundled `wf` CLI that runs the whole select → claim → validate loop in one call instead of a dozen sequential `gh` round-trips. It needs a Python 3 interpreter. This step pins a **dedicated virtualenv** for it, created once under the plugin's persistent data dir and reused on every later call, so the picker never depends on whatever Python is on PATH (and sidesteps the broken `python3` Store shim on Windows).
 

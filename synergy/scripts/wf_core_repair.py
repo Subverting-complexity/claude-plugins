@@ -55,7 +55,7 @@ def placeholder_findings(text, path='ClaudeProject.md'):
         "the value there is the template's, not this project's"
         % (len(hits), '' if len(hits) == 1 else 's', path,
            'ies' if len(hits) == 1 else 'y', '' if len(hits) == 1 else 's', shown),
-        'fill them in, or run `/synergy:onboard` to write them from the '
+        'fill them in, or run `/synergy:setup` to write them from the '
         'live repo', path)]
 
 

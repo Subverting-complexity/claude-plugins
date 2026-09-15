@@ -6,6 +6,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 16.0.0
+
+**The 15.0.0 skill renames are reverted.** `interview` is `grill` again, `correspondence` is `tone` again, and the `onboard` command is `setup` again, with its modes unchanged. The clashes are resolved by removing the other skills from the account instead, so projects keep the names they have always used. `docs/skill-names.md` and the preflight warning about the old names are gone with the rename.
+
+**Upgrading.** Refresh the marketplace and update as usual, then restart Claude Code. A project still on `/synergy:grill`, `/synergy:tone` and `/synergy:setup` needs no change. A project already edited to `/synergy:interview`, `/synergy:correspondence` or `/synergy:onboard` needs those changed back.
+
 ## synergy 15.1.0
 
 **The write guard closes the gaps found after 14.1.0** (Issue #295). It now blocks writes to another owner that it let through, stops denying some ordinary writes inside the allowed org, and fails closed where it used to fail open.

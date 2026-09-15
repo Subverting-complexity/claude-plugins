@@ -1,6 +1,6 @@
 # Harden auto-merge enforcement
 
-Full procedure for `/synergy:onboard harden`, and for the onboarding's Step 7b when the user **enables `auto-merge-on-approval`**. It makes "merge only after CI passes" actually enforceable. Without it, an approved PR on a branch with no **required** checks merges immediately — no CI guarantee.
+Full procedure for `/synergy:setup harden`, and for the onboarding's Step 7b when the user **enables `auto-merge-on-approval`**. It makes "merge only after CI passes" actually enforceable. Without it, an approved PR on a branch with no **required** checks merges immediately — no CI guarantee.
 
 The goal is **one** of two safe configurations:
 

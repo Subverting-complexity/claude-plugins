@@ -218,7 +218,7 @@ declare -a reply_writing_files=(
     "synergy/commands/block-story.md"
     "synergy/commands/guide.md"
     "synergy/commands/report-issue.md"
-    "synergy/commands/onboard.md"
+    "synergy/commands/setup.md"
     "synergy/agents/builder.md"
     "synergy/agents/reviewer.md"
     "synergy/templates/CLAUDE.md"                    # the rules written into a target project
@@ -246,26 +246,26 @@ for f in synergy/skills/*/SKILL.md; do
     fi
 done
 
-# Interview wiring: the interview skill is the one interview procedure. feature-discovery runs
+# Interview wiring: grill is the one interview procedure. feature-discovery runs
 # it rather than carrying its own posture and mechanics, and has no validation
 # mode to route a stress-test into.
-INTERVIEW="synergy/skills/interview/SKILL.md"
-if [ ! -f "$INTERVIEW" ]; then
-    echo "FAIL: $INTERVIEW is missing — the interview procedure feature-discovery runs"
+GRILL="synergy/skills/grill/SKILL.md"
+if [ ! -f "$GRILL" ]; then
+    echo "FAIL: $GRILL is missing — the interview procedure feature-discovery runs"
     status=1
 fi
 for f in synergy/skills/feature-discovery/SKILL.md; do
-    if ! grep -qF 'skills/interview/SKILL.md' "$f"; then
-        echo "FAIL: $f interviews the user but does not cite skills/interview/SKILL.md"
+    if ! grep -qF 'skills/grill/SKILL.md' "$f"; then
+        echo "FAIL: $f interviews the user but does not cite skills/grill/SKILL.md"
         status=1
     fi
     if grep -qE '^#+ (Interview posture|Interview mechanics|Using AskUserQuestion|Wording and Clarity)' "$f"; then
-        echo "FAIL: $f carries its own interview posture or mechanics; they belong in $INTERVIEW"
+        echo "FAIL: $f carries its own interview posture or mechanics; they belong in $GRILL"
         status=1
     fi
 done
 if grep -qiE 'validation mode|\*\*validation\*\*' synergy/skills/feature-discovery/SKILL.md; then
-    echo "FAIL: synergy/skills/feature-discovery/SKILL.md still describes a validation mode; stress-testing a plan is the interview skill's job"
+    echo "FAIL: synergy/skills/feature-discovery/SKILL.md still describes a validation mode; stress-testing a plan is grill's job"
     status=1
 fi
 

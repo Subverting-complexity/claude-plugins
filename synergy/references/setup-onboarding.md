@@ -1,10 +1,10 @@
-# Onboard: full onboarding
+# Setup: full onboarding
 
-Read by `/synergy:onboard` with no argument, after Step 1 (prerequisites) in the command. Run every step in order. Each step reads its own template or guide at the point it runs, not before.
+Read by `/synergy:setup` with no argument, after Step 1 (prerequisites) in the command. Run every step in order. Each step reads its own template or guide at the point it runs, not before.
 
 ## 1b. Set up the `wf` picker runtime (recommended)
 
-Follow `references/onboard-wf.md`.
+Follow `references/setup-wf.md`.
 
 ## 2. Check for existing configuration
 
@@ -58,7 +58,7 @@ For anything not auto-detected, ask the user, showing the detected or suggested 
 
 - **Branch convention**: suggest `feature/{number}/{short-desc}` as default
 - **Quality gate command**: if not auto-detected
-- **Refinement skill**: which skill to use when a story is too thin to implement. Default: `feature-discovery` (runs the `interview` skill, then writes the fuller spec and acceptance criteria). Store as `refinement-skill` in ClaudeProject.md.
+- **Refinement skill**: which skill to use when a story is too thin to implement. Default: `feature-discovery` (runs the `grill` interview, then writes the fuller spec and acceptance criteria). Store as `refinement-skill` in ClaudeProject.md.
 
 **Do not ask about labels, and create none except the review-state labels in Step 5b.** No label decides anything: an issue's state is its `Stage` field, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. A repository that already has priority, type, status or scope labels keeps them (deleting a label strips it from every issue that ever carried it), and `wf issue-apply` takes one off any issue it writes.
 
@@ -182,4 +182,4 @@ Confirm all required sections are present in `ClaudeProject.md`. Report what was
 - Labels configured
 - Ecosystem tools enabled (if any)
 
-Suggest running `/synergy:execute` to start the first story. Mention `/synergy:onboard reap` for a story or PR that is stuck behind a crashed session's claim, and `/synergy:onboard issues` to backfill issues created outside the workflow.
+Suggest running `/synergy:execute` to start the first story. Mention `/synergy:setup reap` for a story or PR that is stuck behind a crashed session's claim, and `/synergy:setup issues` to backfill issues created outside the workflow.

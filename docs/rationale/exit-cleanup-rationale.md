@@ -43,4 +43,4 @@ Every one, without exception:
 
 ## When cleanup cannot run from inside the session
 
-A crash, hard kill, or machine reboot can skip this cleanup entirely and orphan a claim ref. That residue cannot be prevented from inside a session — run `/synergy:onboard reap` to scan and free stale refs automatically, or see **Reaping orphaned claims** in `docs/rationale/claim-procedure-rationale.md` for the manual one-liner. (Within-session context compaction is unaffected — no exit occurs, so the files remain on disk for the duration of the run.)
+A crash, hard kill, or machine reboot can skip this cleanup entirely and orphan a claim ref. That residue cannot be prevented from inside a session — run `/synergy:setup reap` to scan and free stale refs automatically, or see **Reaping orphaned claims** in `docs/rationale/claim-procedure-rationale.md` for the manual one-liner. (Within-session context compaction is unaffected — no exit occurs, so the files remain on disk for the duration of the run.)

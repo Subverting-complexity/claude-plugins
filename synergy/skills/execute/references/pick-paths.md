@@ -29,7 +29,7 @@ No label is read: state is the `Stage` field, and `pick --issue` refuses a story
 ## A thin or empty story
 
 - **Thin**, a real topic but not enough to implement without guessing, in a user-present session → ask with `AskUserQuestion`: "The next priority story (#{number}: {title}) needs refinement before it can be implemented. Would you like to refine it now?"
-  - "Refine now (Recommended)" — run `/synergy:interview` on the story with the user, or the `refinement-skill` (default `feature-discovery`) when it needs breaking down, then continue with Phase 2. The stage is already `In Progress`.
+  - "Refine now (Recommended)" — run `/synergy:grill` on the story with the user, or the `refinement-skill` (default `feature-discovery`) when it needs breaking down, then continue with Phase 2. The stage is already `In Progress`.
   - "Skip and pick next" — send it to refinement as below.
 - **Truly empty**, or thin with nobody present to answer → send it to refinement and re-run the selection for the next story. Do **not** run `/synergy:block-story`: blocked means an open blocked-by edge, and this issue has none, so nothing would ever release it.
 
