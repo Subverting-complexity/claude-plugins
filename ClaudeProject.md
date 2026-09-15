@@ -40,7 +40,7 @@ Example: `feature/27/fix-wrong-board`
 
 ## Issue Types & Fields
 
-Written from `wf org-capabilities` against `Subverting-complexity`. Re-run `/synergy:setup` after enabling a type or adding a field.
+Written from `wf org-capabilities` against `Subverting-complexity`. Re-run `/synergy:onboard` after enabling a type or adding a field.
 
 ### Capability
 
@@ -117,4 +117,4 @@ This section is informational. The board is a view for people, with its columns 
 
 ## Bundled Skills
 
-Available as `/synergy:*`: acceptance-criteria, build, bulk-execute, code-architect, pr-review, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, support-request, tone, user-story, user-facing-communication, verify-feature, writing-github-issues.
+Available as `/synergy:*`: acceptance-criteria, build, bulk-execute, code-architect, pr-review, ecosystem-setup, execute, feature-discovery, interview, pr-body, preflight, support-request, correspondence, user-story, user-facing-communication, verify-feature, writing-github-issues.

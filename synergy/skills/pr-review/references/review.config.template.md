@@ -53,7 +53,7 @@ When `enabled`, the pr-review skill squash-merges a PR (deleting its branch) as 
 - **`true`** — the skill refuses to merge a PR that has **no green CI gate**: if the head SHA has no checks at all, or a check it cannot fix is red, it pauses and leaves the `approved` verdict. An absolute gate — it pauses even on a repo that runs no pipeline. (If your repo genuinely has no GitHub-visible pipeline and you want approved PRs to land anyway, that is what `bypass-ci-when-no-pipeline` below is for.)
 - **`if-present`** — gate on CI **only when CI exists**: if the head SHA has checks they must be green (a red check it cannot fix pauses), but a PR with **no checks at all merges**. Use this for "require CI to pass if there is CI, otherwise merge."
 
-Set it `true` (or `if-present`) whenever auto-merge is enabled but GitHub itself is not enforcing required status checks — `/synergy:setup harden` sets `true` for you when it cannot wire up server-side enforcement.
+Set it `true` (or `if-present`) whenever auto-merge is enabled but GitHub itself is not enforcing required status checks — `/synergy:onboard harden` sets `true` for you when it cannot wire up server-side enforcement.
 
 > **Only `true` and configuration (a) are absolute gates.** Because `if-present` merges when a head SHA has no checks, it guarantees "CI green before merge" only on a repo that **actually runs a PR pipeline**. For a hard guarantee that an approved PR can *never* merge without green CI — including before any check has reported — use GitHub-enforced required status checks (configuration (a) in the setup guide) or `true`.
 

@@ -39,7 +39,7 @@ Example: `feature/{number}/{short-desc}`
 
 **Required.** Not because every org has native issue types — many do not — but because "this org has none" and "nobody wrote this section" look identical at runtime, and the second one silently produced a whole backlog of unclassified issues. So the section is always present and always says which of the two it is. `wf config-audit` reports a missing one as **CRITICAL**.
 
-`/synergy:setup` writes this section from `wf org-capabilities`, which resolves what the owner actually has. Re-run it after enabling issue types or adding a field.
+`/synergy:onboard` writes this section from `wf org-capabilities`, which resolves what the owner actually has. Re-run it after enabling issue types or adding a field.
 
 ### Capability
 
@@ -90,7 +90,7 @@ The purpose→value maps — which native type each kind of work becomes, and th
 | ---------------- | ------------------- |
 | refinement-skill | `feature-discovery` |
 
-Skill the execute flow offers when a story is too thin to implement: `feature-discovery` (default). It runs the `grill` interview and turns the answers into a fuller spec with acceptance criteria. A story a person has not approved yet belongs at `Stage` `Needs refinement`, which keeps it out of the pool without needing a label.
+Skill the execute flow offers when a story is too thin to implement: `feature-discovery` (default). It runs the `interview` skill and turns the answers into a fuller spec with acceptance criteria. A story a person has not approved yet belongs at `Stage` `Needs refinement`, which keeps it out of the pool without needing a label.
 
 ## Session Budget
 
@@ -120,4 +120,4 @@ Paths to architecture docs or specs consulted for cross-cutting concerns not cov
 
 ## Bundled Skills
 
-Available as `/synergy:*`: acceptance-criteria, build, bulk-execute, code-architect, pr-review, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, support-request, tone, user-story, verify-feature, writing-github-issues.
+Available as `/synergy:*`: acceptance-criteria, build, bulk-execute, code-architect, pr-review, ecosystem-setup, execute, feature-discovery, interview, pr-body, preflight, support-request, correspondence, user-story, verify-feature, writing-github-issues.

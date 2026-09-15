@@ -1,9 +1,9 @@
 ---
-description: 'Set up or configure a project for this plugin, harden auto-merge, set up companion tools, reap claims or audit issues.'
+description: 'Onboard a project to this plugin, or harden auto-merge, set up companion tools, reap claims or audit issues.'
 argument-hint: '[harden|ecosystem|reap|wf|issues]'
 ---
 
-# Setup
+# Onboard
 
 Interactive onboarding wizard for configuring the synergy plugin.
 
@@ -25,8 +25,8 @@ A mode runs against an already-configured project and skips the full onboarding:
 
 - If `$ARGUMENTS` is `harden` (or `auto-merge`): wire up or repair the CI and merge gate. Locate `docs/review.config.md` and `ClaudeProject.md`, then follow `templates/harden-auto-merge.md`.
 - If `$ARGUMENTS` is `ecosystem`: install, update or add companion tools. Read `../skills/ecosystem-setup/SKILL.md` and follow it, rather than invoking the skill (it sets `disable-model-invocation`, so only a person can run it by name).
-- If `$ARGUMENTS` is `reap`: free orphaned claim refs left behind when a story or PR is stuck and no agent will pick it up. Follow `references/setup-reap.md`.
-- If `$ARGUMENTS` is `issues` (or `backlog`): audit and backfill open issues that carry no native type or no field values. Follow `references/setup-issues.md`.
-- If `$ARGUMENTS` is `wf` (or `picker`): create, or repair with `--force`, the Python virtualenv the `wf` picker reuses. Follow `references/setup-wf.md`.
+- If `$ARGUMENTS` is `reap`: free orphaned claim refs left behind when a story or PR is stuck and no agent will pick it up. Follow `references/onboard-reap.md`.
+- If `$ARGUMENTS` is `issues` (or `backlog`): audit and backfill open issues that carry no native type or no field values. Follow `references/onboard-issues.md`.
+- If `$ARGUMENTS` is `wf` (or `picker`): create, or repair with `--force`, the Python virtualenv the `wf` picker reuses. Follow `references/onboard-wf.md`.
 
-With no argument, run the full onboarding. Read `references/setup-onboarding.md` once and follow every step in order.
+With no argument, run the full onboarding. Read `references/onboarding.md` once and follow every step in order.

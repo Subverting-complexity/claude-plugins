@@ -28,9 +28,9 @@ The `rm -f` lines clear what a hard-killed run left behind; an inherited `bypass
 
 The skill's auto-loaded configuration block has already run.
 
-1. If it printed "ClaudeProject.md NOT FOUND", stop with exactly one message, "ClaudeProject.md not found — run /synergy:setup.", and do not chain into preflight for the same cause.
-2. Run `test -f .claude/preflight-passed.txt && echo "PREFLIGHT_ALREADY_PASSED"`. The file is written by a clean or WARNING-only preflight and deleted by **Exit cleanup**, so it is valid for this session. If it is absent, invoke `/synergy:preflight`. On "Configure now", wait for setup and ask the user to re-run the command, because the loaded configuration is stale. On "Continue anyway" or "Don't remind me", proceed.
-3. The projection must contain both `## Identity` and `## Quality Gate`. If either is missing, stop with "ClaudeProject.md is missing required section: {name} — run /synergy:setup."
+1. If it printed "ClaudeProject.md NOT FOUND", stop with exactly one message, "ClaudeProject.md not found — run /synergy:onboard.", and do not chain into preflight for the same cause.
+2. Run `test -f .claude/preflight-passed.txt && echo "PREFLIGHT_ALREADY_PASSED"`. The file is written by a clean or WARNING-only preflight and deleted by **Exit cleanup**, so it is valid for this session. If it is absent, invoke `/synergy:preflight`. On "Configure now", wait for onboarding and ask the user to re-run the command, because the loaded configuration is stale. On "Continue anyway" or "Don't remind me", proceed.
+3. The projection must contain both `## Identity` and `## Quality Gate`. If either is missing, stop with "ClaudeProject.md is missing required section: {name} — run /synergy:onboard."
 4. Read `CLAUDE.md` for project rules and build principles.
 
 The projection drops sections needed only later. When a later phase resolves the org issue fields, `Stage` included, read `## Issue Types & Fields` straight from `ClaudeProject.md`.

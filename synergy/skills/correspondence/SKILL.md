@@ -1,9 +1,9 @@
 ---
-name: tone
+name: correspondence
 description: 'Write or polish emails, messages and updates in the user''s own voice, stripping AI tells. Trigger on drafting, rewriting or cleaning up correspondence.'
 disable-model-invocation: true
 ---
-# Correspondence Tone Skill
+# Correspondence
 
 Read `references/examples.md` before editing any text. Those examples are the ground truth for the user's voice.
 

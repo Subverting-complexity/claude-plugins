@@ -1969,7 +1969,7 @@ class TestConfigSections(unittest.TestCase):
         findings = wf_core.config_section_findings(present)
         self.assertEqual(_levels(findings), [wf_core.CRITICAL])
         self.assertIn('Issue Types & Fields', findings[0]['detail'])
-        self.assertIn('setup', findings[0]['fix'])
+        self.assertIn('onboard', findings[0]['fix'])
         self.assertEqual(findings[0]['where'], 'ClaudeProject.md')
 
     def test_an_authoring_qualifier_still_counts_as_present(self):
@@ -3377,7 +3377,7 @@ class TestRetiredWorkflowFindings(unittest.TestCase):
         self.assertIn('line 3', joined)
 
     def test_the_plugin_under_its_old_name_is_reported(self):
-        """#283: `setup` wrote `/github-workflow:` commands into every
+        """#283: onboarding wrote `/github-workflow:` commands into every
         consuming project, and they stopped resolving at 14.0.0."""
         findings = wf_core.instruction_findings({
             'ClaudeProject.md': 'Intro.\nRun /github-workflow:execute.\n',
@@ -3390,6 +3390,25 @@ class TestRetiredWorkflowFindings(unittest.TestCase):
         self.assertTrue(all('/synergy:pr-review' in f['detail'] for f in findings))
         self.assertEqual(wf_core.instruction_findings(
             {'CLAUDE.md': 'Run /synergy:execute.\n'}), [])
+
+    def test_a_command_renamed_to_avoid_a_clash_is_reported(self):
+        """#288: `grill`, `tone` and `setup` clashed with Anthropic skills
+        and were renamed at 15.0.0, so the old commands stop resolving."""
+        findings = wf_core.instruction_findings({
+            'CLAUDE.md': 'Run /synergy:grill first.\nThen `/synergy:setup reap`.\n',
+            'ClaudeProject.md': 'Polish it with /synergy:tone.\n'})
+        self.assertEqual(sorted(f['where'] for f in findings),
+                         ['CLAUDE.md', 'ClaudeProject.md'])
+        joined = ' '.join(f['detail'] for f in findings)
+        for new in ('/synergy:interview', '/synergy:correspondence',
+                    '/synergy:onboard'):
+            self.assertIn(new, joined)
+        self.assertIn('lines 1, 2', joined)
+        # The new names, and a longer name that merely starts with an old
+        # one, are not reported.
+        self.assertEqual(wf_core.instruction_findings({'CLAUDE.md': (
+            'Run /synergy:interview, /synergy:correspondence and '
+            '/synergy:onboard.\nNot /synergy:setup-claude either.\n')}), [])
 
     def test_how_a_project_describes_a_board_is_not_looked_at(self):
         """Nothing reads or writes a board, so preflight has no business with

@@ -16,7 +16,7 @@ The moment two skills each independently decide "this must be the `reviewing` la
 
 ## Why no --force at runtime (pre-creation contract)
 
-The review labels are created at setup (`/synergy:setup`, step 5b) by `wf labels-ensure`. Nothing may `--force`-overwrite a label — that causes colour/description churn when two callers disagree on metadata, and it overwrites any human-customised label colour with the default.
+The review labels are created at setup (`/synergy:onboard`, step 5b) by `wf labels-ensure`. Nothing may `--force`-overwrite a label — that causes colour/description churn when two callers disagree on metadata, and it overwrites any human-customised label colour with the default.
 
 The guarded create in `wf labels-ensure`, and the same one in `wf review-finish`'s readback, is idempotent and safe: it only creates a label that is absent, and a create that loses a race to another agent counts as done. `wf preflight` reports a missing one as `review-label`, and `--fix` runs the same create.
 

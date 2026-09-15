@@ -141,7 +141,7 @@ If `git worktree remove` still fails after killing lock-holders, delete the dire
 
 The synergy plugin locks each in-flight issue/PR with a ref under `refs/claims/`, taken and freed by `wf claim` / `wf claim-release`. The lock is only a race-protector for the brief select-to-claim window; **durable ownership is the assignment plus the issue's `Stage`**, not the ref.
 
-**Automated reaper.** Run `/synergy:setup reap` to scan all active claim refs, cross-check each one against the corresponding issue or PR's current state, and free any that no longer back live work. It applies a staleness threshold (default 4 hours) before touching any ref, so a normally running session is never interrupted. Use this whenever a story is stuck and no agent will pick it, or run it as a scheduled routine via `/schedule`.
+**Automated reaper.** Run `/synergy:onboard reap` to scan all active claim refs, cross-check each one against the corresponding issue or PR's current state, and free any that no longer back live work. It applies a staleness threshold (default 4 hours) before touching any ref, so a normally running session is never interrupted. Use this whenever a story is stuck and no agent will pick it, or run it as a scheduled routine via `/schedule`.
 
 **Manual recovery.** If you need to free a specific claim by hand — or if the reaper flags one as "suspect" and you have confirmed no session holds it — use:
 

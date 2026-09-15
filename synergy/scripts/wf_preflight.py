@@ -549,7 +549,7 @@ def cmd_preflight(args):
             wf_core.CRITICAL, 'file-config',
             'there is no %s at %s, so every value the workflow reads is a '
             'default nobody chose' % (source_rel, root),
-            'run `/synergy:setup`', source_rel))
+            'run `/synergy:onboard`', source_rel))
         return _emit_preflight(findings, checked + ['file-config'],
                                ['config-section'], None, args, [], [])
 

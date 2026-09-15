@@ -6,6 +6,20 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 15.0.0
+
+**Three skills renamed so they stop clashing with other skills** (Issue #288). A person usually types the short name, so a plugin name that matches or nearly matches another skill can run the wrong one without anyone noticing.
+
+- `grill` is now `interview`. It clashed with the Anthropic skill `grill-me`. Its description no longer triggers on "grill me" or "poke holes in this".
+- `tone` is now `correspondence`. It clashed with the Anthropic skill `adrienne-tone`.
+- The `setup` command is now `onboard`. It clashed with the Anthropic skill `setup-claude`. Its modes are unchanged: `/synergy:onboard harden`, `ecosystem`, `reap`, `issues` and `wf`.
+
+`bulk-execute` keeps its name; its description no longer says "batch", so a request to batch something does not also match the built-in `/batch`. `docs/skill-names.md` records every plugin name, what it was checked against, and why it was renamed or kept.
+
+`wf preflight` now warns when a project's `CLAUDE.md` or `ClaudeProject.md` still names `/synergy:grill`, `/synergy:tone` or `/synergy:setup`.
+
+**Upgrading.** This is a breaking release. Refresh the marketplace and update as usual, restart Claude Code, then in each project replace `/synergy:grill` with `/synergy:interview`, `/synergy:tone` with `/synergy:correspondence` and `/synergy:setup` with `/synergy:onboard` in `CLAUDE.md`, `ClaudeProject.md` and any scheduled routine. The `Available as /synergy:*` list in `ClaudeProject.md` names `grill` and `tone` too.
+
 ## synergy 14.1.0
 
 **Nothing is posted outside GitHub without asking.** The plugin posts only to GitHub, through `gh`. A new hook checks every shell and MCP tool call, and anything that would write to Azure DevOps, GitLab or Bitbucket becomes a permission prompt: their CLIs (`az repos`, `az boards`, `glab`), a REST call to their hosts, a push to a remote they host, or one of their MCP tools. It finds a write inside `$( )`, behind `if`, `timeout` or `bash -c`, after a `cd`, or aimed at a URL held in a variable, and ignores text inside quotes and heredocs. Reads pass untouched, and the check adds nothing to what a chat loads.
