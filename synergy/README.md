@@ -162,7 +162,7 @@ To limit GitHub writes to your own organisations, create `~/.claude/synergy/gith
 { "account": "your-github-login", "owners": ["your-org"] }
 ```
 
-With it in place, a push, pull request, issue, comment, label, merge or other GitHub write is blocked outright when it targets an owner not listed, including your personal account unless you list it, or when `gh` is signed in as a different account. Reading and cloning anywhere still work. The list is personal: never commit it to a repository, and each developer keeps their own. Without the file nothing is restricted.
+With it in place, a push, pull request, issue, comment, label, merge or other GitHub write is blocked outright when it targets an owner not listed, including your personal account unless you list it, or when `gh` is signed in as a different account. A write the hook cannot judge, such as a push whose destination it cannot work out, is blocked too. Reading and cloning anywhere still work. The list is personal: never commit it to a repository, and each developer keeps their own. Without the file nothing is restricted.
 
 ## Agents
 

@@ -10,17 +10,18 @@ Two checks, both on the tool call Claude Code is about to make:
   Bitbucket becomes a permission prompt.
 - **On GitHub, only where this machine allows.** With a GitHub allowlist on
   this machine (see github_guard.py), a GitHub write outside it is denied
-  outright.
+  outright, and so is a call the guard cannot read that looks like one.
 
-Reads pass untouched.
+Reads pass untouched. The script always prints one line, `{}` when it has
+nothing to say, so the hook can tell it ran from an interpreter that did not.
 """
 import json
 import re
 import sys
 
-from command_parse import (READ_METHODS, WRITE_VERBS, expand, flag_value,
-                           has_flag, host, mcp_writes, name_words, push_url,
-                           remote_url, walk)
+from command_parse import (HTTP_TOOLS, WRITE_VERBS, expand, flag_value,
+                           has_flag, host, http_writes, mcp_writes,
+                           name_words, not_read, push_url, remote_url, walk)
 
 # Hosts of the platforms the plugin must not post to on its own.
 FORGE_HOSTS = re.compile(
@@ -28,19 +29,13 @@ FORGE_HOSTS = re.compile(
 
 AZ_GROUPS = {'repos', 'boards', 'devops', 'pipelines', 'artifacts'}
 MCP_FORGE_WORDS = {'devops', 'ado', 'azdo', 'gitlab', 'bitbucket'}
-HTTP_TOOLS = {'curl', 'wget', 'invoke-restmethod', 'invoke-webrequest',
-              'irm', 'iwr'}
-DATA_FLAGS = {'--data', '--data-raw', '--data-binary', '--data-urlencode',
-              '--data-ascii', '--json', '--form', '--form-string',
-              '--upload-file', '--post-data', '--post-file', '--body-data',
-              '--body-file'}
-# curl's short flags that take no value, so they can sit in a cluster ahead
-# of -X or -d, as in -sXPOST.
-CURL_BARE = 'sSLkfivgnq'
 
-
-def _not_read(method):
-    return bool(method) and method.upper() not in READ_METHODS
+# What a call the guard could not read has to look like to be denied.
+GITHUB_HINT = re.compile(r'\bgh\b|\bhub\b|github|wf\.(sh|ps1|py)|\bpush\b', re.I)
+WRITE_HINT = re.compile(
+    r'\b(create|merge|comment|edit|close|reopen|delete|push|post|patch|put|'
+    r'add|set|fork|mutation|review|transfer|claim|pick|stage-set|post-merge|'
+    r'handoff|upload|write|update|remove)\b', re.I)
 
 
 def _subcommand(toks, start):
@@ -53,44 +48,20 @@ def _subcommand(toks, start):
     return words
 
 
-def _curl_write(toks):
-    method, data = None, False
-    for i, token in enumerate(toks[1:], 1):
-        after = toks[i + 1] if i + 1 < len(toks) else ''
-        if token.startswith('--'):
-            name, eq, value = token.partition('=')
-            if name in ('--request', '--method'):
-                method = value if eq else after
-            elif name in DATA_FLAGS:
-                data = True
-        elif token.startswith('-'):
-            cluster_method = re.match(r'^-[%s]*X(.*)$' % CURL_BARE, token)
-            if cluster_method:
-                method = cluster_method.group(1) or after
-            elif re.match(r'^-[%s]*[dFT]' % CURL_BARE, token):
-                data = True
-    return data or _not_read(method)
-
-
-def _powershell_write(toks):
-    return (has_flag(toks, ['-Body', '-InFile'])
-            or _not_read(flag_value(toks, ['-Method'])))
-
-
 def _az(toks, text):
     if len(toks) < 2:
         return None
     if toks[1] == 'rest':
         if FORGE_HOSTS.search(text) and (
                 has_flag(toks, ['--body', '-b'])
-                or _not_read(flag_value(toks, ['--method', '-m']))):
+                or not_read(flag_value(toks, ['--method', '-m']))):
             return 'an Azure DevOps REST call (`az rest`)'
         return None
     if toks[1] not in AZ_GROUPS:
         return None
     words = _subcommand(toks, 2)
     if 'invoke' in words:
-        if _not_read(flag_value(toks, ['--http-method'])):
+        if not_read(flag_value(toks, ['--http-method'])):
             return 'an Azure DevOps API call (`az devops invoke`)'
         return None
     if any(w in WRITE_VERBS for w in words):
@@ -102,7 +73,7 @@ def _glab(toks):
     words = _subcommand(toks, 1)
     if words[:1] == ['api']:
         if (has_flag(toks, ['-f', '-F', '--field', '--raw-field', '--input'])
-                or _not_read(flag_value(toks, ['-X', '--method']))):
+                or not_read(flag_value(toks, ['-X', '--method']))):
             return 'a GitLab API call (`glab api`)'
         return None
     if any(w in WRITE_VERBS for w in words):
@@ -117,7 +88,7 @@ def outbound_post(tool_name, tool_input, cwd=None, lookup=remote_url):
             return 'the MCP tool `%s`' % tool_name
         return None
     command = (tool_input or {}).get('command') or ''
-    for toks, where, variables in walk(command, cwd):
+    for toks, where, variables in walk(command, cwd, tool_name == 'PowerShell'):
         text = expand(' '.join(toks), variables)
         program = toks[0]
         found = None
@@ -126,12 +97,10 @@ def outbound_post(tool_name, tool_input, cwd=None, lookup=remote_url):
         elif program == 'glab':
             found = _glab(toks)
         elif program in HTTP_TOOLS and FORGE_HOSTS.search(text):
-            writes = (_curl_write(toks) if program in ('curl', 'wget')
-                      else _powershell_write(toks))
-            if writes:
+            if http_writes(toks):
                 found = 'a REST call to %s' % FORGE_HOSTS.search(text).group(0)
         elif program == 'git':
-            url = push_url(toks, where, lookup)
+            url = push_url(toks, where, lookup, variables)
             if url and FORGE_HOSTS.search(host(url) or ''):
                 found = 'a push to %s' % host(url)
         if found:
@@ -152,23 +121,41 @@ def decision(reason):
     }
 
 
-def main():
+def evaluate(raw, load_allowlist=None, block=None, post=outbound_post):
+    """The hook's answer to one PreToolUse event, as a dict, or None to let
+    the call run. A call the guard fails to read is let through, unless this
+    machine has a GitHub allowlist and the call looks like a GitHub write."""
+    import github_guard
+    load_allowlist = load_allowlist or github_guard.load_allowlist
+    block = block or github_guard.github_block
+    allowlist = load_allowlist()
     try:
-        event = json.load(sys.stdin)
+        event = json.loads(raw)
         name = event.get('tool_name') or ''
         tool_input = event.get('tool_input') or {}
         cwd = event.get('cwd')
-        import github_guard
-        allowlist = github_guard.load_allowlist()
-        blocked = github_guard.github_block(name, tool_input, cwd, allowlist)
+        blocked = block(name, tool_input, cwd, allowlist)
         if blocked:
-            print(json.dumps(github_guard.denial(blocked, allowlist)))
-            return 0
-        reason = outbound_post(name, tool_input, cwd)
-    except Exception:  # a broken guard must never break the tool call
-        return 0
-    if reason:
-        print(json.dumps(decision(reason)))
+            return github_guard.denial(blocked, allowlist)
+        reason = post(name, tool_input, cwd)
+    except Exception as exc:  # a broken guard must not break the tool call
+        if allowlist is not None and GITHUB_HINT.search(raw or '') \
+                and WRITE_HINT.search(raw or ''):
+            return github_guard.denial(
+                'a tool call synergy could not read (%s: %s) that looks like '
+                'a GitHub write' % (type(exc).__name__, exc), allowlist)
+        return None
+    return decision(reason) if reason else None
+
+
+def main():
+    out = None
+    try:
+        raw = sys.stdin.buffer.read().decode('utf-8', 'replace')
+        out = evaluate(raw)
+    except Exception:
+        out = None
+    print(json.dumps(out) if out else '{}')
     return 0
 
 
