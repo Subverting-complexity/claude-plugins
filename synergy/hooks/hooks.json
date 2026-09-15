@@ -28,6 +28,15 @@
             "command": "echo 'WARNING: Off-workflow PR creation. Prefer /synergy:execute, which validates the body (--body-file), applies the review-state entry label, releases the atomic claim, and sets the issue Stage to In Review. If you are already inside the execute skill, proceed.'"
           }
         ]
+      },
+      {
+        "matcher": "Bash|PowerShell|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/forge-guard.sh\""
+          }
+        ]
       }
     ]
   }

@@ -283,6 +283,12 @@ for plugin in synergy; do
         echo "FAIL: $hooks_file has a SessionStart hook that does not carry the response standard"
         status=1
     fi
+    # The plugin posts only to GitHub; the guard is what stops a run posting
+    # to Azure DevOps, GitLab or Bitbucket without the person saying yes.
+    if [ -f "$hooks_file" ] && ! grep -q 'forge-guard.sh' "$hooks_file"; then
+        echo "FAIL: $hooks_file does not run hooks/forge-guard.sh — a run could post outside GitHub without asking"
+        status=1
+    fi
 done
 
 echo ""

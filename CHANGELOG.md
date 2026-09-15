@@ -6,6 +6,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 14.1.0
+
+**Nothing is posted outside GitHub without asking.** The plugin posts only to GitHub, through `gh`. A new hook checks every shell and MCP tool call, and anything that would write to Azure DevOps, GitLab or Bitbucket becomes a permission prompt: their CLIs (`az repos`, `az boards`, `glab`), a REST call to their hosts, a push to a remote they host, or one of their MCP tools. Reads pass untouched, and the check adds nothing to what a chat loads.
+
+**Reviews outside GitHub stay in the chat.** `verify-feature` and the local review in `pr-review` return their report in the conversation only, never as a comment or vote on any platform, and no longer remark on where the repository is hosted. Asked to review a pull request on another platform, `pr-review` reviews its branch locally.
+
 ## synergy 14.0.0
 
 **Renamed from `github-workflow` to `synergy`** (Issue #283). Since 13.0.0 the plugin also covers local work with no GitHub at all, so the old name no longer described it. Every command is now `/synergy:*`, the agents are `synergy:Builder` and `synergy:Reviewer`, and an install named `github-workflow@subverting-complexity` no longer resolves. `preflight` warns about a project `CLAUDE.md` or `ClaudeProject.md` that still names `/github-workflow:` commands, and `wf` keeps using a virtualenv set up under the old name.

@@ -1,6 +1,6 @@
 # Local review
 
-Review a change that has no pull request: uncommitted work, a branch, a commit, or named files. No GitHub access is needed. It fixes concrete problems and reports tersely.
+Review a change that has no pull request: uncommitted work, a branch, a commit, or named files. It needs no access to GitHub or any other hosting platform. It fixes concrete problems and reports tersely, in this conversation only: it posts nothing to any platform, and it does not remark on where the repository is hosted.
 
 When the person wants a report to read rather than fixes ("verify this feature", "is this ready?", a review before merging, "don't change anything"), read `skills/verify-feature/SKILL.md` and follow it instead of this file.
 

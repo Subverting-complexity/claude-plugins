@@ -31,6 +31,8 @@ allowed-tools:
 
 Read one feature, on a branch or in a pull request, and write the review a colleague would leave before it merges. **Change nothing**: no edits, commits, pushes, comments, labels or filed issues. The person reading the report decides what happens next.
 
+**The report stays in this conversation.** Return it here and nowhere else: never post it as a comment, review or vote on a pull request, issue or work item, on GitHub or on any other platform, and never write it to a file unless the person asks. Do not remark on where the repository is hosted.
+
 This is the review a person runs. The automated loop that fixes, labels and merges is `/synergy:pr-review`, and it is not this.
 
 Read `CLAUDE.md` for project rules if it exists.
@@ -41,7 +43,7 @@ Everything a person reads follows `skills/_shared/wording-standard.md` for how i
 
 ## Step 1 — Scope
 
-**The change.** A pull request number: `gh pr view <n> --json title,body,baseRefName,headRefName,files` and `gh pr diff <n>`. Otherwise the named branch, or the current one, against the remote default branch, so a stale local `main` does not widen the diff:
+**The change.** A pull request number: `gh pr view <n> --json title,body,baseRefName,headRefName,files` and `gh pr diff <n>`. On a repository hosted anywhere other than GitHub, review the branch that pull request comes from, with `git` alone and never that platform's own tools. Otherwise the named branch, or the current one, against the remote default branch, so a stale local `main` does not widen the diff:
 
 ```sh
 default_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
