@@ -15,7 +15,7 @@
 # defaults below. Re-measure and re-calibrate (never just raise to silence a
 # failure) if a deliberate, reviewed change grows a file.
 #
-# Checks the plugin's skills and commands under github-workflow/.
+# Checks the plugin's skills and commands under synergy/.
 #
 # Usage:
 #   bash check-budgets.sh              # enforce budgets; exit 1 if any exceeded
@@ -125,8 +125,8 @@ check_body() {
 
 run_gate() {
     local skill_files command_files
-    mapfile -t skill_files < <(find github-workflow -name 'SKILL.md' 2>/dev/null | sort)
-    mapfile -t command_files < <(find github-workflow -path '*/commands/*.md' 2>/dev/null | sort)
+    mapfile -t skill_files < <(find synergy -name 'SKILL.md' 2>/dev/null | sort)
+    mapfile -t command_files < <(find synergy -path '*/commands/*.md' 2>/dev/null | sort)
 
     for f in "${skill_files[@]:-}"; do
         [ -z "$f" ] && continue

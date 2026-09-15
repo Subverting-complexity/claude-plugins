@@ -100,7 +100,7 @@ Do this in a fresh clone before running parallel agents. Without it, the harness
 
 Line-ending churn is the *phantom* reason a worktree stays dirty; the more common *real* reason is simply that a session left uncommitted changes behind. **A worktree is only auto-removed when it is clean** — so any loose change pins it open: it is never reaped, its branch stays checked out, and stale worktrees accumulate until cleanup fails on locks and long paths. There is no cross-session resume, so leaving work "for a later session" strands it rather than preserving it.
 
-The github-workflow plugin enforces a two-ended discipline — **Start clean** before branching, **End clean** on every exit — whose canonical procedure is defined once in [`github-workflow/templates/worktree-hygiene.md`](../github-workflow/templates/worktree-hygiene.md) and referenced from every entry/exit path (`execute` Phase 2 and its exit-cleanup reference, `execute`, `pr-review`, `block-story`). This section deliberately does not restate the steps; read that file.
+The synergy plugin enforces a two-ended discipline — **Start clean** before branching, **End clean** on every exit — whose canonical procedure is defined once in [`synergy/templates/worktree-hygiene.md`](../synergy/templates/worktree-hygiene.md) and referenced from every entry/exit path (`execute` Phase 2 and its exit-cleanup reference, `execute`, `pr-review`, `block-story`). This section deliberately does not restate the steps; read that file.
 
 The model is: *start clean → everything dirty at the end is therefore this session's → commit it or discard it → end clean → the harness reaps the worktree.* The biggest upstream cause of unexpected dirt is a quality gate that runs a **whole-repo formatter** (`prettier --write .`); scope it to staged/changed files or make it check-only so it never silently rewrites unrelated files.
 
@@ -139,9 +139,9 @@ If `git worktree remove` still fails after killing lock-holders, delete the dire
 
 ## Reaping stale claim refs
 
-The github-workflow plugin locks each in-flight issue/PR with a ref under `refs/claims/`, taken and freed by `wf claim` / `wf claim-release`. The lock is only a race-protector for the brief select-to-claim window; **durable ownership is the assignment plus the issue's `Stage`**, not the ref.
+The synergy plugin locks each in-flight issue/PR with a ref under `refs/claims/`, taken and freed by `wf claim` / `wf claim-release`. The lock is only a race-protector for the brief select-to-claim window; **durable ownership is the assignment plus the issue's `Stage`**, not the ref.
 
-**Automated reaper.** Run `/github-workflow:setup reap` to scan all active claim refs, cross-check each one against the corresponding issue or PR's current state, and free any that no longer back live work. It applies a staleness threshold (default 4 hours) before touching any ref, so a normally running session is never interrupted. Use this whenever a story is stuck and no agent will pick it, or run it as a scheduled routine via `/schedule`.
+**Automated reaper.** Run `/synergy:setup reap` to scan all active claim refs, cross-check each one against the corresponding issue or PR's current state, and free any that no longer back live work. It applies a staleness threshold (default 4 hours) before touching any ref, so a normally running session is never interrupted. Use this whenever a story is stuck and no agent will pick it, or run it as a scheduled routine via `/schedule`.
 
 **Manual recovery.** If you need to free a specific claim by hand — or if the reaper flags one as "suspect" and you have confirmed no session holds it — use:
 

@@ -1,6 +1,6 @@
 # Lazy-loading reference files in skills
 
-How this repo keeps a skill's *hot path* — the instructions loaded into context on every invocation — small while still carrying full detail for the rare paths. Used most heavily by `github-workflow`'s `pr-review` and `execute` skills.
+How this repo keeps a skill's *hot path* — the instructions loaded into context on every invocation — small while still carrying full detail for the rare paths. Used most heavily by `synergy`'s `pr-review` and `execute` skills.
 
 ## Why
 
@@ -18,7 +18,7 @@ The stub states the trigger, a one-line summary of what the reference does, and 
 
 ## Exemplar: pr-review
 
-`github-workflow/skills/pr-review/SKILL.md` keeps the every-run review loop (find, claim, read, evaluate, fix, post, label) inline and defers the rest to references loaded on their triggers: `read-only-mode.md`, `picker-fallback.md`, `duplicate-reconciliation.md`, `rework-cascade.md`, `re-review.md`, `auto-merge.md` (which loads `conflict-resolution.md`), `review-workflow.md` (label lookup and the Step 10 fallback), and `review-config-guide.md`. Each is cited once, at the step whose trigger loads it. `execute` and `bulk-execute` share one every-run reference, `shared-phases.md`, so each body holds only what differs. `execute` follows the same shape (`finish.md`, `review-and-merge.md`, `escape-hatches.md`, `audit-mode.md`, …). `review-and-merge.md` checks the merge stop conditions itself and loads `merge.md` only when a merge can happen, which in turn loads pr-review's `auto-merge.md` rather than restating the merge mechanics — a reference may be shared across skills. Code-review's Step 11 checks the same setting before it loads `auto-merge.md`.
+`synergy/skills/pr-review/SKILL.md` keeps the every-run review loop (find, claim, read, evaluate, fix, post, label) inline and defers the rest to references loaded on their triggers: `read-only-mode.md`, `picker-fallback.md`, `duplicate-reconciliation.md`, `rework-cascade.md`, `re-review.md`, `auto-merge.md` (which loads `conflict-resolution.md`), `review-workflow.md` (label lookup and the Step 10 fallback), and `review-config-guide.md`. Each is cited once, at the step whose trigger loads it. `execute` and `bulk-execute` share one every-run reference, `shared-phases.md`, so each body holds only what differs. `execute` follows the same shape (`finish.md`, `review-and-merge.md`, `escape-hatches.md`, `audit-mode.md`, …). `review-and-merge.md` checks the merge stop conditions itself and loads `merge.md` only when a merge can happen, which in turn loads pr-review's `auto-merge.md` rather than restating the merge mechanics — a reference may be shared across skills. Code-review's Step 11 checks the same setting before it loads `auto-merge.md`.
 
 ## When to extract a new reference
 

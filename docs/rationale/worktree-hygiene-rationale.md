@@ -1,6 +1,6 @@
 # Worktree hygiene — design rationale
 
-Background for the protocol in `github-workflow/templates/worktree-hygiene.md`. **Not read at runtime** — it exists so a later change does not silently undo a decision that was made for a reason.
+Background for the protocol in `synergy/templates/worktree-hygiene.md`. **Not read at runtime** — it exists so a later change does not silently undo a decision that was made for a reason.
 
 ## The model
 

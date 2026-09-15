@@ -1,6 +1,6 @@
 # Review Configuration — claude-plugins
 
-Read by `/github-workflow:pr-review`, and by the merge phase that ends a `/github-workflow:execute` run. This repo dogfoods its own plugin, so this file is both a real configuration and a worked example.
+Read by `/synergy:pr-review`, and by the merge phase that ends a `/synergy:execute` run. This repo dogfoods its own plugin, so this file is both a real configuration and a worked example.
 
 ## Repository
 
@@ -39,7 +39,7 @@ These are the only labels the workflow applies; an issue gets none.
 | bypass-ci-on-billing-failure | `false`      |
 | bypass-ci-when-no-pipeline   | `false`      |
 
-**Why enabled.** This is the switch that lets a review land its own work, and it governs both entry points: `/github-workflow:pr-review` and the merge phase at the end of a `/github-workflow:execute` run. Turning it on here is what makes an `execute` run finish at a merged pull request rather than an approved one waiting for a person.
+**Why enabled.** This is the switch that lets a review land its own work, and it governs both entry points: `/synergy:pr-review` and the merge phase at the end of a `/synergy:execute` run. Turning it on here is what makes an `execute` run finish at a merged pull request rather than an approved one waiting for a person.
 
 **Why `require-ci-before-merge: true` rather than `false`.** The stronger guarantee would be GitHub-enforced required status checks on `main`, which this repo qualifies for (it is public). That protection is **not currently applied** — see *Enforcement status* below — so the plugin-side gate is the only thing standing between an approving verdict and a merge. `true` is the absolute form: an approved PR whose head SHA has no checks at all, or has a red check the review cannot fix, is **paused** rather than merged. That costs nothing here because CI runs on every pull request, so the checks are always present; and it fails safe if CI ever stops reporting.
 
@@ -76,7 +76,7 @@ Leave `required_pull_request_reviews` unset. The review records its verdict as a
 
 Any of these forces a `Changes Requested` verdict regardless of all other findings. They are the repo's `CLAUDE.md` critical rules, restated as things a reviewer checks on a diff.
 
-1. **A plugin changed without a version bump.** Any diff touching files under `github-workflow/` must bump the `version` in `github-workflow/.claude-plugin/plugin.json`. Patch for fixes and wording, minor for new skills or behaviour changes, major for breaking changes.
+1. **A plugin changed without a version bump.** Any diff touching files under `synergy/` must bump the `version` in `synergy/.claude-plugin/plugin.json`. Patch for fixes and wording, minor for new skills or behaviour changes, major for breaking changes.
 2. **A description over the cap.** Every skill, command and agent description loads into every session, so `check-budgets.sh` caps each at 240 characters. A diff that raises the cap to fit a longer description is a finding.
 3. **CRLF line endings.** The repo is pinned to LF via `.gitattributes`. CRLF leaves worktrees permanently dirty on Windows and blocks their cleanup, so it is a correctness problem here, not a style one.
 4. **An unreplaced template placeholder shipped.** `{{PLUGIN_NAME}}`, `{{PLUGIN_VERSION}}`, or a `{PLACEHOLDER}` left in a deployed skill or command. `lint-skills.sh` catches these.

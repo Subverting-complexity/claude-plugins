@@ -51,11 +51,11 @@
 - `GoF Design Patterns (Creational, Structural, Behavioral)` --semantically_similar_to--> `SOLID Principles`  [INFERRED] [semantically similar]
   local-workflow/skills/code-architect/references/design-patterns.md → _shared-skills/code-architect/references/clean-architecture.md
 - `Story Template (12-section Issue Format)` --semantically_similar_to--> `Project Configuration Template (ClaudeProject.md)`  [INFERRED] [semantically similar]
-  local-workflow/references/story-template.md → github-workflow/templates/ClaudeProject.md
+  local-workflow/references/story-template.md → synergy/templates/ClaudeProject.md
 - `Story Template Reference` --semantically_similar_to--> `User Story Skill`  [INFERRED] [semantically similar]
-  github-workflow/references/story-template.md → _shared-skills/user-story/SKILL.md
+  synergy/references/story-template.md → _shared-skills/user-story/SKILL.md
 - `User Story Skill` --semantically_similar_to--> `Acceptance Criteria Skill`  [INFERRED] [semantically similar]
-  _shared-skills/user-story/SKILL.md → github-workflow/skills/acceptance-criteria/SKILL.md
+  _shared-skills/user-story/SKILL.md → synergy/skills/acceptance-criteria/SKILL.md
 
 ## Import Cycles
 - None detected.

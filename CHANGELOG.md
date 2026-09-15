@@ -6,13 +6,28 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
-## github-workflow 14.0.0
+## synergy 14.0.0
 
-**The automated review is `pr-review`.** Claude Code has a built-in `/code-review`, so typing the short name ran the built-in instead of the plugin's review, with no review labels and no merge. The plugin's skill is now `pr-review`, and nothing in the plugin is named `code-review` (Issue #291).
+**Renamed from `github-workflow` to `synergy`** (Issue #283). Since 13.0.0 the plugin also covers local work with no GitHub at all, so the old name no longer described it. Every command is now `/synergy:*`, the agents are `synergy:Builder` and `synergy:Reviewer`, and an install named `github-workflow@subverting-complexity` no longer resolves. `preflight` warns about a project `CLAUDE.md` or `ClaudeProject.md` that still names `/github-workflow:` commands, and `wf` keeps using a virtualenv set up under the old name.
 
-**Upgrading.** This is a breaking release. Replace `/github-workflow:code-review` with `/github-workflow:pr-review` anywhere you call it by name: a scheduled routine, a project `CLAUDE.md`, or a script. `execute` and `bulk-execute` already call the new name.
+**The automated review is `pr-review`** (Issue #291). Claude Code has a built-in `/code-review`, so typing the short name ran the built-in instead of the plugin's review, with no review labels and no merge. Nothing in the plugin is named `code-review` any more.
 
-**`verify-feature` is back** as the review a person reads before merging (Issue #287). 13.0.0 folded it into the automated review's local mode, which fixes things and reports tersely. `/github-workflow:verify-feature` reads a branch or pull request, changes nothing, and reports what the feature touches, its concerns and nitpicks, the acceptance-criteria verdict and what to do next. It runs by name only, so it adds nothing to what every chat loads.
+**`verify-feature` is back** as the review a person reads before merging (Issue #287). 13.0.0 folded it into the automated review's local mode, which fixes things and reports tersely. `/synergy:verify-feature` reads a branch or pull request, changes nothing, and reports what the feature touches, its concerns and nitpicks, the acceptance-criteria verdict and what to do next. It runs by name only, so it adds nothing to what every chat loads.
+
+**Fixes.**
+
+- `wf` re-reads its cached configuration when `docs/review.config.md` is newer than the cache, so review-label names edited after the cache was built take effect (Issue #289).
+- `wf handoff` and `wf claim --pr` create a missing review label and retry, so a pull request on a repo without the labels still gets its entry label and the review picker finds it (Issue #290).
+
+**Upgrading.** This is a breaking release. On each machine, from a normal shell:
+
+```bash
+claude plugin marketplace update subverting-complexity
+claude plugin uninstall github-workflow@subverting-complexity
+claude plugin install synergy@subverting-complexity
+```
+
+Then restart Claude Code. In each project, replace `/github-workflow:` with `/synergy:` in `CLAUDE.md`, `ClaudeProject.md` and any scheduled routine, and replace `/github-workflow:code-review` with `/synergy:pr-review`.
 
 ## github-workflow 13.3.0
 

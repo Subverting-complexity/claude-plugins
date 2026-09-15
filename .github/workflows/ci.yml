@@ -43,10 +43,11 @@ jobs:
         run: |
           status=0
           base="${{ github.event.pull_request.base.sha }}"
-          for plugin in github-workflow; do
+          for plugin in synergy; do
             changed=$(git diff --name-only "$base"...HEAD -- "$plugin/" | grep -v '.claude-plugin/plugin.json' | head -1 || true)
             if [ -n "$changed" ]; then
-              old_version=$(git show "$base:$plugin/.claude-plugin/plugin.json" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+              # 14.0.0 renamed github-workflow to synergy, so a base without the new path is read at the old one.
+              old_version=$({ git show "$base:$plugin/.claude-plugin/plugin.json" || git show "$base:github-workflow/.claude-plugin/plugin.json"; } 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
               new_version=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" < "$plugin/.claude-plugin/plugin.json")
               if [ "$old_version" = "$new_version" ]; then
                 echo "FAIL: $plugin/ has changes but version is still $old_version — bump it in plugin.json"
@@ -87,31 +88,31 @@ jobs:
       - name: Check execute every-run load
         shell: bash
         # Lowered in 13.3.0 (#274, #276), when merge mechanics moved behind the auto-merge check and the shared phases moved into one reference.
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 16200
+        run: bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 16200
 
       - name: Check bulk-execute every-run load
         shell: bash
         # Lowered in 13.3.0 (#274, #276).
-        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 22630
+        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 22630
 
       - name: Check pr-review every-run load
         shell: bash
         # Lowered in 13.3.0 (#274, #276), when auto-merge.md and the picker fallback began loading only when needed.
-        run: bash count-tokens.sh github-workflow/skills/pr-review/SKILL.md --budget 5460
+        run: bash count-tokens.sh synergy/skills/pr-review/SKILL.md --budget 5460
 
       - name: Check build every-run load
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/build/SKILL.md --budget 5960
+        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 5960
 
       - name: Check setup every-run load
         shell: bash
         # Lowered in 13.3.0 (#277), when each setup mode began reading only its own steps.
-        run: bash count-tokens.sh github-workflow/commands/setup.md --budget 7240
+        run: bash count-tokens.sh synergy/commands/setup.md --budget 7240
 
       - name: Check tone every-run load
         shell: bash
         # Added in 13.3.0 (#278), when the voice examples were cut; the story caps it at 6,000.
-        run: bash count-tokens.sh github-workflow/skills/tone/SKILL.md --budget 5790
+        run: bash count-tokens.sh synergy/skills/tone/SKILL.md --budget 5790
 
       - name: Check description and body budgets (ratchet)
         shell: bash

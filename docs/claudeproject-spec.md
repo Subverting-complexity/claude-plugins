@@ -1,6 +1,6 @@
 # ClaudeProject.md — format specification (schema v1)
 
-`ClaudeProject.md` is the single source of truth for a project using the `github-workflow` plugin. It lives at the **repository root** — the `wf` picker resolves it via `git rev-parse --show-toplevel`, so one file covers the whole repo (per-subproject configs are unsupported). The template is `github-workflow/templates/ClaudeProject.md`; the setup wizard (`/github-workflow:setup`) generates and refreshes it.
+`ClaudeProject.md` is the single source of truth for a project using the `synergy` plugin. It lives at the **repository root** — the `wf` picker resolves it via `git rev-parse --show-toplevel`, so one file covers the whole repo (per-subproject configs are unsupported). The template is `synergy/templates/ClaudeProject.md`; the setup wizard (`/synergy:setup`) generates and refreshes it.
 
 ## Who parses it
 

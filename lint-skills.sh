@@ -99,20 +99,20 @@ for file in "${skill_files[@]}"; do
     fi
 done
 
-# Issue-writing wiring: github-workflow's writing-github-issues skill is the
+# Issue-writing wiring: synergy's writing-github-issues skill is the
 # standard for every GitHub issue title and body the plugin produces. That only
 # holds if the paths that author or edit an issue body actually point at it, so
 # each one is asserted here. Add a file to this list whenever a new path starts
 # writing issue bodies; do not delete an entry to make the gate pass.
-ISSUE_STANDARD="github-workflow/skills/writing-github-issues/SKILL.md"
+ISSUE_STANDARD="synergy/skills/writing-github-issues/SKILL.md"
 declare -a issue_authoring_files=(
-    "github-workflow/commands/report-issue.md"        # every autonomous filing funnels here
-    "github-workflow/commands/block-story.md"         # edits the body to add the Dependencies marker
-    "github-workflow/skills/feature-discovery/SKILL.md"
-    "github-workflow/skills/user-story/SKILL.md"
-    "github-workflow/references/story-template.md"
-    "github-workflow/templates/CLAUDE.md"             # the rules written into a target project
-    "github-workflow/skills/_shared/wording-standard.md"  # states the precedence
+    "synergy/commands/report-issue.md"        # every autonomous filing funnels here
+    "synergy/commands/block-story.md"         # edits the body to add the Dependencies marker
+    "synergy/skills/feature-discovery/SKILL.md"
+    "synergy/skills/user-story/SKILL.md"
+    "synergy/references/story-template.md"
+    "synergy/templates/CLAUDE.md"             # the rules written into a target project
+    "synergy/skills/_shared/wording-standard.md"  # states the precedence
 )
 
 if [ ! -f "$ISSUE_STANDARD" ]; then
@@ -139,14 +139,14 @@ fi
 # template all point at it. Add a file whenever a new path starts composing a
 # body; do not delete an entry to make the gate pass.
 declare -a body_standard_copies=(
-    "github-workflow/skills/_shared/body-standard.md"
+    "synergy/skills/_shared/body-standard.md"
 )
 declare -a body_authoring_files=(
-    "github-workflow/skills/pr-body/SKILL.md"
-    "github-workflow/skills/pr-body/references/component-format.md"
-    "github-workflow/skills/writing-github-issues/SKILL.md"
-    "github-workflow/templates/body-file-write.md"     # the write mechanics
-    "github-workflow/skills/_shared/wording-standard.md"  # states the precedence
+    "synergy/skills/pr-body/SKILL.md"
+    "synergy/skills/pr-body/references/component-format.md"
+    "synergy/skills/writing-github-issues/SKILL.md"
+    "synergy/templates/body-file-write.md"     # the write mechanics
+    "synergy/skills/_shared/wording-standard.md"  # states the precedence
 )
 
 for f in "${body_standard_copies[@]}"; do
@@ -169,11 +169,11 @@ done
 # UI but that --body-file silently bypasses. The paths that CREATE an issue
 # have to resolve it, or every issue the plugin files ignores the project's own
 # template. The standard and the creating commands must all cite the procedure.
-TEMPLATE_PROC="github-workflow/templates/issue-template-resolution.md"
+TEMPLATE_PROC="synergy/templates/issue-template-resolution.md"
 declare -a issue_creating_files=(
     "$ISSUE_STANDARD"
-    "github-workflow/commands/report-issue.md"
-    "github-workflow/skills/feature-discovery/SKILL.md"
+    "synergy/commands/report-issue.md"
+    "synergy/skills/feature-discovery/SKILL.md"
 )
 
 if [ ! -f "$TEMPLATE_PROC" ]; then
@@ -205,26 +205,26 @@ fi
 # make the gate pass.
 declare -a reply_writing_files=(
     # The standard itself, and the shared standard every skill inherits it through.
-    "github-workflow/skills/user-facing-communication/SKILL.md"
-    "github-workflow/skills/_shared/wording-standard.md"
+    "synergy/skills/user-facing-communication/SKILL.md"
+    "synergy/skills/_shared/wording-standard.md"
     # Orchestrators, commands, and the agents that report back.
-    "github-workflow/skills/execute/SKILL.md"
-    "github-workflow/skills/execute/references/finish.md"
-    "github-workflow/skills/bulk-execute/SKILL.md"
-    "github-workflow/skills/bulk-execute/references/bulk-finish.md"
-    "github-workflow/skills/pr-review/SKILL.md"
-    "github-workflow/skills/preflight/SKILL.md"
-    "github-workflow/skills/writing-github-issues/SKILL.md"  # states the precedence
-    "github-workflow/commands/block-story.md"
-    "github-workflow/commands/guide.md"
-    "github-workflow/commands/report-issue.md"
-    "github-workflow/commands/setup.md"
-    "github-workflow/agents/builder.md"
-    "github-workflow/agents/reviewer.md"
-    "github-workflow/templates/CLAUDE.md"                    # the rules written into a target project
-    "github-workflow/skills/build/SKILL.md"
-    "github-workflow/skills/pr-review/references/local-review.md"
-    "github-workflow/skills/preflight/references/local-checks.md"
+    "synergy/skills/execute/SKILL.md"
+    "synergy/skills/execute/references/finish.md"
+    "synergy/skills/bulk-execute/SKILL.md"
+    "synergy/skills/bulk-execute/references/bulk-finish.md"
+    "synergy/skills/pr-review/SKILL.md"
+    "synergy/skills/preflight/SKILL.md"
+    "synergy/skills/writing-github-issues/SKILL.md"  # states the precedence
+    "synergy/commands/block-story.md"
+    "synergy/commands/guide.md"
+    "synergy/commands/report-issue.md"
+    "synergy/commands/setup.md"
+    "synergy/agents/builder.md"
+    "synergy/agents/reviewer.md"
+    "synergy/templates/CLAUDE.md"                    # the rules written into a target project
+    "synergy/skills/build/SKILL.md"
+    "synergy/skills/pr-review/references/local-review.md"
+    "synergy/skills/preflight/references/local-checks.md"
 )
 
 for f in "${reply_writing_files[@]}"; do
@@ -238,7 +238,7 @@ for f in "${reply_writing_files[@]}"; do
 done
 
 # Every skill writes something a person reads, so each one cites the standard.
-for f in github-workflow/skills/*/SKILL.md; do
+for f in synergy/skills/*/SKILL.md; do
     [ -f "$f" ] || continue
     if ! grep -qF 'user-facing-communication' "$f"; then
         echo "FAIL: $f is a skill but does not cite user-facing-communication"
@@ -249,12 +249,12 @@ done
 # Interview wiring: grill is the one interview procedure. feature-discovery runs
 # it rather than carrying its own posture and mechanics, and has no validation
 # mode to route a stress-test into.
-GRILL="github-workflow/skills/grill/SKILL.md"
+GRILL="synergy/skills/grill/SKILL.md"
 if [ ! -f "$GRILL" ]; then
     echo "FAIL: $GRILL is missing — the interview procedure feature-discovery runs"
     status=1
 fi
-for f in github-workflow/skills/feature-discovery/SKILL.md; do
+for f in synergy/skills/feature-discovery/SKILL.md; do
     if ! grep -qF 'skills/grill/SKILL.md' "$f"; then
         echo "FAIL: $f interviews the user but does not cite skills/grill/SKILL.md"
         status=1
@@ -264,14 +264,14 @@ for f in github-workflow/skills/feature-discovery/SKILL.md; do
         status=1
     fi
 done
-if grep -qiE 'validation mode|\*\*validation\*\*' github-workflow/skills/feature-discovery/SKILL.md; then
-    echo "FAIL: github-workflow/skills/feature-discovery/SKILL.md still describes a validation mode; stress-testing a plan is grill's job"
+if grep -qiE 'validation mode|\*\*validation\*\*' synergy/skills/feature-discovery/SKILL.md; then
+    echo "FAIL: synergy/skills/feature-discovery/SKILL.md still describes a validation mode; stress-testing a plan is grill's job"
     status=1
 fi
 
 # The SessionStart hook is what makes the standard apply outside a workflow
 # command. Without it, a plain question in a fresh session gets none of this.
-for plugin in github-workflow; do
+for plugin in synergy; do
     hooks_file="$plugin/hooks/hooks.json"
     if [ ! -f "$hooks_file" ]; then
         echo "FAIL: $hooks_file is missing — it carries the SessionStart response standard"

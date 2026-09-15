@@ -19,7 +19,7 @@
 # (skills/<skill>/references/<file>.md) resolves against that skill.
 #
 # Usage:
-#   bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 15000
+#   bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 15000
 #   bash count-tokens.sh --every-chat --budget 900
 #   bash count-tokens.sh <file> --exclude <path> --include-rationale
 #   bash count-tokens.sh --self-test
@@ -36,7 +36,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
-PLUGIN_DIR="github-workflow"
+PLUGIN_DIR="synergy"
 
 # description_chars comes from the per-file description gate, so the two
 # scripts can never measure a description differently.

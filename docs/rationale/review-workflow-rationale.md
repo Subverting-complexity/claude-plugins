@@ -14,7 +14,7 @@ Step 7 of the review fixes all objective issues and pushes them. Step 8 then re-
 
 When issues remain that the reviewer could not auto-fix, the PR is left with the `changes-requested` label. To address that feedback:
 
-- The next `/github-workflow:pr-review` invocation picks up the `changes-requested` PR, addresses the feedback (rework cascade in Step 1b), pushes fixes, and then re-reviews the PR — all in one session. (The reviewer agent in read-only mode cannot do rework — it requires file editing and git push access.)
+- The next `/synergy:pr-review` invocation picks up the `changes-requested` PR, addresses the feedback (rework cascade in Step 1b), pushes fixes, and then re-reviews the PR — all in one session. (The reviewer agent in read-only mode cannot do rework — it requires file editing and git push access.)
 - Alternatively, anyone (human or agent) can push commits to the PR branch directly. The next pr-review run will detect the SHA change (Step 1) and re-review the PR automatically.
 - The next pr-review run will pick up PRs with `needs-re-review` (they are prioritised in Step 1) and perform a re-review.
 

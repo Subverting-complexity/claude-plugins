@@ -29,7 +29,7 @@ This is also why there is **no automatic expiry or background reaper**: a sessio
 
 A claim ref is normally released the instant a session no longer needs it (PR opened, story blocked, review verdict recorded, or any **Exit cleanup**). But a ref is server-side state with no owner-side timeout: unlike the old assignment lock, it does **not** self-heal. If a session is hard-killed, the machine reboots, or the process dies before its release runs, the ref survives with no live owner. Every future Acquire for that target then returns non-zero and the item silently drops out of the pool — un-pickable (issues) or un-reviewable (PRs) until the ref is freed.
 
-**Automated reaper.** Run `/github-workflow:setup reap` to scan all active claim refs, cross-check each against the corresponding issue or PR's current state, and free any that no longer back live work. The reaper applies a staleness threshold (default 4 hours) before touching any ref, so a normally running session is never interrupted. It flags claims that are old but still show an in-progress marker as "suspect" — reporting the manual one-liner below — rather than auto-reaping them.
+**Automated reaper.** Run `/synergy:setup reap` to scan all active claim refs, cross-check each against the corresponding issue or PR's current state, and free any that no longer back live work. The reaper applies a staleness threshold (default 4 hours) before touching any ref, so a normally running session is never interrupted. It flags claims that are old but still show an in-progress marker as "suspect" — reporting the manual one-liner below — rather than auto-reaping them.
 
 Run it ad-hoc when a story is stuck, or schedule it as a periodic maintenance routine via `/schedule`.
 

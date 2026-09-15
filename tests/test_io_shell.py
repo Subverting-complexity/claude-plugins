@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Integration tests for the `wf` CLI's I/O shell (github-workflow/scripts/wf.py).
+Integration tests for the `wf` CLI's I/O shell (synergy/scripts/wf.py).
 
 The pure decision logic in `wf_core.py` is covered exhaustively by
 `tests/test_decision_logic.py`. That suite is deliberately pure — no git, no
@@ -48,7 +48,7 @@ from unittest import mock
 # the network.
 sys.path.insert(
     0,
-    os.path.join(os.path.dirname(__file__), '..', 'github-workflow', 'scripts'),
+    os.path.join(os.path.dirname(__file__), '..', 'synergy', 'scripts'),
 )
 import wf  # noqa: E402
 import wf_core  # noqa: E402  (the batch-size cap)
