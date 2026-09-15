@@ -28,7 +28,6 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
-cd "$REPO_ROOT"
 
 # 3.5 chars/token is conservative for markdown instruction prose (matches
 # count-tokens.sh). Integer arithmetic: chars * 10 / 35.
@@ -197,6 +196,8 @@ self_test() {
 if [ "${BASH_SOURCE[0]}" != "$0" ]; then
     return 0
 fi
+
+cd "$REPO_ROOT"
 
 if [ "${1:-}" = "--self-test" ]; then
     self_test

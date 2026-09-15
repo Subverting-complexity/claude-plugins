@@ -237,14 +237,18 @@ scan_deps() {
 declare -A tier=()
 declare -a order=()
 
+tier_changed=0
+
 # Record FILE at TIER, keeping the lower tier when it is reached twice.
 place() {
     local f="$1" t="$2"
     if [ -z "${tier[$f]+x}" ]; then
         tier[$f]="$t"
         order+=("$f")
+        tier_changed=1
     elif [ "$t" -lt "${tier[$f]}" ]; then
         tier[$f]="$t"
+        tier_changed=1
     fi
 }
 
@@ -276,19 +280,24 @@ classify() {
         level1+=("$dep")
     done < <(scan_deps "$input_abs")
 
-    # Every level-1 tier is settled before level 2 reads it.
+    # A level-2 citation can lower a level-1 file's tier after its own
+    # citations were placed, so repeat the pass until no tier changes.
     local parent parent_tier
-    for parent in ${level1[@]+"${level1[@]}"}; do
-        [ -f "$parent" ] || continue
-        is_excluded "$parent" && continue
-        if ! $include_rationale && is_rationale "$parent"; then continue; fi
-        parent_tier="${tier[$parent]}"
-        while IFS=$'\t' read -r ref dep; do
-            [ -z "$dep" ] && continue
-            t="$parent_tier"
-            if [ "$t" -eq 2 ] && cites_on_condition "$parent" "$ref"; then t=3; fi
-            place "$dep" "$t"
-        done < <(scan_deps "$parent")
+    tier_changed=1
+    while [ "$tier_changed" -eq 1 ]; do
+        tier_changed=0
+        for parent in ${level1[@]+"${level1[@]}"}; do
+            [ -f "$parent" ] || continue
+            is_excluded "$parent" && continue
+            if ! $include_rationale && is_rationale "$parent"; then continue; fi
+            parent_tier="${tier[$parent]}"
+            while IFS=$'\t' read -r ref dep; do
+                [ -z "$dep" ] && continue
+                t="$parent_tier"
+                if [ "$t" -eq 2 ] && cites_on_condition "$parent" "$ref"; then t=3; fi
+                place "$dep" "$t"
+            done < <(scan_deps "$parent")
+        done
     done
 }
 
@@ -367,7 +376,16 @@ Runs only on approval. Load `references/led.md` and follow it.
 - `references/listed.md` — the label table. Read only to look up a label.
 
 Never close a PR except per `references/except.md`.
+
+If a person asks, read `references/early.md`.
+
+Finish with `references/zlate.md`.
 EOF
+    # early.md is placed at tier 3 first; zlate.md, read every run, cites it
+    # again, so early.md and what it cites must end at tier 2.
+    echo 'Then read `references/early-deep.md`.' > "$p/skills/main/references/early.md"
+    echo 'Then read `references/early.md`.' > "$p/skills/main/references/zlate.md"
+    echo 'Early deep.' > "$p/skills/main/references/early-deep.md"
     echo 'Led.' > "$p/skills/main/references/led.md"
     echo 'Listed.' > "$p/skills/main/references/listed.md"
     echo 'Except.' > "$p/skills/main/references/except.md"
@@ -424,6 +442,14 @@ EOF
     expect_tier skills/main/references/led.md 3
     expect_tier skills/main/references/listed.md 3
     expect_tier skills/main/references/except.md 3
+    expect_tier skills/main/references/early.md 2
+    expect_tier skills/main/references/early-deep.md 2
+
+    local saved_budget="$budget"
+    budget=1
+    if gate "self-test load" 2 >/dev/null; then echo "self-test FAIL: gate passed a load over its budget"; fail=1; fi
+    if ! gate "self-test load" 1 >/dev/null; then echo "self-test FAIL: gate failed a load within its budget"; fail=1; fi
+    budget="$saved_budget"
 
     # main: "plug:main" (9) + quoted description (22); cmd: "plug:cmd" (8) +
     # quoted description (12); SessionStart: "five!" (5). hidden is left out.
