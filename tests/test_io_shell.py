@@ -4681,6 +4681,7 @@ class TestBoardSync(unittest.TestCase):
         code, payload, _ = hub.sync()
         self.assertEqual(code, wf.EXIT_OK, payload)
         self.assertEqual(sorted(hub.stage_writes), [
+            ('gadgets', 2, 'Backlog'),
             ('widgets', 1, 'Blocked'),
             ('widgets', 2, 'Backlog'),
             ('widgets', 4, 'Backlog'),
@@ -4690,9 +4691,9 @@ class TestBoardSync(unittest.TestCase):
             ('widgets', 10, 'In Progress'),
         ])
         totals = payload['totals']
-        self.assertEqual(totals['stages_set'], 7)
+        self.assertEqual(totals['stages_set'], 8)
         self.assertEqual(totals['stages_by_value'],
-                         {'Blocked': 1, 'Backlog': 2, 'In Review': 1,
+                         {'Blocked': 1, 'Backlog': 3, 'In Review': 1,
                           'Done': 1, 'In Progress': 2})
         # The archived repository is skipped outright.
         self.assertEqual(totals['repos'], 2)
@@ -4720,7 +4721,7 @@ class TestBoardSync(unittest.TestCase):
         self.assertEqual(hub.mutations, [])
         self.assertTrue(payload['dry_run'])
         self.assertEqual(payload['totals']['cards_added'], 1)
-        self.assertEqual(payload['totals']['stages_set'], 7)
+        self.assertEqual(payload['totals']['stages_set'], 8)
 
     def test_unreadable_claim_refs_never_release_work_in_progress(self):
         hub = _SyncHub(claims_fail=True)
@@ -4782,7 +4783,7 @@ class TestBoardSync(unittest.TestCase):
         code, payload, _ = hub.sync()
         self.assertEqual(code, wf.EXIT_PARTIAL)
         self.assertEqual(payload['totals']['repos_failed'], 1)
-        self.assertEqual(hub.stage_writes, [])
+        self.assertEqual([w for w in hub.stage_writes if w[0] == 'widgets'], [])
         self.assertEqual(hub.card_writes, [])
 
     def test_a_failed_card_write_makes_the_run_partial(self):
