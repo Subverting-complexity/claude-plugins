@@ -11,7 +11,7 @@
 #       Run the CLI. Prefers the dedicated venv interpreter created by setup
 #       (so it never depends on PATH or a broken `python3` Store shim); falls
 #       back to a probed system Python if setup hasn't run yet. The CLI exit
-#       code is preserved via exec (wf contract codes 0/10/11/20/30).
+#       code is preserved via exec (see the exit-code table in README.md).
 #
 # Run from the target repo root so wf.py finds ClaudeProject.md and git.
 set -euo pipefail

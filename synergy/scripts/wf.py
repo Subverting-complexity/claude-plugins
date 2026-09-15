@@ -145,13 +145,15 @@ from wf_unblock import cmd_unblock
 
 
 def build_parser():
+    # `bug` is the documented shorthand for maintenance; main() maps it before
+    # any command sees it, so selection only ever handles the three real modes.
     parser = argparse.ArgumentParser(prog='wf', description='synergy programmatic picker')
     sub = parser.add_subparsers(dest='command', required=True)
 
     pick = sub.add_parser('pick', help='claim the next story and return it as JSON')
-    pick.add_argument('--mode', default='story', choices=['story', 'feature', 'maintenance'],
+    pick.add_argument('--mode', default='story', choices=MODE_CHOICES,
                       help='selection mode; feature and maintenance filter the pool '
-                           "by the org's native issueType")
+                           "by the org's native issueType (bug is an alias for maintenance)")
     pick.add_argument('--issue', type=int, default=None,
                       help='target this specific issue instead of auto-selecting; runs the '
                            'same claim + validate machinery (auto-closes it if a merged PR '
@@ -180,7 +182,7 @@ def build_parser():
     cand = sub.add_parser('candidates',
                           help='list the pick pool in priority order without claiming '
                                'anything (bulk-execute chooses its set from this)')
-    cand.add_argument('--mode', default='story', choices=['story', 'feature', 'maintenance'],
+    cand.add_argument('--mode', default='story', choices=MODE_CHOICES,
                       help='selection mode, applied exactly as `pick` applies it')
     cand.add_argument('--max-effort', default=None, choices=['low', 'medium', 'high'],
                       help='skip anything the org has estimated larger than this. '
@@ -410,8 +412,13 @@ def build_parser():
     return parser
 
 
+MODE_CHOICES = ['story', 'feature', 'maintenance', 'bug']
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if getattr(args, 'mode', None) == 'bug':
+        args.mode = 'maintenance'
     args.func(args)
 
 

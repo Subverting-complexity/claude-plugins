@@ -66,7 +66,8 @@ DATA_FLAGS = {'--data', '--data-raw', '--data-binary', '--data-urlencode',
 # of -X or -d, as in -sXPOST.
 CURL_BARE = 'sSLkfivgnq'
 
-HEREDOC = re.compile(r'<<-?\s*([\'"]?)([A-Za-z_][\w.-]*)\1')
+# `<<\EOF` quotes the delimiter as `<<'EOF'` does, so the backslash is allowed.
+HEREDOC = re.compile(r'<<-?\s*\\?([\'"]?)([A-Za-z_][\w.-]*)\1')
 # A heredoc opened on a line that runs a shell or eval is a script it runs.
 SHELL_READER = re.compile(
     r'(?:^|[\s|;&(])(?:\S*[\\/])?(?:bash|sh|zsh|dash|ksh|pwsh|powershell|iex|'
@@ -364,13 +365,18 @@ def tokens(segment, assigns=None):
 def resolve_dir(cwd, target, nt=None):
     """The directory a `cd` to `target` lands in, as Python can open it:
     `~` and `$HOME` expanded, and on Windows a Git Bash `/c/...`,
-    `/mnt/c/...` or `/cygdrive/c/...` path turned into `C:/...`."""
+    `/mnt/c/...` or `/cygdrive/c/...` path turned into `C:/...`. None when
+    the target is computed, such as `$(git rev-parse --show-toplevel)`: a
+    directory named `$__sub` would hide every remote, so the caller stays
+    where it was."""
     nt = os.name == 'nt' if nt is None else nt
     path = target
     if path == '~' or path.startswith(('~/', '~\\')):
         path = os.path.expanduser('~') + path[1:]
     path = re.sub(r'\$\{?(?:env:)?(\w+)\}?',
                   lambda m: os.environ.get(m.group(1), m.group(0)), path)
+    if '$' in path:
+        return None
     if nt:
         m = re.match(r'^/(?:mnt/|cygdrive/)?([a-zA-Z])(?:/(.*))?$', path)
         if m:
@@ -413,7 +419,7 @@ def _walk(command, cwd, variables, found, depth, powershell):
         if head in CD_WORDS and len(toks) > 1:
             args = [t for t in toks[1:] if not t.startswith('-')]
             if args:
-                cwd = resolve_dir(cwd, expand(args[0], env))
+                cwd = resolve_dir(cwd, expand(args[0], env)) or cwd
             continue
         if head in READ_WORDS or head == 'for' or (head == 'printf' and '-v' in toks):
             # A variable these set holds text the command cannot see.
@@ -428,10 +434,8 @@ def _walk(command, cwd, variables, found, depth, powershell):
                     variables[token.lower()] = '$__unknown'
         if head == 'git':
             rest = _git_subcommand(toks)
-            words = [t for t in rest if not t.startswith('-')]
-            if (len(words) >= 4 and words[0] == 'remote'
-                    and words[1] in ('add', 'set-url')):
-                variables['remote:' + words[2].lower()] = words[3]
+            if rest[:1] == ['remote']:
+                _git_remote(rest[1:], variables)
             if rest[:1] == ['config']:
                 _git_config(rest[1:], variables)
         _command(toks, cwd, env, found, depth, powershell, fed)
@@ -450,6 +454,30 @@ def _git_subcommand(toks):
         i += 2 if toks[i] in GIT_VALUE_FLAGS else 1
     return toks[i:]
 
+
+# `git remote add` options that take a value, which would otherwise be read
+# as the remote's name: `-t main az <url>` names the remote az, not main.
+GIT_REMOTE_VALUE_FLAGS = {'-t', '--track', '-m', '--master'}
+
+
+def _git_remote(toks, variables):
+    """Record the URL a `git remote add` or `set-url` gives a remote."""
+    args, skip, options = [], False, True
+    for token in toks:
+        if skip:
+            skip = False
+        elif options and token == '--':
+            options = False
+        elif options and token.startswith('-'):
+            skip = token in GIT_REMOTE_VALUE_FLAGS
+        else:
+            args.append(token)
+    if len(args) >= 3 and args[0] in ('add', 'set-url'):
+        variables['remote:' + args[1].lower()] = args[2]
+
+
+# Settings that choose where a push naming no remote goes instead of origin.
+PUSH_REMOTE_KEY = re.compile(r'^(?:remote\.pushdefault|branch\..+\.pushremote)$', re.I)
 
 GIT_CONFIG_VALUE_FLAGS = {'-f', '--file', '--blob', '--type', '--default',
                           '--comment', '--value', '--url'}
@@ -472,6 +500,8 @@ def _git_config(toks, variables):
     setting = re.match(r'^remote\.(.+)\.(?:push)?url$', args[0], re.I)
     if setting:
         variables['remote:' + setting.group(1).lower()] = args[1]
+    elif PUSH_REMOTE_KEY.match(args[0]):
+        variables['push:remote'] = args[1]
     elif re.match(r'^url\..+\.(?:push)?insteadof$', args[0], re.I):
         variables['url:insteadof'] = args[1]
 
@@ -672,7 +702,7 @@ def push_target(toks, cwd):
         token = toks[i]
         if token in ('-C', '-c') and i + 1 < len(toks):
             if token == '-C':
-                cwd = resolve_dir(cwd, toks[i + 1])
+                cwd = resolve_dir(cwd, toks[i + 1]) or cwd
             else:
                 key, _, value = toks[i + 1].partition('=')
                 config[key.lower()] = value
@@ -738,12 +768,24 @@ def push_url(toks, cwd, lookup=remote_url, variables=None):
                     or config.get('remote.%s.url' % name)
                     or variables.get('remote:' + name))
     else:
-        named = ([v for k, v in config.items()
-                  if re.match(r'^remote\..+\.(push)?url$', k)]
-                 + [v for k, v in variables.items() if k.startswith('remote:')])
-        if len(set(named)) > 1:
-            return ''
-        override = named[0] if named else None
+        # A push naming no remote goes to origin unless git's own config says
+        # otherwise, which `lookup` reads. Every remote the command added is
+        # not a candidate: `git remote add upstream` to fetch from it is common.
+        # A push remote the command itself sets (`-c remote.pushDefault=x`, or
+        # `git config branch.main.pushRemote x` earlier) is followed instead,
+        # or `git -c remote.pushDefault=x -c remote.x.url=<anywhere> push`
+        # would be judged as a push to origin.
+        chosen = next((v for k, v in config.items() if PUSH_REMOTE_KEY.match(k)),
+                      None) or variables.get('push:remote')
+        if chosen:
+            name = expand(chosen, variables)
+            if '$' in name:
+                return ''
+            remote = name
+        name = (remote or 'origin').lower()
+        override = (config.get('remote.%s.pushurl' % name)
+                    or config.get('remote.%s.url' % name)
+                    or variables.get('remote:' + name))
     if override:
         override = expand(override, variables)
         return '' if '$' in override else override

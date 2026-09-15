@@ -36,6 +36,8 @@ tools:
   - Bash(git show *)
   - Bash(git status *)
   - Bash(git switch *)
+  - Bash(git rev-parse *)
+  - Bash(git ls-files *)
   - Bash(gh *)
   - Bash(cat *)
   - Bash(ls *)
@@ -48,6 +50,11 @@ tools:
   - Bash(mkdir *)
   - Bash(cp *)
   - Bash(mv *)
+  - Bash(rm -f .claude/*)
+  - Bash(touch .claude/*)
+  - Bash(xargs -0 -r rm -f)
+  - Bash(test -f *)
+  - Bash(echo *)
   - Bash(scripts/*)
   - WebSearch
 ---
@@ -111,6 +118,10 @@ Each entry is scoped to the minimum needed; the rationale for every family is re
 **Bash(cat \*), Bash(ls \*), Bash(find \*), etc.** — read-only and utility filesystem operations for inspecting the working tree when the dedicated Read/Glob/Grep tools are insufficient (e.g., piping output for comparison).
 
 **Bash(mkdir \*), Bash(cp \*), Bash(mv \*)** — directory and file management needed when creating new modules and reorganising code.
+
+**Bash(rm -f .claude/\*), Bash(touch .claude/\*), Bash(xargs -0 -r rm -f), Bash(test -f \*), Bash(echo \*)** — the run's own marker files: `execute` creates flags such as `.claude/no-merge.flag`, tests for them, and clears them and stale claim files at the start and end of a run. Removal is scoped to `.claude/` so it cannot delete project files.
+
+**Bash(git rev-parse \*), Bash(git ls-files \*)** — read-only: the head SHA recorded for the review, and the untracked claim files cleared at the start of a run.
 
 **Bash(scripts/\*)** — run scripts from the repo's `scripts/` directory directly. Scoped to that path to avoid executing arbitrary named scripts elsewhere.
 

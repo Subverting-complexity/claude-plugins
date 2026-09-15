@@ -33,7 +33,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Expand known workflow shortcuts to their hot-path file sets.
-for wf in "${workflows[@]:-}"; do
+# With no --workflow, "${workflows[@]:-}" would expand to one empty name and
+# reject a plain file list, so the array is expanded only when it has entries.
+for wf in ${workflows[@]+"${workflows[@]}"}; do
     case "$wf" in
         execute)
             files+=(

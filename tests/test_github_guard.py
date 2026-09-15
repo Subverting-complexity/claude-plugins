@@ -670,6 +670,59 @@ class TestGapsFoundInThirdReview(unittest.TestCase):
             'REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner); gh api repos/$REPO/issues -f title=t'))
 
 
+class TestGapsFoundInRobustnessReview(unittest.TestCase):
+    """Pushes inside the allowed org that the review of 16.1.0 found denied."""
+
+    def block(self, command):
+        # Only the repository the call starts in has remotes, so a push
+        # followed into a directory synergy made up finds none.
+        return github_block(
+            'Bash', {'command': command}, '.', ALLOW,
+            account=lambda: 'AdrienneBosch',
+            owner_of=lambda cwd: 'Subverting-complexity',
+            lookup=lambda cwd, remote: ORG if cwd == '.' else '',
+            ssh_host=lambda alias: None, environ={})
+
+    def test_a_computed_directory_keeps_the_working_directory(self):
+        for command in (
+            'cd "$(git rev-parse --show-toplevel)" && git push origin HEAD',
+            'git -C "$(git rev-parse --show-toplevel)" push origin HEAD',
+            'cd "$UNSET_DIR" && git push origin HEAD',
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(self.block(command))
+
+    def test_a_push_naming_no_remote_is_not_sent_to_an_added_one(self):
+        self.assertIsNone(check(
+            'git remote add upstream https://github.com/upstream-org/app.git'
+            ' && git fetch upstream && git rebase upstream/main'
+            ' && git push --force-with-lease'))
+        self.assertIn('SomeoneElse', check(
+            'git remote set-url origin https://github.com/SomeoneElse/r.git'
+            ' && git push'))
+
+    def test_a_push_remote_the_command_sets_is_followed(self):
+        # A push naming no remote goes to origin only when nothing in the
+        # command chooses another push remote.
+        for command in (
+                'git -c remote.pushDefault=evil'
+                ' -c remote.evil.url=https://github.com/SomeoneElse/r.git push',
+                'git -c branch.main.pushRemote=evil'
+                ' -c remote.evil.url=https://github.com/SomeoneElse/r.git push',
+                'git remote add evil https://github.com/SomeoneElse/r.git'
+                ' && git config remote.pushDefault evil && git push'):
+            with self.subTest(command=command):
+                self.assertIn('SomeoneElse', check(command))
+
+    def test_a_remote_added_with_a_tracked_branch_is_followed(self):
+        self.assertIn('SomeoneElse', check(
+            'git remote add -t main evil https://github.com/SomeoneElse/r.git'
+            ' && git push evil main'))
+        self.assertIn('SomeoneElse', check(
+            'git remote add --track=main evil https://github.com/SomeoneElse/r.git'
+            ' && git push evil main'))
+
+
 BASH = shutil.which('bash')
 HOOK = os.path.join(os.path.dirname(__file__), '..', 'synergy', 'hooks',
                     'forge-guard.sh')

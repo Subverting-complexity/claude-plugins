@@ -1,6 +1,6 @@
 # Step 4b — Assess re-review significance (re-reviews only)
 
-Read this when the SKILL's **Step 4b** trigger fires: the PR being reviewed was **previously reviewed** (a prior review comment with a footer exists). Skip — and never load — this for first-time reviews; that is why it lives outside `SKILL.md`.
+Read this when the workflow's **Step 4b** trigger fires: the PR being reviewed was **previously reviewed** (a prior review comment with a footer exists). Skip — and never load — this for first-time reviews; that is why it lives outside `pr-workflow.md`.
 
 Extract the SHA from the previous review footer. Compute the diff between that SHA and the current HEAD:
 

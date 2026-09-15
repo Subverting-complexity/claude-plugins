@@ -204,4 +204,4 @@ Run the checklist in `skills/_shared/body-standard.md` (**Before you post it**),
 - If there is a `## Manual step`, does the title start `[Manual] ` or `[Browser] `, and does `Ownership` say `Human` or `Browser agent` to match?
 - Does this issue need only **one** party to close it? If a second party has to act before it is done, that half is its own issue, and the dependency between them is a native blocked-by edge.
 
-See `references/examples.md` for worked examples.
+When you are unsure of the shape, see `references/examples.md` for worked examples.

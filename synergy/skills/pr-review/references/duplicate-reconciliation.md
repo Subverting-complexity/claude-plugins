@@ -1,6 +1,6 @@
 # Step 2b — Reconcile duplicate PRs for the same issue
 
-Read this when the SKILL's **Step 2b** trigger fires (you have just claimed a PR and are about to reconcile duplicates). It is kept out of `SKILL.md` so the common single-PR review path does not carry it — duplicates are the exception, not the rule.
+Read this when the workflow's **Step 2b** trigger fires (you have just claimed a PR and are about to reconcile duplicates). It is kept out of `pr-workflow.md` so the common single-PR review path does not carry it — duplicates are the exception, not the rule.
 
 Before spending a full review on the claimed PR, check whether **another open PR resolves the same issue**. Duplicates should be rare — the atomic issue claim (`refs/claims/issue-N`) stops two agents selecting one story — but they can still arise at the boundaries the claim does not cover: starting a story by explicit number after a PR already exists, a `block-story` that returned an already-PR'd issue to the pool, a hand-reaped claim ref, or a genuine create-time race where two sessions each opened a PR on a different branch. When two open PRs close one issue, exactly one must survive.
 

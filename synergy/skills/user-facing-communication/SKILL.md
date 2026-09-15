@@ -186,4 +186,4 @@ Before sending, ask:
 
 If yes, remove it.
 
-See `references/examples.md` for worked examples.
+When you are unsure of the shape, see `references/examples.md` for worked examples.

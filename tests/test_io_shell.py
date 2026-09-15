@@ -355,7 +355,7 @@ class TestBulkPickPaths(unittest.TestCase):
                 mock.patch.object(wf, 'apply_in_progress'), \
                 mock.patch.object(wf, 'mark_blocked',
                                   return_value=(True, 'moved')), \
-                mock.patch.object(wf, 'release_claim'), \
+                mock.patch.object(wf, 'release_claim', return_value=True), \
                 mock.patch.object(wf, 'merged_pr_closing', return_value=None), \
                 mock.patch.object(wf, 'issue_edges', return_value=edges), \
                 mock.patch.object(wf, 'gh_json', return_value=(True, [], '')), \

@@ -6,6 +6,33 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 16.2.0
+
+**`--mode bug` works.** `execute` and the guide documented `bug` as shorthand for `maintenance`, but `wf pick` and `wf candidates` rejected it. They now accept it and treat it as `maintenance`.
+
+**The agents can run the commands their workflows give them.** The Builder's tool list now allows the marker-file steps `execute` runs (`rm -f`, `touch` and `test -f` on `.claude/` files, `echo`, `git rev-parse`, `git ls-files`), and the Reviewer's allows `git rev-parse`, `git symbolic-ref` and the `git merge` that conflict resolution uses before an auto-merge.
+
+**The write guard asks where it used to stay silent, and denies less by mistake.**
+
+- **Asks now:** a command the guard cannot parse, such as a `<<\EOF` heredoc, used to skip the check for Azure DevOps, GitLab and Bitbucket; it now asks when the command names one of them. `<<\EOF` itself is parsed. `git remote add -t main az <url>` records the remote as `az`, and an MCP tool named like `myAdo` is checked.
+- **No longer denied:** `cd "$(git rev-parse --show-toplevel)" && git push`, a push naming no remote after `git remote add upstream`, and a local command that could not be parsed in a folder called `github`.
+- **Still caught:** a push naming no remote follows a push remote the command itself sets with `remote.pushDefault` or `branch.<name>.pushRemote`.
+- **Old Python:** an interpreter too old to run the check is no longer cached as one that allows everything.
+
+**The write guard starts Python far less often.** With a GitHub allowlist, a GitHub call now starts Python only when it could write: in local transcripts about 6,500 of 27,500 shell and MCP calls were reads such as `gh pr view` that paid about 300 ms each. Every write the guard's tests know still reaches Python with the same decision, and a test keeps the hook's word lists in step with the Python ones. A call that does start Python forks fewer processes and runs the interpreter by its full path.
+
+**The repository host is read from the host name, faster.** `hooks/repo-host.sh` used to match the whole remote URL, so `github.com/acme/gitlab-ci-templates` or a `gitlab-bot@github.com` remote was reported as GitLab and Claude was told not to use `gh`. It now matches the host alone. It also reads an upper-case `URL =` key, reads the working directory on macOS, where its `sed` did not work, and starts no process at all: about 115 ms per session and per subagent, down from about 350 to 480 ms.
+
+**`wf` cannot hang on a credential prompt, and a failed claim release is reported.** Every `git` and `gh` call `wf` makes runs with `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`, so expired credentials fail the call instead of waiting for a person. A claim ref that could not be deleted used to be listed as released and kept its issue out of every pool until `claim-reap`; `claim-release` now lists it under `failed`, and `pick` and `handoff` report `claim_released` beside each issue. Exit codes are unchanged.
+
+**Every `wf` command starts about 0.7 seconds sooner.** The sign-in check asks `gh auth token`, which reads the local credential store, instead of `gh auth status`, which asks GitHub. On gh older than 2.17 it still falls back to `gh auth status`.
+
+**Documentation agrees with itself.** The plugin README lists `/synergy:build` and no longer says the Builder has full tool access; the guide covers local work; the exit-code table includes 12 (`needs-refinement`); and the Reviewer's read-only arrangement names `bulk-execute` as well as `execute`.
+
+**A local review loads far less.** The pull request steps of `pr-review` moved into `references/pr-workflow.md`, read only when the target is a pull request, so reviewing uncommitted work, a branch or a commit falls from 5,418 to 621 tokens. A pull request review loads the same instructions as before, and CI now gates that path on its own. Worked examples load only when wanted: `pr-body` falls from 5,006 to 1,078 tokens, `writing-github-issues` from 6,786 to 5,114 and `user-facing-communication` from 3,034 to 1,982. No instruction was changed. The read-only reviewer reference no longer says `execute` spawns two reviewers; it spawns one.
+
+**`count-roundtrips.sh` accepts file names again.** Given only files, it stopped with "Unknown workflow". CI only ever used `--workflow`, so its counts are unchanged.
+
 ## synergy 16.1.0
 
 **Claude is told where the repository is hosted.** A new `SessionStart` and `SubagentStart` hook, `hooks/repo-host.sh`, reads the remote from the git config file and says whether the repository is on GitHub, Azure DevOps, GitLab or Bitbucket. In a repository that is not on GitHub it tells Claude not to use `gh` or the GitHub workflows. It reads the file rather than running `git`, so it still works in a repository git refuses to open because another Windows user owns it, and it never prints the remote URL.

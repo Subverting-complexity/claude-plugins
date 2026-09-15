@@ -12,19 +12,19 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 
 | Module | Responsibility | Lines |
 |--------|----------------|-------|
-| `wf.py` | Entry point: argument parser, dispatch, re-exports | 419 |
-| `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 123 |
-| `wf_config.py` | Repo root, `ClaudeProject.md` parsing, the config cache, `config` | 225 |
+| `wf.py` | Entry point: argument parser, dispatch, re-exports | 426 |
+| `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 142 |
+| `wf_config.py` | Repo root, `ClaudeProject.md` parsing, the config cache, `config` | 241 |
 | `wf_capabilities.py` | Org issue types, fields and type pins, repo labels, the capability cache, `org-capabilities` | 446 |
 | `wf_issue_io.py` | Reading, writing and verifying single issues; batched mutations | 422 |
 | `wf_stage.py` | `Stage` writes, the start date, branch checkout, `stage-set` | 213 |
 | `wf_candidates.py` | Open issues by stage, their facets, the candidate list | 470 |
-| `wf_claim.py` | Claim refs and markers, `claim`, `claim-release`, `claim-reap` | 344 |
+| `wf_claim.py` | Claim refs and markers, `claim`, `claim-release`, `claim-reap` | 378 |
 | `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 220 |
 | `wf_unblock.py` | The unblock sweep, `unblock` | 288 |
-| `wf_pick.py` | The claim and validate walk, container trees, `pick`, `candidates` | 780 |
+| `wf_pick.py` | The claim and validate walk, container trees, `pick`, `candidates` | 785 |
 | `wf_post_merge.py` | Closing finished containers, `post-merge` | 243 |
-| `wf_review.py` | PR pools and review labels, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 387 |
+| `wf_review.py` | PR pools and review labels, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 409 |
 | `wf_issue_apply.py` | `issue-apply` | 777 |
 | `wf_issue_audit.py` | `issue-audit` | 166 |
 | `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 654 |
@@ -42,7 +42,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_audit.py` | What an existing issue is missing or contradicts | 344 |
 | `wf_core_review.py` | Review-state label names, pools and reconciliation | 192 |
 | `wf_core_drift.py` | Finished containers and stage drift findings | 96 |
-| `wf_core_preflight.py` | Config sections, label and field drift, instruction files | 579 |
+| `wf_core_preflight.py` | Config sections, label and field drift, instruction files | 584 |
 | `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 307 |
 
 ## Commands
@@ -157,6 +157,7 @@ A single JSON object goes to **stdout**; diagnostics go to **stderr**. Every run
 | 0    | `ok`            | An item was claimed (and checked out, if asked).               |
 | 10   | `no-candidates` | The ready pool was empty.                                      |
 | 11   | `all-blocked`   | Every candidate was claimed away, blocked, or already resolved.|
+| 12   | `needs-refinement` | The next pick is too unclear to build. Nothing was claimed. |
 | 20   | `error`         | Environment/auth problem (not a repo, no `gh`, no config).     |
 | 21   | `no-capabilities` | The org reports no issue types and no fields, or refused to say. |
 | 22   | `spec-invalid`  | An `issue-apply` spec is wrong. Nothing was written.           |
@@ -529,7 +530,7 @@ The ref is the lock but it is ephemeral, so on success the command also advertis
 | 27 | Another agent holds it. Make **no** changes: move to the next item, or report and stop on a named one. |
 | 20 | A broken environment, not a rival — usually no write access to `refs/claims/*`. Never fall back to a bare label as a "soft" claim; that reintroduces the race the ref removes. |
 
-`claim-release` takes repeatable `--issue` / `--pr` and is idempotent — releasing a ref that is already gone is not a failure, so it always exits 0.
+`claim-release` takes repeatable `--issue` / `--pr` and is idempotent — releasing a ref that is already gone is not a failure, so it always exits 0. A ref it could not delete, and which the remote still holds or could not be asked about, is listed under `failed` rather than `released`, and named in `reason`: it keeps the item out of every pool until it is released again or `claim-reap` frees it. `pick` reports the same thing as `claim_released` on each side effect that released a claim, and `handoff` on each issue it hands off.
 
 `claim-reap` frees the refs a crash left behind. It always exits 0 and returns three lists: `reaped` (freed — the issue is closed, no longer in progress, or already has a PR; the PR is closed, merged, or open with no review under way), `suspect` (deliberately left, because the evidence does not say the work stopped) and `skipped` (younger than `--threshold`, default 4 hours). `--dry-run` reports the verdicts without freeing anything. The judgement is `wf_core.reap_verdict`, which is offline-tested; everything in `wf.py` around it is I/O.
 

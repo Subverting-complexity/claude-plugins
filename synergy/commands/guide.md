@@ -55,6 +55,12 @@ gh auth status 2>&1 | head -3
 > - `/synergy:bulk-execute` → Build two to five **related** stories as one change: one branch, one pull request, one review. It reads the pick pool, groups the stories that genuinely belong together, and builds that group. Worth it when the stories touch the same code, or when one is waiting on another; not worth it when they are unrelated, because the pull request then gets hard to review.
 > - `/synergy:bulk-execute 41 43 47` → Build exactly those stories together, when you already know they belong in one change.
 >
+> **Local work (no issue, no pull request):**
+>
+> - "Build this" or `/synergy:build` → Plan, build, run the quality gate and commit on your machine. Nothing is posted anywhere.
+> - "Is this ready?" or `/synergy:pr-review` on uncommitted work, a branch or a commit → Review a local change in the chat.
+> - `/synergy:verify-feature` → Write the report a person reads before merging, in the chat only.
+>
 > **Review and audit:**
 >
 > - `/synergy:pr-review` → Review the next open PR end-to-end (finds it, claims it, reviews in full codebase context, auto-fixes concrete issues, posts structured comment, applies state labels). Also picks up PRs with changes requested and addresses the feedback before re-reviewing.
