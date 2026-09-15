@@ -27,8 +27,11 @@ Contract:
     **stderr**. A caller can parse stdout without stripping prose.
   - Every run's JSON carries a `status` field; the process exit code mirrors it:
       0  status=ok            an item was claimed (and checked out, if asked)
+      2  status=usage         the arguments or the recorded bulk set were wrong
       10 status=no-candidates the ready pool was empty
       11 status=all-blocked   every candidate was blocked / already resolved
+                              (also status=not-merged from post-merge)
+      12 status=needs-refinement the next pick is too unclear to build
       20 status=error         environment/auth problem (not in a repo, no gh, …)
       21 status=no-capabilities an org that resolves but reports neither issue
                               types nor issue fields — a broken or under-scoped
@@ -36,6 +39,9 @@ Contract:
       22 status=spec-invalid  the spec was refused before anything was written
       23 status=verify-failed a write was accepted but the read-back disagrees
       24 status=partial       some entries landed and some did not
+      25 status=gaps          issue-audit found issues missing type or fields
+      26 status=drift         config-audit or preflight found a blocking finding
+      27 status=lost          another run holds the claim
       30 status=unsupported   this path isn't in the CLI yet — caller should
                               fall back to the inline skill procedure
   - Mutations to the *winning* issue (claim, assign, the In Progress move) are
@@ -78,6 +84,7 @@ import wf_issue_audit  # noqa: E402
 import wf_unblock  # noqa: E402
 import wf_pick  # noqa: E402
 import wf_plan  # noqa: E402
+import wf_bulk_build  # noqa: E402
 import wf_post_merge  # noqa: E402
 import wf_review  # noqa: E402
 import wf_preflight  # noqa: E402
@@ -97,6 +104,7 @@ _SHELL_MODULES = (
     wf_unblock,
     wf_pick,
     wf_plan,
+    wf_bulk_build,
     wf_post_merge,
     wf_review,
     wf_preflight,
@@ -130,12 +138,13 @@ class _Shell(types.ModuleType):
 sys.modules[__name__].__class__ = _Shell
 
 from wf_board_sync import SYNC_CLOSED_DAYS, cmd_board_sync
+from wf_bulk_build import cmd_bulk_integrate, cmd_bulk_schedule
 from wf_capabilities import cmd_org_capabilities
 from wf_claim import cmd_claim, cmd_claim_reap, cmd_claim_release
-from wf_config import cmd_config
+from wf_config import cmd_config, cmd_scratch_clean
 from wf_issue_apply import cmd_issue_apply
 from wf_issue_audit import AUDIT_SPEC_DEFAULT, cmd_issue_audit
-from wf_pick import cmd_candidates, cmd_pick
+from wf_pick import cmd_candidates, cmd_pick, cmd_refine
 from wf_plan import cmd_bulk_mark, cmd_drop_story, cmd_plan_set
 from wf_post_merge import cmd_post_merge
 from wf_preflight import cmd_config_audit, cmd_preflight
@@ -184,7 +193,7 @@ def build_parser():
 
     cand = sub.add_parser('candidates',
                           help='list the pick pool in priority order without claiming '
-                               'anything (bulk-execute chooses its set from this)')
+                               'anything (bulk-execute plans with plan-set instead)')
     cand.add_argument('--mode', default='story', choices=MODE_CHOICES,
                       help='selection mode, applied exactly as `pick` applies it')
     cand.add_argument('--max-effort', default=None, choices=['low', 'medium', 'high'],
@@ -199,11 +208,11 @@ def build_parser():
                       help='truncate each body to this many characters (default 600; '
                            '0 for the whole body)')
     cand.add_argument('--parent', type=int, default=None,
-                      help='narrow to the leaves under this Epic or Feature and '
-                           'choose one bulk set from them: one Feature per run, '
-                           'pool leaves plus any Blocked leaf waiting only on '
-                           'another leaf taken; everything else is listed in '
-                           '`excluded` with its reason')
+                      help='the set `plan-set --parent` would choose under this '
+                           'Epic or Feature: related leaves in build order, '
+                           'prerequisites outside the tree pulled in, capped by '
+                           '--size; everything else is listed in `excluded` '
+                           'with its reason')
     cand.add_argument('--size', type=int, default=wf_core.BULK_MAX,
                       help='with --parent, the most leaves to take, highest '
                            'priority first (default %d)' % wf_core.BULK_MAX)
@@ -247,6 +256,20 @@ def build_parser():
     bm.add_argument('--built', type=int, action='append', default=None,
                     help='a story now committed on the branch (repeatable)')
     bm.set_defaults(func=cmd_bulk_mark)
+
+    bsc = sub.add_parser('bulk-schedule',
+                         help="split each wave of the bulk set into batches that "
+                              "can be built in parallel, from the files "
+                              ".claude/plan.md lists (no network)")
+    bsc.set_defaults(func=cmd_bulk_schedule)
+
+    bi = sub.add_parser('bulk-integrate',
+                        help="cherry-pick a wave's builder branches onto the shared "
+                             'branch, push, mark them built and delete them')
+    bi.add_argument('--wave', type=int, required=True, help='the wave to integrate')
+    bi.add_argument('--keep-branches', action='store_true',
+                    help='leave the temporary {branch}--{number} branches on the remote')
+    bi.set_defaults(func=cmd_bulk_integrate)
 
     pm = sub.add_parser('post-merge',
                         help='settle a merged PR: close any still-open linked issue and '
@@ -304,6 +327,11 @@ def build_parser():
 
     cfg = sub.add_parser('config', help='emit .claude/wf-config.json from ClaudeProject.md')
     cfg.set_defaults(func=cmd_config)
+
+    sc = sub.add_parser('scratch-clean',
+                        help="delete this run's scratch files under .claude/ and "
+                             "keep them in the clone's info/exclude (no network)")
+    sc.set_defaults(func=cmd_scratch_clean)
 
     caps = sub.add_parser('org-capabilities',
                           help="resolve the org's enabled native issue types and its "
@@ -385,6 +413,15 @@ def build_parser():
                     help='re-query org capabilities instead of reading the cache')
     pf.set_defaults(func=cmd_preflight)
 
+    rf = sub.add_parser('refine',
+                        help='send a claimed issue back for refinement: Stage to '
+                             'Needs refinement, the comment, unassign, release '
+                             'the claim')
+    rf.add_argument('--issue', type=int, required=True, help='issue number')
+    rf.add_argument('--body-file', required=True,
+                    help='the comment saying what a person must add')
+    rf.set_defaults(func=cmd_refine)
+
     ss = sub.add_parser('stage-set',
                         help="set an issue's Stage field (always exits 0; "
                              '`set` says whether it landed)')
@@ -425,7 +462,9 @@ def build_parser():
 
     sp = sub.add_parser('sibling-pr',
                         help='list the open PRs that will close an issue')
-    sp.add_argument('number', type=int, help='issue number')
+    sp.add_argument('number', type=int, nargs='+',
+                    help='issue number (several share one read; `by_issue` '
+                         'answers each)')
     sp.add_argument('--exclude-branch', default=None,
                     help='drop the PR on this head branch (your own)')
     sp.set_defaults(func=cmd_sibling_pr)

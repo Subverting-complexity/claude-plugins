@@ -144,9 +144,12 @@ REVIEW_STATE_KEYS = [
     'needs-review', 'reviewing', 'approved', 'changes-requested',
     'needs-discussion', 'needs-re-review', 'failed',
 ]
-# The verdicts pr-review can record (the three a review can conclude with;
-# `failed` is set on the error path, not by review-finish).
-REVIEW_VERDICT_KEYS = ('approved', 'changes-requested', 'needs-discussion')
+# The states review-finish can record: the three a review concludes with, and
+# `needs-re-review` for an approved PR whose merge stopped short, which the
+# review picker would otherwise never select again. `failed` is set on the
+# error path, not by review-finish.
+REVIEW_VERDICT_KEYS = ('approved', 'changes-requested', 'needs-discussion',
+                       'needs-re-review')
 
 
 def reconcile_review_labels(current_labels, verdict, names, fixes_applied=False):

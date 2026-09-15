@@ -80,22 +80,7 @@ It names each label through `docs/review.config.md` when that exists, falling ba
 
 ## 5c. Ignore plugin scratch files
 
-The workflow writes session-local scratch files under `.claude/` that must never be committed. A committed plan can follow the branch around and confuse a later session, and any stray untracked scratch file can send an exit-time or pre-merge tree check looking for something to commit. Ensure `.gitignore` excludes them: create it if absent; if it exists and does not already cover `.claude/` wholesale, append the lines below without removing or reordering existing entries.
-
-```
-# synergy plugin scratch files (per-session, never commit)
-.claude/plan.md
-.claude/projected-config.md
-.claude/preflight-passed.txt
-.claude/label-cache.json
-.claude/issue-fields-cache.json
-.claude/candidates.json
-.claude/claim-*.sha
-.claude/wf-config.json
-.claude/*.flag
-```
-
-Best-effort: if `.gitignore` cannot be written, log a warning and continue.
+Nothing to write. Every `wf` command keeps the plugin's scratch-file patterns in the clone's `.git/info/exclude`, which every worktree of the clone reads, so no project lists them in `.gitignore`. Leave an older `synergy plugin scratch files` block in `.gitignore` where it is.
 
 ## 5d. Normalize line endings
 

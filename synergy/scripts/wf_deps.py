@@ -28,7 +28,8 @@ def issue_edges(cfg, number):
     """
     ok, data, _ = gh_graphql(
         'query($o:String!,$r:String!,$n:Int!){ repository(owner:$o,name:$r){'
-        ' issue(number:$n){ blockedBy(first:%d){ nodes { number state } } } } }'
+        ' issue(number:$n){ blockedBy(first:%d){ nodes { number state'
+        ' repository { nameWithOwner } } } } } }'
         % EDGE_PAGE,
         o=cfg['org'], r=cfg['repo'], n=int(number))
     if not ok or not data:
@@ -58,7 +59,8 @@ def issue_edges_map(cfg, numbers):
     for start in range(0, len(ordered), EDGE_BATCH):
         batch = ordered[start:start + EDGE_BATCH]
         parts = ['e%d: issue(number:%d){ blockedBy(first:%d){'
-                 ' nodes { number state title } } }' % (n, n, EDGE_PAGE)
+                 ' nodes { number state title repository { nameWithOwner } } } }'
+                 % (n, n, EDGE_PAGE)
                  for n in batch]
         ok, data, _ = gh_graphql(
             'query($o:String!,$r:String!){ repository(owner:$o,name:$r){ %s } }'
@@ -82,6 +84,20 @@ def issue_edges_map(cfg, numbers):
 
 def validate_issue(cfg, issue, siblings=()):
     """Validate a claimed issue. Returns (verdict, detail).
+
+    `validate_issue_edges` without the open blockers it read; see there.
+    """
+    verdict, detail, _open = validate_issue_edges(cfg, issue, siblings)
+    return verdict, detail
+
+
+def validate_issue_edges(cfg, issue, siblings=()):
+    """Validate a claimed issue. Returns (verdict, detail, open_refs).
+
+    `open_refs` is every open blocker the check read, in the issue's order, or
+    None when the edges could not be read. A bulk claim rebuilds its build
+    order from it, because the edges read when the set was planned may have
+    changed by the time each story is claimed.
 
     verdict ∈ {'valid', 'blocked', 'resolved', 'unknown'}:
       blocked  → open dependencies (detail = list of open #s, or 'meta' on overflow)
@@ -108,20 +124,24 @@ def validate_issue(cfg, issue, siblings=()):
     not block, because it is not unmerged work you cannot see; it is work this
     same run is about to write. Everything else is unchanged, so a single-story
     pick (no siblings) behaves exactly as before.
+
+    A blocker in another repository is named `owner/name#N` and is never a
+    sibling, so it blocks while it is open.
     """
     edges = known_edges(issue)
     if edges is None:
         edges = issue_edges(cfg, issue['number'])
     if edges is None:
-        return 'unknown', 'could not read the blocked-by edges'
-    open_numbers, closed_numbers = wf_core.edge_states(edges)
+        return 'unknown', 'could not read the blocked-by edges', None
+    open_numbers, closed_numbers = wf_core.edge_states(
+        edges, '%s/%s' % (cfg['org'], cfg['repo']))
     deps = open_numbers + closed_numbers
     if len(open_numbers) > wf_core.DEP_LIMIT:
         return 'blocked', ('meta-issue (> %d open dependencies)'
-                           % wf_core.DEP_LIMIT)
+                           % wf_core.DEP_LIMIT), open_numbers
     open_deps = wf_core.blocking_dependencies(deps, open_numbers, siblings)
     if open_deps:
-        return 'blocked', ', '.join('#%d' % d for d in open_deps)
+        return 'blocked', ', '.join(wf_core.ref_label(d) for d in open_deps), open_numbers
     if issue.get('prs_complete') and 'merged_prs' in issue:
         # The read that produced this issue saw every pull request that
         # closes it, so the repository-wide scan would only repeat it.
@@ -130,8 +150,8 @@ def validate_issue(cfg, issue, siblings=()):
     else:
         pr_number = merged_pr_closing(cfg, issue['number'])
     if pr_number is not None:
-        return 'resolved', pr_number
-    return 'valid', None
+        return 'resolved', pr_number, open_numbers
+    return 'valid', None, open_numbers
 
 
 def known_edges(issue):
@@ -153,7 +173,8 @@ def issue_dependency_facts(cfg, number):
     read failed, so the claim falls back to reading each on its own."""
     ok, data, _ = gh_graphql(
         'query($o:String!,$r:String!,$n:Int!){ repository(owner:$o,name:$r){'
-        ' issue(number:$n){ blockedBy(first:%d){ totalCount nodes { number state title } }'
+        ' issue(number:$n){ blockedBy(first:%d){ totalCount nodes { number state title'
+        ' repository { nameWithOwner } } }'
         ' closedByPullRequestsReferences(first:5){ totalCount nodes { number state } } } } }'
         % EDGE_PAGE, o=cfg['org'], r=cfg['repo'], n=int(number))
     node = (((data or {}).get('repository') or {}).get('issue')) if ok else None
@@ -226,7 +247,8 @@ def mark_blocked(cfg, issue, detail, assigned=True):
     run(['gh', 'issue', 'comment', str(issue['number']), '--repo', repo,
          '--body', 'Blocked — open dependency(ies): %s. Returned to blocked until they close.' % detail])
     written, message = set_stage(cfg, issue['number'],
-                                 wf_core.STAGE_NAMES['stage-blocked'])
+                                 wf_core.STAGE_NAMES['stage-blocked'],
+                                 issue.get('id'))
     if not written:
         eprint('wf: warning — #%s is unassigned but its Stage was not set to '
                'Blocked (%s), so it is still in the pool'
@@ -265,4 +287,5 @@ def close_resolved(cfg, issue, pr_number):
     run(['gh', 'issue', 'close', str(issue['number']), '--repo', repo,
          '--comment', 'Closing — already resolved by #%s.' % pr_number])
     clear_lifecycle_label(cfg, issue['number'], issue.get('labels', []))
-    return set_stage(cfg, issue['number'], wf_core.STAGE_NAMES['stage-done'])
+    return set_stage(cfg, issue['number'], wf_core.STAGE_NAMES['stage-done'],
+                     issue.get('id'))

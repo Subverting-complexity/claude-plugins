@@ -129,9 +129,14 @@ def set_stages(cfg, wanted, ids=None, extra=None):
     return out
 
 
-def set_stage(cfg, number, stage):
-    """Write one issue's `Stage`. (written, message)."""
-    return set_stages(cfg, {int(number): stage})[int(number)]
+def set_stage(cfg, number, stage, node_id=None):
+    """Write one issue's `Stage`. (written, message).
+
+    `node_id` is the issue's node id when the caller already read it, which
+    spares the id read.
+    """
+    ids = {int(number): node_id} if node_id else None
+    return set_stages(cfg, {int(number): stage}, ids)[int(number)]
 
 
 def _chunks(items, size):

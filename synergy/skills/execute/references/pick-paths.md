@@ -13,9 +13,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout
 Read the result as Phase 1 does, plus:
 
 - `open_prs` is present → do not start fresh work. Report the existing PR by number **and** title and tell the user to run `/synergy:pr-review`, which handles review and rework. Stop.
-- `assignees` is present or `stage` is `In Review`, with no `open_prs` → look for a **closed, unmerged** PR:
+- `assignees` is present or `stage` is `In Review`, with no `open_prs` → look for a pull request that GitHub links to the issue and that was **closed without merging** (a merged one means the work is done, never abandoned):
   ```
-  gh pr list --repo {org}/{repo} --state closed --search "closes #{number}" --json number,title
+  gh pr list --repo {org}/{repo} --state closed --search "#{number}" --json number,title,mergedAt,closingIssuesReferences --jq '[.[] | select(.mergedAt == null and any(.closingIssuesReferences[]; .number == {number}))]'
   ```
   If there is one, the PR was abandoned: unassign, run `wf stage-set {number} --stage stage-backlog` (that write returns it to the pool), comment `"Resetting — PR #{N} closed without merge."`, and pick it again. If there is none, report who holds it and stop.
 - `ok` with `prerequisite_for` → the story waits on open work this run can build, so `number` is its first prerequisite, already claimed. `SKILL.md` Phase 1 says how to go on.
@@ -24,21 +24,18 @@ Read the result as Phase 1 does, plus:
 
 ## A thin or empty story
 
-- **Thin**, a real topic but not enough to implement without guessing, in a user-present session → ask with `AskUserQuestion`: "The next priority story (#{number}: {title}) needs refinement before it can be implemented. Would you like to refine it now?"
+- **Thin**, a real topic but not enough to implement without guessing, in a user-present session (no `.claude/unattended.flag`) → ask with `AskUserQuestion`: "The next priority story (#{number}: {title}) needs refinement before it can be implemented. Would you like to refine it now?"
   - "Refine now (Recommended)" — run `/synergy:grill` on the story with the user, or the `refinement-skill` (default `feature-discovery`) when it needs breaking down, then continue with Phase 2. The stage is already `In Progress`.
   - "Skip and pick next" — send it to refinement as below.
 - **Truly empty**, or thin with nobody present to answer → send it to refinement and re-run the selection for the next story. Do **not** run `/synergy:block-story`: blocked means an open blocked-by edge, and this issue has none, so nothing would ever release it.
 
-Sending a story to refinement is a comment saying what is missing, the stage set to `Needs refinement`, and the assignment and claim given up:
+Sending a story to refinement is one call. Write the comment to a file first, to `skills/writing-github-issues/SKILL.md`: say what a person would have to add before it can be built, not that you could not build it.
 
 ```bash
-gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-refinement
-gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" refine --issue {number} --body-file {tempfile}
 ```
 
-Write the comment to `skills/writing-github-issues/SKILL.md`: say what a person would have to add before it can be built, not that you could not build it.
+It sets the stage to `Needs refinement` first, then comments, unassigns and releases the claim, and reports each as `stage_set`, `commented`, `unassigned` and `claim_released`. Report any that is false.
 
 ## Phase 2 recovery
 

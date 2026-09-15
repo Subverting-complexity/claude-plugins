@@ -1,6 +1,7 @@
 ---
 name: user-facing-communication
 description: 'The standard for every reply to the user: outcome and current state first, then anything outstanding, blocked or assumed.'
+disable-model-invocation: true
 ---
 # User-Facing Communication
 

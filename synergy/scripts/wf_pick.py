@@ -7,11 +7,11 @@ Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 
 import wf_core
 from wf_candidates import (
-    _norm_issue, _prefilter_numbers, load_issue_facets, pool_verdict,
-    read_pool, report_unprioritised,
+    _norm_issue, _prefilter_numbers, claimed_issue_numbers, load_issue_facets,
+    pool_verdict, read_pool, report_unprioritised,
 )
 from wf_claim import acquire_claim, apply_in_progress, release_claim
-from wf_config import check_environment, field_name, load_config
+from wf_config import check_environment, field_name, load_config, prepare_cfg
 from wf_deps import (
     close_resolved, issue_dependency_facts, issue_edges_map, known_edges,
     mark_blocked, validate_issue,
@@ -21,11 +21,12 @@ from wf_io import (
     EXIT_NO_CANDIDATES, EXIT_OK, EXIT_USAGE, emit, eprint, gh_graphql, gh_json,
     run,
 )
+from wf_issue_io import add_comments
 from wf_stage import (
     best_effort, checkout_branch, set_stage, set_stages, set_start_date,
     stage_in_progress,
 )
-from wf_unblock import auto_unblock_scan, blocked_issues
+from wf_unblock import UNBLOCK_COMMENT
 
 
 def claim_validate_walk(cfg, pool, backlog_mode, siblings=(), start_date=False):
@@ -104,14 +105,10 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=(), start_date=False):
     return None, side_effects
 
 
-# Stages an explicitly named issue may be picked from, beside a blank one.
-# Backlog is the pool;
-# Blocked is here because the edge check runs anyway and an issue whose
-# blockers have all closed is workable; Needs refinement and Parked are here
-# because naming the issue is the person overruling the hold they put on it. In
-# Progress and In Review are somebody else's work, Non-code is work a code
-# agent cannot do, and Done is finished.
-PICKABLE_BY_NAME = frozenset({'Backlog', 'Blocked', 'Needs refinement', 'Parked'})
+# Stages an explicitly named issue may be picked from, beside a blank one. The
+# rule lives in `wf_core_pool`, because the same stages decide which
+# prerequisite a set may pull in.
+PICKABLE_BY_NAME = wf_core.PICKABLE_BY_NAME
 
 
 # How far below a container `candidates --parent` looks. Epic, Feature, story
@@ -289,18 +286,25 @@ def prerequisite_pick(args, cfg, cand, blockers):
     can go on to N afterwards. Only a blocker nobody here may build (owned by a
     person, somebody else's, or waiting on such an issue itself) ends the pick,
     and the reason names it.
+
+    A prerequisite is taken whatever `--mode` or `--max-effort` says, as long
+    as a code agent may build it: those choose which work to start, not what
+    it needs. Only a story in the pool, with a blank or Backlog `Stage`, is set
+    to Blocked; a Parked or Needs refinement story keeps the hold a person put
+    on it.
     """
     pool = read_plan_pool(cfg, args)
     by_num, universe = pool['by_num'], pool['universe']
     number = cand['number']
     universe[number] = {'blockers': list(blockers),
-                        'parent': (by_num.get(number) or {}).get('parent')}
+                        'parent': (by_num.get(number) or {}).get('parent'),
+                        'epic': (pool['verdict'].get('epic') or {}).get(number)}
+    wf_core.admit_prerequisites(universe, pool['verdict'], by_num, pool['reasons'])
     plan = wf_core.plan_set(universe, pool['rank'], seeds=[number], max_size=None,
                             reasons=pool['reasons'])
     side_effects = []
-    if (wf_core.stage_name((by_num.get(number) or {}).get('stage'))
-            != wf_core.STAGE_NAMES['stage-blocked']):
-        block_in_pool(cfg, {number: list(blockers)}, side_effects)
+    if wf_core.is_available_stage((by_num.get(number) or {}).get('stage')):
+        block_in_pool(cfg, {number: list(blockers)}, side_effects, by_num=by_num)
     left_out = {e['number']: e['reason'] for e in plan['excluded']}
     if number in left_out:
         emit('all-blocked', EXIT_ALL_BLOCKED, number=number,
@@ -319,7 +323,7 @@ def prerequisite_pick(args, cfg, cand, blockers):
              side_effects=side_effects,
              reason='issue #%d waits on %s, and every prerequisite that could '
                     'start was claimed away, blocked or already resolved'
-                    % (number, ', '.join('#%d' % b for b in blockers)))
+                    % (number, ', '.join(wf_core.ref_label(b) for b in blockers)))
     entry = next(s for s in plan['selected'] if s['number'] == selected['number'])
     finish_pick(args, cfg, selected, side_effects, None,
                 unblocks=[{'number': m, 'title': (by_num.get(m) or {}).get('title', '')}
@@ -353,7 +357,8 @@ def cmd_pick(args):
         if edges is not None and not siblings:
             # A bulk claim names its siblings and must claim exactly the story
             # it asked for, so only a single-story pick is redirected.
-            waiting_on = wf_core.edge_states(edges)[0]
+            waiting_on = wf_core.edge_states(
+                edges, '%s/%s' % (cfg['org'], cfg['repo']))[0]
             if waiting_on and len(waiting_on) <= wf_core.DEP_LIMIT:
                 prerequisite_pick(args, cfg, cand, waiting_on)
         selected, side_effects = claim_validate_walk(cfg, [cand], None, siblings,
@@ -365,13 +370,11 @@ def cmd_pick(args):
                  side_effects=side_effects)
         finish_pick(args, cfg, selected, side_effects, backlog_mode=None)
 
+    # One round. A Blocked issue whose edges have all closed is released and
+    # judged in that same round, from the same read, so an empty pool is not
+    # swept and read a second time on the chance it only looked empty.
     side_effects = []
     outcome = _pick_round(cfg, args, siblings, side_effects)
-    if not outcome['selected']:
-        restored = auto_unblock_scan(cfg)
-        if restored:
-            eprint('wf: unblock sweep released %d issue(s) — retrying' % restored)
-            outcome = _pick_round(cfg, args, siblings, side_effects)
 
     verdict, backlog_mode = outcome['verdict'], outcome['backlog_mode']
     report_unprioritised(verdict['pool'], outcome['priority'])
@@ -424,23 +427,97 @@ def send_to_refinement(cfg, entry):
             'stage_message': None if written else message}
 
 
-def block_in_pool(cfg, blocked, side_effects):
-    """Set every issue rule 4 caught to Blocked, in one batched write.
+def cmd_refine(args):
+    """`wf refine`: send a claimed issue back for refinement in one call.
 
-    No comment and no unassign: these were never claimed, and the blocked-by
-    edge already says why. The unblock sweep releases each one when its last
-    blocker closes.
+    Four writes a run used to make by hand: `Stage` to Needs refinement, the
+    comment saying what is missing, the assignment given up and the claim
+    released. The stage goes first, because it is the issue's state; a run
+    that stopped after an unassign and before the stage write left an
+    unassigned issue reading `In Progress` that no pool would ever offer.
     """
-    if not blocked:
+    from wf_claim import release_claims
+
+    cfg = prepare_cfg()
+    number = args.issue
+    try:
+        with open(args.body_file, encoding='utf-8') as fh:
+            body = fh.read().strip()
+    except OSError as exc:
+        emit('usage', EXIT_USAGE, reason='could not read %s (%s)' % (args.body_file, exc))
+    if not body:
+        emit('usage', EXIT_USAGE, reason='the comment is empty: say what a person '
+                                         'must add before the issue can be built')
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    stage = wf_core.STAGE_NAMES['stage-refinement']
+    stage_set, stage_message = set_stage(cfg, number, stage)
+    code, _, err = run(['gh', 'issue', 'comment', str(number), '--repo', repo,
+                        '--body-file', args.body_file])
+    commented = code == 0
+    code, _, uerr = run(['gh', 'issue', 'edit', str(number), '--repo', repo,
+                         '--remove-assignee', '@me'])
+    unassigned = code == 0
+    released = release_claims(['issue-%d' % number]).get('issue-%d' % number, False)
+    emit('ok', EXIT_OK, number=number, stage_set=stage_set,
+         stage_message=None if stage_set else stage_message, commented=commented,
+         comment_error=None if commented else (err or '').strip(),
+         unassigned=unassigned, unassign_error=None if unassigned else (uerr or '').strip(),
+         claim_released=released,
+         reason='#%d sent to %s' % (number, stage))
+
+
+def block_in_pool(cfg, blocked, side_effects, releasable=(), by_num=None):
+    """Set every issue rule 4 caught to Blocked, and every `Blocked` issue whose
+    edges have all closed back to Backlog, in one batched write.
+
+    No comment on a block and no unassign: these were never claimed, and the
+    blocked-by edge already says why. The unblock sweep releases each one when
+    its last blocker closes. A release says why on the issue, as the sweep
+    does, in one comment mutation for all of them.
+
+    `by_num` is the pool read, whose node ids spare the id read. The pool was
+    read a moment ago, and a claim taken since belongs to the run that took it,
+    which writes its own `Stage`; so the claim refs are listed once more before
+    anything is written, and an issue claimed in between is left alone.
+    """
+    by_num = by_num or {}
+    wanted = {n: wf_core.STAGE_NAMES['stage-blocked'] for n in blocked}
+    wanted.update({n: wf_core.STAGE_NAMES['stage-backlog'] for n in releasable})
+    if not wanted:
         return
-    results = set_stages(cfg, {n: wf_core.STAGE_NAMES['stage-blocked']
-                               for n in blocked})
+    taken = claimed_issue_numbers() & set(wanted)
+    live = {n: stage for n, stage in wanted.items() if n not in taken}
+    results = set_stages(cfg, live, {n: (by_num.get(n) or {}).get('id')
+                                     for n in live}) if live else {}
+
+    def effect(number, action, detail):
+        if number in taken:
+            written, message = False, ('claimed by another run after the pool was '
+                                       'read, so its Stage is left to that run')
+        else:
+            written, message = results.get(number, (False, 'not written'))
+        return {'issue': number, 'action': action, 'detail': detail,
+                'stage_set': written, 'stage_message': None if written else message}
+
     for number in sorted(blocked):
-        written, message = results.get(number, (False, 'not written'))
-        side_effects.append({'issue': number, 'action': 'marked-blocked',
-                             'detail': ', '.join('#%d' % b for b in blocked[number]),
-                             'stage_set': written,
-                             'stage_message': None if written else message})
+        side_effects.append(effect(number, 'marked-blocked', ', '.join(
+            wf_core.ref_label(b) for b in blocked[number])))
+    comments, released = {}, []
+    for number in sorted(releasable):
+        issue = by_num.get(number) or {}
+        closed = wf_core.edge_states(((issue.get('blockedBy') or {}).get('nodes')) or [],
+                                     issue.get('repo'))[1]
+        named = ', '.join(wf_core.ref_label(n) for n in closed)
+        entry = effect(number, 'released', named)
+        released.append(entry)
+        side_effects.append(entry)
+        if entry['stage_set']:
+            comments[number] = (issue.get('id'), UNBLOCK_COMMENT % named)
+    if comments:
+        posted = add_comments(comments)
+        for entry in released:
+            if entry['issue'] in posted:
+                entry['commented'] = posted[entry['issue']][0]
 
 
 def _pick_round(cfg, args, siblings, side_effects):
@@ -472,8 +549,9 @@ def _pick_round(cfg, args, siblings, side_effects):
 
     backlog_mode, verdict = pool_verdict(cfg, args, issues, claimed, facets,
                                          type_map, classification_map)
-    block_in_pool(cfg, verdict['blocked'], side_effects)
     by_num = {i['number']: i for i in issues}
+    block_in_pool(cfg, verdict['blocked'], side_effects,
+                  verdict.get('releasable') or (), by_num)
     outcome = {'verdict': verdict, 'backlog_mode': backlog_mode,
                'priority': facets['priority'], 'selected': None,
                'container': None, 'offered': [], 'unblocks': []}
@@ -632,6 +710,8 @@ def cmd_candidates(args):
         emit('error', EXIT_ENV, reason=err)
     if not cfg.get('org') or not cfg.get('repo'):
         emit('error', EXIT_ENV, reason='org/repo missing from config')
+    if getattr(args, 'parent', None):
+        candidates_under_parent(args, cfg)
 
     ok, issues, err, claimed = read_pool(cfg)
     if not ok:
@@ -647,10 +727,6 @@ def cmd_candidates(args):
     by_num = {i['number']: i for i in issues}
     maps = {'priority': priority_map, 'effort': facets['effort'],
             'ownership': facets['ownership']}
-    if getattr(args, 'parent', None):
-        # Before the empty-pool exit: a parent whose leaves are all out of the
-        # pool still owes the caller the list of why.
-        candidates_under_parent(args, cfg, pool, maps, verdict, by_num)
 
     # Issues that would be offered but for one thing a person has to fix, and
     # the ones an open blocker holds. Neither is a candidate; both are listed
@@ -733,7 +809,7 @@ def _candidate_entry(cand, edges, edges_unknown, maps, body_chars):
     truncated = False
     if body_chars and body_chars > 0 and len(body) > body_chars:
         body, truncated = body[:body_chars], True
-    open_deps, closed_deps = wf_core.edge_states(edges or [])
+    open_deps, closed_deps = wf_core.edge_states(edges or [], cand.get('repo'))
     ownership = (maps.get('ownership') or {}).get(number)
     return {
         'number': number,
@@ -748,8 +824,8 @@ def _candidate_entry(cand, edges, edges_unknown, maps, body_chars):
         # open dependency is listed and marked rather than hidden, because
         # this command answers "what is there" and `pick` answers "what can
         # I start".
-        'dependencies': sorted(open_deps + closed_deps),
-        'dependencies_open': sorted(open_deps),
+        'dependencies': sorted(open_deps + closed_deps, key=wf_core.ref_sort_key),
+        'dependencies_open': sorted(open_deps, key=wf_core.ref_sort_key),
         'blocked': bool(open_deps),
         # True when the edges could not be read at all, so `blocked` says
         # nothing about this candidate rather than saying "no".
@@ -770,16 +846,16 @@ def _candidate_entry(cand, edges, edges_unknown, maps, body_chars):
     }
 
 
-def candidates_under_parent(args, cfg, pool, maps, verdict=None, by_num=None):
+def candidates_under_parent(args, cfg):
     """`candidates --parent N`: the one bulk set the tree under N offers.
 
-    The pool is the same pool as ever, narrowed to N's leaves, plus the one
-    exception #239 settled: a leaf whose `Stage` is Blocked and whose every open
-    blocker is another leaf taken in the same run. Non-code work is never
-    taken, because it is neither in the pool nor owned by the code agent.
-    Every other leaf under N is listed in `excluded` with its reason, so a
-    short set reads as a decision rather than as a gap. The choice itself is
-    `wf_core.choose_parent_set`; this is the reading around it.
+    The same choice `plan-set --parent N` makes, because it is the same call:
+    `wf_core.plan_set` over the pool, limited to N's leaves. A leaf waiting on
+    another leaf is taken after it; a prerequisite outside the tree is taken
+    when a leaf needs it, and says so in `why`. Only related leaves share a
+    set. Non-code work is never taken. Every other leaf under N is listed in
+    `excluded` with its reason, so a short set reads as a decision rather than
+    as a gap.
     """
     ok, tree, err = fetch_container_tree(cfg, args.parent)
     if not ok:
@@ -794,124 +870,45 @@ def candidates_under_parent(args, cfg, pool, maps, verdict=None, by_num=None):
                        else 'untyped'))
 
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    groups, _, _ = wf_core.parent_leaf_groups(tree, repo)
+    groups, empty, foreign = wf_core.parent_leaf_groups(tree, repo)
     leaves = [n for members in groups.values() for n in members]
-    wanted = set(leaves)
-    pool = [c for c in pool if c['number'] in wanted]
-    pool_by = {c['number']: c for c in pool}
-    outside = [n for n in leaves if n not in pool_by]
+    group_of = {n: g for g, members in groups.items() for n in members}
+    pool = read_plan_pool(cfg, args, extra=leaves)
+    by_num, facets, universe = pool['by_num'], pool['facets'], pool['universe']
+    plan = wf_core.plan_set(universe, pool['rank'], max_size=args.size,
+                            reasons=pool['reasons'], within=set(leaves))
+    chosen = [s['number'] for s in plan['selected']]
 
-    # The fields and the Blocked issues are read only for leaves the pool did
-    # not already answer for.
-    out_maps = {'priority': {}, 'effort': {}, 'ownership': {}}
-    out_stages, out_types = {}, {}
-    blocked, refused = {}, {}
-    if outside:
-        facets = load_issue_facets(cfg, outside,
-                                   issues=list((by_num or {}).values()))
-        out_maps = {k: facets.get(k) or {} for k in out_maps}
-        out_stages = facets.get('stage') or {}
-        out_types = facets.get('types') or {}
-        blocked_now, berr = blocked_issues(cfg)
-        if berr:
-            emit('error', EXIT_ENV,
-                 reason='could not read the issues whose Stage is %s (%s), so '
-                        'which leaves wait only on each other is unknown'
-                        % (wf_core.STAGE_NAMES['stage-blocked'], berr))
-        # The same filter the pool went through -- ownership, `--mode`, any
-        # effort ceiling -- so the one exception #239 made is about the
-        # stage and nothing else. A Blocked story does not join a bug's set.
-        cards = [i for i in blocked_now
-                 if i['number'] in wanted and i['number'] not in pool_by
-                 and not i.get('assigned')]
-        # A Backlog leaf the pool held back for an open edge waits exactly as
-        # a Blocked one does, so it gets the same exception.
-        seen = {i['number'] for i in cards}
-        cards += [(by_num or {})[n] for n in sorted((verdict or {}).get('blocked') or ())
-                  if n in wanted and n not in pool_by and n not in seen
-                  and n in (by_num or {})]
-        types, classes = _mode_maps(cfg, args.mode, facets)
-        untyped, heavy = [], []
-        blocked = {i['number']: i for i in wf_core.select_pool(
-            cards, mode=args.mode, project_map=cfg.get('labels', {}),
-            type_map=types, classification_map=classes, unclassified=untyped,
-            priority_map=out_maps['priority'], effort_map=out_maps['effort'],
-            ownership_map=out_maps['ownership'],
-            max_effort=getattr(args, 'max_effort', None), oversized=heavy)}
-        # Why the filter refused a code-owned Blocked leaf. Being Blocked is
-        # what #239 lets a leaf through with, so it is never the reason.
-        for card in cards:
-            n = card['number']
-            if n in blocked or (wf_core.effective_scope(out_maps['ownership'].get(n),
-                                                        out_types.get(n))
-                                != wf_core.SCOPE_CODE):
-                continue
-            if n in heavy:
-                refused[n] = 'over the `--max-effort` ceiling'
-            elif n in untyped:
-                refused[n] = 'untyped, so `--mode %s` cannot place it' % args.mode
-            else:
-                refused[n] = 'left out by `--mode %s`' % args.mode
-        # Only a leaf waiting on another issue. Most Blocked issues wait on a
-        # person or a decision and carry no edge, and building siblings frees
-        # none of those; with no open blocker one would even lead the run.
-        for n in list(blocked):
-            nodes = ((blocked[n].get('blockedBy') or {}).get('nodes')) or []
-            if not wf_core.edge_states(nodes)[0]:
-                refused[n] = ('`%s` with no open blocker, so it waits on '
-                              'something other than an issue'
-                              % wf_core.STAGE_NAMES['stage-blocked'])
-                del blocked[n]
-
-    edge_map, edges_unknown = pool_edges(cfg, list(pool_by), by_num or {})
-    blocked_edges = {n: ((i.get('blockedBy') or {}).get('nodes')) or []
-                     for n, i in blocked.items()}
-    deps = {}
-    for n in leaves:
-        if n in pool_by:
-            deps[n] = wf_core.edge_states(edge_map.get(n) or [])[0]
-        elif n in blocked:
-            deps[n] = wf_core.edge_states(blocked_edges[n])[0]
-
-    reasons = {}
-    rest = [n for n in outside if n not in blocked]
-    if rest:
-        for n in rest:
-            if n in refused:
-                reasons[n] = refused[n]
-                continue
-            stage = out_stages.get(n)
-            owner = out_maps['ownership'].get(n)
-            why = []
-            if not wf_core.is_available_stage(stage):
-                why.append('`%s` is `%s`' % (field_name(cfg, 'field-stage'), stage))
-            if wf_core.effective_scope(owner, out_types.get(n)) != wf_core.SCOPE_CODE:
-                why.append('owned by %s, not the code agent' % (owner or 'nobody'))
-            reasons[n] = (', '.join(why)
-                          or ((verdict or {}).get('excluded') or {}).get(n)
-                          or 'not in the pool (assigned, or left out by --mode)')
-
-    # The Blocked leaves ranked in among the pool by the pool's own sort, or
-    # the build order would put every one of them behind every pool leaf.
-    ranked = wf_core._sort_candidates(
-        pool + list(blocked.values()), cfg.get('labels', {}),
-        {**(maps.get('priority') or {}), **out_maps['priority']},
-        {**(maps.get('effort') or {}), **out_maps['effort']})
-    choice = wf_core.choose_parent_set(tree, [c['number'] for c in ranked], deps,
-                                       reasons, max_size=args.size, repo=repo)
     titles = _tree_titles(tree)
-    excluded = [dict(e, title=titles.get(e['number'], '')) for e in choice['excluded']]
-    listed = []
-    for story in choice['selected']:
-        n = story['number']
-        if n in pool_by:
-            entry = _candidate_entry(pool_by[n], edge_map.get(n) or [],
-                                     n in edges_unknown, maps, args.body_chars)
-            entry['stage'] = pool_by[n].get('stage')
+    known = set(chosen) | {e['number'] for e in plan['excluded']}
+    excluded = list(plan['excluded'])
+    for n in leaves:
+        if n in known:
+            continue
+        if n in universe:
+            reason = 'nothing links it to the stories this run takes'
         else:
-            entry = _candidate_entry(blocked[n], blocked_edges[n], False,
-                                     out_maps, args.body_chars)
-            entry['stage'] = blocked[n].get('stage') or wf_core.STAGE_NAMES['stage-blocked']
+            reason = (pool['reasons'].get(n)
+                      or 'not open, or not an issue a code agent may take')
+        excluded.append({'number': n, 'reason': reason})
+    excluded += [{'number': n, 'reason': 'a Feature with no open stories yet'}
+                 for n in empty]
+    excluded += [{'number': n, 'reason': 'in another repository'} for n in foreign]
+    excluded = [dict(e, title=titles.get(e['number'])
+                     or (by_num.get(e['number']) or {}).get('title', ''))
+                for e in excluded]
+
+    maps = {'priority': facets['priority'], 'effort': facets['effort'],
+            'ownership': facets['ownership']}
+    edge_map, edges_unknown = pool_edges(cfg, chosen, by_num)
+    listed = []
+    for story in plan['selected']:
+        n = story['number']
+        entry = _candidate_entry(by_num[n], edge_map.get(n) or [],
+                                 n in edges_unknown, maps, args.body_chars)
+        entry.update(stage=by_num[n].get('stage'), wave=story['wave'],
+                     blocked_by=story['blocked_by'], unblocks=story['unblocks'],
+                     why=story['why'])
         listed.append(entry)
 
     unread = _tree_unread(tree)
@@ -926,8 +923,12 @@ def candidates_under_parent(args, cfg, pool, maps, verdict=None, by_num=None):
              unread=unread,
              reason='nothing under #%d is available to a code agent%s'
                     % (args.parent, note))
-    emit('ok', EXIT_OK, mode=args.mode, parent=parent, feature=choice['group'],
+    # The Feature the set came from, when every leaf in it shares one.
+    features = {group_of[n] for n in chosen if n in group_of}
+    emit('ok', EXIT_OK, mode=args.mode, parent=parent,
+         feature=features.pop() if len(features) == 1 else None,
          total=len(listed), listed=len(listed), candidates=listed,
+         lead=plan['lead'], waves=plan['waves'],
          excluded=excluded, unread=unread,
          reason='%d stor%s under #%d%s' % (len(listed), 'y' if len(listed) == 1
                                            else 'ies', args.parent, note))

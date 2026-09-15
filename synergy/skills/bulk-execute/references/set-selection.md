@@ -4,9 +4,10 @@ Read this at Phase 1. `wf plan-set` chooses the set, orders it and claims it. Wh
 
 ## What `plan-set` decides
 
-- **A set is connected.** Two stories belong together when a blocked-by edge joins them either way, when they wait on the same prerequisite, or when they share a parent. A group reached through those links is one set.
-- **A dependency never excludes a story.** A story waiting on another story in the set goes in a later wave. A named story's open prerequisites join the set even when nobody named them, as long as this run can build them.
-- **Only a blocker nobody here may build excludes a story**: one owned by a person, assigned or claimed elsewhere, already closed by an open pull request, waiting on such an issue itself, in a dependency cycle, or with edges that could not be read. Each exclusion carries its reason.
+- **A set is related.** Two stories belong together when a blocked-by edge joins them either way, when they wait on the same prerequisite, or when they share a parent or an Epic. A group reached through those links is one set. An open pool gets its best-ranked related group of two or more, and a single story only when no group exists.
+- **A dependency never excludes a story.** A story waiting on another story in the set goes in a later wave. A story's open prerequisites join the set even when nobody named them, as long as this run can build them, and `--mode` or `--max-effort` never hold one back.
+- **Only a blocker nobody here may build excludes a story**: one owned by a person, assigned or claimed elsewhere, already closed by an open pull request, open in another repository, waiting on such an issue itself, in a dependency cycle, or with edges that could not be read. Each exclusion carries its reason.
+- **A `Blocked` story whose blockers have all closed is ready.** It is listed in `released` and planned in the same round; `--claim` writes its stage and comment.
 - **Waves.** `waves[0]` is built first. The stories in one wave do not depend on each other, so Phase 4 may build them in parallel.
 - **Priority.** A story inherits the priority of the most urgent story waiting on it, so an open pool leads with whatever finishes the most urgent work soonest.
 
@@ -25,7 +26,7 @@ With named stories or `--parent`, nothing is left to judge: add `--claim` to tha
 With neither, run it once without `--claim` and read the result:
 
 - **`no-candidates`** — nothing can be built. Report each `excluded` story by number, title and reason, and stop.
-- **`ok`** — `stories` in build order, each with `wave`, `blocked_by`, `unblocks`, `why` and a truncated body; `excluded`; and `nearby`, the highest-ranked ready stories nothing links to the set.
+- **`ok`** — `stories` in build order, each with `wave`, `blocked_by`, `unblocks`, `why` and a truncated body; `excluded`; and `nearby`, the highest-ranked stories ready now that nothing links to the set.
   - Add a `nearby` story only when its body shows it changes the same files or serves the same objective as the set, and the set is below `--size`. Otherwise leave it in the pool: an unlinked story in the pull request makes the diff harder to review.
   - A story too underspecified to build without guessing is left out now, before anything is claimed.
   - Claim with `--issue` once for every story kept, so the claim takes exactly the plan you read.

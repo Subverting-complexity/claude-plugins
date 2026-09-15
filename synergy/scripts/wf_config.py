@@ -232,6 +232,65 @@ def field_name(cfg, purpose):
 
 # ── commands ─────────────────────────────────────────────────────────────────
 
+def git_common_dir(root):
+    """The clone's shared git directory, read from `.git` without running git.
+
+    In a linked worktree `.git` is a file naming the worktree's own git
+    directory, and that directory's `commondir` names the shared one, which is
+    where `info/exclude` lives for every worktree of the clone. None when
+    neither can be read.
+    """
+    dot_git = os.path.join(root, '.git')
+    if os.path.isdir(dot_git):
+        return dot_git
+    try:
+        with open(dot_git, encoding='utf-8') as fh:
+            line = fh.readline().strip()
+    except OSError:
+        return None
+    if not line.startswith('gitdir:'):
+        return None
+    gitdir = line[len('gitdir:'):].strip()
+    if not os.path.isabs(gitdir):
+        gitdir = os.path.join(root, gitdir)
+    try:
+        with open(os.path.join(gitdir, 'commondir'), encoding='utf-8') as fh:
+            common = fh.readline().strip()
+    except OSError:
+        return gitdir
+    return os.path.normpath(common if os.path.isabs(common)
+                            else os.path.join(gitdir, common))
+
+
+def ensure_scratch_ignored(root):
+    """Keep the scratch-file block current in the clone's `info/exclude`.
+
+    Best-effort and silent on success: a file that cannot be written is
+    reported on stderr and the command carries on. Returns True when the
+    block is in place.
+    """
+    common = git_common_dir(root)
+    if not common:
+        return False
+    path = os.path.join(common, 'info', 'exclude')
+    try:
+        with open(path, encoding='utf-8') as fh:
+            text = fh.read()
+    except OSError:
+        text = ''
+    merged = wf_core.merge_exclude(text)
+    if merged is None:
+        return True
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(merged)
+    except OSError as exc:
+        eprint('wf: could not add the scratch files to %s (%s)' % (path, exc))
+        return False
+    return True
+
+
 def prepare_cfg():
     """Shared command preamble: verify environment + load config, or emit+exit."""
     env_err = check_environment()
@@ -242,7 +301,34 @@ def prepare_cfg():
         emit('error', EXIT_ENV, reason=err)
     if not cfg.get('org') or not cfg.get('repo'):
         emit('error', EXIT_ENV, reason='org/repo missing from config')
+    ensure_scratch_ignored(repo_root())
     return cfg
+
+
+def cmd_scratch_clean(args):
+    """`wf scratch-clean`: delete the run's scratch files under `.claude/`.
+
+    Needs neither gh nor a network, so it runs on every exit path, including
+    one caused by a broken environment.
+    """
+    root = repo_root()
+    ignored = ensure_scratch_ignored(root)
+    folder = os.path.join(root, '.claude')
+    removed, failed = [], []
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        names = []
+    for name in names:
+        path = os.path.join(folder, name)
+        if not wf_core.is_run_scratch(name) or not os.path.isfile(path):
+            continue
+        try:
+            os.remove(path)
+            removed.append('.claude/' + name)
+        except OSError as exc:
+            failed.append({'file': '.claude/' + name, 'reason': str(exc)})
+    emit('ok', EXIT_OK, removed=removed, failed=failed, excluded=ignored)
 
 
 def cmd_config(args):

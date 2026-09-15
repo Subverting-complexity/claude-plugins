@@ -196,8 +196,7 @@ class TestPickFromTheTree(unittest.TestCase):
                             ('apply_in_progress', None),
                             ('release_claim', None),
                             ('merged_pr_closing', None),
-                            ('issue_edges', []),
-                            ('auto_unblock_scan', 0)):
+                            ('issue_edges', [])):
             patch = mock.patch.object(wf, name, return_value=value)
             patch.start()
             self.addCleanup(patch.stop)
@@ -247,7 +246,8 @@ class TestPickFromTheTree(unittest.TestCase):
             code, payload = _capture(wf.cmd_pick, ['pick'])
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(payload['number'], 2)
-        stages.assert_called_once_with(mock.ANY, {1: 'Blocked'})
+        # One write, naming the node id the pool read already holds.
+        stages.assert_called_once_with(mock.ANY, {1: 'Blocked'}, mock.ANY)
 
 
 class TestNoBoardIsRead(unittest.TestCase):

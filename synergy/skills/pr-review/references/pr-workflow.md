@@ -163,16 +163,16 @@ The footer's `Reviewed at <SHA>` line carries the SHA recorded at Step 3, or the
 
 ### Step 10 — Reconcile labels
 
-1. Release the claim: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --pr <number>` (idempotent, always exit 0).
-2. Set the review-state labels to exactly the verdict:
+1. Set the review-state labels to exactly the verdict, while you still hold the claim, so a rival that claims the PR next never has its own marker stripped:
 
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr <number> --verdict <approved|changes-requested|needs-discussion>
    ```
 
    Add `--fixes-applied` when Step 7 pushed fixes, which keeps that sticky label. On `verified: false`, report the failure but do not block. If `wf` errors or Python is absent, follow **Label reconciliation fallback (Step 10)** in `references/review-workflow.md`.
-3. For each custom label `review.config.md` defines, apply it when its "When to apply" criteria match, and remove it when a review applied it and they no longer do.
-4. Check out the branch you were on before the review.
+2. For each custom label `review.config.md` defines, apply it when its "When to apply" criteria match, and remove it when a review applied it and they no longer do.
+
+Keep the claim and stay on the PR branch: Step 10b and Step 11 both work on it. Release both at the end, under **Final report format**.
 
 Then, by verdict:
 
@@ -191,6 +191,8 @@ Runs only when the verdict is **Approved**. Check before reading any merge mecha
 Only when both hold, load `references/auto-merge.md` and follow it, passing `$ARGUMENTS.bypass-ci` through when set. It handles the CI gate settings and drives the PR to merged, then reports in the **Final report format** below.
 
 #### Final report format
+
+First, on every path that ends the review: release the claim (`bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --pr <number>`, idempotent) and check out the branch you were on before the review. In read-only mode there is no claim, so only the checkout applies.
 
 Lead with `Approved and merged PR #<number>: <title>`, or the queued line from auto-merge step 5, when Step 11 merged or queued the PR. Otherwise lead with `Reviewed PR #<number> <title> — <verdict>`. Always name a PR by number and title together. Then:
 

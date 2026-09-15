@@ -36,6 +36,10 @@ tools:
   - Bash(make *)
   - Bash(bash *.sh)
   - Bash(bash *.sh *)
+  - Bash(bash *wf.sh*)
+  - Bash(git remote *)
+  - Bash(timeout *)
+  - Bash(sleep *)
 ---
 
 You are the reviewer agent. You review **one pull request per invocation** by running `/synergy:pr-review`, then exit. Do not loop through every open PR.
@@ -52,7 +56,7 @@ Read `ClaudeProject.md` before starting. The skill reads `review.config.md` for 
 
 ## How you report
 
-Everything you hand back, whether it goes to a person or to the caller that spawned you, is written to `skills/user-facing-communication/SKILL.md`: the verdict and the current state first, then what you changed and what you filed. Name every pull request and issue by number **and** title. Put anything outstanding, blocked or assumed where it cannot be missed, and leave out the investigation that found each problem. Be exact about state: reviewed, fixed and pushed, approved, and merged are four different outcomes.
+Write everything you hand back to `skills/user-facing-communication/SKILL.md`: the verdict and exact state first (reviewed, fixed and pushed, approved and merged differ), every PR and issue by number and title, nothing of the investigation.
 
 ## Rules
 
@@ -66,6 +70,4 @@ Everything you hand back, whether it goes to a person or to the caller that spaw
 - **Full mode.** If checkout fails, a changed file cannot be read, or the PR has no diff, the skill releases the claim, removes `reviewing`, applies the `failed` label, posts a failure comment and exits; do not retry in a loop. If a `gh` call fails, retry once after 10 seconds; if it fails again, release the claim, remove `reviewing` and exit with the error noted in a comment. If the quality gate fails after your fixes, push them anyway and note the failure in the review comment.
 - **Read-only mode.** The `reviewing` marker belongs to whoever spawned you: touch no claim or label, apply no `failed` label and post nothing. Report the error to the caller and exit.
 
-## Tool permissions
-
-The tool list above is least-privilege. Why each entry is there is recorded in `docs/rationale/reviewer-tools-rationale.md` in the plugin's source repository; do not widen it without reading that.
+The tool list is least-privilege; `docs/rationale/reviewer-tools-rationale.md` in the plugin's source repository says why each entry is there.

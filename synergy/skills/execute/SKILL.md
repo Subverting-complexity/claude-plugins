@@ -1,6 +1,6 @@
 ---
 name: execute
-description: 'Take a GitHub story end to end: pick, plan, build, test, open a PR, independent review, merge where enabled. Trigger on "next story", "work on story N", a bare issue number or an issue URL. Modes: feature, maintenance, audit.'
+description: 'Take a GitHub story end to end: pick, plan, build, test, open a PR, independent review, merge where enabled. Trigger on "next story", "work on story N", a bare issue number or an issue URL.'
 depends-on:
   - code-architect
   - feature-discovery
@@ -39,26 +39,7 @@ The only reasons to stop before a PR exists:
 A projection of `ClaudeProject.md` with the sections needed only later dropped. The shared rules say how to check it.
 
 ```!
-if [ -f .claude/projected-config.md ] && [ .claude/projected-config.md -nt ClaudeProject.md ] 2>/dev/null; then
-  cat .claude/projected-config.md
-elif [ -f ClaudeProject.md ]; then
-  # Drop the heavy sections only needed later. Pure POSIX shell (no
-  # awk/tee) so it runs on a Windows bash whose PATH lacks Unix coreutils.
-  mkdir -p .claude 2>/dev/null
-  drop=0
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      '## '*) case "$line" in
-          '## Issue Types & Fields'*|'## Project Board'*|'## Story Template'*|'## Session Budget'*|'## Reference Docs'*|'## Bundled Skills'*) drop=1 ;;
-          *) drop=0 ;;
-        esac ;;
-    esac
-    [ "$drop" -eq 0 ] && printf '%s\n' "$line"
-  done < ClaudeProject.md > .claude/projected-config.md
-  cat .claude/projected-config.md
-else
-  echo "ClaudeProject.md NOT FOUND"
-fi
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/project-config.sh"
 ```
 
 ## Session budget
@@ -89,7 +70,7 @@ If mode is `audit`, do not run the phases below — read `references/audit-mode.
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout --mode {mode}
 ```
 
-`{mode}` is `$ARGUMENTS.mode`, default `story`. Add `--unattended` when nobody is present to answer a question. It reads every open issue, judges each by the pick rules in `scripts/README.md`, sorts by `Priority` then `Effort`, and **claims the top candidate before any side effect**, walking down the list on a lost claim, setting a genuinely blocked issue to `Blocked`, closing one a merged PR already resolved, and running the unblock scan if the pool comes up empty.
+`{mode}` is `$ARGUMENTS.mode`, default `story`. Add `--unattended` when `.claude/unattended.flag` exists (the shared rules write it). It reads every open issue, judges each by the pick rules in `scripts/README.md`, sorts by `Priority` then `Effort`, and **claims the top candidate before any side effect**, walking down the list on a lost claim, setting a genuinely blocked issue to `Blocked`, closing one a merged PR already resolved, and releasing a `Blocked` issue whose blockers have all closed in the same round.
 
 Read the result by its `status`; the exit code mirrors it:
 
@@ -104,19 +85,19 @@ Read the result by its `status`; the exit code mirrors it:
 
 On `ok` the JSON carries `number`, `title`, `url`, `labels`, `milestone`, `body`, `claim_ref`, `branch`, `checked_out`, `stage_set`, `stage_message`, `start_date_set` and `side_effects`. The stage is `In Progress`, `@me` is assigned, and the claim ref is held. Surface any `side_effects`. If `checked_out` is false, read `branch_message` (a rebase conflict, say) and run `/synergy:block-story` instead of building.
 
-When the pick came through an Epic or Feature, `container` names it and `offered` lists its other pickable stories. Decide in Phase 3 whether they belong in this PR: to add one, claim it with `pick --issue {n} --checkout --no-branch --sibling {number}` and build the set as `bulk-execute` does; otherwise leave them in the pool.
+When the pick came through an Epic or Feature, `container` names it and `offered` lists its other pickable stories. Leave them in the pool and name them in the final report: this run builds one story, and `/synergy:bulk-execute --parent {container}` builds several together.
 
 `unblocks` lists the stories waiting on this one: name them in the final report, because this merge frees them. `prerequisite_for` means the story you asked for waits on open work this run can build, so `wf` claimed its first prerequisite instead and set the requested story to `Blocked`; `build_order` is the whole chain. Build and merge the prerequisite as a normal run. Then, if the session budget and the timeout leave room, run `pick --issue {prerequisite_for.number} --checkout` and carry on with what it returns; otherwise report the requested story as next.
 
 **When `$ARGUMENTS.story_number` is given**, do not run the pick above. Follow **An explicit story number** in `references/pick-paths.md`, which guards against a story already in flight and then claims it.
 
-**Then, on the claimed story**, read the full issue body and confirm it has **Context** and **Requirements**. Enough guidance (body, comments, linked docs) → Phase 2. If it is thin or empty, follow **A thin or empty story** in `references/pick-paths.md`.
+**Then, on the claimed story**, confirm its `body` (already in the pick result, untruncated) has **Context** and **Requirements**; read the comments only when it does not. Enough guidance → Phase 2. If it is thin or empty, follow **A thin or empty story** in `references/pick-paths.md`.
 
 ## Phase 2 — Start
 
 `wf pick --checkout` already took the claim, set the stage and start date, and created the branch. Only when its `ok` result says a step did not happen (`stage_set` or `checked_out` false), or the claim state was lost to compaction, follow **Phase 2 recovery** in `references/pick-paths.md`.
 
-**Interactive discovery gate.** When a user is present and mode is `story` or `feature`, run `/synergy:grill` on the story's requirements before planning. Skip it in an autonomous session, in `maintenance` or `audit` mode, or when the issue body already has discovery output (`## Stories` or `## Architecture`).
+**Interactive discovery gate.** When a user is present and mode is `story` or `feature`, run `/synergy:grill` on the story's requirements before planning. Skip it when `.claude/unattended.flag` exists, in `maintenance` or `audit` mode, or when the issue body already has discovery output (`## Stories` or `## Architecture`).
 
 ## Phase 3 — Plan
 
@@ -138,4 +119,4 @@ The moment the PR exists, **read `references/review-and-merge.md`** and follow i
 
 ## Escape hatches
 
-If a run leaves the happy path — execution **fails** unrecoverably, a phase is **blocked**, you find an unrelated **problem** to file, the story has an unmerged **dependency**, it is **too broad** to start or **too large** for one session, or **review feedback** arrives after the PR opens — **read `references/escape-hatches.md`** and follow the procedure for that condition.
+If a run leaves the happy path — execution **fails** unrecoverably, a phase is **blocked**, you find an unrelated **problem** to file, the story has an unmerged **dependency**, or it is **too broad** to start or **too large** for one session — **read `references/escape-hatches.md`** and follow the procedure for that condition.

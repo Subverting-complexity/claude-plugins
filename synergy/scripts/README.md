@@ -24,6 +24,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_unblock.py` | The unblock sweep, `unblock` | 288 |
 | `wf_pick.py` | The claim and validate walk, container trees, the prerequisite redirect, `pick`, `candidates` | 933 |
 | `wf_plan.py` | Planning and claiming a bulk set, `plan-set`, `drop-story`, `bulk-mark` | 391 |
+| `wf_bulk_build.py` | Scheduling a bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 227 |
 | `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, `post-merge` | 397 |
 | `wf_review.py` | PR pools and review labels, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 411 |
 | `wf_issue_apply.py` | `issue-apply` | 777 |
@@ -45,6 +46,8 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_drift.py` | Finished containers and stage drift findings | 96 |
 | `wf_core_preflight.py` | Config sections, label and field drift, instruction files | 584 |
 | `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 307 |
+| `wf_core_scratch.py` | Which `.claude/` files are run scratch, the managed `info/exclude` block | 70 |
+| `wf_core_schedule.py` | Reading `.claude/plan.md`, which stories in a wave share files, parallel batches | 186 |
 
 ## Commands
 
@@ -68,13 +71,25 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout
 # auto-closes it + sets its Stage to Done if a merged PR already resolved it)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue 42 --checkout
 
-# List the pool without claiming anything (bulk-execute chooses its set from this)
+# List the pool without claiming anything
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --limit 0
 
 # …or plan a bulk set: connected stories in build order and waves, blockers
 # first, from the pool, named stories (--issue) or an Epic or Feature (--parent);
 # --claim claims, assigns and sets In Progress for every story in it
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --parent 42 --size 7 --claim
+
+# Split the recorded set's next waves into batches that share no planned file
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" bulk-schedule
+
+# Cherry-pick a wave's parallel builder branches onto the shared branch, push once
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" bulk-integrate --wave 1
+
+# Send a claimed issue back: Stage to Needs refinement, comment, unassign, release
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" refine --issue 42 --body-file .claude/42-body.md
+
+# Delete this run's scratch files under .claude/ (caches and the preflight marker stay)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" scratch-clean
 
 # After merging a PR: close any still-open linked issue and set its Stage to Done,
 # close any Epic or Feature above it whose sub-issues are now all closed,
@@ -130,8 +145,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-reap --threshold 4 --dry-run
 # Set an issue's Stage (best-effort, always exit 0)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set 42 --stage stage-in-review
 
-# The open PRs that close an issue (duplicate detection)
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr 42 --exclude-branch feat/42-thing
+# The open PRs that close each issue (duplicate detection), one read for all of them
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr 42 43 --exclude-branch feat/42-thing
+
+# Settle a PR's review-state labels (approved, changes-requested, needs-discussion, needs-re-review)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr 123 --verdict needs-re-review
 
 # Hand finished stories to review: label the PR, set each issue to In Review, free claims
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" handoff --pr 123 --issue 42 --issue 43
@@ -484,7 +502,7 @@ Nothing did this. `post-merge` settles only the issues a pull request *closes*, 
 
 **The comment is load-bearing.** A bare state change reads to the next agent as damage to repair, and one repaired exactly this: three issues released by hand were re-blocked two minutes later by a concurrent session that took the release for automation gone wrong.
 
-`--dry-run` reports without writing; `--issue N` (repeatable) narrows it. `post-merge` runs the sweep and returns it as `unblocked` whether or not it settled anything (`--no-unblock` opts out), and `pick` runs it when it finds nothing to pick.
+`--dry-run` reports without writing; `--issue N` (repeatable) narrows it. `post-merge` runs the sweep and returns it as `unblocked` whether or not it settled anything (`--no-unblock` opts out). `pick` and `plan-set` need no sweep first: a `Blocked` issue whose blockers have all closed is released and considered in the same round, in one batched stage write and one batched comment.
 
 ## The three pickers
 
@@ -516,7 +534,7 @@ The pool is ordered by `Priority`, then `Effort`, then issue number. `--mode` an
 
 `pick --issue N` on an issue with open blockers does not refuse it when this run can build them. It plans the chain (`wf_core.plan_set`), sets N to `Blocked`, claims the first prerequisite that is ready, and returns it with `prerequisite_for` (`number`, `title`, `build_order`). Only a blocker nobody here may build ends the pick, with `all-blocked` and a reason naming it. A pick with `--sibling` is never redirected, because a bulk claim must take exactly the story it names.
 
-`plan-set` does the same for a bulk run. Its universe is every pool story plus every waiting story (blank, `Backlog` or `Blocked`, code work, unassigned, unclaimed, its edges fully read). Two stories are connected by an edge either way, a shared blocker, or a shared parent. Named (`--issue`, repeatable): each named story plus the prerequisites it needs. `--parent N`: the lead and its group come from the stories under N, and a prerequisite outside N still joins. Neither: the lead is the highest-ranked story whose whole chain fits `--size` (2 to 7), and its connected group joins in rank order. `waves` groups the build order so no story shares a wave with anything it waits on. Without `--claim` it only reads, and `nearby` lists the best unlinked ready stories. With `--claim` it takes every claim ref at once, drops a story claimed away, blocked or resolved together with everything waiting on it, then assigns in one mutation and writes `Stage` and `Start date` in another, and records the set in `.claude/bulk-set.json`. `drop-story` returns a story and its unbuilt dependents to the pool, and `bulk-mark` records the branch and each story built.
+`plan-set` does the same for a bulk run. Its universe is every pool story plus every waiting story (blank, `Backlog` or `Blocked`, code work, unassigned, unclaimed, its edges fully read); a `Blocked` story whose blockers have all closed counts as ready and is listed in `released`. Two stories are related by a blocked-by edge either way, a shared prerequisite, a shared parent, or the same Epic. A blocker in another repository is kept as `owner/name#N`: open, it excludes the story; closed, it is satisfied. `--mode` and `--max-effort` never hold back a prerequisite a code agent may build. Named (`--issue`, repeatable): each named story plus the prerequisites it needs. `--parent N`: the lead and its group come from the stories under N, and a prerequisite outside N still joins; `candidates --parent N` returns the same set without claiming. Neither: the best-ranked related group of at least two whose chains fit `--size` (2 to 7), stories added by closeness to the lead and a blocker never cut while its dependent stays; a single story only when no group exists. `waves` groups the build order so no story shares a wave with anything it waits on. Without `--claim` it only reads, and `nearby` lists the best unlinked ready stories. With `--claim` it takes every claim ref at once, drops a story claimed away, blocked or resolved together with everything waiting on it, then assigns in one mutation and writes `Stage` and `Start date` in another, and records the set in `.claude/bulk-set.json`. `drop-story` returns a story and its unbuilt dependents to the pool, and `bulk-mark` records the branch and each story built.
 
 ## Scope / deferrals
 
@@ -551,7 +569,7 @@ It **always exits 0**, so a failed write never costs a run its work. Read `set`,
 
 ### `sibling-pr`
 
-`sibling-pr N` returns the open PRs that close issue N, oldest first, using GitHub's own parse of closing references rather than a free-text body search. `--exclude-branch` drops your own PR, so anything returned is someone else's. Exit 0 with `found: 0` is the expected answer before starting work; exit 20 means the lookup failed, which is not the same as "no duplicate" and must be reported as such.
+`sibling-pr N [M ...]` returns the open PRs that close issue N, oldest first (with several numbers, `by_issue` holds one answer per issue from the same single read), using GitHub's own parse of closing references rather than a free-text body search. `--exclude-branch` drops your own PR, so anything returned is someone else's. Exit 0 with `found: 0` is the expected answer before starting work; exit 20 means the lookup failed, which is not the same as "no duplicate" and must be reported as such.
 
 ### `labels-ensure`
 
@@ -559,7 +577,7 @@ It **always exits 0**, so a failed write never costs a run its work. Read `set`,
 
 ### `handoff`
 
-`handoff --pr P --issue N [--issue M …]` ends a build: it takes the PR's review claim (`refs/claims/pr-P`) first, so the work is never unlocked between the build and its review, and reports that as `pr_claimed` (`won`, `lost` or `error`). A later `claim --pr P --keep-held` from the same checkout keeps the claim it holds; without `--keep-held` it reports `lost`, so a second session sharing the checkout cannot take the PR. Then it labels the PR with the review-state entry label, then sets each issue's `Stage` to `In Review` and releases every issue claim ref in one push, as `claim-release` does, with one `ls-remote` to tell which refs are still held when that push fails. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`. `--gate-failed` enters review as changes-requested rather than needs-review.
+`handoff --pr P --issue N [--issue M …]` ends a build: it takes the PR's review claim (`refs/claims/pr-P`) first, so the work is never unlocked between the build and its review, and reports that as `pr_claimed` (`won`, `lost` or `error`). A later `claim --pr P --keep-held` from the same checkout keeps the claim it holds; without `--keep-held` it reports `lost`, so a second session sharing the checkout cannot take the PR. Then it labels the PR with the review-state entry label, then sets each issue's `Stage` to `In Review` and releases every issue claim ref in one push, as `claim-release` does, with one `ls-remote` to tell which refs are still held when that push fails. Finally it deletes `.claude/plan.md` and `label-cache.json`; the preflight marker stays, so an issue filed during review does not re-run preflight. `--gate-failed` enters review as changes-requested rather than needs-review.
 
 It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read `pr_labelled` and the per-issue `stage_set` and `stage_message` instead. A failure on one issue does not affect the others.
 
