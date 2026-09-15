@@ -4244,9 +4244,11 @@ class TestPreflight(unittest.TestCase):
         self.assertFalse(any('could not close' in line for line in payload['unfixed']))
 
     def _run(self, argv=(), env_err=None, finished=(), labelled=(), caps=None,
-             drifted=(), stages=None):
+             drifted=(), stages=None, live_labels=None):
         args = wf.build_parser().parse_args(
             ['preflight', '--scan', self.scan, *argv])
+        if live_labels is None:
+            live_labels = list(wf_core.REVIEW_DEFAULT_LABELS.values())
         cfg = _cfg(board={'project_node_id': 'PVT_1', 'project_title': 'Board',
                           'start_date_field_id': None})
 
@@ -4283,8 +4285,7 @@ class TestPreflight(unittest.TestCase):
                     'nodes': nodes}}}, ''
             return True, {'repository': {'labels': {
                 'pageInfo': {'hasNextPage': False, 'endCursor': None},
-                'nodes': [{'name': n} for n
-                          in wf_core.REVIEW_DEFAULT_LABELS.values()]}}}, ''
+                'nodes': [{'name': n} for n in live_labels]}}}, ''
 
         def gh_graphql_partial(query, **fields):
             return {'organization': {'issueTypes': {'nodes': [
@@ -4342,6 +4343,17 @@ class TestPreflight(unittest.TestCase):
                                    14: 'stage-in-progress'}])
         self.assertTrue(any('#12 to In Review' in line for line in payload['fixed']))
         self.assertTrue(any('#13 to In Progress' in line for line in payload['fixed']))
+
+    # ── review labels (#275) ─────────────────────────────────────────────────
+
+    def test_fix_creates_a_missing_review_label_without_forcing(self):
+        live = [n for n in wf_core.REVIEW_DEFAULT_LABELS.values()
+                if n != 'review-failed']
+        _, payload, calls = self._run(['--fix'], live_labels=live)
+        creates = [c for c in calls if c[:3] == ['gh', 'label', 'create']]
+        self.assertEqual([c[3] for c in creates], ['review-failed'])
+        self.assertFalse(any('--force' in c for c in creates))
+        self.assertTrue(any('review-failed' in line for line in payload['fixed']))
 
     def test_fix_leaves_a_healthy_backlog_alone(self):
         writes = []

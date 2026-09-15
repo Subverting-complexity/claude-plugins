@@ -158,7 +158,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" labels-ensure
 
 It names each label through `docs/review.config.md` when that exists, falling back to the `review-` defaults, and creates only the ones the repo lacks, never with `--force`, so an existing label keeps its colour and description.
 
-This step is best-effort. If `failed` is not empty (permissions, etc.), log a warning and continue.
+This step is best-effort. If it exits non-zero, log a warning naming its `reason` and any `failed` labels, and continue.
 
 ### 5c. Ignore plugin scratch files
 
@@ -264,8 +264,8 @@ Ask the user if they plan to use the code-review skill for automated PR reviews.
    - Ask whether to **auto-merge approved PRs** (squash-merge once Claude approves and posts its comment). This defaults to **off**; enable it only for repos that should merge approved reviews unattended. Stored as `auto-merge-on-approval` in `docs/review.config.md`. Say plainly what it covers, because it is the **only** switch that decides this: it governs `/github-workflow:code-review` **and** the merge phase at the end of a `/github-workflow:execute` run. Left off, an execute run ends at an approved pull request waiting for a person, which is a complete run. **If the user enables it, run Step 7b** (Harden auto-merge enforcement) before finishing — that step turns on repo-level auto-merge, attempts branch protection with required checks, and sets the `require-ci-before-merge` fallback when GitHub can't enforce them.
    - Ask, **only if auto-merge was enabled**, what to do when CI can't run because of a GitHub Actions **billing or account** problem (out of minutes, spending limit hit, a failed payment): should an approved PR merge anyway? Default **no**. Stored as `bypass-ci-on-billing-failure` in `docs/review.config.md` — `true` merges an approved PR only when a billing/account failure is the sole blocker (a real test/build/lint failure is never bypassed). It covers billing stopping the pipeline from being created at all, not only one that runs and fails; in that case the merge also requires the project's quality gate to have passed locally. It is the persistent, per-project form of the one-off `--bypass-ci` flag.
    - Ask, **only if auto-merge was enabled and the repo has zero active GitHub Actions workflows** (count them first — the question is meaningless otherwise): its PRs will never report a check, so should an approved PR merge anyway, on the strength of the local quality gate? Default **no**. Stored as `bypass-ci-when-no-pipeline` in `docs/review.config.md` — `true` merges an approved PR only when the rollup is completely empty, the repo really has no active workflows, and the project's quality gate passed locally on that SHA. Any check at all, in any state, is gated normally. This is the setting for a project whose CI lives where GitHub cannot see it (Buildkite, Jenkins, CircleCI) as much as for one with no CI; left `false`, every approved PR on such a repo pauses at the no-checks guard. It is mutually exclusive with `bypass-ci-on-billing-failure`, which needs workflows to exist.
-   - Run `labels-ensure` again (Step 5b), so a renamed label exists before anything applies it
    - Write `docs/review.config.md`
+   - Run `labels-ensure` again (Step 5b) once the file is written, so a renamed label exists before anything applies it
 3. If the user declines, note that the code-review skill will prompt for this config on first run.
 
 Review state labels are a mutex managed by the code-review skill, and the only labels the workflow applies.

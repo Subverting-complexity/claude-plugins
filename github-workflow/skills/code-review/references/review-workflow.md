@@ -54,7 +54,7 @@ gh pr edit <number> --repo <org>/<repo> --add-label <verdict-label> \
   --remove-label <needs-re-review> --remove-label <other-verdict-labels…>
 ```
 
-The remove commands no-op if the label isn't present. If the add fails because the verdict label doesn't exist on the repo, create it guarded — **without `--force`** so existing metadata is never overwritten — then retry the add:
+The remove commands no-op if the label isn't present. If the add fails because the verdict label doesn't exist on the repo, run `wf labels-ensure` and retry the add. If `wf` cannot run, create it guarded, taking the description and colour for that purpose from `REVIEW_LABEL_META` in `scripts/wf_core.py` — **without `--force`** so existing metadata is never overwritten — then retry the add:
 
 ```bash
 gh label create "<verdict-label>" --repo <org>/<repo> --description "<desc>" --color "<color>"
