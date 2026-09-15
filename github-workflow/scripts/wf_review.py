@@ -267,6 +267,28 @@ def ensure_review_labels(cfg, live=None, repo=None):
     return created, failed, ''
 
 
+def add_review_label(cfg, number, add, remove=None):
+    """Put a review-state label on a PR, creating it when the repo lacks it.
+
+    `gh pr edit` refuses a label the repo does not have ("'x' not found").
+    Until #290 only `review-finish` recovered, so a PR handed to review on a
+    repo without the labels opened with no entry label and the picker never
+    found it. On that refusal, create the review labels the repo lacks
+    (guarded, never `--force`) and try the edit once more. Returns (ok, err).
+    """
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    edit = ['gh', 'pr', 'edit', str(number), '--repo', repo]
+    if remove:
+        edit += ['--remove-label', remove]
+    edit += ['--add-label', add]
+    code, _, err = run(edit)
+    if code != 0 and 'not found' in (err or '').lower():
+        _, _, lerr = ensure_review_labels(cfg, repo=repo)
+        if not lerr:
+            code, _, err = run(edit)
+    return code == 0, err or ''
+
+
 def cmd_labels_ensure(args):
     """Create the review-state labels a repo lacks, and nothing else.
 
@@ -352,9 +374,7 @@ def cmd_handoff(args):
         eprint('wf: warning - could not take the review claim on PR #%d (%s)'
                % (args.pr, pr_claimed))
 
-    code, _, perr = run(['gh', 'pr', 'edit', str(args.pr), '--repo', repo,
-                         '--add-label', state_label])
-    pr_labelled = code == 0
+    pr_labelled, perr = add_review_label(cfg, args.pr, state_label)
     if not pr_labelled:
         eprint('wf: warning - could not label PR #%d (%s)' % (args.pr, perr.strip()))
 

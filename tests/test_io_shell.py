@@ -3251,6 +3251,72 @@ class TestHandoffAndClaims(unittest.TestCase):
         self.assertEqual(payload['issues'][0]['stage_message'],
                          wf.NO_STAGE_FIELD)
 
+    @staticmethod
+    def _run_missing_label(calls, label):
+        """A `gh` that refuses any PR edit until `label` has been created."""
+        created = []
+
+        def fake_run(cmd, input_text=None):
+            calls.append(list(cmd))
+            if cmd[:3] == ['gh', 'label', 'create']:
+                created.append(cmd[3])
+                return 0, '', ''
+            if cmd[:3] == ['gh', 'pr', 'edit'] and label not in created:
+                return 1, '', "failed to update pull request: '%s' not found" % label
+            return 0, '', ''
+        return fake_run
+
+    def test_handoff_creates_a_missing_entry_label_and_applies_it(self):
+        """#290: a repo without the labels still gets a PR the picker can find."""
+        calls = []
+        args = wf.build_parser().parse_args(['handoff', '--pr', '7', '--issue', '3'])
+        with mock.patch.object(wf, 'prepare_cfg', self._cfg), \
+                mock.patch.object(wf, 'run', self._run_missing_label(calls, 'review-needs-review')), \
+                mock.patch.object(wf, 'fetch_repo_state',
+                                  lambda cfg, repo=None: (True, {'labels': []}, '')), \
+                mock.patch.object(wf, 'set_stages',
+                                  lambda cfg, wanted: {int(n): (True, 'ok') for n in wanted}), \
+                mock.patch.object(wf, 'repo_root', lambda: tempfile.mkdtemp()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code, payload = _capture(args.func, args)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertTrue(payload['pr_labelled'])
+        joined = [' '.join(c) for c in calls]
+        self.assertTrue(any(c.startswith('gh label create review-needs-review ')
+                            for c in joined))
+        self.assertFalse(any('--force' in c for c in joined))
+        self.assertEqual(len([c for c in joined if c.startswith('gh pr edit 7')]), 2)
+
+    def test_claim_pr_creates_a_missing_reviewing_label_and_applies_it(self):
+        """#290: the same recovery for the `reviewing` marker, leaving an
+        existing label alone."""
+        calls = []
+        with mock.patch.object(wf, 'run', self._run_missing_label(calls, 'review-reviewing')), \
+                mock.patch.object(wf, 'fetch_repo_state',
+                                  lambda cfg, repo=None:
+                                  (True, {'labels': ['review-needs-review']}, '')), \
+                contextlib.redirect_stderr(io.StringIO()):
+            marker = wf.apply_claim_marker(self._cfg(), mock.Mock(issue=None, pr=7))
+        self.assertEqual(marker, 'review-reviewing')
+        joined = [' '.join(c) for c in calls]
+        self.assertTrue(any(c.startswith('gh label create review-reviewing ')
+                            for c in joined))
+        self.assertFalse(any(c.startswith('gh label create review-needs-review ')
+                             for c in joined))
+        self.assertEqual(len([c for c in joined if c.startswith('gh pr edit 7')]), 2)
+
+    def test_a_label_refused_for_another_reason_is_not_retried(self):
+        calls = []
+
+        def fake_run(cmd, input_text=None):
+            calls.append(list(cmd))
+            return 1, '', 'HTTP 403: Resource not accessible by integration'
+        with mock.patch.object(wf, 'run', fake_run), \
+                contextlib.redirect_stderr(io.StringIO()):
+            ok, _ = wf.add_review_label(self._cfg(), 7, 'review-needs-review')
+        self.assertFalse(ok)
+        self.assertEqual(len(calls), 1)
+
     def test_stage_set_accepts_a_purpose_key_as_well_as_an_option_name(self):
         code, payload = self._run(['stage-set', '3', '--stage', 'stage-done'],
                                   [], written=(True, 'Stage set to Done'))

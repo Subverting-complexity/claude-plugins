@@ -149,11 +149,12 @@ def apply_claim_marker(cfg, args):
         apply_in_progress(cfg, {'number': args.issue,
                                 'labels': [l['name'] for l in data.get('labels', [])]})
         return '@me + Stage In Progress'
+    # Imported here because wf_review imports this module.
+    from wf_review import add_review_label
     names = wf_core.review_names(cfg.get('review_labels'))
-    code, _, err = run(['gh', 'pr', 'edit', str(args.pr), '--repo', repo,
-                        '--remove-label', names['needs-review'],
-                        '--add-label', names['reviewing']])
-    if code != 0:
+    ok, err = add_review_label(cfg, args.pr, names['reviewing'],
+                               remove=names['needs-review'])
+    if not ok:
         eprint('wf: warning - could not apply the reviewing label (%s)' % err.strip())
         return None
     return names['reviewing']

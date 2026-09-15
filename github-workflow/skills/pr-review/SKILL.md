@@ -48,7 +48,7 @@ Run `gh auth status` first. If it fails, stop and tell the user to run `gh auth 
 - When neither exists and a user is present, follow `references/review-config-guide.md` to create one with them.
 - When neither exists in an autonomous session (from `execute`, `bulk-execute` or a scheduled routine), run a minimal review: no custom gates, no tech-stack rules, the standard footer, and each label at its `review-` default. Say in the review comment that defaults were used. An interactive session that goes ahead without a file also warns: "No `review.config.md` found — using default labels. Run `/github-workflow:setup` to configure review labels for this project."
 
-**Label names.** Every label this skill applies or filters on (`reviewing`, `approved`, `changes-requested`, …) is a **purpose key**. Resolve each through the Labels table in `review.config.md`, falling back to its `review-` default; never apply a bare name literally or guess a prefix. `wf review-finish` creates a missing verdict label, guarded and never with `--force`.
+**Label names.** Every label this skill applies or filters on (`reviewing`, `approved`, `changes-requested`, …) is a **purpose key**. Resolve each through the Labels table in `review.config.md`, falling back to its `review-` default; never apply a bare name literally or guess a prefix. `wf handoff`, `wf claim --pr` and `wf review-finish` create a missing review label, guarded and never with `--force`.
 
 **Auto-merge.** `review.config.md` may set Auto-Merge on Approval to `enabled`; it is `disabled` when the section or file is absent. Step 11 checks it and is the only place this skill merges.
 
