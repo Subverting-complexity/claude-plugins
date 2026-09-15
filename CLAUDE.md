@@ -8,6 +8,8 @@ This repo contains one Claude Code plugin, `github-workflow`, which covers GitHu
 
 1. **Keep what loads into every session small.** Every skill, command and agent description, and the `SessionStart` hook, is in context for every session whether or not the plugin is used. `check-budgets.sh` caps a description at 240 characters. Put detail in the skill body or in a `references/` file loaded on demand, never in the description.
 
+   A skill that only a person ever runs by name, and that no skill, command or agent needs Claude to invoke, sets `disable-model-invocation: true` in its frontmatter. Claude Code then leaves its description out of context entirely while `/github-workflow:<name>` still works; the cost is that Claude can no longer invoke it, and asking in plain words no longer triggers it. `tone`, `support-request`, `acceptance-criteria` and `ecosystem-setup` carry it. A workflow that needs one of them reads its `SKILL.md` and follows it, as `setup` does for `ecosystem-setup`.
+
 2. **Always bump the plugin version before merging.** If you changed any file under `github-workflow/`, bump its version in `github-workflow/.claude-plugin/plugin.json`:
    - **Patch** (x.y.Z): bug fixes, typo corrections, minor wording
    - **Minor** (x.Y.0): new skills, commands, behavioral changes

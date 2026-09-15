@@ -1,6 +1,7 @@
 ---
 name: ecosystem-setup
 description: 'Install and configure companion tools (Graphify, RTK, Headroom, ccusage, ecc-agentshield, Fallow) and write .claude/ecosystem.md. Trigger on setting up any of them.'
+disable-model-invocation: true
 ---
 # Ecosystem Setup
 

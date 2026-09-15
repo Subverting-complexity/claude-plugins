@@ -1,6 +1,7 @@
 ---
 name: acceptance-criteria
 description: 'Write test steps a tester or stakeholder can follow in the UI for a PR or feature branch. Trigger on acceptance criteria, test steps or "what should I test".'
+disable-model-invocation: true
 ---
 # Acceptance Criteria Skill
 
