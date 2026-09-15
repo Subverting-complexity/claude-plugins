@@ -3704,9 +3704,10 @@ class TestReconcileStage(unittest.TestCase):
         self.assertEqual(self.r(stage='In Progress', scope=wf_core.SCOPE_CODE),
                          'Backlog')
 
-    def test_a_blank_stage_with_nothing_to_say_is_not_written(self):
-        self.assertIsNone(self.r())
-        self.assertIsNone(self.r(claimed=True))
+    def test_a_blank_stage_with_nothing_else_to_say_is_filed_in_backlog(self):
+        self.assertEqual(self.r(), 'Backlog')
+        self.assertEqual(self.r(claimed=True), 'Backlog')
+        self.assertIsNone(self.r(stage='Backlog'))
 
     def test_a_draft_pull_request_or_an_assignee_is_in_progress(self):
         for stage in ('', 'Backlog'):

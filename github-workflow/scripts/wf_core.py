@@ -1419,6 +1419,9 @@ def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
                   or straight to where `started` puts it if somebody already
                   has. Blocked with no edge at all was set by a person and
                   stays.
+      filed       a blank stage that no rule above moved becomes Backlog, so
+                  no board card sits under "No Stage". The plugin still reads
+                  blank as available; only the sync fills it in.
 
     Every result is a fixed point: feeding the stage it returns back in, with
     the same facts, returns None. That is what makes a second run a no-op.
@@ -1454,6 +1457,8 @@ def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
         # it belongs in one write rather than via Backlog on the next run.
         released = stage_drift_target(backlog, assigned=assigned, open_prs=prs)
         return STAGE_NAMES[released or POOL_STAGE]
+    if not current:
+        return backlog
     return None
 
 
