@@ -95,45 +95,18 @@ A **Needs Discussion** verdict is the one case rework cannot settle, because it 
 
 ## Phase 10 — Merge and settle
 
-Merging is **opt-in**, and the switch is the same one that governs the standalone `/github-workflow:code-review` command: `Auto-Merge on Approval` in `review.config.md`. One setting, one meaning, wherever a PR gets merged — a project that has not asked for unattended merges does not get them because it happened to reach the PR through `execute` rather than through a review run. Read it the way `auto-merge.md` specifies (`docs/review.config.md` then `./review.config.md`; absent file or absent section ⇒ `disabled`).
+Merging is **opt-in**. The switch is `Auto-Merge on Approval` in `review.config.md`, the same one code-review's Step 11 reads, so one setting decides unattended merges wherever a PR is merged from. Read it from `docs/review.config.md`, then `./review.config.md`; an absent file or section means `disabled`.
 
-**Do not even attempt the merge** when any of these holds. In each case leave the PR open with its verdict on it, say why in your final report, and exit through **Exit cleanup**:
+**Check these before reading any merge mechanics.** If any holds, do not attempt the merge: leave the PR open with its verdict on it, say in your final report which condition it was, and exit through **Exit cleanup**:
 
-- `Auto-Merge on Approval` is not `enabled` — including the common case where the project has no `review.config.md` at all. This is the default, so the ordinary end of a run is an approved PR waiting for a person.
-- The run was invoked with `--no-merge` (`test -f .claude/no-merge.flag`).
+- `Auto-Merge on Approval` is not `enabled`, the default. The PR is reviewed, approved and deliberately waiting for a person: leave it `approved`, add no other label, and report it as ready to merge.
+- The run was invoked with `--no-merge` (`test -f .claude/no-merge.flag`). Handle it the same way.
 - The Phase 5 quality gate failed (`test -f .claude/gate-failed.flag`).
-- Phase 7 flagged a possible duplicate PR closing the same issue. Its flag line is the first line of the PR body (`⚠ Possible duplicate of #N`), so read the body if the flag is no longer in context. Reconciling duplicates belongs to code review, which keeps the better-implemented PR and closes the other.
+- Phase 7 flagged a possible duplicate PR. The flag is the first line of the PR body (`⚠ Possible duplicate of #N`), so read the body if it is no longer in context. Code review reconciles duplicates.
 - The verdict is not Approved.
 
-A self-review (`test -f .claude/self-review.flag`) is **not** on that list. It merges, provided Phase 8 step 3's disclosure is on the PR comment and repeated in your final report. Check the flag here for exactly that reason: to confirm the disclosure was made, and to repeat it in the report.
+Only when none of them holds, read `references/merge.md` and follow it: it drives the PR to merged and settles the linked issues.
 
-Those are the conditions checked **before** the attempt. The merge mechanics themselves can also stop short — a head SHA that moved since the review, a conflict needing human judgment, a red check that is not yours to fix, absent CI, repo-level auto-merge disabled, or checks still pending when the watch window closes. Each of those leaves the PR approved and unmerged with a comment saying why, which is a correct outcome, not a failure to hide.
+## Final report
 
-When you leave a PR **approved and unmerged because the merge was attempted and stopped short**, also apply the `needs-re-review` label (resolve the name through `review.config.md`; the default is `review-needs-re-review`). The review picker skips a plain `approved` PR, so without that label nothing selects it again and the work is orphaned until a person notices. Two cases are excluded:
-
-- The successful **enqueue** outcome — `autoMergeRequest` non-null at auto-merge step 5 — where GitHub merges the PR on its own once its requirements clear. Labelling a PR that is about to land would put it at the top of the review queue for pointless rework.
-- The merge was never attempted because it is **switched off** — auto-merge is not `enabled`, or `--no-merge` was passed. Nothing is outstanding: the PR is reviewed, approved, and deliberately waiting for a person. Sending it back through the review picker would just re-review an approved PR that no run is allowed to merge anyway. Leave it `approved` and say in your report that it is ready to merge.
-
-Otherwise drive the PR to merged by following **steps 1 to 6** of `skills/code-review/references/auto-merge.md`, which is the single specification of the merge mechanics — confirming the PR is still what was reviewed, resolving conflicts, gating on CI, squash-merging or enqueuing `--auto`, verifying the outcome, and settling the linked issues with `wf post-merge`. Read it with these substitutions:
-
-- Its enabling conditions are read exactly as written — you already confirmed `Auto-Merge on Approval` is `enabled` above, and `require-ci-before-merge` comes from that same section of the same file. Nothing about the CI gate changes for this caller.
-- `--bypass-ci` is set for this run only if the invocation passed it (`test -f .claude/bypass-ci.flag`); otherwise treat it as absent. When a PR reports **no checks at all**, its steps 3a-ii and 3b decide first, and which of them can apply is settled by whether the repo has active workflows: 3a-ii covers a project whose pipeline exists but was stopped by Actions billing (`bypass-ci-on-billing-failure: true`), and 3b covers a project that has no GitHub-visible pipeline at all (`bypass-ci-when-no-pipeline: true`). Either way the merge proceeds on the local quality gate, and either way Phase 5 already produced it: an absent `.claude/gate-failed.flag` **is** the green local gate, so read the flag rather than re-run the suite. Failing both, CI status is unknown and this run is autonomous: do not ask the user, and do not merge. Post the one-line comment that guard specifies, leave the PR approved, and report it as approved but unmerged. An operator whose project has no GitHub-visible pipeline sets `bypass-ci-when-no-pipeline` once instead of re-running with `--bypass-ci` every time.
-- Where it refers to the SHA recorded when the branch was checked out (its step 1 calls this "the SHA you reviewed", recorded at code-review's Step 3), use the head SHA you recorded in Phase 8 or Phase 9. Where it refers to the review comment from code-review's Step 9, use the consolidated comment you posted.
-- Where it says to fix a failing check the way code-review's Step 7 does, apply Phase 9's fix discipline instead: fix what is objectively wrong, file what needs judgment.
-- Its fallbacks that **file** a conflict or a failing check stand as written, and they do not contradict **Fix in scope, file out of scope**. Each covers an in-scope problem this run genuinely cannot resolve — a rebase whose resolution needs human judgment, or an infrastructure or flaky failure originating outside the diff — and each leaves the PR open and unmerged rather than filing the problem away and merging over it. A check that fails **because of this PR's own diff** is not one of them: fix it on the branch.
-- Where its step 5 refers to the final report format in code-review's `SKILL.md`, use the report described at the end of this file instead — execute never loads that file.
-
-One practical difference from a review session: you are sitting **on** the branch being merged, and the merge deletes it. Stay on the PR branch through its steps 1 to 3, because that is where a conflict resolution or a CI fix has to be committed. Immediately before its step 4 merge, move off the branch. Detach rather than checking the default branch out, because another worktree on this clone usually holds it and git refuses to check out a branch twice:
-
-```bash
-git fetch origin {default-branch}
-git checkout --detach origin/{default-branch}
-```
-
-If `git status --porcelain --untracked-files=no` is not empty, run **End clean** in `templates/worktree-hygiene.md` first — the detach will not move with tracked modifications in the way. Ignore untracked files here: this workflow's own `.claude/` scratch files are untracked by design, and routing a mid-merge run into End clean over them would risk committing scratch to the PR.
-
-Its step 6 runs `wf post-merge --pr {pr_number}`, which closes every issue the PR closes and sets each one's stage to **Done**. It also closes any Epic or Feature that merge finished, meaning every sub-issue is now closed, and lists it in `containers_closed`. Report each settled issue and each closed container by number and title.
-
-It then runs the unblock sweep and returns it as `unblocked`, because settling this PR's own issues is only half of a merge. Report `released` (blocked issues whose dependency edges have all closed — name each by number and title, they are back in the pool) and `partials` (still held, but a blocker just merged something, so a person must judge whether that freed them). For `no_edges` report the count only. An empty `settled` is not a finished run: a PR that closes nothing still frees work.
-
-Then run **Exit cleanup** (`references/exit-cleanup.md`) as the final step, which releases the `pr-{pr_number}` claim, and report the run in full: the story implemented, the PR merged, what the review found and what you changed in response, anything filed to the backlog, and the issues now closed. Keep those last two apart in the report and say why each filed item was filed — unrelated to this PR, or an open question for a person. A run that fixed its review findings here and filed nothing is the ordinary outcome, not a gap in the report.
+Run **Exit cleanup** (`references/exit-cleanup.md`) as the final step, which also releases the `pr-{pr_number}` claim. Then report the run in full: the story implemented, whether the PR merged or which condition stopped it, what the review found and what you changed in response, anything filed to the backlog, and the issues now closed. Keep filed and closed apart, and say why each filed item was filed: unrelated to this PR, or an open question for a person. If `.claude/self-review.flag` exists, repeat Phase 8 step 3's disclosure. A run that fixed its findings and filed nothing is the ordinary outcome.

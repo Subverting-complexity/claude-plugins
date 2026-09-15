@@ -68,7 +68,7 @@ If the session is autonomous (called from `/github-workflow:execute` or a schedu
 
 Read `review.config.md` fully before starting. Everything project-specific lives there. This workflow is generic.
 
-**Auto-merge.** `review.config.md` may set `auto-merge-on-approval: enabled` (defaults to `disabled` when the section or file is absent — including the autonomous minimal review). Step 11 reads it and is the only place this skill merges. Full merge procedure and `require-ci-before-merge` handling are in `references/auto-merge.md`, loaded only when Step 11 fires.
+**Auto-merge.** `review.config.md` may set Auto-Merge on Approval to `enabled`; it is `disabled` when the section or file is absent. Step 11 checks it and is the only place this skill merges.
 
 ---
 
@@ -439,7 +439,9 @@ When the Issues Remaining are all concrete, fixable problems (not human- judgmen
 
 ### Step 11 — Auto-merge on approval (if enabled)
 
-Runs when (and only when) the verdict is **Approved** — for any other verdict the review is already complete at Step 10. Load `references/auto-merge.md` and follow it. It re-states the enabling conditions (verdict Approved, `review.config.md` Auto-Merge on Approval `enabled`, not read-only), handles `require-ci-before-merge`, the `--bypass-ci` override (pass `$ARGUMENTS.bypass-ci` through when set) and `review.config.md`'s `bypass-ci-on-billing-failure` and `bypass-ci-when-no-pipeline`, and drives the PR to merged — resolving conflicts, fixing or filing failing checks, and squash-merging or enqueuing `--auto`. Merging a PR is otherwise forbidden (see Rules); this is the one sanctioned merge. On success it reports using the **Final report format** below (shared with Step 10).
+Runs only when the verdict is **Approved**. Check before reading any merge mechanics: the session is not read-only, and `review.config.md`'s Auto-Merge on Approval is `enabled` (no file or no section means `disabled`: never merge). If either fails, the review is complete at Step 10.
+
+Only when both hold, load `references/auto-merge.md` and follow it, passing `$ARGUMENTS.bypass-ci` through when set. It handles the CI gate settings and drives the PR to merged, then reports in the **Final report format** below.
 
 #### Final report format
 
@@ -493,7 +495,7 @@ Rationale files (maintainers only — not read at runtime): `docs/rationale/code
 ## Rules
 
 - Never use `gh pr review --approve`. Always use `gh pr comment`.
-- **Do not merge a PR** except the one sanctioned auto-merge in Step 11, and only under the conditions and the CI-gate rules — `--bypass-ci`, `bypass-ci-on-billing-failure`, `bypass-ci-when-no-pipeline` — stated once in `references/auto-merge.md` (off by default). Never merge in read-only mode. That reference has one other sanctioned caller, named in it: the `execute` skill's Phase 10, which merges the PR its own run built and had reviewed, under the same setting and the same conditions. This rule governs this skill; it does not forbid that one.
+- **Do not merge a PR** except through Step 11, off by default and never in read-only mode. `execute` and `bulk-execute` Phase 10 merge their own PRs under the same setting; this rule does not forbid that.
 - **Do not close a PR** except to reconcile duplicates in Step 2b, per `references/duplicate-reconciliation.md` — the one sanctioned close. Never close a PR for any other reason, and never in read-only mode.
 - Do not make discretionary refactors or stylistic changes.
 - Push fixes for all concrete, objectively wrong problems — both blocking and non-blocking — before approving or merging. Non-blocking cleanups are no longer deferred for budget.
