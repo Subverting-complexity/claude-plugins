@@ -1,6 +1,6 @@
 # Local review
 
-Review a change that has no pull request: uncommitted work, a branch, a commit, named files, or "is this feature ready?". No GitHub access is needed. It fixes concrete problems and reports tersely.
+Review a change that has no pull request: uncommitted work, a branch, a commit, or named files. No GitHub access is needed. It fixes concrete problems and reports tersely.
 
 When the person wants a report to read rather than fixes ("verify this feature", "is this ready?", a review before merging, "don't change anything"), read `skills/verify-feature/SKILL.md` and follow it instead of this file.
 
@@ -11,7 +11,7 @@ Read `CLAUDE.md` for project rules if it exists. When the change is React Native
 | The user says | Review |
 |---------------|--------|
 | "Review my changes", or no target | All uncommitted changes, staged and unstaged |
-| "Review this branch", "verify this feature", "is this ready?" | The branch against its base |
+| "Review this branch" | The branch against its base |
 | File paths | Those files in full |
 | A commit or "the last commit" | That commit |
 | "Everything since X" | X to `HEAD` |

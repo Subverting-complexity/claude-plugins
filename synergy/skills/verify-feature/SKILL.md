@@ -44,7 +44,8 @@ Everything a person reads follows `skills/_shared/wording-standard.md` for how i
 **The change.** A pull request number: `gh pr view <n> --json title,body,baseRefName,headRefName,files` and `gh pr diff <n>`. Otherwise the named branch, or the current one, against the remote default branch, so a stale local `main` does not widen the diff:
 
 ```sh
-default_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+default_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+default_branch=${default_branch#origin/}
 default_branch=${default_branch:-main}
 if git remote get-url origin >/dev/null 2>&1; then
   git fetch --quiet origin "$default_branch"; base="origin/$default_branch"
