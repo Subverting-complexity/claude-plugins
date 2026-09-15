@@ -4,7 +4,7 @@ Read this after Phase 7 has finished and the pull request is open. It covers the
 
 The deliverable of this workflow is a reviewed pull request, merged where the project has opted into that. An open, unreviewed PR is an unfinished story, so these three phases are as much part of the run as the build was. Every exit path still ends with **Exit cleanup** (`references/exit-cleanup.md`).
 
-`SKILL.md`'s **Fix in scope, file out of scope** rule governs all three phases, and it is what stops a review round turning into a pile of new backlog issues: a finding against this pull request's own diff is fixed here, and only a problem this PR is not the place to fix is filed. Each phase below says how that lands in its own steps.
+The **Fix in scope, file out of scope** rule in `shared-phases.md` governs all three phases, and it is what stops a review round turning into a pile of new backlog issues: a finding against this pull request's own diff is fixed here, and only a problem this PR is not the place to fix is filed. Each phase below says how that lands in its own steps.
 
 **Start immediately, and never on a condition.** **CI** does not gate this phase: a reviewer reads the diff, not the pipeline, and Phase 10 is where the merge waits on checks. Reviewing a PR whose checks are still queued is normal and lets the two run in parallel. **The user** does not gate it either — a sentence offering to carry on when asked means you are already off the workflow.
 

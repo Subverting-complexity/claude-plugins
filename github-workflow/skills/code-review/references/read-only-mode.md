@@ -5,7 +5,8 @@ Read this when (and only when) the skill is invoked with `--read-only` (`$ARGUME
 When `$ARGUMENTS.mode` is `read-only`:
 
 - Execute Steps 1–6, but **do not claim**. Selection uses the fast path with `--no-claim` (Step 1) — read-only has no push access, so it never writes a `refs/claims/pr-<number>` ref or applies the `reviewing` marker. In the inline fallback (Step 1), skip **Step 2** (Claim) entirely: just pick the PR by the prioritisation rules and go straight to checkout. A **pinned PR** (an explicit number, Step 1) is the third selection route and behaves the same way: no claim, straight to checkout. Because no claim was held, **Step 10's claim release is a no-op** and there is no `reviewing` label to remove.
-- **Check out detached** — `gh pr checkout <number> --detach`. The branch may already be checked out in another worktree on this clone (the session that built it, or a sibling reviewer), and git refuses to check out a branch twice. Read-only needs the commit, not the branch.
+- **Never enter Step 1b**, which pushes, whatever `prior_state` says: continue at Step 2b.
+- **Check out detached** — `gh pr checkout <number> --detach`, including in Step 3. The branch may already be checked out in another worktree on this clone (the session that built it, or a sibling reviewer), and git refuses to check out a branch twice. Read-only needs the commit, not the branch. If checkout fails, report the failure to the caller and exit without labelling the PR `failed`, which no picker tier selects.
 - In **Step 2b** (duplicate reconciliation), close nothing: identify the winner and list the duplicate set under a "Duplicate PRs" note in the review comment, recommending which to keep. Then continue reviewing the selected PR.
 - **Skip Step 7** (Fix issues) entirely — do not edit any files or push commits, and do not file anything to the backlog (Step 7e is a mutation).
 - In Step 8, determine the verdict based on raw findings (nothing was auto-fixed).
