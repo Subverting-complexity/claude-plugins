@@ -533,7 +533,9 @@ _RETIRED_INSTRUCTION_PATTERNS = (
      'blocked-by edge is the only record'),
     (r'/github-workflow:|github-workflow@subverting-complexity',
      'the plugin under its old name, `github-workflow`, which stopped '
-     'resolving when 14.0.0 renamed it to `synergy`'),
+     'resolving when 14.0.0 renamed it to `synergy`: a `/github-workflow:` '
+     'command is `/synergy:`, except `/github-workflow:code-review`, which is '
+     '`/synergy:pr-review`'),
 )
 
 
@@ -567,8 +569,7 @@ def instruction_findings(files, path=None):
                 'rewrite those lines against the current workflow: the `Stage` '
                 'field is the state, `Priority`, `Effort` and `Ownership` are '
                 'the fields every decision reads, and a dependency is a native '
-                'blocked-by edge, and the plugin is `synergy`, so a '
-                '`/github-workflow:` command is `/synergy:`',
+                'blocked-by edge, and the plugin is `synergy`',
                 name))
     return out
 

@@ -3385,6 +3385,9 @@ class TestRetiredWorkflowFindings(unittest.TestCase):
         self.assertEqual(sorted(f['where'] for f in findings),
                          ['CLAUDE.md', 'ClaudeProject.md'])
         self.assertTrue(all('synergy' in f['detail'] for f in findings))
+        # The review was renamed in the same release, so a straight swap of
+        # the prefix would name a command that does not exist.
+        self.assertTrue(all('/synergy:pr-review' in f['detail'] for f in findings))
         self.assertEqual(wf_core.instruction_findings(
             {'CLAUDE.md': 'Run /synergy:execute.\n'}), [])
 
