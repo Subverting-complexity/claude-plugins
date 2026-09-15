@@ -1,6 +1,8 @@
 # Local review
 
-Review a change that has no pull request: uncommitted work, a branch, a commit, named files, or "is this feature ready?". No GitHub access is needed. This replaces the separate local `pr-review`, `verify-feature` and `mobile-audit` skills.
+Review a change that has no pull request: uncommitted work, a branch, a commit, named files, or "is this feature ready?". No GitHub access is needed. It fixes concrete problems and reports tersely.
+
+When the person wants a report to read rather than fixes ("verify this feature", "is this ready?", a review before merging, "don't change anything"), read `skills/verify-feature/SKILL.md` and follow it instead of this file.
 
 Read `CLAUDE.md` for project rules if it exists. When the change is React Native or Expo code, also work through `references/react-native.md` in Step 4.
 

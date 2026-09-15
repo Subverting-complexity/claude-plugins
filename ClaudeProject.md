@@ -117,4 +117,4 @@ This section is informational. The board is a view for people, with its columns 
 
 ## Bundled Skills
 
-Available as `/github-workflow:*`: acceptance-criteria, build, bulk-execute, code-architect, pr-review, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, support-request, tone, user-story, user-facing-communication, writing-github-issues.
+Available as `/github-workflow:*`: acceptance-criteria, build, bulk-execute, code-architect, pr-review, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, support-request, tone, user-story, user-facing-communication, verify-feature, writing-github-issues.

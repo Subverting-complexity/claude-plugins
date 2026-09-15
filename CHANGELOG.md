@@ -12,6 +12,8 @@ update appears to do nothing.
 
 **Upgrading.** This is a breaking release. Replace `/github-workflow:code-review` with `/github-workflow:pr-review` anywhere you call it by name: a scheduled routine, a project `CLAUDE.md`, or a script. `execute` and `bulk-execute` already call the new name.
 
+**`verify-feature` is back** as the review a person reads before merging (Issue #287). 13.0.0 folded it into the automated review's local mode, which fixes things and reports tersely. `/github-workflow:verify-feature` reads a branch or pull request, changes nothing, and reports what the feature touches, its concerns and nitpicks, the acceptance-criteria verdict and what to do next. It runs by name only, so it adds nothing to what every chat loads.
+
 ## github-workflow 13.3.0
 
 **A smaller plugin to run.** The workflows read much less on each run, and the `wf` scripts are split by concern. No command, skill name or `wf` subcommand changed.
