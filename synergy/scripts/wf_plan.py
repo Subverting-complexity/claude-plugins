@@ -17,16 +17,17 @@ from concurrent.futures import ThreadPoolExecutor
 import wf_core
 from wf_claim import acquire_claim, release_claims
 from wf_config import prepare_cfg, repo_root
-from wf_deps import close_resolved, validate_issue
+from wf_deps import close_resolved, validate_issue_edges
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, EXIT_USAGE, emit,
-    gh_graphql, run,
+    gh_graphql,
 )
-from wf_issue_io import _batch_result, _graphql_json
+from wf_issue_io import _batch_result, _graphql_json, add_comments, resolve_issue_ids
 from wf_pick import (
     PICKABLE_BY_NAME, _tree_unread, fetch_container_tree, read_plan_pool,
 )
 from wf_stage import set_stages, start_date_input
+from wf_unblock import UNBLOCK_COMMENT
 
 
 BULK_SET = os.path.join('.claude', 'bulk-set.json')
@@ -42,9 +43,12 @@ def _admit_named(pool, seeds):
     overrules why it was left out, as `pick --issue` does: a `Stage` of
     Needs refinement, Parked or Blocked, a mode or effort filter. Somebody
     else's issue, a claimed one, one an open pull request already closes and
-    work a code agent may not do stay out, with the reason."""
+    work a code agent may not do stay out, with the reason. Then every
+    prerequisite a code agent may build joins too, whatever the filters say,
+    so a named story is never left out for waiting on one of them."""
     universe, reasons, by_num = pool['universe'], pool['reasons'], pool['by_num']
     facets = pool['facets']
+    epic = pool['verdict'].get('epic') or {}
     for number in seeds:
         issue = by_num.get(number)
         if number in universe or issue is None:
@@ -72,8 +76,10 @@ def _admit_named(pool, seeds):
             reasons[number] = 'its Stage is %s' % stage
         else:
             universe[number] = {'blockers': wf_core._open_blockers(issue),
-                                'parent': issue.get('parent')}
+                                'parent': issue.get('parent'),
+                                'epic': epic.get(number)}
             reasons.pop(number, None)
+    wf_core.admit_prerequisites(universe, pool['verdict'], by_num, reasons)
 
 
 def _story_entry(story, issue, facets, body_chars):
@@ -92,14 +98,18 @@ def _story_entry(story, issue, facets, body_chars):
 
 
 def _nearby(pool, plan, within):
-    """The highest-ranked stories this run could also build that the plan
-    did not take, because nothing links them to it."""
+    """The highest-ranked stories that are ready now and that the plan did not
+    take, because nothing links them to it. A waiting story is not listed: it
+    could not start beside the set, and its blocker is either in the set or
+    excluded with the reason."""
     chosen = {s['number'] for s in plan['selected']}
     left = {e['number'] for e in plan['excluded']}
     out = []
     for number in pool['rank']:
         if number in chosen or number in left or (within is not None
                                                   and number not in within):
+            continue
+        if pool['universe'][number].get('blockers') != []:
             continue
         issue = pool['by_num'].get(number) or {}
         out.append({'number': number, 'title': issue.get('title', ''),
@@ -156,9 +166,20 @@ def cmd_plan_set(args):
                      if n not in known and n not in pool['universe']]
     for entry in excluded:
         entry['title'] = (by_num.get(entry['number']) or {}).get('title', '')
+    # `Blocked` issues whose every edge has closed. They are judged as ready
+    # from this read, not left for a sweep to find; `--claim` writes them back
+    # to Backlog, or In Progress when they are in the set.
+    released = []
+    for n in pool['verdict'].get('releasable') or ():
+        issue = by_num.get(n) or {}
+        released.append({'number': n, 'title': issue.get('title', ''),
+                         'closed_blockers': wf_core.edge_states(
+                             ((issue.get('blockedBy') or {}).get('nodes')) or [],
+                             issue.get('repo'))[1]})
     common = {'mode': args.mode, 'size': size, 'size_clamped': clamped,
               'parent': parent, 'unread': unread, 'excluded': excluded,
-              'nearby': [] if seeds else _nearby(pool, plan, within)}
+              'nearby': [] if seeds else _nearby(pool, plan, within),
+              'released': released}
 
     if not plan['selected']:
         emit('no-candidates', EXIT_NO_CANDIDATES, **common,
@@ -178,7 +199,13 @@ def cmd_plan_set(args):
 
 def claim_plan(cfg, args, pool, plan, stories, common):
     """Claim a plan: every claim ref at once, then one assignment mutation and
-    one Stage and Start date mutation for the whole set. Emits and exits."""
+    one Stage and Start date mutation for the whole set. Emits and exits.
+
+    The build order is rebuilt from the edges each claim reads, not the ones
+    the plan read: an edge added or closed in between changes which story waits
+    on which, and a story whose edges cannot be read is dropped, never taken as
+    waiting on nothing. The same `Stage` mutation returns every releasable
+    `Blocked` issue outside the set to Backlog."""
     by_num = pool['by_num']
     numbers = [s['number'] for s in stories]
     targets = {n: 'issue-%d' % n for n in numbers}
@@ -195,9 +222,11 @@ def claim_plan(cfg, args, pool, plan, stories, common):
 
     dropped = {n: 'claimed by another run first'
                for n in numbers if outcomes[n] == 'lost'}
-    resolved = {}
+    resolved, fresh = {}, {}
     for n in won:
-        verdict, detail = validate_issue(cfg, by_num[n], set(numbers))
+        verdict, detail, open_refs = validate_issue_edges(cfg, by_num[n], set(numbers))
+        if open_refs is not None:
+            fresh[n] = [b for b in open_refs if b in outcomes]
         if verdict == 'resolved':
             close_resolved(cfg, by_num[n], detail)
             resolved[n] = detail
@@ -205,19 +234,21 @@ def claim_plan(cfg, args, pool, plan, stories, common):
             dropped[n] = 'blocked by %s, outside the set' % detail
         elif verdict != 'valid':
             dropped[n] = detail
+    blockers_of = {s['number']: fresh.get(s['number'], s['blocked_by']) for s in stories}
     changed = True
     while changed:
         changed = False
         for story in stories:
             n = story['number']
-            gone = [b for b in story['blocked_by'] if b in dropped]
+            gone = [b for b in blockers_of[n] if b in dropped]
             if n not in dropped and n not in resolved and gone:
                 dropped[n] = 'waits on #%d, which left the set' % gone[0]
                 changed = True
     release_claims([targets[n] for n in list(dropped) + list(resolved)
                     if outcomes[n] == 'won'])
-    kept = [dict(s, blocked_by=[b for b in s['blocked_by'] if b not in resolved])
+    kept = [dict(s, blocked_by=[b for b in blockers_of[s['number']] if b not in resolved])
             for s in stories if s['number'] not in dropped and s['number'] not in resolved]
+    kept = wf_core.plan_bulk_order(kept, max_size=None)[0]
     dropped_list = ([{'number': n, 'reason': r} for n, r in dropped.items()]
                     + [{'number': n, 'reason': 'already resolved by #%s, closed' % pr}
                        for n, pr in resolved.items()])
@@ -234,14 +265,28 @@ def claim_plan(cfg, args, pool, plan, stories, common):
     value, date_msg = start_date_input(cfg)
     extra = {n: [value] for n in kept_numbers} if value is not None else None
     stage = wf_core.STAGE_NAMES['stage-in-progress']
-    results = set_stages(cfg, {n: stage for n in kept_numbers}, ids, extra)
+    wanted = {n: stage for n in kept_numbers}
+    releasing = [e for e in common.get('released') or () if e['number'] not in wanted]
+    wanted.update({e['number']: wf_core.STAGE_NAMES['stage-backlog'] for e in releasing})
+    stage_ids = dict(ids)
+    stage_ids.update({e['number']: (by_num.get(e['number']) or {}).get('id')
+                      for e in releasing})
+    results = set_stages(cfg, wanted, stage_ids, extra)
     failed = [n for n in kept_numbers if not results[n][0]]
     if failed and extra:
         results.update(set_stages(cfg, {n: stage for n in failed}, ids))
+    comments = {e['number']: (stage_ids.get(e['number']), UNBLOCK_COMMENT % ', '.join(
+                    wf_core.ref_label(b) for b in e['closed_blockers']))
+                for e in releasing if results[e['number']][0]}
+    posted = add_comments(comments) if comments else {}
+    for entry in common.get('released') or ():
+        entry['stage_set'] = results.get(entry['number'], (False, ''))[0]
+        if entry['number'] in posted:
+            entry['commented'] = posted[entry['number']][0]
     for story in kept:
         n = story['number']
         story['wave'] = wave_of[n]
-        story['unblocks'] = [m for m in story['unblocks'] if m in wave_of]
+        story['unblocks'] = [m['number'] for m in kept if n in m['blocked_by']]
         story['stage_set'], story['stage_message'] = results[n]
         story['assigned'] = assigned[n][0]
         story['start_date_set'] = bool(extra) and n not in failed
@@ -249,6 +294,7 @@ def claim_plan(cfg, args, pool, plan, stories, common):
     record = {'lead': kept_numbers[0], 'mode': args.mode, 'parent': args.parent,
               'branch': None, 'waves': waves,
               'stories': [{'number': s['number'], 'title': s['title'],
+                           'id': ids.get(s['number']),
                            'wave': s['wave'], 'blocked_by': s['blocked_by'],
                            'built': False} for s in kept],
               'dropped': dropped_list}
@@ -344,16 +390,16 @@ def cmd_drop_story(args):
                 changed = True
 
     released = release_claims(['issue-%d' % n for n in drop])
-    repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    for n, reason in drop.items():
-        run(['gh', 'issue', 'edit', str(n), '--repo', repo, '--remove-assignee', '@me'])
-        run(['gh', 'issue', 'comment', str(n), '--repo', repo, '--body',
-             'Claimed for a bulk run and returned unbuilt: %s.' % reason])
+    ids = {n: stories[n].get('id') for n in drop}
+    missing = sorted(n for n, node_id in ids.items() if not node_id)
+    if missing:
+        ids.update(resolve_issue_ids(cfg, missing))
+    returned = return_unbuilt(ids, drop)
     # A story still waiting on an open issue goes back as Blocked, so the
     # sweep releases it; one waiting on nothing goes back to the pool.
     stages = set_stages(cfg, {
         n: wf_core.STAGE_NAMES['stage-blocked' if stories[n].get('blocked_by')
-                               else 'stage-backlog'] for n in drop})
+                               else 'stage-backlog'] for n in drop}, ids)
 
     remaining = [s for s in record.get('stories') or () if s['number'] not in drop]
     waves = wf_core.dependency_waves(remaining)
@@ -366,12 +412,65 @@ def cmd_drop_story(args):
                   + [{'number': n, 'reason': r} for n, r in drop.items()])
     _write_set(record)
     emit('ok', EXIT_OK, remaining=[s['number'] for s in remaining], waves=waves,
-         dropped=[{'number': n, 'reason': r,
-                   'claim_released': released.get('issue-%d' % n, False),
-                   'stage_set': stages[n][0],
-                   'stage_message': None if stages[n][0] else stages[n][1]}
+         dropped=[dict({'number': n, 'reason': r,
+                        'claim_released': released.get('issue-%d' % n, False),
+                        'stage_set': stages[n][0],
+                        'stage_message': None if stages[n][0] else stages[n][1]},
+                       **returned[n])
                   for n, r in drop.items()],
          reason='dropped %s' % ', '.join('#%d' % n for n in drop))
+
+
+DROP_COMMENT = 'Claimed for a bulk run and returned unbuilt: %s.'
+
+
+def return_unbuilt(ids, reasons):
+    """Take the signed-in account off many issues and say why on each, in one
+    mutation. {number: {'unassigned', 'commented', 'return_error'}}.
+
+    `ids` is {number: node id} and `reasons` {number: why it was returned}.
+    Two requests, the account read and one aliased mutation carrying a
+    `removeAssigneesFromAssignable` and an `addComment` per issue, where
+    `gh issue edit` and `gh issue comment` were two per story.
+    """
+    out = {n: {'unassigned': False, 'commented': False, 'return_error': None}
+           for n in reasons}
+    live = sorted(n for n in reasons if ids.get(n))
+    for n in reasons:
+        if not ids.get(n):
+            out[n]['return_error'] = 'could not read the issue node id'
+    if not live:
+        return out
+    ok, data, err = gh_graphql('query{ viewer { id } }')
+    viewer = ((data or {}).get('viewer') or {}).get('id') if ok else None
+    decls, body, variables = [], [], {}
+    if viewer:
+        decls.append('$u:ID!')
+        variables['u'] = viewer
+    for n in live:
+        decls.append('$i%d:ID!,$b%d:String!' % (n, n))
+        variables['i%d' % n] = ids[n]
+        variables['b%d' % n] = DROP_COMMENT % reasons[n]
+        if viewer:
+            body.append('u%d: removeAssigneesFromAssignable(input:{assignableId:$i%d,'
+                        'assigneeIds:[$u]}){ assignable { ... on Issue { id } } }'
+                        % (n, n))
+        body.append('c%d: addComment(input:{subjectId:$i%d,body:$b%d})'
+                    '{ subject { id } }' % (n, n, n))
+    code, raw, merr = _graphql_json('mutation(%s){ %s }' % (','.join(decls),
+                                                             ' '.join(body)),
+                                    variables)
+    unassigned = (_batch_result(code, raw, merr, ['u%d' % n for n in live],
+                                field='assignable') if viewer else {})
+    commented = _batch_result(code, raw, merr, ['c%d' % n for n in live],
+                              field='subject')
+    for n in live:
+        done, _node, why = unassigned.get('u%d' % n) or (
+            False, None, 'could not read the signed-in account (%s)' % (err or 'no detail'))
+        posted, _node, cwhy = commented['c%d' % n]
+        out[n].update(unassigned=done, commented=posted,
+                      return_error=None if done and posted else (why or cwhy))
+    return out
 
 
 def cmd_bulk_mark(args):

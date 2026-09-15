@@ -6,19 +6,19 @@ Throughout, **"the set" means the stories actually built**: the entries in `.cla
 
 ## 1. Push, and check each story for a sibling pull request
 
-Run these together in one tool-call batch — there is no ordering dependency between them, and the checks are one per story:
+Run these together in one tool-call batch — there is no ordering dependency between them:
 
 - Push the branch:
   ```
   git push -u origin HEAD
   ```
-- For **each** built story, check for an open pull request that already closes it on a different branch:
+- Check every built story at once for an open pull request that already closes it on a different branch:
   ```bash
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number} --exclude-branch {branch}
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number} {number} ... --exclude-branch {branch}
   ```
-  Exit 0 with `found: 0` is the expected answer; exit 20 means the lookup failed, so say so rather than reporting no duplicate.
+  Exit 0 with `found: 0` is the expected answer, and `by_issue` answers each story; exit 20 means the lookup failed, so say so rather than reporting no duplicate.
 
-Wait for all of them before continuing: the push must finish before step 2 creates the PR, and any sibling found changes the PR body.
+Wait for both before continuing: the push must finish before step 2 creates the PR, and any sibling found changes the PR body.
 
 Holding every story's claim through PR creation already serializes builders, so a sibling should never be found. `--exclude-branch` already drops your own PR, so anything returned is someone else's. Still create the pull request, but prepend one line per affected story:
 
@@ -78,7 +78,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" handoff --pr {pr_number} \
 
 Add `--gate-failed` when `.claude/gate-failed.flag` exists, which enters review as changes-requested rather than needs-review.
 
-It takes the pull request's review claim first, so the set is never held by no lock between the build and the review, then labels the pull request with the review-state entry label once, then for **each** issue sets its `Stage` to `In Review` and releases its claim ref — so the per-story release that used to be its own step is done here. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`.
+It takes the pull request's review claim first, so the set is never held by no lock between the build and the review, then labels the pull request with the review-state entry label once, then for **each** issue sets its `Stage` to `In Review` and releases its claim ref — so the per-story release that used to be its own step is done here. Finally it deletes `.claude/plan.md` and `label-cache.json`.
 
 It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read the payload instead — `pr_labelled` and `review_label`, and per issue `stage_set` and a `stage_message`. A failure on one issue does not affect the others; report what failed by issue number **and** title and carry on. The review matters more than a label.
 

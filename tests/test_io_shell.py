@@ -2816,6 +2816,32 @@ class TestIssueHierarchy(_ApplyCase):
         self.assertEqual(hub.issues[by_key['f']]['type'], 'Feature')
         self.assertEqual(hub.issues[by_key['s']]['parent'], by_key['f'])
 
+    def test_numbers_are_written_back_as_each_level_lands(self):
+        """A run that dies part way down the tree must leave the issues it
+        created recorded in the spec, or the re-run creates them again."""
+        fields = self._full()['fields']
+        entries = [
+            {'key': 'e', 'title': 'Epic', 'kind': 'epic', 'fields': dict(fields)},
+            {'key': 'f', 'title': 'Feature', 'kind': 'feature', 'parent': 'e',
+             'fields': dict(fields)},
+            {'key': 's', 'title': 'Story', 'kind': 'story', 'parent': 'f',
+             'fields': dict(fields)},
+        ]
+        hub, seen = _FakeHub(type_map=_FEATURE_CAPS['type_map']), []
+        real = wf.write_back_numbers
+
+        def spy(path, raw, spec_entries):
+            seen.append(len(hub.mutations))
+            return real(path, raw, spec_entries)
+
+        with mock.patch.object(wf, 'write_back_numbers', spy):
+            code, payload, _, written = self._run(entries, hub, caps=_FEATURE_CAPS)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        # One per created level, then the final one.
+        self.assertEqual(len(seen), 4)
+        self.assertLess(seen[0], seen[2])
+        self.assertTrue(all(e.get('number') for e in written['issues']))
+
     def test_a_feature_may_stand_without_an_epic(self):
         hub = _FakeHub(type_map=_FEATURE_CAPS['type_map'])
         entry = self._full(kind='feature', title='A feature')
@@ -3800,6 +3826,7 @@ class _StageHub(object):
         self.missing_field = missing_field
         self.fail = {int(n) for n in fail}
         self.writes = []      # (issue number, option name), in order
+        self.comments = []    # (issue number, body), in order
         self.queries = []
         self.mutations = []
 
@@ -3824,6 +3851,9 @@ class _StageHub(object):
     def graphql_json(self, query, variables):
         self.mutations.append(query)
         data, errors = {}, []
+        for alias in re.findall(r'(c\d+): addComment', query):
+            self.comments.append((int(alias[1:]), variables['%s_b' % alias]))
+            data[alias] = {'subject': {'id': variables['%s_s' % alias]}}
         for alias in re.findall(r'(s\d+): setIssueFieldValue', query):
             number = int(alias[1:])
             spec = variables['%s_f' % alias][0]
@@ -4034,23 +4064,25 @@ class TestStageTransitions(unittest.TestCase):
     def test_an_unblock_returns_a_released_issue_to_backlog(self):
         hub, calls = _StageHub(), []
         with hub.wired(calls):
-            result = wf.release_issue(_cfg(), {'number': 1313,
+            result = wf.release_issue(_cfg(), {'number': 1313, 'id': 'I_1313',
                                                'title': 'Device pass'}, [1311])
         self.assertEqual(hub.writes, [(1313, 'Backlog')])
         self.assertTrue(result['stage_set'])
-        body = [c for c in calls if 'comment' in c][0][-1]
-        self.assertIn('#1311', body)
+        # The comment goes out as a mutation on the node the read held.
+        self.assertEqual([n for n, _b in hub.comments], [1313])
+        self.assertIn('#1311', hub.comments[0][1])
+        self.assertFalse([c for c in calls if 'comment' in c])
 
     def test_non_code_ownership_moves_an_issue_out_of_blocked_without_releasing_it(self):
         """Non-code, never Backlog: no dependency closing will make a code
         agent able to do the work, so it must not pass through the pool."""
         hub, calls = _StageHub(), []
         with hub.wired(calls):
-            result = wf.rescope_issue(_cfg(), {'number': 1368, 'title': 't'},
-                                      'human')
+            result = wf.rescope_issue(_cfg(), {'number': 1368, 'id': 'I_1368',
+                                               'title': 't'}, 'human')
         self.assertEqual(hub.writes, [(1368, 'Non-code')])
         self.assertEqual(result['stage'], 'Non-code')
-        self.assertIn('Non-code', [c for c in calls if 'comment' in c][0][-1])
+        self.assertIn('Non-code', hub.comments[0][1])
 
     def test_a_resolved_issue_is_closed_and_set_to_done(self):
         hub, calls = _StageHub(), []
@@ -4111,9 +4143,17 @@ class TestUnblockSweep(unittest.TestCase):
             calls.append(list(cmd))
             return 0, '', ''
 
-        def fake_stage(cfg, number, stage):
-            (moves if moves is not None else []).append((number, stage))
-            return True, 'Stage set to %s' % stage
+        def fake_stages(cfg, wanted, ids=None, extra=None):
+            for number in sorted(wanted):
+                (moves if moves is not None else []).append((number, wanted[number]))
+            return {n: (True, 'Stage set to %s' % s) for n, s in wanted.items()}
+
+        def fake_comments(comments):
+            # Recorded beside the `gh` calls, in the shape the assertions below
+            # read: the word, the issue, and the body last.
+            for number in sorted(comments):
+                calls.append(['comment', number, comments[number][1]])
+            return {n: (True, 'commented') for n in comments}
 
         with mock.patch.object(wf, 'gh_graphql', fake_graphql), \
                 mock.patch.object(wf, 'run', fake_run), \
@@ -4122,7 +4162,8 @@ class TestUnblockSweep(unittest.TestCase):
                                       ownership=owned), '')), \
                 mock.patch.object(wf, 'blocker_deliveries',
                                   lambda *a, **k: deliveries or {}), \
-                mock.patch.object(wf, 'set_stage', fake_stage):
+                mock.patch.object(wf, 'set_stages', fake_stages), \
+                mock.patch.object(wf, 'add_comments', fake_comments):
             return wf.unblock_scan(_cfg(), dry_run=dry_run)
 
     def test_the_sweep_reads_the_stage_field_not_a_label_and_not_a_board(self):
@@ -4282,7 +4323,7 @@ class TestMarkBlocked(unittest.TestCase):
                                lambda c, input_text=None:
                                (calls.append(list(c)), (0, '', ''))[1]), \
                 mock.patch.object(wf, 'set_stage',
-                                  lambda cfg, number, stage:
+                                  lambda cfg, number, stage, node_id=None:
                                   (moves.append((number, stage)), (True, ''))[1]):
             wf.mark_blocked(_cfg(), {'number': 7}, '#9')
         return calls, moves
@@ -4654,16 +4695,24 @@ def _node(number, kind, *children, title=None):
             'children': list(children)}
 
 
-def _blocked_leaf(number, *blockers):
-    """One issue as `blocked_issues` returns it: Blocked, with its edges."""
-    return {'number': number, 'title': 'issue %d' % number, 'body': '',
-            'labels': [], 'milestone': None, 'url': '', 'assigned': False,
-            'assignees': [], 'stage': 'Blocked',
-            'blockedBy': {'nodes': [{'number': b, 'state': 'OPEN'} for b in blockers]}}
+def _tree_leaf(number, stage=None, blockers=(), parent=50, kind='User Story'):
+    """One open issue as the pool read returns it, under a container."""
+    return {'number': number, 'id': 'I_%d' % number, 'title': 'issue %d' % number,
+            'body': _CLEAR_BODY, 'labels': [], 'milestone': None, 'url': '',
+            'stage': stage, 'assigned': False, 'assignees': [], 'type': kind,
+            'parent': parent, 'sub_issues': {'total': 0, 'open': []},
+            'blockedBy': {'totalCount': len(blockers),
+                          'nodes': [{'number': b, 'state': 'OPEN'} for b in blockers]},
+            'open_prs': []}
 
 
 class TestCandidatesUnderParent(unittest.TestCase):
-    """`wf candidates --parent N`: the one set a container's tree offers."""
+    """`wf candidates --parent N`: the one set a container's tree offers.
+
+    The choice is `plan-set`'s, limited to N's leaves, so the pool read is the
+    only read of the leaves: a Blocked leaf is judged from the same issues as
+    a Backlog one.
+    """
 
     def setUp(self):
         for name, value in (('check_environment', None),
@@ -4674,41 +4723,41 @@ class TestCandidatesUnderParent(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def _run(self, tree, pool, blocked=(), stages=None, ownership=None, argv=(),
-             types=None, priority=None):
-        facets = (_facets(types=types, priority=priority, ownership=ownership,
-                          stage=stages)
-                  if ownership else _facets(types=types, priority=priority,
-                                            stage=stages))
+    def _run(self, tree, pool, ownership=None, argv=(), types=None, priority=None):
+        facets = (_facets(types=types, priority=priority, ownership=ownership)
+                  if ownership else _facets(types=types, priority=priority))
         with mock.patch.object(wf, 'fetch_container_tree', return_value=(True, tree, '')), \
                 mock.patch.object(wf, 'assemble_candidates', return_value=(True, pool, '')), \
-                mock.patch.object(wf, 'load_issue_facets', return_value=facets), \
-                mock.patch.object(wf, 'blocked_issues', return_value=(list(blocked), None)):
+                mock.patch.object(wf, 'load_issue_facets', return_value=facets):
             return _capture(wf.cmd_candidates,
                             _candidates_args('--parent', str(tree['number']), *argv))
+
+    @staticmethod
+    def _reason(payload, number):
+        return next(e['reason'] for e in payload['excluded'] if e['number'] == number)
 
     def test_backlog_leaves_and_a_leaf_waiting_on_them_are_offered(self):
         tree = _node(50, 'Feature', _node(51, 'User Story'), _node(52, 'User Story'),
                      _node(53, 'User Story'))
         code, payload = self._run(
-            tree, [_candidate(51, stage='Backlog')],
-            blocked=[_blocked_leaf(52, 51)],
-            stages={53: 'Non-code'},
+            tree, [_tree_leaf(51, 'Backlog'), _tree_leaf(52, 'Blocked', [51]),
+                   _tree_leaf(53, 'Non-code')],
             ownership={51: 'Code agent', 52: 'Code agent', 53: 'Human'})
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual([c['number'] for c in payload['candidates']], [51, 52])
         self.assertEqual([c['stage'] for c in payload['candidates']],
                          ['Backlog', 'Blocked'])
+        self.assertEqual([c['wave'] for c in payload['candidates']], [0, 1])
+        self.assertEqual(payload['candidates'][1]['blocked_by'], [51])
+        self.assertEqual(payload['waves'], [[51], [52]])
         self.assertEqual(payload['feature'], 50)
-        reason = next(e['reason'] for e in payload['excluded'] if e['number'] == 53)
-        self.assertIn('Non-code', reason)
-        self.assertIn('Human', reason)
+        self.assertIn('Non-code', self._reason(payload, 53))
 
     def test_a_blocked_leaf_waiting_on_other_work_is_not_offered(self):
         tree = _node(50, 'Feature', _node(51, 'User Story'), _node(52, 'User Story'))
-        _, payload = self._run(tree, [_candidate(51)], blocked=[_blocked_leaf(52, 99)])
+        _, payload = self._run(tree, [_tree_leaf(51), _tree_leaf(52, 'Blocked', [99])])
         self.assertEqual([c['number'] for c in payload['candidates']], [51])
-        self.assertIn('#99', payload['excluded'][0]['reason'])
+        self.assertIn('#99', self._reason(payload, 52))
 
     def test_a_blocked_leaf_outside_the_mode_is_not_offered(self):
         """`--mode` holds for a Blocked leaf as it does for the pool, because
@@ -4716,26 +4765,23 @@ class TestCandidatesUnderParent(unittest.TestCase):
         tree = _node(50, 'Feature', _node(51, 'Bug'), _node(52, 'User Story'))
         with mock.patch.object(wf, 'load_config',
                                return_value=(True, _cfg(type_capable=True), '')):
-            _, payload = self._run(tree, [_candidate(51)],
-                                   blocked=[_blocked_leaf(52, 51)],
+            _, payload = self._run(tree, [_tree_leaf(51, kind='Bug'),
+                                          _tree_leaf(52, 'Blocked', [51])],
                                    types={51: 'Bug', 52: 'User Story'},
                                    argv=('--mode', 'maintenance'))
         self.assertEqual([c['number'] for c in payload['candidates']], [51])
-        reason = next(e['reason'] for e in payload['excluded'] if e['number'] == 52)
-        self.assertIn('--mode maintenance', reason)
-        self.assertNotIn('Blocked', reason)
+        self.assertIn('--mode maintenance', self._reason(payload, 52))
 
     def test_a_blocked_leaf_waiting_on_no_issue_is_not_offered(self):
         """Blocked on a person or a decision, so no edge: it must neither be
         offered nor lead the run, however high its priority."""
         tree = _node(40, 'Epic', _node(50, 'Feature', _node(51, 'User Story')),
                      _node(60, 'Feature', _node(61, 'User Story')))
-        _, payload = self._run(tree, [_candidate(51)], blocked=[_blocked_leaf(61)],
+        _, payload = self._run(tree, [_tree_leaf(51), _tree_leaf(61, 'Blocked', parent=60)],
                                priority={51: 'Low', 61: 'High'})
         self.assertEqual(payload['feature'], 50)
         self.assertEqual([c['number'] for c in payload['candidates']], [51])
-        reason = next(e['reason'] for e in payload['excluded'] if e['number'] == 61)
-        self.assertIn('no open blocker', reason)
+        self.assertIn('no open blocker', self._reason(payload, 61))
 
     def test_a_blocked_leaf_keeps_its_priority_against_the_pool(self):
         """A High leaf waiting on a Medium one is built next, ahead of a Low
@@ -4743,34 +4789,45 @@ class TestCandidatesUnderParent(unittest.TestCase):
         tree = _node(50, 'Feature', _node(51, 'User Story'), _node(52, 'User Story'),
                      _node(53, 'User Story'))
         priority = {51: 'Low', 52: 'Medium', 53: 'High'}
-        pool = [_candidate(52), _candidate(51)]
-        _, payload = self._run(tree, pool, blocked=[_blocked_leaf(53, 52)],
-                               priority=priority)
+        pool = [_tree_leaf(52), _tree_leaf(51), _tree_leaf(53, 'Blocked', [52])]
+        _, payload = self._run(tree, pool, priority=priority)
         self.assertEqual([c['number'] for c in payload['candidates']], [52, 53, 51])
-        _, payload = self._run(tree, pool, blocked=[_blocked_leaf(53, 52)],
-                               priority=priority, argv=('--size', '2'))
+        _, payload = self._run(tree, pool, priority=priority, argv=('--size', '2'))
         self.assertEqual([c['number'] for c in payload['candidates']], [52, 53])
+
+    def test_a_prerequisite_outside_the_tree_is_taken_and_says_why(self):
+        """`within` holds for everything but a leaf's own prerequisite."""
+        tree = _node(50, 'Feature', _node(51, 'User Story'), _node(52, 'User Story'))
+        _, payload = self._run(tree, [_tree_leaf(51, 'Blocked', [70]), _tree_leaf(52),
+                                      _tree_leaf(70, parent=None),
+                                      _tree_leaf(71, parent=50)])
+        numbers = [c['number'] for c in payload['candidates']]
+        self.assertIn(70, numbers)
+        self.assertLess(numbers.index(70), numbers.index(51))
+        self.assertNotIn(71, numbers)
+        why = next(c['why'] for c in payload['candidates'] if c['number'] == 70)
+        self.assertIn('#51', why)
 
     def test_sub_issues_past_the_page_size_are_reported(self):
         tree = _node(50, 'Feature', _node(51, 'User Story'))
         tree['unread'] = 3
-        _, payload = self._run(tree, [_candidate(51)])
+        _, payload = self._run(tree, [_tree_leaf(51)])
         self.assertEqual(payload['unread'], [{'number': 50, 'unread': 3}])
         self.assertIn('#50', payload['reason'])
 
     def test_a_tree_read_in_full_reports_nothing_unread(self):
         tree = _node(50, 'Feature', _node(51, 'User Story'))
-        _, payload = self._run(tree, [_candidate(51)])
+        _, payload = self._run(tree, [_tree_leaf(51)])
         self.assertEqual(payload['unread'], [])
 
     def test_a_story_is_not_a_parent(self):
-        code, payload = self._run(_node(51, 'User Story'), [_candidate(51)])
+        code, payload = self._run(_node(51, 'User Story'), [_tree_leaf(51)])
         self.assertEqual(code, wf.EXIT_USAGE)
         self.assertIn('not an Epic or Feature', payload['reason'])
 
     def test_nothing_available_still_says_why(self):
         tree = _node(50, 'Feature', _node(51, 'User Story'))
-        code, payload = self._run(tree, [], stages={51: 'Parked'})
+        code, payload = self._run(tree, [_tree_leaf(51, 'Parked')])
         self.assertEqual(code, wf.EXIT_NO_CANDIDATES)
         self.assertIn('Parked', payload['excluded'][0]['reason'])
 

@@ -28,4 +28,10 @@ The Reviewer holds write tools because full mode fixes and pushes. Read-only mod
 
 **Bash(make \*)**: Make-based build systems.
 
+**Bash(bash \*wf.sh\*)**: the plugin's `wf` CLI, called as `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" …`; the closing quote after `.sh` means the entry below does not match it.
+
+**Bash(git remote \*)**: a local review resolves the base branch from the remote.
+
+**Bash(timeout \*), Bash(sleep \*)**: the auto-merge step waits a bounded time for checks, and the CI bypass waits before re-reading them.
+
 **Bash(bash \*.sh), Bash(bash \*.sh \*)**: run a project's quality gate and shell scripts by name. Restricted to `.sh` filenames on purpose: it blocks `bash -c "arbitrary code"` and process substitution (`bash <(curl ...)`) while allowing any named script.

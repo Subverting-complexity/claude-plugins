@@ -18,7 +18,7 @@ Everything a person reads — plans, questions, findings, summaries, and anythin
 One command answers the whole question. Do not re-derive any part of it by reading files, and do not run `gh` by hand: every check `preflight` makes is in Python, is covered by the offline test suite, and gives the same answer twice for the same project. A second implementation in shell is what this replaced.
 
 ```!
-if [ -f .claude/preflight-passed.txt ]; then
+if [ -n "$(find .claude/preflight-passed.txt -mmin -240 -newer ClaudeProject.md 2>/dev/null)" ]; then
   echo "PREFLIGHT_ALREADY_PASSED"
 elif [ -f .claude/preflight-dismiss.md ]; then
   echo "PREFLIGHT_SUPPRESSED"
@@ -32,7 +32,7 @@ fi
 
 **React to the token, do not re-derive it.**
 
-- `PREFLIGHT_ALREADY_PASSED` — preflight passed earlier this session. **Return silently and immediately**; the calling command proceeds.
+- `PREFLIGHT_ALREADY_PASSED` — preflight passed in the last four hours and `ClaudeProject.md` has not changed since. **Return silently and immediately**; the calling command proceeds.
 - `PREFLIGHT_SUPPRESSED` — the user dismissed preflight reminders. Return silently; the calling command proceeds. They re-enable by deleting `.claude/preflight-dismiss.md` or running `/synergy:setup`.
 - `PREFLIGHT_UNAVAILABLE` — the plugin's scripts are not on disk, so nothing was checked. Say so in one line and let the command proceed; do not substitute a hand-run version of the checks.
 - Otherwise read the JSON object it printed. `PREFLIGHT_EXIT` is `0` when nothing blocks and `26` when something does.

@@ -38,10 +38,11 @@ ISSUE_FIELD_VALUES_SELECTION = (
 
 ISSUE_SELECTION = (
     '  id number title body'
+    '  repository { nameWithOwner }'
     '  issueType { name }'
     '  milestone { title }'
     '  parent { number issueType { name } }'
-    '  blockedBy(first:50){ nodes { number } }'
+    '  blockedBy(first:50){ totalCount nodes { number repository { nameWithOwner } } }'
     '  labels(first:50){ nodes { name } }'
     + ISSUE_FIELD_VALUES_SELECTION
 )
@@ -274,6 +275,39 @@ def _batch_result(code, out, err, aliases, field='issue'):
     return out_map
 
 
+# Comments per aliased `addComment` request: GitHub's complexity budget, as
+# for every other aliased write here.
+COMMENT_BATCH = 20
+
+
+def add_comments(comments):
+    """Post many issue comments in one mutation. {number: (posted, message)}.
+
+    `comments` is {issue number: (issue node id, body)}. One request per
+    twenty comments, where `gh issue comment` was one each.
+    """
+    out = {n: (False, 'could not read the issue node id')
+           for n, (node_id, _body) in comments.items() if not node_id}
+    live = sorted(n for n, (node_id, _body) in comments.items() if node_id)
+    for start in range(0, len(live), COMMENT_BATCH):
+        chunk = live[start:start + COMMENT_BATCH]
+        decls, body, variables = [], [], {}
+        for n in chunk:
+            decls.append('$c%d_s:ID!,$c%d_b:String!' % (n, n))
+            body.append('c%d: addComment(input:{subjectId:$c%d_s,body:$c%d_b})'
+                        '{ subject { id } }' % (n, n, n))
+            variables['c%d_s' % n], variables['c%d_b' % n] = comments[n]
+        code, raw, err = _graphql_json('mutation(%s){ %s }' % (','.join(decls),
+                                                                ' '.join(body)),
+                                       variables)
+        results = _batch_result(code, raw, err, ['c%d' % n for n in chunk],
+                                field='subject')
+        for n in chunk:
+            posted, _node, why = results['c%d' % n]
+            out[n] = (True, 'commented') if posted else (False, why)
+    return out
+
+
 def send_create_batch(inputs):
     """Create many issues in one request. Returns {alias: (ok, issue, err)}.
 
@@ -306,7 +340,8 @@ def send_link_batch(ops):
         mutation = 'removeBlockedBy' if kind == 'unblocked-by' else 'addBlockedBy'
         decls.append('$%s_i:ID!,$%s_b:ID!' % (alias, alias))
         body.append('%s: %s(input:{issueId:$%s_i,blockingIssueId:$%s_b})'
-                    '{ issue { id blockedBy(first:%d){ nodes { number } } } }'
+                    '{ issue { id repository { nameWithOwner } blockedBy(first:%d){'
+                    ' totalCount nodes { number repository { nameWithOwner } } } } }'
                     % (alias, mutation, alias, alias, EDGE_PAGE))
         variables['%s_i' % alias] = args['issue_id']
         variables['%s_b' % alias] = args['blocking_id']
@@ -383,7 +418,8 @@ def issue_mismatches(number, issue, plan, expect_type=None, expect_parent=None,
             mismatches.append('#%s: parent is %s, expected #%s'
                               % (number, '#%s' % got if got else 'unset', expect_parent))
 
-    have = {n['number'] for n in (issue.get('blockedBy') or {}).get('nodes') or []}
+    # Local edges only: `org/other#5` is not the local #5 an entry names.
+    have = set(wf_core.local_blocker_numbers(issue))
     for want in expect_blocked_by or ():
         if want not in have:
             mismatches.append('#%s: missing blocked-by edge to #%s' % (number, want))

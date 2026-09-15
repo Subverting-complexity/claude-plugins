@@ -37,7 +37,7 @@ Original approval stands.
 <footer from review.config.md>
 ```
 
-Remove the `needs-re-review` label, ensure the `approved` label is present, then run **Step 11** (auto-merge on approval, if enabled) and exit. Do not proceed to Step 5.
+Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr <number> --verdict approved`, which leaves `approved` as the only review-state label, then run **Step 11** (auto-merge on approval, if enabled) and exit. Do not proceed to Step 5. In read-only mode, `read-only-mode.md` replaces this paragraph.
 
 **If trivial and previous verdict was `changes-requested`:** Check whether the trivial changes address every item in the previous review's Issues Remaining list. If they do — all flagged issues are resolved by the diff — post an abbreviated approval:
 
@@ -51,7 +51,7 @@ All previously flagged issues have been addressed with trivial fixes.
 <footer from review.config.md>
 ```
 
-Remove the `needs-re-review` and `changes-requested` labels, apply `approved`, then run **Step 11** (auto-merge on approval, if enabled) and exit. Do not proceed to Step 5.
+Run the same `review-finish --verdict approved`, then run **Step 11** (auto-merge on approval, if enabled) and exit. Do not proceed to Step 5.
 
 If the trivial changes do NOT address all Issues Remaining, proceed to Step 5 for a full re-review — the original issues are still unresolved.
 

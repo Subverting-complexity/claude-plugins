@@ -59,7 +59,8 @@ _RETIRED = wf_core.resolve_label(_RETIRED_KEY, {}, wf_core.RETIRED_LABELS)
 # The payload field each mutation's alias is read back by.
 _PAYLOAD = {'addComment': 'subject', 'closeIssue': 'issue',
             'removeLabelsFromLabelable': 'labelable',
-            'setIssueFieldValue': 'issue'}
+            'setIssueFieldValue': 'issue',
+            'removeAssigneesFromAssignable': 'assignable'}
 
 
 class _GitHub(object):
@@ -100,6 +101,8 @@ class _GitHub(object):
         return 0, '', ''
 
     def _query(self, query):
+        if 'viewer' in query:
+            return 0, json.dumps({'data': {'viewer': {'id': 'U_1'}}}), ''
         repository = {}
         for prefix, number in re.findall(r'(\w)(\d+): issue\(number:\d+\)', query):
             node = {'id': 'I_%s' % number, 'number': int(number)}
@@ -214,6 +217,48 @@ class TestHandoffCallCount(_Counted):
         released = {i['number']: i['claim_released'] for i in payload['issues']}
         self.assertEqual(released, {3: True, 4: True, 5: False, 6: True})
         self.assertEqual(len([c for c in calls if c[:2] == ['git', 'ls-remote']]), 1)
+
+
+class TestDropStoryCallCount(_Counted):
+    """Dropping a story and every story waiting on it: one mutation unassigns
+    and comments on all of them, where it was two `gh` calls per story."""
+
+    def _drop(self, dependents):
+        hub = _GitHub()
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        stories = [{'number': 1, 'title': 'a', 'id': 'I_1', 'blocked_by': [],
+                    'built': False}]
+        stories += [{'number': n, 'title': 't', 'id': 'I_%d' % n, 'blocked_by': [1],
+                     'built': False} for n in dependents]
+        os.makedirs(os.path.join(root, '.claude'))
+        with open(os.path.join(root, '.claude', 'bulk-set.json'), 'w',
+                  encoding='utf-8') as fh:
+            json.dump({'lead': 1, 'mode': 'story', 'branch': None,
+                       'waves': wf_core.dependency_waves(stories),
+                       'stories': stories, 'dropped': []}, fh)
+        args = wf.build_parser().parse_args(['drop-story', '--issue', '1',
+                                             '--reason', 'too big'])
+        with mock.patch.object(wf, 'prepare_cfg', _cfg), \
+                mock.patch.object(wf, 'resolve_org_capabilities',
+                                  lambda cfg, refresh=False, root=None, **_:
+                                  (True, dict(_CAPS), '')), \
+                mock.patch.object(wf, 'repo_root', lambda: root), \
+                mock.patch.object(wf, 'run', hub.run):
+            code, payload = _capture(args.func, args)
+        self.assertEqual(code, wf.EXIT_OK)
+        return payload, hub.calls
+
+    def test_one_story_and_four_cost_the_same(self):
+        one, one_calls = self._drop([])
+        four, four_calls = self._drop([2, 3, 4])
+        self.assertEqual(len(one_calls), len(four_calls))
+        self.assertEqual(len(four['dropped']), 4)
+        self.assertFalse([c for c in four_calls if c[:2] == ['gh', 'issue']])
+        for entry in four['dropped']:
+            self.assertTrue(entry['unassigned'])
+            self.assertTrue(entry['commented'])
+            self.assertTrue(entry['stage_set'])
 
 
 class TestClaimReleaseCallCount(_Counted):

@@ -32,6 +32,12 @@ The plugin used to ship `synergy/settings.json` with `"agent": "builder"`. A plu
 
 **Bash(bash \*.sh), Bash(bash \*.sh \*)**: run a project's quality gate and shell scripts by name. Restricted to `.sh` filenames on purpose: it blocks `bash -c "arbitrary code"` and process substitution (`bash <(curl ...)`) while allowing any named script.
 
+**Bash(bash \*wf.sh\*), Bash(bash \*project-config.sh\*)**: the plugin's own scripts. The workflows call them as `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" …`, and the closing quote after `.sh` means `Bash(bash *.sh *)` does not match, so every `wf` step would otherwise stop at a permission prompt nobody is there to answer.
+
+**Bash(git restore \*), Bash(git clean -fd)**: the Start clean and End clean steps in `synergy/templates/worktree-hygiene.md` discard a worktree provisioned dirty, and exit cleanup requires them. `git clean` is allowed only as `-fd`, never `-x`, so gitignored secrets and `node_modules` survive. `git reset` and `git stash` stay out.
+
+**Bash(date \*)**: the shared rules record the start time for the timeout.
+
 **Agent**: the subagent-spawning tool. It exists so `execute` can spawn its one read-only Reviewer in a fresh context for the independent review. Without it the review cannot happen in a separate context, and the workflow falls back to the session that wrote the code reviewing it, which is the thing that review exists to avoid. The spawned agent carries its own allowlist, so this does not widen what the Builder itself can do.
 
 **Bash(cat \*), Bash(ls \*), Bash(find \*), Bash(grep \*), Bash(rg \*), Bash(head \*), Bash(tail \*), Bash(wc \*)**: read-only filesystem utilities for when the dedicated Read, Glob and Grep tools are not enough (for example piping output for comparison).

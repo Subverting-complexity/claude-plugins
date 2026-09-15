@@ -72,7 +72,8 @@ POOL_SELECTION = (
     ' parent { number repository { nameWithOwner } }'
     ' subIssues(first:50){ totalCount nodes { number state'
     '  repository { nameWithOwner } } }'
-    ' blockedBy(first:20){ totalCount nodes { number state title } }'
+    ' blockedBy(first:20){ totalCount nodes { number state title'
+    '  repository { nameWithOwner } } }'
     ' closedByPullRequestsReferences(first:5){ totalCount nodes { number state } }'
 )
 
@@ -186,6 +187,9 @@ def stage_issues(cfg, stages, unassigned_only=True, extra=''):
                 'assigned': bool(assignees),
                 'assignees': [a.get('login') for a in assignees if a.get('login')],
                 'blockedBy': node.get('blockedBy') or {},
+                # The repository the read came from, so a blocker elsewhere
+                # is told apart from the local issue with its number.
+                'repo': repo,
             }))
         pages += 1
         page_info = connection.get('pageInfo') or {}

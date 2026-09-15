@@ -123,10 +123,12 @@ class TestPlanSetOpen(unittest.TestCase):
         self.assertEqual(numbers(plan), [1, 2])
 
     def test_a_story_whose_chain_is_too_long_does_not_lead(self):
+        # #3's chain is three stories and the cap is two, so #3 cannot lead.
+        # Its group still makes a set of two, which beats the unlinked #4.
         universe = {1: story(), 2: story([1]), 3: story([2]), 4: story()}
         plan = wf_core.plan_set(universe, [3, 4, 1, 2], max_size=2)
         self.assertNotIn(3, numbers(plan))
-        self.assertEqual(numbers(plan), [4])
+        self.assertEqual(numbers(plan), [1, 2])
 
     def test_an_empty_universe_is_an_empty_plan(self):
         plan = wf_core.plan_set({}, [])

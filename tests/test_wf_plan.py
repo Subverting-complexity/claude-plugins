@@ -70,7 +70,10 @@ class Harness(unittest.TestCase):
         for name, value in (('prepare_cfg', dict(CFG)),
                             ('check_environment', None),
                             ('load_config', (True, dict(CFG), '')),
-                            ('repo_root', self.root)):
+                            ('repo_root', self.root),
+                            # A write re-lists the claim refs first; the pool
+                            # fixture says who holds one.
+                            ('claimed_issue_numbers', set())):
             patch = mock.patch.object(wf, name, return_value=value)
             patch.start()
             self.addCleanup(patch.stop)
@@ -169,6 +172,53 @@ class TestPlanSet(Harness):
         release.assert_called_once_with(['issue-2'])
 
 
+class TestSelectionAcrossFilters(Harness):
+    """What `--mode` and a closed blocker do to a plan."""
+
+    def _plan(self, issues, the_facets, argv):
+        with mock.patch.object(wf, 'read_pool', return_value=(True, issues, '', set())), \
+                mock.patch.object(wf, 'load_issue_facets', return_value=the_facets):
+            return capture(['plan-set'] + list(argv))
+
+    def test_a_prerequisite_the_mode_holds_back_is_still_taken(self):
+        """`--mode` chooses which work to start, not what that work needs."""
+        issues = [issue(1), issue(2, blockers=[1])]
+        issues[0]['type'] = 'Bug'
+        the_facets = facets(issues, {})
+        the_facets['types'][1] = 'Bug'
+        code, payload = self._plan(issues, the_facets, ['--mode', 'feature'])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual([s['number'] for s in payload['stories']], [1, 2])
+
+    def test_a_prerequisite_a_person_owns_still_excludes(self):
+        issues = [issue(1), issue(2, blockers=[1])]
+        issues[0]['type'] = 'Bug'
+        the_facets = facets(issues, {})
+        the_facets['types'][1] = 'Bug'
+        the_facets['ownership'][1] = 'Human'
+        code, payload = self._plan(issues, the_facets, ['--mode', 'feature', '--issue', '2'])
+        self.assertEqual(code, wf.EXIT_NO_CANDIDATES)
+        self.assertIn('#1', payload['excluded'][0]['reason'])
+
+    def test_a_blocked_story_whose_edges_all_closed_is_released_and_reported(self):
+        freed = issue(5, stage='Blocked')
+        freed['blockedBy'] = {'totalCount': 1, 'nodes': [{'number': 8, 'state': 'CLOSED'}]}
+        issues = [freed]
+        code, payload = self._plan(issues, facets(issues, {}), [])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['released'],
+                         [{'number': 5, 'title': 'story 5', 'closed_blockers': [8]}])
+        self.assertEqual([s['number'] for s in payload['stories']], [5])
+
+    def test_nearby_lists_only_stories_that_are_ready(self):
+        issues = [issue(1, parent=40), issue(2, parent=40), issue(3),
+                  issue(4, blockers=[9]), issue(9, assigned=True)]
+        code, payload = self._plan(issues, facets(issues, {}), [])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual([s['number'] for s in payload['stories']], [1, 2])
+        self.assertEqual([n['number'] for n in payload['nearby']], [3])
+
+
 class TestDropAndMark(Harness):
 
     def write(self, stories):
@@ -180,22 +230,38 @@ class TestDropAndMark(Harness):
                        'stories': stories, 'dropped': []}, fh)
 
     def test_dropping_a_blocker_drops_what_waits_on_it(self):
-        self.write([{'number': 1, 'title': 'a', 'blocked_by': [], 'built': False},
-                    {'number': 2, 'title': 'b', 'blocked_by': [1], 'built': False},
-                    {'number': 3, 'title': 'c', 'blocked_by': [], 'built': False}])
+        self.write([{'number': 1, 'title': 'a', 'id': 'I_1', 'blocked_by': [], 'built': False},
+                    {'number': 2, 'title': 'b', 'id': 'I_2', 'blocked_by': [1], 'built': False},
+                    {'number': 3, 'title': 'c', 'id': 'I_3', 'blocked_by': [], 'built': False}])
+        answer = json.dumps({'data': dict(
+            {'u%d' % n: {'assignable': {'id': 'I_%d' % n}} for n in (1, 2)},
+            **{'c%d' % n: {'subject': {'id': 'I_%d' % n}} for n in (1, 2)})})
         with mock.patch.object(wf, 'release_claims',
                                side_effect=lambda t: {x: True for x in t}), \
-                mock.patch.object(wf, 'run', return_value=(0, '', '')), \
+                mock.patch.object(wf, 'run', return_value=(0, '', '')) as run, \
+                mock.patch.object(wf, 'gh_graphql',
+                                  return_value=(True, {'viewer': {'id': 'U_1'}}, '')), \
+                mock.patch.object(wf, '_graphql_json',
+                                  return_value=(0, answer, '')) as mutation, \
                 mock.patch.object(wf, 'set_stages',
-                                  side_effect=lambda cfg, wanted: {n: (True, '') for n in wanted}) \
-                as stages:
+                                  side_effect=lambda cfg, wanted, ids=None:
+                                  {n: (True, '') for n in wanted}) as stages:
             code, payload = capture(['drop-story', '--issue', '1', '--reason', 'too big'])
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(payload['remaining'], [3])
         self.assertEqual(stages.call_args[0][1],
                          {1: wf_core.STAGE_NAMES['stage-backlog'],
                           2: wf_core.STAGE_NAMES['stage-blocked']})
+        self.assertEqual(stages.call_args[0][2], {1: 'I_1', 2: 'I_2'})
         self.assertEqual([d['number'] for d in self.bulk_set()['dropped']], [1, 2])
+        # Both stories unassigned and told why in one mutation, not a
+        # `gh issue edit` and a `gh issue comment` each.
+        mutation.assert_called_once()
+        query = mutation.call_args[0][0]
+        self.assertEqual(query.count('removeAssigneesFromAssignable'), 2)
+        self.assertEqual(query.count('addComment'), 2)
+        run.assert_not_called()
+        self.assertTrue(all(d['unassigned'] and d['commented'] for d in payload['dropped']))
 
     def test_a_built_story_is_never_dropped(self):
         self.write([{'number': 1, 'title': 'a', 'blocked_by': [], 'built': True}])
@@ -234,6 +300,44 @@ class TestPickBuildsThePrerequisite(Harness):
         self.assertEqual(payload['prerequisite_for']['build_order'], [1, 2])
         self.assertEqual([u['number'] for u in payload['unblocks']], [2])
         self.assertEqual(payload['side_effects'][0]['action'], 'marked-blocked')
+
+    def test_a_named_parked_story_keeps_its_stage(self):
+        """Only a blank or Backlog story is set to Blocked: Parked is a hold
+        a person put on it, and building its prerequisite does not lift it."""
+        issues = [issue(1), issue(2, stage='Parked', blockers=[1])]
+        with self.pool(issues, {}), \
+                mock.patch.object(wf, 'fetch_issue_candidate',
+                                  return_value=issue(2, stage='Parked', blockers=[1])), \
+                mock.patch.object(wf, 'acquire_claim', return_value='won'), \
+                mock.patch.object(wf, 'apply_in_progress'), \
+                mock.patch.object(wf, 'set_stages',
+                                  side_effect=lambda cfg, wanted, *a, **k:
+                                  {n: (True, '') for n in wanted}) as stages:
+            code, payload = capture(['pick', '--issue', '2'])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['number'], 1)
+        for call in stages.call_args_list:
+            self.assertNotIn(2, call[0][1])
+        self.assertNotIn('marked-blocked',
+                         [e['action'] for e in payload.get('side_effects') or ()])
+
+    def test_a_named_story_whose_prerequisite_the_mode_holds_back_builds_it(self):
+        issues = [issue(1), issue(2, blockers=[1])]
+        issues[0]['type'] = 'Bug'
+        the_facets = facets(issues, {})
+        the_facets['types'][1] = 'Bug'
+        with mock.patch.object(wf, 'read_pool', return_value=(True, issues, '', set())), \
+                mock.patch.object(wf, 'load_issue_facets', return_value=the_facets), \
+                mock.patch.object(wf, 'fetch_issue_candidate',
+                                  return_value=issue(2, blockers=[1])), \
+                mock.patch.object(wf, 'acquire_claim', return_value='won'), \
+                mock.patch.object(wf, 'apply_in_progress'), \
+                mock.patch.object(wf, 'set_stages',
+                                  side_effect=lambda cfg, wanted, *a, **k:
+                                  {n: (True, '') for n in wanted}):
+            code, payload = capture(['pick', '--issue', '2', '--mode', 'feature'])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['number'], 1)
 
     def test_a_blocker_nobody_here_may_build_ends_the_pick_with_why(self):
         issues = [issue(9, assigned=True), issue(2, stage='Blocked', blockers=[9])]

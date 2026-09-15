@@ -371,13 +371,23 @@ def link_phase(cfg, plans, results, resolved, node_ids):
                 'blocked-by references nothing in this spec or repo: %s'
                 % ', '.join(str(u) for u in unresolved))
             continue
+        issue = result.get('issue') or {}
+        connection = issue.get('blockedBy') or {}
+        if restated and wf_core.edges_incomplete(connection):
+            # Diffing against a partial read would remove the edges past it
+            # as "not named" and miss the ones the entry already has.
+            result['errors'].append(
+                'the issue holds %d blocked-by edges and the read returned %d, so '
+                'which to add or remove is unknown; no edge was changed'
+                % (connection['totalCount'], len(connection.get('nodes') or [])))
+            continue
         result['blocked_by'] = numbers
         if not restated:
             continue
 
-        issue = result.get('issue') or {}
-        have = sorted({n['number'] for n
-                       in (issue.get('blockedBy') or {}).get('nodes') or []})
+        # Local edges only. An edge to `org/other#5` is not the local #5, so it
+        # is neither kept as #5 nor removed for not being named.
+        have = sorted(wf_core.local_blocker_numbers(issue))
         to_add, to_remove = wf_core.edge_diff(have, numbers)
         for blocker in to_add:
             blocking_id = node_ids.get(blocker)
@@ -433,9 +443,7 @@ def link_phase(cfg, plans, results, resolved, node_ids):
     for result in results:
         if 'blocked_by' not in result:
             continue
-        have = {n['number'] for n
-                in ((result.get('issue') or {}).get('blockedBy')
-                    or {}).get('nodes') or []}
+        have = set(wf_core.local_blocker_numbers(result.get('issue') or {}))
         for want in result['blocked_by']:
             if want not in have:
                 result['mismatches'].append('#%s: missing blocked-by edge to #%s'
@@ -519,7 +527,7 @@ def lifecycle_phase(cfg, plans, results):
         if owner is None:
             owner = issue_field_values(live).get(ownership_field)
         scope = wf_core.ownership_scope(owner)
-        open_blockers, _closed = wf_core.edge_states(edge_map.get(number) or [])
+        open_blockers, _closed = wf_core.edge_states(edge_map.get(number) or [], repo)
 
         retired = wf_core.retired_labels_on(names, cfg.get('labels') or {})
         if retired:
@@ -733,6 +741,7 @@ def cmd_issue_apply(args):
     node_ids = dict(ctx['issues'])
 
     ordered_plans, results = [], []
+    wb_failure = None
     for level in levels:
         level_plans = [plan_by_entry[id(e)] for e in level]
         creates = [p for p in level_plans if not p['entry'].get('number')]
@@ -740,6 +749,12 @@ def cmd_issue_apply(args):
         if creates:
             ordered_plans.extend(creates)
             results.extend(create_level(cfg, ctx, caps, creates, resolved, node_ids))
+            # Written back as each level lands, not once at the end: a run that
+            # dies part way through the tree must not leave issues it created
+            # unrecorded, or the re-run creates them a second time.
+            done, err = write_back_numbers(args.spec, raw, entries)
+            if not done and wb_failure is None:
+                wb_failure = err
         for plan in updates:
             ordered_plans.append(plan)
             results.append(update_entry(cfg, ctx, caps, plan, resolved, node_ids))
@@ -748,6 +763,8 @@ def cmd_issue_apply(args):
     lifecycle_phase(cfg, ordered_plans, results)
 
     wrote_back, wb_err = write_back_numbers(args.spec, raw, entries)
+    if wrote_back and wb_failure is not None:
+        wrote_back, wb_err = False, wb_failure
 
     payload = {'spec': args.spec, 'applied': results,
                'skipped_fields': sorted(skipped),

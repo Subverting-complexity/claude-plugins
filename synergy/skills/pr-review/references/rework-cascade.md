@@ -35,11 +35,9 @@ When the selected PR was picked from the `changes-requested` tier (its `prior_st
 
 6. **Resolve merge conflicts** if the PR is now conflicting: fetch the base branch, rebase, resolve conflicts, run the quality gate once, and force-push with `--force-with-lease`.
 
-7. **Assess significance and relabel:**
-   - Release the claim (`wf claim-release --pr <number>`).
-   - If all feedback was trivial AND all Issues Remaining were addressed → remove `changes-requested`, apply `needs-re-review`.
-   - If changes were substantial → remove `changes-requested`, apply `needs-re-review`.
-   - If some Issues Remaining were NOT addressed (need human judgment) → leave `changes-requested` in place.
+7. **Relabel, keeping the claim**, because the review continues below on this same PR:
+   - Every Issues Remaining item addressed → `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr <number> --verdict needs-re-review`.
+   - Some item needs human judgment and was not addressed → leave `changes-requested` in place.
 
 8. **Continue to review.** After the rework push, the PR has new commits. Proceed to **Step 2b** (duplicate reconciliation), then Step 3 to review the updated PR. The re-review in Step 4b will classify the diff since the last review and may fast-track to approval if the rework was trivial.
 

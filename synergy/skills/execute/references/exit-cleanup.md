@@ -6,7 +6,6 @@ The single canonical specification of exit cleanup — every other mention point
 
 ```
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
-rm -f .claude/claim-issue-{number}.sha
 ```
 
 `claim-release` is idempotent, so releasing a ref Phase 7 step 4 or `block-story` already released is a no-op rather than an error.
@@ -34,19 +33,15 @@ Then release the lock:
 
 ```
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --pr {pr_number}
-rm -f .claude/claim-pr-{pr_number}.sha
 ```
 
 ## 2. Delete the scratch files
 
 ```
-rm -f .claude/plan.md .claude/preflight-passed.txt \
-      .claude/label-cache.json .claude/issue-fields-cache.json \
-      .claude/no-merge.flag .claude/bypass-ci.flag .claude/gate-failed.flag \
-      .claude/self-review.flag
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" scratch-clean
 ```
 
-The `.flag` files carry an invocation flag or a phase outcome across compaction, so they must not outlive the run that wrote them.
+It deletes every per-run file under `.claude/` (the plan, the claim markers, the `.flag` files, `bulk-set.json`, spec and body files) and keeps the caches. It needs no network, so it runs even when `wf` could not reach GitHub. The `.flag` files carry an invocation flag or a phase outcome across compaction, so they must not outlive the run that wrote them.
 
 ## 3. Reconcile the working tree to clean
 

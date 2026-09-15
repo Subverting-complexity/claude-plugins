@@ -339,11 +339,22 @@ def cmd_sibling_pr(args):
         nodes = data['repository']['pullRequests']['nodes']
     except (KeyError, TypeError):
         emit('error', EXIT_ENV, reason='unexpected pullRequests shape')
-    prs = wf_core.select_sibling_prs(nodes, args.number, args.exclude_branch)
-    emit('ok', EXIT_OK, issue=args.number, found=len(prs), prs=prs,
-         reason=('no open PR closes #%d' % args.number) if not prs else
-                'open PR(s) closing #%d: %s'
-                % (args.number, ', '.join('#%d' % p['number'] for p in prs)))
+    # One read answers every issue asked about: a bulk set checks all its
+    # stories here instead of reading the same open PRs once per story.
+    numbers = [int(n) for n in (args.number if isinstance(args.number, list)
+                                else [args.number])]
+    by_issue = {n: wf_core.select_sibling_prs(nodes, n, args.exclude_branch)
+                for n in numbers}
+    found = {n: prs for n, prs in by_issue.items() if prs}
+    first = numbers[0]
+    emit('ok', EXIT_OK, issue=first, found=sum(len(p) for p in by_issue.values()),
+         prs=by_issue[first],
+         by_issue=[{'issue': n, 'prs': by_issue[n]} for n in numbers],
+         reason=('no open PR closes %s' % ', '.join('#%d' % n for n in numbers))
+                if not found else '; '.join(
+                    'open PR(s) closing #%d: %s'
+                    % (n, ', '.join('#%d' % p['number'] for p in prs))
+                    for n, prs in found.items()))
 
 
 # ── handoff ──────────────────────────────────────────────────────────────────
@@ -399,7 +410,9 @@ def cmd_handoff(args):
                        'stage_message': message,
                        'claim_released': releases.get('issue-%d' % number, False)})
 
-    for name in ('plan.md', 'preflight-passed.txt', 'label-cache.json'):
+    # The preflight marker is kept: an issue filed during review re-ran the
+    # whole preflight when it was deleted here. Exit cleanup removes it.
+    for name in ('plan.md', 'label-cache.json'):
         try:
             os.remove(os.path.join(repo_root(), '.claude', name))
         except OSError:

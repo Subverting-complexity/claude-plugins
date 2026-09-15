@@ -588,14 +588,37 @@ def spec_cycles(entries):
 
     Applied before any mutation runs: a cycle cannot be written correctly, and
     finding it after half the tree exists is much worse than finding it first.
+
+    Every reference is resolved to the entry it names before the walk, so a
+    cycle is found however each side spells the other: a `key`, a number, or
+    the number as a digit string. Keyed on the reference as written, an entry
+    `{"number": 12, "blocked_by": ["a"]}` and `{"key": "a", "blocked_by":
+    ["12"]}` were two nodes that never met, and the cycle was applied.
     """
-    graph, refs = {}, set()
-    for entry in entries:
+    index = {}
+    for position, entry in enumerate(entries):
+        for ref in _entry_refs(entry):
+            index.setdefault(ref, position)
+
+    def resolve(ref):
+        if ref in index:
+            return index[ref]
+        if isinstance(ref, int):
+            return index.get(str(ref))
+        if isinstance(ref, str) and ref.strip().isdigit():
+            return index.get(int(ref.strip()))
+        return None
+
+    graph, label = {}, {}
+    for position, entry in enumerate(entries):
         ref = entry.get('key') or entry.get('number')
         if ref is None:
             continue
-        refs.add(ref)
-        graph[ref] = [d for d in (entry.get('blocked_by') or [])]
+        label[position] = ref
+        # A reference that resolves to nothing points outside the spec, which
+        # is not this command's problem.
+        graph[position] = [p for p in (resolve(d) for d in entry.get('blocked_by') or [])
+                           if p is not None]
 
     cycles, state = [], {}
 
@@ -604,15 +627,15 @@ def spec_cycles(entries):
         stack.append(node)
         for nxt in graph.get(node, []):
             if nxt not in graph:
-                continue  # points outside the spec; not this command's problem
+                continue
             if state.get(nxt) == 'open':
-                cycles.append(stack[stack.index(nxt):] + [nxt])
+                cycles.append([label[p] for p in stack[stack.index(nxt):] + [nxt]])
             elif state.get(nxt) is None:
                 walk(nxt, stack)
         stack.pop()
         state[node] = 'done'
 
-    for ref in graph:
-        if state.get(ref) is None:
-            walk(ref, [])
+    for node in graph:
+        if state.get(node) is None:
+            walk(node, [])
     return cycles

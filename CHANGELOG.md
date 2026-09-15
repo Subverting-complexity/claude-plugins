@@ -6,6 +6,20 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 17.1.0
+
+**Related means linked, not identical.** `plan-set` treats two stories as related when a blocked-by edge joins them either way, they share a prerequisite, a parent or an Epic. An open pool gets its best-ranked related group of two or more rather than one story, a blocker is never cut while its dependent stays, and `--mode` or `--max-effort` never hold back a prerequisite. `candidates --parent` returns the same set `plan-set --parent` would. Waves no longer depend on input order.
+
+**Dependencies are read more carefully.** A blocker in another repository is kept by repository: open, it excludes the story; closed, it is satisfied. Edges that could not be fully read are reported as unknown rather than as none, and `pick`, `unblock` and `issue-apply` refuse to decide from a partial read. A `Blocked` issue whose blockers have all closed is released and considered in the same round, so `pick` no longer sweeps and retries on an empty pool. `pick --issue N` sets N to `Blocked` only from a blank or `Backlog` stage, and the pool never marks an issue another run claimed a moment earlier.
+
+**`bulk-execute` hands the mechanics of a wave to `wf`.** `wf bulk-schedule` splits each wave into batches that share no planned file, and `wf bulk-integrate --wave K` cherry-picks the builders' branches in build order, aborts a conflicting one, pushes once, marks what landed and deletes the temporary branches.
+
+**Fewer hand-run steps and GitHub requests.** `wf refine` sends a claimed issue back for refinement in one call. `wf scratch-clean` removes a run's scratch files, and `wf` keeps them out of `git status` through `.git/info/exclude`, so no consuming project needs `.gitignore` entries. `sibling-pr` answers several issues from one read, `review-finish` accepts `needs-re-review`, and the unblock sweep and `drop-story` batch their writes and comments.
+
+**Fixes.** `claim-reap` no longer crashes on a target it cannot read. The handoff keeps the preflight marker, and the marker expires after four hours, so one run no longer repeats preflight. The pull request review releases its claim and checks out the prior branch on every path, and read-only mode never posts or relabels. `issue-apply` writes created numbers back after each level. The projected config is always rebuilt when `ClaudeProject.md` is missing or changed.
+
+**Less loads per run.** `user-facing-communication` no longer loads its description into every session, the project config is projected by a script rather than an inline block, and the Builder agent has one clear job per spawn, with an allowlist that matches the `wf` calls it makes.
+
 ## synergy 17.0.1
 
 **The marketplace listing describes 17.0.0 in full.** The plugin and marketplace descriptions now mention Classification areas on filed issues and the reduced GitHub requests, and the keywords add `bulk-execute`, `dependencies` and `parallel-agents`. No behaviour changes.

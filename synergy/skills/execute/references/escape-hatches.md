@@ -20,7 +20,7 @@ This ensures the next session (or human) can pick up exactly where this one fail
 
 ## Blocked
 
-If any phase cannot proceed, run `/synergy:block-story` with details (it releases the claim for you), then run **Exit cleanup** (`references/exit-cleanup.md`; the claim release is a no-op at this point). Then pick the next story.
+If any phase cannot proceed, run `/synergy:block-story` with details (it releases the claim for you), then run **Exit cleanup** (`references/exit-cleanup.md`; the claim release is a no-op at this point) and exit. One run builds one story, so the next story is the next run's.
 
 ## Problem found (unrelated to this story)
 
@@ -36,17 +36,11 @@ If this story depends on another unmerged story (discovered during planning, not
   1. Branch the dependent story off the dependency branch.
   2. Set the dependent PR's base to the dependency branch.
   3. After the dependency merges, rebase onto the default branch and update the PR base.
-- **Dependency branch does not exist on the remote** (not started, or started but unpushed — you cannot build on what you cannot fetch): do **not** fork a parallel copy. Block this story with `/synergy:block-story` and pick the dependency — or the next available story — instead. The dependency is recorded as a native blocked-by edge, written through a one-entry `issue-apply` spec (`{"issues": [{"number": {this}, "blocked_by": [{dependency}]}]}`), never as a sentence in the body: the edge is the only thing `wf unblock` can read when the dependency closes.
-
-This is the same policy the Phase 1 dependency filter enforces (skip a dependent story while its dependency issue is open): chaining is the narrow exception for a dependency that is already pushed, not a parallel route around an unfinished one.
+- **Dependency branch does not exist on the remote** (not started, or started but unpushed — you cannot build on what you cannot fetch): do **not** fork a parallel copy. Block this story with `/synergy:block-story`, recording the dependency as a native blocked-by edge (a one-entry `issue-apply` spec, `{"issues": [{"number": {this}, "blocked_by": [{dependency}]}]}`), never as a sentence in the body: the edge is what `wf unblock` reads when the dependency closes. Then run **Exit cleanup** and exit. The next `pick --issue {this}` builds the dependency first, because a named story's open prerequisites are claimed before it.
 
 ## Story too broad
 
-If the story covers multiple distinct changes and needs to be broken into sub-stories before implementation can begin, run `/synergy:feature-discovery` to plan the breakdown with the user, then pick the first sub-story.
-
-## Review feedback
-
-Review feedback is no longer an escape hatch: Phases 8 and 9 review the PR in a fresh context and answer the findings inside this same run (`references/review-and-merge.md`). Feedback that arrives **after** the run ends — a human reviewer's comment, or a rework round the session budget cut short — is picked up by the next `/synergy:pr-review` invocation, which selects the `changes-requested` PR automatically, addresses the feedback, and re-reviews. No separate command is needed for it.
+If the story covers multiple distinct changes and needs to be broken into sub-stories before implementation can begin: with a user present, run `/synergy:feature-discovery` to plan the breakdown with them, then pick the first sub-story. Unattended (`.claude/unattended.flag` exists), send it to refinement with `wf refine` (`references/pick-paths.md`), naming the sub-stories it needs, run **Exit cleanup** and exit.
 
 ## Story too large
 

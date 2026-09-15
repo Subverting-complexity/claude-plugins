@@ -402,7 +402,7 @@ def claim_target_state(cfg, target):
     ok, data, _ = gh_json([kind, 'view', str(number), '--repo', repo,
                            '--json', fields])
     if not ok or not data:
-        return kind, number, None, [], False
+        return kind, number, None, [], False, False
     labels = [l['name'] for l in data.get('labels', [])]
     state = data.get('state', '')
     assigned = bool(data.get('assignees'))

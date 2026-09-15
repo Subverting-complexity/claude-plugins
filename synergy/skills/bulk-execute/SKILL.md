@@ -1,6 +1,6 @@
 ---
 name: bulk-execute
-description: 'Build 2 to 7 connected GitHub stories on one branch and one pull request, blockers first, reviewed and merged like execute. Trigger on "bulk execute", "batch these stories" or several issue numbers.'
+description: 'Build 2 to 7 connected GitHub stories on one branch and one pull request, blockers first, reviewed and merged like execute. Trigger on "bulk execute", "build these stories together" or several issue numbers.'
 depends-on:
   - code-architect
   - pr-review
@@ -41,26 +41,7 @@ Once, at the start, read `skills/execute/references/shared-phases.md` and follow
 A projection of `ClaudeProject.md` with the sections needed only later dropped. The shared rules say how to check it.
 
 ```!
-if [ -f .claude/projected-config.md ] && [ .claude/projected-config.md -nt ClaudeProject.md ] 2>/dev/null; then
-  cat .claude/projected-config.md
-elif [ -f ClaudeProject.md ]; then
-  # Drop the heavy sections only needed later. Pure POSIX shell (no
-  # awk/tee) so it runs on a Windows bash whose PATH lacks Unix coreutils.
-  mkdir -p .claude 2>/dev/null
-  drop=0
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      '## '*) case "$line" in
-          '## Issue Types & Fields'*|'## Project Board'*|'## Story Template'*|'## Session Budget'*|'## Reference Docs'*|'## Bundled Skills'*) drop=1 ;;
-          *) drop=0 ;;
-        esac ;;
-    esac
-    [ "$drop" -eq 0 ] && printf '%s\n' "$line"
-  done < ClaudeProject.md > .claude/projected-config.md
-  cat .claude/projected-config.md
-else
-  echo "ClaudeProject.md NOT FOUND"
-fi
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/project-config.sh"
 ```
 
 ## Session budget
@@ -80,7 +61,7 @@ Default mode is `story`. Override with `$ARGUMENTS.mode`: `feature` or `maintena
 
 ## Exit cleanup
 
-Run `skills/execute/references/exit-cleanup.md` with one substitution: its step 1 releases **one** issue claim, and this run holds one per story. Release them all in one `wf claim-release` call with `--issue` once per story in `.claude/bulk-set.json`, and delete every `.claude/claim-issue-{number}.sha`. Its step 2 also deletes `.claude/bulk-set.json`. Everything else applies unchanged.
+Run `skills/execute/references/exit-cleanup.md` with one substitution: its step 1 releases **one** issue claim, and this run holds one per story. Release them all in one `wf claim-release` call with `--issue` once per story in `.claude/bulk-set.json`. Its step 2 deletes `bulk-set.json` with the other scratch files. Everything else applies unchanged.
 
 ---
 
@@ -123,9 +104,11 @@ Use `/synergy:code-architect` **once**, over the whole set: every story's requir
 
 Build the waves in order. Shared code is written once, with the first story that needs it, and that commit says so.
 
-**Serially**, in build order, when a wave holds one story, when its stories share any file in the plan, or when no separate agent context can be spawned. For each story: implement it as the shared rules specify, run Phase 5's per-story checks, commit it (Phase 6), push, then run `wf bulk-mark --built {number}`.
+Before each wave, run `wf bulk-schedule` and read that wave's entry. It splits the wave's unbuilt stories into `batches` from the files `.claude/plan.md` lists: stories in one batch share no file, and batches run one after another. A story in `unplanned` names no files, so it gets a batch of its own. Files under `shared` go in with the first story that names them.
 
-**In parallel** when a wave holds two or more stories whose planned files do not overlap. Push the branch first, then spawn one `synergy:Builder` agent per story in a single message, each with `isolation: "worktree"`. Give each its story's number, title, body and plan section, the shared branch name, and these instructions: start from `origin/{branch}`, create `{branch}--{number}`, implement only this story, run the checks covering what it touched, commit with the message Phase 6 describes, push `{branch}--{number}`, and report the commit SHAs and the check results. When they have all returned, for each story in build order: `git fetch origin {branch}--{number}`, `git cherry-pick` its commits onto the shared branch, push, run `wf bulk-mark --built {number}`, and delete the temporary branch. A cherry-pick that conflicts is aborted (`git cherry-pick --abort`) and that story is rebuilt serially on the shared branch. A builder that failed its checks is treated as Phase 5's red check for that story.
+**A batch of one story, or any batch when no separate agent context can be spawned**, is built serially on the shared branch: implement it as the shared rules specify, run Phase 5's per-story checks, commit it (Phase 6), push, then run `wf bulk-mark --built {number}`.
+
+**A batch of two or more stories** is built in parallel. Push the branch first, then spawn one `synergy:Builder` agent per story in a single message, each with `isolation: "worktree"`. Give each its story's number, title, body and plan section, the shared branch name, and these instructions: start from `origin/{branch}`, create `{branch}--{number}`, implement only this story, run the checks covering what it touched, commit with the message Phase 6 describes, push `{branch}--{number}`, and report the check results. When they have all returned, run `wf bulk-integrate --wave {K}`: it cherry-picks each branch in build order, pushes once, marks what landed as built and deletes those branches. On `partial`, rebuild each story in `conflicted`, `missing` or `empty` serially. On `error`, stop and report `push_error`. A builder that failed its checks is treated as Phase 5's red check for that story.
 
 After the last wave, run Phase 5's full gate for the set before Phase 7.
 

@@ -12,13 +12,16 @@ Every phase flows into the next without pausing for user input, except at a stop
 
 ```
 mkdir -p .claude
-rm -f .claude/no-merge.flag .claude/bypass-ci.flag \
+rm -f .claude/no-merge.flag .claude/bypass-ci.flag .claude/unattended.flag \
       .claude/gate-failed.flag .claude/self-review.flag
 rm -f .claude/bulk-set.json    # bulk-execute only
 git ls-files -z --others -- '.claude/claim-issue-*.sha' | xargs -0 -r rm -f
 touch .claude/no-merge.flag    # only when --no-merge was passed
 touch .claude/bypass-ci.flag   # only when --bypass-ci was passed
+touch .claude/unattended.flag  # only when nobody is present to answer
 ```
+
+**Unattended** means nobody will answer a question: this run was spawned as an agent (the `synergy:Builder`), runs in a scheduled routine or a non-interactive `claude -p`, or the user asked for it to run without questions. Every step that would ask a person checks `.claude/unattended.flag` and takes its unattended branch instead.
 
 The `rm -f` lines clear what a hard-killed run left behind; an inherited `bypass-ci.flag` would quietly disarm the CI gate. Sweeping claim markers is safe here and nowhere else, because this run holds no claim yet: `--others` spares markers a project committed, and `claim-issue-*` spares a `claim-pr-*.sha` a review session in this checkout may still hold.
 
@@ -29,7 +32,7 @@ The `rm -f` lines clear what a hard-killed run left behind; an inherited `bypass
 The skill's auto-loaded configuration block has already run.
 
 1. If it printed "ClaudeProject.md NOT FOUND", stop with exactly one message, "ClaudeProject.md not found — run /synergy:setup.", and do not chain into preflight for the same cause.
-2. Run `test -f .claude/preflight-passed.txt && echo "PREFLIGHT_ALREADY_PASSED"`. The file is written by a clean or WARNING-only preflight and deleted by **Exit cleanup**, so it is valid for this session. If it is absent, invoke `/synergy:preflight`. On "Configure now", wait for setup and ask the user to re-run the command, because the loaded configuration is stale. On "Continue anyway" or "Don't remind me", proceed.
+2. Run `[ -n "$(find .claude/preflight-passed.txt -mmin -240 -newer ClaudeProject.md 2>/dev/null)" ] && echo "PREFLIGHT_ALREADY_PASSED"`. A clean or warning-only preflight writes the marker, and it stands for four hours unless `ClaudeProject.md` changes, so back-to-back runs skip the check. Otherwise invoke `/synergy:preflight`. Unattended, a critical finding is a stop: report it verbatim and exit. With a user present, on "Configure now", wait for setup and ask the user to re-run the command, because the loaded configuration is stale; on "Continue anyway" or "Don't remind me", proceed.
 3. The projection must contain both `## Identity` and `## Quality Gate`. If either is missing, stop with "ClaudeProject.md is missing required section: {name} — run /synergy:setup."
 4. Read `CLAUDE.md` for project rules and build principles.
 
@@ -37,7 +40,7 @@ The projection drops sections needed only later. When a later phase resolves the
 
 ## API quota
 
-Read the quota once, at the start, and again before each batch of `gh` calls, keeping the result in context only:
+Read the quota at the start and again before Phase 7, keeping the result in context only:
 
 ```
 gh api rate_limit --jq '.rate.remaining'

@@ -10,8 +10,9 @@ from datetime import datetime, timezone
 import wf_core
 from wf_candidates import load_issue_facets, stage_issues
 from wf_config import prepare_cfg
-from wf_io import EXIT_ENV, EXIT_OK, emit, eprint, gh_graphql, run
-from wf_stage import set_stage
+from wf_io import EXIT_ENV, EXIT_OK, emit, eprint, gh_graphql
+from wf_issue_io import add_comments
+from wf_stage import set_stages
 
 
 # ── the unblock sweep ────────────────────────────────────────────────────────
@@ -26,16 +27,15 @@ from wf_stage import set_stage
 # than released, because no edge closing will ever make a code
 # agent able to do it.
 
-UNBLOCK_PAGE = 50
 UNBLOCK_BLOCKER_BATCH = 20
 
-_UNBLOCK_SEARCH = (
-    'query($q:String!,$c:String){'
-    ' search(query:$q, type:ISSUE, first:%d, after:$c){'
-    '  pageInfo { hasNextPage endCursor }'
-    '  nodes { ... on Issue { id number title body'
-    '   labels(first:30){ nodes { name } }'
-    '   blockedBy(first:20){ nodes { number state title } } } } } }' % UNBLOCK_PAGE
+# What the sweep reads about each Blocked issue beyond the basics. The type
+# with the field values lets the ownership check use this same read, and
+# `totalCount` says when an issue holds more edges than one page returns.
+BLOCKED_SELECTION = (
+    'issueType { name }'
+    ' blockedBy(first:20){ totalCount nodes { number state title'
+    '  repository { nameWithOwner } } }'
 )
 
 
@@ -51,8 +51,7 @@ def blocked_issues(cfg):
     """
     ok, issues, err = stage_issues(
         cfg, (wf_core.STAGE_NAMES['stage-blocked'],),
-        unassigned_only=False,
-        extra='blockedBy(first:20){ nodes { number state title } }')
+        unassigned_only=False, extra=BLOCKED_SELECTION)
     if not ok:
         return [], err
     return issues, None
@@ -67,10 +66,14 @@ def blocker_deliveries(cfg, numbers, now=None):
     nothing: it delivered one half of a story and left the issue open for the
     other half, so GitHub records no closing reference to read. Which reference
     counts is `wf_core.recent_delivery`'s decision, and it is a strict one.
+
+    Local numbers only: a blocker in another repository is not an issue this
+    repository's query can read.
     """
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     found = {}
-    ordered = sorted({int(n) for n in (numbers or ())})
+    ordered = sorted({int(n) for n in (numbers or ())
+                      if isinstance(n, int) or str(n).isdigit()})
     for start in range(0, len(ordered), UNBLOCK_BLOCKER_BATCH):
         batch = ordered[start:start + UNBLOCK_BLOCKER_BATCH]
         parts = [
@@ -113,8 +116,14 @@ RESCOPE_COMMENT = (
 )
 
 
-def release_issue(cfg, issue, closed_numbers):
-    """Release one issue: set `Stage` to Backlog, then say why. Result dict.
+def settle_blocked(cfg, releases=(), rescopes=(), dry_run=False):
+    """Release and rescope many Blocked issues at once. (released, rescoped).
+
+    `releases` is [(issue, closed blockers)], each going back to Backlog;
+    `rescopes` is [(issue, scope)], each going to Non-code. One `Stage`
+    mutation for all of them, using the node ids the read already holds, and
+    one comment mutation for every write that landed. It was a `Stage` write
+    and a `gh issue comment` per issue.
 
     The write is the release. Backlog is the pick pool, so an issue arriving
     there is the issue becoming available -- there is no separate label to
@@ -125,56 +134,75 @@ def release_issue(cfg, issue, closed_numbers):
     three issues were released by hand and re-blocked two minutes later by a
     concurrent session that took the change for automation stripping labels.
     Saying who did it and why is what stops that.
-    """
-    repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    number = issue['number']
-    result = {'issue': number, 'title': issue.get('title'),
-              'closed_blockers': closed_numbers}
-    # The pool is the *unassigned* issues in Backlog, so an issue that kept the
-    # assignee it had when it was blocked arrives in the pool and is still
-    # invisible to every pick. That is said rather than fixed: taking somebody's
-    # name off their issue is not a sweep's decision to make.
-    if issue.get('assigned'):
-        result['still_assigned'] = issue.get('assignees') or True
-        eprint('wf: #%s was released to Backlog but is still assigned, so no '
-               'pick will offer it until somebody unassigns it' % number)
-    written, message = set_stage(cfg, number,
-                                 wf_core.STAGE_NAMES['stage-backlog'])
-    result['stage_set'] = written
-    if not written:
-        result['stage_message'] = message
-        return result
-
-    named = ', '.join('#%d' % n for n in closed_numbers)
-    run(['gh', 'issue', 'comment', str(number), '--repo', repo,
-         '--body', UNBLOCK_COMMENT % named])
-    return result
-
-
-def rescope_issue(cfg, issue, scope, dry_run=False):
-    """Set one non-code issue's `Stage` from Blocked to Non-code.
 
     A rescope rather than a release, and the distinction is the point: browser
     and human work is never pickable by a code agent, so it must leave Blocked
-    without ever passing through the pool. Which of the two stages an issue
-    belongs in is `Ownership`, read once for the sweep.
+    without ever passing through the pool.
     """
-    repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    number = issue['number']
-    stage = wf_core.STAGE_NAMES['stage-non-code']
-    result = {'issue': number, 'title': issue.get('title'), 'scope': scope,
-              'stage': stage}
-    if dry_run:
-        result['dry_run'] = True
-        return result
-    written, message = set_stage(cfg, number, stage)
-    result['stage_set'] = written
-    if not written:
-        result['stage_message'] = message
-        return result
-    run(['gh', 'issue', 'comment', str(number), '--repo', repo,
-         '--body', RESCOPE_COMMENT % (stage, scope)])
-    return result
+    non_code = wf_core.STAGE_NAMES['stage-non-code']
+    released, rescoped = [], []
+    for issue, closed in releases:
+        entry = {'issue': issue['number'], 'title': issue.get('title'),
+                 'closed_blockers': list(closed)}
+        if dry_run:
+            entry['dry_run'] = True
+        released.append(entry)
+    for issue, scope in rescopes:
+        entry = {'issue': issue['number'], 'title': issue.get('title'),
+                 'scope': scope, 'stage': non_code}
+        if dry_run:
+            entry['dry_run'] = True
+        rescoped.append(entry)
+    if dry_run or not (released or rescoped):
+        return released, rescoped
+
+    wanted = {issue['number']: wf_core.STAGE_NAMES['stage-backlog']
+              for issue, _closed in releases}
+    wanted.update({issue['number']: non_code for issue, _scope in rescopes})
+    ids = {issue['number']: issue.get('id')
+           for issue, _x in list(releases) + list(rescopes)}
+    stages = set_stages(cfg, wanted, ids)
+
+    bodies = {}
+    for entry, (issue, closed) in zip(released, releases):
+        # The pool is the *unassigned* issues in Backlog, so an issue that kept
+        # the assignee it had when it was blocked arrives in the pool and is
+        # still invisible to every pick. That is said rather than fixed: taking
+        # somebody's name off their issue is not a sweep's decision to make.
+        if issue.get('assigned'):
+            entry['still_assigned'] = issue.get('assignees') or True
+            eprint('wf: #%s was released to Backlog but is still assigned, so no '
+                   'pick will offer it until somebody unassigns it' % issue['number'])
+        bodies[issue['number']] = UNBLOCK_COMMENT % ', '.join(
+            wf_core.ref_label(n) for n in closed)
+    for entry, (issue, scope) in zip(rescoped, rescopes):
+        bodies[issue['number']] = RESCOPE_COMMENT % (non_code, scope)
+
+    comments = {}
+    for entry in released + rescoped:
+        n = entry['issue']
+        written, message = stages.get(n, (False, 'not written'))
+        entry['stage_set'] = written
+        if not written:
+            entry['stage_message'] = message
+        else:
+            comments[n] = (ids.get(n), bodies[n])
+    posted = add_comments(comments) if comments else {}
+    for entry in released + rescoped:
+        if entry['issue'] in posted:
+            entry['commented'] = posted[entry['issue']][0]
+    return released, rescoped
+
+
+def release_issue(cfg, issue, closed_numbers):
+    """Release one issue: `settle_blocked` for one. Result dict."""
+    return settle_blocked(cfg, releases=[(issue, closed_numbers)])[0][0]
+
+
+def rescope_issue(cfg, issue, scope, dry_run=False):
+    """Set one non-code issue's `Stage` from Blocked to Non-code: `settle_blocked`
+    for one. Result dict."""
+    return settle_blocked(cfg, rescopes=[(issue, scope)], dry_run=dry_run)[1][0]
 
 
 def unblock_scan(cfg, dry_run=False, only=None, now=None):
@@ -187,7 +215,8 @@ def unblock_scan(cfg, dry_run=False, only=None, now=None):
       rescoped  browser or human work that was sitting in Blocked, set to
                 Non-code instead. Never released: no edge closing will ever
                 make a code agent able to do it.
-      held      at least one blocker is still open, so it stays
+      held      at least one blocker is still open, or the issue holds more
+                edges than the read returned (`edges_unread`), so it stays
       partials  held, but a blocker has just merged something. This is the case
                 no edge can describe, reported rather than acted on.
       no_edges  Blocked with no edge at all, which a person set, so this never
@@ -201,10 +230,14 @@ def unblock_scan(cfg, dry_run=False, only=None, now=None):
     close: releasing them would have put a job needing a phone in someone's
     hand into the code agent's pool.
 
-    Ownership is read from the org's field for the whole repository in one
-    query. An issue with no value is **held** rather than released, and named:
-    the sweep will not decide that an issue nobody has said who owns is safe
-    for a code agent, which is the same rule the picker follows.
+    Ownership is read with the issues themselves. An issue with no value is
+    **held** rather than released, and named: the sweep will not decide that
+    an issue nobody has said who owns is safe for a code agent, which is the
+    same rule the picker follows.
+
+    An issue whose edges ran past the read is held, never released: the edge
+    past the page may be the one still open. A blocker in another repository
+    holds while it is open, like any other.
     """
     issues, error = blocked_issues(cfg)
     wanted = {int(n) for n in (only or ())} or None
@@ -212,10 +245,11 @@ def unblock_scan(cfg, dry_run=False, only=None, now=None):
     # sweep: with no ownership values every blocked issue reads as unowned, so a
     # failed query would report a stage full of issues nobody owns and release
     # none of them.
-    facets = load_issue_facets(cfg, [i['number'] for i in issues])
+    facets = load_issue_facets(cfg, [i['number'] for i in issues], issues=issues)
     ownership = facets.get('ownership') or {}
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
 
-    released, rescoped, held, no_edges, unowned = [], [], [], [], []
+    releases, rescopes, held, no_edges, unowned = [], [], [], [], []
     for issue in issues:
         if wanted is not None and issue['number'] not in wanted:
             continue
@@ -225,24 +259,29 @@ def unblock_scan(cfg, dry_run=False, only=None, now=None):
             unowned.append({'issue': issue['number'], 'title': issue.get('title')})
             continue
         if scope != wf_core.SCOPE_CODE:
-            rescoped.append(rescope_issue(cfg, issue, scope, dry_run=dry_run))
+            rescopes.append((issue, scope))
             continue
-        edges = (issue.get('blockedBy') or {}).get('nodes') or []
-        verdict, open_numbers, closed_numbers = wf_core.unblock_verdict(edges)
-        if verdict == wf_core.UNBLOCK_NO_EDGES:
+        connection = issue.get('blockedBy') or {}
+        edges = connection.get('nodes') or []
+        verdict, open_numbers, closed_numbers = wf_core.unblock_verdict(edges, repo)
+        if wf_core.edges_incomplete(connection):
+            held.append({'issue': issue['number'], 'title': issue.get('title'),
+                         'open_blockers': open_numbers,
+                         'closed_blockers': closed_numbers,
+                         'edges_unread': connection['totalCount'] - len(edges)})
+        elif verdict == wf_core.UNBLOCK_NO_EDGES:
             no_edges.append(issue['number'])
         elif verdict == wf_core.UNBLOCK_HOLD:
             held.append({'issue': issue['number'], 'title': issue.get('title'),
                          'open_blockers': open_numbers,
                          'closed_blockers': closed_numbers})
-        elif dry_run:
-            released.append({'issue': issue['number'], 'title': issue.get('title'),
-                             'closed_blockers': closed_numbers, 'dry_run': True})
         else:
-            released.append(release_issue(cfg, issue, closed_numbers))
+            releases.append((issue, closed_numbers))
+    released, rescoped = settle_blocked(cfg, releases, rescopes, dry_run=dry_run)
 
     deliveries = blocker_deliveries(
-        cfg, {n for entry in held for n in entry['open_blockers']}, now)
+        cfg, {n for entry in held for n in entry['open_blockers']
+              if isinstance(n, int)}, now)
     partials = []
     for entry in held:
         recent = [{'blocker': n, 'merged_pr': deliveries[n]['number'],
@@ -275,14 +314,3 @@ def cmd_unblock(args):
                     % (wf_core.STAGE_NAMES['stage-blocked'], report['error']),
              dry_run=bool(args.dry_run), **report)
     emit('ok', EXIT_OK, dry_run=bool(args.dry_run), **report)
-
-
-def auto_unblock_scan(cfg):
-    """Release any blocked issue whose dependencies have all closed.
-
-    The last-resort sweep: `pick` calls this when it found nothing to pick, on
-    the theory that the pool may only look empty. It is the same sweep
-    `wf unblock` and `post-merge` run, so all three agree on what "released"
-    means. Returns the number of issues released.
-    """
-    return len(unblock_scan(cfg).get('released') or [])

@@ -160,18 +160,82 @@ UNBLOCK_NO_EDGES = 'no-edges'
 PARTIAL_WINDOW_DAYS = 14
 
 
-def edge_states(edges):
-    """Split native blocked-by edges into (open_numbers, closed_numbers).
+def blocker_ref(edge, repo=None):
+    """One blocked-by edge as a reference: the issue number for an issue in
+    `repo`, `'owner/name#N'` for one in another repository, None if unreadable.
+
+    A blocker in another repository is a different issue from the local one
+    that shares its number, so it cannot be keyed by the number alone: local
+    #12 blocked by `org/other#5` read as blocked by local #5, and a run that
+    could build local #5 called #12 buildable. The edge only says where it
+    lives when the read asked for `repository { nameWithOwner }`; an edge
+    that does not say, or a caller that does not know its own repository, is
+    taken as local.
+    """
+    try:
+        number = int((edge or {}).get('number'))
+    except (TypeError, ValueError):
+        return None
+    home = ((edge.get('repository') or {}).get('nameWithOwner')
+            if isinstance(edge.get('repository'), dict) else None)
+    if repo and home and home.lower() != repo.lower():
+        return '%s#%d' % (home, number)
+    return number
+
+
+def ref_label(ref):
+    """A blocker reference in words: `#5`, or `org/other#5` as it stands."""
+    return '#%d' % ref if isinstance(ref, int) else str(ref)
+
+
+def ref_sort_key(ref):
+    """Orders local numbers first, then foreign references, without comparing
+    an int with a str."""
+    return (0, ref, '') if isinstance(ref, int) else (1, 0, str(ref))
+
+
+def local_blocker_numbers(issue, repo=None):
+    """The local issue numbers an issue's `blockedBy` read names.
+
+    `repo` defaults to the issue's own `repository { nameWithOwner }` where the
+    read carried it. A foreign edge is left out, so an entry naming local #5
+    is never satisfied, or diffed against, by `org/other#5`.
+    """
+    home = repo or ((issue.get('repository') or {}).get('nameWithOwner')
+                    if isinstance(issue.get('repository'), dict) else None)
+    out = []
+    for edge in ((issue.get('blockedBy') or {}).get('nodes')) or []:
+        ref = blocker_ref(edge, home)
+        if isinstance(ref, int) and ref not in out:
+            out.append(ref)
+    return out
+
+
+def edges_incomplete(connection):
+    """Whether a `blockedBy` connection read fewer edges than it holds.
+
+    Only a read that asked for `totalCount` can say; one that did not is taken
+    at its word, as it always was.
+    """
+    if not isinstance(connection, dict):
+        return False
+    total = connection.get('totalCount')
+    return total is not None and total > len(connection.get('nodes') or [])
+
+
+def edge_states(edges, repo=None):
+    """Split native blocked-by edges into (open_refs, closed_refs).
 
     `edges` are `{'number': int, 'state': 'OPEN'|'CLOSED'}` nodes in the shape
     GraphQL returns them. Order is kept and duplicates dropped, so a caller
-    can name the blockers in the order the issue itself lists them.
+    can name the blockers in the order the issue itself lists them. With
+    `repo`, a blocker in another repository comes back as `'owner/name#N'`
+    (see `blocker_ref`) rather than as a local number.
     """
     open_numbers, closed_numbers, seen = [], [], set()
     for edge in edges or ():
-        try:
-            number = int(edge.get('number'))
-        except (TypeError, ValueError):
+        number = blocker_ref(edge, repo)
+        if number is None:
             continue
         if number in seen:
             continue
@@ -183,7 +247,7 @@ def edge_states(edges):
     return open_numbers, closed_numbers
 
 
-def unblock_verdict(edges):
+def unblock_verdict(edges, repo=None):
     """Decide whether an issue carrying `edges` has been released.
 
     Returns (verdict, open_numbers, closed_numbers):
@@ -199,8 +263,11 @@ def unblock_verdict(edges):
     pass, a store upload. A sweep that read "no open blockers" as "release"
     would put every one of them into the pool for an agent that cannot do any
     of them.
+
+    An open blocker in another repository holds the issue like any other; one
+    that has closed counts as closed.
     """
-    open_numbers, closed_numbers = edge_states(edges)
+    open_numbers, closed_numbers = edge_states(edges, repo)
     if not open_numbers and not closed_numbers:
         return UNBLOCK_NO_EDGES, [], []
     if open_numbers:

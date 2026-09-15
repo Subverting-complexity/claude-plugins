@@ -27,7 +27,7 @@ If `git status --porcelain --untracked-files=no` is not empty, run **End clean**
 
 The mechanics can stop short: a head SHA that moved since the review, a conflict needing judgment, a red check that is not yours to fix, absent CI, repo-level auto-merge disabled, or checks still pending when the watch window closes. Each leaves the PR approved and unmerged with a comment saying why. That is a correct outcome.
 
-In each of those cases also apply the `needs-re-review` label (resolved through `review.config.md`; default `review-needs-re-review`), because the review picker skips a plain `approved` PR and nothing would select it again. The exception is the successful enqueue (`autoMergeRequest` non-null at step 5): GitHub merges that PR on its own.
+In each of those cases also run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict needs-re-review`, because the review picker skips a plain `approved` PR and nothing would select it again. The exception is the successful enqueue (`autoMergeRequest` non-null at step 5): GitHub merges that PR on its own.
 
 ## Report
 
