@@ -19,7 +19,7 @@ from wf_io import (
 from wf_stage import set_stages
 
 
-# ── PR pickers (code-review pools) ────────────────────────────────────────────
+# ── PR pickers (pr-review pools) ────────────────────────────────────────────
 
 def _norm_pr(raw):
     return {
@@ -113,7 +113,7 @@ def cmd_update_next(args):
              reason='no PRs assigned to you have feedback to address')
 
     # Marker: add `updating`, but keep the actionable state label so the
-    # code-review skill can make its final relabel decision.
+    # pr-review skill can make its final relabel decision.
     outcome, selected, side_effects = claim_first_pr(
         pool, lambda pr: apply_pr_labels(cfg, pr['number'], add=names['updating']))
     if outcome == 'error':
@@ -194,7 +194,7 @@ def cmd_review_next(args):
 def cmd_review_finish(args):
     """Reconcile a reviewed PR's state labels to exactly the verdict label.
 
-    Encodes the code-review skill's Step 10/10b deterministic label dance:
+    Encodes the pr-review skill's Step 10/10b deterministic label dance:
     read the PR's labels, strip every stale review-state label, leave exactly
     the verdict label (keeping the sticky `fixes-applied` when fixes were
     pushed), then read back and — if the verdict label did not stick because

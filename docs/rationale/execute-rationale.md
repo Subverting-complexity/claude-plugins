@@ -28,7 +28,7 @@ What actually decided whether a review was useful was not how many agents read t
 
 Re-reviewing after every push turned a finished pull request into an open one. Each round costs a push, an agent and a round trip, and most rounds were spent re-reading a diff whose only change since the last reading was a deleted unused import or a filled-in test case. The quality gate already covers that class of change.
 
-So the trigger is the nature of the rework rather than the fact of it: new or changed logic, a new file or dependency, a behaviour change, a security fix, or a file the first review never read. Anything smaller is pushed with the gate as its evidence and named in the review comment, so the record stays honest about what a fresh context did and did not see. The loop is capped at one round for the same reason the budget is capped: a PR that is still contested after one round of rework is better handed to the next `/github-workflow:code-review` run, which reads it fresh, than argued with by a session that has been on it for hours.
+So the trigger is the nature of the rework rather than the fact of it: new or changed logic, a new file or dependency, a behaviour change, a security fix, or a file the first review never read. Anything smaller is pushed with the gate as its evidence and named in the review comment, so the record stays honest about what a fresh context did and did not see. The loop is capped at one round for the same reason the budget is capped: a PR that is still contested after one round of rework is better handed to the next `/github-workflow:pr-review` run, which reads it fresh, than argued with by a session that has been on it for hours.
 
 ## Why a disclosed self-review is allowed to merge
 

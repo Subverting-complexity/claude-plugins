@@ -6,6 +6,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## github-workflow 14.0.0
+
+**The automated review is `pr-review`.** Claude Code has a built-in `/code-review`, so typing the short name ran the built-in instead of the plugin's review, with no review labels and no merge. The plugin's skill is now `pr-review`, and nothing in the plugin is named `code-review` (Issue #291).
+
+**Upgrading.** This is a breaking release. Replace `/github-workflow:code-review` with `/github-workflow:pr-review` anywhere you call it by name: a scheduled routine, a project `CLAUDE.md`, or a script. `execute` and `bulk-execute` already call the new name.
+
 ## github-workflow 13.3.0
 
 **A smaller plugin to run.** The workflows read much less on each run, and the `wf` scripts are split by concern. No command, skill name or `wf` subcommand changed.

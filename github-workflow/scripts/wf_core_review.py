@@ -7,7 +7,7 @@ Moved verbatim out of wf_core.py; `scripts/README.md` has the module map.
 
 
 # ── PR review-state labels + selection ───────────────────────────────────────
-# Mirrors the code-review skill (Step 1). These are the only labels the
+# Mirrors the pr-review skill (Step 1). These are the only labels the
 # workflow applies. Names default to the `review-` prefix and are overridden
 # by the Labels table in review.config.md; the colours and descriptions are
 # what `wf labels-ensure` and the review-finish readback create them with.
@@ -72,7 +72,7 @@ def review_names(review_map=None):
 
 
 def select_update_pool(prs, names):
-    """Order PRs that need *my* review feedback addressed (code-review rework pool).
+    """Order PRs that need *my* review feedback addressed (pr-review rework pool).
 
     Keep PRs carrying an actionable state — changes-requested >
     needs-discussion > needs-re-review (priority order) — and drop any
@@ -96,7 +96,7 @@ def select_update_pool(prs, names):
 
 
 def select_review_pool(prs, names):
-    """Order PRs that need reviewing (code-review pool).
+    """Order PRs that need reviewing (pr-review pool).
 
     Keep PRs carrying needs-re-review or needs-review; drop any carrying
     reviewing / updating (an agent is on it), and drop approved unless it also
@@ -127,7 +127,7 @@ def actionable_update_label(labels, names):
     """The highest-priority actionable state label present on an update PR.
 
     Returned so the caller can record which feedback state it claimed (the
-    code-review skill needs it for its final relabel decision).
+    pr-review skill needs it for its final relabel decision).
     """
     for purpose in ('changes-requested', 'needs-discussion', 'needs-re-review'):
         if names[purpose] in labels:
@@ -136,7 +136,7 @@ def actionable_update_label(labels, names):
 
 
 # ── Review-finish label reconciliation ───────────────────────────────────────
-# Encodes the code-review skill's Step 10/10b: on a verdict, strip every stale
+# Encodes the pr-review skill's Step 10/10b: on a verdict, strip every stale
 # review-state label and leave exactly the one verdict label. The seven state
 # labels are mutually exclusive — exactly one belongs on a settled PR.
 
@@ -144,7 +144,7 @@ REVIEW_STATE_KEYS = [
     'needs-review', 'reviewing', 'approved', 'changes-requested',
     'needs-discussion', 'needs-re-review', 'failed',
 ]
-# The verdicts code-review can record (the three a review can conclude with;
+# The verdicts pr-review can record (the three a review can conclude with;
 # `failed` is set on the error path, not by review-finish).
 REVIEW_VERDICT_KEYS = ('approved', 'changes-requested', 'needs-discussion')
 
@@ -155,7 +155,7 @@ def reconcile_review_labels(current_labels, verdict, names, fixes_applied=False)
     Given the PR's current labels and a verdict purpose key, returns the
     concrete label names to add and to remove so the PR ends carrying exactly
     one review-state label (the verdict) — the deterministic "label dance" the
-    code-review skill used to spell out in prose.
+    pr-review skill used to spell out in prose.
 
       - remove: every managed state label currently present except the verdict.
       - add:    the verdict label if not already present, plus `fixes-applied`

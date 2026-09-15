@@ -26,7 +26,7 @@ State labels are mutually exclusive — exactly one is applied per review.
 | `updating` | `{PREFIX}-updating` | State | A builder agent is addressing review feedback — prevents concurrent updates |
 | `fixes-applied` | `{PREFIX}-fixes-applied` | Action | Claude pushed fix commits to the PR branch (sticky across runs) |
 
-These labels are managed by the `/github-workflow:code-review` skill and form the single source of truth for PR review state. They are the only labels the workflow applies; an issue gets none.
+These labels are managed by the `/github-workflow:pr-review` skill and form the single source of truth for PR review state. They are the only labels the workflow applies; an issue gets none.
 
 ## Custom Labels
 
@@ -45,7 +45,7 @@ Additional labels applied to PRs based on project-specific criteria. These are a
 | bypass-ci-on-billing-failure | `false`    |
 | bypass-ci-when-no-pipeline   | `false`    |
 
-When `enabled`, the code-review skill squash-merges a PR (deleting its branch) as soon as the review verdict is **Approved** and the review comment has been posted. When `disabled` (the default), an approved PR is left for a human to merge.
+When `enabled`, the pr-review skill squash-merges a PR (deleting its branch) as soon as the review verdict is **Approved** and the review comment has been posted. When `disabled` (the default), an approved PR is left for a human to merge.
 
 `require-ci-before-merge` (default `false`) hardens the merge gate for repos that intend to gate on CI but cannot mark checks **required** (e.g. a private repo on a free plan, where branch protection is unavailable). It takes three values:
 
@@ -80,7 +80,7 @@ That third condition is the important one: with no remote evidence available to 
 
 `bypass-ci-when-no-pipeline` and `bypass-ci-on-billing-failure` cannot both apply to the same repo. The billing bypass requires **at least one** active workflow (a pipeline exists and should have produced a run); this one requires **zero** (there is no pipeline to run). Set whichever describes your project, and leave the other `false`. Like `--bypass-ci`, this never bypasses a merge **conflict**, and it only takes effect when `auto-merge-on-approval` is `enabled`.
 
-This is **off by default** — turn it on only for repos where you trust an approved Claude review to land unattended. When on, the skill drives the PR all the way to merged. Conflicts and red CI are blockers it clears, not reasons it gives up (enforced in Step 11 of the code-review skill):
+This is **off by default** — turn it on only for repos where you trust an approved Claude review to land unattended. When on, the skill drives the PR all the way to merged. Conflicts and red CI are blockers it clears, not reasons it gives up (enforced in Step 11 of the pr-review skill):
 
 - The PR must still be open and unchanged by **others** since the review (a commit the skill did not review forces a re-review instead of a merge; fixes the skill pushes itself in the steps below do not).
 - **Merge conflicts are resolved automatically** — the skill merges the base branch into the PR branch, resolves the conflicts (preserving both the PR's intent and the incoming base change), re-runs the quality gate, and pushes. It only pauses for a human when the two sides made incompatible product/design decisions with no objectively correct merge.

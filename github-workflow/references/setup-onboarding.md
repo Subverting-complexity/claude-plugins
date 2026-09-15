@@ -70,7 +70,7 @@ Read `templates/ClaudeProject.md` once and fill in all detected and user-provide
 
 ## 5b. Create the review-state labels
 
-The nine review-state labels on a pull request are the only labels the workflow applies, so creating them is the whole of label setup. Create them even if the user defers the review config in Step 7, so the code-review skill never has to create one mid-run:
+The nine review-state labels on a pull request are the only labels the workflow applies, so creating them is the whole of label setup. Create them even if the user defers the review config in Step 7, so the pr-review skill never has to create one mid-run:
 
 ```
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" labels-ensure
@@ -153,11 +153,11 @@ If `CLAUDE.md` exists, check for a "Supplementary Files" section or a reference 
 
 ## 7. Set up review configuration (optional)
 
-Ask whether the user plans to use the code-review skill for automated PR reviews. If they decline, note that the code-review skill will prompt for this config on first run.
+Ask whether the user plans to use the pr-review skill for automated PR reviews. If they decline, note that the pr-review skill will prompt for this config on first run.
 
-If they accept and `docs/review.config.md` does not exist yet, follow `skills/code-review/references/review-config-guide.md` to generate it. It asks for the label prefix, gates, tech-stack rules and test expectations, asks the auto-merge questions, writes the file and runs `labels-ensure` again.
+If they accept and `docs/review.config.md` does not exist yet, follow `skills/pr-review/references/review-config-guide.md` to generate it. It asks for the label prefix, gates, tech-stack rules and test expectations, asks the auto-merge questions, writes the file and runs `labels-ensure` again.
 
-Review-state labels are a mutex managed by the code-review skill, and the only labels the workflow applies.
+Review-state labels are a mutex managed by the pr-review skill, and the only labels the workflow applies.
 
 ## 7b. Harden auto-merge enforcement
 
@@ -165,7 +165,7 @@ Run this only if the user enabled `auto-merge-on-approval` in Step 7. Without it
 
 ## 8. Claude Code Ecosystem Tools (recommended, skippable)
 
-Present this as a recommended step the user can wave off in a sentence. The reason it is worth a minute: `execute` and `code-review` read `.claude/ecosystem.md` to run a codebase knowledge graph (Graphify) and token, cost and security tools automatically; without that cheat-sheet they do not know the tools are installed.
+Present this as a recommended step the user can wave off in a sentence. The reason it is worth a minute: `execute` and `pr-review` read `.claude/ecosystem.md` to run a codebase knowledge graph (Graphify) and token, cost and security tools automatically; without that cheat-sheet they do not know the tools are installed.
 
 Read `skills/ecosystem-setup/SKILL.md` and follow it now, rather than invoking the skill: it sets `disable-model-invocation`, so only a person can run it as a slash command. It asks once which tools the user wants, installs and configures each, and writes `.claude/ecosystem.md` (adding a row to the CLAUDE.md Supplementary Files table from Step 6). If the user wants nothing, it leaves only an opt-out marker and nothing is blocked.
 

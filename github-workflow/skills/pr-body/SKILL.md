@@ -9,7 +9,7 @@ The entry point for **pull request titles and bodies**. It is one of two entry p
 
 The counterpart entry point is `writing-github-issues`, which does the same job for issue bodies. An issue and a pull request are written the same way on purpose: same wording, same section names, same no-wrapping rule.
 
-**Two formats, chosen by the repository, never by preference.** A repository with a `ClaudeProject.md` uses the fixed shape below, always, because `execute`, `bulk-execute` and `code-review` read and extend these bodies and a description that varies per pull request cannot be extended reliably. A repository without one, or a platform other than GitHub, uses the component-section format in `references/component-format.md` instead; read that file and skip the rest of this one. Never mix the two in one body.
+**Two formats, chosen by the repository, never by preference.** A repository with a `ClaudeProject.md` uses the fixed shape below, always, because `execute`, `bulk-execute` and `pr-review` read and extend these bodies and a description that varies per pull request cannot be extended reliably. A repository without one, or a platform other than GitHub, uses the component-section format in `references/component-format.md` instead; read that file and skip the rest of this one. Never mix the two in one body.
 
 `_shared/banned-patterns.md` applies in full. `skills/user-facing-communication/SKILL.md` shapes what you say to the person **around** the description: lead with the outcome and the current state, keep it short, surface anything outstanding or assumed. It governs your reply, not the description.
 

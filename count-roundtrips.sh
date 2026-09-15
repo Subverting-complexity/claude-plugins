@@ -42,7 +42,7 @@ for wf in "${workflows[@]:-}"; do
                 "github-workflow/skills/execute/references/finish.md"
                 "github-workflow/skills/execute/references/review-and-merge.md"
                 "github-workflow/skills/execute/references/merge.md"
-                "github-workflow/skills/code-review/references/auto-merge.md"
+                "github-workflow/skills/pr-review/references/auto-merge.md"
                 "github-workflow/templates/worktree-hygiene.md"
             )
             ;;
@@ -54,7 +54,7 @@ for wf in "${workflows[@]:-}"; do
                 "github-workflow/skills/bulk-execute/references/bulk-finish.md"
                 "github-workflow/skills/execute/references/review-and-merge.md"
                 "github-workflow/skills/execute/references/merge.md"
-                "github-workflow/skills/code-review/references/auto-merge.md"
+                "github-workflow/skills/pr-review/references/auto-merge.md"
                 "github-workflow/templates/worktree-hygiene.md"
             )
             ;;

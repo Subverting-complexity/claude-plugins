@@ -112,9 +112,9 @@ This section is informational. The board is a view for people, with its columns 
 
 ## Reference Docs
 
-- `docs/review.config.md` — review-state labels, non-compliance gates, tech-stack review rules, and the auto-merge settings. Auto-merge is **enabled** here, so an `execute` run ends at a merged PR and `code-review` merges what it approves; the CI gate is enforced plugin-side (`require-ci-before-merge: true`) because branch protection is not currently applied.
+- `docs/review.config.md` — review-state labels, non-compliance gates, tech-stack review rules, and the auto-merge settings. Auto-merge is **enabled** here, so an `execute` run ends at a merged PR and `pr-review` merges what it approves; the CI gate is enforced plugin-side (`require-ci-before-merge: true`) because branch protection is not currently applied.
 - `docs/worktree-config.md` — recommended harness configuration for parallel/background agents, and the manual reap routine for stale worktrees and claim refs.
 
 ## Bundled Skills
 
-Available as `/github-workflow:*`: acceptance-criteria, build, bulk-execute, code-architect, code-review, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, support-request, tone, user-story, user-facing-communication, writing-github-issues.
+Available as `/github-workflow:*`: acceptance-criteria, build, bulk-execute, code-architect, pr-review, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, support-request, tone, user-story, user-facing-communication, writing-github-issues.

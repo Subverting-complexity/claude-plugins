@@ -1,6 +1,6 @@
 # Label Resolver Rationale
 
-> **Not read at runtime.** This file explains the design decisions behind label resolution and the `Stage` field. The data lives in `github-workflow/scripts/wf_core.py`, the review labels are described in `github-workflow/skills/code-review/references/review-workflow.md`, and the field and stage tables are in [`../issue-fields.md`](../issue-fields.md).
+> **Not read at runtime.** This file explains the design decisions behind label resolution and the `Stage` field. The data lives in `github-workflow/scripts/wf_core.py`, the review labels are described in `github-workflow/skills/pr-review/references/review-workflow.md`, and the field and stage tables are in [`../issue-fields.md`](../issue-fields.md).
 
 ## Why purpose keys
 

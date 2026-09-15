@@ -83,10 +83,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr 123
 # Release the blocked issues whose dependencies have all closed (--dry-run reports)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" unblock --dry-run
 
-# Claim the next PR of mine that needs review feedback addressed (code-review)
+# Claim the next PR of mine that needs review feedback addressed (pr-review)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" update-next --checkout
 
-# Claim the next PR that needs reviewing (code-review)
+# Claim the next PR that needs reviewing (pr-review)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-next --checkout
 
 # Emit the parsed config cache (.claude/wf-config.json) from ClaudeProject.md
@@ -458,7 +458,7 @@ It will not create a `CLAUDE.md`, invent an `## Identity` section, create or del
 
 ## Settling a merged PR — `post-merge`
 
-`post-merge --pr <n>` makes "the story is closed and at `Done`" a deterministic step instead of trusting GitHub. It reads the PR's own `closingIssuesReferences`, **force-closes** any of those issues still open (GitHub only auto-closes on a default-branch merge of a recognised keyword — a chained-story PR or an unparsed reference leaves it open), and sets every linked issue's stage to **Done**. Each settled issue is reported with `closed_now` and `stage_set`. It refuses (`status: not-merged`, exit 11) on a PR that has not actually merged, so it is safe to call on the queued `--auto` path. Add `--issue <N>` (repeatable) to settle a reference GitHub did not parse. `code-review`'s auto-merge step calls this after a successful immediate merge.
+`post-merge --pr <n>` makes "the story is closed and at `Done`" a deterministic step instead of trusting GitHub. It reads the PR's own `closingIssuesReferences`, **force-closes** any of those issues still open (GitHub only auto-closes on a default-branch merge of a recognised keyword — a chained-story PR or an unparsed reference leaves it open), and sets every linked issue's stage to **Done**. Each settled issue is reported with `closed_now` and `stage_set`. It refuses (`status: not-merged`, exit 11) on a PR that has not actually merged, so it is safe to call on the queued `--auto` path. Add `--issue <N>` (repeatable) to settle a reference GitHub did not parse. `pr-review`'s auto-merge step calls this after a successful immediate merge.
 
 ## Releasing what a merge freed — `unblock`
 
@@ -487,8 +487,8 @@ Nothing did this. `post-merge` settles only the issues a pull request *closes*, 
 | Subcommand     | Pool                                              | Claims          | Marker applied        | Used by      |
 | -------------- | ------------------------------------------------- | --------------- | --------------------- | ------------ |
 | `pick`         | Every open issue, judged by the rules below       | `issue-{n}` ref | `Stage` In Progress   | execute |
-| `update-next`  | My open PRs with actionable review feedback       | `pr-{n}` ref    | `updating` (keeps the feedback label) | code-review |
-| `review-next`  | Open PRs labelled `needs-review` / `needs-re-review` | `pr-{n}` ref | `reviewing` (removes prior) | code-review |
+| `update-next`  | My open PRs with actionable review feedback       | `pr-{n}` ref    | `updating` (keeps the feedback label) | pr-review |
+| `review-next`  | Open PRs labelled `needs-review` / `needs-re-review` | `pr-{n}` ref | `reviewing` (removes prior) | pr-review |
 
 All share the same atomic claim/checkout core and JSON contract. `--checkout` creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
 
@@ -511,7 +511,7 @@ The pool is ordered by `Priority`, then `Effort`, then issue number. `--mode` an
 ## Scope / deferrals
 
 - **`pick`** — `--mode story` / `feature` / `maintenance`, reading the open, unassigned issues whose `Stage` is blank or `Backlog` as the pool, from the repository's issues rather than a board. One GraphQL query (`fetch_issue_facets`) reads the native type, the `Priority` field and the `Classification` field for the open backlog, and the pool is ordered by `Priority` — `Urgent` → `High` → `Medium` → `Low`, then lowest issue number. An issue with no `Priority` value sorts last and is named on stderr; there is no label fallback, on purpose. No mode offers an `Epic`: it is the outcome its features and stories deliver, not a piece of work. **Type has none**: `feature` and `maintenance` filter on the native `issueType` alone, so an issue the org has not typed — or a `Feature` it left unclassified — is out of the pool and named on stderr rather than guessed at from a `type-*` label or a `[PREFIX]` title. An org whose backlog carries no native type at all cannot answer those modes and `pick` exits `no-capabilities` (21) saying so; `--mode story` is unaffected. Membership of the pool is the `Stage` field's answer: an issue is in it because its `Stage` is blank or `Backlog` and nobody is assigned, whether or not it has a card on any board. Every other stage takes an issue out of the pool. No label is read at any point in the selection.
-- **`review-next`** — the *label-driven* subset. A PR whose head SHA changed since its last review (needing review without a label) is **not** detected here, so `code-review` treats `no-candidates` as non-conclusive and falls back to its inline SHA check. Pass `--no-claim` for a read-only review (no push access): it selects the next PR without writing a claim ref or applying the `reviewing` marker, and the JSON reports `claimed: false`.
+- **`review-next`** — the *label-driven* subset. A PR whose head SHA changed since its last review (needing review without a label) is **not** detected here, so `pr-review` treats `no-candidates` as non-conclusive and falls back to its inline SHA check. Pass `--no-claim` for a read-only review (no push access): it selects the next PR without writing a claim ref or applying the `reviewing` marker, and the JSON reports `claimed: false`.
 
 ## Locks, stage and handoff
 

@@ -388,7 +388,7 @@ ORIGIN_FIELD_OPTIONS = {
     'feature-discovery': 'Feature Discovery',
     'grill-me':          'Grill-Me Session',
     'security-audit':    'Security Audit',
-    'code-review':       'Code Review',
+    'pr-review':         'Code Review',
     'report-issue':      'Development',
     'execute':           'Development',
     'human':             'Stakeholder Request',

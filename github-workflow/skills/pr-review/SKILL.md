@@ -1,5 +1,5 @@
 ---
-name: code-review
+name: pr-review
 description: 'Review a pull request (the next one needing review, or a number) or a local change (uncommitted work, a branch, a commit, "is this ready?"). Fixes concrete issues; for a PR posts the review and labels. --read-only evaluates only.'
 arguments:
   - name: mode
@@ -33,7 +33,7 @@ allowed-tools:
   - Bash(make *)
 ---
 
-# Code Review
+# PR Review
 
 **Pull request or local change.** Review a pull request when a PR number is given, when asked to review PRs, from `execute` or `bulk-execute`, or from a scheduled routine: that is the workflow in this file. For anything else (uncommitted work, a branch with no PR, a commit, named files, "verify this feature", "is this ready?") follow `references/local-review.md` instead and skip everything below; add `references/react-native.md` when the change is React Native or Expo code.
 

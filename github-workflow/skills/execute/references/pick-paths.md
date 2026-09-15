@@ -14,7 +14,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
 No label is read: state is the `Stage` field, and `pick --issue` refuses a story at `In Progress`, `In Review`, `Non-code` or `Done`. `sibling-pr` answers "which open PRs will close this issue on merge?" from GitHub's own closing-reference parse. Exit 0 with `found: 0` is the normal result; exit 20 means the lookup failed, so stop rather than assume there is no duplicate.
 
 - The issue is **closed** → report it and stop.
-- `found` is above zero → do not start fresh work. Report the existing PR by number **and** title and tell the user to run `/github-workflow:code-review`, which handles review and rework. Stop: do not claim, branch or build.
+- `found` is above zero → do not start fresh work. Report the existing PR by number **and** title and tell the user to run `/github-workflow:pr-review`, which handles review and rework. Stop: do not claim, branch or build.
 - The stage is `In Review` but `found` is `0` → look for a **closed, unmerged** PR:
   ```
   gh pr list --repo {org}/{repo} --state closed --search "closes #{number}" --json number,title

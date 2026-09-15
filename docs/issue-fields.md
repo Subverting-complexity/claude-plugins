@@ -6,7 +6,7 @@
 
 An issue's state, priority, size and owner are **structured fields**, and a label is none of those things. Two records of one fact drift the moment anyone edits either, and the drift is silent: the picker preferring one issue over another on a `priority-high` somebody set months ago, while the `Priority` field said Low.
 
-So the workflow puts no label on an issue. The only labels it applies are the review-state labels on a pull request, described in `github-workflow/skills/code-review/references/review-workflow.md` and created by `wf labels-ensure`. The four questions labels used to answer are answered once each:
+So the workflow puts no label on an issue. The only labels it applies are the review-state labels on a pull request, described in `github-workflow/skills/pr-review/references/review-workflow.md` and created by `wf labels-ensure`. The four questions labels used to answer are answered once each:
 
 | Question | Where the answer lives | Who reads it |
 |----------|------------------------|--------------|

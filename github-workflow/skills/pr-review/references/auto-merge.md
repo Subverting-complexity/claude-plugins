@@ -1,6 +1,6 @@
 # Step 11 — Auto-merge on approval
 
-Read this only after the caller has confirmed a merge is allowed. For code-review that is Step 11's check: the verdict is **Approved** (including a Step 4b abbreviated approval), `Auto-Merge on Approval` is `enabled`, and the session is not read-only. For `execute` and `bulk-execute` it is Phase 10's stop conditions, which name the same setting; they drive steps 1 to 6 below under identical rules and carry their own naming substitutions. The conditions are not restated here.
+Read this only after the caller has confirmed a merge is allowed. For pr-review that is Step 11's check: the verdict is **Approved** (including a Step 4b abbreviated approval), `Auto-Merge on Approval` is `enabled`, and the session is not read-only. For `execute` and `bulk-execute` it is Phase 10's stop conditions, which name the same setting; they drive steps 1 to 6 below under identical rules and carry their own naming substitutions. The conditions are not restated here.
 
 Read **`require-ci-before-merge`** from the Auto-Merge on Approval section of `review.config.md`. Absent ⇒ `false`. It takes three values:
 

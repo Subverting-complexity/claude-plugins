@@ -14,7 +14,7 @@ The comment should include: phase name, error summary, branch name, whether comm
 
 Then run `wf stage-set {number} --stage stage-attention` so the failure is visible on the issue — the stage is the issue's state, so this is what stops the next run picking it up as available. If `set` is false, report "Stage update failed: {reason}. Continuing." Do **not** open a PR for failed/incomplete work.
 
-**Once the PR is open (Phase 8 onward), do not move the issue backwards.** Phase 7 already set the stage to `In Review`, and the open, labelled PR is the visible record of the work. Comment the failure on the **PR** instead, leave the stage at `In Review`, and let the next `/github-workflow:code-review` run take it from there. Setting it to `Needs attention` would put the stage and the PR's review state at odds.
+**Once the PR is open (Phase 8 onward), do not move the issue backwards.** Phase 7 already set the stage to `In Review`, and the open, labelled PR is the visible record of the work. Comment the failure on the **PR** instead, leave the stage at `In Review`, and let the next `/github-workflow:pr-review` run take it from there. Setting it to `Needs attention` would put the stage and the PR's review state at odds.
 
 This ensures the next session (or human) can pick up exactly where this one failed without guessing what happened. After the comment is posted, run **Exit cleanup** (`references/exit-cleanup.md` — it releases the claim ref so the issue can be picked again) before exiting.
 
@@ -46,7 +46,7 @@ If the story covers multiple distinct changes and needs to be broken into sub-st
 
 ## Review feedback
 
-Review feedback is no longer an escape hatch: Phases 8 and 9 review the PR in a fresh context and answer the findings inside this same run (`references/review-and-merge.md`). Feedback that arrives **after** the run ends — a human reviewer's comment, or a rework round the session budget cut short — is picked up by the next `/github-workflow:code-review` invocation, which selects the `changes-requested` PR automatically, addresses the feedback, and re-reviews. No separate command is needed for it.
+Review feedback is no longer an escape hatch: Phases 8 and 9 review the PR in a fresh context and answer the findings inside this same run (`references/review-and-merge.md`). Feedback that arrives **after** the run ends — a human reviewer's comment, or a rework round the session budget cut short — is picked up by the next `/github-workflow:pr-review` invocation, which selects the `changes-requested` PR automatically, addresses the feedback, and re-reviews. No separate command is needed for it.
 
 ## Story too large
 

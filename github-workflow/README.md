@@ -22,7 +22,7 @@ Run both from a normal shell, not inside a Claude Code session, then restart the
 | `/github-workflow:execute --no-merge`   | Skip the merge for one run on a project that has merging enabled |
 | `/github-workflow:bulk-execute`         | Choose 2-5 related stories and build them as one branch, one PR, one review |
 | `/github-workflow:bulk-execute 41 43 47` | Build exactly these stories together     |
-| `/github-workflow:code-review`          | Review (or rework + re-review) the next PR |
+| `/github-workflow:pr-review`          | Review (or rework + re-review) the next PR |
 | `/github-workflow:block-story`          | Mark current story as blocked            |
 | `/github-workflow:report-issue`         | Create a bug/arch/debt issue             |
 | `/github-workflow:setup`                | Interactive project onboarding wizard    |
@@ -58,7 +58,7 @@ Run `/github-workflow:setup` to onboard your project. The wizard:
 3. Checks for milestones to determine sprint vs flat backlog mode.
 4. Asks for your label scheme, branch convention, and quality gate.
 5. Generates `ClaudeProject.md` (project settings) and `CLAUDE.md` (project rules) at your repo root.
-6. Optionally sets up Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and writes `.claude/ecosystem.md` so `execute` and `code-review` use them automatically. This step is the shared `ecosystem-setup` skill — run it again any time with `/github-workflow:setup ecosystem`.
+6. Optionally sets up Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and writes `.claude/ecosystem.md` so `execute` and `pr-review` use them automatically. This step is the shared `ecosystem-setup` skill — run it again any time with `/github-workflow:setup ecosystem`.
 
 If you already have these files, the setup wizard detects them and offers to fill in missing sections rather than overwrite.
 
@@ -70,7 +70,7 @@ Tools the plugin expects on the host machine:
 | ---- | ---------- | ----- |
 | `gh` (GitHub CLI) | every issue, PR, label, and field operation | Must be authenticated: `gh auth login`. This is a **hard dependency by design** — the plugin has no REST-API fallback. |
 | `git` | branching, claims, worktrees | Any recent version. |
-| Python ≥ 3.8 | the `wf` CLI (`scripts/wf.py`) | **Required** for `execute`, `bulk-execute` and issue creation. Selection, claiming, stage writes, handoff and issue classification are all `wf` commands with no markdown fallback — without Python those commands fail naming the missing prerequisite. `code-review` still has its own PR-selection fallback. |
+| Python ≥ 3.8 | the `wf` CLI (`scripts/wf.py`) | **Required** for `execute`, `bulk-execute` and issue creation. Selection, claiming, stage writes, handoff and issue classification are all `wf` commands with no markdown fallback — without Python those commands fail naming the missing prerequisite. `pr-review` still has its own PR-selection fallback. |
 
 The plugin also reads two files from the host project:
 
@@ -82,7 +82,7 @@ Optional sections: Project Board, Reference Docs.
 
 **`CLAUDE.md`** (required) — Project rules, build principles, and session hygiene.
 
-**`docs/review.config.md`** (optional) — Review label definitions, non-compliance gates, and tech-stack review rules. Required by the `code-review` skill. Generated automatically on first code-review run, or during setup.
+**`docs/review.config.md`** (optional) — Review label definitions, non-compliance gates, and tech-stack review rules. Required by the `pr-review` skill. Generated automatically on first pr-review run, or during setup.
 
 ### Known limitations
 
@@ -143,12 +143,12 @@ Approval is structural too. A person approves work by setting its stage to `Back
 
 Both entry points can merge a pull request, and **one setting decides whether either of them does**: `Auto-Merge on Approval` in `docs/review.config.md`. It is `disabled` unless you turn it on, including when the file does not exist at all.
 
-| Setting | `/github-workflow:execute` ends at | `/github-workflow:code-review` ends at |
+| Setting | `/github-workflow:execute` ends at | `/github-workflow:pr-review` ends at |
 | ------- | ---------------------------------- | -------------------------------------- |
 | `disabled` (default) | An approved PR, reviewed and waiting for you | An approved PR |
 | `enabled` | A merged PR, with its issues closed and set to Done | A merged PR |
 
-Keeping it to one switch is deliberate. The alternative — merging by default from `execute` and only on request from `code-review` — means the answer to "is this repository going to merge something without me" depends on which command happened to reach the PR, which is not a property anyone can hold in their head. Turn it on in `/github-workflow:setup`, which also runs the hardening step that makes "merge only after CI passes" actually enforceable.
+Keeping it to one switch is deliberate. The alternative — merging by default from `execute` and only on request from `pr-review` — means the answer to "is this repository going to merge something without me" depends on which command happened to reach the PR, which is not a property anyone can hold in their head. Turn it on in `/github-workflow:setup`, which also runs the hardening step that makes "merge only after CI passes" actually enforceable.
 
 Two ways to suppress a merge on a project that has it on: pass `--no-merge` for a single `execute` run, or leave the PR at a non-approved verdict. And several conditions stop a merge on their own — a red quality gate, a possible duplicate PR, a review that could not run independently, a moved head SHA, absent or red CI. Each of those leaves the PR open with a comment saying why.
 
@@ -165,7 +165,7 @@ Each agent's tool allowlist is scoped to the GitHub workflow (specific `gh` and 
 
 ## Skills
 
-The plugin bundles the following skills. The orchestrators (`execute`, `bulk-execute`, `code-review`, `build`) drive the workflow; the rest are invoked by them or directly.
+The plugin bundles the following skills. The orchestrators (`execute`, `bulk-execute`, `pr-review`, `build`) drive the workflow; the rest are invoked by them or directly.
 
 | Skill                 | What it does                                       |
 | --------------------- | ------------------------------------------------- |
@@ -173,7 +173,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | `bulk-execute`        | The same loop for 2-5 related stories at once     |
 | `code-architect`      | Architecture design and audit (SOLID + Clean)     |
 | `build`               | Orchestrator for local work: plan → build → verify → commit, no issue or PR |
-| `code-review`         | Deep PR review, labels, optional auto-merge; also reviews a local change, with a React Native checklist |
+| `pr-review`         | Deep PR review, labels, optional auto-merge; also reviews a local change, with a React Native checklist |
 | `preflight`           | Checks project-config health before a run; `wf preflight --fix` repairs what it safely can |
 | `feature-discovery`   | Breaks features into stories; plans a new project's foundations |
 | `grill`               | Stress-tests a plan or design by interviewing you |
@@ -204,4 +204,4 @@ Once installed, your scheduled task prompts become one-liners:
 | Work through a related group | `Run /github-workflow:bulk-execute`  |
 | Fix bugs           | `Run /github-workflow:execute --mode maintenance` |
 | Audit codebase     | `Run /github-workflow:execute --mode audit`  |
-| Review a PR, or apply review feedback | `Run /github-workflow:code-review` |
+| Review a PR, or apply review feedback | `Run /github-workflow:pr-review` |

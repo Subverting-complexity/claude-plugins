@@ -3,7 +3,7 @@ name: bulk-execute
 description: 'Build two to five related GitHub stories on one branch behind one pull request, reviewed and merged like execute. Trigger on "bulk execute", "batch these stories" or several issue numbers.'
 depends-on:
   - code-architect
-  - code-review
+  - pr-review
 argument-hint: '[issue# issue# ... | --parent N] [--mode feature|maintenance] [--size N] [--no-merge] [--bypass-ci]'
 arguments:
   - name: story_numbers

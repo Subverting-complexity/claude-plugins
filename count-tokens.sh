@@ -190,7 +190,7 @@ cites_on_condition() {
 #
 # A citation that names another skill's references directory
 # (skills/<skill>/references/<file>.md — how a shared reference such as
-# code-review's auto-merge.md is cited from outside its own skill) is resolved
+# pr-review's auto-merge.md is cited from outside its own skill) is resolved
 # against that skill, not the citing one. Without this the path would fall
 # through to the plugin-level references/ directory and report "(missing)",
 # hiding a real dependency from the count.

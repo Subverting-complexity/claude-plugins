@@ -19,7 +19,7 @@ working for the shell and the tests alike. A new rule goes in the module whose
 concern it belongs to, never here.
 
 Reference templates (the prose these functions encode):
-  - github-workflow/skills/code-review/references/review-workflow.md  (review labels)
+  - github-workflow/skills/pr-review/references/review-workflow.md  (review labels)
   - github-workflow/skills/execute/SKILL.md  (branch convention)
 """
 

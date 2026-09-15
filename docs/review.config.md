@@ -1,6 +1,6 @@
 # Review Configuration — claude-plugins
 
-Read by `/github-workflow:code-review`, and by the merge phase that ends a `/github-workflow:execute` run. This repo dogfoods its own plugin, so this file is both a real configuration and a worked example.
+Read by `/github-workflow:pr-review`, and by the merge phase that ends a `/github-workflow:execute` run. This repo dogfoods its own plugin, so this file is both a real configuration and a worked example.
 
 ## Repository
 
@@ -39,7 +39,7 @@ These are the only labels the workflow applies; an issue gets none.
 | bypass-ci-on-billing-failure | `false`      |
 | bypass-ci-when-no-pipeline   | `false`      |
 
-**Why enabled.** This is the switch that lets a review land its own work, and it governs both entry points: `/github-workflow:code-review` and the merge phase at the end of a `/github-workflow:execute` run. Turning it on here is what makes an `execute` run finish at a merged pull request rather than an approved one waiting for a person.
+**Why enabled.** This is the switch that lets a review land its own work, and it governs both entry points: `/github-workflow:pr-review` and the merge phase at the end of a `/github-workflow:execute` run. Turning it on here is what makes an `execute` run finish at a merged pull request rather than an approved one waiting for a person.
 
 **Why `require-ci-before-merge: true` rather than `false`.** The stronger guarantee would be GitHub-enforced required status checks on `main`, which this repo qualifies for (it is public). That protection is **not currently applied** — see *Enforcement status* below — so the plugin-side gate is the only thing standing between an approving verdict and a merge. `true` is the absolute form: an approved PR whose head SHA has no checks at all, or has a red check the review cannot fix, is **paused** rather than merged. That costs nothing here because CI runs on every pull request, so the checks are always present; and it fails safe if CI ever stops reporting.
 
@@ -96,7 +96,7 @@ This repo is instruction text plus a small amount of tooling. What that means fo
 
 - **Purpose keys, never literal names.** Review labels resolve through this file's Labels table, and stages through `wf_core.STAGE_NAMES`. A hardcoded label string in a skill is a finding: it silently breaks every project that renamed that label.
 - **Nothing project-specific in a skill.** Repo names, board IDs, and label names belong in `ClaudeProject.md` or this file. The skills are generic.
-- **Local paths must not need GitHub.** `build`, `code-review`'s `references/local-review.md` and `preflight`'s `references/local-checks.md` serve projects with no `ClaudeProject.md` and no tracker. Anything they load must not assume GitHub, a board or an issue.
+- **Local paths must not need GitHub.** `build`, `pr-review`'s `references/local-review.md` and `preflight`'s `references/local-checks.md` serve projects with no `ClaudeProject.md` and no tracker. Anything they load must not assume GitHub, a board or an issue.
 - **References are cited, not duplicated.** See the canonical-specification rule above; this is its architectural form.
 
 ## Security Specifics

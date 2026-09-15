@@ -2,7 +2,7 @@
 
 Deep checks for the **opt-in** `auto-merge-on-approval` feature. Read and run these **only when** `ClaudeProject.md` references a `review.config.md` **and** that file has `auto-merge-on-approval: enabled`. In the default configuration (no `review.config.md`, or auto-merge disabled) none of this runs — skip it entirely; it is off the common path on purpose.
 
-Gating on that one setting is safe because it is the only thing that enables a merge anywhere in the plugin: it governs both `/github-workflow:code-review`'s merge step and the merge phase that ends a `/github-workflow:execute` run. There is no second path that merges without it, so a project this block skips is a project where nothing merges unattended.
+Gating on that one setting is safe because it is the only thing that enables a merge anywhere in the plugin: it governs both `/github-workflow:pr-review`'s merge step and the merge phase that ends a `/github-workflow:execute` run. There is no second path that merges without it, so a project this block skips is a project where nothing merges unattended.
 
 When auto-merge is enabled, an approved PR is squash-merged automatically, so two repo-side settings must hold or a queued merge silently never fires:
 

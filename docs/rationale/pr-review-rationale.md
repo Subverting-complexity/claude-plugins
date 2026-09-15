@@ -1,6 +1,6 @@
 ---
-name: code-review-rationale
-description: Rationale behind the code-review skill's design decisions. Not read at runtime. Maintainers read this; the runtime workflow does not load it.
+name: pr-review-rationale
+description: Rationale behind the pr-review skill's design decisions. Not read at runtime. Maintainers read this; the runtime workflow does not load it.
 ---
 
 # Code-review skill — rationale (not read at runtime)

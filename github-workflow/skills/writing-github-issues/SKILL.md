@@ -17,7 +17,7 @@ Prefer a clear work item over a record of how the problem was discovered.
 
 This is the standard for **every GitHub issue title and body** this plugin writes or edits, whoever triggers it. That includes:
 
-- `/github-workflow:report-issue`, including every autonomous filing that routes through it (`execute` finding a problem outside its own diff, `code-review` filing what it cannot fix, an audit run, a story sliced down to fit a session).
+- `/github-workflow:report-issue`, including every autonomous filing that routes through it (`execute` finding a problem outside its own diff, `pr-review` filing what it cannot fix, an audit run, a story sliced down to fit a session).
 - Story issues created by `/github-workflow:feature-discovery`.
 - A single story written by `/github-workflow:user-story` when it is destined for a GitHub issue.
 - Any edit to an existing issue body.

@@ -5,7 +5,7 @@ disable-model-invocation: true
 ---
 # Ecosystem Setup
 
-Set up commonly used Claude Code companion tools and record what was enabled in `.claude/ecosystem.md`. That cheat-sheet is what the `/github-workflow:execute` and `/github-workflow:code-review` skills read to decide which tools to run automatically — without it, those skills have no idea the tools are installed.
+Set up commonly used Claude Code companion tools and record what was enabled in `.claude/ecosystem.md`. That cheat-sheet is what the `/github-workflow:execute` and `/github-workflow:pr-review` skills read to decide which tools to run automatically — without it, those skills have no idea the tools are installed.
 
 ## Output standard
 
@@ -101,7 +101,7 @@ open files.
 load `graph.json` into context directly — it is megabytes of mostly
 irrelevant detail.
 **The workflow uses it:** in the execute **Plan** phase and the
-code-review **evaluation** step — prefer a `graphify query` over blind
+pr-review **evaluation** step — prefer a `graphify query` over blind
 file search for structure questions. Kept fresh automatically by the
 `Stop` hook in `.claude/settings.json`.
 ```
@@ -230,7 +230,7 @@ skills — looking for hardcoded secrets, prompt-injection openings,
 overly permissive allowlists, and risky MCP endpoints. No AI, so the
 same input always gives the same A–F report.
 **Use it:** `npx ecc-agentshield scan` from the repo root.
-**The workflow uses it:** the execute **audit** mode and the code-review
+**The workflow uses it:** the execute **audit** mode and the pr-review
 **evaluation** step — run it when the change touches Claude Code config
 files (CLAUDE.md, `.claude/`, hooks, skills, MCP config), and fold any
 finding into the Security section.
@@ -270,7 +270,7 @@ analysis (MIT); an optional paid tier adds production runtime data.
 With the `fallow-mcp` server in settings.json, agents can call its tools
 (`analyze`, `find_dupes`, `check_health`, `audit`) directly.
 **The workflow uses it:** the execute **Plan** phase — to avoid
-rebuilding logic that already exists — and the code-review **evaluation**
+rebuilding logic that already exists — and the pr-review **evaluation**
 step (Minimality / dead-code) — to flag unused exports and duplication
 the diff introduces.
 ```

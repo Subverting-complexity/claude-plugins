@@ -35,7 +35,7 @@ CHARS_PER_TOKEN_X10=35
 
 # --- Budgets (calibrated from measured baselines) --------------------------
 # Description: every description loads into every session, so they are kept
-# short. The longest is 229 chars (code-review, which covers pull requests and
+# short. The longest is 229 chars (pr-review, which covers pull requests and
 # local changes); 240 sits ~5% above it, so a longer one has to trim first.
 DESC_BUDGET_CHARS=240
 # Body: the Anthropic ≤500-line guideline; every skill sits under it.

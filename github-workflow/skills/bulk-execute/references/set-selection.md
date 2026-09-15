@@ -34,7 +34,7 @@ Drop a named story, with a one-line reason in your report, when it is:
   ```bash
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
   ```
-  Exit 0 with `found: 0` means nothing closes it; exit 20 means the lookup failed, so say so rather than assuming it is free. Report any PR found by number and title and say `/github-workflow:code-review` handles it;
+  Exit 0 with `found: 0` means nothing closes it; exit 20 means the lookup failed, so say so rather than assuming it is free. Report any PR found by number and title and say `/github-workflow:pr-review` handles it;
 - **assigned to someone else** — another agent or person owns it;
 - **empty** — no Context and no Requirements anywhere in the body, comments or linked docs, so any implementation would be a guess;
 - **not in the pool** — the number came back in none of the `wf candidates` entries, so it is not an unassigned, available issue a code agent may take. Its stage is `Needs refinement`, `Parked`, `Blocked` or `Non-code`, or its `Ownership` is not `Code agent`. Read the reason off the issue's fields and name it; `pick --issue` refuses the same story anyway, so claiming it would only fail later.

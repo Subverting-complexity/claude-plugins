@@ -10,7 +10,7 @@ Entry points sit on top of this file and hold only the part that actually differ
 | `skills/pr-body/references/component-format.md` | Pull request titles and bodies anywhere else, on any platform | `## Summary`, then one `##` section per component |
 | `writing-github-issues` | GitHub issue titles and bodies | `## Summary` plus only the sections that carry information, the `[Manual]` convention, and the single write path |
 
-The two pull request formats are deliberately different, and the repository decides which applies. The fixed one exists because `execute`, `bulk-execute` and `code-review` read and extend those bodies, and a shape that varies per pull request cannot be extended reliably. The component format is written for whoever is about to read the diff, with no automated loop behind it, so it groups by component instead.
+The two pull request formats are deliberately different, and the repository decides which applies. The fixed one exists because `execute`, `bulk-execute` and `pr-review` read and extend those bodies, and a shape that varies per pull request cannot be extended reliably. The component format is written for whoever is about to read the diff, with no automated loop behind it, so it groups by component instead.
 
 For a work item outside GitHub, this file plus `references/story-template.md` is the whole standard.
 

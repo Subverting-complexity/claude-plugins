@@ -705,7 +705,7 @@ class TestReviewLabelResolution(unittest.TestCase):
 
 
 class TestUpdatePool(unittest.TestCase):
-    """code-review rework pool: my PRs with actionable feedback, prioritised."""
+    """pr-review rework pool: my PRs with actionable feedback, prioritised."""
 
     def test_changes_requested_beats_needs_re_review(self):
         prs = [
@@ -739,7 +739,7 @@ class TestUpdatePool(unittest.TestCase):
 
 
 class TestReviewPool(unittest.TestCase):
-    """code-review pool: open PRs needing review, re-review first."""
+    """pr-review pool: open PRs needing review, re-review first."""
 
     def test_needs_re_review_before_needs_review(self):
         prs = [

@@ -1,6 +1,6 @@
 # Component-section format
 
-The pull request body for a repository **with no `ClaudeProject.md`**, which is not run by `execute`, `bulk-execute` or `code-review`, or on a platform other than GitHub (GitLab, Azure DevOps, Bitbucket). It is written for whoever is about to read the diff rather than for an automated loop. The output is two separate, independently copyable markdown blocks: one for the **title** and one for the **description body**.
+The pull request body for a repository **with no `ClaudeProject.md`**, which is not run by `execute`, `bulk-execute` or `pr-review`, or on a platform other than GitHub (GitLab, Azure DevOps, Bitbucket). It is written for whoever is about to read the diff rather than for an automated loop. The output is two separate, independently copyable markdown blocks: one for the **title** and one for the **description body**.
 
 Read `_shared/banned-patterns.md` and `_shared/wording-standard.md` before writing. All banned patterns apply to PR descriptions, and the wording standard governs the prose: write so a reviewer who has not seen the diff or the originating conversation can understand what changed and why. Plain English first, with the per-component bullets as a scannable supplement, not a stripped list of identifiers in place of explanation.
 

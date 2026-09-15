@@ -50,7 +50,7 @@ Below **100**, pause: commit and push current work, set every claimed issue to `
 - **Commit early, push periodically**, so an unexpected end leaves recoverable work on the branch.
 - **One run, one session.** Do not pick more work after finishing.
 - **Wrap up, don't run out.** Deep into a session, get to a committable state; a PR with remaining-work notes beats an abandoned session.
-- **Leave room for the review.** Phases 8 and 9 hand the diff to a separate context, so here they cost the review reference, the findings returned and the fixes applied, plus the whole code-review hot path inline if no agent can be spawned. The rework loop stops once the budget is nearly spent.
+- **Leave room for the review.** Phases 8 and 9 hand the diff to a separate context, so here they cost the review reference, the findings returned and the fixes applied, plus the whole pr-review hot path inline if no agent can be spawned. The rework loop stops once the budget is nearly spent.
 - **Record the start time** (`date +%s`) and check the elapsed time against the skill's timeout before each phase.
 
 ## Fix in scope, file out of scope
@@ -88,6 +88,6 @@ Stage only relevant files, never `.env`, credentials or generated files that sho
 
 ## Phases 7 to 10 — Finish, review, rework, merge
 
-**Do not review your own diff anywhere in the run.** The session that wrote the code shares every assumption it was built on. That decides whose judgement counts, not whether the run continues: you still spawn the reviewer, own what it returns, and hand the PR to nobody (not the user, not a later session, not a standalone `/github-workflow:code-review`). Phase 8's last-resort inline fallback is the one exception, and it is disclosed.
+**Do not review your own diff anywhere in the run.** The session that wrote the code shares every assumption it was built on. That decides whose judgement counts, not whether the run continues: you still spawn the reviewer, own what it returns, and hand the PR to nobody (not the user, not a later session, not a standalone `/github-workflow:pr-review`). Phase 8's last-resort inline fallback is the one exception, and it is disclosed.
 
 The moment the PR exists, read `skills/execute/references/review-and-merge.md` and follow it to the end of the run, in the same turn. The review is unconditional. Merging is opt-in through `Auto-Merge on Approval` in `review.config.md`, off by default; a project that has not opted in ends at an approved PR waiting for a person, which is a complete run. The conditions that stop a merge decide only whether an already-reviewed PR merges, never whether it is reviewed.

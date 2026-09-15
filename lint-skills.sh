@@ -212,7 +212,7 @@ declare -a reply_writing_files=(
     "github-workflow/skills/execute/references/finish.md"
     "github-workflow/skills/bulk-execute/SKILL.md"
     "github-workflow/skills/bulk-execute/references/bulk-finish.md"
-    "github-workflow/skills/code-review/SKILL.md"
+    "github-workflow/skills/pr-review/SKILL.md"
     "github-workflow/skills/preflight/SKILL.md"
     "github-workflow/skills/writing-github-issues/SKILL.md"  # states the precedence
     "github-workflow/commands/block-story.md"
@@ -223,7 +223,7 @@ declare -a reply_writing_files=(
     "github-workflow/agents/reviewer.md"
     "github-workflow/templates/CLAUDE.md"                    # the rules written into a target project
     "github-workflow/skills/build/SKILL.md"
-    "github-workflow/skills/code-review/references/local-review.md"
+    "github-workflow/skills/pr-review/references/local-review.md"
     "github-workflow/skills/preflight/references/local-checks.md"
 )
 

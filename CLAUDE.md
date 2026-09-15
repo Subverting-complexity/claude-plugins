@@ -2,7 +2,7 @@
 
 This repo contains one Claude Code plugin, `github-workflow`, which covers GitHub story work and work that stays on your machine. It used to be two plugins (`github-workflow` and `local-workflow`) sharing fifteen skills through a sync step; 13.0.0 merged them, so every skill now has exactly one copy and there is nothing to sync. A new name for the merged plugin is still to be chosen.
 
-> **Dogfooding note:** This repo is itself configured as a `github-workflow` target. Project settings (org/repo, quality gate, issue fields) live in [`ClaudeProject.md`](ClaudeProject.md); workflow commands (`/github-workflow:execute`, `:code-review`, etc.) read it. The open backlog of plugin-hardening work can be viewed on the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8), grouped by each issue's `Stage`.
+> **Dogfooding note:** This repo is itself configured as a `github-workflow` target. Project settings (org/repo, quality gate, issue fields) live in [`ClaudeProject.md`](ClaudeProject.md); workflow commands (`/github-workflow:execute`, `:pr-review`, etc.) read it. The open backlog of plugin-hardening work can be viewed on the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8), grouped by each issue's `Stage`.
 
 ## CRITICAL RULES
 
@@ -23,7 +23,7 @@ This repo contains one Claude Code plugin, `github-workflow`, which covers GitHu
 
 `_shared/body-standard.md` is the single standard for every body written into a tracker or forge: an issue, a pull request description, a comment. It holds the wording, the bullet and title rules, the style and the no-hard-wrapping rule. Its entry points carry only the part that differs, which is which sections a body has: `writing-github-issues` for a GitHub issue, `pr-body` for a pull request.
 
-`pr-body` has two formats and the repository chooses between them, never the writer. A repository with a `ClaudeProject.md` always gets the fixed shape (`## Summary` → `## Changes` → `## Test plan`, then `Closes #N`), because `execute`, `bulk-execute` and `code-review` read and extend those bodies. Any other repository, or another platform, gets the component-section format in `pr-body/references/component-format.md`.
+`pr-body` has two formats and the repository chooses between them, never the writer. A repository with a `ClaudeProject.md` always gets the fixed shape (`## Summary` → `## Changes` → `## Test plan`, then `Closes #N`), because `execute`, `bulk-execute` and `pr-review` read and extend those bodies. Any other repository, or another platform, gets the component-section format in `pr-body/references/component-format.md`.
 
 `writing-github-issues` and `user-story` stay separate on purpose: one is the standard for a GitHub issue body, the other writes a story for pasting into any project management tool.
 
@@ -41,7 +41,7 @@ This is not cosmetic. These files are the examples the model learns the house st
 
 | Plugin | Description |
 |--------|-------------|
-| `github-workflow` | GitHub story work end to end (`execute`, `bulk-execute`, `code-review`), local work that stops at a commit (`build`), and the planning, review and writing skills both use |
+| `github-workflow` | GitHub story work end to end (`execute`, `bulk-execute`, `pr-review`), local work that stops at a commit (`build`), and the planning, review and writing skills both use |
 ## Running parallel agents
 
 These workflows spawn parallel/background agents, each of which the harness places in its own git worktree. When running agents in parallel — especially on Windows, where per-worktree `node_modules` duplication causes file-lock cleanup failures — follow the recommended harness configuration and manual reap routine in [`docs/worktree-config.md`](docs/worktree-config.md).

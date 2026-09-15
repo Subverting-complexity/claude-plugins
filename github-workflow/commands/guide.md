@@ -47,7 +47,7 @@ gh auth status 2>&1 | head -3
 > **Daily workflow:**
 >
 > - "Start the next story" → I'll pick the highest priority issue from your backlog, plan it, build it, test it, open a PR, have that PR reviewed by separate agents in a fresh context, and apply what the review asks for. Hands-free, start to finish.
-> - **Merging is off until you ask for it.** By default a run ends at an approved pull request and waits for you. Turn on `Auto-Merge on Approval` in `docs/review.config.md` — via `/github-workflow:setup` — and the same run merges it for you once the review approves. That one setting also governs `/github-workflow:code-review`, so there is only ever one answer to "will this merge on its own".
+> - **Merging is off until you ask for it.** By default a run ends at an approved pull request and waits for you. Turn on `Auto-Merge on Approval` in `docs/review.config.md` — via `/github-workflow:setup` — and the same run merges it for you once the review approves. That one setting also governs `/github-workflow:pr-review`, so there is only ever one answer to "will this merge on its own".
 > - `/github-workflow:execute --no-merge` → Skip the merge for a single run on a project that has it switched on.
 > - `/github-workflow:execute 42` → Work on a specific issue.
 > - `/github-workflow:execute --mode feature` → Pick only feature stories.
@@ -57,7 +57,7 @@ gh auth status 2>&1 | head -3
 >
 > **Review and audit:**
 >
-> - `/github-workflow:code-review` → Review the next open PR end-to-end (finds it, claims it, reviews in full codebase context, auto-fixes concrete issues, posts structured comment, applies state labels). Also picks up PRs with changes requested and addresses the feedback before re-reviewing.
+> - `/github-workflow:pr-review` → Review the next open PR end-to-end (finds it, claims it, reviews in full codebase context, auto-fixes concrete issues, posts structured comment, applies state labels). Also picks up PRs with changes requested and addresses the feedback before re-reviewing.
 > - `/github-workflow:execute --mode audit` → Audit the codebase and create issues for anything found.
 >
 > **Issue management:**

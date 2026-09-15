@@ -4,7 +4,7 @@ description: 'Take a GitHub story end to end: pick, plan, build, test, open a PR
 depends-on:
   - code-architect
   - feature-discovery
-  - code-review
+  - pr-review
 argument-hint: '[issue#] [--mode feature|maintenance|audit] [--no-merge] [--bypass-ci]'
 arguments:
   - name: story_number

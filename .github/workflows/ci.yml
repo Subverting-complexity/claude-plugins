@@ -94,10 +94,10 @@ jobs:
         # Lowered in 13.3.0 (#274, #276).
         run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 22630
 
-      - name: Check code-review every-run load
+      - name: Check pr-review every-run load
         shell: bash
         # Lowered in 13.3.0 (#274, #276), when auto-merge.md and the picker fallback began loading only when needed.
-        run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 5460
+        run: bash count-tokens.sh github-workflow/skills/pr-review/SKILL.md --budget 5460
 
       - name: Check build every-run load
         shell: bash

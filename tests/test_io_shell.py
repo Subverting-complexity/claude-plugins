@@ -3164,7 +3164,7 @@ class TestHandoffAndClaims(unittest.TestCase):
         self.assertEqual(code, wf.EXIT_OK)
         self.assertTrue(payload['claimed'])
         # Without the flag the same checkout is refused, so a second session
-        # sharing it (a `code-review N`) cannot take a PR another holds.
+        # sharing it (a `pr-review N`) cannot take a PR another holds.
         code, _ = claim()
         self.assertEqual(code, wf.EXIT_LOST)
 

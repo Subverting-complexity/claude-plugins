@@ -7,7 +7,7 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace with one deve
 
 Both share one set of planning, review and writing skills. Until 13.0.0 these were two plugins, `github-workflow` and `local-workflow`, with fifteen skills copied into each. They are now one plugin, so every skill is listed once. A new name for it is still to be chosen.
 
-> **Upgrading from `local-workflow`:** uninstall it (`claude plugin uninstall local-workflow@subverting-complexity`) and install `github-workflow`. `/local-workflow:build` is now `/github-workflow:build`, local review is `/github-workflow:code-review`, and `/local-workflow:pr-description` is `/github-workflow:pr-body`.
+> **Upgrading from `local-workflow`:** uninstall it (`claude plugin uninstall local-workflow@subverting-complexity`) and install `github-workflow`. `/local-workflow:build` is now `/github-workflow:build`, local review is `/github-workflow:pr-review`, and `/local-workflow:pr-description` is `/github-workflow:pr-body`.
 
 ---
 
