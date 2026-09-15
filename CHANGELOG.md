@@ -6,6 +6,17 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 15.1.0
+
+**The write guard closes the gaps found after 14.1.0** (Issue #295). It now blocks writes to another owner that it let through, stops denying some ordinary writes inside the allowed org, and fails closed where it used to fail open.
+
+- **Blocked now:** `-R` placed before the subcommand, `GH_REPO` in the environment, commands run through `bash -lc`, `eval`, `Invoke-Expression`, `xargs` or a heredoc piped into a shell, `curl` or `Invoke-RestMethod` writes to `api.github.com`, `hub`, a push to a remote or URL set earlier in the same command or through `git -c`, `gh api` fields attached to their flag, GraphQL mutations whose node IDs belong to another owner, GitHub MCP connectors without `github` in their name, forks to the personal account, deploy and SSH keys, and `rtk proxy gh`. `wf` is judged by the org in `ClaudeProject.md` as well as the git remote.
+- **No longer hidden:** a comment with an apostrophe, a PowerShell path ending in a backslash, or `<<EOF` inside quotes used to hide the commands after it, from the Azure DevOps check as well. The parser now knows Bash and PowerShell quote differently.
+- **No longer denied:** an allowlist saved with a byte-order mark, a `cd` to `~` or a Git Bash `/c/...` path, SSH alias remotes such as `git@github-work:org/x.git` and `ssh.github.com:443`, `gh api repos/:owner/:repo`, `repos/$slug` taken from `gh repo view`, `gh project item-edit --project-id`, and `gh pr create -r` (a reviewer, not a repository).
+- **Fails closed:** with an allowlist present, a GitHub write the guard cannot judge is denied, including a push whose destination it cannot work out and a tool call it cannot read. Reads still pass. A cached Python that exits without running the check is detected and replaced.
+
+To learn who owns a node ID, the guard makes one GraphQL read, and only for a GraphQL write that names node IDs.
+
 ## synergy 15.0.0
 
 **Three skills renamed so they stop clashing with other skills** (Issue #288). A person usually types the short name, so a plugin name that matches or nearly matches another skill can run the wrong one without anyone noticing.
