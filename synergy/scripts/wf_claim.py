@@ -76,12 +76,37 @@ def acquire_claim(target):
 
 
 def release_claim(target):
-    run(['git', 'push', 'origin', ':refs/claims/%s' % target])
+    """Delete refs/claims/<target> and this checkout's marker for it.
+
+    Returns True when the ref is gone from the remote and False when it may
+    still be there. A failed release is not harmless: the ref goes on holding
+    the item out of every pool until `claim-reap` frees it hours later, so the
+    caller has to be able to say so rather than report it released.
+
+    Deleting a ref that is already gone fails the push too, and that is the
+    outcome the caller wanted, so releasing stays idempotent: a failed push is
+    a failed release only when the ref is still there or the remote cannot be
+    asked.
+    """
+    ref = 'refs/claims/%s' % target
+    code, _, err = run(['git', 'push', 'origin', ':%s' % ref])
+    if code != 0:
+        # `--exit-code` makes ls-remote exit 2 only when it reached the remote
+        # and found no such ref; any other answer leaves the ref's fate unknown.
+        probe, _, _ = run(['git', 'ls-remote', '--exit-code', 'origin', ref])
+        if probe != 2:
+            eprint('wf: warning - could not release %s (%s); it stays claimed '
+                   'until this is re-run or claim-reap frees it'
+                   % (ref, err.strip() or 'no detail'))
+            # The marker stays as well: the ref is still this checkout's, and
+            # the marker is what lets `claim --keep-held` recognise it as such.
+            return False
     marker = _claim_marker_path(repo_root(), target)
     try:
         os.remove(marker)
     except OSError:
         pass
+    return True
 
 
 def apply_in_progress(cfg, issue):
@@ -220,18 +245,26 @@ def cmd_claim_release(args):
     err = check_environment()
     if err:
         emit('error', EXIT_ENV, reason=err)
-    released = []
-    for number in args.issue or []:
-        release_claim('issue-%d' % number)
-        released.append('issue-%d' % number)
-    for number in args.pr or []:
-        release_claim('pr-%d' % number)
-        released.append('pr-%d' % number)
-    if not released:
+    targets = (['issue-%d' % number for number in args.issue or []]
+               + ['pr-%d' % number for number in args.pr or []])
+    if not targets:
         emit('usage', EXIT_USAGE,
              reason='name what to release: --issue N and/or --pr N')
-    emit('ok', EXIT_OK, released=released,
-         reason='released %s' % ', '.join(released))
+    released, failed = [], []
+    for target in targets:
+        (released if release_claim(target) else failed).append(target)
+    # Still exit 0, as the command always has, so a caller tidying up is never
+    # stopped by it; but a ref that is still there is named in `failed` and in
+    # the reason, never listed as released.
+    parts = []
+    if released:
+        parts.append('released %s' % ', '.join(released))
+    if failed:
+        parts.append('could not release %s, which stay%s claimed until this is '
+                     're-run or claim-reap frees %s'
+                     % (', '.join(failed), 's' if len(failed) == 1 else '',
+                        'it' if len(failed) == 1 else 'them'))
+    emit('ok', EXIT_OK, released=released, failed=failed, reason='; '.join(parts))
 
 
 # ── claim-reap ───────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 # Review Workflow Reference
 
-Read this when you need to look up a **label purpose**, verify the **claim/release procedure** for a PR, or run the **label reconciliation fallback** for Step 10 (when `wf review-finish` is unavailable). Skip it on the common path when label names and claim steps are already clear from `SKILL.md`.
+Read this when you need to look up a **label purpose**, verify the **claim/release procedure** for a PR, or run the **label reconciliation fallback** for Step 10 (when `wf review-finish` is unavailable). Skip it on the common path when label names and claim steps are already clear from `pr-workflow.md`.
 
 For background on the feedback loop (how builders address review comments, how change significance is classified) and why duplicate PRs arise, see `docs/rationale/review-workflow-rationale.md` — not read at runtime.
 

@@ -391,9 +391,11 @@ def cmd_handoff(args):
         if not written:
             eprint('wf: warning - could not set #%d to In Review (%s)'
                    % (number, message))
-        release_claim('issue-%d' % number)
+        # Reported rather than fatal, like the stage: the PR exists either way,
+        # but a claim left behind keeps the issue locked until claim-reap.
+        released = release_claim('issue-%d' % number)
         issues.append({'number': number, 'stage_set': written,
-                       'stage_message': message})
+                       'stage_message': message, 'claim_released': released})
 
     for name in ('plan.md', 'preflight-passed.txt', 'label-cache.json'):
         try:

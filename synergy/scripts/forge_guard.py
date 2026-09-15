@@ -19,13 +19,24 @@ import json
 import re
 import sys
 
-from command_parse import (HTTP_TOOLS, WRITE_VERBS, expand, flag_value,
+# The hook keeps the first interpreter that prints an answer. One too old for
+# this script (2.7, or 3.6, where `capture_output` raises a TypeError the
+# guard swallows) would answer `{}` to every call and be kept, so it exits
+# without printing and the hook tries the next.
+if sys.version_info < (3, 7):
+    sys.exit(1)
+
+from command_parse import (HTTP_TOOLS, WRITE_VERBS, expand, flag_value,  # noqa: E402
                            has_flag, host, http_writes, mcp_writes,
                            name_words, not_read, push_url, remote_url, walk)
 
 # Hosts of the platforms the plugin must not post to on its own.
 FORGE_HOSTS = re.compile(
     r'dev\.azure\.com|visualstudio\.com|gitlab\.com|bitbucket\.org', re.I)
+# What a call the guard could not read has to name to be asked about.
+FORGE_HINT = re.compile(
+    FORGE_HOSTS.pattern + r'|\baz\b|\bglab\b|\bado\b|azdo|devops|gitlab|bitbucket',
+    re.I)
 
 AZ_GROUPS = {'repos', 'boards', 'devops', 'pipelines', 'artifacts'}
 MCP_FORGE_WORDS = {'devops', 'ado', 'azdo', 'gitlab', 'bitbucket'}
@@ -110,23 +121,46 @@ def outbound_post(tool_name, tool_input, cwd=None, lookup=remote_url):
     return None
 
 
-def decision(reason):
+def decision(reason, certain=True):
     return {
         'hookSpecificOutput': {
             'hookEventName': 'PreToolUse',
             'permissionDecision': 'ask',
             'permissionDecisionReason': (
-                'synergy: this is %s, which posts outside GitHub. The plugin '
+                'synergy: this is %s, which %s outside GitHub. The plugin '
                 'never posts to another platform on its own; approve only if '
-                'you asked for this.' % reason),
+                'you asked for this.'
+                % (reason, 'posts' if certain else 'may post')),
         }
     }
 
 
+def _subject(raw):
+    """The text a call the guard could not read is judged on: the tool name
+    and its command. The working directory and the description are left out,
+    so a repository under a folder called github, described as writing a
+    file, is not taken for a GitHub write. Text that is not an event is
+    judged whole."""
+    try:
+        event = json.loads(raw)
+    except (TypeError, ValueError):
+        return raw or ''
+    if not isinstance(event, dict):
+        return raw or ''
+    tool_input = event.get('tool_input')
+    tool_input = tool_input if isinstance(tool_input, dict) else {}
+    # `\b` does not fall between the words of `mcp__github__create_issue`.
+    parts = [str(event.get('tool_name') or '').replace('_', ' ')]
+    parts += [tool_input[key] for key in ('command', 'script')
+              if isinstance(tool_input.get(key), str)]
+    return '\n'.join(parts)
+
+
 def evaluate(raw, load_allowlist=None, block=None, post=outbound_post):
     """The hook's answer to one PreToolUse event, as a dict, or None to let
-    the call run. A call the guard fails to read is let through, unless this
-    machine has a GitHub allowlist and the call looks like a GitHub write."""
+    the call run. A call the guard fails to read is denied when this machine
+    has a GitHub allowlist and the call looks like a GitHub write, asked about
+    when it names another platform, and otherwise let through."""
     import github_guard
     load_allowlist = load_allowlist or github_guard.load_allowlist
     block = block or github_guard.github_block
@@ -141,11 +175,17 @@ def evaluate(raw, load_allowlist=None, block=None, post=outbound_post):
             return github_guard.denial(blocked, allowlist)
         reason = post(name, tool_input, cwd)
     except Exception as exc:  # a broken guard must not break the tool call
-        if allowlist is not None and GITHUB_HINT.search(raw or '') \
-                and WRITE_HINT.search(raw or ''):
+        subject = _subject(raw)
+        failure = '%s: %s' % (type(exc).__name__, exc)
+        if allowlist is not None and GITHUB_HINT.search(subject) \
+                and WRITE_HINT.search(subject):
             return github_guard.denial(
-                'a tool call synergy could not read (%s: %s) that looks like '
-                'a GitHub write' % (type(exc).__name__, exc), allowlist)
+                'a tool call synergy could not read (%s) that looks like a '
+                'GitHub write' % failure, allowlist)
+        if FORGE_HINT.search(subject):
+            return decision(
+                'a tool call synergy could not read (%s) that names Azure '
+                'DevOps, GitLab or Bitbucket' % failure, certain=False)
         return None
     return decision(reason) if reason else None
 

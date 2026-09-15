@@ -198,13 +198,13 @@ fi
 
 # Reply-writing wiring: user-facing-communication is the standard for every
 # reply the plugin writes to a person. It reaches a session three ways —
-# the SessionStart hook, the shared wording standard every skill
-# cites, and a direct citation in each file that writes to the user. Only the
+# the SessionStart hook, the shared wording standard most skills
+# cite, and a direct citation in each file that writes to the user. Only the
 # third can rot silently, so each of those files is asserted here. Add a file
 # whenever a new path starts writing to the user; do not delete an entry to
 # make the gate pass.
 declare -a reply_writing_files=(
-    # The standard itself, and the shared standard every skill inherits it through.
+    # The standard itself, and the shared standard most skills inherit it through.
     "synergy/skills/user-facing-communication/SKILL.md"
     "synergy/skills/_shared/wording-standard.md"
     # Orchestrators, commands, and the agents that report back.

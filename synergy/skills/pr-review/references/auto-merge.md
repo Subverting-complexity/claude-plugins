@@ -165,7 +165,7 @@ Drive the PR to a merged state. Conflicts and red CI are **blockers to clear, no
    ```bash
    gh pr view <number> --repo <org>/<repo> --json state,mergedAt,autoMergeRequest
    ```
-   - `state` `MERGED` → report in the **final report format** (in `SKILL.md`, shared with Step 10), leading with `Approved and merged PR #<number>: <title>`.
+   - `state` `MERGED` → report in the **final report format** (in `pr-workflow.md`, shared with Step 10), leading with `Approved and merged PR #<number>: <title>`.
    - `autoMergeRequest` is non-null (auto-merge enqueued) → report in the same format, leading with `Approved PR #<number>: <title> — auto-merge queued, will land when checks / branch protection clear`.
    - You took the **Enqueue** path but `autoMergeRequest` is null and `state` is still `OPEN` → the `--auto` call did not take (repo auto-merge disabled). Pause per step 4: post the one-line comment, leave `approved`, and exit. Do not claim success.
    - Neither merged nor queued → report exactly why the merge did not complete. Do not claim success.

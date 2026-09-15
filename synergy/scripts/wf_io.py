@@ -6,6 +6,7 @@ Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
 
 import json
+import os
 import subprocess
 import sys
 
@@ -41,8 +42,26 @@ def emit(status, exit_code, **fields):
     sys.exit(exit_code)
 
 
+# git and gh must fail rather than ask for credentials. An unattended run (a
+# `wf claim` pushing its claim ref, say) has nobody to answer a terminal prompt
+# or a Git Credential Manager window, so expired credentials would hang it
+# instead of failing it with a message the caller can report.
+NON_INTERACTIVE_ENV = {'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never'}
+
+
+def _non_interactive_env():
+    """The current environment with credential prompts turned off. Built per
+    call rather than at import, so a variable set later still reaches git."""
+    env = dict(os.environ)
+    env.update(NON_INTERACTIVE_ENV)
+    return env
+
+
 def run(args, input_text=None):
     """Run a subprocess, capturing text output. Returns (code, stdout, stderr).
+
+    The child runs with `NON_INTERACTIVE_ENV` over the current environment, so
+    a credential that needs a person fails the call instead of hanging it.
 
     Decoding is pinned to UTF-8 with ``errors='replace'`` rather than the
     platform locale codec. ``gh`` emits UTF-8 (issue bodies routinely carry
@@ -56,7 +75,7 @@ def run(args, input_text=None):
     try:
         proc = subprocess.run(
             args, input=input_text, capture_output=True, text=True,
-            encoding='utf-8', errors='replace',
+            encoding='utf-8', errors='replace', env=_non_interactive_env(),
         )
     except FileNotFoundError:
         return 127, '', '%s: not found' % args[0]

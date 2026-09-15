@@ -67,11 +67,12 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
             # undone and the run stops: retrying the next candidate would
             # almost certainly hit the same failure, one issue at a time.
             restored, message = revert_in_progress(cfg, cand['number'])
-            release_claim(target)
+            released = release_claim(target)
             side_effects.append({'issue': cand['number'],
                                  'action': 'released-unverified',
                                  'detail': detail, 'restored': restored,
-                                 'stage_message': None if restored else message})
+                                 'stage_message': None if restored else message,
+                                 'claim_released': released})
             emit('error', EXIT_ENV,
                  reason='could not read the blocked-by edges of #%d, so whether '
                         'it is blocked is unknown and nothing was decided from '
@@ -81,16 +82,20 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
                  backlog_mode=backlog_mode, side_effects=side_effects)
         if verdict == 'blocked':
             written, message = mark_blocked(cfg, cand, detail)
-            release_claim(target)
+            # A release that failed leaves the ref holding the issue out of
+            # every pool until claim-reap, so it is reported beside the rest.
+            released = release_claim(target)
             side_effects.append({'issue': cand['number'], 'action': 'marked-blocked',
                                  'detail': detail, 'stage_set': written,
-                                 'stage_message': None if written else message})
+                                 'stage_message': None if written else message,
+                                 'claim_released': released})
             continue
         if verdict == 'resolved':
             done_set, _ = close_resolved(cfg, cand, detail)
-            release_claim(target)
+            released = release_claim(target)
             side_effects.append({'issue': cand['number'], 'action': 'closed-already-resolved',
-                                 'pr': detail, 'stage_set': done_set})
+                                 'pr': detail, 'stage_set': done_set,
+                                 'claim_released': released})
             continue
         return cand, side_effects
     return None, side_effects

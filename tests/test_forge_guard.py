@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """Offline tests for the guard that asks before posting outside GitHub."""
+import importlib.util
+import json
 import os
+import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(
     0,
     os.path.join(os.path.dirname(__file__), '..', 'synergy', 'scripts'),
 )
-from forge_guard import decision, outbound_post  # noqa: E402
+from forge_guard import decision, evaluate, outbound_post  # noqa: E402
 
 AZURE = 'https://org@dev.azure.com/org/project/_git/repo'
 GITHUB = 'git@github.com:Subverting-complexity/claude-plugins.git'
@@ -269,6 +276,231 @@ class TestParserGaps(unittest.TestCase):
                 self.assertIsNone(bash(command))
         self.assertIsNone(pwsh(
             "$body = @'\naz repos pr create --title x\n'@\ngh pr comment 1 --body $body"))
+
+
+def event(command, tool='Bash', cwd='.', description=None):
+    tool_input = {'command': command}
+    if description:
+        tool_input['description'] = description
+    return json.dumps({'tool_name': tool, 'cwd': cwd, 'tool_input': tool_input})
+
+
+class TestGapsFoundInRobustnessReview(unittest.TestCase):
+    """Calls the review of 16.1.0 found judged wrongly."""
+
+    def test_a_heredoc_with_a_backslash_delimiter_hides_nothing(self):
+        command = ("cat <<\\EOF\nit's here\nEOF\n"
+                   'git push https://dev.azure.com/org/p/_git/r main')
+        self.assertIsNotNone(bash(command, {}))
+
+    def test_a_call_that_cannot_be_read_and_names_a_forge_asks(self):
+        post = (lambda name, tool_input, cwd:
+                outbound_post(name, tool_input, cwd, remotes({})))
+        out = evaluate(event(
+            'echo "oops; git push https://dev.azure.com/org/p/_git/r main'),
+            lambda: None, post=post)
+        self.assertEqual(out['hookSpecificOutput']['permissionDecision'], 'ask')
+        self.assertIsNone(evaluate(event('echo "oops; git status'),
+                                   lambda: None, post=post))
+
+    def test_only_the_command_of_an_unreadable_call_is_judged(self):
+        allow = {'path': 'allow.json', 'account': None,
+                 'owners': ['Subverting-complexity']}
+        unreadable = event('echo "oops', cwd='/home/me/github/app',
+                           description='write the notes')
+        self.assertIsNone(evaluate(unreadable, lambda: allow))
+        self.assertIsNone(evaluate(
+            event('echo "oops', cwd='/home/me/gitlab/app',
+                  description='push the notes'), lambda: None))
+
+    def test_a_remote_added_with_a_tracked_branch_is_followed(self):
+        self.assertIsNotNone(bash(
+            'git remote add -t main az https://dev.azure.com/org/p/_git/r'
+            ' && git push az main', {'origin': GITHUB}))
+        self.assertIsNotNone(bash(
+            'git remote add -f --tags -m main az https://dev.azure.com/org/p/_git/r'
+            ' && git push az main', {'origin': GITHUB}))
+
+    def test_a_python_too_old_for_the_script_prints_nothing(self):
+        script = os.path.join(os.path.dirname(__file__), '..', 'synergy',
+                              'scripts', 'forge_guard.py')
+        # The script's own folder is on the path when the hook runs it.
+        old = ('import os, runpy, sys; sys.version_info = (3, 6, 0); '
+               'sys.argv = sys.argv[1:]; '
+               'sys.path.insert(0, os.path.dirname(sys.argv[0])); '
+               'runpy.run_path(sys.argv[0], run_name="__main__")')
+        out = subprocess.run([sys.executable, '-c', old, script],
+                             input=event('az repos pr create --title x'),
+                             capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertEqual(out.stdout, '')
+
+
+BASH = shutil.which('bash')
+HERE = os.path.dirname(os.path.abspath(__file__))
+HOOK = os.path.join(HERE, '..', 'synergy', 'hooks', 'forge-guard.sh')
+
+
+def hook_event(tool, tool_input, cwd):
+    """A PreToolUse event shaped as Claude Code sends it."""
+    return json.dumps({
+        'session_id': 's1', 'transcript_path': cwd + '/s1.jsonl', 'cwd': cwd,
+        'permission_mode': 'default', 'hook_event_name': 'PreToolUse',
+        'tool_name': tool, 'tool_input': tool_input, 'tool_use_id': 'toolu_1'})
+
+
+def recorded_writes():
+    """(tool, tool_input) for every call the guard tests expect an answer on,
+    found by running those tests with the guard wrapped."""
+    spec = importlib.util.spec_from_file_location(
+        'recorded_github_guard_tests', os.path.join(HERE, 'test_github_guard.py'))
+    github_tests = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(github_tests)
+    calls = []
+
+    def wrap(real):
+        def recorder(tool, tool_input, *args, **kwargs):
+            out = real(tool, tool_input, *args, **kwargs)
+            if out is not None:
+                calls.append((tool, dict(tool_input or {})))
+            return out
+        return recorder
+
+    this = sys.modules[__name__]
+    patches = [(this, 'outbound_post'), (github_tests, 'github_block')]
+    saved = [getattr(module, name) for module, name in patches]
+    try:
+        for module, name in patches:
+            setattr(module, name, wrap(getattr(module, name)))
+        for module in (this, github_tests):
+            suite = unittest.TestLoader().loadTestsFromModule(module)
+            cases = [case for group in suite for case in group
+                     if not type(case).__name__.startswith('TestHook')]
+            unittest.TestSuite(cases).run(unittest.TestResult())
+    finally:
+        for (module, name), real in zip(patches, saved):
+            setattr(module, name, real)
+    unique = {}
+    for tool, tool_input in calls:
+        unique[(tool, json.dumps(tool_input, sort_keys=True))] = (tool, tool_input)
+    return list(unique.values())
+
+
+@unittest.skipIf(not BASH or 'system32' in (BASH or '').lower(),
+                 'needs a POSIX bash')
+class TestHookFilter(unittest.TestCase):
+    """The text check in forge-guard.sh that decides whether to start Python."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp().replace('\\', '/')
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        # An interpreter that notes it was started, then runs the real one.
+        self.logger = self.tmp + '/logging-python'
+        with open(self.logger, 'w', newline='\n') as f:
+            f.write('#!/bin/sh\n: > "$CLAUDE_PLUGIN_DATA/ran"\nexec "%s" "$@"\n'
+                    % sys.executable.replace('\\', '/'))
+        os.chmod(self.logger, 0o755)
+
+    def data_dir(self, name, allowlist=None, cache=None):
+        data = '%s/%s' % (self.tmp, name)
+        os.makedirs(data)
+        if allowlist is not None:
+            with open(data + '/allow.json', 'w') as f:
+                json.dump(allowlist, f)
+        if cache is not None:
+            with open(data + '/guard-python', 'w') as f:
+                f.write(cache)
+        return data
+
+    def run_hook(self, data, event):
+        env = dict(os.environ, CLAUDE_PLUGIN_DATA=data,
+                   SYNERGY_GITHUB_ALLOWLIST=data + '/allow.json')
+        return subprocess.run([BASH, HOOK.replace('\\', '/')], input=event,
+                              capture_output=True, text=True, env=env,
+                              timeout=120).stdout.strip()
+
+    def test_every_write_the_tests_know_still_reaches_python(self):
+        # An account nobody is signed in as denies each GitHub write before
+        # any owner is looked up, so no call leaves this machine.
+        allow = {'account': 'synergy-test-account', 'owners': ['Subverting-complexity']}
+        writes = recorded_writes()
+        self.assertGreater(len(writes), 150)
+
+        def judge(item):
+            index, (tool, tool_input) = item
+            data = self.data_dir(str(index), allow, self.logger)
+            event = hook_event(tool, tool_input, data)
+            out = self.run_hook(data, event)
+            expected = evaluate(event, lambda: dict(allow, path=data + '/allow.json'))
+            return (tool, tool_input, os.path.exists(data + '/ran'), out,
+                    json.dumps(expected) if expected else '')
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(judge, enumerate(writes)))
+        for tool, tool_input, ran, out, expected in results:
+            with self.subTest(tool=tool, tool_input=tool_input):
+                self.assertTrue(ran, 'the hook did not start Python')
+                self.assertEqual(out, expected)
+
+    def test_github_reads_do_not_start_python(self):
+        allow = {'owners': ['Subverting-complexity']}
+        for index, (tool, tool_input) in enumerate((
+            ('Bash', {'command': 'gh pr view 12', 'description': 'push notes'}),
+            ('Bash', {'command': 'gh issue list --limit 5'}),
+            ('Bash', {'command': 'git log --oneline -5'}),
+            ('Bash', {'command': 'ls C:/src/github/app',
+                      'description': 'write the notes to github'}),
+            ('PowerShell', {'command': 'gh pr checks 12 --watch'}),
+            ('mcp__github__get_repository', {'owner': 'SomeoneElse', 'repo': 'r'}),
+        )):
+            with self.subTest(tool=tool, tool_input=tool_input):
+                data = self.data_dir(str(index), allow, self.logger)
+                out = self.run_hook(data, hook_event(
+                    tool, tool_input, '/home/me/github/app'))
+                self.assertEqual(out, '')
+                self.assertFalse(os.path.exists(data + '/ran'))
+
+    def test_a_camel_case_forge_mcp_tool_starts_python(self):
+        data = self.data_dir('camel', cache=self.logger)
+        out = self.run_hook(data, hook_event(
+            'mcp__myAdo__create_pull_request', {'title': 'x'}, data))
+        self.assertIn('"ask"', out)
+
+    def test_an_interpreter_that_prints_something_else_is_replaced(self):
+        data = self.data_dir('echo', cache='echo')
+        out = self.run_hook(data, hook_event(
+            'Bash', {'command': 'az repos pr create --title x'}, data))
+        self.assertIn('"ask"', out)
+        with open(data + '/guard-python') as f:
+            cached = f.read()
+        # The interpreter's own path, so `py -3` is not started twice a call.
+        self.assertTrue(os.path.isfile(cached), cached)
+
+    def test_the_word_lists_match_the_guard(self):
+        from command_parse import WRITE_VERBS
+        from forge_guard import WRITE_HINT
+        from github_guard import GH_ALIASES, GH_NESTED, GH_WRITES
+        with open(HOOK, encoding='utf-8') as f:
+            text = f.read()
+        verbs = re.search(r"^\s*verbs='([^']*)'", text, re.M).group(1).split('|')
+        capitals = re.search(r"^\s*Verbs='([^']*)'", text, re.M).group(1).split('|')
+        words = {w for w in WRITE_VERBS if '-' not in w}
+        self.assertEqual(set(verbs), words)
+        self.assertEqual(set(capitals), {w.capitalize() for w in words})
+        write = set(re.search(r'^write="\(\^\|\$w\)\(([^)]*)\)', text, re.M)
+                    .group(1).split('|'))
+        hint = re.search(r'\((.*)\)', WRITE_HINT.pattern).group(1).split('|')
+        self.assertLessEqual(set(hint), write)
+        # A write action is seen by its own word, a hyphenated part of it, or
+        # its group: `workflow` stands for `gh workflow run`, so that
+        # `gh run view` does not start Python.
+        actions = [(group, a) for group, names in GH_WRITES.items() for a in names]
+        actions += [(pair[1], a) for pair, names in GH_NESTED.items() for a in names]
+        actions += [('', a) for a in GH_ALIASES]
+        for group, action in sorted(actions):
+            with self.subTest(group=group, action=action):
+                self.assertTrue(action in write or group in write
+                                or set(action.split('-')) & write)
 
 
 class TestDecision(unittest.TestCase):

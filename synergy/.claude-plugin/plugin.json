@@ -1,6 +1,6 @@
 {
   "name": "synergy",
-  "version": "16.1.0",
+  "version": "16.2.0",
   "description": "Development workflow plugin for GitHub story work and for work that stays on your machine. Say 'start the next story' and it picks an issue from your backlog, plans it, builds it, runs tests, opens a PR, has the PR reviewed independently by agents in a fresh context, and merges it on projects that turn on auto-merge. Selection reads org issue fields (Stage, Priority, Effort, Ownership) and the Epic and Feature tree, never labels or board cards, and a scheduled board-sync keeps every issue's Stage in step. For local work, 'build this' plans, builds, verifies and commits with no issue or PR, pr-review reviews a local change as well as a PR, and verify-feature writes the report a person reads before merging, in the chat only. It posts only to GitHub: anything that would post to Azure DevOps, GitLab or Bitbucket asks first, each session is told which platform hosts the repository, and a personal allowlist on each machine blocks GitHub writes outside the orgs and account it names. One grill skill runs every interview. Keeps what loads into each session small.",
   "author": {
     "name": "Subverting Complexity"

@@ -23,6 +23,7 @@ Run both from a normal shell, not inside a Claude Code session, then restart the
 | `/synergy:bulk-execute`         | Choose 2-5 related stories and build them as one branch, one PR, one review |
 | `/synergy:bulk-execute 41 43 47` | Build exactly these stories together     |
 | `/synergy:pr-review`          | Review (or rework + re-review) the next PR |
+| `/synergy:build`                | Plan, build, verify and commit a local task, with no issue or PR |
 | `/synergy:block-story`          | Mark current story as blocked            |
 | `/synergy:report-issue`         | Create a bug/arch/debt issue             |
 | `/synergy:setup`                | Interactive project onboarding wizard    |
@@ -169,8 +170,8 @@ With it in place, a push, pull request, issue, comment, label, merge or other Gi
 
 | Agent         | Role                          | Constraint             |
 | ------------- | ----------------------------- | ---------------------- |
-| **Builder**   | Implements stories end-to-end | Full tool access       |
-| **Reviewer**  | Validates PRs against issues  | Fixes and merges in full mode; read-only when `execute` spawns it for an independent review |
+| **Builder**   | Implements stories end-to-end | Scoped allowlist (see `agents/builder.md`) |
+| **Reviewer**  | Validates PRs against issues  | Fixes and merges in full mode; read-only when `execute` or `bulk-execute` spawns it for an independent review |
 
 Each agent follows least privilege — only the tools it needs. The builder is the default agent when the plugin is active.
 

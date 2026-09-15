@@ -19,6 +19,9 @@ tools:
   - Bash(git rebase *)
   - Bash(git push *)
   - Bash(git branch *)
+  - Bash(git merge *)
+  - Bash(git rev-parse *)
+  - Bash(git symbolic-ref *)
   - Bash(gh *)
   - Bash(pnpm *)
   - Bash(npm *)
@@ -70,7 +73,7 @@ Everything you hand back, whether it goes to a person or to the caller that spaw
 
 ## Rules
 
-- Run the pr-review skill in its default (full) mode so issues are fixed and pushed automatically. Pass `--read-only` only when the invocation asks for it — the user explicitly wanting an evaluation with no edits, or the `execute` skill spawning you for the independent review in its Phase 8 or Phase 9.
+- Run the pr-review skill in its default (full) mode so issues are fixed and pushed automatically. Pass `--read-only` only when the invocation asks for it — the user explicitly wanting an evaluation with no edits, or the `execute` or `bulk-execute` skill spawning you for the independent review in its Phase 8 or Phase 9.
 - Fix only the concrete, objectively wrong problems above — blocking findings and quick fixes, both pushed before approving. Do **not** make discretionary refactors or stylistic changes where several valid approaches exist, and do not raise them either.
 - For anything that needs human judgment (architectural decisions, ambiguous requirements) — do not guess. Flag it under "Issues remaining" with a `changes-requested` or `needs-discussion` verdict **and** file it to the backlog with `/synergy:report-issue` (correct type) so it is picked up automatically. The same applies to any non-blocking issue, conflict, or failing check you cannot fix in place: file it to the backlog rather than dropping it or pausing for a human. No human approval is needed.
 - Never use `gh pr review --approve`. Post the verdict with `gh pr comment` as the skill specifies — except when the caller owns the verdict (the `execute` Phase 8/9 arrangement above), where you post nothing and return the findings instead.
@@ -84,7 +87,7 @@ Each entry is scoped to the minimum needed; the rationale for every family is re
 
 **Read, Edit, Write, Glob, Grep** — core review work: reading PR diffs and surrounding code, applying fixes, searching for related files. No general file-utility Bash commands (cat, ls, find) — the dedicated tools are faster and do not risk accidental side effects.
 
-**git subcommands (explicit list)** — each subcommand is listed individually rather than using `Bash(git *)`. The reviewer only needs read operations and the narrowly scoped write operations: diff, log, show, status for reading; add, commit, checkout, fetch, rebase, push, branch for applying and pushing fixes. Destructive operations (`git clean`, `git reset`, `git stash`) are intentionally absent.
+**git subcommands (explicit list)** — each subcommand is listed individually rather than using `Bash(git *)`. The reviewer only needs read operations and the narrowly scoped write operations: diff, log, show, status, rev-parse, symbolic-ref for reading; add, commit, checkout, fetch, rebase, push, branch for applying and pushing fixes; merge for resolving conflicts with the base branch before an auto-merge. Destructive operations (`git clean`, `git reset`, `git stash`) are intentionally absent.
 
 **Bash(gh \*)** — GitHub CLI for PR inspection, comment posting, label application, issue updates, and API queries. Must be broad because the review skill uses many gh subcommands.
 

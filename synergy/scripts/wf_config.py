@@ -27,7 +27,13 @@ def check_environment():
     code, _, _ = run(['git', 'rev-parse', '--is-inside-work-tree'])
     if code != 0:
         return 'not inside a git work tree'
-    code, _, err = run(['gh', 'auth', 'status'])
+    # `gh auth token` answers "is gh signed in" from the local credential store
+    # in about 100 ms; `gh auth status` asks GitHub and cost about 750 ms on every
+    # wf command. A token GitHub no longer accepts fails on the first real call.
+    # gh older than 2.17 has no `auth token`, so a failure is confirmed the slow way.
+    code, _, err = run(['gh', 'auth', 'token'])
+    if code != 0:
+        code, _, err = run(['gh', 'auth', 'status'])
     if code != 0:
         return 'gh not available or not authenticated (%s)' % (err.strip() or 'run `gh auth login`')
     return None

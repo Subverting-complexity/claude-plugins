@@ -98,8 +98,13 @@ jobs:
 
       - name: Check pr-review every-run load
         shell: bash
-        # Lowered in 13.3.0 (#274, #276), when auto-merge.md and the picker fallback began loading only when needed.
-        run: bash count-tokens.sh synergy/skills/pr-review/SKILL.md --budget 5460
+        # Lowered in 13.3.0 (#274, #276), when auto-merge.md and the picker fallback began loading only when needed. Lowered again in 16.2.0, when the pull request workflow began loading only when the target is a pull request.
+        run: bash count-tokens.sh synergy/skills/pr-review/SKILL.md --budget 635
+
+      - name: Check pr-review pull request path load
+        shell: bash
+        # Added in 16.2.0, when the pull request steps moved out of SKILL.md: a pull request review loads this file as well as the 635 above, so it keeps its own gate.
+        run: bash count-tokens.sh synergy/skills/pr-review/references/pr-workflow.md --budget 5010
 
       - name: Check build every-run load
         shell: bash
