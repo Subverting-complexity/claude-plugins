@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 17.0.1
+
+**The marketplace listing describes 17.0.0 in full.** The plugin and marketplace descriptions now mention Classification areas on filed issues and the reduced GitHub requests, and the keywords add `bulk-execute`, `dependencies` and `parallel-agents`. No behaviour changes.
+
 ## synergy 17.0.0
 
 **A dependency decides the build order, never whether a story is taken.** `wf plan-set` plans a bulk set from the blocked-by edges and the issue tree: two stories are connected by an edge either way, a shared blocker or a shared parent, and a story waiting on another story in the set is built after it rather than left out. Named stories bring the open prerequisites they need. The set is 2 to 7 stories, grouped into waves of stories that do not wait on each other, and `--claim` claims, assigns and sets `In Progress` for all of them in a handful of requests. `wf drop-story` returns a story and everything waiting on it to the pool, and `wf bulk-mark` records the branch and each story built. The three per-path selection references are replaced by one.
