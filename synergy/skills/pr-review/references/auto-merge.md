@@ -221,7 +221,7 @@ Drive the PR to a merged state. Conflicts and red CI are **blockers to clear, no
      **not** fall back to an unguarded immediate merge — that would defeat
      the gate you just enqueued behind. Instead **pause**: post a one-line
      comment ("auto-merge paused: repo-level auto-merge is disabled —
-     enable it with `/synergy:onboard harden`"), leave `approved`,
+     enable it with `/synergy:setup harden`"), leave `approved`,
      and exit. Confirm the enqueue actually took in step 5 below.
 
 5. **Verify the outcome — never assume.** Re-read the state:

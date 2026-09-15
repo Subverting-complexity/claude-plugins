@@ -1,6 +1,6 @@
-# Onboard: audit the backlog's issue metadata
+# Setup: audit the backlog's issue metadata
 
-Read by `/synergy:onboard issues` (or `backlog`).
+Read by `/synergy:setup issues` (or `backlog`).
 
 The onboarding's Step 5e records what the org *can* classify an issue with. This checks what the open issues actually carry, because nothing else does: an issue created outside the workflow, or before the org enabled types, sits there with no type and no field values, and no error anywhere says so. It only reads.
 

@@ -293,7 +293,7 @@ def cmd_labels_ensure(args):
     """Create the review-state labels a repo lacks, and nothing else.
 
     These are the only labels the workflow applies (#275), so this is the whole
-    of label setup: `onboard` runs it, `preflight --fix` runs it for a
+    of label setup: `setup` runs it, `preflight --fix` runs it for a
     `review-label` finding, and a person can run it any time.
     """
     cfg = prepare_cfg()

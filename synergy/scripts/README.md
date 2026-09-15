@@ -146,7 +146,7 @@ Run from the **target repo root** so the CLI can read `ClaudeProject.md` and the
 2. **A probed system Python** otherwise (`python3` verified, then `py -3`, then `python` — the broken Windows `python3` Store shim fails its `--version` probe and is skipped), with a one-line hint to run setup.
 3. **Nothing found** → exit 20; the caller falls back to the inline skill.
 
-`wf.sh setup` is idempotent: a valid venv is reused, `--force` rebuilds it. If no Python 3 exists it prints the platform install command and stops (exit 20) — or, with the explicit `--install-python` opt-in, installs system Python via winget/brew/apt first. Wire it via `/synergy:onboard wf` (or it's offered during full onboarding, Step 1b).
+`wf.sh setup` is idempotent: a valid venv is reused, `--force` rebuilds it. If no Python 3 exists it prints the platform install command and stops (exit 20) — or, with the explicit `--install-python` opt-in, installs system Python via winget/brew/apt first. Wire it via `/synergy:setup wf` (or it's offered during full setup, Step 1b).
 
 ## Contract
 

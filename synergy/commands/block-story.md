@@ -23,7 +23,7 @@ A blocked issue has its `Stage` field set to **Blocked**, and that field is the 
 
 ## Preflight
 
-Before doing anything else, invoke `/synergy:preflight` to verify project configuration. If it finds issues and the user chooses "Configure now", wait for onboarding to complete, then ask the user to re-run this command. Otherwise, proceed.
+Before doing anything else, invoke `/synergy:preflight` to verify project configuration. If it finds issues and the user chooses "Configure now", wait for setup to complete, then ask the user to re-run this command. Otherwise, proceed.
 
 ## Steps
 

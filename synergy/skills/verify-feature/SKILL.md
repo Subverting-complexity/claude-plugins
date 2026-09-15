@@ -88,7 +88,7 @@ Each concern is a short comment to the person who wrote the code:
 
 Keep the uncertainty that is there, ask questions rather than issue instructions when intent is unclear, do not paste code back, and stop once the point and the question are clear. Severity goes in the heading, never in the prose.
 
-Before presenting the report, read `skills/correspondence/SKILL.md` and apply it to the concerns, so they read in the user's own voice.
+Before presenting the report, read `skills/tone/SKILL.md` and apply it to the concerns, so they read in the user's own voice.
 
 ## Step 5 — Report
 

@@ -33,7 +33,7 @@ REQUIRED_CONFIG_SECTIONS = (
 
 _SECTION_FIXES = {
     'Issue Types & Fields': (
-        "run `/synergy:onboard` to write it from the org's live issue "
+        "run `/synergy:setup` to write it from the org's live issue "
         'types and fields, or copy the section from '
         '`synergy/templates/ClaudeProject.md`'),
 }
@@ -534,14 +534,8 @@ _RETIRED_INSTRUCTION_PATTERNS = (
     (r'/github-workflow:|github-workflow@subverting-complexity',
      'the plugin under its old name, `github-workflow`, which stopped '
      'resolving when 14.0.0 renamed it to `synergy`: a `/github-workflow:` '
-     'command is `/synergy:`, and `code-review`, `grill`, `tone` and `setup` '
-     'are now `/synergy:pr-review`, `/synergy:interview`, '
-     '`/synergy:correspondence` and `/synergy:onboard`'),
-    (r'/synergy:(?:grill|tone|setup)(?![\w-])',
-     'a command 15.0.0 renamed so it stops clashing with a Claude Code '
-     'built-in or an Anthropic skill: `/synergy:grill` is '
-     '`/synergy:interview`, `/synergy:tone` is `/synergy:correspondence` and '
-     '`/synergy:setup` is `/synergy:onboard`'),
+     'command is `/synergy:`, except `/github-workflow:code-review`, which is '
+     '`/synergy:pr-review`'),
 )
 
 

@@ -1,6 +1,6 @@
 # ClaudeProject.md — format specification (schema v1)
 
-`ClaudeProject.md` is the single source of truth for a project using the `synergy` plugin. It lives at the **repository root** — the `wf` picker resolves it via `git rev-parse --show-toplevel`, so one file covers the whole repo (per-subproject configs are unsupported). The template is `synergy/templates/ClaudeProject.md`; the onboarding wizard (`/synergy:onboard`) generates and refreshes it.
+`ClaudeProject.md` is the single source of truth for a project using the `synergy` plugin. It lives at the **repository root** — the `wf` picker resolves it via `git rev-parse --show-toplevel`, so one file covers the whole repo (per-subproject configs are unsupported). The template is `synergy/templates/ClaudeProject.md`; the setup wizard (`/synergy:setup`) generates and refreshes it.
 
 ## Who parses it
 
@@ -22,7 +22,7 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 
 ## Sections
 
-**Required** — `wf preflight` emits a CRITICAL (blocking, offers the onboarding wizard) if the literal level-2 heading is absent:
+**Required** — `wf preflight` emits a CRITICAL (blocking, offers the setup wizard) if the literal level-2 heading is absent:
 
 | Heading | Content |
 | ------- | ------- |
@@ -54,7 +54,7 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 
 ## Behaviour on deviation
 
-- **Missing file, missing required section, or `gh` unauthenticated** — preflight CRITICAL: the calling command stops and offers `wf preflight --fix`, the onboarding wizard, "continue anyway" or "don't remind me". A missing file is reported on its own and stops before the network: with no file there is nothing to compare anything against.
+- **Missing file, missing required section, or `gh` unauthenticated** — preflight CRITICAL: the calling command stops and offers `wf preflight --fix`, the setup wizard, "continue anyway" or "don't remind me". A missing file is reported on its own and stops before the network: with no file there is nothing to compare anything against.
 - **Missing recommended/optional content** — WARNING at most; commands proceed on defaults (the `review-` prefix for review labels, `main` for the default branch, `feature/{number}/{short-desc}` for branches).
 - **Org `Stage` field absent** — CRITICAL `stage-absent`: no state can be written or read. **`Stage` missing one of its nine options** — CRITICAL `stage-options`, naming the option, because a transition to it fails. A missing `## Project Board` section is not a finding.
 - **`wf.py` parse failures stop the run.** The picker returns a non-`ok` status and the calling command reports it and stops. There is no inline procedure to fall back to: selection, claiming, stage writes, handoff and issue creation are `wf` commands and nothing else implements them, so a `wf` that cannot read this file is a stop, not a slow path.

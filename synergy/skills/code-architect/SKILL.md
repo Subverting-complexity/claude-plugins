@@ -2,7 +2,7 @@
 name: code-architect
 description: 'Design a new system, audit a codebase for SOLID, dependency and testability problems with a refactor plan, or write architecture docs and coding standards.'
 depends-on:
-  - interview
+  - grill
 allowed-tools:
   - Read
   - Glob
@@ -39,7 +39,7 @@ find . -maxdepth 2 -type d ! -path '*/node_modules/*' ! -path '*/.git/*' ! -path
 ### Workflow 1: Design New Codebase
 When user asks to design, architect, or build a new system/codebase:
 
-1. **Establish shared understanding** - Run the `interview` skill (`/synergy:interview`) to clarify (skip this step when called from an autonomous workflow like `/synergy:execute` that explicitly says not to pause or interview the user):
+1. **Establish shared understanding** - Run the `grill` skill (`/synergy:grill`) to clarify (skip this step when called from an autonomous workflow like `/synergy:execute` that explicitly says not to pause or interview the user):
    - What problem does this solve?
    - Who are the users/actors?
    - What are the core business rules?

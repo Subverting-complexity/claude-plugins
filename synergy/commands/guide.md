@@ -32,13 +32,13 @@ gh auth status 2>&1 | head -3
 
 > This plugin runs your entire GitHub development workflow — from picking a story off your backlog to opening a PR. But first we need to set up your project.
 >
-> Run `/synergy:onboard` and I'll walk you through it. I'll auto-detect your repo, package manager, and org issue fields, then ask you a few questions about your labels and branch convention. Takes about 2 minutes.
+> Run `/synergy:setup` and I'll walk you through it. I'll auto-detect your repo, package manager, and org issue fields, then ask you a few questions about your labels and branch convention. Takes about 2 minutes.
 
 **Config files exist but incomplete:**
 
 > Your project is partially configured. I found `ClaudeProject.md` but it's missing some sections.
 >
-> Run `/synergy:onboard` and I'll fill in the gaps without overwriting what you already have.
+> Run `/synergy:setup` and I'll fill in the gaps without overwriting what you already have.
 
 **Fully configured:**
 
@@ -47,7 +47,7 @@ gh auth status 2>&1 | head -3
 > **Daily workflow:**
 >
 > - "Start the next story" → I'll pick the highest priority issue from your backlog, plan it, build it, test it, open a PR, have that PR reviewed by separate agents in a fresh context, and apply what the review asks for. Hands-free, start to finish.
-> - **Merging is off until you ask for it.** By default a run ends at an approved pull request and waits for you. Turn on `Auto-Merge on Approval` in `docs/review.config.md` — via `/synergy:onboard` — and the same run merges it for you once the review approves. That one setting also governs `/synergy:pr-review`, so there is only ever one answer to "will this merge on its own".
+> - **Merging is off until you ask for it.** By default a run ends at an approved pull request and waits for you. Turn on `Auto-Merge on Approval` in `docs/review.config.md` — via `/synergy:setup` — and the same run merges it for you once the review approves. That one setting also governs `/synergy:pr-review`, so there is only ever one answer to "will this merge on its own".
 > - `/synergy:execute --no-merge` → Skip the merge for a single run on a project that has it switched on.
 > - `/synergy:execute 42` → Work on a specific issue.
 > - `/synergy:execute --mode feature` → Pick only feature stories.
@@ -72,7 +72,7 @@ gh auth status 2>&1 | head -3
 >
 > **Faster, better-grounded runs (optional):**
 >
-> - `/synergy:onboard ecosystem` → Turn on companion tools so the workflow uses them automatically: a codebase knowledge graph (Graphify) for graph-grounded planning and review, plus token, cost, and config-security helpers. Fully skippable — decline and nothing changes.
+> - `/synergy:setup ecosystem` → Turn on companion tools so the workflow uses them automatically: a codebase knowledge graph (Graphify) for graph-grounded planning and review, plus token, cost, and config-security helpers. Fully skippable — decline and nothing changes.
 >
 > Most people just say "start the next story" and let me handle it.
 

@@ -1,6 +1,6 @@
 ---
 name: bulk-execute
-description: 'Build two to five related GitHub stories on one branch behind one pull request, reviewed and merged like execute. Trigger on "bulk execute", "build these stories together" or several issue numbers.'
+description: 'Build two to five related GitHub stories on one branch behind one pull request, reviewed and merged like execute. Trigger on "bulk execute", "batch these stories" or several issue numbers.'
 depends-on:
   - code-architect
   - pr-review

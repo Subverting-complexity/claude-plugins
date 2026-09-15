@@ -34,7 +34,7 @@ with this content:
 This project opted out of Claude Code companion tools. Workflow skills
 skip the ecosystem step silently and never prompt for it. To enable tools
 later, run `/synergy:ecosystem-setup` (or
-`/synergy:onboard ecosystem`) — that deletes this marker and writes
+`/synergy:setup ecosystem`) — that deletes this marker and writes
 `.claude/ecosystem.md`.
 ```
 
