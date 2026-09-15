@@ -1,6 +1,6 @@
 ---
 name: Reviewer
-description: 'Reviews a pull request in a fresh context, fixes concrete issues in place, resolves conflicts and CI failures when merging, files what it cannot fix, and applies review-state labels.'
+description: 'Independent pull request reviewer that execute, bulk-execute and pr-review spawn by name.'
 color: blue
 tools:
   - Read

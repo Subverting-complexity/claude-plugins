@@ -79,7 +79,8 @@ jobs:
       # acceptance-criteria and ecosystem-setup left the every-chat tier.
       - name: Check every-chat load
         shell: bash
-        run: bash count-tokens.sh --every-chat --budget 1020
+        # Lowered in 16.1.0: the repository host message was added and the Reviewer agent description shortened.
+        run: bash count-tokens.sh --every-chat --budget 1005
 
       - name: Prove the load counter assigns tiers as documented
         shell: bash
@@ -87,13 +88,13 @@ jobs:
 
       - name: Check execute every-run load
         shell: bash
-        # Lowered in 13.3.0 (#274, #276), when merge mechanics moved behind the auto-merge check and the shared phases moved into one reference.
-        run: bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 16200
+        # Lowered in 13.3.0 (#274, #276), when merge mechanics moved behind the auto-merge check and the shared phases moved into one reference. Lowered again in 16.1.0, when Phase 9 rework began loading only when there is some.
+        run: bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 14820
 
       - name: Check bulk-execute every-run load
         shell: bash
-        # Lowered in 13.3.0 (#274, #276).
-        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 22630
+        # Lowered in 13.3.0 (#274, #276), and in 16.1.0 when each set-selection path began loading only when chosen.
+        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 18340
 
       - name: Check pr-review every-run load
         shell: bash
@@ -102,7 +103,8 @@ jobs:
 
       - name: Check build every-run load
         shell: bash
-        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 5960
+        # Lowered in 16.1.0, when audit mode, failure handling and the ecosystem tip began loading only when needed.
+        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 4960
 
       - name: Check setup every-run load
         shell: bash

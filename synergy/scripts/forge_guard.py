@@ -84,7 +84,9 @@ def _glab(toks):
 def outbound_post(tool_name, tool_input, cwd=None, lookup=remote_url):
     """What this tool call would post outside GitHub, or None."""
     if tool_name.startswith('mcp__'):
-        if set(name_words(tool_name)) & MCP_FORGE_WORDS and mcp_writes(tool_name):
+        words = name_words(tool_name)
+        forge = set(words) & MCP_FORGE_WORDS or 'devops' in ''.join(words)
+        if forge and mcp_writes(tool_name):
             return 'the MCP tool `%s`' % tool_name
         return None
     command = (tool_input or {}).get('command') or ''

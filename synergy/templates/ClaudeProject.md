@@ -120,4 +120,4 @@ Paths to architecture docs or specs consulted for cross-cutting concerns not cov
 
 ## Bundled Skills
 
-Available as `/synergy:*`: acceptance-criteria, build, bulk-execute, code-architect, pr-review, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, support-request, tone, user-story, verify-feature, writing-github-issues.
+Available as `/synergy:*`: acceptance-criteria, build, bulk-execute, code-architect, pr-review, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, support-request, tone, user-facing-communication, user-story, verify-feature, writing-github-issues.

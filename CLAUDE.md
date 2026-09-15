@@ -101,6 +101,8 @@ The plugin posts only to GitHub. Only the GitHub workflows (`execute`, `bulk-exe
 
 The same hook also limits GitHub writes to what each machine allows. The list is personal and lives at `~/.claude/synergy/github-allowlist.json` (`account` and `owners`), never in a repository, so each developer sets their own. With it present, a GitHub write to an owner not listed, or made while `gh` is signed in as another account, is denied outright; without it nothing is restricted. That check is `scripts/github_guard.py`, tested in `tests/test_github_guard.py`. Both guards split commands with `scripts/command_parse.py`.
 
+A session is told where the repository is hosted before it does anything. `hooks/repo-host.sh` runs at `SessionStart` and `SubagentStart`, reads the remote from the git config file (not from `git`, which refuses a repository another Windows user owns), and names the platform, so Claude in an Azure DevOps, GitLab or Bitbucket repository does not reach for `gh` or the GitHub workflows. It prints the platform only, never the URL. It is tested in `tests/test_repo_host.py`, and `lint-skills.sh` fails if `hooks.json` stops running it.
+
 ## Installing the plugin for a project
 
 Install the plugin per machine, at user scope, and never commit it into a consuming project. A project's `.claude/settings.json` must not carry `enabledPlugins` or `extraKnownMarketplaces` for this marketplace, and `claude plugin install --scope project` must not be used, because it writes `enabledPlugins` into that file.

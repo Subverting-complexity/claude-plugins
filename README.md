@@ -5,7 +5,7 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace with one deve
 - **GitHub story work:** pick a story from your backlog, plan it, build it, test it, open a PR, and have that PR reviewed independently by agents in a fresh context, then merge it on projects that opt into unattended merging.
 - **Local work:** plan, build, verify and commit on your machine, with no issue tracker and no pull request.
 
-Both share one set of planning, review and writing skills. Until 13.0.0 these were two plugins, `synergy` and `local-workflow`, with fifteen skills copied into each. They are now one plugin, so every skill is listed once. A new name for it is still to be chosen.
+Both share one set of planning, review and writing skills. Until 13.0.0 these were two plugins, `github-workflow` and `local-workflow`, with fifteen skills copied into each. They are now one plugin, so every skill is listed once, and since 14.0.0 it is called `synergy`.
 
 > **Upgrading from `local-workflow`:** uninstall it (`claude plugin uninstall local-workflow@subverting-complexity`) and install `synergy`. `/local-workflow:build` is now `/synergy:build`, local review is `/synergy:pr-review`, and `/local-workflow:pr-description` is `/synergy:pr-body`.
 
@@ -13,7 +13,7 @@ Both share one set of planning, review and writing skills. Until 13.0.0 these we
 
 ## Installation
 
-Add the marketplace, then install whichever plugin(s) you want:
+Add the marketplace, then install the plugin:
 
 ```bash
 # 1. Add this marketplace
@@ -23,7 +23,7 @@ claude plugin marketplace add Subverting-complexity/claude-plugins
 claude plugin install synergy@subverting-complexity
 ```
 
-Or run `/plugin` inside Claude Code (after step 1) to browse and install interactively. Restart your session afterward so the plugins' skills, commands, agents, and hooks load.
+Or run `/plugin` inside Claude Code (after step 1) to browse and install interactively. Restart your session afterward so the plugin's skills, commands, agents, and hooks load.
 
 ### Picking up a new version
 
@@ -42,29 +42,15 @@ Check what you actually have with `claude plugin list`, and compare against the 
 
 **Install per machine, not per project.** Add the marketplace and install the plugin once on each machine, and do not commit `enabledPlugins` or `extraKnownMarketplaces` into a project's `.claude/settings.json`. A committed entry stops resolving without any error when the plugin is renamed. See [`CLAUDE.md`](CLAUDE.md#installing-the-plugin-for-a-project).
 
-### Configuring `synergy`
+### Configuring a project
 
-`synergy` exposes a few user-config options. The only **required** one is the GitHub org/owner of the repos you'll work against:
-
-```bash
-claude plugin install synergy@subverting-complexity \
-  --config github_org=YOUR_ORG_OR_USERNAME
-```
-
-| Option | Required | Default | Description |
-|--------|----------|---------|-------------|
-| `github_org` | ✅ | — | GitHub org or username that owns your repos |
-| `default_branch` | | `main` | Main branch name |
-| `branch_prefix` | | `feat` | Prefix for feature branches |
-| `quality_gate_command` | | — | Command to run before PRs (e.g. `npm test`, `dotnet test`) |
-
-You can also configure interactively with `/plugin configure synergy@subverting-complexity`, or run the plugin's own setup wizard by asking Claude to *"set up my project"*.
+The plugin has no install-time options. Project settings (org, repo, default branch, branch convention, quality gate and issue fields) live in a `ClaudeProject.md` at the repository root. Run `/synergy:setup`, or ask Claude to *"set up my project"*: it detects what it can, asks for the rest and writes the file. The format is in [`docs/claudeproject-spec.md`](docs/claudeproject-spec.md).
 
 ---
 
 ## Usage
 
-Once installed, drive the plugins in natural language — the relevant skill triggers automatically. A few starting points:
+Once installed, drive the plugin in natural language — the relevant skill triggers automatically. A few starting points:
 
 **GitHub story work**
 - *"Execute"* / *"start the next story"* / *"what's next?"* / *"pick a story"* / *"start story 42"* — full pick → plan → build → test → PR → independent review, then merge on projects that enable it

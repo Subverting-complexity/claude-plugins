@@ -45,7 +45,7 @@ if [ -e .git ] && [ ! -f .claude/ecosystem.md ] && [ ! -f .claude/ecosystem-decl
 fi
 ```
 
-**`ECOSYSTEM_TIP` is informational, not a gate.** If the block above printed an `ECOSYSTEM_TIP` line, this project has not opted into *or* out of the companion tools. Surface it as **one** plain line early in your response — e.g. "Tip: companion tools like Graphify aren't set up. Run `/synergy:ecosystem-setup` to enable them, or skip — it's optional." — then carry on with the task. It never blocks, never repeats within a run, and stops entirely once the user sets up or declines (declining writes `.claude/ecosystem-declined`). If no `ECOSYSTEM_TIP` line was printed, say nothing about ecosystem tools.
+If the block above printed an `ECOSYSTEM_TIP` line, follow `references/ecosystem-tip.md`; it is informational and never blocks the run. If it printed none, say nothing about ecosystem tools.
 
 ## Session budget
 
@@ -65,7 +65,7 @@ Default mode is `build`. Override with `$ARGUMENTS.mode`:
 - **build** -- Take a task and implement it
 - **audit** -- Audit the codebase, report findings, no code changes
 
-If mode is `audit`, skip to the Audit section at the bottom.
+If mode is `audit`, follow `references/audit-mode.md` instead of the phases below, then run the **Exit cleanup**.
 
 ---
 
@@ -162,31 +162,6 @@ Because Start clean recorded what was already dirty, anything dirty here that is
 
 ---
 
-## Audit mode
-
-When `$ARGUMENTS.mode` is `audit`:
-
-1. Read `CLAUDE.md` for project rules if it exists.
-2. Review the codebase for issues: bugs, security vulnerabilities, architecture problems, code quality concerns.
-
-   **Ecosystem tools.** If `.claude/ecosystem.md` exists, the project has opted into the tools it lists — run them as part of the audit and fold their findings into the report:
-   - **Graphify** → `graphify . --update` then `graphify query` for architecture/dependency questions across the whole tree.
-   - **Fallow** (TS/JS) → run it for unused exports, duplication, and complexity hotspots.
-   - **ecc-agentshield** → `npx ecc-agentshield scan` to audit the Claude Code config (CLAUDE.md, `.claude/`, hooks, skills, MCP) for secrets, prompt-injection openings, and over-broad allowlists. If `.claude/ecosystem.md` is absent the project opted out — skip this step silently. If a listed tool is not installed, note it in one line and continue the audit; a missing tool never blocks it.
-3. Report findings organized by severity (critical, warning, suggestion).
-4. Do not make code changes. Do not create branches or commits.
-5. Run the **Exit cleanup** so the tree ends clean. Audit makes no code changes, so the tree should already be clean — but the quality gate or a tool may have left incidental churn; reconcile it (or confirm `git status --porcelain` is empty) before ending.
-
----
-
 ## When things go wrong
 
-**Blocked**: If any phase cannot proceed (missing dependency, unclear requirement, broken environment), tell the user what's blocking you and what information you need to continue. Then run the **Exit cleanup**: commit any real partial work worth keeping (do **not** `git stash` it — the stash is shared across worktrees, and there is no cross-session resume to pick it back up) or discard disposable noise, so the tree ends clean and the worktree can be reaped.
-
-**Abandoning an approach**: If the current approach is wrong and pushing on would make the codebase worse, stop rather than force it. Restore the working tree to the Start clean baseline — discard only *your* session's changes (`git restore` / `git clean -fd` on files you touched), never the user's pre-existing edits. Then report what was attempted and why it was abandoned, so the next attempt starts from that knowledge instead of repeating it.
-
-**Partial progress**: If only part of the work passes the quality gate, commit the passing part as its own atomic commit and leave the failing part out — discard it or note it, but never commit code that fails the gate. In the final report, list exactly what was committed and what remains, with enough detail that a fresh session can finish the job.
-
-**Bug found**: If you discover an unrelated bug during development, note it in the final report. Do not fix it inline unless it is trivial and within the same scope.
-
-**Task too large**: If the plan reveals the task exceeds one session's budget, implement the highest-priority slice, commit it, and report what remains. Do not attempt to complete everything in one session. Run the **Exit cleanup** after committing the slice so the tree ends clean — uncommitted remainder left in the worktree is stranded, not resumed.
+If a phase is blocked or fails, the approach has to be abandoned, only part of the work passes the gate, an unrelated bug turns up, or the task proves too large, follow `references/when-things-go-wrong.md`.

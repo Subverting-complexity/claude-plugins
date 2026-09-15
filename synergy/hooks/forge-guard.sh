@@ -3,17 +3,31 @@
 # the decision: a write to Azure DevOps, GitLab or Bitbucket asks first, and
 # with a GitHub allowlist on this machine a GitHub write outside it is denied.
 # A cheap text check runs first, so an ordinary tool call never starts Python.
-input=$(cat)
+# It runs before every shell and MCP call, so the check uses bash built-ins
+# only: starting cat, sed and grep for it cost about a quarter of a second on
+# Windows.
+IFS= read -r -d '' input
 
 # Look only at the tool name and its input: the working directory and the
 # transcript path would otherwise match a repository whose path says "gitlab".
 # JSON writes a line break as \n, which would join `gh` on a new line to the
 # n before it, so escaped breaks and tabs become spaces.
-subject=$(printf '%s' "$input" | sed -E 's/"(cwd|transcript_path|session_id|permission_mode|hook_event_name|tool_use_id)"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"//g; s/\\[nrt]/ /g')
-pattern='\baz\b|glab|dev\.azure|visualstudio|gitlab|bitbucket|devops|push|[_-]ado[_-]|invoke-(restmethod|webrequest)|\birm\b|\biwr\b|(pwsh|powershell)(\.exe)?([^"[:alnum:]_]|$)|(^|[^[:alnum:]_])(--?|/)(ec|en[a-z]*)\b'
+subject=$input
+meta='"(cwd|transcript_path|session_id|permission_mode|hook_event_name|tool_use_id)"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"'
+while [[ $subject =~ $meta ]]; do
+    subject=${subject/"${BASH_REMATCH[0]}"/}
+done
+subject=${subject//\\n/ }
+subject=${subject//\\r/ }
+subject=${subject//\\t/ }
+
+# bash regex has no \b on every platform, so a word edge is spelt out.
+w='[^[:alnum:]_]'
+pattern="(^|$w)az($w|$)|azdo|glab|dev\\.azure|visualstudio|gitlab|bitbucket|devops|push|[_-]ado[_-]|invoke-(restmethod|webrequest)|(^|$w)(irm|iwr)($w|$)|(pwsh|powershell)(\\.exe)?([^\"[:alnum:]_]|$)|(^|$w)(--?|/)(ec|en[a-z]*)($w|$)"
 allowlist="${SYNERGY_GITHUB_ALLOWLIST:-$HOME/.claude/synergy/github-allowlist.json}"
-[ -f "$allowlist" ] && pattern="$pattern|\\bgh\\b|\\bhub\\b|github|wf\\.(sh|ps1|py)|\"owner\"[[:space:]]*:"
-printf '%s' "$subject" | grep -qiE "$pattern" || exit 0
+[ -f "$allowlist" ] && pattern="$pattern|(^|$w)(gh|hub)($w|$)|github|wf\\.(sh|ps1|py)|\"owner\"[[:space:]]*:"
+shopt -s nocasematch
+[[ $subject =~ $pattern ]] || exit 0
 
 script="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)/forge_guard.py"
 cache="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/synergy}/guard-python"
