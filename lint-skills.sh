@@ -186,6 +186,14 @@ else
             status=1
         fi
     done
+    # The standard also covers rewriting an issue, where no template applies, so
+    # its citation is scoped to creating. Every line that cites the procedure
+    # must say so; dropping the scope would load it on every rewrite, and
+    # dropping the citation would leave the create path without it.
+    if grep -F 'issue-template-resolution.md' "$ISSUE_STANDARD" | grep -viq 'when creating'; then
+        echo "FAIL: $ISSUE_STANDARD cites issue-template-resolution.md on a line that does not scope it to creating an issue"
+        status=1
+    fi
 fi
 
 # Reply-writing wiring: user-facing-communication is the standard for every
