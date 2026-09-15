@@ -47,15 +47,20 @@ def _fake_git(refused=(), still_there=True, calls=None):
     """A `run` whose release push fails for each target in `refused`.
 
     `still_there` is what the ls-remote probe then finds: the ref still on the
-    remote (exit 0) or gone (exit 2)."""
+    remote (exit 0) or gone (exit 2). A push naming several refs fails if any
+    one is refused, and the probe then lists the refused refs it was asked
+    about, as git does after deleting the rest."""
     def fake(cmd, input_text=None):
         if calls is not None:
             calls.append(list(cmd))
         if cmd[:2] == ['git', 'push'] and any(
-                cmd[-1] == ':refs/claims/%s' % t for t in refused):
+                ':refs/claims/%s' % t in cmd for t in refused):
             return 1, '', 'remote: permission denied'
         if cmd[:2] == ['git', 'ls-remote']:
-            return (0, 'abc\t%s\n' % cmd[-1], '') if still_there else (2, '', '')
+            if not still_there:
+                return 2, '', ''
+            held = [a for a in cmd if a in ['refs/claims/%s' % t for t in refused]]
+            return 0, ''.join('abc\t%s\n' % r for r in held or cmd[-1:]), ''
         return 0, '', ''
     return fake
 

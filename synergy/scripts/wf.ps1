@@ -9,6 +9,11 @@
 #   wf.ps1 pick|config|...
 #       Run the CLI, preferring the venv interpreter created by setup and
 #       falling back to a probed system Python. Exit code is preserved.
+#
+# The resolved interpreter is cached in `wf-python-ps1` under the data dir and
+# trusted while its path exists, so a call does not launch Python once just to
+# find it. `setup` rewrites the cache; an interpreter that will not start is
+# forgotten and looked for again.
 $ErrorActionPreference = 'Stop'
 
 $wf = Join-Path $PSScriptRoot 'wf.py'
@@ -21,6 +26,10 @@ $dataRoot = if ($env:CLAUDE_PLUGIN_DATA) { $env:CLAUDE_PLUGIN_DATA }
             else { $newData }
 $venv = Join-Path $dataRoot 'wf-venv'
 $venvPy = Join-Path $venv 'Scripts/python.exe'
+# Two lines: `venv` or `base`, then the interpreter's path. Separate from
+# wf.sh's `wf-python`, whose paths are written in a form PowerShell cannot run.
+$pyCache = Join-Path $dataRoot 'wf-python-ps1'
+$script:baseExe = ''
 
 # Write-Error stops the script under 'Stop' before the exit code is set, and
 # callers read exit 20 as "fall back to the inline procedure".
@@ -35,17 +44,47 @@ function Get-VenvPython {
 }
 
 # Each candidate is run, not just found: the Microsoft Store `python3` stub is
-# on PATH but runs nothing, and wf.py needs Python 3.8 or later.
+# on PATH but runs nothing, and wf.py needs Python 3.8 or later. The same run
+# reports the interpreter's absolute path, which is what gets cached.
 function Get-BasePython {
     foreach ($candidate in @(, @('py', '-3')) + @(, @('python3')) + @(, @('python'))) {
         if (-not (Get-Command $candidate[0] -ErrorAction SilentlyContinue)) { continue }
         $rest = @($candidate | Select-Object -Skip 1)
         try {
-            $ok = & $candidate[0] @rest -c 'import sys; print(sys.version_info >= (3, 8))' 2>$null
+            $out = @(& $candidate[0] @rest -c 'import sys; print(sys.version_info >= (3, 8)); print(sys.executable)' 2>$null)
         } catch { continue }
-        if ($LASTEXITCODE -eq 0 -and "$ok".Trim() -eq 'True') { return , $candidate }
+        if ($LASTEXITCODE -eq 0 -and $out.Count -ge 1 -and "$($out[0])".Trim() -eq 'True') {
+            $script:baseExe = if ($out.Count -ge 2) { "$($out[1])".Trim() } else { '' }
+            return , $candidate
+        }
     }
     return $null
+}
+
+# Best-effort: a cache that cannot be written only means the next call probes.
+function Save-PythonCache([string] $Kind, [string] $Path) {
+    try {
+        New-Item -ItemType Directory -Force $dataRoot | Out-Null
+        Set-Content -LiteralPath $pyCache -Value @($Kind, $Path) -Encoding utf8 -ErrorAction Stop
+    } catch { }
+}
+
+function Remove-PythonCache {
+    Remove-Item -LiteralPath $pyCache -Force -ErrorAction SilentlyContinue
+}
+
+# The cached interpreter, trusted without running it. Its path must still
+# exist, and a cached system Python gives way as soon as a venv exists.
+function Get-CachedPython {
+    if (-not (Test-Path -LiteralPath $pyCache)) { return $null }
+    try { $lines = @(Get-Content -LiteralPath $pyCache -ErrorAction Stop) } catch { return $null }
+    if ($lines.Count -lt 2) { return $null }
+    $kind = "$($lines[0])".Trim()
+    $path = "$($lines[1])".Trim()
+    if (-not $path -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    if ($kind -eq 'base' -and (Test-Path $venvPy)) { return $null }
+    if ($kind -ne 'venv' -and $kind -ne 'base') { return $null }
+    return @{ Kind = $kind; Path = $path }
 }
 
 function Invoke-WfSetup {
@@ -53,8 +92,13 @@ function Invoke-WfSetup {
     $force = $Rest -contains '-Force' -or $Rest -contains '--force'
     $install = $Rest -contains '-InstallPython' -or $Rest -contains '--install-python'
 
+    # Whatever setup ends with is what the next call runs, so a failed setup
+    # leaves no stale answer behind.
+    Remove-PythonCache
+
     $vpy = Get-VenvPython
     if ((-not $force) -and $vpy) {
+        Save-PythonCache 'venv' $vpy
         Write-Host "wf: virtualenv already set up at $venv"
         exit 0
     }
@@ -84,6 +128,7 @@ function Invoke-WfSetup {
         & $vpy -m pip install --quiet -r $req
         if ($LASTEXITCODE -ne 0) { Stop-Wf "wf: installing $req failed; re-run 'wf.ps1 setup -Force' once the error above is fixed." 1 }
     }
+    Save-PythonCache 'venv' $vpy
     Write-Host "wf: setup complete — $(& $vpy --version). Future calls reuse it automatically."
     exit 0
 }
@@ -92,16 +137,37 @@ if ($args.Count -ge 1 -and $args[0] -eq 'setup') {
     Invoke-WfSetup -Rest @($args | Select-Object -Skip 1)
 }
 
+$cached = Get-CachedPython
+if ($cached) {
+    if ($cached.Kind -eq 'base') {
+        Write-Warning "wf: no dedicated virtualenv yet — using system Python. Run 'wf.ps1 setup' to pin one."
+    }
+    try {
+        & $cached.Path $wf @args
+        exit $LASTEXITCODE
+    } catch [System.Management.Automation.CommandNotFoundException], [System.Management.Automation.ApplicationFailedException] {
+        # The interpreter would not start, which is not an answer from wf.py.
+        Remove-PythonCache
+        [Console]::Error.WriteLine("wf: the cached interpreter $($cached.Path) would not start; looking for Python again.")
+    }
+}
+
 $vpy = Get-VenvPython
 if ($vpy) {
+    Save-PythonCache 'venv' $vpy
     & $vpy $wf @args
     exit $LASTEXITCODE
 }
 $base = Get-BasePython
 if ($base) {
     Write-Warning "wf: no dedicated virtualenv yet — using system Python. Run 'wf.ps1 setup' to pin one."
-    $baseArgs = @($base | Select-Object -Skip 1)
-    & $base[0] @baseArgs $wf @args
+    if ($script:baseExe -and (Test-Path -LiteralPath $script:baseExe -PathType Leaf)) {
+        Save-PythonCache 'base' $script:baseExe
+        & $script:baseExe $wf @args
+    } else {
+        $baseArgs = @($base | Select-Object -Skip 1)
+        & $base[0] @baseArgs $wf @args
+    }
     exit $LASTEXITCODE
 }
 Stop-Wf "wf: Python 3 not found; run 'wf.ps1 setup' (or install Python 3.8 or later). Falling back to the inline procedure."

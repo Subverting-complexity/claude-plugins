@@ -79,8 +79,8 @@ jobs:
       # acceptance-criteria and ecosystem-setup left the every-chat tier.
       - name: Check every-chat load
         shell: bash
-        # Lowered in 16.1.0: the repository host message was added and the Reviewer agent description shortened.
-        run: bash count-tokens.sh --every-chat --budget 1005
+        # Lowered in 17.0.0: shorter SessionStart message and agent and skill descriptions, and user-story left the every-chat tier.
+        run: bash count-tokens.sh --every-chat --budget 960
 
       - name: Prove the load counter assigns tiers as documented
         shell: bash
@@ -88,38 +88,38 @@ jobs:
 
       - name: Check execute every-run load
         shell: bash
-        # Lowered in 13.3.0 (#274, #276), when merge mechanics moved behind the auto-merge check and the shared phases moved into one reference. Lowered again in 16.1.0, when Phase 9 rework began loading only when there is some.
-        run: bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 14820
+        # Re-measured in 17.0.0 (#301): the count now includes the shared standards and other skills' SKILL.md files a workflow cites, which it always loaded. The rise is the measurement, not new instructions.
+        run: bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 24100
 
       - name: Check bulk-execute every-run load
         shell: bash
-        # Lowered in 13.3.0 (#274, #276), and in 16.1.0 when each set-selection path began loading only when chosen.
-        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 18340
+        # Re-measured in 17.0.0 (#301), as execute above; set selection became one short reference driven by wf plan-set.
+        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 26750
 
       - name: Check pr-review every-run load
         shell: bash
         # Lowered in 13.3.0 (#274, #276), when auto-merge.md and the picker fallback began loading only when needed. Lowered again in 16.2.0, when the pull request workflow began loading only when the target is a pull request.
-        run: bash count-tokens.sh synergy/skills/pr-review/SKILL.md --budget 635
+        run: bash count-tokens.sh synergy/skills/pr-review/SKILL.md --budget 625
 
       - name: Check pr-review pull request path load
         shell: bash
-        # Added in 16.2.0, when the pull request steps moved out of SKILL.md: a pull request review loads this file as well as the 635 above, so it keeps its own gate.
-        run: bash count-tokens.sh synergy/skills/pr-review/references/pr-workflow.md --budget 5010
+        # Added in 16.2.0, when the pull request steps moved out of SKILL.md: a pull request review loads this file as well as the budget above, so it keeps its own gate. Re-measured in 17.0.0 (#301) with the shared standards counted.
+        run: bash count-tokens.sh synergy/skills/pr-review/references/pr-workflow.md --budget 13030
 
       - name: Check build every-run load
         shell: bash
-        # Lowered in 16.1.0, when audit mode, failure handling and the ecosystem tip began loading only when needed.
-        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 4960
+        # Re-measured in 17.0.0 (#301) with the shared standards counted.
+        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 12980
 
       - name: Check setup every-run load
         shell: bash
-        # Lowered in 13.3.0 (#277), when each setup mode began reading only its own steps.
-        run: bash count-tokens.sh synergy/commands/setup.md --budget 7240
+        # Re-measured in 17.0.0 (#301) with the shared standards counted; the onboarding steps now count as conditional.
+        run: bash count-tokens.sh synergy/commands/setup.md --budget 8760
 
       - name: Check tone every-run load
         shell: bash
-        # Added in 13.3.0 (#278), when the voice examples were cut; the story caps it at 6,000.
-        run: bash count-tokens.sh synergy/skills/tone/SKILL.md --budget 5790
+        # Added in 13.3.0 (#278), when the voice examples were cut. Re-measured in 17.0.0 (#301): the shared standards it cites are now counted, which puts it past the 6,000 that story set for tone's own text.
+        run: bash count-tokens.sh synergy/skills/tone/SKILL.md --budget 11150
 
       - name: Check description and body budgets (ratchet)
         shell: bash

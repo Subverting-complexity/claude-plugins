@@ -11,6 +11,9 @@
 # 3.2 macOS ships, so there is no ${var,,}; nocasematch does the case folding.
 #
 # Pass SubagentStart as the first argument to get the JSON that event needs.
+# A subagent in a GitHub repository is told nothing: GitHub is what every
+# workflow assumes, so the line would cost every subagent context and change
+# nothing it does. Every other host is still reported to subagents.
 # Only the platform is printed, never the remote URL, which can carry a token.
 # count-tokens.sh counts the longest `say` line as this hook's every-chat load,
 # so every message is one literal `say '...'` line.
@@ -115,6 +118,8 @@ case $host in
     *dev.azure.com*|*visualstudio.com*) say 'Repository host: Azure DevOps, not GitHub. Do not use gh or the synergy GitHub workflows for this repository; use git and Azure DevOps tools, and ask before writing to Azure DevOps.' ;;
     *gitlab*) say 'Repository host: GitLab, not GitHub. Do not use gh or the synergy GitHub workflows for this repository; use git and GitLab tools, and ask before writing to GitLab.' ;;
     *bitbucket*) say 'Repository host: Bitbucket, not GitHub. Do not use gh or the synergy GitHub workflows for this repository; use git and Bitbucket tools, and ask before writing to Bitbucket.' ;;
-    *github*) say 'Repository host: GitHub.' ;;
+    *github*)
+        [ "$event" = SubagentStart ] && exit 0
+        say 'Repository host: GitHub.' ;;
     *) say 'Repository host: not a recognised GitHub remote. Check where this repository is hosted before using gh or the synergy GitHub workflows.' ;;
 esac

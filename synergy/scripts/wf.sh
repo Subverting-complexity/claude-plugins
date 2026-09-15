@@ -11,7 +11,12 @@
 #       Run the CLI. Prefers the dedicated venv interpreter created by setup
 #       (so it never depends on PATH or a broken `python3` Store shim); falls
 #       back to a probed system Python if setup hasn't run yet. The CLI exit
-#       code is preserved via exec (see the exit-code table in README.md).
+#       code is preserved (see the exit-code table in README.md).
+#
+# Finding the interpreter used to launch it with `--version` on every call,
+# about 420 ms on Windows where no venv exists. The answer is now cached in
+# `$DATA_ROOT/wf-python` and trusted while the path it names still exists;
+# `setup` rewrites it, and an interpreter that will not launch is forgotten.
 #
 # Run from the target repo root so wf.py finds ClaudeProject.md and git.
 set -euo pipefail
@@ -31,6 +36,11 @@ else
     DATA_ROOT="$HOME/.claude/synergy"
 fi
 VENV="$DATA_ROOT/wf-venv"
+# Two lines: `venv` or `base`, then the interpreter's path. wf.ps1 keeps its
+# own, because a path this shell writes is not one PowerShell can run.
+PY_CACHE="$DATA_ROOT/wf-python"
+PY=''
+PY_KIND=''
 
 # Echo the venv's python path if it exists and runs, else fail.
 venv_python() {
@@ -42,6 +52,11 @@ venv_python() {
     printf '%s' "$p"
 }
 
+# Whether a venv interpreter file exists, without running it.
+venv_present() {
+    [ -f "$VENV/bin/python" ] || [ -f "$VENV/Scripts/python.exe" ]
+}
+
 # Detect a usable system Python 3 into the BASE_PY array (verifies --version
 # actually runs, so the broken Windows `python3` Store shim is skipped).
 detect_base_py() {
@@ -49,6 +64,56 @@ detect_base_py() {
     if command -v py >/dev/null 2>&1 && py -3 --version >/dev/null 2>&1; then BASE_PY=(py -3); return 0; fi
     if command -v python >/dev/null 2>&1 && python --version >/dev/null 2>&1; then BASE_PY=(python); return 0; fi
     return 1
+}
+
+# Record which interpreter runs wf.py. Best-effort: a cache that cannot be
+# written only means the next call probes again.
+save_python_cache() {
+    { mkdir -p "$DATA_ROOT" && printf '%s\n%s\n' "$1" "$2" > "$PY_CACHE"; } 2>/dev/null || true
+}
+
+# Load the cached interpreter into PY without running it. The path must still
+# exist, and a cached system Python gives way as soon as a venv exists, so a
+# venv made by the other launcher's setup is picked up.
+cached_python() {
+    [ -f "$PY_CACHE" ] || return 1
+    local kind='' path=''
+    { IFS= read -r kind; IFS= read -r path; } < "$PY_CACHE" || true
+    kind="${kind%$'\r'}"
+    path="${path%$'\r'}"
+    [ -n "$path" ] && [ -f "$path" ] || return 1
+    case "$kind" in
+        venv) ;;
+        base) if venv_present; then return 1; fi ;;
+        *) return 1 ;;
+    esac
+    PY="$path"
+    PY_KIND="$kind"
+}
+
+# Resolve the interpreter by running the candidates, and cache the answer. A
+# system Python is cached by its absolute path, so a later call neither
+# searches PATH nor goes through the `py` launcher.
+probe_python() {
+    local p=''
+    if p=$(venv_python); then
+        PY="$p"; PY_KIND=venv
+        save_python_cache venv "$p"
+        return 0
+    fi
+    detect_base_py || return 1
+    PY_KIND=base
+    p=$("${BASE_PY[@]}" -c 'import sys; print(sys.executable)' 2>/dev/null) || p=''
+    p="${p%$'\r'}"
+    if [ -n "$p" ] && [ -f "$p" ]; then
+        PY="$p"
+        save_python_cache base "$p"
+    fi
+    return 0
+}
+
+base_warning() {
+    echo "wf: no dedicated virtualenv yet — using system Python ${PY:-${BASE_PY[*]}}. Run 'wf.sh setup' to pin one." >&2
 }
 
 py_install_hint() {
@@ -80,7 +145,12 @@ wf_setup() {
         esac
     done
 
+    # Whatever setup ends with is what the next call should run, so the old
+    # answer goes first and a failed setup leaves nothing stale behind.
+    rm -f "$PY_CACHE"
+
     if [ "$force" -eq 0 ] && VPY=$(venv_python); then
+        save_python_cache venv "$VPY"
         echo "wf: virtualenv already set up — $("$VPY" --version 2>&1) at $VENV" >&2
         exit 0
     fi
@@ -116,6 +186,7 @@ wf_setup() {
     if [ -f "$HERE/requirements.txt" ]; then
         "$VPY" -m pip install --quiet -r "$HERE/requirements.txt" || { echo "wf: failed to install requirements.txt." >&2; exit 20; }
     fi
+    save_python_cache venv "$VPY"
     echo "wf: setup complete — $("$VPY" --version 2>&1)" >&2
     echo "    Future 'wf.sh' calls reuse this interpreter automatically." >&2
     exit 0
@@ -126,13 +197,30 @@ if [ "${1:-}" = "setup" ]; then
     wf_setup "$@"
 fi
 
-# Run path: prefer the dedicated venv, else a probed system Python.
-if VPY=$(venv_python); then
-    exec "$VPY" "$WF" "$@"
-elif detect_base_py; then
-    echo "wf: no dedicated virtualenv yet — using $("${BASE_PY[@]}" --version 2>&1) on PATH. Run 'wf.sh setup' to pin one." >&2
-    exec "${BASE_PY[@]}" "$WF" "$@"
-else
-    echo "wf: Python 3 not found; run 'wf.sh setup' (or install Python 3.x). Falling back to the inline procedure." >&2
-    exit 20
+# Run path: the cached interpreter, else the venv, else a probed system Python.
+if cached_python; then
+    [ "$PY_KIND" = base ] && base_warning
+    set +e
+    "$PY" "$WF" "$@"
+    code=$?
+    set -e
+    # 126 and 127 are the shell saying the interpreter would not launch; wf.py
+    # never exits with either. Anything else is wf's own answer, passed on.
+    if [ "$code" -ne 126 ] && [ "$code" -ne 127 ]; then
+        exit "$code"
+    fi
+    rm -f "$PY_CACHE"
+    echo "wf: the cached interpreter $PY would not start; looking for Python again." >&2
+    PY=''
+    PY_KIND=''
 fi
+
+if probe_python; then
+    [ "$PY_KIND" = base ] && base_warning
+    if [ -n "$PY" ]; then
+        exec "$PY" "$WF" "$@"
+    fi
+    exec "${BASE_PY[@]}" "$WF" "$@"
+fi
+echo "wf: Python 3 not found; run 'wf.sh setup' (or install Python 3.x). Falling back to the inline procedure." >&2
+exit 20

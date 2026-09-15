@@ -1,6 +1,6 @@
 # Read-Only Mode
 
-Read this when (and only when) the skill is invoked with `--read-only` (`$ARGUMENTS.mode` is `read-only`) — the workflow carries just a pointer so a full-mode review never loads it. Read-only mode is intended for the Reviewer agent, which has no write access: it produces the same structured evaluation without modifying the PR branch.
+Read this when (and only when) the skill is invoked with `--read-only` (`$ARGUMENTS.mode` is `read-only`) — the workflow carries just a pointer so a full-mode review never loads it. Read-only mode is for a review that must leave the PR untouched, such as the Reviewer agent that `execute` and `bulk-execute` spawn. That agent holds write tools for full mode and uses none of them here: it produces the same structured evaluation without modifying the PR branch.
 
 When `$ARGUMENTS.mode` is `read-only`:
 

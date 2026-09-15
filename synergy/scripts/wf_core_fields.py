@@ -216,11 +216,21 @@ def native_type_for(kind, type_map=None):
 # Every valid `Classification` option. A value outside this set is a spec
 # error, not a new option — the org owns the field, and adding to it is a
 # deliberate org-level change.
+#
+# The area options say which part of the system the work touches, not what
+# kind of change it is, so one is only ever set beside a kind value. Maintenance
+# mode picks a `Feature` by its kind value, and a `Feature` tagged only
+# `Back end` would be left out of the pool. An org may define none of them.
+AREA_CLASSIFICATION_OPTIONS = (
+    'Front end', 'Back end', 'API', 'Database', 'Mobile', 'Infrastructure',
+    'Build and deploy', 'Testing',
+)
+
 CLASSIFICATION_OPTIONS = (
     'New Feature', 'Enhancement', 'Bug Fix', 'Regression', 'Performance',
     'Security', 'Tech Debt', 'Architecture', 'Integration', 'Spike', 'Chore',
     'Documentation', 'Accessibility',
-)
+) + AREA_CLASSIFICATION_OPTIONS
 
 # The only Classification values that contradict the kind an issue claims to
 # be. `NATIVE_TYPE_MAP` names a *default* classification per kind; almost every

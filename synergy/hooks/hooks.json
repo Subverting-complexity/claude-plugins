@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'RESPONSE STANDARD: every reply to the user follows the user-facing-communication skill. Open with what was done and the exact current state (committed, pushed, PR opened, reviewed and merged are different). Put anything outstanding, blocked or assumed where it cannot be missed. Name every issue and PR by number and title. Leave out investigation history, file lists and test names.'"
+            "command": "echo 'RESPONSE STANDARD for every reply (user-facing-communication skill): what was done and the exact state first (committed, pushed, PR opened, reviewed and merged differ); anything outstanding, blocked or assumed where it cannot be missed; issues and PRs by number and title; no investigation history, file lists or test names.'"
           },
           {
             "type": "command",

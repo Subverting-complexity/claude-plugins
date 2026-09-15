@@ -86,6 +86,7 @@ cat > .claude/report-spec.json <<'JSON'
              "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                         "field-effort": "{Low|Medium|High}",
                         "field-ownership": "{Code agent|Browser agent|Human}",
+                        "field-type": ["{kind of change}", "{area}"],
                         "field-origin": "Development"}}]}
 JSON
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/report-spec.json
@@ -99,7 +100,7 @@ Drop the `milestone` key entirely in flat-backlog mode, or whenever Step 4 found
 
 The exceptions are `[Manual] `, for an issue a person has to do, and `[Browser] `, for one a browser agent has to do (Step 3). They are kept because nothing native says who has to do the work. The prefix and `field-ownership` must agree — `[Manual] ` with `Human`, `[Browser] ` with `Browser agent` — and `issue-apply` refuses a spec where they contradict each other rather than filing an issue two things claim to own.
 
-**Pass no labels** beyond a template's own. `kind` supplies the native issue type and the `Classification` value together, and the three required fields carry the rest. `wf issue-apply` drops any retired label a spec does name.
+**Pass no labels** beyond a template's own. `kind` supplies the native issue type and the default `Classification` value, `field-type` adds the areas, and the three required fields carry the rest. `wf issue-apply` drops any retired label a spec does name.
 
 **You do not choose the stage.** `issue-apply` decides it from the issue's own fields and writes it itself, in this order: `Ownership` of `Human` or `Browser agent` goes to Non-code; an explicit `"state"` on the spec entry (`backlog`, `refinement` or `parked`) goes to that stage; an `Ownership` that is missing or unrecognised goes to Needs refinement, because nothing can route it; an open blocked-by edge goes to Blocked; everything else goes to Backlog.
 
@@ -109,6 +110,7 @@ The exceptions are `[Manual] `, for an issue a person has to do, and `[Browser] 
 
 - `kind` is the Step 2 classification in lower case. For `architecture`, add `"parent": {epic number}` beside it when an epic covers the work.
 - `field-priority`, `field-effort` and `field-ownership` are the three values Step 3 settled. All three are **required**: `issue-apply` refuses a spec that leaves one blank rather than filing work nothing can rank, size or route.
+- `field-type` is the kind of change (**Bug Fix**, **Security**, **Architecture** or **Tech Debt**, or a better one) plus each area the work touches, such as **Front end**, following `../skills/writing-github-issues/SKILL.md` → **Adding areas**. Never areas alone. Where the org defines no area options, leave the key out and `kind` supplies the value.
 - `field-origin` is **Development**, or **Security Audit** if this report came out of a security audit session. It is optional — leave it out and the created issue gets a comment saying it was filed without one.
 
 **The issue number** comes back in the command's JSON as `applied[0].number`, and is written into the spec file too. Later steps need it.

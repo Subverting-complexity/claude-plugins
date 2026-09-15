@@ -60,14 +60,16 @@ def stage_field_meta(cfg):
     return True, meta, ''
 
 
-def set_stages(cfg, wanted, ids=None):
+def set_stages(cfg, wanted, ids=None, extra=None):
     """Write many issues' `Stage` at once. {number: (written, message)}.
 
     `wanted` is {issue number: option name or `stage-*` purpose key}. Two round
     trips whatever the size, after the capability record (cached): one aliased
     read of the node ids and one aliased `setIssueFieldValue`, twenty issues to
     a request. `ids` is {number: node id} for issues the caller has already
-    read, which skips the id read for them.
+    read, which skips the id read for them. `extra` is {number: [field
+    input]} for other fields to write in the same mutation, such as the start
+    date a claim stamps beside `In Progress`.
 
     Nothing here touches a board. Every board an issue is on groups by `Stage`,
     so the value written is the value every board shows, and an issue with no
@@ -114,7 +116,8 @@ def set_stages(cfg, wanted, ids=None):
                         'issueFields:$%s_f}){ issue { id } }'
                         % (alias, alias, alias))
             variables['%s_i' % alias] = ids[number]
-            variables['%s_f' % alias] = [inputs[number][1]]
+            variables['%s_f' % alias] = ([inputs[number][1]]
+                                         + list((extra or {}).get(number) or ()))
         code, raw, merr = _graphql_json('mutation(%s){ %s }'
                                         % (','.join(decls), ' '.join(body)),
                                         variables)
@@ -136,6 +139,27 @@ def _chunks(items, size):
         yield items[start:start + size]
 
 
+def start_date_input(cfg):
+    """Today's value for the org's `Start date` field. (input, message).
+
+    `input` is None, with `message` saying why, when the org defines no such
+    field or its capabilities cannot be read: best-effort in both directions,
+    because neither is a misconfiguration a claim should stop on.
+    """
+    ok, caps, err = resolve_org_capabilities(cfg)
+    if not ok:
+        return None, 'org capabilities unavailable (%s)' % (err or 'no detail')
+    name = field_name(cfg, 'field-start')
+    meta = (caps.get('field_map') or {}).get(name)
+    if not meta:
+        return None, 'the org does not define a %s field' % name
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    value, verr = wf_core.field_value_input(meta, today)
+    if verr:
+        return None, verr
+    return value, 'set %s to %s' % (name, today)
+
+
 def set_start_date(cfg, number):
     """Stamp the org's `Start date` issue field with today. Returns (set, why).
 
@@ -143,17 +167,11 @@ def set_start_date(cfg, number):
     define the field is not misconfigured, and neither is one that denies the
     field API to this token.
     """
-    ok, caps, err = resolve_org_capabilities(cfg)
-    if not ok:
-        return False, 'org capabilities unavailable (%s)' % (err or 'no detail')
+    value, why = start_date_input(cfg)
+    if value is None:
+        return False, why
     name = field_name(cfg, 'field-start')
-    meta = (caps.get('field_map') or {}).get(name)
-    if not meta:
-        return False, 'the org does not define a %s field' % name
     today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    value, verr = wf_core.field_value_input(meta, today)
-    if verr:
-        return False, verr
     ok, data, jerr = gh_json(['issue', 'view', str(number), '--repo',
                               '%s/%s' % (cfg['org'], cfg['repo']), '--json', 'id'])
     if not ok or not data or not data.get('id'):

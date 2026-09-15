@@ -77,6 +77,7 @@ import wf_issue_apply  # noqa: E402
 import wf_issue_audit  # noqa: E402
 import wf_unblock  # noqa: E402
 import wf_pick  # noqa: E402
+import wf_plan  # noqa: E402
 import wf_post_merge  # noqa: E402
 import wf_review  # noqa: E402
 import wf_preflight  # noqa: E402
@@ -95,6 +96,7 @@ _SHELL_MODULES = (
     wf_issue_audit,
     wf_unblock,
     wf_pick,
+    wf_plan,
     wf_post_merge,
     wf_review,
     wf_preflight,
@@ -134,6 +136,7 @@ from wf_config import cmd_config
 from wf_issue_apply import cmd_issue_apply
 from wf_issue_audit import AUDIT_SPEC_DEFAULT, cmd_issue_audit
 from wf_pick import cmd_candidates, cmd_pick
+from wf_plan import cmd_bulk_mark, cmd_drop_story, cmd_plan_set
 from wf_post_merge import cmd_post_merge
 from wf_preflight import cmd_config_audit, cmd_preflight
 from wf_review import (
@@ -205,6 +208,45 @@ def build_parser():
                       help='with --parent, the most leaves to take, highest '
                            'priority first (default %d)' % wf_core.BULK_MAX)
     cand.set_defaults(func=cmd_candidates)
+
+    ps = sub.add_parser('plan-set',
+                        help='choose a set of %d to %d connected stories for one '
+                             'bulk run, in build order and waves; --claim claims it'
+                             % (wf_core.BULK_MIN, wf_core.BULK_MAX))
+    ps.add_argument('--issue', type=int, action='append', default=None,
+                    help='a story the set must hold (repeatable); every open '
+                         'prerequisite this run can build joins it')
+    ps.add_argument('--parent', type=int, default=None,
+                    help='choose from the stories under this Epic or Feature')
+    ps.add_argument('--mode', default='story', choices=MODE_CHOICES,
+                    help='selection mode, applied exactly as `pick` applies it')
+    ps.add_argument('--max-effort', default=None, choices=['low', 'medium', 'high'],
+                    help='skip anything the org has estimated larger than this')
+    ps.add_argument('--size', type=int, default=wf_core.BULK_MAX,
+                    help='the most stories, prerequisites included (%d to %d, '
+                         'default %d)' % (wf_core.BULK_MIN, wf_core.BULK_MAX,
+                                          wf_core.BULK_MAX))
+    ps.add_argument('--body-chars', type=int, default=600,
+                    help='truncate each body to this many characters (0 for all)')
+    ps.add_argument('--claim', action='store_true',
+                    help='claim, assign and set In Progress every story in the '
+                         'plan, and record it in .claude/bulk-set.json')
+    ps.set_defaults(func=cmd_plan_set)
+
+    dr = sub.add_parser('drop-story',
+                        help='return an unbuilt story in the bulk set to the pool, '
+                             'with every unbuilt story waiting on it')
+    dr.add_argument('--issue', type=int, required=True, help='the story to drop')
+    dr.add_argument('--reason', required=True,
+                    help='why, in a few words; it is commented on the issue')
+    dr.set_defaults(func=cmd_drop_story)
+
+    bm = sub.add_parser('bulk-mark',
+                        help='record the bulk branch, or a story as built')
+    bm.add_argument('--branch', default=None, help='the shared branch')
+    bm.add_argument('--built', type=int, action='append', default=None,
+                    help='a story now committed on the branch (repeatable)')
+    bm.set_defaults(func=cmd_bulk_mark)
 
     pm = sub.add_parser('post-merge',
                         help='settle a merged PR: close any still-open linked issue and '
@@ -393,7 +435,9 @@ def build_parser():
                              "issue's Stage across the org (totals only)")
     bs.add_argument('--closed-days', type=int, default=SYNC_CLOSED_DAYS,
                     help='how far back to read closed issues, in days '
-                         '(default %d)' % SYNC_CLOSED_DAYS)
+                         '(default %d; 0 reads every closed issue, which '
+                         'corrects the Stage of one closed long ago)'
+                         % SYNC_CLOSED_DAYS)
     bs.add_argument('--dry-run', action='store_true',
                     help='report what would change without writing anything')
     bs.set_defaults(func=cmd_board_sync)

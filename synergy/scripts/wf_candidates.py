@@ -5,6 +5,8 @@ and the candidate list selection runs on.
 Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
 
+from concurrent.futures import ThreadPoolExecutor
+
 import wf_core
 from wf_config import field_name
 from wf_io import EXIT_ENV, emit, eprint, gh_graphql, run
@@ -46,13 +48,15 @@ def _stage_issues_query(paged, extra=''):
         '  issues(first:%d,states:OPEN,orderBy:{field:CREATED_AT,direction:ASC}%s){'
         '   pageInfo { hasNextPage endCursor }'
         '   nodes {'
-        '    number title body url'
+        '    id number title body url'
         '    labels(first:20){ nodes { name } }'
         '    milestone { title }'
         '    assignees(first:1){ nodes { login } }'
         '    issueFieldValues(first:50){ nodes {'
         '     ... on IssueFieldSingleSelectValue {'
-        '      field { ... on IssueFieldSingleSelect { name } } name } } }'
+        '      field { ... on IssueFieldSingleSelect { name } } name }'
+        '     ... on IssueFieldMultiSelectValue {'
+        '      field { ... on IssueFieldMultiSelect { name } } options { name } } } }'
         '    %s'
         '   } } } }'
         % (',$cursor:String!' if paged else '', STAGE_PAGE_SIZE,
@@ -69,7 +73,7 @@ POOL_SELECTION = (
     ' subIssues(first:50){ totalCount nodes { number state'
     '  repository { nameWithOwner } } }'
     ' blockedBy(first:20){ totalCount nodes { number state title } }'
-    ' closedByPullRequestsReferences(first:5){ nodes { number state } }'
+    ' closedByPullRequestsReferences(first:5){ totalCount nodes { number state } }'
 )
 
 
@@ -96,9 +100,18 @@ def _tree_facts(node, repo):
                      and ((c.get('repository') or {}).get('nameWithOwner')
                           in (None, repo))]}
     if 'closedByPullRequestsReferences' in node:
-        refs = (node.get('closedByPullRequestsReferences') or {}).get('nodes') or []
+        conn = node.get('closedByPullRequestsReferences') or {}
+        refs = conn.get('nodes') or []
         facts['open_prs'] = [p['number'] for p in refs
                              if p and (p.get('state') or '').upper() == 'OPEN']
+        # A merged pull request that closes the issue means the work already
+        # landed. Read here, the claim does not need its own scan of the
+        # repository's merged pull requests to find out; only a read that
+        # could not see every reference falls back to that scan.
+        facts['merged_prs'] = sorted(p['number'] for p in refs
+                                     if p and (p.get('state') or '').upper() == 'MERGED')
+        total = conn.get('totalCount')
+        facts['prs_complete'] = total is not None and total <= len(refs)
     return facts
 
 
@@ -158,6 +171,10 @@ def stage_issues(cfg, stages, unassigned_only=True, extra=''):
                 continue
             milestone = node.get('milestone')
             issues.append(dict(_tree_facts(node, repo), **{
+                'id': node.get('id'),
+                # Every field value, so the pick needs no second query for
+                # Priority, Effort, Ownership or Classification.
+                'fields': issue_field_values(node),
                 'number': node['number'],
                 'title': node.get('title', ''),
                 'labels': [l['name'] for l
@@ -334,8 +351,36 @@ def report_unprioritised(pool, priority_map):
            % (len(missing), ', '.join('#%d' % n for n in missing)))
 
 
-def load_issue_facets(cfg, numbers=None):
+def facets_from_issues(cfg, issues, numbers):
+    """The facet maps for `numbers`, built from issues the pool query already
+    read with their field values and type. No request."""
+    fields = {'priority': field_name(cfg, 'field-priority'),
+              'classification': field_name(cfg, 'field-type'),
+              'effort': field_name(cfg, 'field-effort'),
+              'ownership': field_name(cfg, 'field-ownership'),
+              'stage': field_name(cfg, 'field-stage')}
+    facets = {'types': {}, 'priority': {}, 'classification': {},
+              'effort': {}, 'ownership': {}, 'stage': {}}
+    wanted = {int(n) for n in numbers}
+    for issue in issues:
+        number = issue['number']
+        if number not in wanted:
+            continue
+        if issue.get('type'):
+            facets['types'][number] = issue['type']
+        values = issue.get('fields') or {}
+        for key, field in fields.items():
+            if values.get(field):
+                facets[key][number] = values[field]
+    return facets
+
+
+def load_issue_facets(cfg, numbers=None, issues=None):
     """`fetch_issue_facets` for this project's field names, or stop.
+
+    When `issues` came from the pool query, which reads every field value and
+    the type with each issue, the maps are built from them and nothing is
+    requested. That was a second round trip on every pick.
 
     A failure ends the run rather than returning empty maps. Empty maps used to
     be the fallback, from when a label could answer these questions: with no
@@ -344,6 +389,12 @@ def load_issue_facets(cfg, numbers=None):
     failed. There is nothing left to fall back to, so there is nothing to
     report but the failure.
     """
+    if issues is not None and numbers is not None:
+        wanted = {int(n) for n in numbers}
+        read = [i for i in issues if i['number'] in wanted]
+        if len(read) == len(wanted) and all('fields' in i and 'type' in i
+                                            for i in read):
+            return facets_from_issues(cfg, read, wanted)
     ok, facets, err = fetch_issue_facets(cfg, numbers,
                                          field_name(cfg, 'field-priority'),
                                          field_name(cfg, 'field-type'),
@@ -404,11 +455,30 @@ def claimed_issue_numbers():
     return found
 
 
+def read_pool(cfg):
+    """The open issues and the held claim refs, read at the same time.
+
+    (ok, issues, err, claimed). The two are independent -- a GraphQL read and
+    a `git ls-remote` -- so running them one after the other only added the
+    shorter one's wait to every pick.
+    """
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        issues_future = pool.submit(assemble_candidates, cfg)
+        claimed_future = pool.submit(claimed_issue_numbers)
+        ok, issues, err = issues_future.result()
+        claimed = claimed_future.result()
+    return ok, issues, err, claimed
+
+
 def _prefilter_numbers(issues, claimed):
     """The issues whose fields are worth reading: rules 1 and 2 of the pool,
-    which need no field. Everything else is out whatever its fields say."""
+    which need no field, plus every unassigned `Blocked` issue, because a
+    story waiting on an issue lends its priority to that issue and can join a
+    set beside it. Everything else is out whatever its fields say."""
+    blocked = wf_core.STAGE_NAMES['stage-blocked']
     return [i['number'] for i in issues
-            if wf_core.is_available_stage(i.get('stage'))
+            if (wf_core.is_available_stage(i.get('stage'))
+                or wf_core.stage_name(i.get('stage')) == blocked)
             and not i.get('assigned') and i['number'] not in claimed
             and not i.get('open_prs')]
 

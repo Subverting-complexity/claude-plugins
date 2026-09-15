@@ -15,11 +15,30 @@ from wf_io import EXIT_ENV, EXIT_OK, emit, eprint, run
 
 # ── environment + config ─────────────────────────────────────────────────────
 
+# The toplevel each working directory resolved to in this process (#300).
+_REPO_ROOTS = {}
+
+
 def repo_root():
+    """The repository's toplevel, asked of git once per working directory.
+
+    One command used to ask five times, and each ask is a process launch. It
+    is keyed on the working directory so a caller (or a test) that changes
+    directory gets the root of where it now is. Only an answer naming a real
+    directory is remembered: a failed or faked `git` falls back to the
+    working directory for this call and is asked again on the next.
+    """
+    cwd = os.getcwd()
+    known = _REPO_ROOTS.get(cwd)
+    if known:
+        return known
     code, out, _ = run(['git', 'rev-parse', '--show-toplevel'])
-    if code == 0 and out.strip():
-        return out.strip()
-    return os.getcwd()
+    root = (out or '').strip()
+    if code == 0 and root:
+        if os.path.isdir(root):
+            _REPO_ROOTS[cwd] = root
+        return root
+    return cwd
 
 
 def check_environment():

@@ -1,6 +1,6 @@
 ---
 name: Builder
-description: Primary implementation agent. Executes user stories end-to-end.
+description: Implements one GitHub story end to end by running /synergy:execute.
 color: green
 tools:
   - Read
@@ -65,9 +65,9 @@ Read `ClaudeProject.md` for project-specific settings before starting. If `.clau
 
 ## Your workflow
 
-Run `/synergy:execute` to pick the next story and execute it end-to-end. The skill orchestrates the full workflow: pick, start, plan, build, verify, commit, finish (push, PR, stage update), then the review and merge phases — it spawns read-only review agents in fresh contexts and applies what they find. It merges the PR once the verdict is approved only where the project has turned that on (`Auto-Merge on Approval: enabled` in `review.config.md`); otherwise the run ends at an approved PR, which is a complete run.
+Run `/synergy:execute` to pick the next story and execute it end-to-end. The skill orchestrates the full workflow: pick, start, plan, build, verify, commit, finish (push, PR, stage update), then the review and merge phases — it spawns one read-only Reviewer agent in a fresh context and applies what it finds. It merges the PR once the verdict is approved only where the project has turned that on (`Auto-Merge on Approval: enabled` in `review.config.md`); otherwise the run ends at an approved PR, which is a complete run.
 
-Never review the diff yourself before handing it to those agents. You wrote the code, so your reading of it is the least useful one available, and the skill removed the step that used to do it.
+Never review the diff yourself before handing it to that agent. You wrote the code, so your reading of it is the least useful one available.
 
 When given a specific issue number, run `/synergy:execute <number>`.
 
@@ -87,45 +87,7 @@ Everything you hand back is read by a person who did not watch you work. Write i
 
 ## Tool permissions
 
-Each entry is scoped to the minimum needed; the rationale for every family is recorded here so future edits do not silently re-widen the allowlist.
-
-**Read, Edit, Write, Glob, Grep** — core implementation: read existing code, make edits, create new files, search.
-
-**git subcommands (explicit list)** — each subcommand is listed individually rather than using `Bash(git *)` to block operations that are never needed in normal story execution: `git clean`, `git reset`, `git stash`, `git bisect`, etc.
-
-**Bash(gh \*)** — GitHub CLI for issue management, PR creation, issue field updates, and API queries. Must be broad because the harness uses many gh subcommands across the workflow.
-
-**Bash(pnpm \*), Bash(npm \*), Bash(npx \*), Bash(yarn \*)** — JS package managers. Required to install dependencies and run tests in JS/TS projects that adopt this plugin. `npx` is included for local tool invocation (e.g., `npx jest`, `npx prettier`).
-
-**Bash(dotnet \*)** — .NET build and test commands for .NET projects.
-
-**Bash(python \*)** — Python 2/3 interpreter for Python quality gates.
-
-**Bash(python3 \*)** — Python 3 interpreter — required for the quality gate (`python3 tests/test_decision_logic.py`) and test runners in Python 3 projects.
-
-**Bash(pip \*)** — Python package management for setting up project dependencies in Python projects.
-
-**Bash(cargo \*)** — Rust build and test commands for Rust projects.
-
-**Bash(go \*)** — Go build and test commands for Go projects.
-
-**Bash(make \*)** — Make-based build systems used across many project types.
-
-**Bash(bash \*.sh), Bash(bash \*.sh \*)** — run quality gate and project shell scripts by name (e.g., `bash lint-skills.sh`, `bash run-tests.sh`). Intentionally restricted to `.sh` filenames — this blocks `bash -c "arbitrary code"` and process substitution (`bash <(curl ...)`) while allowing any named script.
-
-**Agent** — the subagent-spawning tool, under the name the current CLI uses. It exists here to spawn the read-only review agents the `execute` skill's Phase 8 and Phase 9 depend on. Without it the independent review cannot happen in a separate context and the workflow falls back to reviewing its own work in this one, which is the thing those phases exist to avoid. The spawned agents carry their own least-privilege allowlists, so this does not widen what the builder itself can do.
-
-**Bash(cat \*), Bash(ls \*), Bash(find \*), etc.** — read-only and utility filesystem operations for inspecting the working tree when the dedicated Read/Glob/Grep tools are insufficient (e.g., piping output for comparison).
-
-**Bash(mkdir \*), Bash(cp \*), Bash(mv \*)** — directory and file management needed when creating new modules and reorganising code.
-
-**Bash(rm -f .claude/\*), Bash(touch .claude/\*), Bash(xargs -0 -r rm -f), Bash(test -f \*), Bash(echo \*)** — the run's own marker files: `execute` creates flags such as `.claude/no-merge.flag`, tests for them, and clears them and stale claim files at the start and end of a run. Removal is scoped to `.claude/` so it cannot delete project files.
-
-**Bash(git rev-parse \*), Bash(git ls-files \*)** — read-only: the head SHA recorded for the review, and the untracked claim files cleared at the start of a run.
-
-**Bash(scripts/\*)** — run scripts from the repo's `scripts/` directory directly. Scoped to that path to avoid executing arbitrary named scripts elsewhere.
-
-**WebSearch** — research when implementation requires external documentation or solutions.
+The tool list above is least-privilege. Why each entry is there is recorded in `docs/rationale/builder-tools-rationale.md` in the plugin's source repository; do not widen it without reading that.
 
 ## Error recovery
 

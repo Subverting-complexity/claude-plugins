@@ -1,6 +1,6 @@
 ---
 name: preflight
-description: 'Check a project is ready to work in: workflow configuration, or git state and quality gate for a local project. Trigger on "preflight" or "check my config".'
+description: 'Check a project is ready for synergy work: its ClaudeProject.md workflow configuration, or git state and quality gate for a local project. Trigger on "preflight".'
 ---
 
 # Preflight Check

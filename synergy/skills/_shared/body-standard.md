@@ -7,12 +7,12 @@ Entry points sit on top of this file and hold only the part that actually differ
 | Entry point | Governs | Its own section shape |
 | ----------- | ------- | --------------------- |
 | `skills/pr-body/SKILL.md` | Pull request titles and bodies in a repository with a `ClaudeProject.md` | Fixed: `## Summary` → `## Changes` → `## Test plan`, then the `Closes #N` lines |
-| `skills/pr-body/references/component-format.md` | Pull request titles and bodies anywhere else, on any platform | `## Summary`, then one `##` section per component |
+| `skills/pr-body/references/component-format.md` | Pull request titles and bodies only when the repository has no `ClaudeProject.md`, on any platform | `## Summary`, then one `##` section per component |
 | `writing-github-issues` | GitHub issue titles and bodies | `## Summary` plus only the sections that carry information, the `[Manual]` convention, and the single write path |
 
 The two pull request formats are deliberately different, and the repository decides which applies. The fixed one exists because `execute`, `bulk-execute` and `pr-review` read and extend those bodies, and a shape that varies per pull request cannot be extended reliably. The component format is written for whoever is about to read the diff, with no automated loop behind it, so it groups by component instead.
 
-For a work item outside GitHub, this file plus `references/story-template.md` is the whole standard.
+When the body is a work item outside GitHub, this file plus `references/story-template.md` is the whole standard.
 
 Everything below applies to all of them. No entry point restates it, and none may contradict it.
 

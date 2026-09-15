@@ -1,5 +1,5 @@
 ---
-description: 'Mark the current story as blocked. Trigger: "blocked", "I''m stuck", "can''t continue".'
+description: 'Block a GitHub story: set its Stage to Blocked and unassign it. Only when a story is explicitly being blocked.'
 ---
 
 # Block Story

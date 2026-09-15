@@ -42,6 +42,7 @@ Read this only when the user has approved the plan and accepted the offer to cre
                 "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                            "field-effort": "{Low|Medium|High}",
                            "field-ownership": "Code agent",
+                           "field-type": ["New Feature", "{area}"],
                            "field-origin": "Feature Discovery"}}]}
    JSON
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/discovery-spec.json
@@ -49,6 +50,7 @@ Read this only when the user has approved the plan and accepted the offer to cre
 
    - Each body goes in its own file and the entry names it (`body_file`) rather than carrying the text, so fenced code, backticks, `$` and quotes survive intact. The rule is stated once in `templates/body-file-write.md`.
    - `kind` supplies the native type **and** the `Classification` value together (a story → User Story / New Feature, a feature → Feature, an epic → Epic), so neither is chosen by hand. Use `spike` for a research story.
+   - `field-type` adds each area the entry's work touches, beside the kind's value (`writing-github-issues` → **Adding areas**). It replaces the `kind` default, so it always names that value too, never areas alone. Leave it out where the work touches no area or the org defines no area options.
    - `parent` is required on every story, naming its feature, and set on a feature that belongs to an epic, by spec `key` or by the issue number of one that already exists. Drop the epic entry and the feature's `parent` when the work is a single feature. An epic takes none.
    - **No labels at all**, and no `[STORY]` title prefix. The native type classifies the issue and the fields carry everything a decision reads; `issue-apply` strips a retired label or a type prefix if a spec still names one, and says that it did.
    - `field-effort` comes from the story's size estimate: large → **High**, medium → **Medium**, small → **Low**.

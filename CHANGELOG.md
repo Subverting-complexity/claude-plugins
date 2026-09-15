@@ -6,6 +6,28 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 17.0.0
+
+**A dependency decides the build order, never whether a story is taken.** `wf plan-set` plans a bulk set from the blocked-by edges and the issue tree: two stories are connected by an edge either way, a shared blocker or a shared parent, and a story waiting on another story in the set is built after it rather than left out. Named stories bring the open prerequisites they need. The set is 2 to 7 stories, grouped into waves of stories that do not wait on each other, and `--claim` claims, assigns and sets `In Progress` for all of them in a handful of requests. `wf drop-story` returns a story and everything waiting on it to the pool, and `wf bulk-mark` records the branch and each story built. The three per-path selection references are replaced by one.
+
+**`bulk-execute` builds a wave in parallel** when its stories touch different files, each in its own worktree, cherry-picked onto the shared branch in build order. The timeout is now 90 minutes.
+
+**`pick --issue N` builds N's prerequisites first.** When N waits on open work this run can build, `pick` sets N to `Blocked`, claims the first prerequisite, and reports `prerequisite_for` with the build order. It refuses N only when a blocker is work nobody here may build, and says which. It also refuses an issue an open pull request already closes (`open_prs`), so `execute` no longer runs its own in-flight guard first.
+
+**A blocker inherits the priority of what waits on it.** A low-priority issue that blocks an urgent one now sorts with the urgent one, and pick results carry `unblocks`.
+
+**Breaking:** `candidates --parent` is no longer what `bulk-execute` reads, and `.claude/bulk-set.json` gains `waves` and per-story `blocked_by`. `synergy/settings.json` is removed, so the Builder is no longer the default agent of every session. The claim walk validates before it assigns, so a blocked candidate is never assigned and unassigned.
+
+**Fewer GitHub calls (#300).** `pick` reads the pool and the claim refs at once, takes field values from that read instead of a second query, reuses the edges and closing pull requests it already read, and writes `Stage` and `Start date` in one mutation. `post-merge`, `handoff` and `claim-release` cost the same for one issue as for several, preflight reads the org once, and `wf.sh` and `wf.ps1` remember the Python they found.
+
+**Stale `Stage` on long-closed issues is corrected.** `wf board-sync --closed-days 0` reads every closed issue, and the scheduled workflow runs that full sweep once a day.
+
+**Area values are set in `Classification` when filing issues (#282)**, and an area the org does not define is dropped with a note instead of refusing the whole spec.
+
+**`count-tokens.sh` counts the shared standards (#301)** and other skills' `SKILL.md` files a workflow cites, so the every-run figures are real; the CI budgets are re-measured.
+
+**Less loads into every session.** Shorter hook output, agent and skill descriptions; `user-story` no longer loads its description; the write guard starts Python for fewer commands; the Reviewer carries a pointer to the rubric instead of a copy.
+
 ## synergy 16.2.0
 
 **`--mode bug` works.** `execute` and the guide documented `bug` as shorthand for `maintenance`, but `wf pick` and `wf candidates` rejected it. They now accept it and treat it as `maintenance`.

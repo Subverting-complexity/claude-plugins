@@ -6,8 +6,8 @@ Moved verbatim out of wf_core.py; `scripts/README.md` has the module map.
 """
 
 from wf_core_fields import (
-    MANDATORY_FIELD_KEYS, NATIVE_TYPE_MAP, OPTIONAL_FIELD_KEYS,
-    native_type_for, resolve_field_name,
+    AREA_CLASSIFICATION_OPTIONS, MANDATORY_FIELD_KEYS, NATIVE_TYPE_MAP,
+    OPTIONAL_FIELD_KEYS, native_type_for, resolve_field_name,
 )
 from wf_core_stage import (
     OWNERSHIP_FIELD_OPTIONS, SCOPE_CODE, SCOPE_PREFIXES, ownership_scope,
@@ -248,6 +248,47 @@ def default_classification(entry):
     return [mapped['classification']] if mapped else None
 
 
+def settle_classification_areas(entry, value, field_name, field_meta):
+    """The `field-type` value to write once its area values are settled.
+
+    Returns (value, notes, err). The Classification field holds two kinds of
+    value: what kind of change the work is, and which areas of the system it
+    touches (`AREA_CLASSIFICATION_OPTIONS`). An issue tagged only with areas is
+    left out of maintenance mode, which picks by the kind value, so:
+
+    - a list of areas alone gains the kind's default value when the entry has a
+      `kind`, and is refused when it has none, since nothing says what kind of
+      change it is;
+    - an area the org's field does not define is dropped with a note, because
+      an org without area options should file issues as it did before areas
+      existed. Any other value the org does not define is left for
+      `field_value_input` to refuse.
+    """
+    values = list(value) if isinstance(value, (list, tuple)) else [value]
+    notes = []
+    if values and all(v in AREA_CLASSIFICATION_OPTIONS for v in values):
+        implied = default_classification(entry)
+        if not implied:
+            return None, notes, (
+                "'%s' names only areas (%s) and the entry has no `kind` to say "
+                "what kind of change it is; add a value such as 'Bug Fix' or "
+                "'New Feature' beside them" % (field_name, ', '.join(values)))
+        values = implied + values
+        notes.append("'%s' named only areas, so the kind's default '%s' was "
+                     'added beside them' % (field_name, implied[0]))
+    options = field_meta.get('options') or {}
+    undefined = [v for v in values
+                 if v in AREA_CLASSIFICATION_OPTIONS and v not in options]
+    if undefined:
+        values = [v for v in values if v not in undefined]
+        notes.append("dropped %s: this org's '%s' field does not define %s"
+                     % (', '.join("'%s'" % v for v in undefined), field_name,
+                        'that area' if len(undefined) == 1 else 'those areas'))
+    if not notes:
+        return value, notes, None
+    return values, notes, None
+
+
 def field_value_input(field_meta, value):
     """Shape one `IssueFieldCreateOrUpdateInput`. Returns (input, err).
 
@@ -354,6 +395,21 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
             implied = default_classification(entry)
             if implied:
                 wanted['field-type'] = implied
+
+        # Area values in `field-type`, settled before the value is shaped.
+        # Only when the org has the field: a field it lacks is skipped below.
+        plan['notes'] = []
+        type_field = resolve_field_name('field-type', project_fields)
+        type_meta = field_map.get(type_field)
+        if type_meta is not None and _is_supplied(wanted.get('field-type')):
+            settled, notes, err = settle_classification_areas(
+                entry, wanted['field-type'], type_field, type_meta)
+            plan['notes'].extend('%s: %s' % (name, n) for n in notes)
+            if err:
+                errors.append('%s: %s' % (name, err))
+                wanted.pop('field-type')
+            else:
+                wanted['field-type'] = settled
 
         for purpose in mandatory_keys:
             concrete = resolve_field_name(purpose, project_fields)

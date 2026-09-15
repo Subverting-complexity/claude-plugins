@@ -5,12 +5,13 @@ Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
 
 import wf_core
+from wf_capabilities import gh_graphql_partial
 from wf_config import prepare_cfg
-from wf_deps import clear_lifecycle_label
 from wf_io import (
-    EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_OK, emit, gh_graphql, gh_json, run,
+    EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_OK, emit, gh_json, run,
 )
-from wf_stage import set_stage, set_stages
+from wf_issue_io import _batch_result, _graphql_json
+from wf_stage import _chunks, set_stage, set_stages
 from wf_unblock import unblock_scan
 
 
@@ -20,12 +21,18 @@ from wf_unblock import unblock_scan
 # and one more for a tree nested deeper than the usual three levels.
 CONTAINER_CHAIN_DEPTH = 4
 
+# Issues per aliased read or write in this module. The same twenty the `Stage`
+# and edge writers use, for the same reason: GitHub's complexity budget. A
+# merge closes one to five issues, so every run fits in one request (#300).
+SETTLE_BATCH = 20
+
 CONTAINER_CLOSE_COMMENT = (
     'Closing as completed: every sub-issue is closed, and #%d was the last to '
     'close. Reopen this if more work is planned under it.')
 CONTAINER_SWEEP_COMMENT = (
     'Closing as completed: every sub-issue is closed. Found by `wf preflight '
     '--fix`; reopen this if more work is planned under it.')
+SETTLE_COMMENT = 'Closing — resolved by merged PR #%d.'
 
 _CONTAINER_NODE = ('number title state issueType { name }'
                    ' repository { nameWithOwner }'
@@ -47,20 +54,73 @@ def _chain_selection(depth):
     return _CONTAINER_NODE + ' parent { %s }' % _chain_selection(depth - 1)
 
 
+def _alias_errors(errors, aliases):
+    """Split a GraphQL error list by the alias each error's path names.
+
+    Returns ({alias: message}, general), where `general` joins the errors
+    that name no alias. An aliased read answers a partial failure with the
+    aliases that worked and an error for each that did not, so one unreadable
+    issue is reported against that issue instead of failing the batch.
+    """
+    wanted, per, general = set(aliases), {}, []
+    for entry in errors or []:
+        message = entry.get('message') or 'the query failed'
+        hit = next((p for p in entry.get('path') or [] if p in wanted), None)
+        if hit:
+            per.setdefault(hit, message)
+        else:
+            general.append(message)
+    return per, '; '.join(general)
+
+
+def _aliased_repository_read(cfg, numbers, prefix, selection):
+    """Read `selection` for many issues, one aliased request per batch.
+
+    Yields (number, ok, node, err) for each number, in order. `node` is the
+    aliased issue (None when GitHub has no such issue and said nothing).
+    """
+    for chunk in _chunks(list(numbers), SETTLE_BATCH):
+        aliases = ['%s%d' % (prefix, n) for n in chunk]
+        parts = ' '.join('%s: issue(number:%d){ %s }' % (a, n, selection)
+                         for a, n in zip(aliases, chunk))
+        data, errors, err = gh_graphql_partial(
+            'query($o:String!,$r:String!){ repository(owner:$o,name:$r){ %s } }'
+            % parts, o=cfg['org'], r=cfg['repo'])
+        repository = (data or {}).get('repository')
+        per, general = _alias_errors(errors, aliases)
+        for alias, number in zip(aliases, chunk):
+            why = per.get(alias) or general
+            if why or not repository:
+                yield number, False, None, (why or err
+                                            or 'the query returned no repository')
+            else:
+                yield number, True, repository.get(alias), ''
+
+
+def fetch_parent_chains(cfg, numbers):
+    """The parents above each issue, nearest first. {number: (ok, chain, err)}.
+
+    One aliased read for every issue a merge settled (#300), where there was
+    a read per issue.
+    """
+    wanted = list(dict.fromkeys(int(n) for n in numbers or ()))
+    out = {}
+    for number, ok, node, err in _aliased_repository_read(
+            cfg, wanted, 'p', 'parent { %s }' % _chain_selection(CONTAINER_CHAIN_DEPTH)):
+        if not ok:
+            out[number] = (False, [], err)
+            continue
+        parent, chain = (node or {}).get('parent'), []
+        while parent:
+            chain.append(_container_node(parent))
+            parent = parent.get('parent')
+        out[number] = (True, chain, '')
+    return out
+
+
 def fetch_parent_chain(cfg, number):
     """The parents above one issue, nearest first. (ok, chain, err)."""
-    ok, data, err = gh_graphql(
-        'query($o:String!,$r:String!,$n:Int!){ repository(owner:$o,name:$r){'
-        ' issue(number:$n){ parent { %s } } } }' % _chain_selection(CONTAINER_CHAIN_DEPTH),
-        o=cfg['org'], r=cfg['repo'], n=int(number))
-    if not ok or not data:
-        return False, [], err or 'the parent query failed'
-    node = (((data.get('repository') or {}).get('issue')) or {}).get('parent')
-    chain = []
-    while node:
-        chain.append(_container_node(node))
-        node = node.get('parent')
-    return True, chain, ''
+    return fetch_parent_chains(cfg, [number])[int(number)]
 
 
 def close_container(cfg, number, comment):
@@ -84,12 +144,18 @@ def close_finished_ancestors(cfg, numbers):
     parent in another repository is left alone. Returns (closed, errors):
     one entry per container it tried to close, and each parent chain that
     could not be read.
+
+    Every chain is read up front in one request. Reading them one at a time
+    after each close bought nothing: GitHub may not show a close this run just
+    made, so the walk already judges each chain against `done` rather than
+    against what the read says.
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     done = {int(n) for n in numbers or ()}
     closed, errors = [], []
+    chains = fetch_parent_chains(cfg, numbers) if numbers else {}
     for number in numbers or ():
-        ok, chain, err = fetch_parent_chain(cfg, number)
+        ok, chain, err = chains.get(int(number), (False, [], 'not read'))
         if not ok:
             errors.append('#%d: %s' % (number, err))
             continue
@@ -168,6 +234,76 @@ def _fix_stage_drift(cfg, drifted):
     return done, blocked
 
 
+# ── settling the linked issues ───────────────────────────────────────────────
+
+def read_linked_issues(cfg, numbers):
+    """Each linked issue's node id, state and labels. {number: (ok, issue, err)}.
+
+    `issue` is {'id', 'state', 'labels': [{'id', 'name'}]}. The label ids come
+    back with the names because removing a retired label by mutation takes
+    its id. One aliased read for every issue (#300).
+    """
+    out = {}
+    for number, ok, node, err in _aliased_repository_read(
+            cfg, numbers, 'i', 'id state labels(first:50){ nodes { id name } }'):
+        if ok and not node:
+            ok, err = False, 'issue #%d not found' % number
+        out[number] = (ok, None if not ok else {
+            'id': node.get('id'), 'state': (node.get('state') or '').upper(),
+            'labels': [l for l in (node.get('labels') or {}).get('nodes') or []
+                       if l and l.get('name')]}, err)
+    return out
+
+
+def settle_issues(plan, pr):
+    """Close and strip every linked issue that needs it, in one request per batch.
+
+    `plan` is [{'number', 'id', 'close', 'label_ids'}]; each entry needs at
+    least one of the two. A close posts its comment first and closes as
+    completed, as `gh issue close --comment` did. Returns {number: {'closed':
+    bool or None, 'cleared': bool or None}}, None where nothing was asked.
+
+    GraphQL runs every field of a mutation whatever an earlier one did, and
+    answers each with its own outcome, so one issue that refuses its close is
+    reported against that issue and the rest still land.
+    """
+    out = {}
+    for chunk in _chunks(list(plan), SETTLE_BATCH):
+        decls, body, variables = [], [], {}
+        comments, closes, strips = [], [], []
+        for entry in chunk:
+            n = entry['number']
+            decls.append('$i%d:ID!' % n)
+            variables['i%d' % n] = entry['id']
+            if entry['close']:
+                decls.append('$b%d:String!' % n)
+                variables['b%d' % n] = SETTLE_COMMENT % pr
+                body.append('m%d: addComment(input:{subjectId:$i%d,body:$b%d})'
+                            '{ subject { id } }' % (n, n, n))
+                body.append('c%d: closeIssue(input:{issueId:$i%d,'
+                            'stateReason:COMPLETED}){ issue { id state } }' % (n, n))
+                comments.append('m%d' % n)
+                closes.append('c%d' % n)
+            if entry['label_ids']:
+                decls.append('$l%d:[ID!]!' % n)
+                variables['l%d' % n] = list(entry['label_ids'])
+                body.append('l%d: removeLabelsFromLabelable(input:{labelableId:$i%d,'
+                            'labelIds:$l%d}){ labelable { __typename } }' % (n, n, n))
+                strips.append('l%d' % n)
+        code, raw, err = _graphql_json('mutation(%s){ %s }'
+                                       % (','.join(decls), ' '.join(body)),
+                                       variables)
+        closed = _batch_result(code, raw, err, closes, field='issue')
+        cleared = _batch_result(code, raw, err, strips, field='labelable')
+        for entry in chunk:
+            n = entry['number']
+            out[n] = {
+                'closed': closed['c%d' % n][0] if entry['close'] else None,
+                'cleared': cleared['l%d' % n][0] if entry['label_ids'] else None,
+            }
+    return out
+
+
 def cmd_post_merge(args):
     """Settle a merged PR's linked issues: force-close any still open, set all to Done.
 
@@ -179,6 +315,10 @@ def cmd_post_merge(args):
     issue the PR closes (GitHub's own `closingIssuesReferences` parse, plus any
     `--issue` the caller names for an unrecognised reference), close it if still
     open and set its `Stage` to Done.
+
+    The same five requests however many issues the PR closes (#300): the PR,
+    one read of every issue, one write closing and stripping them, one `Stage`
+    write, and one read of their parents. It was five per issue.
     """
     cfg = prepare_cfg()
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
@@ -200,27 +340,41 @@ def cmd_post_merge(args):
         if extra not in linked:
             linked.append(extra)
 
+    issues = read_linked_issues(cfg, linked) if linked else {}
+    facts, plan = {}, []
+    for number in linked:
+        ok, issue, _ = issues.get(number, (False, None, ''))
+        issue = issue or {}
+        state = issue.get('state') or ''
+        # A settled issue is Done: strip any retired lifecycle label it still
+        # carries (e.g. a PR that auto-closed the issue but left
+        # status-in-progress on).
+        stale = wf_core.retired_labels_on([l['name'] for l in issue.get('labels') or []],
+                                          cfg.get('labels') or {})
+        label_ids = [l['id'] for l in issue.get('labels') or []
+                     if l['name'] in stale and l.get('id')]
+        facts[number] = {'id': issue.get('id'), 'was_open': state == 'OPEN',
+                         'closed': state == 'CLOSED', 'stale': stale}
+        if ok and issue.get('id') and (state == 'OPEN' or label_ids):
+            plan.append({'number': number, 'id': issue['id'],
+                         'close': state == 'OPEN', 'label_ids': label_ids})
+
+    outcomes = settle_issues(plan, args.pr) if plan else {}
+    stages = set_stages(cfg, {n: wf_core.STAGE_NAMES['stage-done'] for n in linked},
+                        ids={n: facts[n]['id'] for n in linked if facts[n]['id']})
+
     settled = []
     for number in linked:
-        ok, idata, _ = gh_json(['issue', 'view', str(number), '--repo', repo,
-                                '--json', 'state,labels'])
-        was_open = ok and idata and (idata.get('state') or '').upper() == 'OPEN'
-        label_names = [l['name'] for l in (idata or {}).get('labels', [])]
+        fact, outcome = facts[number], outcomes.get(number) or {}
         # Whether the issue is closed once this is done. The container walk
         # below reads it: an Epic or Feature is only finished by a close that
         # happened, not by one that was attempted.
-        closed = bool(ok and idata and (idata.get('state') or '').upper() == 'CLOSED')
-        if was_open:
-            code, _, _ = run(['gh', 'issue', 'close', str(number), '--repo', repo,
-                              '--comment', 'Closing — resolved by merged PR #%d.' % args.pr])
-            closed = code == 0
-        # A settled issue is Done: strip any open-state lifecycle label it still
-        # carries (e.g. a PR that auto-closed the issue but left status-in-review
-        # on).
-        cleared = clear_lifecycle_label(cfg, number, label_names)
-        done_set, stage_msg = set_stage(cfg, number,
-                                        wf_core.STAGE_NAMES['stage-done'])
-        settled.append({'issue': number, 'closed_now': bool(was_open and closed),
+        closed = fact['closed']
+        if fact['was_open']:
+            closed = bool(outcome.get('closed'))
+        cleared = ', '.join(fact['stale']) if outcome.get('cleared') else None
+        done_set, stage_msg = stages.get(int(number), (False, 'not attempted'))
+        settled.append({'issue': number, 'closed_now': bool(fact['was_open'] and closed),
                         'closed': closed,
                         'lifecycle_label_cleared': cleared,
                         'stage_set': done_set, 'stage_message': stage_msg})

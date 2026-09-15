@@ -5,10 +5,12 @@
 #     SessionStart hook. Every session pays it, whether or not the plugin is
 #     used. A skill or command that sets `disable-model-invocation` is left out,
 #     because Claude Code keeps its description out of context.
-#   Tier 2, every run: a skill's own file, plus every templates/ or references/
-#     file it cites without stating a condition, followed two levels deep.
+#   Tier 2, every run: a skill's own file, plus every templates/, references/
+#     or skills/_shared/ file and every other skill's SKILL.md it cites without
+#     stating a condition, followed two levels deep.
 #   Tier 3, on a trigger: a cited file whose citing sentence states a condition
-#     (if, unless, when, whenever, only), and everything that file cites.
+#     (if, unless, when, whenever, only, except, without, no argument), and
+#     everything that file cites.
 #
 # A file cited without a condition anywhere on the path is tier 2. Write "once"
 # rather than "when" for a step every run reaches, or the file it reads is
@@ -16,7 +18,12 @@
 # "not read at runtime" throughout the codebase.
 #
 # A citation naming another skill's references directory
-# (skills/<skill>/references/<file>.md) resolves against that skill.
+# (skills/<skill>/references/<file>.md) resolves against that skill. A shared
+# standard (_shared/<file>.md, skills/_shared/<file>.md) and another skill's
+# entry point (<skill>/SKILL.md, skills/<skill>/SKILL.md) resolve against the
+# plugin's skills/ directory, whatever ../ prefix the citation carries. A file
+# is counted once however many ways it is cited, and a file citing itself adds
+# nothing.
 #
 # Usage:
 #   bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 15000
@@ -169,15 +176,15 @@ is_excluded() {
 }
 
 # Succeeds when every citation of REF in FILE states a condition. A citation
-# states one when a condition word (if, unless, when, whenever, only, except)
-# appears in the sentence making it, or in the first sentence of its paragraph.
-# A list item or table row is judged whole. One unconditional citation makes
-# the file an every-run read.
+# states one when a condition word (if, unless, when, whenever, only, except,
+# without, no argument) appears in the sentence making it, or in the first
+# sentence of its paragraph. A list item or table row is judged whole. One
+# unconditional citation makes the file an every-run read.
 cites_on_condition() {
     awk -v ref="$2" '
         function states_condition(s) {
             s = tolower(s)
-            return s ~ /(^|[^a-z])(if|unless|when|whenever|only|except)([^a-z]|$)/
+            return s ~ /(^|[^a-z])(if|unless|when|whenever|only|except|without|no arguments?)([^a-z]|$)/
         }
         index($0, ref) {
             if ($0 ~ /^[ \t]*([-*+]|[0-9]+\.|\|)[ \t]/) {
@@ -196,8 +203,9 @@ cites_on_condition() {
     ' "$1"
 }
 
-# Scan a file for templates/ and references/ citations. Prints one line per
-# citation: the citation as written, a tab, and the resolved absolute path.
+# Scan a file for templates/, references/, _shared/ and <skill>/SKILL.md
+# citations. Prints one line per citation: the citation as written, a tab, and
+# the resolved absolute path. A file's citation of itself is not printed.
 #
 # A citation that names another skill's references directory
 # (skills/<skill>/references/<file>.md — how a shared reference such as
@@ -205,6 +213,11 @@ cites_on_condition() {
 # against that skill, not the citing one. Without this the path would fall
 # through to the plugin-level references/ directory and report "(missing)",
 # hiding a real dependency from the count.
+#
+# The shared standards in skills/_shared/ and other skills' SKILL.md files are
+# read the same way a reference is, so they are followed too. Their citations
+# carry a varying prefix (_shared/, skills/_shared/, ../skills/_shared/), and
+# all of them resolve to the one file under the plugin's skills/ directory.
 scan_deps() {
     local f="$1"
     [ -f "$f" ] || return 0
@@ -216,12 +229,18 @@ scan_deps() {
         */references/*) citer_ref_base="${f%/*}" ;;
         */skills/*)     citer_ref_base="${f%/*}/references" ;;
     esac
-    grep -oE '(skills/[a-zA-Z0-9_-]+/)?(templates|references)/[a-zA-Z0-9_-]+\.md' "$f" 2>/dev/null \
+    grep -oE '(skills/[a-zA-Z0-9_-]+/)?(templates|references)/[a-zA-Z0-9_-]+\.md|(skills/)?_shared/[a-zA-Z0-9_-]+\.md|(skills/)?[a-zA-Z0-9_-]+/SKILL\.md' "$f" 2>/dev/null \
         | sort -u \
         | while IFS= read -r ref; do
             local name="${ref##*/}"
             local skill path
             case "$ref" in
+                *_shared/*)
+                    path="$REPO_ROOT/$plugin_dir/skills/_shared/$name" ;;
+                */SKILL.md)
+                    skill="${ref%/SKILL.md}"
+                    skill="${skill##*/}"
+                    path="$REPO_ROOT/$plugin_dir/skills/$skill/SKILL.md" ;;
                 skills/*/references/*)
                     skill="${ref#skills/}"
                     skill="${skill%%/*}"
@@ -241,6 +260,7 @@ scan_deps() {
                         path="$REPO_ROOT/$plugin_dir/references/$name"
                     fi ;;
             esac
+            [ "$path" = "$f" ] && continue
             printf '%s\t%s\n' "$ref" "$path"
         done
 }
@@ -367,7 +387,7 @@ self_test() {
     tmp="$(mktemp -d)"
     trap "rm -rf '$tmp'" EXIT
     local p="$tmp/plug"
-    mkdir -p "$p/skills/main/references" "$p/skills/hidden" "$p/templates" "$p/commands" "$p/agents" "$p/hooks"
+    mkdir -p "$p/skills/main/references" "$p/skills/hidden" "$p/skills/_shared" "$p/skills/other/references" "$p/skills/pr/references" "$p/templates" "$p/commands" "$p/agents" "$p/hooks"
 
     cat > "$p/skills/main/SKILL.md" <<'EOF'
 ---
@@ -391,6 +411,16 @@ Never close a PR except per `references/except.md`.
 If a person asks, read `references/early.md`.
 
 Finish with `references/zlate.md`.
+
+Follow `_shared/wording-standard.md` for how every reply reads.
+
+Then read `../skills/other/SKILL.md` and follow it. This file is `skills/main/SKILL.md`.
+
+If the change is a pull request, read `pr/SKILL.md` as well.
+
+Without a config file, read `references/noconf.md`.
+
+With no argument, read `references/noarg.md`.
 EOF
     # early.md is placed at tier 3 first; zlate.md, read every run, cites it
     # again, so early.md and what it cites must end at tier 2.
@@ -406,6 +436,15 @@ EOF
     echo 'Unconditional.' > "$p/skills/main/references/rare-deep.md"
     echo 'Both.' > "$p/skills/main/references/both.md"
     echo 'Step.' > "$p/templates/step.md"
+    echo 'No config.' > "$p/skills/main/references/noconf.md"
+    echo 'No argument.' > "$p/skills/main/references/noarg.md"
+    echo 'Wording.' > "$p/skills/_shared/wording-standard.md"
+    # other/SKILL.md cites its own reference, which must resolve under other/,
+    # and the shared standard again in a longer form, which must not count twice.
+    printf -- "---\ndisable-model-invocation: true\n---\nRead \`references/other-ref.md\` and \`skills/_shared/wording-standard.md\`.\n" > "$p/skills/other/SKILL.md"
+    echo 'Other ref.' > "$p/skills/other/references/other-ref.md"
+    printf -- "---\ndisable-model-invocation: true\n---\nRead \`references/pr-ref.md\`.\n" > "$p/skills/pr/SKILL.md"
+    echo 'PR ref.' > "$p/skills/pr/references/pr-ref.md"
     printf -- "---\nname: hidden\ndescription: 'Should not count'\ndisable-model-invocation: True\n---\nBody.\n" > "$p/skills/hidden/SKILL.md"
     printf -- "---\ndescription: 'Ten chars!'\n---\nBody.\n" > "$p/commands/cmd.md"
     cat > "$p/hooks/hooks.json" <<'EOF'
@@ -460,6 +499,19 @@ EOF
     expect_tier skills/main/references/except.md 3
     expect_tier skills/main/references/early.md 2
     expect_tier skills/main/references/early-deep.md 2
+    expect_tier skills/_shared/wording-standard.md 2
+    expect_tier skills/other/SKILL.md 2
+    expect_tier skills/other/references/other-ref.md 2
+    expect_tier skills/pr/SKILL.md 3
+    expect_tier skills/pr/references/pr-ref.md 3
+    expect_tier skills/main/references/noconf.md 3
+    expect_tier skills/main/references/noarg.md 3
+    local once f seen_count
+    for once in skills/main/SKILL.md skills/_shared/wording-standard.md; do
+        seen_count=0
+        for f in "${order[@]}"; do [ "$f" = "$p/$once" ] && seen_count=$(( seen_count + 1 )); done
+        [ "$seen_count" -eq 1 ] || { echo "self-test FAIL: $once is listed $seen_count times, expected once"; fail=1; }
+    done
 
     local saved_budget="$budget"
     budget=1

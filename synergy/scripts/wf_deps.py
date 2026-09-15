@@ -109,7 +109,9 @@ def validate_issue(cfg, issue, siblings=()):
     same run is about to write. Everything else is unchanged, so a single-story
     pick (no siblings) behaves exactly as before.
     """
-    edges = issue_edges(cfg, issue['number'])
+    edges = known_edges(issue)
+    if edges is None:
+        edges = issue_edges(cfg, issue['number'])
     if edges is None:
         return 'unknown', 'could not read the blocked-by edges'
     open_numbers, closed_numbers = wf_core.edge_states(edges)
@@ -120,10 +122,52 @@ def validate_issue(cfg, issue, siblings=()):
     open_deps = wf_core.blocking_dependencies(deps, open_numbers, siblings)
     if open_deps:
         return 'blocked', ', '.join('#%d' % d for d in open_deps)
-    pr_number = merged_pr_closing(cfg, issue['number'])
+    if issue.get('prs_complete') and 'merged_prs' in issue:
+        # The read that produced this issue saw every pull request that
+        # closes it, so the repository-wide scan would only repeat it.
+        merged = issue['merged_prs']
+        pr_number = min(merged) if merged else None
+    else:
+        pr_number = merged_pr_closing(cfg, issue['number'])
     if pr_number is not None:
         return 'resolved', pr_number
     return 'valid', None
+
+
+def known_edges(issue):
+    """The blocked-by edges an earlier read already returned with the issue,
+    or None when it returned none or not all of them."""
+    connection = issue.get('blockedBy')
+    if not isinstance(connection, dict) or 'nodes' not in connection:
+        return None
+    nodes = connection.get('nodes') or []
+    total = connection.get('totalCount')
+    if total is None or total > len(nodes):
+        return None
+    return nodes
+
+
+def issue_dependency_facts(cfg, number):
+    """One issue's blocked-by edges and the pull requests that close it, in
+    one query. Returns the facts to merge into a candidate, or {} when the
+    read failed, so the claim falls back to reading each on its own."""
+    ok, data, _ = gh_graphql(
+        'query($o:String!,$r:String!,$n:Int!){ repository(owner:$o,name:$r){'
+        ' issue(number:$n){ blockedBy(first:%d){ totalCount nodes { number state title } }'
+        ' closedByPullRequestsReferences(first:5){ totalCount nodes { number state } } } } }'
+        % EDGE_PAGE, o=cfg['org'], r=cfg['repo'], n=int(number))
+    node = (((data or {}).get('repository') or {}).get('issue')) if ok else None
+    if not node:
+        return {}
+    conn = node.get('closedByPullRequestsReferences') or {}
+    refs = [p for p in conn.get('nodes') or [] if p]
+    total = conn.get('totalCount')
+    return {'blockedBy': node.get('blockedBy') or {},
+            'open_prs': [p['number'] for p in refs
+                         if (p.get('state') or '').upper() == 'OPEN'],
+            'merged_prs': sorted(p['number'] for p in refs
+                                 if (p.get('state') or '').upper() == 'MERGED'),
+            'prs_complete': total is not None and total <= len(refs)}
 
 
 def merged_pr_closing(cfg, number):
@@ -163,7 +207,7 @@ def merged_pr_closing(cfg, number):
     return min(matches) if matches else None
 
 
-def mark_blocked(cfg, issue, detail):
+def mark_blocked(cfg, issue, detail, assigned=True):
     """Return an issue to blocked: unassign, comment, set `Stage` to Blocked.
 
     Returns (written, message) for the `Stage` half, which the caller reports.
@@ -171,10 +215,14 @@ def mark_blocked(cfg, issue, detail):
     says the issue is blocked, and it is what keeps the issue out of the pool.
     A failed write therefore leaves the issue in the pool, unassigned, and the
     next run picks it up again — so it has to be said rather than swallowed.
+
+    `assigned=False` skips the unassign, for an issue the claim walk found
+    blocked before it assigned anybody.
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    run(['gh', 'issue', 'edit', str(issue['number']), '--repo', repo,
-         '--remove-assignee', '@me'])
+    if assigned:
+        run(['gh', 'issue', 'edit', str(issue['number']), '--repo', repo,
+             '--remove-assignee', '@me'])
     run(['gh', 'issue', 'comment', str(issue['number']), '--repo', repo,
          '--body', 'Blocked — open dependency(ies): %s. Returned to blocked until they close.' % detail])
     written, message = set_stage(cfg, issue['number'],

@@ -1209,16 +1209,15 @@ class TestShapeRegressionGuards(unittest.TestCase):
                     'baseRefName': 'main',
                     'closingIssuesReferences': [{'number': 5}],
                 }), ''
-            if argv[:3] == ['gh', 'issue', 'view']:
-                return 0, json.dumps({'state': 'OPEN', 'labels': []}), ''
-            return 0, '', ''  # issue close, etc.
+            return _settle_graphql(argv, input_text) or (0, '', '')
 
         args = wf.build_parser().parse_args(['post-merge', '--pr', '50',
                                              '--no-unblock'])
         with mock.patch.object(wf, 'check_environment', return_value=None), \
                 mock.patch.object(wf, 'load_config', return_value=(True, cfg, '')), \
-                mock.patch.object(wf, 'set_stage',
-                                  return_value=(True, 'Stage set to Done')), \
+                mock.patch.object(wf, 'set_stages',
+                                  lambda cfg, wanted, ids=None:
+                                  {int(n): (True, 'Stage set to Done') for n in wanted}), \
                 mock.patch.object(wf, 'close_finished_ancestors',
                                   return_value=([], [])), \
                 mock.patch.object(wf, 'run', side_effect=fake_run):
@@ -1239,6 +1238,33 @@ class TestShapeRegressionGuards(unittest.TestCase):
         self.assertEqual(args[n_idx - 1], '-F')
 
 
+def _settle_graphql(argv, input_text, state='OPEN', close_fails=()):
+    """Answer post-merge's aliased issue read and its settle mutation (#300).
+
+    Returns a `run` result for either, and None for any other command. Every
+    issue reads as `state` with no labels; a close for an issue in
+    `close_fails` is refused the way GitHub refuses one alias of a batch.
+    """
+    if argv[:3] != ['gh', 'api', 'graphql']:
+        return None
+    if input_text is None:
+        query = next((a for a in argv if a.startswith('query=')), '')
+        numbers = re.findall(r'i(\d+): issue\(number:\d+\)', query)
+        return 0, json.dumps({'data': {'repository': {
+            'i%s' % n: {'id': 'I_%s' % n, 'state': state, 'labels': {'nodes': []}}
+            for n in numbers}}}), ''
+    body = json.loads(input_text)['query']
+    data, errors = {}, []
+    for n in re.findall(r'c(\d+): closeIssue', body):
+        data['m%s' % n] = {'subject': {'id': 'I_%s' % n}}
+        if int(n) in close_fails:
+            data['c%s' % n] = None
+            errors.append({'path': ['c%s' % n], 'message': 'HTTP 502'})
+        else:
+            data['c%s' % n] = {'issue': {'id': 'I_%s' % n, 'state': 'CLOSED'}}
+    return 0, json.dumps({'data': data, 'errors': errors}), ''
+
+
 class TestPostMergeClosesFinishedContainers(unittest.TestCase):
     """A merge closes the Epic or Feature its last story finished (#240)."""
 
@@ -1247,16 +1273,14 @@ class TestPostMergeClosesFinishedContainers(unittest.TestCase):
 
         def fake_run(argv, input_text=None):
             calls.append(argv)
-            if close_fails and argv[:4] == ['gh', 'issue', 'close', '5']:
-                return 1, '', 'HTTP 502'
             if argv[:3] == ['gh', 'pr', 'view']:
                 return 0, json.dumps({
                     'number': 50, 'state': 'MERGED', 'mergedAt': '2026-09-10T00:00:00Z',
                     'baseRefName': 'main',
                     'closingIssuesReferences': [{'number': 5}]}), ''
-            if argv[:3] == ['gh', 'issue', 'view']:
-                return 0, json.dumps({'state': 'OPEN', 'labels': []}), ''
-            return 0, '', ''
+            return _settle_graphql(argv, input_text,
+                                   close_fails=(5,) if close_fails else ()) \
+                or (0, '', '')
 
         args = wf.build_parser().parse_args(['post-merge', '--pr', '50', '--no-unblock'])
         with mock.patch.object(wf, 'check_environment', return_value=None), \
@@ -1264,8 +1288,12 @@ class TestPostMergeClosesFinishedContainers(unittest.TestCase):
                 mock.patch.object(wf, 'run', side_effect=fake_run), \
                 mock.patch.object(wf, 'set_stage',
                                   return_value=(True, 'Stage set to Done')), \
-                mock.patch.object(wf, 'fetch_parent_chain',
-                                  return_value=(True, chain, '')):
+                mock.patch.object(wf, 'set_stages',
+                                  lambda cfg, wanted, ids=None:
+                                  {int(n): (True, 'Stage set to Done') for n in wanted}), \
+                mock.patch.object(wf, 'fetch_parent_chains',
+                                  lambda cfg, numbers: {int(n): (True, chain, '')
+                                                        for n in numbers}):
             code, payload = _capture(args.func, args)
         closes = [c for c in calls if c[:3] == ['gh', 'issue', 'close']]
         return code, payload, closes
@@ -3518,7 +3546,7 @@ class TestConfigAudit(unittest.TestCase):
         with mock.patch.object(wf, 'load_config', lambda: (True, cfg, '')), \
                 mock.patch.object(wf, 'repo_root', lambda: self.dir), \
                 mock.patch.object(wf, 'resolve_org_capabilities',
-                                  lambda cfg, refresh=False, root=None:
+                                  lambda cfg, refresh=False, root=None, **_:
                                   (True, caps or _APPLY_CAPS, '')), \
                 mock.patch.object(wf, 'gh_graphql', gh_graphql), \
                 mock.patch.object(wf, 'gh_graphql_partial', gh_graphql_partial), \
@@ -3978,14 +4006,21 @@ class TestStageTransitions(unittest.TestCase):
                     'number': 50, 'state': 'MERGED',
                     'mergedAt': '2026-09-10T00:00:00Z', 'baseRefName': 'main',
                     'closingIssuesReferences': [{'number': 5}]}), ''
-            if cmd[:3] == ['gh', 'issue', 'view']:
-                return 0, json.dumps({'state': 'OPEN', 'labels': []}), ''
-            return 0, '', ''
+            return _settle_graphql(cmd, input_text) or (0, '', '')
+
+        def graphql_json(query, variables):
+            # The close goes out as its own mutation; only the `Stage` write
+            # is the hub's to check.
+            if 'closeIssue' in query:
+                return _settle_graphql(['gh', 'api', 'graphql'],
+                                       json.dumps({'query': query}))
+            return hub.graphql_json(query, variables)
 
         args = wf.build_parser().parse_args(['post-merge', '--pr', '50',
                                              '--no-unblock'])
         with hub.wired(), \
                 mock.patch.object(wf, 'run', fake_run), \
+                mock.patch.object(wf, '_graphql_json', graphql_json), \
                 mock.patch.object(wf, 'check_environment', lambda: None), \
                 mock.patch.object(wf, 'load_config', lambda: (True, _cfg(), '')), \
                 mock.patch.object(wf, 'close_finished_ancestors',
@@ -4336,16 +4371,18 @@ class TestPreflight(unittest.TestCase):
         """The same rule as post-merge, so one `--fix` is enough."""
         epic = {'number': 1, 'title': 'e', 'state': 'OPEN', 'type': 'Epic',
                 'repo': None, 'children': [{'number': 40, 'state': 'OPEN'}]}
-        with mock.patch.object(wf, 'fetch_parent_chain',
-                               return_value=(True, [epic], '')):
+        with mock.patch.object(wf, 'fetch_parent_chains',
+                               lambda cfg, numbers: {int(n): (True, [epic], '')
+                                                     for n in numbers}):
             _, payload, calls = self._run(['--fix'], finished=[40])
         closed = [c[3] for c in calls if c[:3] == ['gh', 'issue', 'close']]
         self.assertEqual(closed, ['40', '1'])
         self.assertTrue(any('#1' in line for line in payload['fixed']))
 
     def test_fix_says_when_it_could_not_read_a_parent(self):
-        with mock.patch.object(wf, 'fetch_parent_chain',
-                               return_value=(False, [], 'HTTP 502')):
+        with mock.patch.object(wf, 'fetch_parent_chains',
+                               lambda cfg, numbers: {int(n): (False, [], 'HTTP 502')
+                                                     for n in numbers}):
             _, payload, _ = self._run(['--fix'], finished=[40])
         self.assertTrue(any('#40' in line for line in payload['fixed']))
         self.assertTrue(any('could not read the parents of #40' in line
@@ -4414,7 +4451,7 @@ class TestPreflight(unittest.TestCase):
                 mock.patch.object(wf, 'repo_root', lambda: self.dir), \
                 mock.patch.object(wf, 'check_environment', lambda: env_err), \
                 mock.patch.object(wf, 'resolve_org_capabilities',
-                                  lambda cfg, refresh=False, root=None:
+                                  lambda cfg, refresh=False, root=None, **_:
                                   (True, caps or _APPLY_CAPS, '')), \
                 mock.patch.object(wf, 'gh_graphql', gh_graphql), \
                 mock.patch.object(wf, 'gh_graphql_partial', gh_graphql_partial), \
@@ -4771,6 +4808,7 @@ class TestPickBlockedSibling(unittest.TestCase):
                 'milestone': None, 'url': '', 'state': 'OPEN', 'assignees': []}
         cfg = _cfg()
         with mock.patch.object(wf, 'gh_json', return_value=(True, data, '')), \
+                mock.patch.object(wf, 'issue_dependency_facts', return_value={}), \
                 mock.patch.object(wf, 'load_issue_facets',
                                   return_value=_facets(stage={52: 'Blocked'})):
             self.assertEqual(wf.fetch_issue_candidate(cfg, 52)['number'], 52)

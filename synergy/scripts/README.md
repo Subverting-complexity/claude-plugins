@@ -14,29 +14,30 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 |--------|----------------|-------|
 | `wf.py` | Entry point: argument parser, dispatch, re-exports | 426 |
 | `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 142 |
-| `wf_config.py` | Repo root, `ClaudeProject.md` parsing, the config cache, `config` | 241 |
-| `wf_capabilities.py` | Org issue types, fields and type pins, repo labels, the capability cache, `org-capabilities` | 446 |
+| `wf_config.py` | Repo root (asked of git once per working directory), `ClaudeProject.md` parsing, the config cache, `config` | 260 |
+| `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 498 |
 | `wf_issue_io.py` | Reading, writing and verifying single issues; batched mutations | 422 |
 | `wf_stage.py` | `Stage` writes, the start date, branch checkout, `stage-set` | 213 |
-| `wf_candidates.py` | Open issues by stage, their facets, the candidate list | 470 |
-| `wf_claim.py` | Claim refs and markers, `claim`, `claim-release`, `claim-reap` | 378 |
-| `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 220 |
+| `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 540 |
+| `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 463 |
+| `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 268 |
 | `wf_unblock.py` | The unblock sweep, `unblock` | 288 |
-| `wf_pick.py` | The claim and validate walk, container trees, `pick`, `candidates` | 785 |
-| `wf_post_merge.py` | Closing finished containers, `post-merge` | 243 |
-| `wf_review.py` | PR pools and review labels, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 409 |
+| `wf_pick.py` | The claim and validate walk, container trees, the prerequisite redirect, `pick`, `candidates` | 933 |
+| `wf_plan.py` | Planning and claiming a bulk set, `plan-set`, `drop-story`, `bulk-mark` | 391 |
+| `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, `post-merge` | 397 |
+| `wf_review.py` | PR pools and review labels, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 411 |
 | `wf_issue_apply.py` | `issue-apply` | 777 |
 | `wf_issue_audit.py` | `issue-audit` | 166 |
-| `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 654 |
+| `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 659 |
 | `wf_board_sync.py` | `board-sync` | 287 |
 | `wf_core.py` | Facade: re-exports the rules below | 50 |
 | `wf_core_findings.py` | The finding record and the helpers findings are worded with | 46 |
 | `wf_core_fields.py` | Label resolution, native issue types, field vocabularies and ranks | 419 |
 | `wf_core_stage.py` | `Stage` names, work scope, which stage an issue belongs in, stage drift targets | 452 |
 | `wf_core_select.py` | Candidate filter and sort, native type filtering, backlog mode | 308 |
-| `wf_core_pool.py` | The verdict on every open issue in the pool | 251 |
+| `wf_core_pool.py` | The verdict on every open issue in the pool, waiting work and inherited priority | 375 |
 | `wf_core_refs.py` | Parent parsing, closing references, branch names, dependency edges, unblock verdicts | 268 |
-| `wf_core_bulk.py` | Ordering a bulk set and choosing one from a container | 225 |
+| `wf_core_bulk.py` | Planning a dependency-ordered bulk set and its waves | 453 |
 | `wf_core_claims.py` | Sibling PRs that would duplicate a claim, claim reaping | 110 |
 | `wf_core_spec.py` | The issue hierarchy, spec validation, value shaping and batching | 562 |
 | `wf_core_audit.py` | What an existing issue is missing or contradicts | 344 |
@@ -70,10 +71,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue 42 --checkout
 # List the pool without claiming anything (bulk-execute chooses its set from this)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --limit 0
 
-# …or the one set the stories under an Epic or Feature offer: one Feature per
-# run, available leaves plus any Blocked leaf waiting only on another leaf taken,
-# and every other leaf in `excluded` with its reason
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --parent 42 --size 5
+# …or plan a bulk set: connected stories in build order and waves, blockers
+# first, from the pool, named stories (--issue) or an Epic or Feature (--parent);
+# --claim claims, assigns and sets In Progress for every story in it
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --parent 42 --size 7 --claim
 
 # After merging a PR: close any still-open linked issue and set its Stage to Done,
 # close any Epic or Feature above it whose sub-issues are now all closed,
@@ -145,6 +146,8 @@ Run from the **target repo root** so the CLI can read `ClaudeProject.md` and the
 1. **A dedicated virtualenv**, if `wf.sh setup` has created one. It lives under `${CLAUDE_PLUGIN_DATA}/wf-venv` (the plugin's persistent data dir, which survives plugin updates), with `requirements.txt` installed into it. This is the steady state — pinned, isolated, never affected by PATH.
 2. **A probed system Python** otherwise (`python3` verified, then `py -3`, then `python` — the broken Windows `python3` Store shim fails its `--version` probe and is skipped), with a one-line hint to run setup.
 3. **Nothing found** → exit 20; the caller falls back to the inline skill.
+
+Probing launches Python, about 420 ms on Windows, so the answer is cached: `wf.sh` writes the kind (`venv` or `base`) and the interpreter's absolute path to `wf-python` under the data dir, and `wf.ps1` to `wf-python-ps1`. A later call trusts it without running anything while that path exists, and a cached system Python gives way as soon as a venv exists. If the cached interpreter will not launch (exit 126 or 127 in bash, command not found in PowerShell), the cache is deleted and the probe runs once. `setup` always rewrites it.
 
 `wf.sh setup` is idempotent: a valid venv is reused, `--force` rebuilds it. If no Python 3 exists it prints the platform install command and stops (exit 20) — or, with the explicit `--install-python` opt-in, installs system Python via winget/brew/apt first. Wire it via `/synergy:setup wf` (or it's offered during full setup, Step 1b).
 
@@ -459,7 +462,7 @@ It will not create a `CLAUDE.md`, invent an `## Identity` section, create or del
 
 ## Settling a merged PR — `post-merge`
 
-`post-merge --pr <n>` makes "the story is closed and at `Done`" a deterministic step instead of trusting GitHub. It reads the PR's own `closingIssuesReferences`, **force-closes** any of those issues still open (GitHub only auto-closes on a default-branch merge of a recognised keyword — a chained-story PR or an unparsed reference leaves it open), and sets every linked issue's stage to **Done**. Each settled issue is reported with `closed_now` and `stage_set`. It refuses (`status: not-merged`, exit 11) on a PR that has not actually merged, so it is safe to call on the queued `--auto` path. Add `--issue <N>` (repeatable) to settle a reference GitHub did not parse. `pr-review`'s auto-merge step calls this after a successful immediate merge.
+`post-merge --pr <n>` makes "the story is closed and at `Done`" a deterministic step instead of trusting GitHub. It reads the PR's own `closingIssuesReferences`, **force-closes** any of those issues still open (GitHub only auto-closes on a default-branch merge of a recognised keyword — a chained-story PR or an unparsed reference leaves it open), and sets every linked issue's stage to **Done**. Each settled issue is reported with `closed_now` and `stage_set`. It refuses (`status: not-merged`, exit 11) on a PR that has not actually merged, so it is safe to call on the queued `--auto` path. Add `--issue <N>` (repeatable) to settle a reference GitHub did not parse. `pr-review`'s auto-merge step calls this after a successful immediate merge. It costs the same five GitHub requests however many issues the PR closes: the PR, one aliased read of every issue, one mutation closing them and removing any retired label, one `Stage` write, and one read of their parents. A close GitHub refuses is still reported against its own issue.
 
 ## Releasing what a merge freed — `unblock`
 
@@ -500,7 +503,7 @@ All share the same atomic claim/checkout core and JSON contract. `--checkout` cr
 1. `Stage` is anything but blank or `Backlog`: not pickable.
 2. Assigned, held by a claim ref, or closed by an open pull request: not pickable.
 3. `Ownership` is not `Code agent`: not pickable. A `User Story` or `Bug` with no `Ownership` counts as `Code agent`; any other type with none does not.
-4. An open blocked-by edge: not pickable, and `pick` sets `Stage` to `Blocked`. A blocker holds back only the issues it blocks.
+4. An open blocked-by edge: not pickable, and `pick` sets `Stage` to `Blocked`. A blocker holds back only the issues it blocks, and it inherits the priority of the most urgent story waiting on it, directly or down a chain, so the pool puts first whatever finishes urgent work soonest. The entry carries `unblocks`, and `inherited_priority` when it rose.
 5. Under an Epic or Feature whose `Stage` is `Parked`: not pickable. This is the one rule that passes down the tree.
 6. Any other story, bug or chore: pickable as itself.
 7. A `Feature` with pickable stories: pickable. `pick` claims its highest-priority story and returns the rest in `offered`; `candidates` lists them in `stories`.
@@ -508,6 +511,12 @@ All share the same atomic claim/checkout core and JSON contract. `--checkout` cr
 9. An Epic or Feature with no sub-issues, or a story whose body is nearly empty or has no acceptance criteria: needs refinement. `pick` stops with `needs-refinement` (exit 12) and claims nothing, so a person can clarify it; with `--unattended` it sets `Stage` to `Needs refinement`, comments why, and walks on. `candidates` lists these under `needs_refinement`.
 
 The pool is ordered by `Priority`, then `Effort`, then issue number. `--mode` and `--max-effort` apply to stories, bugs and chores; in `maintenance` mode a story under a `Feature` classified as maintenance work counts too. Nothing here sets an Epic or Feature to `In Progress`, `In Review` or `Parked`.
+
+### Dependencies decide order, not membership
+
+`pick --issue N` on an issue with open blockers does not refuse it when this run can build them. It plans the chain (`wf_core.plan_set`), sets N to `Blocked`, claims the first prerequisite that is ready, and returns it with `prerequisite_for` (`number`, `title`, `build_order`). Only a blocker nobody here may build ends the pick, with `all-blocked` and a reason naming it. A pick with `--sibling` is never redirected, because a bulk claim must take exactly the story it names.
+
+`plan-set` does the same for a bulk run. Its universe is every pool story plus every waiting story (blank, `Backlog` or `Blocked`, code work, unassigned, unclaimed, its edges fully read). Two stories are connected by an edge either way, a shared blocker, or a shared parent. Named (`--issue`, repeatable): each named story plus the prerequisites it needs. `--parent N`: the lead and its group come from the stories under N, and a prerequisite outside N still joins. Neither: the lead is the highest-ranked story whose whole chain fits `--size` (2 to 7), and its connected group joins in rank order. `waves` groups the build order so no story shares a wave with anything it waits on. Without `--claim` it only reads, and `nearby` lists the best unlinked ready stories. With `--claim` it takes every claim ref at once, drops a story claimed away, blocked or resolved together with everything waiting on it, then assigns in one mutation and writes `Stage` and `Start date` in another, and records the set in `.claude/bulk-set.json`. `drop-story` returns a story and its unbuilt dependents to the pool, and `bulk-mark` records the branch and each story built.
 
 ## Scope / deferrals
 
@@ -550,7 +559,7 @@ It **always exits 0**, so a failed write never costs a run its work. Read `set`,
 
 ### `handoff`
 
-`handoff --pr P --issue N [--issue M …]` ends a build: it takes the PR's review claim (`refs/claims/pr-P`) first, so the work is never unlocked between the build and its review, and reports that as `pr_claimed` (`won`, `lost` or `error`). A later `claim --pr P --keep-held` from the same checkout keeps the claim it holds; without `--keep-held` it reports `lost`, so a second session sharing the checkout cannot take the PR. Then it labels the PR with the review-state entry label, then for each issue sets its `Stage` to `In Review` and releases its claim ref. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`. `--gate-failed` enters review as changes-requested rather than needs-review.
+`handoff --pr P --issue N [--issue M …]` ends a build: it takes the PR's review claim (`refs/claims/pr-P`) first, so the work is never unlocked between the build and its review, and reports that as `pr_claimed` (`won`, `lost` or `error`). A later `claim --pr P --keep-held` from the same checkout keeps the claim it holds; without `--keep-held` it reports `lost`, so a second session sharing the checkout cannot take the PR. Then it labels the PR with the review-state entry label, then sets each issue's `Stage` to `In Review` and releases every issue claim ref in one push, as `claim-release` does, with one `ls-remote` to tell which refs are still held when that push fails. Finally it deletes `.claude/plan.md`, `preflight-passed.txt` and `label-cache.json`. `--gate-failed` enters review as changes-requested rather than needs-review.
 
 It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read `pr_labelled` and the per-issue `stage_set` and `stage_message` instead. A failure on one issue does not affect the others.
 

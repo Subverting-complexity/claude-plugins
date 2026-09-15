@@ -1,96 +1,61 @@
-# Bulk Execute — Phase 1 (choose the set, claim every story)
+# Bulk Execute — Phase 1 (plan and claim the set)
 
-Read this at Phase 1. It is the whole of set selection: which of the three ways a set gets chosen applies (each, with the rules that decide what belongs in one pull request, is in its own file), the claim every member has to hold, and how a story leaves the set again.
+Read this at Phase 1. `wf plan-set` chooses the set, orders it and claims it. Which stories are connected, which waits on which, and what order and waves to build them in are decided there from the blocked-by edges and the issue tree, so none of it is judged here.
 
-Two things hold throughout:
+## What `plan-set` decides
 
-1. **The set is chosen, not sampled.** Priority order says which story is worth doing next. It says nothing about which stories belong in one pull request. A set assembled by taking the top few off the backlog is the most likely way for this command to produce a diff nobody can review.
-2. **Every story in the set holds its own atomic claim** before any code is written. The claim ref is the only thing that stops a second agent picking up a story this branch is already building.
+- **A set is connected.** Two stories belong together when a blocked-by edge joins them either way, when they wait on the same prerequisite, or when they share a parent. A group reached through those links is one set.
+- **A dependency never excludes a story.** A story waiting on another story in the set goes in a later wave. A named story's open prerequisites join the set even when nobody named them, as long as this run can build them.
+- **Only a blocker nobody here may build excludes a story**: one owned by a person, assigned or claimed elsewhere, already closed by an open pull request, waiting on such an issue itself, in a dependency cycle, or with edges that could not be read. Each exclusion carries its reason.
+- **Waves.** `waves[0]` is built first. The stories in one wave do not depend on each other, so Phase 4 may build them in parallel.
+- **Priority.** A story inherits the priority of the most urgent story waiting on it, so an open pool leads with whatever finishes the most urgent work soonest.
 
----
+## Plan
 
-## Choosing the path
-
-Exactly one path applies. Each lives in its own file, so read only the one that applies, then come back to **Claiming the set**:
-
-- If the user named stories (`$ARGUMENTS.story_numbers` is present, e.g. `/synergy:bulk-execute 41 43 47`), follow Path A in `references/set-selection-named.md`.
-- If `--parent N` was given, follow Path C in `references/set-selection-parent.md`. Named story numbers and `--parent` cannot be combined; if both are given, stop and say so.
-- If no numbers and no `--parent` were given, follow Path B in `references/set-selection-open.md`.
-
----
-
-## Claiming the set
-
-Identical for every path. Claim in **build order**, so the lead is claimed first and a run that loses claims part way still holds a coherent prefix.
-
-For each story, in order:
+Exactly one form applies. Named stories and `--parent` together is a usage error: stop and say so.
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout --no-branch \
-  --sibling {other_number} --sibling {other_number} ...
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --mode {mode} --size {size} --issue 41 --issue 43
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --mode {mode} --size {size} --parent {N}
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --mode {mode} --size {size}
 ```
 
-Pass `--sibling` once for **every other story in the set**. That is what lets a dependency chain be built at all: `wf` normally refuses a story whose dependency is still open, because you cannot build on unmerged work you cannot see, and a sibling is the exception — it is work this same run is about to write, in the same commit series, on the same branch. A dependency that is open and **not** a sibling still blocks, exactly as it does for a single-story run.
+With named stories or `--parent`, nothing is left to judge: add `--claim` to that first call and go to **Read the claim**.
 
-`--checkout --no-branch` sets the stage to `In Progress` without creating a branch. Every story in the set shares the one branch Phase 2 creates; branching per story here would give each its own.
+With neither, run it once without `--claim` and read the result:
 
-Interpret each result by `status`:
+- **`no-candidates`** — nothing can be built. Report each `excluded` story by number, title and reason, and stop.
+- **`ok`** — `stories` in build order, each with `wave`, `blocked_by`, `unblocks`, `why` and a truncated body; `excluded`; and `nearby`, the highest-ranked ready stories nothing links to the set.
+  - Add a `nearby` story only when its body shows it changes the same files or serves the same objective as the set, and the set is below `--size`. Otherwise leave it in the pool: an unlinked story in the pull request makes the diff harder to review.
+  - A story too underspecified to build without guessing is left out now, before anything is claimed.
+  - Claim with `--issue` once for every story kept, so the claim takes exactly the plan you read.
 
-- **`ok`** — claimed. The stage is `In Progress`, the `@me` assignment is applied and the claim ref is held. Surface any `side_effects`.
-- **`all-blocked`** — this story could not be claimed: taken by another agent, blocked by an open dependency outside the set, or already resolved by a merged PR. Drop it from the set, say which and why, and carry on with the rest. It is not a reason to abandon the run.
-- **`error`**, or Python is missing — `wf` cannot run here. Stop the run and name the prerequisite; every story already claimed is released by the dropping procedure below.
+`size_clamped` set means `--size` was outside 2 to 7 and was clamped: say so. For named stories, `unrelated: true` means they fall into separate groups: say so in one sentence and build them anyway, because the user's choice stands.
 
-If dropping a story leaves another story in the set depending on it, drop that one too and repeat until the set is stable — a story whose dependency is no longer being built has an open external dependency again.
+## Read the claim
 
-## Recording the set
-
-The set has to survive a compaction, so write it down as soon as it is claimed, and update it whenever a story joins or leaves:
-
-```
-mkdir -p .claude
-cat > .claude/bulk-set.json <<'JSON'
-{
-  "lead": 41,
-  "mode": "feature",
-  "branch": null,
-  "stories": [
-    {"number": 41, "title": "Resolve labels by purpose key", "built": false},
-    {"number": 43, "title": "Report the label that was missing", "built": false}
-  ],
-  "dropped": []
-}
-JSON
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --mode {mode} --size {size} --issue {n} --issue {n} --claim
 ```
 
-`branch` is filled in by Phase 2. `built` flips to `true` as each story is committed in Phase 6, and it is the field Phase 7 reads to decide which stories the pull request may close. `dropped` records each departure as `{"number": N, "reason": "..."}` so the final report can account for every story that was ever claimed.
+- **`ok`** — every story in `stories` holds its claim ref, is assigned and is `In Progress`, and `.claude/bulk-set.json` records the set with its waves. `dropped` lists stories claimed away, blocked or already resolved, and every story that waited on one of them; report each by number, title and reason. A story whose `stage_set` is false is reported as "Stage update failed: {stage_message}. Continuing."
+- **`all-blocked`** — nothing is held. Report `dropped` and stop.
+- **`error`** — a claim ref could not be written, which is an environment problem rather than a rival. Every claim already taken was released. Stop and name the problem.
+
+One story claimed is a correct outcome: say so and run the rest of the workflow for it.
+
+## Recording progress
+
+Never edit `.claude/bulk-set.json` by hand. `wf bulk-mark --branch {branch}` records the branch in Phase 2, and `wf bulk-mark --built {number}` records each story once its commit is on the branch. Phase 7 closes only the stories `built` marks.
 
 ## Dropping a story
 
-Called from Phase 1 (unclaimable), Phase 3 (the plan shows the set does not fit), Phase 5 (a red gate stops the build) and the escape hatches (blocked, too large). Dropping is cheap and correct; carrying a story you cannot finish is neither.
+Called when the plan shows the set will not fit, when a gate stays red, or from the escape hatches:
 
-If the story was **never claimed**, there is nothing to undo — remove it from `.claude/bulk-set.json` and say why in the report.
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" drop-story --issue {number} --reason "{why, in a few words}"
+```
 
-If it **was claimed**, return it to the backlog properly, in this order:
+It releases the claim, unassigns, comments the reason on the issue, sets the `Stage` back to `Backlog` (or `Blocked` when the story still waits on an open issue), updates `.claude/bulk-set.json`, and does the same for every unbuilt story that waits on it. Report `dropped` by number, title and reason.
 
-1. Release the lock:
-   ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
-   ```
-2. Give the issue back:
-   ```
-   gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
-   ```
-3. Set the stage back to `Backlog` — **this is the step that returns the issue to the pool**, because the pool is that stage:
-   ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-backlog
-   ```
-   It always exits 0; read `set`, and report a failed write as "Stage update failed: {reason}. Continuing."
-4. Comment on the issue saying it was claimed for a bulk run and returned unbuilt, and why, so the next run does not have to infer it:
-   ```
-   gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
-   ```
-5. Record it in `.claude/bulk-set.json` under `dropped`.
-
-**Never leave a claimed story half-built.** If code for it is already on the branch, it is not a candidate for dropping — either finish it, or reset that work off the branch before releasing the claim. A story returned to the backlog with its code already merged into someone else's pull request is worse than either outcome on its own.
-
-If dropping takes the set below two stories, that is fine: one claimed story is a single-story run, and the rest of the workflow handles it unchanged.
+It refuses a story already built. Finish that story, or reset its commits off the branch, before dropping it: a story returned to the backlog with its code in someone's pull request is worse than either outcome.
