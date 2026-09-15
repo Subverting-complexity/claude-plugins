@@ -86,16 +86,18 @@ jobs:
 
       - name: Check execute every-run load
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 29050
+        # Lowered in 13.3.0 (#274, #276), when merge mechanics moved behind the auto-merge check and the shared phases moved into one reference.
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 16200
 
       - name: Check bulk-execute every-run load
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 33280
+        # Lowered in 13.3.0 (#274, #276).
+        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 22630
 
       - name: Check code-review every-run load
         shell: bash
-        # Lowered in 13.2.0 (#275), when the label inventory stopped loading.
-        run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 10350
+        # Lowered in 13.3.0 (#274, #276), when auto-merge.md and the picker fallback began loading only when needed.
+        run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 5460
 
       - name: Check build every-run load
         shell: bash
@@ -103,8 +105,13 @@ jobs:
 
       - name: Check setup every-run load
         shell: bash
-        # Lowered in 13.2.0 (#275), when the label inventory stopped loading.
-        run: bash count-tokens.sh github-workflow/commands/setup.md --budget 11500
+        # Lowered in 13.3.0 (#277), when each setup mode began reading only its own steps.
+        run: bash count-tokens.sh github-workflow/commands/setup.md --budget 7240
+
+      - name: Check tone every-run load
+        shell: bash
+        # Added in 13.3.0 (#278), when the voice examples were cut; the story caps it at 6,000.
+        run: bash count-tokens.sh github-workflow/skills/tone/SKILL.md --budget 5790
 
       - name: Check description and body budgets (ratchet)
         shell: bash

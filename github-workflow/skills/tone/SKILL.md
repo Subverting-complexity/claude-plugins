@@ -11,7 +11,7 @@ Read `references/glossary.md` for proper noun corrections, sign-off preferences,
 
 Read `_shared/banned-patterns.md` before writing. All banned patterns apply to correspondence.
 
-The examples file has two sections. The **Golden Reference Examples** at the top are polished writing the user produced themselves, with no dictation artefacts. They are the target output. If an edited message would not fit in that section, the edit has drifted too far from their voice. The **Standard Examples** show the typical shape of their correspondence across work, technical, and client-facing contexts. Study both.
+The examples file has two sections. The **Golden Reference Examples** are polished writing the user produced themselves, and the target output: if an edited message would not fit there, it has drifted too far from their voice. The **Standard Examples** show the typical shape of their status notes, options and client emails. Study both.
 
 `skills/user-facing-communication/SKILL.md` shapes what you say to the person **around** the message: lead with the outcome and the current state, keep it short, and surface anything outstanding or assumed. It governs your own reply. The polished message keeps the user's voice as this skill defines it, and nothing here overrides that.
 
@@ -65,11 +65,8 @@ Signals this is Mode B:
 - AI vocabulary (**hard override**)
 - Formulaic openers (**hard override**)
 - Packed causal chains in single sentences (**hard override**)
-- Abstract nominal closers that restate the point at a higher level ("which is the wrong semantic", "which is the correct approach")
-- Balanced "not only X but also Y" or "it's not X, it's Y" constructions
+- Any other structural or closing pattern in `_shared/banned-patterns.md`
 - Generic, passive, or third-person framing instead of "I think" / "IMO"
-- Tidy summary sentences that restate the previous paragraph
-- Closing lines like "Let me know if you have any questions" or "Hope this helps"
 - Feels like it could have been written by any professional, not specifically the user
 - User explicitly says "rewrite this in my voice" / "make this sound like me" / "this was written by Claude, fix the tone"
 
@@ -115,12 +112,7 @@ Mode B output should contain:
 - Short paragraphs, one thought per line for chat-style output
 - No sign-off for chat; standard sign-off only for email format when matching the user's examples
 
-Mode B output must not contain:
-- Em dashes anywhere
-- Any word from the AI vocabulary list
-- Any formulaic opener or closer from the banned patterns
-- Balanced framing that presents pros and cons equally when the user would lean one way
-- A tidy closing sentence that summarises what was just said
+Mode B output must not contain anything in `_shared/banned-patterns.md`, and must not present pros and cons equally when the user would lean one way.
 
 ---
 

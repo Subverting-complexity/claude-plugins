@@ -1,14 +1,8 @@
-# Step 11 — Auto-merge on approval (if enabled)
+# Step 11 — Auto-merge on approval
 
-Read this when the SKILL's **Step 11** trigger fires: the verdict is **Approved** and Step 10 has sent you here. It is the heaviest, most conditional path in the review and almost never runs (auto-merge is off by default), so it lives outside `SKILL.md`.
+Read this only after the caller has confirmed a merge is allowed. For code-review that is Step 11's check: the verdict is **Approved** (including a Step 4b abbreviated approval), `Auto-Merge on Approval` is `enabled`, and the session is not read-only. For `execute` and `bulk-execute` it is Phase 10's stop conditions, which name the same setting; they drive steps 1 to 6 below under identical rules and carry their own naming substitutions. The conditions are not restated here.
 
-Run this step **only** when all of the following hold. If any is false, skip it and exit normally:
-
-- The verdict is **Approved** — including the abbreviated re-review approvals in Step 4b, which route here before exiting.
-- `review.config.md`'s **Auto-Merge on Approval** setting is `enabled`. If there is no `review.config.md`, or the section is absent, the setting is `disabled` — **never merge**. This holds for every caller, with no exceptions; see **Second sanctioned caller** below.
-- The session is **not** in read-only mode.
-
-Also read **`require-ci-before-merge`** from the same Auto-Merge on Approval section. Absent ⇒ `false`. It takes three values:
+Read **`require-ci-before-merge`** from the Auto-Merge on Approval section of `review.config.md`. Absent ⇒ `false`. It takes three values:
 
 - **`false`** (default) — no green-CI requirement: an unprotected branch merges immediately when checks exist, whatever their state. A PR with **no checks at all** is handled by the no-checks guard in step 3 (CI status unknown — explicit confirmation required).
 - **`true`** — the skill must see a **green CI gate** before it merges: a PR with no checks at all, or with a failing check it cannot fix, is **paused**, not merged. An absolute gate, even on a repo with no pipeline — the only things that can satisfy it without green checks are `bypass-ci-on-billing-failure` and `bypass-ci-when-no-pipeline` below, and only against the evidence steps 3a and 3b demand.
@@ -24,13 +18,9 @@ Also read **`bypass-ci-on-billing-failure`** from the same Auto-Merge on Approva
 
 Also read **`bypass-ci-when-no-pipeline`** from the same Auto-Merge on Approval section. Absent ⇒ `false`. When `true`, it is a **persistent, absent-pipeline-scoped** form of `--bypass-ci`, for a project whose CI is permanently invisible to GitHub — no pipeline at all, or one on a system that never posts a status back (Buildkite, Jenkins, CircleCI). There an empty rollup is not a transient unknown to wait out but the steady state of every PR, so without this setting each autonomous run stops at the no-checks guard and only a human, or `--bypass-ci` re-passed every time, can land the work. It is **narrower** than `--bypass-ci`, not broader: it applies only to a rollup with **no checks in it at all**, and only against evidence. Handled in **step 3b**, which like 3a overrides the no-checks guard for every `require-ci-before-merge` value. The two config bypasses are mutually exclusive by construction: 3a-ii requires at least one active workflow, 3b requires zero.
 
-This is opt-in and **off by default**. Merging a PR is otherwise forbidden (see Rules); this is the one sanctioned merge, and only under an explicit `enabled` setting. The review comment from Step 9 must already be posted before you merge — never merge before the verdict is on the PR.
+The review comment must already be on the PR before you merge.
 
-**Second sanctioned caller.** The `execute` skill's Phase 10 drives this file directly, to merge the PR its own run built and had reviewed. It is subject to the **identical** conditions — the same `Auto-Merge on Approval` setting read from the same file, the same `require-ci-before-merge` handling, the same everything below. That is the point: one switch decides whether a repository gets unattended merges, wherever the merge is driven from, so an operator never has to work out which command is about to merge in order to know what the setting means.
-
-What differs is only naming. That caller records its own head SHA and posts its own consolidated review comment, so where this file says "the SHA you reviewed" or "the review comment from Step 9", its equivalents are the ones its own Phase 8 or Phase 9 produced. It carries that list of substitutions itself, and nothing here needs to read them, so the dependency runs one way only.
-
-When all conditions hold, drive the PR to a merged state. Conflicts and red CI are **blockers to clear, not reasons to give up** — fix them on the branch (the same auto-fix discipline as Step 7: fix concrete, objectively correct problems; never guess at changes that need product or design judgment), then merge. You are already on the PR branch from Step 3. Whenever a conflict or a failing check is genuinely **not yours to fix**, do not just pause for a human: file it to the backlog with `/github-workflow:report-issue` (autonomous, correct type, referencing this PR) so the fix is picked up automatically — it lands at the `Backlog` stage, available — then leave `approved` and exit. The fallbacks below say where.
+Drive the PR to a merged state. Conflicts and red CI are **blockers to clear, not reasons to give up** — fix them on the branch (the same auto-fix discipline as Step 7: fix concrete, objectively correct problems; never guess at changes that need product or design judgment), then merge. You are already on the PR branch from Step 3. Whenever a conflict or a failing check is genuinely **not yours to fix**, do not just pause for a human: file it to the backlog with `/github-workflow:report-issue` (autonomous, correct type, referencing this PR) so the fix is picked up automatically — it lands at the `Backlog` stage, available — then leave `approved` and exit. The fallbacks below say where.
 
 1. **Confirm the PR is still what you reviewed.** Re-read its state:
    ```bash
@@ -251,7 +241,7 @@ When all conditions hold, drive the PR to a merged state. Conflicts and red CI a
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr <number>
    ```
 
-   It reads the PR's own `closingIssuesReferences`, force-closes any of those issues still open, and sets every one of them to the **Done** stage, which is where the issue's state is recorded. Report each entry in the returned `settled` array (`closed_now`, `stage_set`). If the PR body used a closing keyword GitHub did not parse, pass the issue explicitly: `... post-merge --pr <number> --issue <N>`.
+   It reads the PR's own `closingIssuesReferences`, force-closes any of those issues still open, and sets every one of them to the **Done** stage, which is where the issue's state is recorded. Report each entry in the returned `settled` array (`closed_now`, `stage_set`) by number and title, and each Epic or Feature in `containers_closed` (a container whose every sub-issue is now closed). If the PR body used a closing keyword GitHub did not parse, pass the issue explicitly: `... post-merge --pr <number> --issue <N>`.
 
    It then runs the **unblock sweep** and returns it as `unblocked`, because closing this PR's own issues is only half of a merge. Report all three of its parts: `released` (blocked issues whose native blocked-by edges have all closed — name each by number and title, they are back in the pool), `partials` (still held, but a blocker just merged something, so a person has to judge whether that freed them), and the `no_edges` count (labelled blocked with no dependency edge, so the sweep cannot speak to them either way — the number only, never the list). A `settled` array that came back empty does **not** mean there was nothing to do: a PR that deliberately closes nothing can still release work, and the sweep is what finds it. Use `--no-unblock` only when running `wf unblock` separately.
 

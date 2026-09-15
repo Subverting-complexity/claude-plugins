@@ -38,8 +38,10 @@ for wf in "${workflows[@]:-}"; do
         execute)
             files+=(
                 "github-workflow/skills/execute/SKILL.md"
+                "github-workflow/skills/execute/references/shared-phases.md"
                 "github-workflow/skills/execute/references/finish.md"
                 "github-workflow/skills/execute/references/review-and-merge.md"
+                "github-workflow/skills/execute/references/merge.md"
                 "github-workflow/skills/code-review/references/auto-merge.md"
                 "github-workflow/templates/worktree-hygiene.md"
             )
@@ -47,9 +49,11 @@ for wf in "${workflows[@]:-}"; do
         bulk-execute)
             files+=(
                 "github-workflow/skills/bulk-execute/SKILL.md"
+                "github-workflow/skills/execute/references/shared-phases.md"
                 "github-workflow/skills/bulk-execute/references/set-selection.md"
                 "github-workflow/skills/bulk-execute/references/bulk-finish.md"
                 "github-workflow/skills/execute/references/review-and-merge.md"
+                "github-workflow/skills/execute/references/merge.md"
                 "github-workflow/skills/code-review/references/auto-merge.md"
                 "github-workflow/templates/worktree-hygiene.md"
             )
@@ -57,6 +61,7 @@ for wf in "${workflows[@]:-}"; do
         pick)
             files+=(
                 "github-workflow/skills/execute/SKILL.md"
+                "github-workflow/skills/execute/references/pick-paths.md"
             )
             ;;
         *)

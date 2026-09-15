@@ -49,43 +49,30 @@ Ask what architecture rules matter to them (layer boundaries, single responsibil
 
 **Test expectations:** Present defaults and ask if they want to adjust.
 
-**Auto-merge on approval:** Ask "Automatically squash-merge a PR once Claude approves it and posts the review comment?" **Default to no** — record `auto-merge-on-approval: disabled` unless the user explicitly opts in. If they say yes, set it to `enabled` and warn them what it implies: the PR is merged unattended on an approved review; merge conflicts are resolved automatically and a failing pipeline is fixed on the branch and then merged (the skill only pauses for a human on judgment-call conflicts or flaky/infra failures); and (because Claude approves via a comment, not a GitHub review) a branch that requires an approving review needs the merging actor to have admin rights. See the Auto-Merge on Approval section in `references/review.config.template.md` for the exact guardrails.
+**Auto-merge on approval:** Ask "Automatically squash-merge a PR once Claude approves it and posts the review comment?" **Default to no**: record `auto-merge-on-approval: disabled` unless the user explicitly opts in. Say plainly what it covers, because it is the only switch that decides this: it governs `/github-workflow:code-review` and the merge phase at the end of a `/github-workflow:execute` run. Left off, an execute run ends at an approved pull request waiting for a person, which is a complete run. If they say yes, set it to `enabled` and warn them what it implies, using the guardrails in the Auto-Merge on Approval section of `references/review.config.template.md`.
 
-If they enable it, **run the wizard's hardening step** (`/github-workflow:setup harden`, Step 7b of the setup command) rather than wiring the repo up by hand. It enables repo-level auto-merge, attempts branch protection with required status checks, and — when GitHub can't enforce those — sets the plugin-side fallback below. Auto-merge is only safe with **one** of these two configurations:
+If they enable it, **run the hardening step** (`templates/harden-auto-merge.md`, which is `/github-workflow:setup harden`) rather than wiring the repo up by hand. It turns on repo-level auto-merge, attempts branch protection with required status checks, and sets the plugin-side fallback when GitHub cannot enforce them. Auto-merge is only safe with **one** of two configurations: **(a)** GitHub enforces required status checks through branch protection, or **(b)** `require-ci-before-merge: true` plus a real pipeline that runs on PRs.
 
-- **(a) GitHub enforces it** — required status checks via branch protection on the default branch. GitHub itself blocks the merge until the checks pass. Requires branch protection (a public repo, or GitHub Pro/Team on a private one).
-- **(b) The plugin enforces it** — `require-ci-before-merge: true` **plus a real pipeline** that runs on PRs. The skill waits for a green CI gate and pauses if there are no checks or a red check. Use this when (a) isn't available. (A lighter variant, **`if-present`**, gates the same way *when checks exist* but merges a PR that has none — convenient for a mix of repos where some have CI and some don't, at the cost of not being an absolute gate. Prefer `true` when you want the guarantee.)
-
-> **Plan limitation — when (a) is simply not available.** GitHub gates required status checks behind a paid plan for private repos. Verified against GitHub docs (June 2026): branch protection covers *"public and private repositories with GitHub Pro, GitHub Team, GitHub Enterprise"* — **private + Free is excluded** — and the newer **rulesets** path is *"GitHub Team and GitHub Enterprise"* only. So on a **private repo on the Free plan, configuration (a) cannot be turned on at all** (you'll get `403 "Upgrade to GitHub Pro or make this repository public"`). The three real choices, in order of enforcement strength:
+> **Plan limitation: when (a) is simply not available.** GitHub gates required status checks behind a paid plan for private repos. Verified against GitHub docs (June 2026): branch protection covers *"public and private repositories with GitHub Pro, GitHub Team, GitHub Enterprise"* (**private + Free is excluded**), and the newer **rulesets** path is *"GitHub Team and GitHub Enterprise"* only. So on a **private repo on the Free plan, configuration (a) cannot be turned on at all** (you'll get `403 "Upgrade to GitHub Pro or make this repository public"`). The three real choices, in order of enforcement strength:
 >
-> 1. **Make the repo public** — free, gives real server-side enforcement.
-> 2. **Pay** — GitHub **Pro** (personal) or **Team** (org-owned, the realistic option for an organization's private repo) unlocks (a).
-> 3. **Stay private + Free** — configuration (a) is impossible, so **(b) is your only gate.** This is not a stopgap for these repos; it is the enforcement mechanism. `/github-workflow:setup harden` detects the `403` and sets `require-ci-before-merge: true` automatically.
+> 1. **Make the repo public**: free, gives real server-side enforcement.
+> 2. **Pay**: GitHub **Pro** (personal) or **Team** (org-owned, the realistic option for an organization's private repo) unlocks (a).
+> 3. **Stay private + Free**: configuration (a) is impossible, so **(b) is your only gate.** This is not a stopgap for these repos; it is the enforcement mechanism. `/github-workflow:setup harden` detects the `403` and sets `require-ci-before-merge: true` automatically.
 >
 > Sources: [About protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches), [About rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets).
 
-So after enabling auto-merge, also ask: **"Should an approved PR refuse to merge unless CI is green?"** If yes (or if branch protection can't be configured), record `require-ci-before-merge: true`. If the answer is "only when the PR actually runs CI — otherwise just merge," record `require-ci-before-merge: if-present` instead (it gates when checks exist and merges when none do; not an absolute gate). Default `false` keeps today's behaviour — an approved PR with no *required* checks merges immediately, which is only safe under configuration (a). Without either (a) or (b), an approved PR can land with no CI guarantee at all.
+Then ask the three follow-up questions below, only when auto-merge was enabled. The template's Auto-Merge on Approval section defines each value and its guardrails; explain them from there rather than restating them here.
 
-Then ask one more, about the **billing edge case**: **"If CI can't run because of a GitHub Actions billing or account problem (out of minutes, spending limit hit, a failed payment), should an approved PR merge anyway?"** **Default to no** — record `bypass-ci-on-billing-failure: false`. If they say yes, set it to `true` and explain the guardrail: it merges an approved PR **only** when the sole blocker is a billing/account failure that keeps the pipeline from running; a real test, build, or lint failure is never bypassed (it is still fixed or filed), and a merge conflict is still resolved. Say that it covers the case where billing stops the pipeline being *created* at all, not just the case where it runs and fails — that is the usual symptom, and there the merge additionally requires the project's quality gate to have passed locally, so an approved PR never lands with no test evidence at all. This is the persistent, per-project form of the one-off `--bypass-ci` flag, scoped to billing. It is worth turning on for repos on a plan where Actions billing can lapse and you would rather an approved review land than sit blocked behind a pipeline that cannot run. See the Auto-Merge on Approval section in `references/review.config.template.md` for the exact semantics.
+1. **"Should an approved PR refuse to merge unless CI is green?"** Record `require-ci-before-merge`: `true` if yes (or if branch protection cannot be configured), `if-present` for "only when the PR actually runs CI, otherwise just merge", and the default `false` otherwise.
+2. **"If CI can't run because of a GitHub Actions billing or account problem (out of minutes, spending limit hit, a failed payment), should an approved PR merge anyway?"** **Default to no.** Record `bypass-ci-on-billing-failure`.
+3. **No pipeline.** Count the active workflows rather than guessing:
 
-Then handle the **no-pipeline** case, but only ask when it applies — you can determine that rather than guess:
+   ```bash
+   gh api "repos/{ORG}/{REPO}/actions/workflows" \
+     --jq '[.workflows[] | select(.state == "active")] | length'
+   ```
 
-```bash
-gh api "repos/{ORG}/{REPO}/actions/workflows" \
-  --jq '[.workflows[] | select(.state == "active")] | length'
-```
-
-Non-zero → the repo has a GitHub-hosted pipeline, the question is irrelevant to it, and you record `bypass-ci-when-no-pipeline: false` without asking. Only when the count is **zero** ask: **"This repo has no GitHub Actions workflows, so its PRs will never report a check. Should an approved PR merge anyway, on the strength of the local quality gate?"**
-
-**Default to no** — record `false`, and say what it costs: with auto-merge on, every approved PR pauses at the no-checks guard and needs a human or `--bypass-ci` each time. If they say yes, set `true` and explain the guardrail: it applies only to a rollup with no checks in it whatsoever, and only after confirming zero active workflows and a locally green quality gate on that head SHA. Any check at all is gated normally, and a conflict is still resolved. It is the right answer for a project whose CI runs where GitHub cannot see it (Buildkite, Jenkins, CircleCI) as much as for one with no CI — the gate reads only what GitHub reports, so both look identical to it. It is mutually exclusive with `bypass-ci-on-billing-failure`, which needs workflows to exist, so at most one should be `true`.
-
-The repo-level auto-merge toggle the skill's `gh pr merge --auto` needs is handled by the same hardening step:
-
-```bash
-gh api -X PATCH repos/{ORG}/{REPO} -F allow_auto_merge=true
-```
-
-Best-effort: if it fails (permissions/org policy), tell the user an admin must turn on "Allow auto-merge" in the repo's Settings → Pull Requests, or queued merges will not complete.
+   Non-zero: record `bypass-ci-when-no-pipeline: false` without asking. Only when the count is **zero** ask: **"This repo has no GitHub Actions workflows, so its PRs will never report a check. Should an approved PR merge anyway, on the strength of the local quality gate?"** **Default to no**, and say what it costs: every approved PR then pauses at the no-checks guard. At most one of the two bypass settings may be `true`.
 
 **Review comment footer:** Offer a default and let them customise.
 

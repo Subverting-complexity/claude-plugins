@@ -27,17 +27,15 @@ Apply it without being asked. There is no separate "concise mode".
 
 ## Precedence
 
-- `skills/_shared/body-standard.md` is the base. It carries the no-wrapping rule, the section vocabulary, the Summary and bullet rules, the title rules, and what never appears in a body. All of it applies to an issue.
-- **This skill decides which of those sections an issue uses**, how long the body runs, and the conventions GitHub itself needs: classification, the write path, templates, and scope.
-- `skills/_shared/banned-patterns.md` applies in full. Its banned vocabulary, phrases and closing patterns are never acceptable in an issue.
-- `skills/_shared/wording-standard.md` governs how everything else a person reads is worded. Where it asks for more explanation than an issue needs, the body standard and this skill win **inside the issue body only**.
+- `skills/_shared/body-standard.md` is the base, and all of it applies to an issue.
+- **This skill decides which of its sections an issue uses**, how long the body runs, and the conventions GitHub itself needs: classification, the write path, templates, and scope.
 - `skills/user-facing-communication/SKILL.md` governs the shape of what you say **about** the issue: what you filed, its current state, the issue named as well as numbered, and anything still outstanding. That is your reply, not the issue body, and it never reaches into the body.
 
 The standards agree on the important part: explain the point in plain words. They differ on length. An issue is read by someone about to do the work, so it stays short.
 
 ## Title
 
-Follow the title rules in `skills/_shared/body-standard.md`. The title is the work, said once, in the fewest words that still identify it: verb first, sentence case, roughly 70 characters, identifiers exact, no metadata prefix.
+Follow the title rules in `skills/_shared/body-standard.md`. The title is the work, said once, in the fewest words that still identify it.
 
 The only prefixes a title carries are `[Manual] ` and `[Browser] `, written exactly like that, square brackets, capital letter, one trailing space. They say who does the work, never what kind of work it is. See **Scope: one issue, one party** below.
 
@@ -54,8 +52,6 @@ Not this:
 > [BUG] (High) Fix accessibility labels — Settings
 
 > Investigation into why the settings screen sometimes reads wrong
-
-The title belongs in GitHub's title field. Do not repeat it in the body.
 
 ## Classification
 
@@ -126,7 +122,7 @@ Every issue this plugin files is created by `wf issue-apply` from a spec, so the
 
 ## Repository templates
 
-Before writing a body, check whether the target repository publishes an issue template, following `templates/issue-template-resolution.md`. A template can come from the repository itself or from the organisation's `.github` repository, which supplies a default to every repo in the org that has none of its own.
+When creating an issue, and only then, check before writing the body whether the target repository publishes an issue template, following `templates/issue-template-resolution.md`. A template can come from the repository itself or from the organisation's `.github` repository, which supplies a default to every repo in the org that has none of its own. Rewriting an existing issue skips this: keep the headings it already has.
 
 Creating an issue through the API or `gh issue create --body-file` applies no template: the body is used exactly as supplied. So a project that has defined a template gets ignored unless you fetch it and fill it in yourself.
 
@@ -202,7 +198,7 @@ Apply the rewrite with a temp file and `--body-file`, following `templates/body-
 
 ## Final check
 
-Run the checklist in `skills/_shared/body-standard.md` (**Before you post it**), plus these two, which only apply to an issue:
+Run the checklist in `skills/_shared/body-standard.md` (**Before you post it**), plus these, which only apply to an issue:
 
 - Are the repository template's headings intact, where one applied?
 - If there is a `## Manual step`, does the title start `[Manual] ` or `[Browser] `, and does `Ownership` say `Human` or `Browser agent` to match?
