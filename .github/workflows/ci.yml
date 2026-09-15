@@ -64,69 +64,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Budget convention: each budget is the last measured footprint plus
-      # ~2%. Lower it when a change shrinks a window; raise it only when a
-      # change adds a decision the run has to carry, and say so in the commit.
+      # Load is judged in three tiers (see count-tokens.sh):
+      #   1. every chat: descriptions and the SessionStart hook, gated here;
+      #   2. every run of a workflow: its file and every reference it reads
+      #      without stating a condition, gated per workflow below;
+      #   3. on a trigger: printed with each workflow, never gated.
       #
-      # The orchestrators get two windows each. The build window excludes the
-      # references that only load once a PR exists, so it protects the
-      # pick/plan/build path that this gate was built for. The whole-run
-      # window keeps the rest bounded. Raising the whole-run budget alone
-      # would let the build window regrow unnoticed.
-      # Raised from 19650 in the body-standard change: Phase 7 now carries the
-      # fixed PR body shape (## Summary / ## Changes / ## Test plan, Closes #N
-      # last) and the pointer to the standard behind it, which is a decision the
-      # run has to make and could not make from the old "a section per
-      # component" wording.
-      #
-      # All four orchestrator windows were raised in 13.0.0: the
-      # structured-coding and debugging skills were removed and their few rules
-      # moved into templates/coding-method.md, which this counter follows. A
-      # run used to invoke structured-coding as a separate skill (~3.1k tokens
-      # this counter never saw), so the real load went down even though the
-      # measured windows went up by ~500 tokens.
-      - name: Check execute build-window footprint
+      # Budget convention: each budget is the last measured load plus ~2%.
+      # Lower it when a change shrinks a tier; raise it only when a change adds
+      # something every chat or every run has to carry, and say so in the
+      # commit. These budgets replaced the per-workflow window budgets in
+      # 13.1.0 (#280), measured after tone, support-request,
+      # acceptance-criteria and ecosystem-setup left the every-chat tier.
+      - name: Check every-chat load
         shell: bash
-        run: |
-          bash count-tokens.sh github-workflow/skills/execute/SKILL.md \
-            --exclude github-workflow/skills/execute/references/review-and-merge.md \
-            --exclude github-workflow/skills/code-review/references/auto-merge.md \
-            --budget 20900
+        run: bash count-tokens.sh --every-chat --budget 1020
 
-      # Raised in the non-code lane change: `default-labels.md` is the
-      # inventory every one of these windows loads, and it gained a
-      # lifecycle label (`status-non-code`), two scope labels and a board
-      # column. A run has to know they exist to put an issue in the right
-      # lane, so this is a decision the run carries rather than prose.
-      #
-      # Raised again in 11.2.0: bulk-execute gained a third way to choose its
-      # set (`--parent`, #239), and the hand-off now takes the PR's review
-      # claim (#164), which review-and-merge and exit cleanup must describe.
-      - name: Check execute whole-run footprint
+      - name: Prove the load counter assigns tiers as documented
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 35400
+        run: bash count-tokens.sh --self-test
 
-      - name: Check bulk-execute build-window footprint
+      - name: Check execute every-run load
         shell: bash
-        run: |
-          bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md \
-            --exclude github-workflow/skills/execute/references/review-and-merge.md \
-            --exclude github-workflow/skills/code-review/references/auto-merge.md \
-            --budget 24600
+        run: bash count-tokens.sh github-workflow/skills/execute/SKILL.md --budget 29050
 
-      - name: Check bulk-execute whole-run footprint
+      - name: Check bulk-execute every-run load
         shell: bash
-        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 39100
+        run: bash count-tokens.sh github-workflow/skills/bulk-execute/SKILL.md --budget 33280
 
-      # The pull request path. local-review.md and react-native.md load only
-      # for a change with no pull request, so they are left out of this window.
-      - name: Check code-review skill footprint
+      - name: Check code-review every-run load
         shell: bash
-        run: |
-          bash count-tokens.sh github-workflow/skills/code-review/SKILL.md \
-            --exclude github-workflow/skills/code-review/references/local-review.md \
-            --exclude github-workflow/skills/code-review/references/react-native.md \
-            --budget 31100
+        run: bash count-tokens.sh github-workflow/skills/code-review/SKILL.md --budget 14420
+
+      - name: Check build every-run load
+        shell: bash
+        run: bash count-tokens.sh github-workflow/skills/build/SKILL.md --budget 5960
+
+      - name: Check setup every-run load
+        shell: bash
+        run: bash count-tokens.sh github-workflow/commands/setup.md --budget 16520
 
       - name: Check description and body budgets (ratchet)
         shell: bash

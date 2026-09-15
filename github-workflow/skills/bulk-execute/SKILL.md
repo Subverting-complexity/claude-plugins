@@ -242,7 +242,7 @@ Still failing after that, **stop**: on a per-story check do not start the next s
 
 ## Phase 7 — Finish
 
-When every story in the set is built, gated and committed, **read `references/bulk-finish.md`** and follow it end-to-end: push, per-story duplicate detection, one pull request closing every built story, PR labels, the `In Review` stage for each issue, claim release, and the progress note.
+Once every story in the set is built, gated and committed, **read `references/bulk-finish.md`** and follow it end-to-end: push, per-story duplicate detection, one pull request closing every built story, PR labels, the `In Review` stage for each issue, claim release, and the progress note.
 
 **Do not review your own diff anywhere in this run.** You share every assumption the code was built on, so Phase 8 gets the verdict from a context that never saw the build. That decides whose judgement counts, not whether the run continues: you still spawn the reviewer, own what it returns, and hand the PR to nobody. The one exception is Phase 8's last-resort fallback, which is disclosed rather than silent.
 

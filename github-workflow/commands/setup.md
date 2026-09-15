@@ -291,9 +291,9 @@ This is where a project actually starts *using* the companion tools, so present 
 
 Offer to set up commonly used Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and record what was enabled in `.claude/ecosystem.md` — the cheat-sheet that `/github-workflow:execute` and `/github-workflow:code-review` read to use those tools automatically. If the user declines everything, the step is a clean no-op: it leaves a small opt-out marker so onboarding never nags again, and nothing is blocked.
 
-This is handled by the **`ecosystem-setup`** skill (`skills/ecosystem-setup/SKILL.md`), which `build` also points to, so the tool list lives in one place. Run that skill now: it asks once whether the user wants any tools, detects/installs/configures each one they choose, offers the optional commit-reminder hook, and writes `.claude/ecosystem.md` (adding a row to the CLAUDE.md Supplementary Files table from Step 6 when one exists). If the user wants nothing, it writes no file — zero impact on future context windows.
+This is handled by the **`ecosystem-setup`** skill (`skills/ecosystem-setup/SKILL.md`), which `build` also points to, so the tool list lives in one place. Read that file and follow it now, rather than invoking the skill: it sets `disable-model-invocation`, so only a person can run it as a slash command. It asks once whether the user wants any tools, detects/installs/configures each one they choose, offers the optional commit-reminder hook, and writes `.claude/ecosystem.md` (adding a row to the CLAUDE.md Supplementary Files table from Step 6 when one exists). If the user wants nothing, it writes no file — zero impact on future context windows.
 
-The focused mode `/github-workflow:setup ecosystem` is just this step on its own — equivalent to invoking the `ecosystem-setup` skill directly.
+The focused mode `/github-workflow:setup ecosystem` is just this step on its own, the same as a person running `/github-workflow:ecosystem-setup`.
 
 ---
 

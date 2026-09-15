@@ -12,6 +12,8 @@ Split the conditional detail into `references/*.md` files next to the skill, and
 
 > If <trigger condition>, load `references/<file>.md` and follow it.
 
+State the trigger with if, unless, when, whenever, only or except, in the sentence that cites the file, in the first sentence of its paragraph, or anywhere in its list item. `count-tokens.sh` reads those words to put the file in the on-a-trigger tier rather than the every-run tier, which CI gates. A step every run reaches is not a trigger: write "once the gate has passed, read …", not "when the gate has passed, read …".
+
 The stub states the trigger, a one-line summary of what the reference does, and where control resumes — enough to route correctly without the detail. The reference file opens by restating its trigger ("Read this when …") so a model landing in it can confirm it belongs there. References may themselves load further references at the point of need — e.g. code-review's `auto-merge.md` loads `conflict-resolution.md` only when the PR is actually conflicting.
 
 ## Exemplar: code-review
