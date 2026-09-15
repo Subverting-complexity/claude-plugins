@@ -1,12 +1,12 @@
 ---
-name: grill
-description: 'Interview the user hard about a plan until every open question is answered or deferred. Trigger on "grill me", "stress-test this" or "poke holes in this".'
+name: interview
+description: 'Interview the user hard about a plan until every open question is answered or deferred. Trigger on "interview me about this plan" or a plan to settle before it is built.'
 ---
-# Grill
+# Interview
 
 Question a plan until its weak points are found and each open question has an answer or has been parked on purpose. The interview is worth running only if it changes something: a session in which the user agrees with everything and never has to stop and think has not found the parts of the plan nobody has decided yet.
 
-This skill is the one interview procedure in this plugin. Run it directly to stress-test a plan, or let `feature-discovery` run it as its interview. When another skill runs it, that skill supplies the subject and a list of topics that must be covered before the grill closes; everything about how the questions are asked lives here.
+This skill is the one interview procedure in this plugin. Run it directly to stress-test a plan, or let `feature-discovery` run it as its interview. When another skill runs it, that skill supplies the subject and a list of topics that must be covered before the interview closes; everything about how the questions are asked lives here.
 
 ## Output standard
 
@@ -14,7 +14,7 @@ Everything a person reads — plans, questions, findings, summaries, and anythin
 
 ## No person present
 
-A grill needs somebody to answer it. When nobody is there, because the session is an agent run, a scheduled routine, or a subagent, do not answer the questions yourself and do not carry on as if a guess were a decision.
+An interview needs somebody to answer it. When nobody is there, because the session is an agent run, a scheduled routine, or a subagent, do not answer the questions yourself and do not carry on as if a guess were a decision.
 
 1. Do the research and the mapping below as normal.
 2. Write down every question you would have asked, each with your recommendation and why, grouped by topic.
@@ -22,7 +22,7 @@ A grill needs somebody to answer it. When nobody is there, because the session i
 
 A calling skill that is itself running unattended inherits this rule: it stops at the same point and reports the open questions rather than producing stories from guesses.
 
-## How a grill runs
+## How an interview runs
 
 1. **Get the plan.** If the user has not described it yet, ask them to, in one plain-text question with no options.
 2. **Look before asking.** Read what can answer questions without the user: the codebase, the README and project docs, the issue and its comments, anything they linked. See **Checking the sources first**.
@@ -47,7 +47,7 @@ Questions about preferences are cheap to answer and reveal little. Questions abo
 
 ## Pacing
 
-A grill should move quickly. Most slow interviews are slow because they ask one small question at a time.
+An interview should move quickly. Most slow interviews are slow because they ask one small question at a time.
 
 - **One topic per turn, every question on that topic together.** Three or four questions in a turn is normal.
 - **Hardest first.** A foundational answer that changes can make later questions pointless, so find it early.
@@ -106,4 +106,4 @@ End with a brief recap, in the conversation itself, readable in under a minute. 
 - **Open:** each deferred question and the reason it was deferred.
 - **Still shaky:** the one or two points that would still worry you if you owned this plan. Say it plainly. After an interview spent looking for weak points, the user is owed your honest read, not reassurance.
 
-When a calling skill ran the grill, the recap hands control back to it and its next phase starts from these decisions.
+When a calling skill ran the interview, the recap hands control back to it and its next phase starts from these decisions.

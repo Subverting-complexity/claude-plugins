@@ -175,7 +175,7 @@ def load_config():
 
     The cache holds the review-label names too, so it is stale when either
     `ClaudeProject.md` or `docs/review.config.md` is newer than it (#289).
-    Setup writes the review config late, after the cache may already exist.
+    Onboarding writes the review config late, after the cache may already exist.
     """
     root = repo_root()
     cache, source = config_paths(root)

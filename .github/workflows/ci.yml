@@ -107,12 +107,12 @@ jobs:
       - name: Check setup every-run load
         shell: bash
         # Lowered in 13.3.0 (#277), when each setup mode began reading only its own steps.
-        run: bash count-tokens.sh synergy/commands/setup.md --budget 7240
+        run: bash count-tokens.sh synergy/commands/onboard.md --budget 7240
 
       - name: Check tone every-run load
         shell: bash
         # Added in 13.3.0 (#278), when the voice examples were cut; the story caps it at 6,000.
-        run: bash count-tokens.sh synergy/skills/tone/SKILL.md --budget 5790
+        run: bash count-tokens.sh synergy/skills/correspondence/SKILL.md --budget 5790
 
       - name: Check description and body budgets (ratchet)
         shell: bash

@@ -58,7 +58,7 @@ claude plugin install synergy@subverting-complexity \
 | `branch_prefix` | | `feat` | Prefix for feature branches |
 | `quality_gate_command` | | — | Command to run before PRs (e.g. `npm test`, `dotnet test`) |
 
-You can also configure interactively with `/plugin configure synergy@subverting-complexity`, or run the plugin's own setup wizard by asking Claude to *"set up my project"*.
+You can also configure interactively with `/plugin configure synergy@subverting-complexity`, or run the plugin's own onboarding wizard by asking Claude to *"set up my project"*.
 
 ---
 

@@ -1,6 +1,6 @@
-# Tone Glossary
+# Correspondence Glossary
 
-Project-specific terms, proper nouns, and dictation corrections. The tone skill reads this file before editing text.
+Project-specific terms, proper nouns, and dictation corrections. The correspondence skill reads this file before editing text.
 
 Add entries here for any terms that are commonly dictated and frequently mangled by speech-to-text, or that have specific capitalization or formatting requirements in your project.
 

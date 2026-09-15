@@ -2,12 +2,12 @@
 name: feature-discovery
 description: 'Plan a feature, change or new project and break it into epics, features and stories with acceptance criteria. Trigger on scoping work, planning a new project, or refining an issue too thin to build.'
 depends-on:
-  - grill
+  - interview
   - code-architect
 ---
 # Feature Discovery
 
-Turn a feature, change, requirement or brand-new project into buildable stories. The interview that gets there is the `grill` skill's; this skill decides what the interview must cover and what gets built from its answers. A request to stress-test a plan without producing stories is a grill on its own: run `/synergy:grill` instead.
+Turn a feature, change, requirement or brand-new project into buildable stories. The interview that gets there is run by the `interview` skill; this skill decides what the interview must cover and what gets built from its answers. A request to stress-test a plan without producing stories is an interview on its own: run `/synergy:interview` instead.
 
 ## Output standard
 
@@ -17,7 +17,7 @@ Everything a person reads — plans, questions, findings, summaries, and anythin
 
 Read each skill's SKILL.md when you reach the phase that needs it.
 
-- **grill** (`/synergy:grill`) — The interview: how questions are asked, paced and closed, and what happens when nobody is present to answer.
+- **interview** (`/synergy:interview`) — The interview: how questions are asked, paced and closed, and what happens when nobody is present to answer.
 - **code-architect** (`/synergy:code-architect`) — Architecture design and validation.
 
 ## Scope Detection
@@ -39,7 +39,7 @@ When called as the refinement skill for a story too thin to implement, the story
 
 ## Phase 1: Research
 
-Gather what you can before the interview starts; the grill checks these sources again before each question.
+Gather what you can before the interview starts; the interview checks these sources again before each question.
 
 **When a codebase is available:**
 
@@ -56,11 +56,11 @@ Present a brief summary of what you found (relevant existing code and patterns, 
 
 ## Phase 2: Interview
 
-Read `skills/grill/SKILL.md` and run it with the feature as the plan. Its posture, question wording, `AskUserQuestion` rules, pacing and no-person-present rule govern the whole interview; this skill adds none of its own. Every resolved question informs the stories, and every deferred one becomes an open item in Phase 5.
+Read `skills/interview/SKILL.md` and run it with the feature as the plan. Its posture, question wording, `AskUserQuestion` rules, pacing and no-person-present rule govern the whole interview; this skill adds none of its own. Every resolved question informs the stories, and every deferred one becomes an open item in Phase 5.
 
 ### Coverage topics
 
-Hand the grill the topics for the tier. They are not a script to read out: the grill asks about them in its own order and batches, and uses this list at the end as a check that nothing was missed. A topic the codebase already answers counts as covered.
+Hand the interview the topics for the tier. They are not a script to read out: the interview asks about them in its own order and batches, and uses this list at the end as a check that nothing was missed. A topic the codebase already answers counts as covered.
 
 1. **Scope and boundaries** (all tiers): what is being built or changed (the opening message usually says), what is out of scope, who is affected.
 2. **User journeys** (medium + large): the happy path end to end, critical failure modes, edge cases.
@@ -74,7 +74,7 @@ Hand the grill the topics for the tier. They are not a script to read out: the g
 10. **Tech stack** (new project): language, framework and runtime, hosting, CI/CD, key libraries.
 11. **DevOps and deployment** (new project, medium size and up): environments, deployment targets, monitoring.
 
-When the grill closes with every applicable topic covered, go straight to Phase 3.
+When the interview closes with every applicable topic covered, go straight to Phase 3.
 
 ---
 
@@ -248,5 +248,5 @@ When the feature area already has stories:
 1. Read all existing tasks and their status
 2. Identify gaps (missing stories, stale stories, incomplete AC)
 3. Present findings
-4. Run the grill on the gaps only
+4. Run the interview on the gaps only
 5. Produce only the missing stories
