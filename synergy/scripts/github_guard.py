@@ -540,6 +540,12 @@ def _url_arg(call):
         call['first'] and github_owner(call['first'])) else NEXT
 
 
+def _positional(call, index):
+    args = _positionals(call['toks'][1:], {'-R', '--repo'})
+    return (_owner_of_spec(args[index], call['env'], call['ctx'])
+            if len(args) > index else NEXT)
+
+
 def _env_repo(call):
     spec = call['env'].get('gh_repo') or call['ctx']['environ'].get('GH_REPO')
     return _owner_of_spec(spec, call['env'], call['ctx']) if spec else NEXT
@@ -557,7 +563,11 @@ STRATEGIES = {
     'spec-flag': _spec_flag,   # the owner of the owner/repo the flag names
     'url-arg': _url_arg,       # the owner in a GitHub URL given as first word
     'env-repo': _env_repo,     # the owner of the repository GH_REPO names
+    'positional': _positional,  # the owner of the owner/repo at that index
 }
+# A step written ('also', strategy, args...) adds its owner and carries on,
+# for a command that writes to two owners.
+ALSO = 'also'
 
 # Where gh acts when nothing more specific names an owner: -R/--repo, a
 # GitHub URL argument, GH_REPO, then the repository in the working directory.
@@ -576,16 +586,26 @@ OWNER_RULES = {
     'project': (('owner-flag', ('--owner',)),),
     'secret': SETTINGS,
     'variable': SETTINGS,
+    ('repo', 'fork'): (('flag', ('--org',)), ('constant', ACCOUNT)),
+    # `gh issue transfer <issue> <destination>` writes to both repositories:
+    # args[3] counts `gh issue transfer` itself, so it is the destination.
+    ('issue', 'transfer'): (('also', 'positional', 3),) + IN_REPO,
 }
 
 
 def _rule_owners(rule, call):
-    """The owners one OWNER_RULES row yields, or None when it falls through."""
+    """The owners one OWNER_RULES row yields, in order."""
+    owners = []
     for step in rule:
+        also = step[0] == ALSO
+        step = step[1:] if also else step
         owner = STRATEGIES[step[0]](call, *step[1:])
-        if owner is not NEXT:
-            return [owner]
-    return None
+        if owner is NEXT:
+            continue
+        owners.append(owner)
+        if not also:
+            return owners
+    raise ValueError('an OWNER_RULES row must end in a step that always decides')
 
 
 def _gh(toks, cwd, env, ctx):
@@ -611,13 +631,7 @@ def _gh(toks, cwd, env, ctx):
     if rule:
         call = {'toks': toks, 'first': first, 'env': env, 'ctx': ctx}
         return [(owner, what) for owner in _rule_owners(rule, call)]
-    if group == 'repo' and action == 'fork':
-        return [(flag_value(toks, ['--org'], False) or ACCOUNT, what)]
     writes = []
-    if group == 'issue' and action == 'transfer':
-        args = _positionals(toks[1:], {'-R', '--repo'})
-        if len(args) > 3:
-            writes.append((_owner_of_spec(args[3], env, ctx), what))
     spec = flag_value(toks, ['-R', '--repo'], False)
     if spec:
         return writes + [(_owner_of_spec(spec, env, ctx), what)]
