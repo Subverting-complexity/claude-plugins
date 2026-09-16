@@ -22,21 +22,15 @@ def issue_edges(cfg, number):
     caller has to tell the two apart, because acting on "no edges" means
     treating the issue as unblocked.
 
-    One query, and it answers the whole question: which issues this one waits
-    on, and which of those are still open. The old shape read the body prose
-    and then spent a call per reference to look each one up.
+    Built on `issue_dependency_facts`, which answers the wider question this
+    is a slice of: which issues this one waits on, which of those are still
+    open, and the pull requests that close it. One query shape for the
+    `blockedBy` field set, read from either call site, rather than two
+    hand-kept copies of it.
     """
-    ok, data, _ = gh_graphql(
-        'query($o:String!,$r:String!,$n:Int!){ repository(owner:$o,name:$r){'
-        ' issue(number:$n){ blockedBy(first:%d){ nodes { number state'
-        ' repository { nameWithOwner } } } } } }'
-        % EDGE_PAGE,
-        o=cfg['org'], r=cfg['repo'], n=int(number))
-    if not ok or not data:
-        return None
-    try:
-        nodes = data['repository']['issue']['blockedBy']['nodes'] or []
-    except (KeyError, TypeError):
+    facts = issue_dependency_facts(cfg, number)
+    nodes = (facts.get('blockedBy') or {}).get('nodes')
+    if nodes is None:
         return None
     return None if len(nodes) >= EDGE_PAGE else nodes
 
