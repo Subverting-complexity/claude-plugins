@@ -23,9 +23,8 @@ from wf_io import (
     gh_graphql,
 )
 from wf_issue_io import _batch_result, _graphql_json, add_comments, resolve_issue_ids
-from wf_pick import (
-    PICKABLE_BY_NAME, _tree_unread, fetch_container_tree, read_plan_pool,
-)
+from wf_pick_select import read_plan_pool
+from wf_pick_tree import PICKABLE_BY_NAME, _tree_unread, fetch_container_tree
 from wf_stage import set_stages, start_date_input
 from wf_unblock import UNBLOCK_COMMENT
 

@@ -22,7 +22,10 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 463 |
 | `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 268 |
 | `wf_unblock.py` | The unblock sweep, `unblock` | 288 |
-| `wf_pick.py` | The claim and validate walk, container trees, the prerequisite redirect, `pick`, `candidates` | 933 |
+| `wf_pick.py` | The `pick` and `refine` entry point and the result a pick returns | 207 |
+| `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 356 |
+| `wf_pick_tree.py` | The sub-issue tree under an Epic or Feature, one named issue checked as a pick candidate | 153 |
+| `wf_pick_candidates.py` | `candidates`, including `--parent` | 270 |
 | `wf_plan.py` | Planning and claiming a bulk set, `plan-set`, `drop-story`, `bulk-mark` | 391 |
 | `wf_bulk_build.py` | Scheduling a bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 227 |
 | `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, `post-merge` | 397 |

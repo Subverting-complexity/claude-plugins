@@ -82,6 +82,9 @@ import wf_deps  # noqa: E402
 import wf_issue_apply  # noqa: E402
 import wf_issue_audit  # noqa: E402
 import wf_unblock  # noqa: E402
+import wf_pick_tree  # noqa: E402
+import wf_pick_select  # noqa: E402
+import wf_pick_candidates  # noqa: E402
 import wf_pick  # noqa: E402
 import wf_plan  # noqa: E402
 import wf_bulk_build  # noqa: E402
@@ -102,6 +105,9 @@ _SHELL_MODULES = (
     wf_issue_apply,
     wf_issue_audit,
     wf_unblock,
+    wf_pick_tree,
+    wf_pick_select,
+    wf_pick_candidates,
     wf_pick,
     wf_plan,
     wf_bulk_build,
@@ -144,7 +150,8 @@ from wf_claim import cmd_claim, cmd_claim_reap, cmd_claim_release
 from wf_config import cmd_config, cmd_scratch_clean
 from wf_issue_apply import cmd_issue_apply
 from wf_issue_audit import AUDIT_SPEC_DEFAULT, cmd_issue_audit
-from wf_pick import cmd_candidates, cmd_pick, cmd_refine
+from wf_pick import cmd_pick, cmd_refine
+from wf_pick_candidates import cmd_candidates
 from wf_plan import cmd_bulk_mark, cmd_drop_story, cmd_plan_set
 from wf_post_merge import cmd_post_merge
 from wf_preflight import cmd_config_audit, cmd_preflight
