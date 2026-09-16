@@ -51,3 +51,31 @@ The plugin used to ship `synergy/settings.json` with `"agent": "builder"`. A plu
 **Bash(scripts/\*)**: run scripts from the repository's `scripts/` directory directly. Scoped to that path so arbitrary named scripts elsewhere cannot run.
 
 **WebSearch**: research when the implementation needs external documentation.
+
+## Auto mode: recording the review verdict and merging
+
+Issue #321 recorded a Builder finishing PR #317 whose `wf.sh review-finish --pr 317 --verdict approved` and `gh pr edit 317 --add-label review-approved` were both denied with the reason `Self-Approval`, although both matched the allowlist above. Nothing in this file can fix that, because it is not a permission rule.
+
+**It is general to Claude Code's auto mode, not one machine's setup.** `claude auto-mode defaults` (checked on Claude Code 2.1.271) lists two built-in `soft_deny` rules that cover the end of an `execute` run:
+
+- `Self-Approval`: approving or giving a positive review on a PR the agent authored, or on one an automation it controls authored.
+- `Merge Without Review`: merging a PR before any human has approved it. `gh pr merge --auto` is exempt only on a repository whose branch protection requires reviews.
+
+The classifier sees a session applying an approval label to its own PR. It cannot see that a separate `synergy:Reviewer` made the decision in a fresh context. Earlier versions (2.1.191 was checked) do not have either rule. The machine had no `autoMode` block in its settings, so the rules came from the built-in defaults.
+
+**The plugin cannot grant the allowance.** The classifier reads `autoMode` only from user settings (`~/.claude/settings.json`) and managed settings. It ignores project and local settings on purpose, so a repository cannot change its own rules. An `allow` entry does override a matching `soft_deny` rule, so each machine that runs `execute` or `bulk-execute` unattended with `Auto-Merge on Approval` enabled needs one in its user settings. Keep `"$defaults"` in the array; without it the entry replaces every built-in allow rule:
+
+```json
+{
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Recording a synergy review verdict is allowed: after a separate synergy:Reviewer subagent has reviewed a pull request, the session that opened it may run `wf.sh review-finish` or `gh pr edit --add-label review-*` to record that verdict, and may merge the pull request under the repository's Auto-Merge on Approval setting once that verdict is Approved"
+    ]
+  }
+}
+```
+
+Run `claude auto-mode critique` after adding it. Without the allowance a run cannot reach a merged PR in auto mode. Other permission modes do not use the classifier, so this does not apply to them.
+
+**Do not work around the denial.** Rewording the command, calling the API directly or retrying is the bypass the classifier exists to stop. The `Auto-Mode Bypass` rule also covers it. **Auto-mode denial** in `synergy/skills/execute/references/escape-hatches.md` says what a run does instead: leave the verdict comment on the PR, label it `needs-re-review` so a later review can select it, and report the allowance above.

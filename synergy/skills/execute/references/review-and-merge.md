@@ -39,7 +39,7 @@ Your session planned this change and wrote it, so it cannot review it independen
 
 4. **Sift what comes back.** Drop anything the agent raised that the rubric says is not a finding, and take the stricter reading where a finding is genuinely ambiguous between blocking and quick fix. What survives is the findings list; one agent means there is nothing to reconcile.
 
-5. **Post one consolidated review comment and set the label yourself.** Write the comment following `templates/body-file-write.md` (temp file plus `--body-file`), naming what was reviewed, the verdict, and each finding with its bucket. Then reconcile the PR's review-state label, which is why the reviewer was told not to:
+5. **Post one consolidated review comment and set the label yourself.** Write the comment following `templates/body-file-write.md` (temp file plus `--body-file`), naming what was reviewed, the verdict, and each finding with its bucket. Then reconcile the PR's review-state label (if auto mode denies it, read `references/escape-hatches.md`):
 
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict <approved|changes-requested|needs-discussion>

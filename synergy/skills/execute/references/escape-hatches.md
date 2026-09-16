@@ -18,6 +18,10 @@ Then run `wf stage-set {number} --stage stage-attention` so the failure is visib
 
 This ensures the next session (or human) can pick up exactly where this one failed without guessing what happened. After the comment is posted, run **Exit cleanup** (`references/exit-cleanup.md` — it releases the claim ref so the issue can be picked again) before exiting.
 
+## Auto-mode denial
+
+If auto mode denies Phase 8 step 5's label call as `Self-Approval`, or Phase 10's merge as `Merge Without Review`, do not retry, reword the command or reach the API another way. Those are built-in auto-mode rules that only a machine's user settings can relax. After a denied label, leave the PR open with the verdict comment on it, skip Phase 10, and run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict needs-re-review`, as `merge.md` does for a merge that stops short: **Exit cleanup** would otherwise turn a leftover `reviewing` marker into `changes-requested`. After a denied merge, handle it as `merge.md` handles an attempt that stops short. Either way run **Exit cleanup**, and in the final report say which call was denied and that `docs/rationale/builder-tools-rationale.md` in the plugin's source repository gives the `autoMode.allow` entry that lets a run finish.
+
 ## Blocked
 
 If any phase cannot proceed, run `/synergy:block-story` with details (it releases the claim for you), then run **Exit cleanup** (`references/exit-cleanup.md`; the claim release is a no-op at this point) and exit. One run builds one story, so the next story is the next run's.
