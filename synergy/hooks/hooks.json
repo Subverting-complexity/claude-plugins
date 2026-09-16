@@ -1,0 +1,39 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'RESPONSE STANDARD for every reply (user-facing-communication skill): what was done and the exact state first (committed, pushed, PR opened, reviewed and merged differ); anything outstanding, blocked or assumed where it cannot be missed; issues and PRs by number and title; no investigation history, file lists or test names.'"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/repo-host.sh\""
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/repo-host.sh\" SubagentStart"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/forge-guard.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,306 @@
+#!/usr/bin/env bash
+# Skill frontmatter linter
+# Validates: required fields, leftover placeholders, name collisions, and the
+# wiring between skills and the standards they cite
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$REPO_ROOT"
+status=0
+
+# Collect all SKILL.md files
+# Use relative paths so the exclusion pattern isn't defeated when REPO_ROOT itself
+# is inside a git worktree (e.g. .claude/worktrees/<name>/).
+mapfile -t skill_files < <(find . -name 'SKILL.md' -not -path './.claude/worktrees/*')
+
+echo "=== Skill Frontmatter Linter ==="
+echo "Found ${#skill_files[@]} skill files"
+echo ""
+
+# Track trigger phrases for collision detection
+declare -A trigger_map
+
+for file in "${skill_files[@]}"; do
+    rel="${file#./}"
+    has_frontmatter=false
+    has_name=false
+    has_description=false
+    name_value=""
+
+    # Check for YAML frontmatter
+    if head -n5 "$file" | grep -q '^---$'; then
+        has_frontmatter=true
+
+        # Extract frontmatter block (avoid sed|head pipe to prevent SIGPIPE with pipefail)
+        frontmatter=$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$file")
+
+        # Check required fields
+        if echo "$frontmatter" | grep -qE '^name:'; then
+            has_name=true
+            name_value=$(echo "$frontmatter" | grep -E '^name:' | sed 's/^name:[[:space:]]*//' | tr -d '"' | xargs)
+        fi
+        if echo "$frontmatter" | grep -qE '^description:'; then
+            has_description=true
+        fi
+    fi
+
+    # Placeholders from the retired sync step must never reach a skill
+    if grep -qF '{{PLUGIN_NAME}}' "$file"; then
+        echo "FAIL: $rel — contains unreplaced {{PLUGIN_NAME}} placeholder"
+        status=1
+    fi
+    if grep -qF '{{PLUGIN_VERSION}}' "$file"; then
+        echo "FAIL: $rel — contains unreplaced {{PLUGIN_VERSION}} placeholder"
+        status=1
+    fi
+    if grep -qF '{{EXECUTE_SKILL}}' "$file"; then
+        echo "FAIL: $rel — contains unreplaced {{EXECUTE_SKILL}} placeholder"
+        status=1
+    fi
+
+    # Report missing frontmatter fields
+    if [ "$has_frontmatter" = false ]; then
+        echo "WARN: $rel — no YAML frontmatter"
+        continue
+    fi
+    if [ "$has_name" = false ]; then
+        echo "WARN: $rel — missing 'name' in frontmatter"
+    fi
+    if [ "$has_description" = false ]; then
+        echo "WARN: $rel — missing 'description' in frontmatter"
+    fi
+
+    # Validate depends-on references exist as skill directories in the same plugin
+    if [ "$has_frontmatter" = true ]; then
+        depends_on=$(echo "$frontmatter" | awk '/^depends-on:/{found=1; next} found && /^  - /{gsub(/^  - /,""); print} found && !/^  - /&&!/^$/{found=0}')
+        if [ -n "$depends_on" ]; then
+            plugin_dir=$(echo "$rel" | cut -d'/' -f1)
+            while IFS= read -r dep; do
+                dep=$(echo "$dep" | xargs)
+                [ -z "$dep" ] && continue
+                skill_path="$REPO_ROOT/$plugin_dir/skills/$dep/SKILL.md"
+                command_path="$REPO_ROOT/$plugin_dir/commands/$dep.md"
+                if [ ! -f "$skill_path" ] && [ ! -f "$command_path" ]; then
+                    echo "FAIL: $rel — depends-on '$dep' not found in $plugin_dir/skills/ or $plugin_dir/commands/"
+                    status=1
+                fi
+            done <<< "$depends_on"
+        fi
+    fi
+
+    # Track trigger phrases for collision detection (from description field)
+    if [ -n "$name_value" ]; then
+        if [ -n "${trigger_map[$name_value]+x}" ]; then
+            existing="${trigger_map[$name_value]}"
+            echo "WARN: Skill name '$name_value' used by both $existing and $rel"
+        fi
+        trigger_map[$name_value]="$rel"
+    fi
+done
+
+# Issue-writing wiring: synergy's writing-github-issues skill is the
+# standard for every GitHub issue title and body the plugin produces. That only
+# holds if the paths that author or edit an issue body actually point at it, so
+# each one is asserted here. Add a file to this list whenever a new path starts
+# writing issue bodies; do not delete an entry to make the gate pass.
+ISSUE_STANDARD="synergy/skills/writing-github-issues/SKILL.md"
+declare -a issue_authoring_files=(
+    "synergy/commands/report-issue.md"        # every autonomous filing funnels here
+    "synergy/commands/block-story.md"         # edits the body to add the Dependencies marker
+    "synergy/skills/feature-discovery/SKILL.md"
+    "synergy/skills/user-story/SKILL.md"
+    "synergy/references/story-template.md"
+    "synergy/templates/CLAUDE.md"             # the rules written into a target project
+    "synergy/skills/_shared/wording-standard.md"  # states the precedence
+)
+
+if [ ! -f "$ISSUE_STANDARD" ]; then
+    echo "FAIL: $ISSUE_STANDARD is missing — the issue-writing standard every issue path cites"
+    status=1
+else
+    for f in "${issue_authoring_files[@]}"; do
+        if [ ! -f "$f" ]; then
+            echo "FAIL: $f is listed as an issue-authoring path but does not exist"
+            status=1
+        elif ! grep -qF 'writing-github-issues' "$f"; then
+            echo "FAIL: $f writes or edits GitHub issue bodies but does not cite writing-github-issues"
+            status=1
+        fi
+    done
+fi
+
+# Body-writing wiring: _shared/body-standard.md is the single standard behind
+# every body written into a tracker or forge — an issue, a pull request
+# description, a comment. Entry points sit on it and hold only what differs:
+# pr-body (and its component-format reference) for pull requests,
+# writing-github-issues for issues. That split only holds if every
+# entry point, the wording standard that defers to it, and the write-mechanics
+# template all point at it. Add a file whenever a new path starts composing a
+# body; do not delete an entry to make the gate pass.
+declare -a body_standard_copies=(
+    "synergy/skills/_shared/body-standard.md"
+)
+declare -a body_authoring_files=(
+    "synergy/skills/pr-body/SKILL.md"
+    "synergy/skills/pr-body/references/component-format.md"
+    "synergy/skills/writing-github-issues/SKILL.md"
+    "synergy/templates/body-file-write.md"     # the write mechanics
+    "synergy/skills/_shared/wording-standard.md"  # states the precedence
+)
+
+for f in "${body_standard_copies[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is missing — the body standard every issue and PR body follows"
+        status=1
+    fi
+done
+for f in "${body_authoring_files[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is listed as a body-authoring path but does not exist"
+        status=1
+    elif ! grep -qF 'body-standard.md' "$f"; then
+        echo "FAIL: $f composes issue or PR bodies but does not cite body-standard.md"
+        status=1
+    fi
+done
+
+# A repository can publish an issue template that GitHub pre-fills in the web
+# UI but that --body-file silently bypasses. The paths that CREATE an issue
+# have to resolve it, or every issue the plugin files ignores the project's own
+# template. The standard and the creating commands must all cite the procedure.
+TEMPLATE_PROC="synergy/templates/issue-template-resolution.md"
+declare -a issue_creating_files=(
+    "$ISSUE_STANDARD"
+    "synergy/commands/report-issue.md"
+    "synergy/skills/feature-discovery/SKILL.md"
+)
+
+if [ ! -f "$TEMPLATE_PROC" ]; then
+    echo "FAIL: $TEMPLATE_PROC is missing — the issue-template resolution procedure"
+    status=1
+else
+    for f in "${issue_creating_files[@]}"; do
+        if ! grep -qF 'issue-template-resolution.md' "$f"; then
+            echo "FAIL: $f creates GitHub issues but does not cite issue-template-resolution.md"
+            status=1
+        fi
+    done
+    # The standard also covers rewriting an issue, where no template applies, so
+    # its citation is scoped to creating. Every line that cites the procedure
+    # must say so; dropping the scope would load it on every rewrite, and
+    # dropping the citation would leave the create path without it.
+    if grep -F 'issue-template-resolution.md' "$ISSUE_STANDARD" | grep -viq 'when creating'; then
+        echo "FAIL: $ISSUE_STANDARD cites issue-template-resolution.md on a line that does not scope it to creating an issue"
+        status=1
+    fi
+fi
+
+# Reply-writing wiring: user-facing-communication is the standard for every
+# reply the plugin writes to a person. It reaches a session three ways —
+# the SessionStart hook, the shared wording standard most skills
+# cite, and a direct citation in each file that writes to the user. Only the
+# third can rot silently, so each of those files is asserted here. Add a file
+# whenever a new path starts writing to the user; do not delete an entry to
+# make the gate pass.
+declare -a reply_writing_files=(
+    # The standard itself, and the shared standard most skills inherit it through.
+    "synergy/skills/user-facing-communication/SKILL.md"
+    "synergy/skills/_shared/wording-standard.md"
+    # Orchestrators, commands, and the agents that report back.
+    "synergy/skills/execute/SKILL.md"
+    "synergy/skills/execute/references/finish.md"
+    "synergy/skills/bulk-execute/SKILL.md"
+    "synergy/skills/bulk-execute/references/bulk-finish.md"
+    "synergy/skills/pr-review/SKILL.md"
+    "synergy/skills/preflight/SKILL.md"
+    "synergy/skills/writing-github-issues/SKILL.md"  # states the precedence
+    "synergy/commands/block-story.md"
+    "synergy/commands/guide.md"
+    "synergy/commands/report-issue.md"
+    "synergy/commands/setup.md"
+    "synergy/agents/builder.md"
+    "synergy/agents/reviewer.md"
+    "synergy/templates/CLAUDE.md"                    # the rules written into a target project
+    "synergy/skills/build/SKILL.md"
+    "synergy/skills/pr-review/references/local-review.md"
+    "synergy/skills/preflight/references/local-checks.md"
+)
+
+for f in "${reply_writing_files[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is listed as a reply-writing path but does not exist"
+        status=1
+    elif ! grep -qF 'user-facing-communication' "$f"; then
+        echo "FAIL: $f writes replies the user reads but does not cite user-facing-communication"
+        status=1
+    fi
+done
+
+# Every skill writes something a person reads, so each one cites the standard.
+for f in synergy/skills/*/SKILL.md; do
+    [ -f "$f" ] || continue
+    if ! grep -qF 'user-facing-communication' "$f"; then
+        echo "FAIL: $f is a skill but does not cite user-facing-communication"
+        status=1
+    fi
+done
+
+# Interview wiring: grill is the one interview procedure. feature-discovery runs
+# it rather than carrying its own posture and mechanics, and has no validation
+# mode to route a stress-test into.
+GRILL="synergy/skills/grill/SKILL.md"
+if [ ! -f "$GRILL" ]; then
+    echo "FAIL: $GRILL is missing — the interview procedure feature-discovery runs"
+    status=1
+fi
+for f in synergy/skills/feature-discovery/SKILL.md; do
+    if ! grep -qF 'skills/grill/SKILL.md' "$f"; then
+        echo "FAIL: $f interviews the user but does not cite skills/grill/SKILL.md"
+        status=1
+    fi
+    if grep -qE '^#+ (Interview posture|Interview mechanics|Using AskUserQuestion|Wording and Clarity)' "$f"; then
+        echo "FAIL: $f carries its own interview posture or mechanics; they belong in $GRILL"
+        status=1
+    fi
+done
+if grep -qiE 'validation mode|\*\*validation\*\*' synergy/skills/feature-discovery/SKILL.md; then
+    echo "FAIL: synergy/skills/feature-discovery/SKILL.md still describes a validation mode; stress-testing a plan is grill's job"
+    status=1
+fi
+
+# The SessionStart hook is what makes the standard apply outside a workflow
+# command. Without it, a plain question in a fresh session gets none of this.
+for plugin in synergy; do
+    hooks_file="$plugin/hooks/hooks.json"
+    if [ ! -f "$hooks_file" ]; then
+        echo "FAIL: $hooks_file is missing — it carries the SessionStart response standard"
+        status=1
+    elif ! grep -q 'SessionStart' "$hooks_file"; then
+        echo "FAIL: $hooks_file has no SessionStart hook — the response standard would only apply inside a command"
+        status=1
+    elif ! grep -q 'user-facing-communication' "$hooks_file"; then
+        echo "FAIL: $hooks_file has a SessionStart hook that does not carry the response standard"
+        status=1
+    fi
+    # The plugin posts only to GitHub; the guard is what stops a run posting
+    # to Azure DevOps, GitLab or Bitbucket without the person saying yes.
+    if [ -f "$hooks_file" ] && ! grep -q 'forge-guard.sh' "$hooks_file"; then
+        echo "FAIL: $hooks_file does not run hooks/forge-guard.sh — a run could post outside GitHub without asking"
+        status=1
+    fi
+    # Without the host hook a session in an Azure DevOps repository is not
+    # told it is not on GitHub, and reaches for gh and the GitHub workflows.
+    if [ -f "$hooks_file" ] && ! grep -q 'repo-host.sh' "$hooks_file"; then
+        echo "FAIL: $hooks_file does not run hooks/repo-host.sh — a session would not be told which platform hosts the repository"
+        status=1
+    fi
+done
+
+echo ""
+if [ $status -eq 0 ]; then
+    echo "All checks passed."
+else
+    echo "Linting failed — see FAIL lines above."
+fi
+exit $status

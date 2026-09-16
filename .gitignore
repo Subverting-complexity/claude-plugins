@@ -1,0 +1,35 @@
+# Claude Code worktree directories
+**/.claude/worktrees/
+
+# Python bytecode (from wf CLI / offline tests)
+**/__pycache__/
+*.pyc
+
+# synergy plugin scratch files (per-session, never commit)
+**/.claude/plan.md
+**/.claude/projected-config.md
+**/.claude/preflight-passed.txt
+**/.claude/label-cache.json
+**/.claude/candidates.json
+**/.claude/claim-*.sha
+**/.claude/wf-config.json
+**/.claude/issue-fields-cache.json
+**/.claude/issue-audit-spec.json
+**/.claude/bulk-set.json
+**/.claude/*.flag
+**/.claude/*-spec.json
+**/.claude/*-body.md
+
+# graphify — generated graph artifacts (large, derived, or machine-local)
+# Agents rebuild graph.json locally from cache: `graphify . --update` (0 tokens, ~10s)
+graphify-out/graph.json
+graphify-out/graph.html
+graphify-out/cost.json
+graphify-out/.graphify_python
+graphify-out/.graphify_root
+# Path/mtime indexes: embed absolute worktree paths + timestamps, so they
+# churn on every run in every worktree. The content-addressed cache/ast/ and
+# cache/semantic/ files are portable and stay committed; these are rebuilt
+# locally for free.
+graphify-out/manifest.json
+graphify-out/cache/stat-index.json

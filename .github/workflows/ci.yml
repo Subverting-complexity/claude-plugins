@@ -1,0 +1,257 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint-skills:
+    name: Lint skill metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run skill linter
+        shell: bash
+        run: bash lint-skills.sh
+
+  decision-logic-tests:
+    name: Test workflow decision logic and wf.py I/O shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the offline test suite
+        shell: bash
+        # Discovery runs every tests/test_*.py module: the pure decision-logic
+        # suite plus the wf.py I/O-shell integration tests.
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+
+  version-bump-check:
+    name: Check plugin versions are bumped
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version bumps for changed plugins
+        shell: bash
+        run: |
+          status=0
+          base="${{ github.event.pull_request.base.sha }}"
+          for plugin in synergy; do
+            changed=$(git diff --name-only "$base"...HEAD -- "$plugin/" | grep -v '.claude-plugin/plugin.json' | head -1 || true)
+            if [ -n "$changed" ]; then
+              # 14.0.0 renamed github-workflow to synergy, so a base without the new path is read at the old one.
+              old_version=$({ git show "$base:$plugin/.claude-plugin/plugin.json" || git show "$base:github-workflow/.claude-plugin/plugin.json"; } 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+              new_version=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" < "$plugin/.claude-plugin/plugin.json")
+              if [ "$old_version" = "$new_version" ]; then
+                echo "FAIL: $plugin/ has changes but version is still $old_version — bump it in plugin.json"
+                status=1
+              else
+                echo "OK: $plugin version bumped $old_version → $new_version"
+              fi
+            fi
+          done
+          exit $status
+
+  footprint-check:
+    name: Check instruction-token footprint budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Load is judged in three tiers (see count-tokens.sh):
+      #   1. every chat: descriptions and the SessionStart hook, gated here;
+      #   2. every run of a workflow: its file and every reference it reads
+      #      without stating a condition, gated per workflow below;
+      #   3. on a trigger: printed with each workflow, never gated.
+      #
+      # Budget convention: each budget is the last measured load plus ~2%.
+      # Lower it when a change shrinks a tier; raise it only when a change adds
+      # something every chat or every run has to carry, and say so in the
+      # commit. These budgets replaced the per-workflow window budgets in
+      # 13.1.0 (#280), measured after tone, support-request,
+      # acceptance-criteria and ecosystem-setup left the every-chat tier.
+      - name: Check every-chat load
+        shell: bash
+        # Lowered in 17.0.0: shorter SessionStart message and agent and skill descriptions, and user-story left the every-chat tier.
+        run: bash count-tokens.sh --every-chat --budget 960
+
+      - name: Prove the load counter assigns tiers as documented
+        shell: bash
+        run: bash count-tokens.sh --self-test
+
+      - name: Check execute every-run load
+        shell: bash
+        # Re-measured in 17.0.0 (#301): the count now includes the shared standards and other skills' SKILL.md files a workflow cites, which it always loaded. The rise is the measurement, not new instructions.
+        run: bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 24100
+
+      - name: Check bulk-execute every-run load
+        shell: bash
+        # Re-measured in 17.0.0 (#301), as execute above; set selection became one short reference driven by wf plan-set.
+        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 26750
+
+      - name: Check pr-review every-run load
+        shell: bash
+        # Lowered in 13.3.0 (#274, #276), when auto-merge.md and the picker fallback began loading only when needed. Lowered again in 16.2.0, when the pull request workflow began loading only when the target is a pull request.
+        run: bash count-tokens.sh synergy/skills/pr-review/SKILL.md --budget 625
+
+      - name: Check pr-review pull request path load
+        shell: bash
+        # Added in 16.2.0, when the pull request steps moved out of SKILL.md: a pull request review loads this file as well as the budget above, so it keeps its own gate. Re-measured in 17.0.0 (#301) with the shared standards counted.
+        run: bash count-tokens.sh synergy/skills/pr-review/references/pr-workflow.md --budget 13030
+
+      - name: Check build every-run load
+        shell: bash
+        # Re-measured in 17.0.0 (#301) with the shared standards counted.
+        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 12980
+
+      - name: Check setup every-run load
+        shell: bash
+        # Re-measured in 17.0.0 (#301) with the shared standards counted; the onboarding steps now count as conditional.
+        run: bash count-tokens.sh synergy/commands/setup.md --budget 8760
+
+      - name: Check tone every-run load
+        shell: bash
+        # Added in 13.3.0 (#278), when the voice examples were cut. Re-measured in 17.0.0 (#301): the shared standards it cites are now counted, which puts it past the 6,000 that story set for tone's own text.
+        run: bash count-tokens.sh synergy/skills/tone/SKILL.md --budget 11150
+
+      - name: Check description and body budgets (ratchet)
+        shell: bash
+        run: bash check-budgets.sh
+
+      - name: Prove the budget gate rejects oversized files
+        shell: bash
+        run: bash check-budgets.sh --self-test
+
+      - name: Report round-trip counts (informational)
+        shell: bash
+        run: |
+          echo "--- execute workflow ---"
+          bash count-roundtrips.sh --workflow execute
+          echo ""
+          echo "--- bulk-execute workflow ---"
+          bash count-roundtrips.sh --workflow bulk-execute
+          echo ""
+          echo "--- pick workflow ---"
+          bash count-roundtrips.sh --workflow pick
+          echo ""
+
+  validate-plugin-json:
+    name: Validate plugin manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required fields
+        shell: bash
+        run: |
+          status=0
+          for f in */\.claude-plugin/plugin.json; do
+            plugin_dir=$(dirname "$(dirname "$f")")
+            name=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" < "$f")
+            version=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" < "$f")
+            desc=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('description',''))" < "$f")
+
+            if [ -z "$name" ]; then
+              echo "FAIL: $f missing 'name'"
+              status=1
+            fi
+            if [ -z "$version" ]; then
+              echo "FAIL: $f missing 'version'"
+              status=1
+            fi
+            if ! echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "FAIL: $f version '$version' is not valid semver"
+              status=1
+            fi
+            if [ -z "$desc" ]; then
+              echo "FAIL: $f missing 'description'"
+              status=1
+            fi
+            # Reject keys the Claude Code plugin schema does not recognize.
+            # Unknown keys (e.g. displayName, userConfig) make the plugin
+            # fail to load in the CLI, even though the file is valid JSON.
+            extra=$(python3 -c "import json,sys; allowed={'name','version','description','author','homepage','repository','license','keywords','commands','agents','hooks','skills','mcpServers'}; print(','.join(sorted(set(json.load(sys.stdin).keys())-allowed)))" < "$f")
+            if [ -n "$extra" ]; then
+              echo "FAIL: $f has unrecognized key(s): $extra — the Claude Code plugin schema rejects these and the plugin will fail to load"
+              status=1
+            fi
+            echo "OK: $plugin_dir ($name@$version)"
+          done
+          exit $status
+
+      - name: Check the marketplace manifest
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+
+          MARKET_KEYS = {'name', 'owner', 'metadata', 'plugins'}
+          ENTRY_KEYS = {'name', 'source', 'description', 'version', 'author',
+                        'homepage', 'repository', 'license', 'category',
+                        'keywords', 'strict'}
+
+          status = 0
+          failed = 0
+          def fail(msg):
+              global status, failed
+              print('FAIL: ' + msg)
+              status = 1
+              failed += 1
+
+          path = '.claude-plugin/marketplace.json'
+          market = json.load(open(path, encoding='utf-8'))
+
+          for key in ('name', 'owner', 'plugins'):
+              if not market.get(key):
+                  fail(f'{path} missing {key!r}')
+
+          extra = sorted(set(market) - MARKET_KEYS)
+          if extra:
+              fail(f'{path} has unrecognized key(s): {", ".join(extra)} - Claude Code ignores these at load time')
+
+          listed = set()
+          for entry in market.get('plugins', []):
+              before = failed
+              name = entry.get('name', '')
+              source = entry.get('source', '')
+              if not name or not source or not entry.get('description'):
+                  fail(f'{path} entry {name or "<unnamed>"} needs name, source and description')
+                  continue
+              listed.add(name)
+
+              extra = sorted(set(entry) - ENTRY_KEYS)
+              if extra:
+                  fail(f'{path} entry {name} has unrecognized key(s): {", ".join(extra)}')
+
+              manifest = os.path.join(source, '.claude-plugin', 'plugin.json')
+              if not os.path.isfile(manifest):
+                  fail(f'{path} entry {name} points at {source}, which has no plugin.json')
+                  continue
+
+              declared = json.load(open(manifest, encoding='utf-8')).get('name', '')
+              if declared != name:
+                  fail(f'{path} entry {name} points at a plugin that calls itself {declared!r} - an install would resolve nothing')
+
+              # A version here would be a second source of truth that goes stale
+              # the moment plugin.json is bumped without it.
+              if 'version' in entry:
+                  fail(f'{path} entry {name} carries a version; versions live in {manifest} alone')
+
+              if failed == before:
+                  print(f'OK: {name} -> {source}')
+
+          on_disk = {d for d in os.listdir('.')
+                     if os.path.isfile(os.path.join(d, '.claude-plugin', 'plugin.json'))}
+          for missing in sorted(on_disk - listed):
+              fail(f'{missing} ships a plugin.json but is not listed in {path}, so nobody can install it')
+
+          sys.exit(status)
+          PY
+
