@@ -2,7 +2,8 @@
 # Run the offline test suite (decision logic + wf.py I/O shell) on Windows.
 # Discovery picks up every tests/test_*.py module, so new test files run
 # automatically without editing this script.
-# Tries the Windows Python Launcher (py), then python3, then python.
+# Resolves a Python 3 via scripts/find-python.ps1: tries the Windows Python
+# Launcher (py), then python3, then python.
 # Prints which interpreter it found; exits 1 with an install hint if none found.
 $ErrorActionPreference = 'Stop'
 
@@ -10,20 +11,12 @@ Set-Location (git rev-parse --show-toplevel)
 
 $discover = @('-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py')
 
-if (Get-Command py -ErrorAction SilentlyContinue) {
-    $ver = (py -3 --version 2>&1)
-    Write-Host "==> Using $ver (Windows Python Launcher)"
-    py -3 @discover
-    exit $LASTEXITCODE
-} elseif (Get-Command python3 -ErrorAction SilentlyContinue) {
-    $ver = (python3 --version 2>&1)
-    Write-Host "==> Using $ver"
-    python3 @discover
-    exit $LASTEXITCODE
-} elseif (Get-Command python -ErrorAction SilentlyContinue) {
-    $ver = (python --version 2>&1)
-    Write-Host "==> Using $ver"
-    python @discover
+. (Join-Path $PSScriptRoot 'scripts/find-python.ps1')
+$found = Find-Python
+if ($found) {
+    Write-Host "==> Using $($found.Label)"
+    $runArgs = @($found.Args) + $discover
+    & $found.Command @runArgs
     exit $LASTEXITCODE
 } else {
     Write-Error @"
