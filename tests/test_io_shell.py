@@ -53,7 +53,11 @@ sys.path.insert(
 import wf  # noqa: E402
 import wf_core  # noqa: E402  (the batch-size cap)
 
-# Sentinel for a keyword whose default is a value, so `None` stays meaningful.
+# `WfCommandTestCase` holds the env/facets/claims mocking pattern most of the
+# classes below need, plus the `_facets` fixture and its `_use_cfg` helper —
+# see `tests/helpers.py` for why they live there instead of here.
+sys.path.insert(0, os.path.dirname(__file__))
+from helpers import WfCommandTestCase, facets as _facets  # noqa: E402
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -111,9 +115,6 @@ _STAGE_META = {
 _STAGE_BY_ID = {i: name for name, i in _STAGE_META['options'].items()}
 
 
-_UNSET = object()
-
-
 def _cfg(**over):
     """A deep copy of the baseline config with top-level overrides applied."""
     cfg = json.loads(json.dumps(_BASE_CFG))
@@ -134,44 +135,6 @@ def _candidate(number, labels=(), milestone=None, stage=None):
             'url': '', 'stage': stage}
 
 
-class _CodeOwned(dict):
-    """An `Ownership` map answering `Code agent` for any issue not named in it.
-
-    Truthy even when empty, because the picker treats a falsy ownership map as
-    "the org told us nothing" and empties the pool.
-
-    The picker excludes anything it cannot confirm is code work, so a fixture
-    saying nothing about ownership would empty every pool and every test would
-    be asserting that filter rather than what it meant to assert. This is the
-    ordinary state of a configured backlog: most issues are code work and the
-    org has said so. Tests about ownership pass a real map.
-    """
-
-    def get(self, key, default=None):
-        return dict.get(self, key, 'Code agent')
-
-    def __bool__(self):
-        return True
-
-
-def _facets(types=None, priority=None, classification=None, effort=None,
-            ownership=_UNSET, stage=None):
-    """The `load_issue_facets` return shape.
-
-    `cmd_pick` and `cmd_candidates` read the org's native types and field
-    values before selecting, so every test that drives them stubs this. The
-    type, priority and classification maps are empty by default — that is the
-    org-has-not-typed-this case, and it is a case the picker has to handle.
-    Ownership is not: pass `ownership={}` for the org that defines no such
-    field, which is a pool of nothing.
-    """
-    return {'types': types or {}, 'priority': priority or {},
-            'classification': classification or {}, 'effort': effort or {},
-            'stage': stage or {},
-            'ownership': _CodeOwned() if ownership is _UNSET
-            else (ownership or {})}
-
-
 def _git_available():
     try:
         return subprocess.run(['git', '--version'],
@@ -182,27 +145,11 @@ def _git_available():
 
 # ── status-emission contract ─────────────────────────────────────────────────
 
-class TestPickStatusContract(unittest.TestCase):
+class TestPickStatusContract(WfCommandTestCase):
     """`wf pick` must emit the documented status + exit code for each outcome.
 
     The selection/claim logic is driven through `wf`'s own seams; no network.
     """
-
-    def setUp(self):
-        env = mock.patch.object(wf, 'check_environment', return_value=None)
-        env.start()
-        self.addCleanup(env.stop)
-        facets = mock.patch.object(wf, 'load_issue_facets', return_value=_facets())
-        facets.start()
-        self.addCleanup(facets.stop)
-        claims = mock.patch.object(wf, 'claimed_issue_numbers', return_value=set())
-        claims.start()
-        self.addCleanup(claims.stop)
-
-    def _use_cfg(self, cfg):
-        p = mock.patch.object(wf, 'load_config', return_value=(True, cfg, ''))
-        p.start()
-        self.addCleanup(p.stop)
 
     def test_empty_pool_emits_no_candidates(self):
         self._use_cfg(_cfg())
@@ -313,29 +260,13 @@ class TestPickStatusContract(unittest.TestCase):
 
 # -- bulk-execute: shared branch, sibling dependencies, unclaimed pool read ---
 
-class TestBulkPickPaths(unittest.TestCase):
+class TestBulkPickPaths(WfCommandTestCase):
     """`pick`'s two bulk affordances: `--no-branch` and `--sibling`.
 
     Both exist for `bulk-execute`, which claims several stories onto one
     branch. Neither may change single-story behaviour, so each test below has
     a counterpart asserting the default path is untouched.
     """
-
-    def setUp(self):
-        env = mock.patch.object(wf, 'check_environment', return_value=None)
-        env.start()
-        self.addCleanup(env.stop)
-        facets = mock.patch.object(wf, 'load_issue_facets', return_value=_facets())
-        facets.start()
-        self.addCleanup(facets.stop)
-        claims = mock.patch.object(wf, 'claimed_issue_numbers', return_value=set())
-        claims.start()
-        self.addCleanup(claims.stop)
-
-    def _use_cfg(self, cfg):
-        p = mock.patch.object(wf, 'load_config', return_value=(True, cfg, ''))
-        p.start()
-        self.addCleanup(p.stop)
 
     @contextlib.contextmanager
     def _claimable(self, candidate, open_issues=(), closed_issues=()):
@@ -480,7 +411,7 @@ class TestStartDateStamp(unittest.TestCase):
         self.assertTrue(done, msg)
 
 
-class TestBestEffortSteps(unittest.TestCase):
+class TestBestEffortSteps(WfCommandTestCase):
     """A cosmetic side effect must never cost the run its branch.
 
     The `Stage` write and the start-date stamp sit between the claim and the
@@ -488,17 +419,6 @@ class TestBestEffortSteps(unittest.TestCase):
     is left claimed with nowhere to work -- the one outcome the caller cannot
     recover from on its own.
     """
-
-    def setUp(self):
-        env = mock.patch.object(wf, 'check_environment', return_value=None)
-        env.start()
-        self.addCleanup(env.stop)
-        facets = mock.patch.object(wf, 'load_issue_facets', return_value=_facets())
-        facets.start()
-        self.addCleanup(facets.stop)
-        claims = mock.patch.object(wf, 'claimed_issue_numbers', return_value=set())
-        claims.start()
-        self.addCleanup(claims.stop)
 
     def test_the_wrapper_turns_a_raise_into_a_message(self):
         def boom(cfg, number):
@@ -928,7 +848,7 @@ class TestStageIssues(unittest.TestCase):
         self.assertIn('blockedBy', read.call_args[1]['extra'])
 
 
-class TestCandidatesCommand(unittest.TestCase):
+class TestCandidatesCommand(WfCommandTestCase):
     """`wf candidates` reads the pool and claims nothing.
 
     `bulk-execute` has to see the pool before it can decide which stories
@@ -937,18 +857,8 @@ class TestCandidatesCommand(unittest.TestCase):
     """
 
     def setUp(self):
-        env = mock.patch.object(wf, 'check_environment', return_value=None)
-        env.start()
-        self.addCleanup(env.stop)
-        cfg = mock.patch.object(wf, 'load_config', return_value=(True, _cfg(), ''))
-        cfg.start()
-        self.addCleanup(cfg.stop)
-        facets = mock.patch.object(wf, 'load_issue_facets', return_value=_facets())
-        facets.start()
-        self.addCleanup(facets.stop)
-        claims = mock.patch.object(wf, 'claimed_issue_numbers', return_value=set())
-        claims.start()
-        self.addCleanup(claims.stop)
+        super().setUp()
+        self._use_cfg(_cfg())
 
     def test_the_pool_is_ordered_by_the_org_priority_field(self):
         """The field is the whole order, and the listing carries its value.
@@ -4706,7 +4616,7 @@ def _tree_leaf(number, stage=None, blockers=(), parent=50, kind='User Story'):
             'open_prs': []}
 
 
-class TestCandidatesUnderParent(unittest.TestCase):
+class TestCandidatesUnderParent(WfCommandTestCase):
     """`wf candidates --parent N`: the one set a container's tree offers.
 
     The choice is `plan-set`'s, limited to N's leaves, so the pool read is the
@@ -4715,13 +4625,11 @@ class TestCandidatesUnderParent(unittest.TestCase):
     """
 
     def setUp(self):
-        for name, value in (('check_environment', None),
-                            ('load_config', (True, _cfg(), '')),
-                            ('claimed_issue_numbers', set()),
-                            ('issue_edges_map', ({}, set()))):
-            patch = mock.patch.object(wf, name, return_value=value)
-            patch.start()
-            self.addCleanup(patch.stop)
+        super().setUp()
+        self._use_cfg(_cfg())
+        edges = mock.patch.object(wf, 'issue_edges_map', return_value=({}, set()))
+        edges.start()
+        self.addCleanup(edges.stop)
 
     def _run(self, tree, pool, ownership=None, argv=(), types=None, priority=None):
         facets = (_facets(types=types, priority=priority, ownership=ownership)
