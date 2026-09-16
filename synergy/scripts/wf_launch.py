@@ -8,7 +8,7 @@ when there is none, and installing one on `setup --install-python`. Everything
 else is here:
 
     wf_launch.py --launcher wf.sh --data-root DIR run [wf args...]
-    wf_launch.py --launcher wf.sh --data-root DIR setup [--force] [--install-python]
+    wf_launch.py --launcher wf.sh --data-root DIR setup [--force] [--install-python] [--ready-only]
 
 This file runs on whatever bare system Python the launcher found, before
 anything is pip-installed, so it imports the standard library only. Keep it
@@ -41,6 +41,8 @@ CACHE_NAMES = {'wf.sh': 'wf-python', 'wf.ps1': 'wf-python-ps1'}
 LOCK_TIMEOUT = 120
 MIN_VERSION = (3, 8)
 EXIT_ERROR = 20
+# `setup --ready-only` on a venv that is not ready; the launcher reports it.
+EXIT_NOT_READY = 3
 
 
 class Paths(object):
@@ -269,6 +271,10 @@ def cmd_run(paths, args):
 
 def cmd_setup(paths, args):
     force = '--force' in args or '-Force' in args
+    # The launcher found no base Python and is asking an existing venv
+    # interpreter only whether the venv is ready. It must never build from
+    # itself, so anything short of ready leaves the launcher to report.
+    ready_only = '--ready-only' in args
     # Whatever setup ends with is what the next call runs, so a failed setup
     # leaves no stale answer behind.
     remove_cache(paths)
@@ -282,6 +288,8 @@ def cmd_setup(paths, args):
             save_cache(paths, 'venv', vpy)
             say('wf: virtualenv already set up — %s at %s' % (version_text(vpy), paths.venv))
             return 0
+        if ready_only:
+            return EXIT_NOT_READY
         if sys.version_info < MIN_VERSION:
             say('wf: found Python %d.%d but Python >= 3.8 is required.' % sys.version_info[:2])
             return EXIT_ERROR

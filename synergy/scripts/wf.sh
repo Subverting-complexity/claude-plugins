@@ -65,6 +65,20 @@ if [ "${1:-}" = "setup" ]; then
     # wf_launch.py clears the cache too; this covers a setup that ends here.
     rm -f "$PY_CACHE"
     if ! find_python; then
+        # No base Python, but a ready venv is still a finished setup. Only its
+        # own interpreter can say so, and it is never asked to rebuild itself.
+        case " $* " in
+            *" --force "*) ;;
+            *)
+                for vpy in "$DATA_ROOT/wf-venv/bin/python" "$DATA_ROOT/wf-venv/Scripts/python.exe"; do
+                    if [ -f "$vpy" ]; then
+                        code=0
+                        "$vpy" "$LAUNCH" --launcher wf.sh --data-root "$DATA_ROOT" setup --ready-only || code=$?
+                        [ "$code" -eq 0 ] && exit 0
+                        break
+                    fi
+                done ;;
+        esac
         case " $* " in
             *" --install-python "*)
                 echo "wf: no Python 3 found — attempting install (this changes your system)..." >&2

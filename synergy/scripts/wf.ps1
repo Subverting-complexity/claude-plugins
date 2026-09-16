@@ -47,6 +47,20 @@ if ($args.Count -ge 1 -and $args[0] -eq 'setup') {
     # wf_launch.py clears the cache too; this covers a setup that ends here.
     Remove-PythonCache
     $base = Find-Python
+    $force = $rest -contains '-Force' -or $rest -contains '--force'
+    if (-not $base -and -not $force) {
+        # No base Python, but a ready venv is still a finished setup. Only its
+        # own interpreter can say so, and it is never asked to rebuild itself.
+        foreach ($vpy in @((Join-Path $dataRoot 'wf-venv/Scripts/python.exe'), (Join-Path $dataRoot 'wf-venv/bin/python'))) {
+            if (Test-Path -LiteralPath $vpy -PathType Leaf) {
+                try {
+                    & $vpy @launchArgs setup --ready-only
+                    if ($LASTEXITCODE -eq 0) { exit 0 }
+                } catch { }
+                break
+            }
+        }
+    }
     if (-not $base) {
         $install = $rest -contains '-InstallPython' -or $rest -contains '--install-python'
         if ($install -and (Get-Command winget -ErrorAction SilentlyContinue)) {
