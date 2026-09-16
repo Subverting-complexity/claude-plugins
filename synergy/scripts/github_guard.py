@@ -55,7 +55,6 @@ GH_WRITES = {
 # `gh <group> <sub> <action>` writes.
 GH_NESTED = {('repo', 'deploy-key'): {'add', 'delete'},
              ('repo', 'autolink'): {'create', 'delete'}}
-ACCOUNT_GROUPS = {'gist', 'ssh-key', 'gpg-key'}
 # gh's own aliases for write actions: `gh pr new` is `gh pr create`.
 GH_ALIASES = {'new': 'create', 'remove': 'delete'}
 # What `gh repo view -q` may print for its output to be the repository's own.
@@ -93,6 +92,8 @@ CURRENT = 'the repository in the working directory'
 ACCOUNT = 'the signed-in account'
 PROJECT = 'the org named in ClaudeProject.md'
 NODES = 'nodes'
+# What an owner-extraction step returns to fall through to the next step.
+NEXT = object()
 
 
 def allowlist_path():
@@ -507,6 +508,150 @@ def _gh_api(toks, cwd, env, ctx):
              'a GitHub API write (`gh api %s`)' % endpoint)]
 
 
+def _constant(call, owner):
+    return owner
+
+
+def _flag(call, names):
+    return flag_value(call['toks'], names, False) or NEXT
+
+
+def _switch(call, names, owner):
+    return owner if has_flag(call['toks'], names) else NEXT
+
+
+def _node_flag(call, names):
+    return _nodes(flag_value(call['toks'], names, False))
+
+
+def _owner_flag(call, names):
+    owner = flag_value(call['toks'], names, False)
+    return ACCOUNT if owner in (None, '@me') else owner
+
+
+def _spec_flag(call, names):
+    spec = flag_value(call['toks'], names, False)
+    return _owner_of_spec(spec, call['env'], call['ctx']) if spec else NEXT
+
+
+def _url_arg(call):
+    return (call['first'] and github_owner(call['first'])) or NEXT
+
+
+def _positional(call, index):
+    args = _positionals(call['toks'][1:], {'-R', '--repo'})
+    return (_owner_of_spec(args[index], call['env'], call['ctx'])
+            if len(args) > index else NEXT)
+
+
+def _slug_arg(call):
+    first = call['first']
+    return (_owner_of_spec(first, call['env'], call['ctx'])
+            if first and '/' in first else NEXT)
+
+
+def _named_arg(call, owner):
+    return owner if call['first'] else None
+
+
+def _env_repo(call):
+    spec = call['env'].get('gh_repo') or call['ctx']['environ'].get('GH_REPO')
+    return _owner_of_spec(spec, call['env'], call['ctx']) if spec else NEXT
+
+
+# The owner-extraction strategies an OWNER_RULES row may name. Each takes the
+# call and the row's arguments, and returns an owner, or NEXT to fall through
+# to the row's next step.
+STRATEGIES = {
+    'constant': _constant,     # always this owner
+    'flag': _flag,             # the flag's value, used as the owner as given
+    'switch': _switch,         # this owner when the flag is present
+    'node-flag': _node_flag,   # the owner of the node ID the flag names
+    'owner-flag': _owner_flag,  # --owner, where absent or @me is the account
+    'spec-flag': _spec_flag,   # the owner of the owner/repo the flag names
+    'url-arg': _url_arg,       # the owner in a GitHub URL given as first word
+    'slug-arg': _slug_arg,     # the owner of an owner/repo given as first word
+    'named-arg': _named_arg,   # this owner when a first word names something,
+                               # otherwise unknown
+    'env-repo': _env_repo,     # the owner of the repository GH_REPO names
+    'positional': _positional,  # the owner of the owner/repo at that index
+}
+# A step written ('also', strategy, args...) adds its owner and carries on,
+# for a command that writes to two owners.
+ALSO = 'also'
+
+# Where gh acts when nothing more specific names an owner: -R/--repo, a
+# GitHub URL argument, GH_REPO, then the repository in the working directory.
+IN_REPO = (('spec-flag', ('-R', '--repo')), ('url-arg',), ('env-repo',),
+           ('constant', CURRENT))
+# An org or user secret or variable is written to that owner, not a repo.
+SETTINGS = (('flag', ('--org', '-o')),
+            ('switch', ('--user', '-u'), ACCOUNT)) + IN_REPO
+ACCOUNT_ONLY = (('constant', ACCOUNT),)
+FORK = (('flag', ('--org',)), ('constant', ACCOUNT))
+
+# How each `gh` write's owner is worked out, most specific key first:
+# (group, action), then group, then IN_REPO. A row is a sequence of
+# (strategy, args...) steps tried in order until one returns an owner, so it
+# must end in one that always does. Adding a guard rule for a new subcommand
+# is a GH_WRITES entry plus, when IN_REPO is not right for it, a row here.
+OWNER_RULES = {
+    'gist': ACCOUNT_ONLY,
+    'ssh-key': ACCOUNT_ONLY,
+    'gpg-key': ACCOUNT_ONLY,
+    'project': (('owner-flag', ('--owner',)),),
+    ('project', 'item-edit'): (('node-flag', ('--project-id',)),),
+    ('project', 'field-delete'): (('node-flag', ('--id',)),),
+    'secret': SETTINGS,
+    'variable': SETTINGS,
+    # `gh repo delete owner/name` names its repository as the first word.
+    'repo': (('spec-flag', ('-R', '--repo')), ('url-arg',), ('slug-arg',),
+             ('env-repo',), ('constant', CURRENT)),
+    # `gh repo create name` makes it under the signed-in account, and GH_REPO
+    # does not decide where a new repository goes.
+    ('repo', 'create'): (('spec-flag', ('-R', '--repo')), ('url-arg',),
+                         ('slug-arg',), ('named-arg', ACCOUNT)),
+    ('repo', 'fork'): FORK,
+    # `gh issue transfer <issue> <destination>` writes to both repositories:
+    # index 3 counts `gh issue transfer` itself, so it is the destination.
+    ('issue', 'transfer'): (('also', 'positional', 3),) + IN_REPO,
+}
+
+# `hub <command>` writes, as OWNER_RULES rows; hub push and hub api are
+# judged as git push and gh api instead.
+IN_CURRENT = (('constant', CURRENT),)
+REPO_OR_ACCOUNT = (('slug-arg',), ('constant', ACCOUNT))
+HUB_RULES = {
+    'pull-request': IN_CURRENT,
+    'merge': IN_CURRENT,
+    'sync': IN_CURRENT,
+    'fork': FORK,
+    'create': REPO_OR_ACCOUNT,
+    'delete': REPO_OR_ACCOUNT,
+}
+# `hub <command> <verb>` writes, when the verb is one of WRITE_VERBS.
+HUB_VERB_RULES = {
+    'issue': IN_CURRENT,
+    'release': IN_CURRENT,
+    'gist': ACCOUNT_ONLY,
+}
+
+
+def _rule_owners(rule, call):
+    """The owners one OWNER_RULES row yields, in order."""
+    owners = []
+    for step in rule:
+        also = step[0] == ALSO
+        step = step[1:] if also else step
+        owner = STRATEGIES[step[0]](call, *step[1:])
+        if owner is NEXT:
+            continue
+        owners.append(owner)
+        if not also:
+            return owners
+    raise ValueError('an OWNER_RULES row must end in a step that always decides')
+
+
 def _gh(toks, cwd, env, ctx):
     words = _gh_words(toks)
     group = words[0] if words else ''
@@ -524,41 +669,10 @@ def _gh(toks, cwd, env, ctx):
         what = '`gh %s %s`' % (group, action)
     else:
         return []
-    if group in ACCOUNT_GROUPS:
-        return [(ACCOUNT, what)]
-    if group == 'project':
-        if action == 'item-edit':
-            return [(_nodes(flag_value(toks, ['--project-id'], False)), what)]
-        if action == 'field-delete':
-            return [(_nodes(flag_value(toks, ['--id'], False)), what)]
-        owner = flag_value(toks, ['--owner'], False)
-        return [(ACCOUNT if owner in (None, '@me') else owner, what)]
-    if group in ('secret', 'variable'):
-        org = flag_value(toks, ['--org', '-o'], False)
-        if org:
-            return [(org, what)]
-        if has_flag(toks, ['--user', '-u']):
-            return [(ACCOUNT, what)]
-    if group == 'repo' and action == 'fork':
-        return [(flag_value(toks, ['--org'], False) or ACCOUNT, what)]
-    writes = []
-    if group == 'issue' and action == 'transfer':
-        args = _positionals(toks[1:], {'-R', '--repo'})
-        if len(args) > 3:
-            writes.append((_owner_of_spec(args[3], env, ctx), what))
-    spec = flag_value(toks, ['-R', '--repo'], False)
-    if spec:
-        return writes + [(_owner_of_spec(spec, env, ctx), what)]
-    if first and github_owner(first):
-        return writes + [(github_owner(first), what)]
-    if group == 'repo' and first and '/' in first:
-        return writes + [(_owner_of_spec(first, env, ctx), what)]
-    if group == 'repo' and action == 'create':
-        return writes + [(ACCOUNT if first else None, what)]
-    spec = env.get('gh_repo') or ctx['environ'].get('GH_REPO')
-    if spec:
-        return writes + [(_owner_of_spec(spec, env, ctx), what)]
-    return writes + [(CURRENT, what)]
+    rule = (OWNER_RULES.get((group, action)) or OWNER_RULES.get(group)
+            or IN_REPO)
+    call = {'toks': toks, 'first': first, 'env': env, 'ctx': ctx}
+    return [(owner, what) for owner in _rule_owners(rule, call)]
 
 
 def _hub(toks, cwd, env, ctx, lookup, ssh_host):
@@ -568,19 +682,17 @@ def _hub(toks, cwd, env, ctx, lookup, ssh_host):
         return _push(['git'] + toks[1:], cwd, env, lookup, ssh_host)
     if sub == 'api':
         return _gh_api(['gh'] + toks[1:], cwd, env, ctx)
-    what = '`hub %s`' % sub
-    if sub in ('pull-request', 'merge', 'sync'):
-        return [(CURRENT, what)]
-    if sub == 'fork':
-        return [(flag_value(toks, ['--org'], False) or ACCOUNT, what)]
-    if sub in ('create', 'delete'):
-        spec = words[1] if len(words) > 1 else ''
-        return [(_owner_of_spec(spec, env, ctx) if '/' in spec else ACCOUNT, what)]
-    if (sub in ('issue', 'release', 'gist') and len(words) > 1
-            and words[1] in WRITE_VERBS):
-        return [(ACCOUNT if sub == 'gist' else CURRENT,
-                 '`hub %s %s`' % (sub, words[1]))]
-    return []
+    first = words[1] if len(words) > 1 else ''
+    if sub in HUB_VERB_RULES:
+        if first not in WRITE_VERBS:
+            return []
+        rule, what = HUB_VERB_RULES[sub], '`hub %s %s`' % (sub, first)
+    elif sub in HUB_RULES:
+        rule, what = HUB_RULES[sub], '`hub %s`' % sub
+    else:
+        return []
+    call = {'toks': toks, 'first': first, 'env': env, 'ctx': ctx}
+    return [(owner, what) for owner in _rule_owners(rule, call)]
 
 
 def _http(toks, env, ctx):

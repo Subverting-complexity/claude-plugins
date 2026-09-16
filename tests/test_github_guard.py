@@ -15,7 +15,9 @@ sys.path.insert(
 from command_parse import resolve_dir  # noqa: E402
 from forge_guard import evaluate  # noqa: E402
 from github_guard import (  # noqa: E402
-    active_account, denial, github_block, github_owner, load_allowlist)
+    ACCOUNT, ALSO, CURRENT, GH_WRITES, HUB_RULES, HUB_VERB_RULES, NODES,
+    OWNER_RULES, STRATEGIES, active_account, denial, github_block,
+    github_owner, github_writes, load_allowlist)
 
 ALLOW = {'path': '~/.claude/synergy/github-allowlist.json',
          'account': 'AdrienneBosch', 'owners': ['Subverting-complexity']}
@@ -791,6 +793,157 @@ class TestHookInterpreter(unittest.TestCase):
             self.assertIn('"deny"', out.stdout)
             with open(cache) as f:
                 self.assertNotEqual(f.read().strip(), 'true')
+
+
+def writes(command):
+    """The (owner, what) pairs github_writes finds in one Bash command."""
+    return [w[:2] for w in github_writes(
+        'Bash', {'command': command}, '.', lookup=lambda cwd, remote: '',
+        ssh_host=lambda alias: None, environ={})]
+
+
+class TestOwnerExtraction(unittest.TestCase):
+    """Characterisation of where each `gh` and `hub` write's owner comes
+    from, captured before those rules were moved into a table."""
+
+    def assertWrites(self, cases):
+        for command, expected in cases:
+            with self.subTest(command=command):
+                self.assertEqual(writes(command), expected)
+
+    def test_issue_transfer_yields_the_destination_then_the_source(self):
+        what = '`gh issue transfer`'
+        self.assertWrites((
+            ('gh issue transfer 12 SomeoneElse/dest',
+             [('SomeoneElse', what), (CURRENT, what)]),
+            ('gh issue transfer 12 SomeoneElse/dest -R Other/src',
+             [('SomeoneElse', what), ('Other', what)]),
+            ('gh issue transfer -R Other/src 12 SomeoneElse/dest',
+             [('SomeoneElse', what), ('Other', what)]),
+            ('gh issue transfer 12 https://github.com/SomeoneElse/dest',
+             [('SomeoneElse', what), (CURRENT, what)]),
+            ('gh issue transfer 12', [(CURRENT, what)]),
+        ))
+
+    def test_issue_transfer_needs_both_owners_allowed(self):
+        self.assertIn('SomeoneElse',
+                      check('gh issue transfer 12 SomeoneElse/dest'))
+        self.assertIn('SomeoneElse', check(
+            'gh issue transfer 12 Subverting-complexity/dest -R SomeoneElse/src'))
+        self.assertIsNone(check(
+            'gh issue transfer 12 Subverting-complexity/dest'))
+
+    def test_project_owners(self):
+        self.assertWrites((
+            ('gh project field-delete --id PVTF_lADOABCDEF',
+             [((NODES, ('PVTF_lADOABCDEF',)), '`gh project field-delete`')]),
+            ('gh project field-delete --id notanode',
+             [(None, '`gh project field-delete`')]),
+            ('gh project field-delete', [(None, '`gh project field-delete`')]),
+            ('gh project item-edit --project-id PVT_kwDOABCDEF --id x',
+             [((NODES, ('PVT_kwDOABCDEF',)), '`gh project item-edit`')]),
+            ('gh project item-add 3 --owner @me --url u',
+             [(ACCOUNT, '`gh project item-add`')]),
+            ('gh project create --title t', [(ACCOUNT, '`gh project create`')]),
+            ('gh project item-add 3 --owner SomeoneElse --url u',
+             [('SomeoneElse', '`gh project item-add`')]),
+        ))
+
+    def test_secret_and_variable_owners(self):
+        self.assertWrites((
+            ('gh secret set TOKEN --org SomeoneElse',
+             [('SomeoneElse', '`gh secret set`')]),
+            ('gh secret set TOKEN -o SomeoneElse',
+             [('SomeoneElse', '`gh secret set`')]),
+            ('gh secret set TOKEN --user', [(ACCOUNT, '`gh secret set`')]),
+            ('gh secret set TOKEN -u', [(ACCOUNT, '`gh secret set`')]),
+            ('gh variable set X --org SomeoneElse',
+             [('SomeoneElse', '`gh variable set`')]),
+            ('gh variable delete X -o SomeoneElse',
+             [('SomeoneElse', '`gh variable delete`')]),
+            ('gh variable set X --user', [(ACCOUNT, '`gh variable set`')]),
+            ('gh variable remove X -u', [(ACCOUNT, '`gh variable delete`')]),
+            ('gh variable set X -R SomeoneElse/r',
+             [('SomeoneElse', '`gh variable set`')]),
+            ('gh secret set X --org SomeoneElse -R Other/r',
+             [('SomeoneElse', '`gh secret set`')]),
+            ('gh secret set X', [(CURRENT, '`gh secret set`')]),
+        ))
+
+    def test_nested_and_account_owners(self):
+        self.assertWrites((
+            ('gh repo autolink create --key-prefix T- --url-template u',
+             [(CURRENT, '`gh repo autolink create`')]),
+            ('gh repo autolink delete 3 -R SomeoneElse/r',
+             [('SomeoneElse', '`gh repo autolink delete`')]),
+            ('gh repo autolink list', []),
+            ('gh repo deploy-key add k.pub -R SomeoneElse/r',
+             [('SomeoneElse', '`gh repo deploy-key add`')]),
+            ('gh gpg-key add key.asc', [(ACCOUNT, '`gh gpg-key add`')]),
+            ('gh gpg-key delete 1', [(ACCOUNT, '`gh gpg-key delete`')]),
+            ('gh ssh-key add k.pub -R SomeoneElse/r',
+             [(ACCOUNT, '`gh ssh-key add`')]),
+            ('gh gist create notes.md', [(ACCOUNT, '`gh gist create`')]),
+        ))
+
+    def test_repository_owners(self):
+        self.assertWrites((
+            ('gh repo fork SomeoneElse/r', [(ACCOUNT, '`gh repo fork`')]),
+            ('gh repo fork SomeoneElse/r --org MyOrg',
+             [('MyOrg', '`gh repo fork`')]),
+            ('gh repo create scratch', [(ACCOUNT, '`gh repo create`')]),
+            ('gh repo create', [(None, '`gh repo create`')]),
+            ('gh repo create SomeoneElse/new',
+             [('SomeoneElse', '`gh repo create`')]),
+            ('gh repo delete SomeoneElse/r',
+             [('SomeoneElse', '`gh repo delete`')]),
+            ('gh repo edit https://github.com/SomeoneElse/r',
+             [('SomeoneElse', '`gh repo edit`')]),
+            ('gh pr comment https://github.com/SomeoneElse/r/pull/3 --body hi',
+             [('SomeoneElse', '`gh pr comment`')]),
+            ('gh pr create --fill', [(CURRENT, '`gh pr create`')]),
+            ('gh pr new --fill', [(CURRENT, '`gh pr create`')]),
+            ('GH_REPO=SomeoneElse/r gh pr create --fill',
+             [('SomeoneElse', '`gh pr create`')]),
+            ('gh label remove x', [(CURRENT, '`gh label delete`')]),
+            ('gh pr view 3', []),
+        ))
+
+    def test_every_rule_names_known_strategies_and_ends_in_a_decision(self):
+        # Steps that can fall through, so cannot be a row's last step.
+        falls_through = {'flag', 'switch', 'spec-flag', 'url-arg', 'slug-arg',
+                         'env-repo', 'positional'}
+        tables = {'OWNER_RULES': OWNER_RULES, 'HUB_RULES': HUB_RULES,
+                  'HUB_VERB_RULES': HUB_VERB_RULES}
+        for table, rules in tables.items():
+            for key, rule in rules.items():
+                with self.subTest(table=table, key=key):
+                    steps = [s[1:] if s[0] == ALSO else s for s in rule]
+                    for step in steps:
+                        self.assertIn(step[0], STRATEGIES)
+                    self.assertNotEqual(rule[-1][0], ALSO)
+                    self.assertNotIn(rule[-1][0], falls_through)
+        for key in OWNER_RULES:
+            group = key[0] if isinstance(key, tuple) else key
+            with self.subTest(key=key):
+                self.assertIn(group, GH_WRITES)
+
+    def test_hub_owners(self):
+        self.assertWrites((
+            ('hub pull-request -m x', [(CURRENT, '`hub pull-request`')]),
+            ('hub merge x', [(CURRENT, '`hub merge`')]),
+            ('hub sync', [(CURRENT, '`hub sync`')]),
+            ('hub fork', [(ACCOUNT, '`hub fork`')]),
+            ('hub fork --org MyOrg', [('MyOrg', '`hub fork`')]),
+            ('hub create', [(ACCOUNT, '`hub create`')]),
+            ('hub create SomeoneElse/r', [('SomeoneElse', '`hub create`')]),
+            ('hub delete r', [(ACCOUNT, '`hub delete`')]),
+            ('hub issue create -m x', [(CURRENT, '`hub issue create`')]),
+            ('hub release create v1', [(CURRENT, '`hub release create`')]),
+            ('hub gist create f', [(ACCOUNT, '`hub gist create`')]),
+            ('hub issue list', []),
+            ('hub browse SomeoneElse/r', []),
+        ))
 
 
 class TestDenial(unittest.TestCase):
