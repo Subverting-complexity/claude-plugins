@@ -26,10 +26,17 @@ $dataRoot = if ($env:CLAUDE_PLUGIN_DATA) { $env:CLAUDE_PLUGIN_DATA }
             else { $newData }
 $venv = Join-Path $dataRoot 'wf-venv'
 $venvPy = Join-Path $venv 'Scripts/python.exe'
-# `New-Item -ErrorAction Stop` on this path is the exclusivity check for
-# auto-bootstrap below: it either succeeds for exactly one concurrent caller
-# or throws for the rest.
+# `New-Item -ErrorAction Stop` on this path is the exclusivity check shared by
+# Invoke-WfSetup and Try-AutoBootstrapVenv: it either succeeds for exactly one
+# concurrent caller or throws for the rest, so only one of them ever builds
+# the venv at a time.
 $venvLock = Join-Path $dataRoot 'wf-venv.lock'
+# Written last, only by whichever caller holds $venvLock while building, so it
+# marks the venv as fully provisioned rather than merely present.
+$venvReadyMarker = Join-Path $venv '.wf-ready'
+# Seconds a caller waits for a concurrent build before treating the lock as
+# abandoned (its owner was killed without releasing it) and reclaiming it.
+$venvLockTimeoutSec = 120
 # Two lines: `venv` or `base`, then the interpreter's path. Separate from
 # wf.sh's `wf-python`, whose paths are written in a form PowerShell cannot run.
 $pyCache = Join-Path $dataRoot 'wf-python-ps1'
@@ -45,6 +52,45 @@ function Stop-Wf([string] $Message, [int] $Code = 20) {
 function Get-VenvPython {
     if ((Test-Path $venvPy) -and (& $venvPy --version 2>$null)) { return $venvPy }
     return $null
+}
+
+# The venv's python path, but only if the venv is not just present but fully
+# provisioned. Get-VenvPython alone is true as soon as `-m venv` finishes,
+# before pip install has run — it must never be used to decide that a build
+# (as opposed to the bare interpreter) is complete.
+function Get-VenvReady {
+    if (-not (Test-Path -LiteralPath $venvReadyMarker -PathType Leaf)) { return $null }
+    return Get-VenvPython
+}
+
+# Try to acquire $venvLock, waiting up to $venvLockTimeoutSec seconds. Shared
+# by Invoke-WfSetup and Try-AutoBootstrapVenv so neither can build the venv
+# while the other holds the lock — both write to the same $venv. Returns
+# $true once this call holds the lock, $false on timeout (including a
+# reclaim attempt that lost to another late arrival).
+function Acquire-VenvLock {
+    New-Item -ItemType Directory -Force $dataRoot -ErrorAction SilentlyContinue | Out-Null
+    $waited = 0
+    while ($true) {
+        try {
+            New-Item -ItemType Directory -Path $venvLock -ErrorAction Stop | Out-Null
+            return $true
+        } catch {
+            if ($waited -ge $venvLockTimeoutSec) {
+                Remove-Item -LiteralPath $venvLock -Recurse -Force -ErrorAction SilentlyContinue
+                try {
+                    New-Item -ItemType Directory -Path $venvLock -ErrorAction Stop | Out-Null
+                    return $true
+                } catch { return $false }
+            }
+            Start-Sleep -Seconds 1
+            $waited++
+        }
+    }
+}
+
+function Release-VenvLock {
+    Remove-Item -LiteralPath $venvLock -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # Each candidate is run, not just found: the Microsoft Store `python3` stub is
@@ -86,33 +132,21 @@ function Remove-PythonCache {
 # Unlike `setup` (a one-off command a person runs by hand), this can now run
 # from any ordinary invocation, so two calls with no venv yet can start at the
 # same moment — plausible here since parallel agents on one machine share
-# $dataRoot. Creating $venvLock is the exclusivity check: only one caller
-# creates it, so only one caller builds the venv. A loser polls for the
-# winner's result instead of racing it into the same `-m venv` target, which
-# could otherwise interleave two writes into one venv directory and leave it
-# corrupted.
+# $dataRoot. The lock (shared with Invoke-WfSetup, so an explicit setup run
+# can never race this either) makes only one caller build at a time; everyone
+# else waits for it rather than racing it into the same `-m venv` target,
+# which could otherwise interleave two writes into one venv directory and
+# leave it corrupted. Readiness is checked only after this call itself holds
+# the lock, so it never mistakes a build still in progress under someone
+# else's hold for a finished one.
 function Try-AutoBootstrapVenv {
     param([string] $ExePath, [string[]] $BaseArgs)
     if (-not $ExePath) { return $null }
-
-    New-Item -ItemType Directory -Force $dataRoot -ErrorAction SilentlyContinue | Out-Null
-    $waited = 0
-    while ($true) {
-        try {
-            New-Item -ItemType Directory -Path $venvLock -ErrorAction Stop | Out-Null
-            break
-        } catch {
-            $existing = Get-VenvPython
-            if ($existing) { return $existing }
-            if ($waited -ge 30) { return $null }
-            Start-Sleep -Seconds 1
-            $waited++
-        }
-    }
+    if (-not (Acquire-VenvLock)) { return $null }
     try {
-        # The winner may have finished between our first check and the lock.
-        $existing = Get-VenvPython
+        $existing = Get-VenvReady
         if ($existing) { return $existing }
+        Remove-Item -LiteralPath $venv -Recurse -Force -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Force (Split-Path $venv) | Out-Null
         & $ExePath @BaseArgs -m venv $venv 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) { return $null }
@@ -124,10 +158,11 @@ function Try-AutoBootstrapVenv {
             & $vpy -m pip install --quiet -r $req 2>$null | Out-Null
             if ($LASTEXITCODE -ne 0) { return $null }
         }
+        New-Item -ItemType File -Path $venvReadyMarker -Force | Out-Null
         Save-PythonCache 'venv' $vpy
         return $vpy
     } finally {
-        Remove-Item -LiteralPath $venvLock -Recurse -Force -ErrorAction SilentlyContinue
+        Release-VenvLock
     }
 }
 
@@ -154,41 +189,52 @@ function Invoke-WfSetup {
     # leaves no stale answer behind.
     Remove-PythonCache
 
-    $vpy = Get-VenvPython
-    if ((-not $force) -and $vpy) {
-        Save-PythonCache 'venv' $vpy
-        Write-Host "wf: virtualenv already set up at $venv"
-        exit 0
+    # Share the lock with Try-AutoBootstrapVenv: an explicit setup run must
+    # wait for an auto-bootstrap already building $venv rather than racing
+    # it, and vice versa. Stop-Wf's `exit` still runs this finally block.
+    if (-not (Acquire-VenvLock)) {
+        Stop-Wf "wf: timed out waiting for another wf process building the virtualenv. Try again shortly."
     }
-
-    $base = Get-BasePython
-    if (-not $base) {
-        if ($install -and (Get-Command winget -ErrorAction SilentlyContinue)) {
-            Write-Host 'wf: no Python 3 found — attempting install (this changes your system)...'
-            winget install -e --id Python.Python.3.12
-            $base = Get-BasePython
+    try {
+        $vpy = Get-VenvReady
+        if ((-not $force) -and $vpy) {
+            Save-PythonCache 'venv' $vpy
+            Write-Host "wf: virtualenv already set up at $venv"
+            exit 0
         }
+
+        $base = Get-BasePython
         if (-not $base) {
-            Stop-Wf "wf: Python 3.8 or later is required but was not found. Install it (winget install -e --id Python.Python.3.12), then re-run 'wf.ps1 setup'. Or re-run with -InstallPython."
+            if ($install -and (Get-Command winget -ErrorAction SilentlyContinue)) {
+                Write-Host 'wf: no Python 3 found — attempting install (this changes your system)...'
+                winget install -e --id Python.Python.3.12
+                $base = Get-BasePython
+            }
+            if (-not $base) {
+                Stop-Wf "wf: Python 3.8 or later is required but was not found. Install it (winget install -e --id Python.Python.3.12), then re-run 'wf.ps1 setup'. Or re-run with -InstallPython."
+            }
         }
-    }
-    $baseArgs = @($base | Select-Object -Skip 1)
+        $baseArgs = @($base | Select-Object -Skip 1)
 
-    if ($force -and (Test-Path $venv)) { Remove-Item -Recurse -Force $venv }
-    New-Item -ItemType Directory -Force (Split-Path $venv) | Out-Null
-    Write-Host "wf: creating virtualenv at $venv ..."
-    & $base[0] @baseArgs -m venv $venv
-    $vpy = Get-VenvPython
-    if ($LASTEXITCODE -ne 0 -or -not $vpy) { Stop-Wf 'wf: the virtualenv could not be created, or its interpreter is not usable.' }
-    & $vpy -m pip install --quiet --upgrade pip 2>$null
-    $req = Join-Path $PSScriptRoot 'requirements.txt'
-    if (Test-Path $req) {
-        & $vpy -m pip install --quiet -r $req
-        if ($LASTEXITCODE -ne 0) { Stop-Wf "wf: installing $req failed; re-run 'wf.ps1 setup -Force' once the error above is fixed." 1 }
+        if ($force -and (Test-Path $venv)) { Remove-Item -Recurse -Force $venv }
+        New-Item -ItemType Directory -Force (Split-Path $venv) | Out-Null
+        Write-Host "wf: creating virtualenv at $venv ..."
+        & $base[0] @baseArgs -m venv $venv
+        $vpy = Get-VenvPython
+        if ($LASTEXITCODE -ne 0 -or -not $vpy) { Stop-Wf 'wf: the virtualenv could not be created, or its interpreter is not usable.' }
+        & $vpy -m pip install --quiet --upgrade pip 2>$null
+        $req = Join-Path $PSScriptRoot 'requirements.txt'
+        if (Test-Path $req) {
+            & $vpy -m pip install --quiet -r $req
+            if ($LASTEXITCODE -ne 0) { Stop-Wf "wf: installing $req failed; re-run 'wf.ps1 setup -Force' once the error above is fixed." 1 }
+        }
+        New-Item -ItemType File -Path $venvReadyMarker -Force | Out-Null
+        Save-PythonCache 'venv' $vpy
+        Write-Host "wf: setup complete — $(& $vpy --version). Future calls reuse it automatically."
+        exit 0
+    } finally {
+        Release-VenvLock
     }
-    Save-PythonCache 'venv' $vpy
-    Write-Host "wf: setup complete — $(& $vpy --version). Future calls reuse it automatically."
-    exit 0
 }
 
 if ($args.Count -ge 1 -and $args[0] -eq 'setup') {
