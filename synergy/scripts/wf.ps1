@@ -73,6 +73,31 @@ function Remove-PythonCache {
     Remove-Item -LiteralPath $pyCache -Force -ErrorAction SilentlyContinue
 }
 
+# Try to create the dedicated venv from a usable base Python, silently, on a
+# run that would otherwise fall back to system Python. Mirrors Invoke-WfSetup's
+# create step but never installs a system Python and never writes to the
+# console: any failure here is not this call's problem to report, so it just
+# returns $null and leaves the caller to warn and fall back to system Python.
+function Try-AutoBootstrapVenv {
+    param([string] $ExePath, [string[]] $BaseArgs)
+    if (-not $ExePath) { return $null }
+    try {
+        New-Item -ItemType Directory -Force (Split-Path $venv) | Out-Null
+        & $ExePath @BaseArgs -m venv $venv 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { return $null }
+    } catch { return $null }
+    $vpy = Get-VenvPython
+    if (-not $vpy) { return $null }
+    & $vpy -m pip install --quiet --upgrade pip 2>$null | Out-Null
+    $req = Join-Path $PSScriptRoot 'requirements.txt'
+    if (Test-Path $req) {
+        & $vpy -m pip install --quiet -r $req 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { return $null }
+    }
+    Save-PythonCache 'venv' $vpy
+    return $vpy
+}
+
 # The cached interpreter, trusted without running it. Its path must still
 # exist, and a cached system Python gives way as soon as a venv exists.
 function Get-CachedPython {
@@ -140,7 +165,9 @@ if ($args.Count -ge 1 -and $args[0] -eq 'setup') {
 $cached = Get-CachedPython
 if ($cached) {
     if ($cached.Kind -eq 'base') {
-        Write-Warning "wf: no dedicated virtualenv yet — using system Python. Run 'wf.ps1 setup' to pin one."
+        $vpy = Try-AutoBootstrapVenv -ExePath $cached.Path -BaseArgs @()
+        if ($vpy) { $cached = @{ Kind = 'venv'; Path = $vpy } }
+        else { Write-Warning "wf: no dedicated virtualenv yet — using system Python. Run 'wf.ps1 setup' to pin one." }
     }
     try {
         & $cached.Path $wf @args
@@ -160,12 +187,18 @@ if ($vpy) {
 }
 $base = Get-BasePython
 if ($base) {
+    $exePath = if ($script:baseExe -and (Test-Path -LiteralPath $script:baseExe -PathType Leaf)) { $script:baseExe } else { $null }
+    $baseArgs = @($base | Select-Object -Skip 1)
+    $vpy = if ($exePath) { Try-AutoBootstrapVenv -ExePath $exePath -BaseArgs @() } else { Try-AutoBootstrapVenv -ExePath $base[0] -BaseArgs $baseArgs }
+    if ($vpy) {
+        & $vpy $wf @args
+        exit $LASTEXITCODE
+    }
     Write-Warning "wf: no dedicated virtualenv yet — using system Python. Run 'wf.ps1 setup' to pin one."
-    if ($script:baseExe -and (Test-Path -LiteralPath $script:baseExe -PathType Leaf)) {
-        Save-PythonCache 'base' $script:baseExe
-        & $script:baseExe $wf @args
+    if ($exePath) {
+        Save-PythonCache 'base' $exePath
+        & $exePath $wf @args
     } else {
-        $baseArgs = @($base | Select-Object -Skip 1)
         & $base[0] @baseArgs $wf @args
     }
     exit $LASTEXITCODE

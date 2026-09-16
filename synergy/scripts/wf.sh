@@ -116,6 +116,42 @@ base_warning() {
     echo "wf: no dedicated virtualenv yet — using system Python ${PY:-${BASE_PY[*]}}. Run 'wf.sh setup' to pin one." >&2
 }
 
+# Try to create the dedicated venv from a usable base Python, silently, on a
+# run that would otherwise fall back to system Python. Mirrors wf_setup's
+# create step but never installs a system Python and never prints anything:
+# any failure here is not this call's problem to report, so it just leaves
+# the caller to fall back to base_warning and system Python as before.
+# Echoes the venv's python path on success.
+autobootstrap_venv() {
+    local base=("$@") vpy=''
+    [ "${#base[@]}" -gt 0 ] && [ -n "${base[0]}" ] || return 1
+    "${base[@]}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1 || return 1
+    mkdir -p "$(dirname "$VENV")" 2>/dev/null || return 1
+    "${base[@]}" -m venv "$VENV" >/dev/null 2>&1 || return 1
+    vpy=$(venv_python) || return 1
+    "$vpy" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
+    if [ -f "$HERE/requirements.txt" ]; then
+        "$vpy" -m pip install --quiet -r "$HERE/requirements.txt" >/dev/null 2>&1 || return 1
+    fi
+    save_python_cache venv "$vpy"
+    printf '%s' "$vpy"
+}
+
+# Called whenever PY_KIND is "base": try the silent auto-bootstrap first, and
+# only warn if it did not produce a usable venv. On success this switches PY
+# and PY_KIND to the new venv in place, so the caller runs on it unchanged.
+maybe_bootstrap_or_warn() {
+    [ "$PY_KIND" = base ] || return 0
+    local base=() vpy=''
+    if [ -n "$PY" ]; then base=("$PY"); else base=("${BASE_PY[@]}"); fi
+    if vpy=$(autobootstrap_venv "${base[@]}"); then
+        PY="$vpy"
+        PY_KIND=venv
+    else
+        base_warning
+    fi
+}
+
 py_install_hint() {
     case "$(uname -s 2>/dev/null)" in
         Darwin) echo "brew install python" ;;
@@ -199,7 +235,7 @@ fi
 
 # Run path: the cached interpreter, else the venv, else a probed system Python.
 if cached_python; then
-    [ "$PY_KIND" = base ] && base_warning
+    maybe_bootstrap_or_warn
     set +e
     "$PY" "$WF" "$@"
     code=$?
@@ -216,7 +252,7 @@ if cached_python; then
 fi
 
 if probe_python; then
-    [ "$PY_KIND" = base ] && base_warning
+    maybe_bootstrap_or_warn
     if [ -n "$PY" ]; then
         exec "$PY" "$WF" "$@"
     fi
