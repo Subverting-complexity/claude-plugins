@@ -18,7 +18,7 @@ New-Item -ItemType Directory -Force -Path $hookDir | Out-Null
 Copy-Item hooks/pre-commit (Join-Path $hookDir 'pre-commit') -Force
 
 Write-Host "==> Checking Python availability"
-. (Join-Path $PSScriptRoot 'scripts/find-python.ps1')
+. (Join-Path $PSScriptRoot 'synergy/scripts/find-python.ps1')
 $found = Find-Python
 if ($found) {
     Write-Host "    Found: $($found.Label)"
