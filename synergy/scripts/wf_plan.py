@@ -1,13 +1,15 @@
 """
-Bulk sets: `plan-set` chooses a dependency-ordered set of stories and, with
-`--claim`, claims it; `drop-story` returns a story, and whatever waits on it,
-to the pool; `bulk-mark` records the branch and each story as it is built.
+Bulk sets: `plan-set` chooses a set of stories that fills an effort budget,
+split into at most two pull requests, and with `--claim` claims it;
+`drop-story` returns a story, and whatever waits on it, to the pool;
+`drop-group` returns a whole unbuilt group; `bulk-mark` records each group's
+branch and each story as it is built.
 
-The choice is `wf_core.plan_set`. What used to be a judgement read off a
-listing -- which stories are related, which depends on which, what order to
-build them in -- is decided here from the blocked-by edges and the issue tree,
-so a story is never left out because it waits on another story in the set.
-`scripts/README.md` has the module map.
+The choice is `wf_core.plan_set`. Which stories fit together, which depends on
+which, which pull request each goes in and what order to build them in are
+decided there from the fields, the blocked-by edges and the issue tree, so the
+skill reads the result rather than judging it. `scripts/README.md` has the
+module map.
 """
 
 import json
@@ -30,12 +32,6 @@ from wf_unblock import UNBLOCK_COMMENT
 
 
 BULK_SET = os.path.join('.claude', 'bulk-set.json')
-
-# Unchosen stories reported beside a plan, so the caller can see what else is
-# ready without a second listing. Five is enough to judge a shared surface.
-NEARBY = 5
-NEARBY_BODY_CHARS = 300
-
 
 def _admit_named(pool, seeds):
     """Put each named story the pool left out into the universe when naming it
@@ -90,34 +86,12 @@ def _story_entry(story, issue, facets, body_chars):
             'type': issue.get('type'),
             'priority': (facets.get('priority') or {}).get(number),
             'effort': (facets.get('effort') or {}).get(number),
-            'wave': story['wave'], 'blocked_by': story['blocked_by'],
+            'weight': story['weight'], 'mode': story['mode'],
+            'group': story['group'], 'wave': story['wave'],
+            'blocked_by': story['blocked_by'],
             'unblocks': story['unblocks'], 'why': story['why'],
             'body': body[:body_chars] if truncated else body,
             'body_truncated': truncated}
-
-
-def _nearby(pool, plan, within):
-    """The highest-ranked stories that are ready now and that the plan did not
-    take, because nothing links them to it. A waiting story is not listed: it
-    could not start beside the set, and its blocker is either in the set or
-    excluded with the reason."""
-    chosen = {s['number'] for s in plan['selected']}
-    left = {e['number'] for e in plan['excluded']}
-    out = []
-    for number in pool['rank']:
-        if number in chosen or number in left or (within is not None
-                                                  and number not in within):
-            continue
-        if pool['universe'][number].get('blockers') != []:
-            continue
-        issue = pool['by_num'].get(number) or {}
-        out.append({'number': number, 'title': issue.get('title', ''),
-                    'priority': (pool['facets'].get('priority') or {}).get(number),
-                    'ready': not pool['universe'][number].get('blockers'),
-                    'body': (issue.get('body') or '')[:NEARBY_BODY_CHARS]})
-        if len(out) >= NEARBY:
-            break
-    return out
 
 
 def cmd_plan_set(args):
@@ -128,11 +102,6 @@ def cmd_plan_set(args):
     if seeds and args.parent:
         emit('usage', EXIT_USAGE,
              reason='name stories or pass --parent, not both')
-    size, clamped = args.size, None
-    if not wf_core.BULK_MIN <= size <= wf_core.BULK_MAX:
-        clamped = size
-        size = min(max(size, wf_core.BULK_MIN), wf_core.BULK_MAX)
-
     pool = read_plan_pool(cfg, args, extra=seeds)
     within, parent, unread = None, None, []
     if args.parent:
@@ -153,8 +122,10 @@ def cmd_plan_set(args):
     if seeds:
         _admit_named(pool, seeds)
 
+    wf_core.story_facts(pool['universe'], pool['verdict'], pool['facets'].get('effort'))
     plan = wf_core.plan_set(pool['universe'], pool['rank'], seeds=seeds or None,
-                            max_size=size, reasons=pool['reasons'], within=within)
+                            reasons=pool['reasons'], within=within,
+                            max_groups=args.max_groups)
     by_num = pool['by_num']
     excluded = list(plan['excluded'])
     if within is not None:
@@ -175,10 +146,9 @@ def cmd_plan_set(args):
                          'closed_blockers': wf_core.edge_states(
                              ((issue.get('blockedBy') or {}).get('nodes')) or [],
                              issue.get('repo'))[1]})
-    common = {'mode': args.mode, 'size': size, 'size_clamped': clamped,
-              'parent': parent, 'unread': unread, 'excluded': excluded,
-              'nearby': [] if seeds else _nearby(pool, plan, within),
-              'released': released}
+    common = {'mode': args.mode, 'budget': plan['budget'],
+              'max_groups': args.max_groups, 'parent': parent, 'unread': unread,
+              'excluded': excluded, 'released': released}
 
     if not plan['selected']:
         emit('no-candidates', EXIT_NO_CANDIDATES, **common,
@@ -188,11 +158,8 @@ def cmd_plan_set(args):
                             args.body_chars) for s in plan['selected']]
     if not args.claim:
         emit('ok', EXIT_OK, claimed=False, lead=plan['lead'], stories=stories,
-             waves=plan['waves'], unrelated=plan['unrelated'],
-             components=plan['components'], **common,
-             reason='%d stor%s in %d wave%s' % (
-                 len(stories), 'y' if len(stories) == 1 else 'ies',
-                 len(plan['waves']), '' if len(plan['waves']) == 1 else 's'))
+             groups=plan['groups'], weight=plan['weight'], **common,
+             reason=_summary(stories, plan['groups'], plan['weight'], plan['budget']))
     claim_plan(cfg, args, pool, plan, stories, common)
 
 
@@ -248,6 +215,11 @@ def claim_plan(cfg, args, pool, plan, stories, common):
     kept = [dict(s, blocked_by=[b for b in blockers_of[s['number']] if b not in resolved])
             for s in stories if s['number'] not in dropped and s['number'] not in resolved]
     kept = wf_core.plan_bulk_order(kept, max_size=None)[0]
+    # Stories claimed away can empty a group, so the groups left are numbered
+    # again from 1 before anything is built.
+    renumber = {g: i for i, g in enumerate(
+        sorted({s['group'] for s in kept}), start=1)}
+    kept = [dict(s, group=renumber[s['group']]) for s in kept]
     dropped_list = ([{'number': n, 'reason': r} for n, r in dropped.items()]
                     + [{'number': n, 'reason': 'already resolved by #%s, closed' % pr}
                        for n, pr in resolved.items()])
@@ -256,8 +228,8 @@ def claim_plan(cfg, args, pool, plan, stories, common):
              reason='every story in the plan was claimed away, blocked or '
                     'already resolved')
 
-    waves = wf_core.dependency_waves(kept)
-    wave_of = {n: i for i, wave in enumerate(waves) for n in wave}
+    groups = _group_records(kept)
+    wave_of = {n: i for g in groups for i, wave in enumerate(g['waves']) for n in wave}
     kept_numbers = [s['number'] for s in kept]
     ids = {n: by_num[n].get('id') for n in kept_numbers}
     assigned = assign_many(ids)
@@ -290,20 +262,50 @@ def claim_plan(cfg, args, pool, plan, stories, common):
         story['assigned'] = assigned[n][0]
         story['start_date_set'] = bool(extra) and n not in failed
 
-    record = {'lead': kept_numbers[0], 'mode': args.mode, 'parent': args.parent,
-              'branch': None, 'waves': waves,
+    kept = [s for g in groups for n in (m for wave in g['waves'] for m in wave)
+            for s in kept if s['number'] == n]
+    record = {'lead': kept[0]['number'], 'mode': args.mode, 'parent': args.parent,
+              'groups': groups,
               'stories': [{'number': s['number'], 'title': s['title'],
-                           'id': ids.get(s['number']),
+                           'id': ids.get(s['number']), 'group': s['group'],
                            'wave': s['wave'], 'blocked_by': s['blocked_by'],
                            'built': False} for s in kept],
               'dropped': dropped_list}
     _write_set(record)
+    weight = sum(s['weight'] for s in kept)
     emit('ok', EXIT_OK, claimed=True, lead=record['lead'], stories=kept,
-         waves=waves, dropped=dropped_list, bulk_set=BULK_SET.replace(os.sep, '/'),
+         groups=groups, weight=weight, dropped=dropped_list,
+         bulk_set=BULK_SET.replace(os.sep, '/'),
          start_date_message=None if extra else date_msg, **common,
-         reason='claimed %d stor%s in %d wave%s' % (
-             len(kept), 'y' if len(kept) == 1 else 'ies', len(waves),
-             '' if len(waves) == 1 else 's'))
+         reason='claimed ' + _summary(kept, groups, weight, common['budget']))
+
+
+def _summary(stories, groups, weight, budget):
+    waves = sum(len(g['waves']) for g in groups)
+    return '%d stor%s, effort %d of %d, in %d pull request%s and %d wave%s' % (
+        len(stories), 'y' if len(stories) == 1 else 'ies', weight, budget,
+        len(groups), '' if len(groups) == 1 else 's', waves, '' if waves == 1 else 's')
+
+
+def _group_records(stories, previous=()):
+    """The `groups` a bulk set records, from its stories: each group's mode,
+    lead and waves, in group order, keeping any branch `previous` recorded.
+    A group every story has left stays listed, empty, so the numbers a run
+    has already used keep meaning the same group."""
+    before = {g['group']: g for g in previous or ()}
+    numbers = sorted({s['group'] for s in stories} | set(before))
+    out = []
+    for g in numbers:
+        mine = [s for s in stories if s['group'] == g]
+        waves = wf_core.dependency_waves(mine)
+        order = [n for wave in waves for n in wave]
+        out.append({'group': g,
+                    'mode': ((before.get(g) or {}).get('mode')
+                             or (mine[0].get('mode') if mine else None)),
+                    'lead': order[0] if order else None,
+                    'branch': (before.get(g) or {}).get('branch'),
+                    'waves': waves})
+    return out
 
 
 def assign_many(ids):
@@ -351,13 +353,25 @@ def _write_set(record):
 
 
 def _load_set():
+    """The recorded bulk set, in the grouped form whatever wrote it: a record
+    from before groups existed is one group holding every story."""
     try:
         with open(_set_path(), encoding='utf-8') as fh:
-            return json.load(fh)
+            record = json.load(fh)
     except (OSError, ValueError) as exc:
         emit('usage', EXIT_USAGE,
              reason='no bulk set is recorded at %s (%s); run plan-set --claim first'
                     % (BULK_SET.replace(os.sep, '/'), exc))
+    return wf_core.grouped_record(record)
+
+
+def _group(record, number):
+    """The group `number` of a record, or a usage exit naming what there is."""
+    for group in record['groups']:
+        if group['group'] == number:
+            return group
+    emit('usage', EXIT_USAGE, reason='the bulk set has no group %d (it has %s)' % (
+        number, ', '.join(str(g['group']) for g in record['groups']) or 'none'))
 
 
 def cmd_drop_story(args):
@@ -373,7 +387,36 @@ def cmd_drop_story(args):
         emit('usage', EXIT_USAGE,
              reason='#%d is already built on the branch. Finish it, or reset its '
                     'commits off the branch, before dropping it.' % number)
-    drop = {number: args.reason}
+    _drop(cfg, record, {number: args.reason})
+
+
+def cmd_drop_group(args):
+    """`wf drop-group`: return every story in one unbuilt group to the pool,
+    with every unbuilt story in another group that waits on one of them.
+    Refused once any story in the group is built: nothing is dropped after it
+    is built."""
+    record = _load_set()
+    _group(record, args.group)
+    mine = [s for s in record.get('stories') or () if s['group'] == args.group]
+    built = [s['number'] for s in mine if s.get('built')]
+    if built:
+        emit('usage', EXIT_USAGE,
+             reason='group %d already has %s built, so it cannot be dropped. '
+                    'Finish its pull request instead.'
+                    % (args.group, ', '.join('#%d' % n for n in built)))
+    if not mine:
+        emit('ok', EXIT_OK, remaining=[s['number'] for s in record.get('stories') or ()],
+             groups=record['groups'], dropped=[],
+             reason='group %d holds no story' % args.group)
+    _drop(prepare_cfg(), record, {s['number']: args.reason for s in mine})
+
+
+def _drop(cfg, record, drop):
+    """Drop the stories in `drop` ({number: reason}) and every unbuilt story
+    waiting on one of them, return them all to the pool, and record it.
+    Emits and exits."""
+    stories = {s['number']: s for s in record.get('stories') or ()}
+    first = next(iter(drop))
     changed = True
     while changed:
         changed = False
@@ -384,7 +427,7 @@ def cmd_drop_story(args):
                     emit('usage', EXIT_USAGE,
                          reason='#%d is built and waits on #%d, so #%d cannot be '
                                 'dropped without resetting #%d too' % (n, waits[0],
-                                                                        number, n))
+                                                                        first, n))
                 drop[n] = 'waits on #%d, which was dropped' % waits[0]
                 changed = True
 
@@ -401,16 +444,17 @@ def cmd_drop_story(args):
                                else 'stage-backlog'] for n in drop}, ids)
 
     remaining = [s for s in record.get('stories') or () if s['number'] not in drop]
-    waves = wf_core.dependency_waves(remaining)
-    for i, wave in enumerate(waves):
-        for n in wave:
-            next(s for s in remaining if s['number'] == n)['wave'] = i
-    record.update(stories=remaining, waves=waves,
+    groups = _group_records(remaining, record['groups'])
+    for group in groups:
+        for i, wave in enumerate(group['waves']):
+            for n in wave:
+                next(s for s in remaining if s['number'] == n)['wave'] = i
+    record.update(stories=remaining, groups=groups,
                   lead=remaining[0]['number'] if remaining else None,
                   dropped=(record.get('dropped') or [])
                   + [{'number': n, 'reason': r} for n, r in drop.items()])
     _write_set(record)
-    emit('ok', EXIT_OK, remaining=[s['number'] for s in remaining], waves=waves,
+    emit('ok', EXIT_OK, remaining=[s['number'] for s in remaining], groups=groups,
          dropped=[dict({'number': n, 'reason': r,
                         'claim_released': released.get('issue-%d' % n, False),
                         'stage_set': stages[n][0],
@@ -473,17 +517,23 @@ def return_unbuilt(ids, reasons):
 
 
 def cmd_bulk_mark(args):
-    """`wf bulk-mark`: record the shared branch, and each story once built."""
+    """`wf bulk-mark`: record a group's branch, and each story once built."""
     record = _load_set()
+    group = _group(record, args.group)
     if args.branch:
-        record['branch'] = args.branch
+        group['branch'] = args.branch
     by_number = {s['number']: s for s in record.get('stories') or ()}
     for n in args.built or ():
         if n not in by_number:
             emit('usage', EXIT_USAGE, reason='#%d is not in the bulk set' % n)
         by_number[n]['built'] = True
     _write_set(record)
-    emit('ok', EXIT_OK, branch=record.get('branch'),
-         built=[s['number'] for s in record.get('stories') or () if s.get('built')],
-         unbuilt=[s['number'] for s in record.get('stories') or () if not s.get('built')],
-         waves=record.get('waves'))
+    mine = [s for s in record.get('stories') or () if s['group'] == args.group]
+    emit('ok', EXIT_OK, group=args.group, branch=group.get('branch'),
+         built=[s['number'] for s in mine if s.get('built')],
+         unbuilt=[s['number'] for s in mine if not s.get('built')],
+         waves=group.get('waves'),
+         groups=[{'group': g['group'], 'branch': g.get('branch'),
+                  'stories': [s['number'] for s in record.get('stories') or ()
+                              if s['group'] == g['group']]}
+                 for g in record['groups']])

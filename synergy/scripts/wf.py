@@ -152,7 +152,7 @@ from wf_issue_apply import cmd_issue_apply
 from wf_issue_audit import AUDIT_SPEC_DEFAULT, cmd_issue_audit
 from wf_pick import cmd_pick, cmd_refine
 from wf_pick_candidates import cmd_candidates
-from wf_plan import cmd_bulk_mark, cmd_drop_story, cmd_plan_set
+from wf_plan import cmd_bulk_mark, cmd_drop_group, cmd_drop_story, cmd_plan_set
 from wf_post_merge import cmd_post_merge
 from wf_preflight import cmd_config_audit, cmd_preflight
 from wf_review import (
@@ -216,19 +216,21 @@ def build_parser():
                            '0 for the whole body)')
     cand.add_argument('--parent', type=int, default=None,
                       help='the set `plan-set --parent` would choose under this '
-                           'Epic or Feature: related leaves in build order, '
-                           'prerequisites outside the tree pulled in, capped by '
-                           '--size; everything else is listed in `excluded` '
-                           'with its reason')
-    cand.add_argument('--size', type=int, default=wf_core.BULK_MAX,
-                      help='with --parent, the most leaves to take, highest '
-                           'priority first (default %d)' % wf_core.BULK_MAX)
+                           'Epic or Feature: leaves in build order, '
+                           'prerequisites outside the tree pulled in, within '
+                           'the effort budget; everything else is listed in '
+                           '`excluded` with its reason')
+    cand.add_argument('--max-groups', type=int, default=wf_core.MAX_GROUPS,
+                      choices=range(1, wf_core.MAX_GROUPS + 1),
+                      help='with --parent, the most pull requests the set may '
+                           'be split into (default %d)' % wf_core.MAX_GROUPS)
     cand.set_defaults(func=cmd_candidates)
 
     ps = sub.add_parser('plan-set',
-                        help='choose a set of %d to %d connected stories for one '
-                             'bulk run, in build order and waves; --claim claims it'
-                             % (wf_core.BULK_MIN, wf_core.BULK_MAX))
+                        help='choose a set of stories for one bulk run that fills '
+                             'an effort budget of %d, split into pull requests, '
+                             'in build order and waves; --claim claims it'
+                             % wf_core.BULK_BUDGET)
     ps.add_argument('--issue', type=int, action='append', default=None,
                     help='a story the set must hold (repeatable); every open '
                          'prerequisite this run can build joins it')
@@ -238,10 +240,11 @@ def build_parser():
                     help='selection mode, applied exactly as `pick` applies it')
     ps.add_argument('--max-effort', default=None, choices=['low', 'medium', 'high'],
                     help='skip anything the org has estimated larger than this')
-    ps.add_argument('--size', type=int, default=wf_core.BULK_MAX,
-                    help='the most stories, prerequisites included (%d to %d, '
-                         'default %d)' % (wf_core.BULK_MIN, wf_core.BULK_MAX,
-                                          wf_core.BULK_MAX))
+    ps.add_argument('--max-groups', type=int, default=wf_core.MAX_GROUPS,
+                    choices=range(1, wf_core.MAX_GROUPS + 1),
+                    help='the most pull requests the set may be split into: 1 '
+                         'when this run cannot start a separate reviewer '
+                         '(default %d)' % wf_core.MAX_GROUPS)
     ps.add_argument('--body-chars', type=int, default=600,
                     help='truncate each body to this many characters (0 for all)')
     ps.add_argument('--claim', action='store_true',
@@ -257,22 +260,37 @@ def build_parser():
                     help='why, in a few words; it is commented on the issue')
     dr.set_defaults(func=cmd_drop_story)
 
+    dg = sub.add_parser('drop-group',
+                        help='return every story in one unbuilt group of the bulk '
+                             'set to the pool, with every unbuilt story waiting '
+                             'on one of them')
+    dg.add_argument('--group', type=int, required=True, help='the group to drop')
+    dg.add_argument('--reason', required=True,
+                    help='why, in a few words; it is commented on each issue')
+    dg.set_defaults(func=cmd_drop_group)
+
     bm = sub.add_parser('bulk-mark',
-                        help='record the bulk branch, or a story as built')
-    bm.add_argument('--branch', default=None, help='the shared branch')
+                        help="record a group's branch, or a story as built")
+    bm.add_argument('--group', type=int, default=1,
+                    help='the group whose branch --branch records (default 1)')
+    bm.add_argument('--branch', default=None, help="the group's branch")
     bm.add_argument('--built', type=int, action='append', default=None,
                     help='a story now committed on the branch (repeatable)')
     bm.set_defaults(func=cmd_bulk_mark)
 
     bsc = sub.add_parser('bulk-schedule',
-                         help="split each wave of the bulk set into batches that "
-                              "can be built in parallel, from the files "
-                              ".claude/plan.md lists (no network)")
+                         help="split each wave of one group of the bulk set into "
+                              "batches that can be built in parallel, from the "
+                              "files .claude/plan.md lists (no network)")
+    bsc.add_argument('--group', type=int, default=1,
+                     help='the group to schedule (default 1)')
     bsc.set_defaults(func=cmd_bulk_schedule)
 
     bi = sub.add_parser('bulk-integrate',
                         help="cherry-pick a wave's builder branches onto the shared "
                              'branch, push, mark them built and delete them')
+    bi.add_argument('--group', type=int, default=1,
+                    help='the group whose branch the wave lands on (default 1)')
     bi.add_argument('--wave', type=int, required=True, help='the wave to integrate')
     bi.add_argument('--keep-branches', action='store_true',
                     help='leave the temporary {branch}--{number} branches on the remote')

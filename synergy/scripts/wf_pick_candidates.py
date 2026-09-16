@@ -23,9 +23,8 @@ def cmd_candidates(args):
 
     `pick` collapses select-claim-branch into one call, which is exactly right
     when the caller wants *a* story. `bulk-execute` needs the opposite: it has
-    to see the pool before it can decide which two to seven stories belong in
-    one pull request, and that decision is a judgement about relatedness that
-    no sort order can make. This command gives it the same filtered, sorted
+    to see the pool without claiming anything. This command gives it the
+    same filtered, sorted
     pool `pick` would walk — blank or Backlog `Stage`, sprint narrowing,
     ownership filter, mode filter, any effort ceiling, and
     the priority-then-effort sort — and then stops. Nothing is claimed, nothing
@@ -188,8 +187,8 @@ def candidates_under_parent(args, cfg):
     The same choice `plan-set --parent N` makes, because it is the same call:
     `wf_core.plan_set` over the pool, limited to N's leaves. A leaf waiting on
     another leaf is taken after it; a prerequisite outside the tree is taken
-    when a leaf needs it, and says so in `why`. Only related leaves share a
-    set. Non-code work is never taken. Every other leaf under N is listed in
+    when a leaf needs it, and says so in `why`. The leaves fill the effort
+    budget by priority, linked or not. Non-code work is never taken. Every other leaf under N is listed in
     `excluded` with its reason, so a short set reads as a decision rather than
     as a gap.
     """
@@ -211,8 +210,9 @@ def candidates_under_parent(args, cfg):
     group_of = {n: g for g, members in groups.items() for n in members}
     pool = read_plan_pool(cfg, args, extra=leaves)
     by_num, facets, universe = pool['by_num'], pool['facets'], pool['universe']
-    plan = wf_core.plan_set(universe, pool['rank'], max_size=args.size,
-                            reasons=pool['reasons'], within=set(leaves))
+    wf_core.story_facts(universe, pool['verdict'], facets.get('effort'))
+    plan = wf_core.plan_set(universe, pool['rank'], reasons=pool['reasons'],
+                            within=set(leaves), max_groups=args.max_groups)
     chosen = [s['number'] for s in plan['selected']]
 
     titles = _tree_titles(tree)
@@ -264,7 +264,8 @@ def candidates_under_parent(args, cfg):
     emit('ok', EXIT_OK, mode=args.mode, parent=parent,
          feature=features.pop() if len(features) == 1 else None,
          total=len(listed), listed=len(listed), candidates=listed,
-         lead=plan['lead'], waves=plan['waves'],
+         lead=plan['lead'], groups=plan['groups'], weight=plan['weight'],
+         budget=plan['budget'],
          excluded=excluded, unread=unread,
          reason='%d stor%s under #%d%s' % (len(listed), 'y' if len(listed) == 1
                                            else 'ies', args.parent, note))

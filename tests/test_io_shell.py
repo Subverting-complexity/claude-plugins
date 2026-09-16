@@ -4657,7 +4657,7 @@ class TestCandidatesUnderParent(WfCommandTestCase):
                          ['Backlog', 'Blocked'])
         self.assertEqual([c['wave'] for c in payload['candidates']], [0, 1])
         self.assertEqual(payload['candidates'][1]['blocked_by'], [51])
-        self.assertEqual(payload['waves'], [[51], [52]])
+        self.assertEqual(payload['groups'][0]['waves'], [[51], [52]])
         self.assertEqual(payload['feature'], 50)
         self.assertIn('Non-code', self._reason(payload, 53))
 
@@ -4692,16 +4692,16 @@ class TestCandidatesUnderParent(WfCommandTestCase):
         self.assertIn('no open blocker', self._reason(payload, 61))
 
     def test_a_blocked_leaf_keeps_its_priority_against_the_pool(self):
-        """A High leaf waiting on a Medium one is built next, ahead of a Low
-        leaf that was ready all along, and `--size` keeps it."""
+        """A High leaf waiting on a Medium one is built next, and the Medium
+        blocker carries its High. A Low leaf that was ready all along is two
+        levels below, so it waits for another run and says why."""
         tree = _node(50, 'Feature', _node(51, 'User Story'), _node(52, 'User Story'),
                      _node(53, 'User Story'))
         priority = {51: 'Low', 52: 'Medium', 53: 'High'}
         pool = [_tree_leaf(52), _tree_leaf(51), _tree_leaf(53, 'Blocked', [52])]
         _, payload = self._run(tree, pool, priority=priority)
-        self.assertEqual([c['number'] for c in payload['candidates']], [52, 53, 51])
-        _, payload = self._run(tree, pool, priority=priority, argv=('--size', '2'))
         self.assertEqual([c['number'] for c in payload['candidates']], [52, 53])
+        self.assertIn('Priority', self._reason(payload, 51))
 
     def test_a_prerequisite_outside_the_tree_is_taken_and_says_why(self):
         """`within` holds for everything but a leaf's own prerequisite."""

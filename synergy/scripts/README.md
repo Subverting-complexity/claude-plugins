@@ -12,7 +12,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 
 | Module | Responsibility | Lines |
 |--------|----------------|-------|
-| `wf.py` | Entry point: argument parser, dispatch, re-exports | 426 |
+| `wf.py` | Entry point: argument parser, dispatch, re-exports | 534 |
 | `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 142 |
 | `wf_config.py` | Repo root (asked of git once per working directory), `ClaudeProject.md` parsing, the config cache, `config` | 260 |
 | `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 498 |
@@ -23,11 +23,11 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 268 |
 | `wf_unblock.py` | The unblock sweep, `unblock` | 288 |
 | `wf_pick.py` | The `pick` and `refine` entry point and the result a pick returns | 207 |
-| `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 356 |
+| `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 360 |
 | `wf_pick_tree.py` | The sub-issue tree under an Epic or Feature, one named issue checked as a pick candidate | 153 |
-| `wf_pick_candidates.py` | `candidates`, including `--parent` | 270 |
-| `wf_plan.py` | Planning and claiming a bulk set, `plan-set`, `drop-story`, `bulk-mark` | 391 |
-| `wf_bulk_build.py` | Scheduling a bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 227 |
+| `wf_pick_candidates.py` | `candidates`, including `--parent` | 271 |
+| `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 539 |
+| `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
 | `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, `post-merge` | 397 |
 | `wf_review.py` | PR pools and review labels, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 411 |
 | `wf_issue_apply.py` | `issue-apply` | 777 |
@@ -39,9 +39,9 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_fields.py` | Label resolution, native issue types, field vocabularies and ranks | 419 |
 | `wf_core_stage.py` | `Stage` names, work scope, which stage an issue belongs in, stage drift targets | 452 |
 | `wf_core_select.py` | Candidate filter and sort, native type filtering, backlog mode | 308 |
-| `wf_core_pool.py` | The verdict on every open issue in the pool, waiting work and inherited priority | 375 |
+| `wf_core_pool.py` | The verdict on every open issue in the pool, waiting work, inherited priority and work mode | 584 |
 | `wf_core_refs.py` | Parent parsing, closing references, branch names, dependency edges, unblock verdicts | 268 |
-| `wf_core_bulk.py` | Planning a dependency-ordered bulk set and its waves | 453 |
+| `wf_core_bulk.py` | Filling a bulk set's effort budget, splitting it into groups, ordering each into waves | 477 |
 | `wf_core_claims.py` | Sibling PRs that would duplicate a claim, claim reaping | 110 |
 | `wf_core_spec.py` | The issue hierarchy, spec validation, value shaping and batching | 562 |
 | `wf_core_audit.py` | What an existing issue is missing or contradicts | 344 |
@@ -50,7 +50,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_preflight.py` | Config sections, label and field drift, instruction files | 584 |
 | `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 307 |
 | `wf_core_scratch.py` | Which `.claude/` files are run scratch, the managed `info/exclude` block | 70 |
-| `wf_core_schedule.py` | Reading `.claude/plan.md`, which stories in a wave share files, parallel batches | 186 |
+| `wf_core_schedule.py` | Reading `.claude/plan.md`, a bulk set record by group, which stories in a wave share files, parallel batches | 210 |
 
 ## Commands
 
@@ -77,16 +77,20 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue 42 --checkout
 # List the pool without claiming anything
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --limit 0
 
-# …or plan a bulk set: connected stories in build order and waves, blockers
-# first, from the pool, named stories (--issue) or an Epic or Feature (--parent);
-# --claim claims, assigns and sets In Progress for every story in it
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --parent 42 --size 7 --claim
+# …or plan a bulk set: the stories that fill an effort budget, split into at
+# most --max-groups pull requests, blockers first, from the pool, named stories
+# (--issue) or an Epic or Feature (--parent); --claim claims, assigns and sets
+# In Progress for every story in it
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --parent 42 --max-groups 2 --claim
 
-# Split the recorded set's next waves into batches that share no planned file
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" bulk-schedule
+# Split one group's next waves into batches that share no planned file
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" bulk-schedule --group 1
 
-# Cherry-pick a wave's parallel builder branches onto the shared branch, push once
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" bulk-integrate --wave 1
+# Cherry-pick a wave's parallel builder branches onto the group's branch, push once
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" bulk-integrate --group 1 --wave 1
+
+# Return a whole unbuilt group to the pool
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" drop-group --group 2 --reason "review ran inline"
 
 # Send a claimed issue back: Stage to Needs refinement, comment, unassign, release
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" refine --issue 42 --body-file .claude/42-body.md
@@ -537,7 +541,7 @@ The pool is ordered by `Priority`, then `Effort`, then issue number. `--mode` an
 
 `pick --issue N` on an issue with open blockers does not refuse it when this run can build them. It plans the chain (`wf_core.plan_set`), sets N to `Blocked`, claims the first prerequisite that is ready, and returns it with `prerequisite_for` (`number`, `title`, `build_order`). Only a blocker nobody here may build ends the pick, with `all-blocked` and a reason naming it. A pick with `--sibling` is never redirected, because a bulk claim must take exactly the story it names.
 
-`plan-set` does the same for a bulk run. Its universe is every pool story plus every waiting story (blank, `Backlog` or `Blocked`, code work, unassigned, unclaimed, its edges fully read); a `Blocked` story whose blockers have all closed counts as ready and is listed in `released`. Two stories are related by a blocked-by edge either way, a shared prerequisite, a shared parent, or the same Epic. A blocker in another repository is kept as `owner/name#N`: open, it excludes the story; closed, it is satisfied. `--mode` and `--max-effort` never hold back a prerequisite a code agent may build. Named (`--issue`, repeatable): each named story plus the prerequisites it needs. `--parent N`: the lead and its group come from the stories under N, and a prerequisite outside N still joins; `candidates --parent N` returns the same set without claiming. Neither: the best-ranked related group of at least two whose chains fit `--size` (2 to 7), stories added by closeness to the lead and a blocker never cut while its dependent stays; a single story only when no group exists. `waves` groups the build order so no story shares a wave with anything it waits on. Without `--claim` it only reads, and `nearby` lists the best unlinked ready stories. With `--claim` it takes every claim ref at once, drops a story claimed away, blocked or resolved together with everything waiting on it, then assigns in one mutation and writes `Stage` and `Start date` in another, and records the set in `.claude/bulk-set.json`. `drop-story` returns a story and its unbuilt dependents to the pool, and `bulk-mark` records the branch and each story built.
+`plan-set` does the same for a bulk run. Its universe is every pool story plus every waiting story (blank, `Backlog` or `Blocked`, code work, unassigned, unclaimed, its edges fully read); a `Blocked` story whose blockers have all closed counts as ready and is listed in `released`. A blocker in another repository is kept as `owner/name#N`: open, it excludes the story; closed, it is satisfied. `--mode` and `--max-effort` never hold back a prerequisite a code agent may build. Every story comes with its whole prerequisite chain or not at all, and only while the set keeps three rules (`wf_core.plan_set`): its `Effort` adds up to no more than `BULK_BUDGET` (7, with Low 1, Medium 2, High 6 and an unset value costing Medium); no two stories are more than one `Priority` level apart, each read as the priority it inherits; and `split_groups` can cut it on the feature/maintenance boundary into at most `--max-groups` groups (1 or 2), a group holding a prerequisite first. Named (`--issue`, repeatable): each named story plus the prerequisites it needs, and one that breaks a rule is in `excluded` with the rule. `--parent N`: the stories under N, and a prerequisite outside N still joins; `candidates --parent N` returns the same set without claiming. Neither: the pool in rank order, linked or not, a story joining a started group before one that would start a second. `groups` lists each group's `mode`, `lead`, `stories` and `waves`, so no story shares a wave with anything it waits on. With `--claim` it takes every claim ref at once, drops a story claimed away, blocked or resolved together with everything waiting on it, then assigns in one mutation and writes `Stage` and `Start date` in another, and records the set in `.claude/bulk-set.json` with a `branch` per group. `drop-story` returns a story and its unbuilt dependents to the pool, `drop-group` a whole unbuilt group, and `bulk-mark --group G` records the group's branch and each story built. A `bulk-set.json` written before groups existed is read as one group.
 
 ## Scope / deferrals
 

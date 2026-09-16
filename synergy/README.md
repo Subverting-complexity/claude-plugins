@@ -20,7 +20,7 @@ Run both from a normal shell, not inside a Claude Code session, then restart the
 | `/synergy:execute --mode maintenance` | Pick and fix the next bug/security/debt issue |
 | `/synergy:execute --mode audit` | Audit codebase, create issues (no code)  |
 | `/synergy:execute --no-merge`   | Skip the merge for one run on a project that has merging enabled |
-| `/synergy:bulk-execute`         | Plan 2-7 connected stories, blockers first, and build them as one branch, one PR, one review |
+| `/synergy:bulk-execute`         | Plan the stories that fill an effort budget, blockers first, and build them as at most two PRs, each reviewed and merged |
 | `/synergy:bulk-execute 41 43 47` | Build exactly these stories together     |
 | `/synergy:pr-review`          | Review (or rework + re-review) the next PR |
 | `/synergy:build`                | Plan, build, verify and commit a local task, with no issue or PR |
@@ -183,7 +183,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | Skill                 | What it does                                       |
 | --------------------- | ------------------------------------------------- |
 | `execute`             | Orchestrator: pick → build → PR → review → merge   |
-| `bulk-execute`        | The same loop for 2-7 connected stories at once   |
+| `bulk-execute`        | The same loop for the stories that fill an effort budget, as at most two PRs |
 | `code-architect`      | Architecture design and audit (SOLID + Clean)     |
 | `build`               | Orchestrator for local work: plan → build → verify → commit, no issue or PR |
 | `pr-review`           | Deep PR review, labels, optional auto-merge; also reviews a local change, with a React Native checklist |

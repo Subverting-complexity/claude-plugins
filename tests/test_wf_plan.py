@@ -100,10 +100,12 @@ class TestPlanSet(Harness):
             code, payload = capture(['plan-set'])
         self.assertEqual(code, wf.EXIT_OK)
         self.assertFalse(payload['claimed'])
-        self.assertEqual([s['number'] for s in payload['stories']], [1, 2])
-        self.assertEqual(payload['waves'], [[1], [2]])
+        # #3 is High and #1 carries #2's Urgent: one level apart, so all three
+        # fit a budget of 7 (unestimated stories cost Medium).
+        self.assertEqual([s['number'] for s in payload['stories']], [1, 2, 3])
+        self.assertEqual(payload['groups'][0]['waves'], [[1, 3], [2]])
         self.assertEqual(payload['stories'][1]['blocked_by'], [1])
-        self.assertEqual([n['number'] for n in payload['nearby']], [3])
+        self.assertEqual((payload['weight'], payload['budget']), (6, 7))
 
     def test_naming_the_dependent_brings_its_prerequisite(self):
         issues = [issue(1), issue(2, stage='Blocked', blockers=[1]), issue(3)]
@@ -121,13 +123,25 @@ class TestPlanSet(Harness):
         self.assertIn('#9', payload['excluded'][0]['reason'])
         self.assertIn('assigned', payload['excluded'][0]['reason'])
 
-    def test_an_out_of_range_size_is_clamped_and_reported(self):
-        issues = [issue(1), issue(2, blockers=[1])]
-        with self.pool(issues, {}):
-            code, payload = capture(['plan-set', '--size', '12'])
-        self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['size'], wf_core.BULK_MAX)
-        self.assertEqual(payload['size_clamped'], 12)
+    def test_size_is_gone_and_max_groups_is_one_or_two(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            for argv in (['plan-set', '--size', '3'], ['plan-set', '--max-groups', '3']):
+                with self.subTest(argv=argv), self.assertRaises(SystemExit):
+                    wf.build_parser().parse_args(argv)
+        self.assertEqual(wf.build_parser().parse_args(['plan-set']).max_groups, 2)
+
+    def test_a_bug_and_a_story_become_two_groups_or_one_with_max_groups_1(self):
+        issues = [issue(1), issue(2)]
+        issues[0]['type'] = 'Bug'
+        the_facets = facets(issues, {})
+        the_facets['types'][1] = 'Bug'
+        for argv, expected in (([], [[1], [2]]), (['--max-groups', '1'], [[1]])):
+            with self.subTest(argv=argv), \
+                    mock.patch.object(wf, 'read_pool', return_value=(True, issues, '', set())), \
+                    mock.patch.object(wf, 'load_issue_facets', return_value=the_facets):
+                code, payload = capture(['plan-set'] + argv)
+            self.assertEqual(code, wf.EXIT_OK)
+            self.assertEqual([g['stories'] for g in payload['groups']], expected)
 
     def _claim(self, issues, outcomes):
         mutation = json.dumps({'data': {'a%d' % i['number']: {'assignable': {'id': i['id']}}
@@ -158,7 +172,10 @@ class TestPlanSet(Harness):
         stages.assert_called_once()
         self.assertEqual(sorted(stages.call_args[0][3]), [1, 2])
         record = self.bulk_set()
-        self.assertEqual(record['waves'], [[1], [2]])
+        self.assertEqual([(g['group'], g['branch'], g['waves']) for g in record['groups']],
+                         [(1, None, [[1], [2]])])
+        self.assertEqual([s['group'] for s in record['stories']], [1, 1])
+        self.assertNotIn('waves', record)
         self.assertEqual([s['built'] for s in record['stories']], [False, False])
 
     def test_a_lost_blocker_takes_its_dependent_out_and_releases_it(self):
@@ -181,7 +198,9 @@ class TestSelectionAcrossFilters(Harness):
             return capture(['plan-set'] + list(argv))
 
     def test_a_prerequisite_the_mode_holds_back_is_still_taken(self):
-        """`--mode` chooses which work to start, not what that work needs."""
+        """`--mode` chooses which work to start, not what that work needs. The
+        prerequisite is maintenance work, so it is its own pull request, built
+        first."""
         issues = [issue(1), issue(2, blockers=[1])]
         issues[0]['type'] = 'Bug'
         the_facets = facets(issues, {})
@@ -189,6 +208,8 @@ class TestSelectionAcrossFilters(Harness):
         code, payload = self._plan(issues, the_facets, ['--mode', 'feature'])
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual([s['number'] for s in payload['stories']], [1, 2])
+        self.assertEqual([(g['mode'], g['stories']) for g in payload['groups']],
+                         [('maintenance', [1]), ('feature', [2])])
 
     def test_a_prerequisite_a_person_owns_still_excludes(self):
         issues = [issue(1), issue(2, blockers=[1])]
@@ -210,13 +231,15 @@ class TestSelectionAcrossFilters(Harness):
                          [{'number': 5, 'title': 'story 5', 'closed_blockers': [8]}])
         self.assertEqual([s['number'] for s in payload['stories']], [5])
 
-    def test_nearby_lists_only_stories_that_are_ready(self):
+    def test_unlinked_stories_fill_the_budget_and_nothing_is_left_to_judge(self):
         issues = [issue(1, parent=40), issue(2, parent=40), issue(3),
                   issue(4, blockers=[9]), issue(9, assigned=True)]
-        code, payload = self._plan(issues, facets(issues, {}), [])
+        the_facets = facets(issues, {})
+        the_facets['effort'] = {1: 'Medium', 2: 'Medium', 3: 'Medium'}
+        code, payload = self._plan(issues, the_facets, [])
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual([s['number'] for s in payload['stories']], [1, 2])
-        self.assertEqual([n['number'] for n in payload['nearby']], [3])
+        self.assertEqual([s['number'] for s in payload['stories']], [1, 2, 3])
+        self.assertNotIn('nearby', payload)
 
 
 class TestDropAndMark(Harness):
@@ -225,7 +248,18 @@ class TestDropAndMark(Harness):
         os.makedirs(os.path.join(self.root, '.claude'), exist_ok=True)
         with open(os.path.join(self.root, '.claude', 'bulk-set.json'), 'w',
                   encoding='utf-8') as fh:
-            json.dump({'lead': 1, 'mode': 'story', 'branch': None,
+            json.dump({'lead': 1, 'mode': 'story',
+                       'groups': [{'group': g, 'branch': None,
+                                   'waves': wf_core.dependency_waves(
+                                       [s for s in stories if s.get('group', 1) == g])}
+                                  for g in sorted({s.get('group', 1) for s in stories})],
+                       'stories': stories, 'dropped': []}, fh)
+
+    def write_legacy(self, stories):
+        os.makedirs(os.path.join(self.root, '.claude'), exist_ok=True)
+        with open(os.path.join(self.root, '.claude', 'bulk-set.json'), 'w',
+                  encoding='utf-8') as fh:
+            json.dump({'lead': 1, 'mode': 'story', 'branch': 'feature/1/old',
                        'waves': wf_core.dependency_waves(stories),
                        'stories': stories, 'dropped': []}, fh)
 
@@ -276,7 +310,61 @@ class TestDropAndMark(Harness):
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(payload['built'], [1])
         self.assertEqual(payload['unbuilt'], [2])
-        self.assertEqual(self.bulk_set()['branch'], 'feature/1/x')
+        self.assertEqual(self.bulk_set()['groups'][0]['branch'], 'feature/1/x')
+
+    def test_bulk_mark_records_each_groups_branch_on_its_own(self):
+        self.write([{'number': 1, 'title': 'a', 'blocked_by': [], 'built': False, 'group': 1},
+                    {'number': 2, 'title': 'b', 'blocked_by': [], 'built': False, 'group': 2}])
+        capture(['bulk-mark', '--branch', 'feature/1/x', '--built', '1'])
+        code, payload = capture(['bulk-mark', '--group', '2', '--branch', 'feature/2/y'])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual((payload['built'], payload['unbuilt']), ([], [2]))
+        self.assertEqual([g['branch'] for g in self.bulk_set()['groups']],
+                         ['feature/1/x', 'feature/2/y'])
+        code, payload = capture(['bulk-mark', '--group', '3', '--branch', 'z'])
+        self.assertEqual(code, wf.EXIT_USAGE)
+
+    def test_a_record_from_before_groups_is_read_as_one_group(self):
+        self.write_legacy([{'number': 1, 'title': 'a', 'blocked_by': [], 'built': False}])
+        code, payload = capture(['bulk-mark', '--built', '1'])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['branch'], 'feature/1/old')
+        self.assertEqual(self.bulk_set()['groups'][0]['branch'], 'feature/1/old')
+
+    def _drop_group(self, stories, group):
+        self.write(stories)
+        numbers = [s['number'] for s in stories]
+        answer = json.dumps({'data': dict(
+            {'u%d' % n: {'assignable': {'id': 'I_%d' % n}} for n in numbers},
+            **{'c%d' % n: {'subject': {'id': 'I_%d' % n}} for n in numbers})})
+        with mock.patch.object(wf, 'release_claims',
+                               side_effect=lambda t: {x: True for x in t}), \
+                mock.patch.object(wf, 'gh_graphql',
+                                  return_value=(True, {'viewer': {'id': 'U_1'}}, '')), \
+                mock.patch.object(wf, '_graphql_json', return_value=(0, answer, '')), \
+                mock.patch.object(wf, 'set_stages',
+                                  side_effect=lambda cfg, wanted, ids=None:
+                                  {n: (True, '') for n in wanted}):
+            return capture(['drop-group', '--group', str(group), '--reason', 'inline review'])
+
+    def test_drop_group_returns_a_whole_unbuilt_group_and_keeps_the_numbers(self):
+        code, payload = self._drop_group(
+            [{'number': 1, 'title': 'a', 'id': 'I_1', 'blocked_by': [], 'built': True, 'group': 1},
+             {'number': 2, 'title': 'b', 'id': 'I_2', 'blocked_by': [], 'built': False, 'group': 2},
+             {'number': 3, 'title': 'c', 'id': 'I_3', 'blocked_by': [2], 'built': False,
+              'group': 2}], 2)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['remaining'], [1])
+        self.assertEqual(sorted(d['number'] for d in payload['dropped']), [2, 3])
+        self.assertEqual([(g['group'], g['waves']) for g in self.bulk_set()['groups']],
+                         [(1, [[1]]), (2, [])])
+
+    def test_drop_group_refuses_a_group_with_anything_built(self):
+        code, payload = self._drop_group(
+            [{'number': 1, 'title': 'a', 'id': 'I_1', 'blocked_by': [], 'built': True, 'group': 1}],
+            1)
+        self.assertEqual(code, wf.EXIT_USAGE)
+        self.assertIn('#1', payload['reason'])
 
 
 class TestPickBuildsThePrerequisite(Harness):

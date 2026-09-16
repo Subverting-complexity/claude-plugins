@@ -167,6 +167,7 @@ def evaluate_pool(issues, mode='story', type_map=None, classification_map=None,
                   named pick accepts, nobody holds it, and it is code work
       epic        {number: nearest Epic ancestor}
       effective_priority   the Priority each issue carries, inherited
+      work_mode   {number: 'feature' or 'maintenance'} for every leaf
     """
     type_map = type_map or {}
     priority_map = priority_map or {}
@@ -415,11 +416,43 @@ def evaluate_pool(issues, mode='story', type_map=None, classification_map=None,
         f['stories'] = [e['number'] for e in ordered([leaves[s] for s in f['stories']])]
     pool = ordered(leaf_entries + list(features.values()) + list(epics.values()))
     ranked = ordered(pool + list(unclear.values()))
+    work_mode = {n: _work_mode(n, kind, nearest_feature, classification_map)
+                 for n in by_num if kind(n) not in HIERARCHY_CONTAINER_TYPES}
     return {'ranked': ranked, 'pool': pool, 'excluded': excluded,
             'blocked': blocked, 'unclassified': unclassified,
             'oversized': oversized, 'waiting': waiting,
             'releasable': releasable, 'buildable': buildable, 'epic': epic,
-            'effective_priority': effective}
+            'effective_priority': effective, 'work_mode': work_mode}
+
+
+MODE_FEATURE = 'feature'
+MODE_MAINTENANCE = 'maintenance'
+
+
+def _work_mode(number, kind, nearest_feature, classification_map):
+    """Whether a leaf is feature or maintenance work, whatever `--mode` the
+    run has: a `Bug` or `Chore`, or a story under a Feature classified as
+    maintenance, is maintenance; anything else is feature work. A pull request
+    never holds both, so a bulk set is split on this."""
+    if kind(number) in NATIVE_MAINTENANCE_TYPES:
+        return MODE_MAINTENANCE
+    feature = nearest_feature(number)
+    if feature and is_maintenance_classification((classification_map or {}).get(feature)):
+        return MODE_MAINTENANCE
+    return MODE_FEATURE
+
+
+def story_facts(universe, verdict, effort_map):
+    """Put on each story in `universe`, in place, what the bulk budget reads:
+    its `effort` value, the `priority` it carries (inherited from the most
+    urgent story waiting on it), and its work `mode`."""
+    effective = verdict.get('effective_priority') or {}
+    modes = verdict.get('work_mode') or {}
+    for n, story in universe.items():
+        story['effort'] = (effort_map or {}).get(n)
+        story['priority'] = effective.get(n)
+        story['mode'] = modes.get(n, MODE_FEATURE)
+    return universe
 
 
 def plan_universe(verdict, issues, claimed=()):

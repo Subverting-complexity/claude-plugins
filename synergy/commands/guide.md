@@ -52,7 +52,7 @@ gh auth status 2>&1 | head -3
 > - `/synergy:execute 42` → Work on a specific issue.
 > - `/synergy:execute --mode feature` → Pick only feature stories.
 > - `/synergy:execute --mode maintenance` → Pick and fix the next bug, security issue, architecture problem, or tech debt item. (Shorthand: `--mode bug` also works.)
-> - `/synergy:bulk-execute` → Build two to seven **connected** stories as one change: one branch, one pull request, one review. Stories are connected when one waits on another, when they wait on the same issue, or when they share a parent. Blockers are built first and independent stories can be built in parallel.
+> - `/synergy:bulk-execute` → Build the stories that fill an **effort budget** (Low 1, Medium 2, High 6, up to 7), linked or not and within one step of `Priority`, as at most two pull requests: feature and maintenance work never share one, and the first is merged before the second is built. Blockers are built first and independent stories can be built in parallel.
 > - `/synergy:bulk-execute 41 43 47` → Build exactly those stories together, plus any open issue they wait on that can be built in the same run.
 >
 > **Local work (no issue, no pull request):**

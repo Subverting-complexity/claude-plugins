@@ -116,6 +116,10 @@ def read_plan_pool(cfg, args, extra=()):
                      | {int(n) for n in extra if int(n) in present})
     facets = load_issue_facets(cfg, numbers, issues=issues)
     type_map, classification_map = _mode_maps(cfg, args.mode, facets)
+    if args.mode == 'story':
+        # `story` mode filters on no classification, but a bulk set is still
+        # split by whether each story is feature or maintenance work.
+        classification_map = facets.get('classification') or None
     verdict = wf_core.evaluate_pool(
         issues, mode=args.mode, type_map=type_map,
         classification_map=classification_map, priority_map=facets['priority'],
@@ -168,7 +172,7 @@ def prerequisite_pick(args, cfg, cand, blockers):
                         'parent': (by_num.get(number) or {}).get('parent'),
                         'epic': (pool['verdict'].get('epic') or {}).get(number)}
     wf_core.admit_prerequisites(universe, pool['verdict'], by_num, pool['reasons'])
-    plan = wf_core.plan_set(universe, pool['rank'], seeds=[number], max_size=None,
+    plan = wf_core.plan_set(universe, pool['rank'], seeds=[number], budget=None,
                             reasons=pool['reasons'])
     side_effects = []
     if wf_core.is_available_stage((by_num.get(number) or {}).get('stage')):

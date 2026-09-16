@@ -59,9 +59,9 @@ def pool_numbers(verdict):
     return [e['number'] for e in verdict['pool']]
 
 
-def node(blockers=(), parent=None, epic=None):
+def node(blockers=(), parent=None, epic=None, effort='Low'):
     return {'blockers': None if blockers is None else list(blockers),
-            'parent': parent, 'epic': epic}
+            'parent': parent, 'epic': epic, 'effort': effort}
 
 
 def chosen(plan):
@@ -113,34 +113,30 @@ class TestCrossRepositoryBlockers(unittest.TestCase):
 
 
 class TestOpenPoolPlanning(unittest.TestCase):
-    """2. The best related group, not the best single story."""
+    """2. The budget filled by rank, linked or not."""
 
-    def test_a_related_pair_is_chosen_over_a_higher_ranked_loner(self):
+    def test_an_unlinked_higher_ranked_story_is_taken_first(self):
         universe = {9: node(), 1: node(parent=50), 2: node(parent=50)}
         plan = wf_core.plan_set(universe, [9, 1, 2])
-        self.assertEqual(sorted(chosen(plan)), [1, 2])
+        self.assertEqual(chosen(plan), [9, 1, 2])
+        self.assertEqual(plan['lead'], 9)
 
-    def test_a_single_story_only_when_no_group_exists(self):
-        plan = wf_core.plan_set({9: node(), 1: node()}, [9, 1])
+    def test_a_single_story_when_nothing_else_fits(self):
+        plan = wf_core.plan_set({9: node(effort='High'), 1: node(effort='Medium')},
+                                [9, 1])
         self.assertEqual(chosen(plan), [9])
 
-    def test_cousins_under_one_epic_are_related(self):
-        universe = {9: node(), 3: node(parent=30, epic=100), 4: node(parent=40, epic=100)}
-        plan = wf_core.plan_set(universe, [9, 3, 4])
-        self.assertEqual(sorted(chosen(plan)), [3, 4])
-        self.assertTrue(any('Epic' in s['why'] for s in plan['selected']))
-
-    def test_the_cap_never_keeps_a_dependent_without_its_blocker(self):
-        universe = {1: node(parent=50), 2: node([1], parent=50), 3: node([2], parent=50),
-                    4: node(parent=50), 5: node(parent=50)}
-        for size in (2, 3, 4):
-            for rank in itertools.permutations([1, 2, 3, 4, 5]):
-                plan = wf_core.plan_set(universe, list(rank), max_size=size)
-                taken = set(chosen(plan))
-                self.assertLessEqual(len(taken), size)
-                for n in taken:
-                    self.assertTrue(set(universe[n]['blockers']) <= taken,
-                                    (size, rank, sorted(taken)))
+    def test_the_budget_never_keeps_a_dependent_without_its_blocker(self):
+        universe = {1: node(effort='Medium'), 2: node([1], effort='Medium'),
+                    3: node([2], effort='Medium'), 4: node(effort='Low'),
+                    5: node(effort='High')}
+        for rank in itertools.permutations([1, 2, 3, 4, 5]):
+            plan = wf_core.plan_set(universe, list(rank))
+            taken = set(chosen(plan))
+            self.assertLessEqual(plan['weight'], wf_core.BULK_BUDGET)
+            for n in taken:
+                self.assertTrue(set(universe[n]['blockers']) <= taken,
+                                (rank, sorted(taken)))
 
 
 class TestReleasableBlocked(unittest.TestCase):
