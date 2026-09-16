@@ -158,6 +158,23 @@ class TestSetup(LaunchTestCase):
         self.assertFalse(os.path.exists(self.paths.cache))
         self.assertFalse(os.path.exists(self.paths.lock))
 
+    def test_ready_only_reports_a_ready_venv(self):
+        self.make_venv()
+        with mock.patch.object(wf_launch, 'runs', return_value=True), \
+                mock.patch.object(wf_launch, 'version_text', return_value='Python 3.12'), \
+                mock.patch.object(wf_launch, 'build_venv') as build:
+            self.assertEqual(wf_launch.cmd_setup(self.paths, ['--ready-only']), 0)
+        build.assert_not_called()
+
+    def test_ready_only_never_builds(self):
+        self.make_venv(ready=False)
+        with mock.patch.object(wf_launch, 'runs', return_value=True), \
+                mock.patch.object(wf_launch, 'build_venv') as build:
+            self.assertEqual(wf_launch.cmd_setup(self.paths, ['--ready-only']), wf_launch.EXIT_NOT_READY)
+        build.assert_not_called()
+        self.assertTrue(os.path.isdir(self.paths.venv))
+        self.assertFalse(os.path.exists(self.paths.lock))
+
     def test_lock_timeout_exits_20(self):
         with mock.patch.object(wf_launch, 'acquire_lock', return_value=False):
             self.assertEqual(wf_launch.cmd_setup(self.paths, []), 20)
@@ -214,10 +231,29 @@ class EndToEnd(object):
         self.data = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.data, True)
 
-    def run_launcher(self, *args):
-        env = dict(os.environ, CLAUDE_PLUGIN_DATA=self.data)
+    def run_launcher(self, *args, **env_overrides):
+        env = dict(os.environ, CLAUDE_PLUGIN_DATA=self.data, **env_overrides)
         return subprocess.run(self.command(*args), env=env, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, timeout=300)
+
+    def path_without_python(self):
+        """A PATH on which no python3, py or python can be found.
+
+        Directories that hold a Python are dropped. The few tools wf.sh needs
+        from such a directory (on Linux, /usr/bin) are linked into a new one.
+        """
+        names = ('python', 'python3', 'py', 'python.exe', 'python3.exe', 'py.exe')
+        kept = [d for d in os.environ.get('PATH', '').split(os.pathsep)
+                if d and not any(os.path.isfile(os.path.join(d, n)) for n in names)]
+        if os.name != 'nt':
+            tools = tempfile.mkdtemp()
+            self.addCleanup(shutil.rmtree, tools, True)
+            for tool in ('dirname', 'rm', 'uname'):
+                found = shutil.which(tool)
+                if found:
+                    os.symlink(found, os.path.join(tools, tool))
+            kept.insert(0, tools)
+        return os.pathsep.join(kept)
 
     def cache(self):
         with open(os.path.join(self.data, self.cache_name)) as f:
@@ -249,6 +285,11 @@ class EndToEnd(object):
         self.assertEqual(stale.returncode, 0, stale.stderr)
         self.assertEqual(self.cache(), [kind, path])
 
+        # A ready venv is a finished setup even with no Python on PATH.
+        bare = self.run_launcher('setup', PATH=self.path_without_python())
+        self.assertEqual(bare.returncode, 0, bare.stderr)
+        self.assertIn(b'already set up', bare.stderr)
+
 
 @unittest.skipUnless(_bash(), 'bash is not installed')
 class TestWfShEndToEnd(EndToEnd, unittest.TestCase):
@@ -263,7 +304,7 @@ class TestWfPs1EndToEnd(EndToEnd, unittest.TestCase):
     cache_name = 'wf-python-ps1'
 
     def command(self, *args):
-        return ['pwsh', '-NoProfile', '-NonInteractive', '-File', os.path.join(SCRIPTS, 'wf.ps1')] + list(args)
+        return [shutil.which('pwsh'), '-NoProfile', '-NonInteractive', '-File', os.path.join(SCRIPTS, 'wf.ps1')] + list(args)
 
 
 if __name__ == '__main__':
