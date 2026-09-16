@@ -25,8 +25,8 @@ cp hooks/pre-commit "$hookdir/pre-commit"
 chmod +x "$hookdir/pre-commit"
 
 echo "==> Checking for Python 3 (required by run-tests.sh)"
-# shellcheck source=scripts/find-python.sh
-source scripts/find-python.sh
+# shellcheck source=synergy/scripts/find-python.sh
+source synergy/scripts/find-python.sh
 if find_python; then
     if [ "${BASE_PY[0]}" = "py" ]; then
         echo "    Found $("${BASE_PY[@]}" --version) (Windows Python Launcher)"

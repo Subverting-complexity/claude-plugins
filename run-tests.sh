@@ -2,15 +2,15 @@
 # Run the offline test suite (decision logic + wf.py I/O shell).
 # Discovery picks up every tests/test_*.py module, so new test files run
 # automatically without editing this script.
-# Resolves a Python 3 via scripts/find-python.sh: tries python3, py -3
+# Resolves a Python 3 via synergy/scripts/find-python.sh: tries python3, py -3
 # (Windows Python Launcher), then python in order.
 # Prints which interpreter it found; exits 1 with an install hint if none found.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-# shellcheck source=scripts/find-python.sh
-source scripts/find-python.sh
+# shellcheck source=synergy/scripts/find-python.sh
+source synergy/scripts/find-python.sh
 
 DISCOVER=(-m unittest discover -s tests -p 'test_*.py')
 
