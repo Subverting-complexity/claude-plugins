@@ -36,19 +36,35 @@ else
     DATA_ROOT="$HOME/.claude/synergy"
 fi
 VENV="$DATA_ROOT/wf-venv"
+# `mkdir` on this path is the exclusivity check for auto-bootstrap below: it
+# either succeeds for exactly one concurrent caller or fails for the rest.
+VENV_LOCK="$DATA_ROOT/wf-venv.lock"
 # Two lines: `venv` or `base`, then the interpreter's path. wf.ps1 keeps its
 # own, because a path this shell writes is not one PowerShell can run.
 PY_CACHE="$DATA_ROOT/wf-python"
 PY=''
 PY_KIND=''
 
-# Echo the venv's python path if it exists and runs, else fail.
+# Echo the venv's python path if it exists and runs, else fail. This is true
+# as soon as `python -m venv` finishes, before pip install has run — it must
+# never be used to decide that a *build* (as opposed to the bare interpreter)
+# is complete. Use venv_ready for that.
 venv_python() {
     local p=''
     if [ -f "$VENV/bin/python" ]; then p="$VENV/bin/python"
     elif [ -f "$VENV/Scripts/python.exe" ]; then p="$VENV/Scripts/python.exe"
     else return 1; fi
     "$p" --version >/dev/null 2>&1 || return 1
+    printf '%s' "$p"
+}
+
+# Echo the venv's python path if the venv is not just present but fully
+# provisioned (created, pip upgraded, requirements installed) — the marker is
+# written last, only by whichever caller holds $VENV_LOCK while building.
+venv_ready() {
+    local p=''
+    [ -f "$VENV/.wf-ready" ] || return 1
+    p=$(venv_python) || return 1
     printf '%s' "$p"
 }
 
@@ -116,6 +132,91 @@ base_warning() {
     echo "wf: no dedicated virtualenv yet — using system Python ${PY:-${BASE_PY[*]}}. Run 'wf.sh setup' to pin one." >&2
 }
 
+# Seconds a caller waits for a concurrent venv build before treating the lock
+# as abandoned (its owner was killed without releasing it) and reclaiming it.
+VENV_LOCK_TIMEOUT=120
+
+# Try to acquire $VENV_LOCK, waiting up to VENV_LOCK_TIMEOUT seconds. Shared
+# by wf_setup and autobootstrap_venv so neither can build the venv while the
+# other holds the lock — both write to the same $VENV. Returns 0 once this
+# call holds the lock, 1 on timeout (including a reclaim attempt that lost to
+# another late arrival).
+acquire_venv_lock() {
+    mkdir -p "$DATA_ROOT" 2>/dev/null
+    local waited=0
+    while ! mkdir "$VENV_LOCK" 2>/dev/null; do
+        if [ "$waited" -ge "$VENV_LOCK_TIMEOUT" ]; then
+            rmdir "$VENV_LOCK" 2>/dev/null
+            mkdir "$VENV_LOCK" 2>/dev/null && return 0
+            return 1
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    return 0
+}
+
+release_venv_lock() {
+    rmdir "$VENV_LOCK" 2>/dev/null || true
+}
+
+# Try to create the dedicated venv from a usable base Python, silently, on a
+# run that would otherwise fall back to system Python. Mirrors wf_setup's
+# create step but never installs a system Python and never prints anything:
+# any failure here is not this call's problem to report, so it just leaves
+# the caller to fall back to base_warning and system Python as before.
+# Echoes the venv's python path on success.
+#
+# Unlike `setup` (a one-off command a person runs by hand), this can now run
+# from any ordinary invocation, so two calls with no venv yet can start at the
+# same moment — plausible here since parallel agents on one machine share
+# $DATA_ROOT (docs/worktree-config.md). The lock (shared with wf_setup, so an
+# explicit setup run can never race this either) makes only one caller build
+# at a time; everyone else waits for it rather than racing it into the same
+# `python -m venv` target, which could otherwise interleave two writes into
+# one venv directory and leave it corrupted. Readiness is checked only after
+# this call itself holds the lock, so it never mistakes a build still in
+# progress under someone else's hold for a finished one.
+autobootstrap_venv() {
+    local base=("$@") vpy=''
+    [ "${#base[@]}" -gt 0 ] && [ -n "${base[0]}" ] || return 1
+    "${base[@]}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1 || return 1
+    vpy=$(
+        set -e
+        acquire_venv_lock || exit 1
+        trap 'release_venv_lock' EXIT
+        if existing=$(venv_ready); then printf '%s' "$existing"; exit 0; fi
+        rm -rf "$VENV"
+        mkdir -p "$(dirname "$VENV")"
+        "${base[@]}" -m venv "$VENV" >/dev/null 2>&1 || exit 1
+        created=$(venv_python) || exit 1
+        "$created" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
+        if [ -f "$HERE/requirements.txt" ]; then
+            "$created" -m pip install --quiet -r "$HERE/requirements.txt" >/dev/null 2>&1 || exit 1
+        fi
+        touch "$VENV/.wf-ready"
+        printf '%s' "$created"
+    ) || return 1
+    [ -n "$vpy" ] || return 1
+    save_python_cache venv "$vpy"
+    printf '%s' "$vpy"
+}
+
+# Called whenever PY_KIND is "base": try the silent auto-bootstrap first, and
+# only warn if it did not produce a usable venv. On success this switches PY
+# and PY_KIND to the new venv in place, so the caller runs on it unchanged.
+maybe_bootstrap_or_warn() {
+    [ "$PY_KIND" = base ] || return 0
+    local base=() vpy=''
+    if [ -n "$PY" ]; then base=("$PY"); else base=("${BASE_PY[@]}"); fi
+    if vpy=$(autobootstrap_venv "${base[@]}"); then
+        PY="$vpy"
+        PY_KIND=venv
+    else
+        base_warning
+    fi
+}
+
 py_install_hint() {
     case "$(uname -s 2>/dev/null)" in
         Darwin) echo "brew install python" ;;
@@ -149,7 +250,13 @@ wf_setup() {
     # answer goes first and a failed setup leaves nothing stale behind.
     rm -f "$PY_CACHE"
 
-    if [ "$force" -eq 0 ] && VPY=$(venv_python); then
+    # Share the lock with autobootstrap_venv: an explicit setup run must wait
+    # for an auto-bootstrap already building $VENV rather than racing it, and
+    # vice versa. exit (used throughout this function) still runs this trap.
+    acquire_venv_lock || { echo "wf: timed out waiting for another wf process building the virtualenv. Try again shortly." >&2; exit 20; }
+    trap 'release_venv_lock' EXIT
+
+    if [ "$force" -eq 0 ] && VPY=$(venv_ready); then
         save_python_cache venv "$VPY"
         echo "wf: virtualenv already set up — $("$VPY" --version 2>&1) at $VENV" >&2
         exit 0
@@ -186,6 +293,7 @@ wf_setup() {
     if [ -f "$HERE/requirements.txt" ]; then
         "$VPY" -m pip install --quiet -r "$HERE/requirements.txt" || { echo "wf: failed to install requirements.txt." >&2; exit 20; }
     fi
+    touch "$VENV/.wf-ready"
     save_python_cache venv "$VPY"
     echo "wf: setup complete — $("$VPY" --version 2>&1)" >&2
     echo "    Future 'wf.sh' calls reuse this interpreter automatically." >&2
@@ -199,7 +307,7 @@ fi
 
 # Run path: the cached interpreter, else the venv, else a probed system Python.
 if cached_python; then
-    [ "$PY_KIND" = base ] && base_warning
+    maybe_bootstrap_or_warn
     set +e
     "$PY" "$WF" "$@"
     code=$?
@@ -216,7 +324,7 @@ if cached_python; then
 fi
 
 if probe_python; then
-    [ "$PY_KIND" = base ] && base_warning
+    maybe_bootstrap_or_warn
     if [ -n "$PY" ]; then
         exec "$PY" "$WF" "$@"
     fi
