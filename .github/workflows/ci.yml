@@ -80,7 +80,8 @@ jobs:
       - name: Check every-chat load
         shell: bash
         # Lowered in 17.0.0: shorter SessionStart message and agent and skill descriptions, and user-story left the every-chat tier.
-        run: bash count-tokens.sh --every-chat --budget 960
+        # Raised in 17.3.0: verify-feature, tone, support-request, acceptance-criteria, user-story and user-facing-communication are visible to Claude again, because a hidden skill fails when asked for in plain words or named mid-message.
+        run: bash count-tokens.sh --every-chat --budget 1215
 
       - name: Prove the load counter assigns tiers as documented
         shell: bash
@@ -93,8 +94,8 @@ jobs:
 
       - name: Check bulk-execute every-run load
         shell: bash
-        # Re-measured in 17.0.0 (#301), as execute above; set selection became one short reference driven by wf plan-set.
-        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 26750
+        # Re-measured in 17.0.0 (#301), as execute above; set selection became one short reference driven by wf plan-set. Raised in 17.3.0 for the check that stops a run in a repository not on GitHub or started by the wrong request.
+        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 27380
 
       - name: Check pr-review every-run load
         shell: bash

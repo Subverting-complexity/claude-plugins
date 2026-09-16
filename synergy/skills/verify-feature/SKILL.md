@@ -1,7 +1,6 @@
 ---
 name: verify-feature
-description: 'Read a branch or pull request and write the report a person reads before merging: what it touches, concerns, nitpicks and the acceptance-criteria verdict. Changes nothing.'
-disable-model-invocation: true
+description: 'Report on a branch or PR before merging: what it touches, concerns, nitpicks, acceptance criteria. Changes nothing; any host. Trigger on "verify this feature" or "is this branch ready".'
 arguments:
   - name: target
     description: 'Optional pull request number or branch name. Defaults to the current branch against its base.'

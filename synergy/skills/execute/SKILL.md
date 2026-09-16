@@ -1,6 +1,6 @@
 ---
 name: execute
-description: 'Take a GitHub story end to end: pick, plan, build, test, open a PR, independent review, merge where enabled. Trigger on "next story", "work on story N", a bare issue number or an issue URL.'
+description: 'Take a GitHub story end to end: pick, plan, build, test, open a PR, independent review, merge where enabled. GitHub only. Trigger on "next story", "work on story N", a bare issue number or an issue URL, never a branch name.'
 depends-on:
   - code-architect
   - feature-discovery
@@ -24,6 +24,14 @@ Take one story end to end: pick it, plan, build, test, open a PR, have that PR r
 ## Output standard
 
 Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
+
+## Is this the right skill?
+
+Check this before reading anything else, and stop without running a phase if any of it holds:
+
+- **The repository is not on GitHub.** The session was told it is hosted on Azure DevOps, GitLab, Bitbucket or an unrecognised remote. Say this workflow needs GitHub, and offer `/synergy:build` for local work or `/synergy:verify-feature` for a review.
+- **The message names another synergy command.** A `/synergy:<name>` typed after other text, such as a branch name, is not run by Claude Code, so it arrives here as plain words. Read that skill's `SKILL.md` and follow it instead.
+- **The only number is inside a branch name.** `feature/1963-seo-fix` names a branch, not a story. Ask what to do with the branch rather than picking an issue.
 
 ## Shared rules
 

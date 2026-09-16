@@ -1,7 +1,6 @@
 ---
 name: support-request
 description: 'Write or polish a support request or incident write-up from notes, logs or ticket content, for internal or client readers.'
-disable-model-invocation: true
 ---
 # Support Request Documentation
 

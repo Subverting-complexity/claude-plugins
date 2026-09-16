@@ -1,7 +1,6 @@
 ---
 name: user-story
 description: 'Write one user story with acceptance criteria from rough notes, for a project management tool.'
-disable-model-invocation: true
 ---
 # User Story Documentation
 
