@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 17.3.0
+
+**`execute` no longer starts on the wrong request.** A `/synergy:verify-feature` typed after a branch name such as `feature/1963-seo-fix` is not run by Claude Code, and `execute` read the 1963 as a story number and began the GitHub workflow in an Azure DevOps repository. `execute` and `bulk-execute` now stop first when the repository is not on GitHub, when the message names another synergy command, or when the only number is in a branch name. `verify-feature`, `tone`, `support-request`, `acceptance-criteria`, `user-story` and `user-facing-communication` are no longer hidden from Claude, so Claude can run them when they are named mid-message or asked for in plain words, and a session no longer reports that they do not exist. Every chat loads about 230 more tokens. `ecosystem-setup` stays hidden, because `/synergy:setup ecosystem` reaches it.
+
 ## synergy 17.1.0
 
 **Related means linked, not identical.** `plan-set` treats two stories as related when a blocked-by edge joins them either way, they share a prerequisite, a parent or an Epic. An open pool gets its best-ranked related group of two or more rather than one story, a blocker is never cut while its dependent stays, and `--mode` or `--max-effort` never hold back a prerequisite. `candidates --parent` returns the same set `plan-set --parent` would. Waves no longer depend on input order.
