@@ -15,7 +15,8 @@ sys.path.insert(
 from command_parse import resolve_dir  # noqa: E402
 from forge_guard import evaluate  # noqa: E402
 from github_guard import (  # noqa: E402
-    ACCOUNT, CURRENT, NODES, active_account, denial, github_block,
+    ACCOUNT, ALSO, CURRENT, GH_WRITES, HUB_RULES, HUB_VERB_RULES, NODES,
+    OWNER_RULES, STRATEGIES, active_account, denial, github_block,
     github_owner, github_writes, load_allowlist)
 
 ALLOW = {'path': '~/.claude/synergy/github-allowlist.json',
@@ -907,6 +908,25 @@ class TestOwnerExtraction(unittest.TestCase):
             ('gh label remove x', [(CURRENT, '`gh label delete`')]),
             ('gh pr view 3', []),
         ))
+
+    def test_every_rule_names_known_strategies_and_ends_in_a_decision(self):
+        # Steps that can fall through, so cannot be a row's last step.
+        falls_through = {'flag', 'switch', 'spec-flag', 'url-arg', 'slug-arg',
+                         'env-repo', 'positional'}
+        tables = {'OWNER_RULES': OWNER_RULES, 'HUB_RULES': HUB_RULES,
+                  'HUB_VERB_RULES': HUB_VERB_RULES}
+        for table, rules in tables.items():
+            for key, rule in rules.items():
+                with self.subTest(table=table, key=key):
+                    steps = [s[1:] if s[0] == ALSO else s for s in rule]
+                    for step in steps:
+                        self.assertIn(step[0], STRATEGIES)
+                    self.assertNotEqual(rule[-1][0], ALSO)
+                    self.assertNotIn(rule[-1][0], falls_through)
+        for key in OWNER_RULES:
+            group = key[0] if isinstance(key, tuple) else key
+            with self.subTest(key=key):
+                self.assertIn(group, GH_WRITES)
 
     def test_hub_owners(self):
         self.assertWrites((

@@ -617,6 +617,25 @@ OWNER_RULES = {
     ('issue', 'transfer'): (('also', 'positional', 3),) + IN_REPO,
 }
 
+# `hub <command>` writes, as OWNER_RULES rows; hub push and hub api are
+# judged as git push and gh api instead.
+IN_CURRENT = (('constant', CURRENT),)
+REPO_OR_ACCOUNT = (('slug-arg',), ('constant', ACCOUNT))
+HUB_RULES = {
+    'pull-request': IN_CURRENT,
+    'merge': IN_CURRENT,
+    'sync': IN_CURRENT,
+    'fork': FORK,
+    'create': REPO_OR_ACCOUNT,
+    'delete': REPO_OR_ACCOUNT,
+}
+# `hub <command> <verb>` writes, when the verb is one of WRITE_VERBS.
+HUB_VERB_RULES = {
+    'issue': IN_CURRENT,
+    'release': IN_CURRENT,
+    'gist': ACCOUNT_ONLY,
+}
+
 
 def _rule_owners(rule, call):
     """The owners one OWNER_RULES row yields, in order."""
@@ -663,19 +682,17 @@ def _hub(toks, cwd, env, ctx, lookup, ssh_host):
         return _push(['git'] + toks[1:], cwd, env, lookup, ssh_host)
     if sub == 'api':
         return _gh_api(['gh'] + toks[1:], cwd, env, ctx)
-    what = '`hub %s`' % sub
-    if sub in ('pull-request', 'merge', 'sync'):
-        return [(CURRENT, what)]
-    if sub == 'fork':
-        return [(flag_value(toks, ['--org'], False) or ACCOUNT, what)]
-    if sub in ('create', 'delete'):
-        spec = words[1] if len(words) > 1 else ''
-        return [(_owner_of_spec(spec, env, ctx) if '/' in spec else ACCOUNT, what)]
-    if (sub in ('issue', 'release', 'gist') and len(words) > 1
-            and words[1] in WRITE_VERBS):
-        return [(ACCOUNT if sub == 'gist' else CURRENT,
-                 '`hub %s %s`' % (sub, words[1]))]
-    return []
+    first = words[1] if len(words) > 1 else ''
+    if sub in HUB_VERB_RULES:
+        if first not in WRITE_VERBS:
+            return []
+        rule, what = HUB_VERB_RULES[sub], '`hub %s %s`' % (sub, first)
+    elif sub in HUB_RULES:
+        rule, what = HUB_RULES[sub], '`hub %s`' % sub
+    else:
+        return []
+    call = {'toks': toks, 'first': first, 'env': env, 'ctx': ctx}
+    return [(owner, what) for owner in _rule_owners(rule, call)]
 
 
 def _http(toks, env, ctx):
