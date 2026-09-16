@@ -96,17 +96,41 @@ def parse_plan(text):
     return {'stories': stories, 'shared': shared}
 
 
-def set_waves(record):
-    """The waves and built stories a bulk set record holds.
+def grouped_record(record):
+    """A bulk set record in its grouped form, as a new dict.
+
+    A set is split into groups, each one pull request with its own `branch`
+    and `waves`, and every story names its `group`. A record written before
+    groups existed has one top-level `branch` and `waves`; it is read as a
+    single group 1 holding every story, so a run already under way carries on.
+    """
+    record = dict(record or {})
+    stories = [dict(s) for s in record.get('stories') or ()]
+    groups = record.get('groups')
+    if not groups:
+        groups = [{'group': 1, 'mode': record.get('mode'), 'lead': record.get('lead'),
+                   'branch': record.get('branch'), 'waves': record.get('waves')}]
+    for story in stories:
+        story.setdefault('group', 1)
+    record.pop('branch', None)
+    record.pop('waves', None)
+    record.update(stories=stories, groups=[dict(g) for g in groups])
+    return record
+
+
+def set_waves(record, group=1):
+    """The waves and built stories of one group of a bulk set record.
 
     Returns (waves, built): waves as lists of story numbers in build order,
-    built as a set. The record's `waves` is authoritative; a record without
-    it is grouped by each story's `wave`, in the order the stories are listed.
+    built as a set, both for `group` only. The group's `waves` is
+    authoritative; a group without it is grouped by each story's `wave`, in
+    the order the stories are listed.
     """
-    stories = record.get('stories') or ()
+    record = grouped_record(record)
+    stories = [s for s in record['stories'] if s['group'] == group]
     built = {s['number'] for s in stories if s.get('built')}
     known = {s['number'] for s in stories}
-    waves = record.get('waves')
+    waves = next((g.get('waves') for g in record['groups'] if g['group'] == group), None)
     if waves:
         return [[n for n in wave if n in known] for wave in waves], built
     grouped = {}

@@ -1,8 +1,8 @@
 # Bulk Execute — Phase 7 (Finish)
 
-Read this at Phase 7 of the `bulk-execute` workflow: every story in the set is built, gated and committed. It is `execute`'s Phase 7 done once for a set — one push, one pull request, one review — with the per-issue work repeated for each story.
+Read this at Phase 7 of the `bulk-execute` workflow: every story in the current group is built, gated and committed. It is `execute`'s Phase 7 done once for a group — one push, one pull request, one review — with the per-issue work repeated for each story.
 
-Throughout, **"the set" means the stories actually built**: the entries in `.claude/bulk-set.json` whose `built` is `true`. Stories dropped along the way are already back in the backlog and take no part in anything below.
+Throughout, **"the set" means the current group's stories actually built**: the entries in `.claude/bulk-set.json` with this `group` whose `built` is `true`. Stories dropped along the way are already back in the backlog, and the other group's stories take no part in anything below.
 
 ## 1. Push, and check each story for a sibling pull request
 
@@ -38,7 +38,7 @@ Write the body to a file with the Write tool and pass `--body-file` — never `-
 gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}
 ```
 
-**Title.** Under 70 characters, naming what the set has in common rather than any one story: "Resolve labels by purpose key throughout the picker", not "Fix #41 and #43 and #47". A reader scanning the pull request list should be able to tell what changed without opening it.
+**Title.** Under 70 characters, naming what the set does as a whole rather than any one story: "Resolve labels by purpose key throughout the picker", not "Fix #41 and #43 and #47". A reader scanning the pull request list should be able to tell what changed without opening it.
 
 **Body.** A bulk pull request asks more of a reviewer than a single-story one, so it adds one section to the fixed shape in `skills/pr-body/SKILL.md` and keeps everything else the same. Use these headings, with these names, in this order, on every bulk pull request:
 
@@ -52,7 +52,7 @@ gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --bod
 ## Test plan
 ```
 
-1. **`## Summary`** — two or three sentences on the shared thread: what the stories have in common and why they are one change rather than three. This is the paragraph that makes the diff readable, and it is the one most worth writing carefully.
+1. **`## Summary`** — two or three sentences on what the stories do, and on their shared thread when they have one; unlinked stories that fit one budget are said to be so. This is the paragraph that makes the diff readable, and it is the one most worth writing carefully.
 2. **`## Stories`** — a table, each row giving the issue **number and title** together, plus one line on what it asked for. Never a bare list of numbers: a reader should not have to open three issues to find out what the pull request does.
 3. **`## Changes`** — a `###` sub-section per story, in build order, saying what was implemented and which acceptance criteria it answers.
 4. **`## Test plan`** — how to verify the change, with the per-story steps kept distinguishable so a tester can check each story separately.

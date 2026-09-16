@@ -6,6 +6,14 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 17.5.0
+
+**`bulk-execute` fills an effort budget instead of counting linked stories.** `wf plan-set` takes stories by priority, linked or not, until their `Effort` reaches 7 (Low 1, Medium 2, High 6), keeps every story within one `Priority` level of the rest, and splits the set into at most two pull requests on the feature/maintenance boundary. The groups are built, reviewed and merged one after another; when group 1's review had to run inline, `wf drop-group` returns group 2 to the backlog unbuilt. `--max-groups 1` keeps a run with no tool to start agents to one pull request. All of it is enforced in `wf` and covered by offline tests.
+
+**Breaking:** `--size` is removed from `plan-set`, `candidates --parent` and `bulk-execute`, and `nearby`, `unrelated`, `components` and the top-level `waves` are gone from the `plan-set` result, which now reports `groups`, `weight` and `budget`. `bulk-mark`, `bulk-schedule` and `bulk-integrate` take `--group`. `.claude/bulk-set.json` records a `branch` and `waves` per group; a record written by an earlier version is read as one group.
+
+**`wf_pick.py` is split by concern.** The tree and single-issue reads are in `wf_pick_tree.py`, the claim walk and selection in `wf_pick_select.py`, and `candidates` in `wf_pick_candidates.py`, with no change in behaviour. A new test fails when a `wf_*.py` shell module is missing from `_SHELL_MODULES`, which is what lets a patch through `wf` reach it.
+
 ## synergy 17.3.0
 
 **`execute` no longer starts on the wrong request.** A `/synergy:verify-feature` typed after a branch name such as `feature/1963-seo-fix` is not run by Claude Code, and `execute` read the 1963 as a story number and began the GitHub workflow in an Azure DevOps repository. `execute` and `bulk-execute` now stop first when the repository is not on GitHub, when the message names another synergy command, or when the only number is in a branch name. `verify-feature`, `tone`, `support-request`, `acceptance-criteria`, `user-story` and `user-facing-communication` are no longer hidden from Claude, so Claude can run them when they are named mid-message or asked for in plain words, and a session no longer reports that they do not exist. Every chat loads about 230 more tokens. `ecosystem-setup` stays hidden, because `/synergy:setup ecosystem` reaches it.

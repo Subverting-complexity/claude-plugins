@@ -153,7 +153,19 @@ class TestScheduleCommand(unittest.TestCase):
         with open(os.path.join(self.root, '.claude', 'bulk-set.json'), encoding='utf-8') as fh:
             record = json.load(fh)
         self.assertEqual(record['schedule']['waves'][1]['batches'], [[2, 3]])
-        self.assertEqual(record['branch'], 'feature/b')
+        self.assertEqual(record['groups'][0]['branch'], 'feature/b')
+
+    def test_schedule_reads_only_the_group_it_is_given(self):
+        self.write('bulk-set.json', json.dumps({
+            'groups': [{'group': 1, 'branch': 'a', 'waves': [[1]]},
+                       {'group': 2, 'branch': None, 'waves': [[2, 3]]}],
+            'stories': [{'number': 1, 'group': 1, 'wave': 0, 'built': True},
+                        {'number': 2, 'group': 2, 'wave': 0, 'built': False},
+                        {'number': 3, 'group': 2, 'wave': 0, 'built': False}]}))
+        code, out = capture(['bulk-schedule', '--group', '2'])
+        self.assertEqual(code, 0)
+        self.assertEqual([w['stories'] for w in out['waves']], [[2, 3]])
+        self.assertEqual(out['group'], 2)
 
     def test_a_missing_plan_makes_every_story_unplanned(self):
         self.write('bulk-set.json', json.dumps({

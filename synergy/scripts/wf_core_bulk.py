@@ -1,21 +1,25 @@
 """
-Bulk sets: ordering a set of stories and choosing one from a container.
+Bulk sets: filling an effort budget, splitting it into pull requests, and
+ordering each one; choosing from a container.
 
-Moved verbatim out of wf_core.py; `scripts/README.md` has the module map.
+`scripts/README.md` has the module map.
 """
 
-from wf_core_refs import ref_label, ref_sort_key
+from wf_core_fields import _priority_rank
+from wf_core_refs import ref_label
 from wf_core_select import HIERARCHY_CONTAINER_TYPES
 
 
 # ── Bulk set planning (bulk-execute) ─────────────────────────────────────────
-# `bulk-execute` builds two to seven connected stories on one branch behind
-# one pull request. Its decisions are pure enough to live here rather than in
-# prose: which dependencies still block a story that is being built alongside
-# its own dependency, which stories are connected at all, and what order and
-# which parallel waves the set has to be built in.
+# `bulk-execute` builds a set of stories that fills an effort budget, as at
+# most two pull requests built one after the other. Its decisions are pure
+# enough to live here rather than in prose: which dependencies still block a
+# story that is being built alongside its own dependency, which stories fit
+# the budget together, how the set splits into pull requests, and what order
+# and which parallel waves each one has to be built in.
 
-BULK_MIN = 2
+# The most stories `pick` offers from one Epic or Feature, and the default
+# trim of `plan_bulk_order`.
 BULK_MAX = 7
 
 
@@ -68,8 +72,8 @@ def plan_bulk_order(stories, max_size=BULK_MAX):
 
     Returns (ordered, notes). `ordered` is the story dicts in build order.
     `notes` is a list of {'number', 'reason'} with reason `'trimmed'` (cut by
-    `max_size`) or `'dependency-cycle'`. Enforcing `BULK_MIN` is the caller's
-    job: a set that shrinks to one story is a single-story run, not an error.
+    `max_size`) or `'dependency-cycle'`. A set that shrinks to one story is a
+    single-story run, not an error.
     """
     stories = list(stories or [])
     notes = []
@@ -150,22 +154,40 @@ def parent_leaf_groups(root, repo=None):
     return groups, empty, foreign
 
 
-# ── a connected set, dependencies first (`plan-set`) ─────────────────────────
-# The rules that decide which stories are one change and in what order, for
-# every way a set is chosen: named stories, the open pool, the stories under a
-# container, and `execute` asking what a blocked story is waiting on. Two
-# stories are related when a blocked-by edge joins them in either direction,
-# when they share a prerequisite, when they share a parent, or when they sit
-# under the same Epic. A dependency never removes a story from a set; it
-# decides where in the order the story goes. Only a blocker this run cannot
-# build does, because then nothing in the set can finish the story.
+# ── a set that fills an effort budget, dependencies first (`plan-set`) ───────
+# The rules that decide which stories are one run and in what order, for every
+# way a set is chosen: named stories, the open pool, the stories under a
+# container, and `execute` asking what a blocked story is waiting on. A set is
+# filled by priority until its effort budget is spent, whether or not the
+# stories are linked. A dependency never removes a story from a set on its own
+# account; it decides where in the order the story goes, and the story comes
+# with its whole prerequisite chain or not at all. Only a blocker this run
+# cannot build excludes a story outright, because then nothing in the set can
+# finish it.
 
-# How closely two stories are related, closest first. A set grows through the
-# closest link it has, so an Epic's cousins join only once the stories joined
-# by an edge or a parent are in.
-LINK_EDGE = 0
-LINK_PARENT = 1
-LINK_EPIC = 2
+# The effort a set may hold, and what each `Effort` value costs. A High story
+# leaves room for one Low story and nothing larger. An issue with no `Effort`
+# costs Medium, the same middle `_effort_rank` sorts it as: unestimated work is
+# unknown rather than large.
+BULK_BUDGET = 7
+EFFORT_WEIGHTS = {'low': 1, 'medium': 2, 'high': 6}
+EFFORT_WEIGHT_DEFAULT = EFFORT_WEIGHTS['medium']
+
+# The most pull requests one set is split into. A run that cannot start a
+# separate reviewer passes 1, because an inline review of a second pull
+# request is what fills its context.
+MAX_GROUPS = 2
+
+# How far apart two stories' `Priority` may be and still share a set: the same
+# level or the next one, so urgent work never waits behind low-priority work.
+PRIORITY_BAND = 1
+
+
+def effort_weight(value):
+    """What an `Effort` value costs against `BULK_BUDGET`."""
+    if not value:
+        return EFFORT_WEIGHT_DEFAULT
+    return EFFORT_WEIGHTS.get(str(value).strip().lower(), EFFORT_WEIGHT_DEFAULT)
 
 
 def dependency_waves(stories):
@@ -202,49 +224,103 @@ def dependency_waves(stories):
     return waves
 
 
-def plan_set(universe, rank, seeds=None, max_size=BULK_MAX, reasons=None,
-             within=None):
-    """Choose a connected set of stories and the order and waves to build it in.
+def split_groups(stories, max_groups=MAX_GROUPS):
+    """Split a set into the pull requests it becomes. (groups, reason).
+
+    `stories` carry `number`, `mode` and `blocked_by`, in build order. The cut
+    is on the work mode, because a pull request never mixes feature and
+    maintenance work; stories of one mode stay together, so a set of one mode
+    is one group. A group holding a prerequisite of another group's story goes
+    first, since groups are built and merged one after another.
+
+    `groups` is a list of {'mode', 'stories'} with the stories in their input
+    order, or None when the set cannot be split: it needs more than
+    `max_groups` groups (None for no limit), or two groups each wait on the
+    other. `reason` says which, in words, and is None otherwise.
+    """
+    by_mode, modes = {}, []
+    for story in stories:
+        mode = story.get('mode') or 'feature'
+        if mode not in by_mode:
+            by_mode[mode] = []
+            modes.append(mode)
+        by_mode[mode].append(story)
+    if max_groups is not None and len(modes) > max_groups:
+        return None, ('it would put %s and %s work in one pull request, and this '
+                      'run opens %s' % (modes[0], modes[1],
+                                        'one pull request' if max_groups == 1
+                                        else 'at most %d' % max_groups))
+    mode_of = {s['number']: s.get('mode') or 'feature' for s in stories}
+    after = {m: set() for m in modes}
+    for story in stories:
+        for b in story.get('blocked_by') or ():
+            other = mode_of.get(_as_ref(b))
+            if other is not None and other != mode_of[story['number']]:
+                after[mode_of[story['number']]].add(other)
+    ordered, placed, remaining = [], set(), list(modes)
+    while remaining:
+        ready = [m for m in remaining if after[m] <= placed]
+        if not ready:
+            return None, ('its %s and %s work each wait on the other, so neither '
+                          'pull request can merge first' % (remaining[0], remaining[1]))
+        ordered.append(ready[0])
+        placed.add(ready[0])
+        remaining.remove(ready[0])
+    return [{'mode': m, 'stories': by_mode[m]} for m in ordered], None
+
+
+def plan_set(universe, rank, seeds=None, budget=BULK_BUDGET, reasons=None,
+             within=None, max_groups=MAX_GROUPS):
+    """Choose a set of stories that fills an effort budget, and the pull
+    requests, order and waves to build it in.
 
     `universe` is every story a run could take, `{number: {'blockers': [open
     blocker references] or None when the edges could not all be read,
-    'parent': number or None, 'epic': number or None}}`. A local blocker is an
-    issue number; one in another repository is `'owner/name#N'`, which this
-    run can never build. A story with no open blocker is ready; one with open
-    blockers waits, and it is still takeable when every blocker is takeable
-    too. `rank` is the universe in priority order. `reasons` explains any
-    other open issue (`{number: why it cannot be taken}`), so a blocker or a
-    named story outside the universe is excluded with the reason it is out.
+    'parent', 'epic', 'effort', 'priority', 'mode'}}` (`wf_core.story_facts`
+    fills the last three). A local blocker is an issue number; one in another
+    repository is `'owner/name#N'`, which this run can never build. A story
+    with no open blocker is ready; one with open blockers waits, and it is
+    still takeable when every blocker is takeable too. `rank` is the universe
+    in priority order. `reasons` explains any other open issue (`{number: why
+    it cannot be taken}`), so a blocker or a named story outside the universe
+    is excluded with the reason it is out.
 
-    - **Named** (`seeds`): each named story plus every prerequisite it needs
-      that this run can build, even one nobody named. A named story waiting on
-      something the run cannot build is excluded. Nothing else is added.
-    - **Open** (no seeds): the takeable stories split into related groups,
-      each ranked by its best story. A group's lead is its highest-ranked
-      story whose whole prerequisite chain fits in `max_size`, ready or
-      waiting, so a high-priority story pulls in the lower-priority issue that
-      blocks it instead of being passed over. The group then grows through its
-      closest links first (an edge or a shared prerequisite, then a shared
-      parent, then the same Epic), by rank within a tier, each story with its
-      whole chain or not at all. The set is the best-ranked group that comes
-      to at least `BULK_MIN` stories; only when none does is it the single
-      best story. Group members the cap left out are excluded and say so.
+    Every story is taken with its whole prerequisite chain or not at all, and
+    only while the set still keeps three rules:
 
-    Returns `{'lead', 'selected', 'waves', 'excluded', 'components',
-    'unrelated'}`. `selected` is in build order: a story always follows every
-    story it waits on, and otherwise keeps priority (or named) order. Each
-    entry carries `number`, `wave`, `blocked_by` and `unblocks` (inside the
-    set) and `why`. `components` groups the set by relation, and `unrelated`
-    is True when a named set falls into more than one group.
+    - **Budget.** The `effort_weight` of every story, prerequisites included,
+      adds up to no more than `budget`.
+    - **Priority.** No two stories are more than `PRIORITY_BAND` levels of
+      `Priority` apart, each read as the priority it carries.
+    - **Groups.** `split_groups` can cut the set into at most `max_groups`
+      pull requests, none of them mixing modes.
 
-    `within`, in open mode, limits which stories may lead or join the set, as
-    `--parent` does to the stories under one container. A prerequisite outside
-    it is still built when a story inside needs it, and its `why` says so.
+    - **Named** (`seeds`): each named story, in the order given, plus every
+      prerequisite it needs. A named story that breaks a rule, or waits on
+      something the run cannot build, is excluded with the reason.
+    - **Open** (no seeds): the takeable stories in rank order, whether or not
+      they are linked. A story that would start a second group is passed over
+      until every story that joins a group already started has had its turn.
+      Only a story that cannot be built is excluded; with `within` (the
+      stories under one container), every story inside it the set did not
+      take is excluded too, with the rule that kept it out.
+
+    `budget` None turns the three rules off and gives one group holding
+    every story, its `mode` None when it holds both, for a caller that wants
+    only the build order (`pick --issue` on a story that waits).
+
+    Returns `{'lead', 'selected', 'groups', 'excluded', 'weight', 'budget'}`.
+    `groups` is a list of {'group' (from 1), 'mode', 'lead', 'stories',
+    'waves'}, in the order they are built. `selected` is every story, group
+    by group, each in build order: a story always follows every story it
+    waits on. Each entry carries `number`, `group`, `wave` (inside its group),
+    `blocked_by` and `unblocks` (inside the set), `mode`, `weight` and `why`.
+    `weight` is the set's total.
     """
     reasons = reasons or {}
     rank_index = {n: i for i, n in enumerate(rank)}
     seeds = [int(s) for s in (seeds or ())]
-    cap = max_size if max_size and max_size > 0 else None
+    limited = budget is not None
     excluded = {}
     verdicts = {}
 
@@ -290,14 +366,42 @@ def plan_set(universe, rank, seeds=None, max_size=BULK_MAX, reasons=None,
             out.append(n)
         return out
 
+    def weight(n):
+        return effort_weight(universe[n].get('effort'))
+
+    def as_stories(numbers):
+        return [{'number': n, 'mode': universe[n].get('mode') or 'feature',
+                 'blocked_by': list(universe[n].get('blockers') or ())}
+                for n in numbers]
+
+    def groups_of(numbers):
+        if limited:
+            return split_groups(as_stories(numbers), max_groups)
+        # No rules: one group in build order, whatever modes it holds, so a
+        # prerequisite chain that crosses modes both ways still has an order.
+        modes = {universe[n].get('mode') or 'feature' for n in numbers}
+        return ([{'mode': modes.pop() if len(modes) == 1 else None,
+                  'stories': as_stories(numbers)}] if numbers else []), None
+
+    def breaks_rule(numbers):
+        """Which rule a candidate set breaks, in words, or None."""
+        if not limited:
+            return None
+        total = sum(weight(n) for n in numbers)
+        if total > budget:
+            return ('its Effort, with its prerequisites, takes the set to %d '
+                    'against a budget of %d' % (total, budget))
+        levels = [_priority_rank(universe[n].get('priority')) for n in numbers]
+        if max(levels) - min(levels) > PRIORITY_BAND:
+            return ('its Priority is more than one level from another story in '
+                    'the set')
+        return groups_of(numbers)[1]
+
     def take(chosen, why, n, reason):
-        needed = [c for c in chain(n) if c not in chosen]
-        if cap is not None and len(chosen) + len(needed) > cap:
-            return False
-        for c in needed:
-            chosen.append(c)
-            why.setdefault(c, reason if c == n else 'prerequisite of #%d' % n)
-        return True
+        for c in chain(n):
+            if c not in chosen:
+                chosen.append(c)
+                why.setdefault(c, reason if c == n else 'prerequisite of #%d' % n)
 
     chosen, why = [], {}
     if seeds:
@@ -305,24 +409,44 @@ def plan_set(universe, rank, seeds=None, max_size=BULK_MAX, reasons=None,
             reason = cannot_build(s)
             if reason:
                 excluded[s] = reason
-            elif s not in chosen and not take(chosen, why, s, 'named'):
-                excluded[s] = ('left out by the size cap: it and its prerequisites '
-                               'do not fit beside the stories named before it')
+                continue
+            if s in chosen:
+                continue
+            broken = breaks_rule(chosen + [c for c in chain(s) if c not in chosen])
+            if broken:
+                excluded[s] = 'left out: %s' % broken
+            else:
+                take(chosen, why, s, 'named')
     else:
         ordered_rank = sorted((n for n in universe if within is None or n in within),
                               key=position)
         joinable = [n for n in ordered_rank if cannot_build(n) is None]
-        chosen, why, group = _best_group(universe, joinable, chain, take, cap,
-                                         position)
+        deferred, broken_by = [], {}
+        for turn in (joinable, deferred):
+            for n in list(turn):
+                if n in chosen:
+                    continue
+                candidate = chosen + [c for c in chain(n) if c not in chosen]
+                broken = breaks_rule(candidate)
+                if broken:
+                    broken_by[n] = broken
+                    continue
+                if turn is joinable and chosen and (
+                        len(groups_of(candidate)[0]) > len(groups_of(chosen)[0])):
+                    deferred.append(n)
+                    continue
+                broken_by.pop(n, None)
+                take(chosen, why, n, 'lead' if not chosen else 'next by priority')
         for n in ordered_rank:
             if n in chosen:
                 continue
             reason = cannot_build(n)
             if reason:
                 excluded[n] = reason
-            elif n in group:
-                excluded[n] = ('related to the set, but left out by the size cap: '
-                               'it and its prerequisites do not fit')
+            elif within is not None:
+                excluded[n] = 'left out: %s' % (
+                    breaks_rule(chosen + [c for c in chain(n) if c not in chosen])
+                    or broken_by.get(n) or 'it did not fit beside the stories taken')
 
     order_key = {s: i for i, s in enumerate(seeds)} if seeds else rank_index
     placed, ordered = set(), []
@@ -335,145 +459,26 @@ def plan_set(universe, rank, seeds=None, max_size=BULK_MAX, reasons=None,
         placed.add(nxt)
         remaining.remove(nxt)
 
-    stories = []
-    for n in ordered:
-        stories.append({
-            'number': n,
-            'blocked_by': list(universe[n].get('blockers') or ()),
-            'unblocks': [m for m in ordered
-                         if n in (universe[m].get('blockers') or ())],
-            'why': why.get(n, 'named')})
-    waves = dependency_waves(stories)
-    wave_of = {n: i for i, wave in enumerate(waves) for n in wave}
-    for story in stories:
-        story['wave'] = wave_of[story['number']]
-
-    components = _components(universe, ordered)
-    return {'lead': ordered[0] if ordered else None, 'selected': stories,
-            'waves': waves,
+    groups = groups_of(ordered)[0] if ordered else []
+    stories, group_out = [], []
+    for index, group in enumerate(groups or (), start=1):
+        numbers = [s['number'] for s in group['stories']]
+        entries = [{'number': n, 'group': index, 'mode': group['mode'],
+                    'weight': weight(n),
+                    'blocked_by': list(universe[n].get('blockers') or ()),
+                    'unblocks': [m for m in ordered
+                                 if n in (universe[m].get('blockers') or ())],
+                    'why': why.get(n, 'named')}
+                   for n in numbers]
+        waves = dependency_waves(entries)
+        wave_of = {n: i for i, wave in enumerate(waves) for n in wave}
+        for entry in entries:
+            entry['wave'] = wave_of[entry['number']]
+        stories.extend(entries)
+        group_out.append({'group': index, 'mode': group['mode'], 'lead': numbers[0],
+                          'stories': numbers, 'waves': waves})
+    return {'lead': stories[0]['number'] if stories else None, 'selected': stories,
+            'groups': group_out,
             'excluded': [{'number': n, 'reason': r}
                          for n, r in sorted(excluded.items())],
-            'components': components,
-            'unrelated': bool(seeds) and len(components) > 1}
-
-
-def _best_group(universe, joinable, chain, take, cap, position):
-    """Open mode's choice: (chosen, why, group) for the best-ranked related
-    group that makes a set of at least `BULK_MIN`, else for the single best
-    story. `group` is every joinable story in the group the set came from.
-
-    The groups are drawn over the joinable stories and every prerequisite
-    their chains pull in, so two stories joined only through a prerequisite
-    outside `within` are still one group; only a joinable story may lead or
-    join on its own account.
-    """
-    nodes = list(joinable)
-    for n in joinable:
-        nodes.extend(c for c in chain(n) if c not in nodes)
-    groups, left = [], list(nodes)
-    while left:
-        members = _connected(universe, left[0], lambda n: n in nodes)
-        groups.append([n for n in joinable if n in members])
-        left = [n for n in left if n not in members]
-    groups = sorted((g for g in groups if g), key=lambda g: position(g[0]))
-
-    fallback = None
-    for group in groups:
-        chosen, why = [], {}
-        lead = next((n for n in group if cap is None or len(chain(n)) <= cap), None)
-        if lead is None:
-            continue
-        take(chosen, why, lead, 'lead')
-        while True:
-            best = None
-            for n in group:
-                if n in chosen:
-                    continue
-                needed = [c for c in chain(n) if c not in chosen]
-                if cap is not None and len(chosen) + len(needed) > cap:
-                    continue
-                tiers = [t for c in needed for m in chosen
-                         for t in (_link_tier(universe, c, m),) if t is not None]
-                if not tiers:
-                    continue
-                key = (min(tiers), position(n))
-                if best is None or key < best[0]:
-                    best = (key, n, needed)
-            if best is None:
-                break
-            _key, n, needed = best
-            reason = _link_reason(universe, n, chosen + [c for c in needed if c != n])
-            take(chosen, why, n, reason)
-        if len(chosen) >= BULK_MIN:
-            return chosen, why, set(group)
-        if fallback is None:
-            fallback = (chosen, why, set(group))
-    return fallback or ([], {}, set())
-
-
-def _link_tier(universe, n, m):
-    """How closely a direct link joins two stories (`LINK_*`), or None: an
-    edge either way or a shared prerequisite, a shared parent, the same Epic."""
-    if n == m:
-        return None
-    mine, other = universe[n], universe[m]
-    mine_b, other_b = set(mine.get('blockers') or ()), set(other.get('blockers') or ())
-    if m in mine_b or n in other_b or mine_b & other_b:
-        return LINK_EDGE
-    if mine.get('parent') and mine.get('parent') == other.get('parent'):
-        return LINK_PARENT
-    if mine.get('epic') and mine.get('epic') == other.get('epic'):
-        return LINK_EPIC
-    return None
-
-
-def _linked(universe, n, m):
-    """Whether a direct link joins two stories: an edge, a shared
-    prerequisite, a shared parent, or the same Epic."""
-    return _link_tier(universe, n, m) is not None
-
-
-def _connected(universe, start, allowed):
-    """Every story reachable from `start` through links, within `allowed`."""
-    members = [n for n in universe if n == start or allowed(n)]
-    seen, frontier = {start}, [start]
-    while frontier:
-        n = frontier.pop()
-        for m in members:
-            if m not in seen and _linked(universe, n, m):
-                seen.add(m)
-                frontier.append(m)
-    return seen
-
-
-def _components(universe, numbers):
-    """The set split into groups joined by links, in build order."""
-    left, groups = list(numbers), []
-    while left:
-        group = _connected(universe, left[0], lambda n: n in numbers)
-        groups.append([n for n in numbers if n in group])
-        left = [n for n in left if n not in group]
-    return groups
-
-
-def _link_reason(universe, n, chosen):
-    """Why `n` belongs beside the stories already chosen, in words."""
-    mine = universe[n]
-    for m in chosen:
-        if m in (mine.get('blockers') or ()):
-            return 'depends on #%d' % m
-        if n in (universe[m].get('blockers') or ()):
-            return 'prerequisite of #%d' % m
-    for m in chosen:
-        other = universe[m]
-        shared = set(mine.get('blockers') or ()) & set(other.get('blockers') or ())
-        if shared:
-            return 'shares prerequisite %s with #%d' % (
-                ref_label(min(shared, key=ref_sort_key)), m)
-    for m in chosen:
-        if mine.get('parent') and mine.get('parent') == universe[m].get('parent'):
-            return 'same parent (#%d) as #%d' % (mine['parent'], m)
-    for m in chosen:
-        if mine.get('epic') and mine.get('epic') == universe[m].get('epic'):
-            return 'same Epic (#%d) as #%d' % (mine['epic'], m)
-    return 'related to the set'
+            'weight': sum(s['weight'] for s in stories), 'budget': budget}

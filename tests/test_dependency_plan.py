@@ -3,7 +3,9 @@
 priority a blocker inherits in `evaluate_pool`.
 
 A dependency decides where a story goes in the build order, never whether it
-belongs in the set. Only a blocker the run cannot build takes a story out.
+belongs in the set on its own account. Only a blocker the run cannot build
+takes a story out outright; the budget, priority and group rules take a story
+out with its whole chain.
 """
 
 import os
@@ -20,8 +22,13 @@ CLEAR = ('## Summary\n\nChange the thing the story names.\n\n'
          '## Acceptance criteria\n\n- [ ] The thing is changed.\n')
 
 
-def story(blockers=(), parent=None):
-    return {'blockers': list(blockers), 'parent': parent}
+def story(blockers=(), parent=None, effort='Low', priority=None, mode='feature'):
+    return {'blockers': list(blockers), 'parent': parent, 'effort': effort,
+            'priority': priority, 'mode': mode}
+
+
+def waves(plan):
+    return [g['waves'] for g in plan['groups']]
 
 
 def numbers(plan):
@@ -34,7 +41,7 @@ class TestPlanSetNamed(unittest.TestCase):
         universe = {1: story(), 2: story([1])}
         plan = wf_core.plan_set(universe, [2, 1], seeds=[2, 1])
         self.assertEqual(numbers(plan), [1, 2])
-        self.assertEqual(plan['waves'], [[1], [2]])
+        self.assertEqual(waves(plan), [[[1], [2]]])
         self.assertEqual(plan['excluded'], [])
 
     def test_a_named_dependent_pulls_in_an_unnamed_prerequisite(self):
@@ -46,7 +53,7 @@ class TestPlanSetNamed(unittest.TestCase):
     def test_independent_stories_share_a_wave(self):
         universe = {1: story(), 2: story(), 3: story([1, 2])}
         plan = wf_core.plan_set(universe, [1, 2, 3], seeds=[1, 2, 3])
-        self.assertEqual(plan['waves'], [[1, 2], [3]])
+        self.assertEqual(waves(plan), [[[1, 2], [3]]])
         self.assertEqual(plan['selected'][2]['blocked_by'], [1, 2])
         self.assertEqual(plan['selected'][0]['unblocks'], [3])
 
@@ -54,7 +61,7 @@ class TestPlanSetNamed(unittest.TestCase):
         universe = {1: story(), 2: story([1]), 3: story([2])}
         plan = wf_core.plan_set(universe, [3, 2, 1], seeds=[3])
         self.assertEqual(numbers(plan), [1, 2, 3])
-        self.assertEqual(plan['waves'], [[1], [2], [3]])
+        self.assertEqual(waves(plan), [[[1], [2], [3]]])
 
     def test_a_blocker_the_run_cannot_build_excludes_the_story_with_why(self):
         universe = {2: story([9])}
@@ -75,41 +82,36 @@ class TestPlanSetNamed(unittest.TestCase):
         self.assertEqual(numbers(plan), [])
         self.assertIn('cycle', plan['excluded'][0]['reason'])
 
-    def test_unrelated_named_stories_are_kept_and_flagged(self):
+    def test_unlinked_named_stories_share_one_group(self):
         universe = {1: story(), 2: story()}
         plan = wf_core.plan_set(universe, [1, 2], seeds=[1, 2])
         self.assertEqual(numbers(plan), [1, 2])
-        self.assertTrue(plan['unrelated'])
-        self.assertEqual(plan['components'], [[1], [2]])
+        self.assertEqual([g['stories'] for g in plan['groups']], [[1, 2]])
 
-    def test_shared_parent_or_prerequisite_is_one_group(self):
-        universe = {1: story(parent=50), 2: story(parent=50),
-                    3: story([9]), 4: story([9]), 9: story()}
-        plan = wf_core.plan_set(universe, [1, 2], seeds=[1, 2])
-        self.assertFalse(plan['unrelated'])
-        plan = wf_core.plan_set(universe, [9, 3, 4], seeds=[3, 4])
-        self.assertEqual(numbers(plan), [9, 3, 4])
-        self.assertFalse(plan['unrelated'])
-
-    def test_the_cap_keeps_a_named_story_with_its_prerequisites_or_not_at_all(self):
-        universe = {1: story(), 2: story(), 3: story([1, 2])}
-        plan = wf_core.plan_set(universe, [1, 2, 3], seeds=[1, 3], max_size=2)
+    def test_the_budget_keeps_a_named_story_with_its_prerequisites_or_not_at_all(self):
+        universe = {1: story(effort='Medium'), 2: story(effort='High'),
+                    3: story([1, 2], effort='Low')}
+        plan = wf_core.plan_set(universe, [1, 2, 3], seeds=[1, 3])
         self.assertEqual(numbers(plan), [1])
-        self.assertIn('size cap', plan['excluded'][0]['reason'])
+        self.assertIn('budget of 7', plan['excluded'][0]['reason'])
 
-    def test_seven_stories_fit_the_default_cap(self):
-        universe = {n: story([n - 1] if n > 1 else []) for n in range(1, 8)}
-        plan = wf_core.plan_set(universe, list(range(1, 8)), seeds=[7])
+    def test_seven_low_stories_fill_the_budget_and_an_eighth_does_not_fit(self):
+        universe = {n: story([n - 1] if n > 1 else []) for n in range(1, 9)}
+        plan = wf_core.plan_set(universe, list(range(1, 9)), seeds=[7])
         self.assertEqual(numbers(plan), list(range(1, 8)))
-        self.assertEqual(wf_core.BULK_MAX, 7)
+        self.assertEqual(plan['weight'], 7)
+        plan = wf_core.plan_set(universe, list(range(1, 9)), seeds=[8])
+        self.assertEqual(numbers(plan), [])
 
 
 class TestPlanSetOpen(unittest.TestCase):
 
     def test_a_high_priority_waiting_story_leads_and_brings_its_blocker(self):
         # #5 is urgent and waits on #8, which is low priority. Neither is
-        # passed over: #8 is built first, then #5.
-        universe = {5: story([8]), 8: story(), 3: story()}
+        # passed over: #8 is built first, then #5. #8 carries #5's priority.
+        universe = {5: story([8], effort='High', priority='Urgent'),
+                    8: story(effort='Low', priority='Urgent'),
+                    3: story(effort='Medium', priority='Urgent')}
         plan = wf_core.plan_set(universe, [5, 3, 8])
         self.assertEqual(numbers(plan), [8, 5])
         self.assertEqual(plan['lead'], 8)
@@ -117,23 +119,119 @@ class TestPlanSetOpen(unittest.TestCase):
         self.assertEqual(whys[5], 'lead')
         self.assertEqual(whys[8], 'prerequisite of #5')
 
-    def test_unconnected_stories_stay_out_of_an_open_set(self):
+    def test_unlinked_stories_fill_an_open_set_by_rank(self):
         universe = {1: story(parent=40), 2: story(parent=40), 3: story()}
         plan = wf_core.plan_set(universe, [1, 3, 2])
-        self.assertEqual(numbers(plan), [1, 2])
+        self.assertEqual(numbers(plan), [1, 3, 2])
+        self.assertEqual(plan['selected'][1]['why'], 'next by priority')
 
-    def test_a_story_whose_chain_is_too_long_does_not_lead(self):
-        # #3's chain is three stories and the cap is two, so #3 cannot lead.
-        # Its group still makes a set of two, which beats the unlinked #4.
-        universe = {1: story(), 2: story([1]), 3: story([2]), 4: story()}
-        plan = wf_core.plan_set(universe, [3, 4, 1, 2], max_size=2)
+    def test_a_story_whose_chain_is_over_budget_is_passed_over(self):
+        # #3's chain costs 2 + 2 + 6 = 10, so #3 cannot lead; the rest fill in.
+        universe = {1: story(effort='Medium'), 2: story([1], effort='Medium'),
+                    3: story([2], effort='High'), 4: story()}
+        plan = wf_core.plan_set(universe, [3, 4, 1, 2])
         self.assertNotIn(3, numbers(plan))
-        self.assertEqual(numbers(plan), [1, 2])
+        self.assertEqual(sorted(numbers(plan)), [1, 2, 4])
+        self.assertEqual(plan['weight'], 5)
 
     def test_an_empty_universe_is_an_empty_plan(self):
         plan = wf_core.plan_set({}, [])
         self.assertIsNone(plan['lead'])
         self.assertEqual(plan['selected'], [])
+
+
+class TestBudgetBandAndGroups(unittest.TestCase):
+    """The three rules every set keeps, enforced in `plan_set`."""
+
+    def test_effort_weights(self):
+        self.assertEqual(wf_core.BULK_BUDGET, 7)
+        self.assertEqual([wf_core.effort_weight(v) for v in ('Low', 'Medium', 'High')],
+                         [1, 2, 6])
+        self.assertEqual(wf_core.effort_weight(None), 2)
+
+    def test_a_high_story_leaves_room_for_one_low_story_only(self):
+        universe = {1: story(effort='High'), 2: story(effort='Medium'),
+                    3: story(effort='Low'), 4: story(effort='Low')}
+        plan = wf_core.plan_set(universe, [1, 2, 3, 4])
+        self.assertEqual(numbers(plan), [1, 3])
+        self.assertEqual(plan['weight'], 7)
+
+    def test_no_set_spans_more_than_one_priority_level(self):
+        universe = {1: story(priority='Urgent'), 2: story(priority='Medium'),
+                    3: story(priority='High'), 4: story(priority='Low')}
+        plan = wf_core.plan_set(universe, [1, 3, 2, 4])
+        self.assertEqual(numbers(plan), [1, 3])
+        plan = wf_core.plan_set(universe, [1, 2], seeds=[1, 2])
+        self.assertEqual(numbers(plan), [1])
+        self.assertIn('Priority', plan['excluded'][0]['reason'])
+
+    def test_a_blocker_is_banded_by_the_priority_it_inherits(self):
+        universe = {1: story([2], priority='Urgent'), 2: story(priority='Urgent'),
+                    3: story(priority='Low')}
+        plan = wf_core.plan_set(universe, [1, 2, 3])
+        self.assertEqual(numbers(plan), [2, 1])
+
+    def test_modes_split_into_two_groups_and_one_group_holds_one_mode(self):
+        universe = {1: story(mode='feature'), 2: story(mode='maintenance'),
+                    3: story(mode='feature')}
+        plan = wf_core.plan_set(universe, [1, 2, 3])
+        self.assertEqual([(g['group'], g['mode'], g['stories']) for g in plan['groups']],
+                         [(1, 'feature', [1, 3]), (2, 'maintenance', [2])])
+        self.assertEqual([s['group'] for s in plan['selected']], [1, 1, 2])
+        for group in plan['groups']:
+            modes = {s['mode'] for s in plan['selected'] if s['group'] == group['group']}
+            self.assertEqual(len(modes), 1)
+        plan = wf_core.plan_set(universe, [1, 2, 3], max_groups=1)
+        self.assertEqual([g['stories'] for g in plan['groups']], [[1, 3]])
+
+    def test_a_story_joining_a_started_group_goes_before_one_starting_a_group(self):
+        universe = {1: story(effort='Medium', mode='feature'),
+                    2: story(effort='Medium', mode='maintenance'),
+                    3: story(effort='Medium', mode='feature'),
+                    4: story(effort='Medium', mode='feature'),
+                    5: story(effort='Low', mode='maintenance')}
+        plan = wf_core.plan_set(universe, [1, 2, 3, 4, 5])
+        self.assertEqual([g['stories'] for g in plan['groups']], [[1, 3, 4], [5]])
+
+    def test_one_mode_is_never_more_than_one_group(self):
+        universe = {n: story() for n in range(1, 6)}
+        plan = wf_core.plan_set(universe, list(range(1, 6)))
+        self.assertEqual(len(plan['groups']), 1)
+
+    def test_the_group_holding_a_prerequisite_is_built_first(self):
+        universe = {1: story([2], mode='feature'), 2: story(mode='maintenance')}
+        plan = wf_core.plan_set(universe, [1, 2], seeds=[1])
+        self.assertEqual([(g['mode'], g['stories']) for g in plan['groups']],
+                         [('maintenance', [2]), ('feature', [1])])
+        self.assertEqual([g['waves'] for g in plan['groups']], [[[2]], [[1]]])
+        plan = wf_core.plan_set(universe, [1, 2], seeds=[1], max_groups=1)
+        self.assertEqual(numbers(plan), [])
+        self.assertIn('one pull request', plan['excluded'][0]['reason'])
+
+    def test_groups_that_wait_on_each_other_cannot_be_split(self):
+        stories = [{'number': 1, 'mode': 'feature', 'blocked_by': [2]},
+                   {'number': 2, 'mode': 'maintenance', 'blocked_by': [3]},
+                   {'number': 3, 'mode': 'feature', 'blocked_by': []}]
+        groups, reason = wf_core.split_groups(stories)
+        self.assertIsNone(groups)
+        self.assertIn('each wait on the other', reason)
+
+    def test_no_budget_turns_the_rules_off(self):
+        universe = {1: story([2], effort='High', priority='Urgent'),
+                    2: story(effort='High', priority='Low')}
+        plan = wf_core.plan_set(universe, [1, 2], seeds=[1], budget=None)
+        self.assertEqual(numbers(plan), [2, 1])
+
+    def test_no_budget_orders_a_chain_that_crosses_modes_both_ways(self):
+        """`pick --issue` plans with no budget: a feature waiting on a bug
+        waiting on a feature still gets an order, in one group."""
+        universe = {10: story([20], mode='feature'), 20: story([30], mode='maintenance'),
+                    30: story(mode='feature')}
+        plan = wf_core.plan_set(universe, [10, 20, 30], seeds=[10], budget=None)
+        self.assertEqual(numbers(plan), [30, 20, 10])
+        self.assertEqual([(g['mode'], g['stories']) for g in plan['groups']],
+                         [(None, [30, 20, 10])])
+        self.assertEqual(plan['excluded'], [])
 
 
 class TestDependencyWaves(unittest.TestCase):

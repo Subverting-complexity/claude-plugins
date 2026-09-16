@@ -1,7 +1,7 @@
 """
 Building a bulk set's waves: `bulk-schedule` decides which stories in a wave
-may be built in parallel, and `bulk-integrate` brings the parallel builders'
-temporary branches onto the shared branch.
+of one group may be built in parallel, and `bulk-integrate` brings the
+parallel builders' temporary branches onto that group's branch.
 
 Both used to be steps Claude carried out by hand from the skill: judging from
 the plan whether stories share files, then fetching, cherry-picking, aborting,
@@ -18,7 +18,7 @@ import tempfile
 import wf_core
 from wf_config import repo_root
 from wf_io import EXIT_ENV, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE, emit, run
-from wf_plan import BULK_SET, _load_set, _set_path
+from wf_plan import BULK_SET, _group, _load_set, _set_path
 
 
 PLAN_FILE = os.path.join('.claude', 'plan.md')
@@ -48,12 +48,14 @@ def _write_set_atomic(record):
 
 
 def cmd_bulk_schedule(args):
-    """`wf bulk-schedule`: each wave's parallel batches, from the plan's files.
+    """`wf bulk-schedule --group G`: each wave's parallel batches in one
+    group, from the plan's files.
 
     No network. A missing plan is not an error: every story is then
     unplanned, which schedules each wave one story at a time.
     """
     record = _load_set()
+    _group(record, args.group)
     try:
         with open(os.path.join(repo_root(), PLAN_FILE), encoding='utf-8') as fh:
             plan_text = fh.read()
@@ -61,22 +63,23 @@ def cmd_bulk_schedule(args):
     except OSError:
         plan_text, plan_found = '', False
     plan = wf_core.parse_plan(plan_text)
-    waves, built = wf_core.set_waves(record)
+    waves, built = wf_core.set_waves(record, args.group)
     out, next_wave, shared = wf_core.schedule_waves(
         waves, plan['stories'], plan['shared'], built)
-    record['schedule'] = {'waves': out, 'next_wave': next_wave, 'shared': shared}
+    record['schedule'] = {'group': args.group, 'waves': out, 'next_wave': next_wave,
+                          'shared': shared}
     _write_set_atomic(record)
     if next_wave is None:
-        reason = 'every story in the set is built'
+        reason = 'every story in group %d is built' % args.group
     else:
         wave = out[next_wave]
-        reason = 'wave %d: %d stor%s in %d batch%s%s' % (
-            next_wave, len(wave['stories']),
+        reason = 'group %d, wave %d: %d stor%s in %d batch%s%s' % (
+            args.group, next_wave, len(wave['stories']),
             'y' if len(wave['stories']) == 1 else 'ies', len(wave['batches']),
             '' if len(wave['batches']) == 1 else 'es',
             ', parallel' if wave['parallel'] else ', serial')
-    emit('ok', EXIT_OK, waves=out, next_wave=next_wave, shared=shared,
-         plan_found=plan_found, reason=reason)
+    emit('ok', EXIT_OK, group=args.group, waves=out, next_wave=next_wave,
+         shared=shared, plan_found=plan_found, reason=reason)
 
 
 def _git(root, *args):
@@ -88,8 +91,9 @@ def _detail(out, err):
 
 
 def cmd_bulk_integrate(args):
-    """`wf bulk-integrate --wave K`: cherry-pick each builder's branch onto
-    the shared branch, push once, then mark and delete what landed.
+    """`wf bulk-integrate --group G --wave K`: cherry-pick each builder's
+    branch onto the group's branch, push once, then mark and delete what
+    landed.
 
     Each story is taken in build order. Its commits are the ones on its
     temporary branch that are not already on HEAD, found through the merge
@@ -101,14 +105,15 @@ def cmd_bulk_integrate(args):
     set never claims a story the remote does not hold.
     """
     record = _load_set()
-    branch = record.get('branch')
+    branch = _group(record, args.group).get('branch')
     if not branch:
         emit('usage', EXIT_USAGE,
-             reason='no shared branch is recorded; run bulk-mark --branch first')
-    waves, built = wf_core.set_waves(record)
+             reason='no branch is recorded for group %d; run bulk-mark --group %d '
+                    '--branch first' % (args.group, args.group))
+    waves, built = wf_core.set_waves(record, args.group)
     if not 0 <= args.wave < len(waves):
-        emit('usage', EXIT_USAGE, reason='the set has no wave %d (it has %d)'
-                                         % (args.wave, len(waves)))
+        emit('usage', EXIT_USAGE, reason='group %d has no wave %d (it has %d)'
+                                         % (args.group, args.wave, len(waves)))
     root = repo_root()
 
     code, out, err = _git(root, 'rev-parse', '--abbrev-ref', 'HEAD')
@@ -135,7 +140,8 @@ def cmd_bulk_integrate(args):
     def fail(reason):
         emit('error', EXIT_ENV, pushed=False, branches_deleted=[],
              remaining=[s['number'] for s in record.get('stories') or ()
-                        if not s.get('built')], reason=reason, **state)
+                        if s['group'] == args.group and not s.get('built')],
+             reason=reason, **state)
 
     for number in [n for n in waves[args.wave] if n not in built]:
         temp = '%s--%d' % (branch, number)
@@ -202,9 +208,10 @@ def cmd_bulk_integrate(args):
             else:
                 delete_error = _detail(out, err)
 
-    remaining = [s['number'] for s in record.get('stories') or () if not s.get('built')]
+    remaining = [s['number'] for s in record.get('stories') or ()
+                 if s['group'] == args.group and not s.get('built')]
     payload = dict(state, pushed=pushed, branches_deleted=deleted,
-                   remaining=remaining, wave=args.wave, branch=branch,
+                   remaining=remaining, group=args.group, wave=args.wave, branch=branch,
                    bulk_set=BULK_SET.replace(os.sep, '/'))
     if push_error:
         payload['push_error'] = push_error
