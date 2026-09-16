@@ -44,7 +44,7 @@ The plugin used to ship `synergy/settings.json` with `"agent": "builder"`. A plu
 
 **Bash(mkdir \*), Bash(cp \*), Bash(mv \*)**: directory and file management when creating modules and reorganising code.
 
-**Bash(rm -f .claude/\*), Bash(touch .claude/\*), Bash(xargs -0 -r rm -f), Bash(test -f \*), Bash(echo \*)**: the run's own marker files. `execute` creates flags such as `.claude/no-merge.flag`, tests for them, and clears them and stale claim files at the start and end of a run. Removal is scoped to `.claude/` so it cannot delete project files.
+**Bash(rm -f .claude/\*), Bash(touch .claude/\*), Bash(xargs -0 -r rm -f), Bash(test -f \*), Bash(echo \*)**: the run's own marker files. `execute` creates flags such as `.claude/no-merge.flag`, tests for them, and clears them and stale claim files at the start and end of a run. Removal is scoped to `.claude/` so it cannot delete project files. Issue #314 investigated whether the invocation-flags block in `shared-phases.md` — including `touch .claude/unattended.flag`, the signal a spawned Builder uses to mark itself unattended — is reliably reachable for a spawned agent. Run live as an actual `synergy:Builder`, the block (and `touch .claude/unattended.flag` specifically) completed with no permission prompt: these five entries already cover every command in it. Keep them; removing any one reopens that gap.
 
 **Bash(git rev-parse \*), Bash(git ls-files \*)**: read-only: the head SHA recorded for the review, and the untracked claim files cleared at the start of a run.
 
