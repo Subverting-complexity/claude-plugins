@@ -25,12 +25,14 @@ cp hooks/pre-commit "$hookdir/pre-commit"
 chmod +x "$hookdir/pre-commit"
 
 echo "==> Checking for Python 3 (required by run-tests.sh)"
-if command -v python3 >/dev/null 2>&1; then
-    echo "    Found $(python3 --version)"
-elif command -v py >/dev/null 2>&1 && py -3 --version >/dev/null 2>&1; then
-    echo "    Found $(py -3 --version) (Windows Python Launcher)"
-elif command -v python >/dev/null 2>&1; then
-    echo "    Found $(python --version)"
+# shellcheck source=scripts/find-python.sh
+source scripts/find-python.sh
+if find_python; then
+    if [ "${BASE_PY[0]}" = "py" ]; then
+        echo "    Found $("${BASE_PY[@]}" --version) (Windows Python Launcher)"
+    else
+        echo "    Found $("${BASE_PY[@]}" --version)"
+    fi
 else
     echo "    WARNING: Python not found. Install Python 3.x to run the test suite."
     echo "      Windows: winget install Python.Python.3.12"

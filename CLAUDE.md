@@ -51,6 +51,7 @@ These workflows spawn parallel/background agents, each of which the harness plac
 | Tool | What it does |
 |------|-------------|
 | `bootstrap.ps1` / `bootstrap.sh` | One-time per-clone setup: pin LF line endings, renormalize, install the pre-commit hook, check Python is available |
+| `scripts/find-python.sh` / `scripts/find-python.ps1` | Shared "find a usable Python 3" cascade (`python3`/`py -3`/`python`, or `py -3`/`python3`/`python` on Windows), sourced by `bootstrap.sh`/`bootstrap.ps1` and `run-tests.sh`/`run-tests.ps1` so the detection logic lives in one place per platform |
 | `lint-skills.sh` | Validate skill frontmatter and the wiring between skills and the standards they cite |
 | `run-tests.sh` | Run the offline decision-logic tests; auto-detects `python3`, `py -3` (Windows Launcher), or `python` |
 | `run-tests.ps1` | Windows PowerShell equivalent of `run-tests.sh`; prints a `winget` install hint if no Python is found |
