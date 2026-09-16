@@ -241,6 +241,8 @@ class EndToEnd(object):
         bad = os.path.join(self.data, 'bad.exe')
         with open(bad, 'wb') as f:
             f.write(b'\x01\x02\x03')
+        # Executable, so it fails to start rather than being opened as a document.
+        os.chmod(bad, 0o755)
         with open(os.path.join(self.data, self.cache_name), 'w') as f:
             f.write('venv\n%s\n' % bad)
         stale = self.run_launcher('--help')
