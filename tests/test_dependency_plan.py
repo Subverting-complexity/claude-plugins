@@ -222,6 +222,17 @@ class TestBudgetBandAndGroups(unittest.TestCase):
         plan = wf_core.plan_set(universe, [1, 2], seeds=[1], budget=None)
         self.assertEqual(numbers(plan), [2, 1])
 
+    def test_no_budget_orders_a_chain_that_crosses_modes_both_ways(self):
+        """`pick --issue` plans with no budget: a feature waiting on a bug
+        waiting on a feature still gets an order, in one group."""
+        universe = {10: story([20], mode='feature'), 20: story([30], mode='maintenance'),
+                    30: story(mode='feature')}
+        plan = wf_core.plan_set(universe, [10, 20, 30], seeds=[10], budget=None)
+        self.assertEqual(numbers(plan), [30, 20, 10])
+        self.assertEqual([(g['mode'], g['stories']) for g in plan['groups']],
+                         [(None, [30, 20, 10])])
+        self.assertEqual(plan['excluded'], [])
+
 
 class TestDependencyWaves(unittest.TestCase):
 

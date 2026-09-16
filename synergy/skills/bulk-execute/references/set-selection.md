@@ -35,7 +35,7 @@ With neither, run it once without `--claim` and read the result:
 ## Read the claim
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --mode {mode} --size {size} --issue {n} --issue {n} --claim
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --mode {mode} --max-groups {1|2} --issue {n} --issue {n} --claim
 ```
 
 - **`ok`** — every story in `stories` holds its claim ref, is assigned and is `In Progress`, and `.claude/bulk-set.json` records the set with its groups and waves. `dropped` lists stories claimed away, blocked or already resolved, and every story that waited on one of them; report each by number, title and reason. A story whose `stage_set` is false is reported as "Stage update failed: {stage_message}. Continuing."

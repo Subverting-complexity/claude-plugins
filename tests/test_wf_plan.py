@@ -231,6 +231,18 @@ class TestSelectionAcrossFilters(Harness):
                          [{'number': 5, 'title': 'story 5', 'closed_blockers': [8]}])
         self.assertEqual([s['number'] for s in payload['stories']], [5])
 
+    def test_a_story_under_a_maintenance_feature_is_its_own_group_in_story_mode(self):
+        feature = issue(40)
+        feature.update(type='Feature', sub_issues={'total': 1, 'open': [1]})
+        issues = [feature, issue(1, parent=40), issue(2)]
+        the_facets = facets(issues, {})
+        the_facets['types'][40] = 'Feature'
+        the_facets['classification'] = {40: ['Tech Debt']}
+        code, payload = self._plan(issues, the_facets, [])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(sorted((g['mode'], tuple(g['stories'])) for g in payload['groups']),
+                         [('feature', (2,)), ('maintenance', (1,))])
+
     def test_unlinked_stories_fill_the_budget_and_nothing_is_left_to_judge(self):
         issues = [issue(1, parent=40), issue(2, parent=40), issue(3),
                   issue(4, blockers=[9]), issue(9, assigned=True)]
@@ -388,6 +400,27 @@ class TestPickBuildsThePrerequisite(Harness):
         self.assertEqual(payload['prerequisite_for']['build_order'], [1, 2])
         self.assertEqual([u['number'] for u in payload['unblocks']], [2])
         self.assertEqual(payload['side_effects'][0]['action'], 'marked-blocked')
+
+    def test_a_prerequisite_chain_across_modes_both_ways_still_redirects(self):
+        """A story waiting on a bug that waits on another story: the pick
+        claims the first link of the chain, as it did before sets had groups."""
+        issues = [issue(10, blockers=[20]), issue(20, blockers=[30]), issue(30)]
+        issues[1]['type'] = 'Bug'
+        the_facets = facets(issues, {})
+        the_facets['types'][20] = 'Bug'
+        with mock.patch.object(wf, 'read_pool', return_value=(True, issues, '', set())), \
+                mock.patch.object(wf, 'load_issue_facets', return_value=the_facets), \
+                mock.patch.object(wf, 'fetch_issue_candidate',
+                                  return_value=issue(10, blockers=[20])), \
+                mock.patch.object(wf, 'acquire_claim', return_value='won'), \
+                mock.patch.object(wf, 'apply_in_progress'), \
+                mock.patch.object(wf, 'set_stages',
+                                  side_effect=lambda cfg, wanted, *a, **k:
+                                  {n: (True, '') for n in wanted}):
+            code, payload = capture(['pick', '--issue', '10'])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['number'], 30)
+        self.assertEqual(payload['prerequisite_for']['build_order'], [30, 20, 10])
 
     def test_a_named_parked_story_keeps_its_stage(self):
         """Only a blank or Backlog story is set to Blocked: Parked is a hold

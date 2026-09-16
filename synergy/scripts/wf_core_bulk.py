@@ -305,8 +305,9 @@ def plan_set(universe, rank, seeds=None, budget=BULK_BUDGET, reasons=None,
       stories under one container), every story inside it the set did not
       take is excluded too, with the rule that kept it out.
 
-    `budget` None turns the three rules off and gives one group per mode,
-    for a caller that wants only the build order.
+    `budget` None turns the three rules off and gives one group holding
+    every story, its `mode` None when it holds both, for a caller that wants
+    only the build order (`pick --issue` on a story that waits).
 
     Returns `{'lead', 'selected', 'groups', 'excluded', 'weight', 'budget'}`.
     `groups` is a list of {'group' (from 1), 'mode', 'lead', 'stories',
@@ -374,12 +375,18 @@ def plan_set(universe, rank, seeds=None, budget=BULK_BUDGET, reasons=None,
                 for n in numbers]
 
     def groups_of(numbers):
-        return split_groups(as_stories(numbers), max_groups if limited else None)
+        if limited:
+            return split_groups(as_stories(numbers), max_groups)
+        # No rules: one group in build order, whatever modes it holds, so a
+        # prerequisite chain that crosses modes both ways still has an order.
+        modes = {universe[n].get('mode') or 'feature' for n in numbers}
+        return ([{'mode': modes.pop() if len(modes) == 1 else None,
+                  'stories': as_stories(numbers)}] if numbers else []), None
 
     def breaks_rule(numbers):
         """Which rule a candidate set breaks, in words, or None."""
         if not limited:
-            return groups_of(numbers)[1]
+            return None
         total = sum(weight(n) for n in numbers)
         if total > budget:
             return ('its Effort, with its prerequisites, takes the set to %d '
