@@ -401,9 +401,12 @@ class TestPickBuildsThePrerequisite(Harness):
         self.assertEqual([u['number'] for u in payload['unblocks']], [2])
         self.assertEqual(payload['side_effects'][0]['action'], 'marked-blocked')
 
-    def test_a_prerequisite_chain_across_modes_both_ways_still_redirects(self):
+    def test_a_three_link_chain_through_a_bug_redirects_to_its_first_link(self):
         """A story waiting on a bug that waits on another story: the pick
-        claims the first link of the chain, as it did before sets had groups."""
+        claims the first link and reports the whole order. `prerequisite_pick`
+        plans with no budget and no work modes, so the cross-mode case itself
+        is `test_no_budget_orders_a_chain_that_crosses_modes_both_ways` in
+        `test_dependency_plan.py`."""
         issues = [issue(10, blockers=[20]), issue(20, blockers=[30]), issue(30)]
         issues[1]['type'] = 'Bug'
         the_facets = facets(issues, {})
