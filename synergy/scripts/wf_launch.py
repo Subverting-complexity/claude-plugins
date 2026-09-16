@@ -253,7 +253,7 @@ def run_wf(python, args, execv=os.execv):
     if os.name != 'nt':
         sys.stdout.flush()
         sys.stderr.flush()
-        execv(python, argv)
+        return execv(python, argv)
     proc = subprocess.Popen(argv)
     while True:
         try:
