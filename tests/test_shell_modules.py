@@ -24,13 +24,20 @@ sys.path.insert(0, SCRIPTS)
 import wf  # noqa: E402
 
 
+# `wf_*.py` files that are not part of the `wf` shell. `wf_launch.py` runs
+# before `wf.py` on a bare system Python, to find the interpreter and build the
+# virtualenv, and `wf` never imports it.
+NOT_SHELL = frozenset({'wf_launch'})
+
+
 def shell_module_names():
     """`wf_*.py` in the scripts directory, less the `wf_core*` rules, which
-    have their own facade and are never patched through `wf`."""
+    have their own facade and are never patched through `wf`, and less
+    `NOT_SHELL`."""
     names = set()
     for path in glob.glob(os.path.join(SCRIPTS, 'wf_*.py')):
         name = os.path.splitext(os.path.basename(path))[0]
-        if name == 'wf_core' or name.startswith('wf_core_'):
+        if name == 'wf_core' or name.startswith('wf_core_') or name in NOT_SHELL:
             continue
         names.add(name)
     return names
