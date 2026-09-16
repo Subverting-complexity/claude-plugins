@@ -161,8 +161,8 @@ Run from the **target repo root** so the CLI can read `ClaudeProject.md` and the
 
 `wf.sh` / `wf.ps1` resolve which Python runs `wf.py` like this:
 
-1. **A dedicated virtualenv**, if `wf.sh setup` has created one. It lives under `${CLAUDE_PLUGIN_DATA}/wf-venv` (the plugin's persistent data dir, which survives plugin updates), with `requirements.txt` installed into it. This is the steady state — pinned, isolated, never affected by PATH.
-2. **A probed system Python** otherwise (`python3` verified, then `py -3`, then `python` — the broken Windows `python3` Store shim fails its `--version` probe and is skipped), with a one-line hint to run setup.
+1. **A dedicated virtualenv.** It lives under `${CLAUDE_PLUGIN_DATA}/wf-venv` (the plugin's persistent data dir, which survives plugin updates), with `requirements.txt` installed into it. This is the steady state — pinned, isolated, never affected by PATH. `wf.sh setup` creates it explicitly, but so does the first ordinary call that finds none and a usable system Python: it builds the venv in place before running, silently, so most projects never need to run `setup` by hand.
+2. **A probed system Python**, only when no venv exists and the auto-bootstrap above could not build one (e.g. no `venv` module, a locked-down filesystem, or a losing race against another concurrent `wf` call already building it) — `python3` verified, then `py -3`, then `python` (the broken Windows `python3` Store shim fails its `--version` probe and is skipped), with a one-line hint to run setup.
 3. **Nothing found** → exit 20; the caller falls back to the inline skill.
 
 Probing launches Python, about 420 ms on Windows, so the answer is cached: `wf.sh` writes the kind (`venv` or `base`) and the interpreter's absolute path to `wf-python` under the data dir, and `wf.ps1` to `wf-python-ps1`. A later call trusts it without running anything while that path exists, and a cached system Python gives way as soon as a venv exists. If the cached interpreter will not launch (exit 126 or 127 in bash, command not found in PowerShell), the cache is deleted and the probe runs once. `setup` always rewrites it.

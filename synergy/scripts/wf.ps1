@@ -26,6 +26,10 @@ $dataRoot = if ($env:CLAUDE_PLUGIN_DATA) { $env:CLAUDE_PLUGIN_DATA }
             else { $newData }
 $venv = Join-Path $dataRoot 'wf-venv'
 $venvPy = Join-Path $venv 'Scripts/python.exe'
+# `New-Item -ErrorAction Stop` on this path is the exclusivity check for
+# auto-bootstrap below: it either succeeds for exactly one concurrent caller
+# or throws for the rest.
+$venvLock = Join-Path $dataRoot 'wf-venv.lock'
 # Two lines: `venv` or `base`, then the interpreter's path. Separate from
 # wf.sh's `wf-python`, whose paths are written in a form PowerShell cannot run.
 $pyCache = Join-Path $dataRoot 'wf-python-ps1'
@@ -78,24 +82,53 @@ function Remove-PythonCache {
 # create step but never installs a system Python and never writes to the
 # console: any failure here is not this call's problem to report, so it just
 # returns $null and leaves the caller to warn and fall back to system Python.
+#
+# Unlike `setup` (a one-off command a person runs by hand), this can now run
+# from any ordinary invocation, so two calls with no venv yet can start at the
+# same moment — plausible here since parallel agents on one machine share
+# $dataRoot. Creating $venvLock is the exclusivity check: only one caller
+# creates it, so only one caller builds the venv. A loser polls for the
+# winner's result instead of racing it into the same `-m venv` target, which
+# could otherwise interleave two writes into one venv directory and leave it
+# corrupted.
 function Try-AutoBootstrapVenv {
     param([string] $ExePath, [string[]] $BaseArgs)
     if (-not $ExePath) { return $null }
+
+    New-Item -ItemType Directory -Force $dataRoot -ErrorAction SilentlyContinue | Out-Null
+    $waited = 0
+    while ($true) {
+        try {
+            New-Item -ItemType Directory -Path $venvLock -ErrorAction Stop | Out-Null
+            break
+        } catch {
+            $existing = Get-VenvPython
+            if ($existing) { return $existing }
+            if ($waited -ge 30) { return $null }
+            Start-Sleep -Seconds 1
+            $waited++
+        }
+    }
     try {
+        # The winner may have finished between our first check and the lock.
+        $existing = Get-VenvPython
+        if ($existing) { return $existing }
         New-Item -ItemType Directory -Force (Split-Path $venv) | Out-Null
         & $ExePath @BaseArgs -m venv $venv 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) { return $null }
-    } catch { return $null }
-    $vpy = Get-VenvPython
-    if (-not $vpy) { return $null }
-    & $vpy -m pip install --quiet --upgrade pip 2>$null | Out-Null
-    $req = Join-Path $PSScriptRoot 'requirements.txt'
-    if (Test-Path $req) {
-        & $vpy -m pip install --quiet -r $req 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { return $null }
+        $vpy = Get-VenvPython
+        if (-not $vpy) { return $null }
+        & $vpy -m pip install --quiet --upgrade pip 2>$null | Out-Null
+        $req = Join-Path $PSScriptRoot 'requirements.txt'
+        if (Test-Path $req) {
+            & $vpy -m pip install --quiet -r $req 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { return $null }
+        }
+        Save-PythonCache 'venv' $vpy
+        return $vpy
+    } finally {
+        Remove-Item -LiteralPath $venvLock -Recurse -Force -ErrorAction SilentlyContinue
     }
-    Save-PythonCache 'venv' $vpy
-    return $vpy
 }
 
 # The cached interpreter, trusted without running it. Its path must still

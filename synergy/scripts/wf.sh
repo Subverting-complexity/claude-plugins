@@ -36,6 +36,9 @@ else
     DATA_ROOT="$HOME/.claude/synergy"
 fi
 VENV="$DATA_ROOT/wf-venv"
+# `mkdir` on this path is the exclusivity check for auto-bootstrap below: it
+# either succeeds for exactly one concurrent caller or fails for the rest.
+VENV_LOCK="$DATA_ROOT/wf-venv.lock"
 # Two lines: `venv` or `base`, then the interpreter's path. wf.ps1 keeps its
 # own, because a path this shell writes is not one PowerShell can run.
 PY_CACHE="$DATA_ROOT/wf-python"
@@ -122,17 +125,42 @@ base_warning() {
 # any failure here is not this call's problem to report, so it just leaves
 # the caller to fall back to base_warning and system Python as before.
 # Echoes the venv's python path on success.
+#
+# Unlike `setup` (a one-off command a person runs by hand), this can now run
+# from any ordinary invocation, so two calls with no venv yet can start at the
+# same moment — plausible here since parallel agents on one machine share
+# $DATA_ROOT (docs/worktree-config.md). `mkdir "$VENV_LOCK"` is atomic: only
+# one caller creates it, so only one caller builds the venv. A loser polls for
+# the winner's result instead of racing it into the same `python -m venv`
+# target, which could otherwise interleave two writes into one venv directory
+# and leave it corrupted.
 autobootstrap_venv() {
     local base=("$@") vpy=''
     [ "${#base[@]}" -gt 0 ] && [ -n "${base[0]}" ] || return 1
     "${base[@]}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1 || return 1
-    mkdir -p "$(dirname "$VENV")" 2>/dev/null || return 1
-    "${base[@]}" -m venv "$VENV" >/dev/null 2>&1 || return 1
-    vpy=$(venv_python) || return 1
-    "$vpy" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
-    if [ -f "$HERE/requirements.txt" ]; then
-        "$vpy" -m pip install --quiet -r "$HERE/requirements.txt" >/dev/null 2>&1 || return 1
-    fi
+    vpy=$(
+        set -e
+        mkdir -p "$DATA_ROOT" 2>/dev/null
+        waited=0
+        while ! mkdir "$VENV_LOCK" 2>/dev/null; do
+            if existing=$(venv_python); then printf '%s' "$existing"; exit 0; fi
+            [ "$waited" -ge 30 ] && exit 1
+            sleep 1
+            waited=$((waited + 1))
+        done
+        trap 'rmdir "$VENV_LOCK" 2>/dev/null' EXIT
+        # The winner may have finished between our first check and the lock.
+        if existing=$(venv_python); then printf '%s' "$existing"; exit 0; fi
+        mkdir -p "$(dirname "$VENV")"
+        "${base[@]}" -m venv "$VENV" >/dev/null 2>&1 || exit 1
+        created=$(venv_python) || exit 1
+        "$created" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
+        if [ -f "$HERE/requirements.txt" ]; then
+            "$created" -m pip install --quiet -r "$HERE/requirements.txt" >/dev/null 2>&1 || exit 1
+        fi
+        printf '%s' "$created"
+    ) || return 1
+    [ -n "$vpy" ] || return 1
     save_python_cache venv "$vpy"
     printf '%s' "$vpy"
 }
@@ -182,8 +210,11 @@ wf_setup() {
     done
 
     # Whatever setup ends with is what the next call should run, so the old
-    # answer goes first and a failed setup leaves nothing stale behind.
+    # answer goes first and a failed setup leaves nothing stale behind. Also
+    # clear a stale auto-bootstrap lock (e.g. left by a killed process), since
+    # an explicit setup run is not itself subject to the lock.
     rm -f "$PY_CACHE"
+    rm -rf "$VENV_LOCK"
 
     if [ "$force" -eq 0 ] && VPY=$(venv_python); then
         save_python_cache venv "$VPY"
