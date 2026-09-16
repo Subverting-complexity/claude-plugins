@@ -93,6 +93,8 @@ CURRENT = 'the repository in the working directory'
 ACCOUNT = 'the signed-in account'
 PROJECT = 'the org named in ClaudeProject.md'
 NODES = 'nodes'
+# What an owner-extraction step returns to fall through to the next step.
+NEXT = object()
 
 
 def allowlist_path():
@@ -507,6 +509,85 @@ def _gh_api(toks, cwd, env, ctx):
              'a GitHub API write (`gh api %s`)' % endpoint)]
 
 
+def _constant(call, owner):
+    return owner
+
+
+def _flag(call, names):
+    return flag_value(call['toks'], names, False) or NEXT
+
+
+def _switch(call, names, owner):
+    return owner if has_flag(call['toks'], names) else NEXT
+
+
+def _node_flag(call, names):
+    return _nodes(flag_value(call['toks'], names, False))
+
+
+def _owner_flag(call, names):
+    owner = flag_value(call['toks'], names, False)
+    return ACCOUNT if owner in (None, '@me') else owner
+
+
+def _spec_flag(call, names):
+    spec = flag_value(call['toks'], names, False)
+    return _owner_of_spec(spec, call['env'], call['ctx']) if spec else NEXT
+
+
+def _url_arg(call):
+    return github_owner(call['first']) if (
+        call['first'] and github_owner(call['first'])) else NEXT
+
+
+def _env_repo(call):
+    spec = call['env'].get('gh_repo') or call['ctx']['environ'].get('GH_REPO')
+    return _owner_of_spec(spec, call['env'], call['ctx']) if spec else NEXT
+
+
+# The owner-extraction strategies an OWNER_RULES row may name. Each takes the
+# call and the row's arguments, and returns an owner, or NEXT to fall through
+# to the row's next step.
+STRATEGIES = {
+    'constant': _constant,     # always this owner
+    'flag': _flag,             # the flag's value, used as the owner as given
+    'switch': _switch,         # this owner when the flag is present
+    'node-flag': _node_flag,   # the owner of the node ID the flag names
+    'owner-flag': _owner_flag,  # --owner, where absent or @me is the account
+    'spec-flag': _spec_flag,   # the owner of the owner/repo the flag names
+    'url-arg': _url_arg,       # the owner in a GitHub URL given as first word
+    'env-repo': _env_repo,     # the owner of the repository GH_REPO names
+}
+
+# Where gh acts when nothing more specific names an owner: -R/--repo, a
+# GitHub URL argument, GH_REPO, then the repository in the working directory.
+IN_REPO = (('spec-flag', ('-R', '--repo')), ('url-arg',), ('env-repo',),
+           ('constant', CURRENT))
+# An org or user secret or variable is written to that owner, not a repo.
+SETTINGS = (('flag', ('--org', '-o')), ('switch', ('--user', '-u'), ACCOUNT)) + IN_REPO
+
+# How each `gh` write's owner is worked out, most specific key first:
+# (group, action), then group. A row is a sequence of (strategy, args...)
+# steps tried in order until one returns an owner. Adding a guard rule for a
+# new subcommand is a GH_WRITES entry plus, when it needs one, a row here.
+OWNER_RULES = {
+    ('project', 'item-edit'): (('node-flag', ('--project-id',)),),
+    ('project', 'field-delete'): (('node-flag', ('--id',)),),
+    'project': (('owner-flag', ('--owner',)),),
+    'secret': SETTINGS,
+    'variable': SETTINGS,
+}
+
+
+def _rule_owners(rule, call):
+    """The owners one OWNER_RULES row yields, or None when it falls through."""
+    for step in rule:
+        owner = STRATEGIES[step[0]](call, *step[1:])
+        if owner is not NEXT:
+            return [owner]
+    return None
+
+
 def _gh(toks, cwd, env, ctx):
     words = _gh_words(toks)
     group = words[0] if words else ''
@@ -526,19 +607,10 @@ def _gh(toks, cwd, env, ctx):
         return []
     if group in ACCOUNT_GROUPS:
         return [(ACCOUNT, what)]
-    if group == 'project':
-        if action == 'item-edit':
-            return [(_nodes(flag_value(toks, ['--project-id'], False)), what)]
-        if action == 'field-delete':
-            return [(_nodes(flag_value(toks, ['--id'], False)), what)]
-        owner = flag_value(toks, ['--owner'], False)
-        return [(ACCOUNT if owner in (None, '@me') else owner, what)]
-    if group in ('secret', 'variable'):
-        org = flag_value(toks, ['--org', '-o'], False)
-        if org:
-            return [(org, what)]
-        if has_flag(toks, ['--user', '-u']):
-            return [(ACCOUNT, what)]
+    rule = OWNER_RULES.get((group, action)) or OWNER_RULES.get(group)
+    if rule:
+        call = {'toks': toks, 'first': first, 'env': env, 'ctx': ctx}
+        return [(owner, what) for owner in _rule_owners(rule, call)]
     if group == 'repo' and action == 'fork':
         return [(flag_value(toks, ['--org'], False) or ACCOUNT, what)]
     writes = []
