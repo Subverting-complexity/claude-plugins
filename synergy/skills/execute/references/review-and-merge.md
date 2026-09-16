@@ -39,15 +39,13 @@ Your session planned this change and wrote it, so it cannot review it independen
 
 4. **Sift what comes back.** Drop anything the agent raised that the rubric says is not a finding, and take the stricter reading where a finding is genuinely ambiguous between blocking and quick fix. What survives is the findings list; one agent means there is nothing to reconcile.
 
-5. **Post one consolidated review comment and set the label yourself.** Write the comment following `templates/body-file-write.md` (temp file plus `--body-file`), naming what was reviewed, the verdict, and each finding with its bucket. Then reconcile the PR's review-state label, which is why the reviewer was told not to:
+5. **Post one consolidated review comment and set the label yourself.** Write the comment following `templates/body-file-write.md` (temp file plus `--body-file`), naming what was reviewed, the verdict, and each finding with its bucket. Then reconcile the PR's review-state label (if auto mode denies it, read `references/escape-hatches.md`):
 
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict <approved|changes-requested|needs-discussion>
    ```
 
    **One override.** If `.claude/gate-failed.flag` exists, record `changes-requested` whatever the reviewer concluded. Phase 7 applied that label deliberately to block the merge while the quality gate is red, and this call strips every other state label, so an approving verdict would quietly remove the guard. Say in the comment that the review approved the code but the gate is still red.
-
-   **If auto mode denies the label or the merge** as `Self-Approval` or `Merge Without Review`, do not retry, reword the command or reach the API another way. Those are built-in auto-mode rules that only a machine's user settings can relax. Leave the PR open, labelled `reviewing`, with the verdict comment on it. Skip Phase 10, run **Exit cleanup**, and in the final report say which call was denied and that `docs/rationale/builder-tools-rationale.md` in the plugin's source repository gives the `autoMode.allow` entry that lets a run finish.
 
 ### The severity rubric
 

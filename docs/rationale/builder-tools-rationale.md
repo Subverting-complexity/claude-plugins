@@ -78,4 +78,4 @@ The classifier sees a session applying an approval label to its own PR. It canno
 
 Run `claude auto-mode critique` after adding it. Without the allowance a run cannot reach a merged PR in auto mode. Other permission modes do not use the classifier, so this does not apply to them.
 
-**Do not work around the denial.** Rewording the command, calling the API directly or retrying is the bypass the classifier exists to stop. The `Auto-Mode Bypass` rule also covers it. `review-and-merge.md` Phase 8 step 5 says what a run does instead: leave the PR labelled `reviewing` with the verdict comment on it, and report the allowance above.
+**Do not work around the denial.** Rewording the command, calling the API directly or retrying is the bypass the classifier exists to stop. The `Auto-Mode Bypass` rule also covers it. **Auto-mode denial** in `synergy/skills/execute/references/escape-hatches.md` says what a run does instead: leave the PR labelled `reviewing` with the verdict comment on it, and report the allowance above.
