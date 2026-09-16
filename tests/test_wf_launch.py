@@ -160,13 +160,16 @@ class TestSetup(LaunchTestCase):
 
     def test_ready_only_reports_a_ready_venv(self):
         self.make_venv()
-        with mock.patch.object(wf_launch, 'runs', return_value=True),                 mock.patch.object(wf_launch, 'version_text', return_value='Python 3.12'),                 mock.patch.object(wf_launch, 'build_venv') as build:
+        with mock.patch.object(wf_launch, 'runs', return_value=True), \
+                mock.patch.object(wf_launch, 'version_text', return_value='Python 3.12'), \
+                mock.patch.object(wf_launch, 'build_venv') as build:
             self.assertEqual(wf_launch.cmd_setup(self.paths, ['--ready-only']), 0)
         build.assert_not_called()
 
     def test_ready_only_never_builds(self):
         self.make_venv(ready=False)
-        with mock.patch.object(wf_launch, 'runs', return_value=True),                 mock.patch.object(wf_launch, 'build_venv') as build:
+        with mock.patch.object(wf_launch, 'runs', return_value=True), \
+                mock.patch.object(wf_launch, 'build_venv') as build:
             self.assertEqual(wf_launch.cmd_setup(self.paths, ['--ready-only']), wf_launch.EXIT_NOT_READY)
         build.assert_not_called()
         self.assertTrue(os.path.isdir(self.paths.venv))

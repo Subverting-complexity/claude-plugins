@@ -85,7 +85,7 @@ if [ "${1:-}" = "setup" ]; then
                 try_install_python || true
                 find_python || { echo "wf: install did not produce a usable Python 3. Install manually: $(py_install_hint)" >&2; exit 20; } ;;
             *)
-                echo "wf: Python 3 is required but was not found." >&2
+                echo "wf: Python 3.8 or later is required but was not found." >&2
                 echo "    Install it, then re-run 'wf.sh setup':" >&2
                 echo "      $(py_install_hint)" >&2
                 echo "    Or re-run as 'wf.sh setup --install-python' to attempt it automatically." >&2
