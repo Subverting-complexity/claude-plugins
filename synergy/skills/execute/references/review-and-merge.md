@@ -47,6 +47,8 @@ Your session planned this change and wrote it, so it cannot review it independen
 
    **One override.** If `.claude/gate-failed.flag` exists, record `changes-requested` whatever the reviewer concluded. Phase 7 applied that label deliberately to block the merge while the quality gate is red, and this call strips every other state label, so an approving verdict would quietly remove the guard. Say in the comment that the review approved the code but the gate is still red.
 
+   **If auto mode denies the label or the merge** as `Self-Approval` or `Merge Without Review`, do not retry, reword the command or reach the API another way. Those are built-in auto-mode rules that only a machine's user settings can relax. Leave the PR open, labelled `reviewing`, with the verdict comment on it. Skip Phase 10, run **Exit cleanup**, and in the final report say which call was denied and that `docs/rationale/builder-tools-rationale.md` in the plugin's source repository gives the `autoMode.allow` entry that lets a run finish.
+
 ### The severity rubric
 
 Every finding lands in one of four buckets, and the reviewer is asked to say which. A note that fits none of them is not a finding.
