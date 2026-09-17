@@ -12,13 +12,13 @@ Create a bug, security, architecture, or tech debt issue discovered during devel
 
 ## Preflight
 
-Before doing anything else, check whether preflight already passed in the last four hours — an autonomous filing from `execute`, `pr-review` or audit mode calls this command repeatedly in one run, and the check is what keeps a repeat filing from loading the whole skill again:
+Before doing anything else:
 
 ```!
-[ -n "$(find .claude/preflight-passed.txt -mmin -240 -newer ClaudeProject.md 2>/dev/null)" ] && echo "PREFLIGHT_ALREADY_PASSED"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" preflight-cached
 ```
 
-`PREFLIGHT_ALREADY_PASSED` — skip straight to Step 1; do not load the preflight skill. Otherwise invoke `/synergy:preflight`. If it finds issues and the user chooses "Configure now", wait for setup to complete, then ask the user to re-run this command. Otherwise, proceed.
+`cached: true` — skip straight to Step 1. Otherwise invoke `/synergy:preflight` and proceed once it returns.
 
 ## Steps
 

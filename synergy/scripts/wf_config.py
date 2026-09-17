@@ -332,6 +332,25 @@ def cmd_scratch_clean(args):
     emit('ok', EXIT_OK, removed=removed, failed=failed, excluded=ignored)
 
 
+def _preflight_cached(root):
+    """Whether a clean or warning-only `wf preflight` still stands here."""
+    source = config_paths(root)[1]
+    marker = os.path.join(root, '.claude', 'preflight-passed.txt')
+    marker_mtime = os.path.getmtime(marker) if os.path.isfile(marker) else None
+    source_mtime = os.path.getmtime(source) if os.path.isfile(source) else None
+    return wf_core.preflight_marker_fresh(marker_mtime, source_mtime, time.time())
+
+
+def cmd_preflight_cached(args):
+    """`wf preflight-cached`: read-only. Whether a clean or warning-only
+    `wf preflight` already stands within the last four hours, for a caller
+    (`block-story`, `report-issue`) that only needs that one bit and must not
+    touch the invocation-flag files `run-init` resets -- filing an issue is
+    not the start of a build.
+    """
+    emit('ok', EXIT_OK, cached=_preflight_cached(repo_root()))
+
+
 def cmd_run_init(args):
     """`wf run-init`: the start-of-run housekeeping `execute` and
     `bulk-execute` used to do as a hand-written shell block -- reset and set
@@ -376,12 +395,7 @@ def cmd_run_init(args):
         if flags[key]:
             open(os.path.join(claude_dir, flag_file), 'a').close()
 
-    source = config_paths(root)[1]
-    marker = os.path.join(claude_dir, 'preflight-passed.txt')
-    marker_mtime = os.path.getmtime(marker) if os.path.isfile(marker) else None
-    source_mtime = os.path.getmtime(source) if os.path.isfile(source) else None
-    preflight_cached = wf_core.preflight_marker_fresh(
-        marker_mtime, source_mtime, time.time())
+    preflight_cached = _preflight_cached(root)
 
     remaining = None
     code, out, _err = run(['gh', 'api', 'rate_limit', '--jq', '.rate.remaining'])

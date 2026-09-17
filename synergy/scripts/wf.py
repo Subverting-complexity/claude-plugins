@@ -147,7 +147,9 @@ from wf_board_sync import SYNC_CLOSED_DAYS, cmd_board_sync
 from wf_bulk_build import cmd_bulk_integrate, cmd_bulk_schedule
 from wf_capabilities import cmd_org_capabilities
 from wf_claim import cmd_claim, cmd_claim_reap, cmd_claim_release
-from wf_config import cmd_config, cmd_run_init, cmd_scratch_clean
+from wf_config import (
+    cmd_config, cmd_preflight_cached, cmd_run_init, cmd_scratch_clean,
+)
 from wf_issue_apply import cmd_issue_apply
 from wf_issue_audit import AUDIT_SPEC_DEFAULT, cmd_issue_audit
 from wf_pick import cmd_pick, cmd_refine
@@ -370,6 +372,13 @@ def build_parser():
     ri.add_argument('--bulk', action='store_true',
                     help='also clear .claude/bulk-set.json (bulk-execute only)')
     ri.set_defaults(func=cmd_run_init)
+
+    pc = sub.add_parser('preflight-cached',
+                        help='read-only: does a clean or warning-only `wf '
+                             'preflight` still stand within the last four '
+                             "hours? (`block-story`, `report-issue` -- doesn't "
+                             'touch the invocation-flag files `run-init` does)')
+    pc.set_defaults(func=cmd_preflight_cached)
 
     caps = sub.add_parser('org-capabilities',
                           help="resolve the org's enabled native issue types and its "
