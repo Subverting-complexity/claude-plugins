@@ -6,7 +6,7 @@ description: 'File a bug, security, architecture or tech debt issue. Trigger: "r
 
 Create a bug, security, architecture, or tech debt issue discovered during development.
 
-**Issue wording.** The title and body you create here follow `../skills/writing-github-issues/SKILL.md`. Read it before writing the body. It is the standard for every issue this plugin files, and it is short: open with the actual problem, use `## Summary` plus only the sections that carry information, cut the investigation history, and keep any uncertainty the source had.
+**Issue wording.** Read `../skills/writing-github-issues/SKILL.md` and follow it. It is the standard for every issue this plugin files, and it is short: open with the actual problem, use `## Summary` plus only the sections that carry information, cut the investigation history, and keep any uncertainty the source had.
 
 **Output standard.** Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `../skills/_shared/wording-standard.md` for how it reads, `../skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `../skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one. Inside the issue body the issue standard above governs structure and length; banned patterns still apply there in full.
 
@@ -38,7 +38,7 @@ Determine the type:
 - **Architecture** — Layer violation, coupling, design problem
 - **Tech Debt** — Working but needs improvement
 
-A bug, a security problem and tech debt need no parent. An architecture report is filed as a `Feature` (`../skills/writing-github-issues/SKILL.md` → **Hierarchy**): where an open epic covers the work, pass its number as `parent` in Step 5; otherwise file it without one. Do not file an epic to hold one report.
+A bug, a security problem and tech debt need no parent. Only for an architecture report, read `../skills/writing-github-issues/references/scope-and-hierarchy.md` → **Hierarchy**: it is filed as a `Feature`, and where an open epic covers the work, pass its number as `parent` in Step 5; otherwise file it without one. Do not file an epic to hold one report.
 
 ### 3. Assess severity, size and owner
 
@@ -52,7 +52,7 @@ Then settle the three field values every issue must carry. They are written in S
 
 - **`Priority`** — **Urgent** for a security hole, data loss or a crash on a core path; **High** for a broken feature, work this blocks, or a clear regression; **Medium** for incorrect behaviour with a workaround, or notable debt; **Low** for cosmetic work, minor cleanup or a nice-to-have. This is the whole of the pool's order, so an issue without it sorts to the back and is never picked.
 - **`Effort`** — **Low** for a targeted fix in a few files, **Medium** for moderate scope with some investigation, **High** for broad impact, architectural change or significant unknowns.
-- **`Ownership`** — **Code agent** unless the fix needs a browser (**Browser agent**) or a person (**Human**). This is what keeps work a code agent cannot finish out of the pool. When the report covers both kinds of work, file two issues rather than choosing one owner for both halves: `../skills/writing-github-issues/SKILL.md` → **Scope: one issue, one party**.
+- **`Ownership`** — **Code agent** unless the fix needs a browser (**Browser agent**) or a person (**Human**). This is what keeps work a code agent cannot finish out of the pool. When the report covers both kinds of work, file two issues rather than choosing one owner for both halves: `../skills/writing-github-issues/references/scope-and-hierarchy.md` → **Scope: one issue, one party**.
 
 **No label carries any of this.** There is no priority label, no type label and no state label to choose — `wf issue-apply` writes the fields, sets the native issue type from `kind`, and writes the stage. The issue gets no label.
 
@@ -74,7 +74,7 @@ If a template carries frontmatter labels, add them as a `labels` list on the spe
 
 One write, through `wf issue-apply`. It is the only path that creates an issue: it applies the title rules, the native issue type, the org's field values, the labels and the milestone together, so an issue filed here is shaped exactly like one filed by `feature-discovery` or `execute`.
 
-Write the issue body to the standard in `../skills/writing-github-issues/SKILL.md` — which is also where the title rules live — to `.claude/report-body.md` with the Write tool, and the spec beside it (`templates/body-file-write.md` — a body always goes in a file, never into a shell argument or a JSON string):
+Write the issue body to the standard in `../skills/writing-github-issues/SKILL.md`, which is also where the title rules live. Write it to `.claude/report-body.md` with the Write tool, and the spec beside it (`templates/body-file-write.md` — a body always goes in a file, never into a shell argument or a JSON string):
 
 ```bash
 mkdir -p .claude
@@ -110,7 +110,7 @@ The exceptions are `[Manual] `, for an issue a person has to do, and `[Browser] 
 
 - `kind` is the Step 2 classification in lower case. For `architecture`, add `"parent": {epic number}` beside it when an epic covers the work.
 - `field-priority`, `field-effort` and `field-ownership` are the three values Step 3 settled. All three are **required**: `issue-apply` refuses a spec that leaves one blank rather than filing work nothing can rank, size or route.
-- `field-type` is the kind of change (**Bug Fix**, **Security**, **Architecture** or **Tech Debt**, or a better one) plus each area the work touches, such as **Front end**, following `../skills/writing-github-issues/SKILL.md` → **Adding areas**. Never areas alone. Where the org defines no area options, leave the key out and `kind` supplies the value.
+- `field-type` is the kind of change (**Bug Fix**, **Security**, **Architecture** or **Tech Debt**, or a better one) plus each area the work touches, such as **Front end** — only when adding an area, follow `../skills/writing-github-issues/SKILL.md` → **Adding areas**. Never areas alone. Where the org defines no area options, leave the key out and `kind` supplies the value.
 - `field-origin` is **Development**, or **Security Audit** if this report came out of a security audit session. It is optional — leave it out and the created issue gets a comment saying it was filed without one.
 
 **The issue number** comes back in the command's JSON as `applied[0].number`, and is written into the spec file too. Later steps need it.
@@ -134,7 +134,7 @@ Do not narrate how you found the problem, and do not add a section that would be
 
 ### 6. Validate issue body
 
-`issue-apply` reads the created issue back in the same request and reports any mismatch, so there is nothing to check by hand when it exits 0. Only if it reported a mismatch on the body, apply the corruption test and retry in `templates/body-file-write.md` (**Validate** + **Retry**). The `Closes #N` clause is PR-only and does not apply to an issue body.
+`issue-apply` reads the created issue back in the same request and reports any mismatch, so there is nothing to check by hand when it exits 0. Only if it reported a mismatch on the body, apply the corruption test and retry in `templates/body-validate-retry.md`. The `Closes #N` clause is PR-only and does not apply to an issue body.
 
 ### 6b. The stage is already written
 

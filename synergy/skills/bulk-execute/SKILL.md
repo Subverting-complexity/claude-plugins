@@ -58,10 +58,8 @@ If the API quota read at the start is below **300**, do not start: say so and su
 
 Stay under ~150k tokens in this context for the whole run; builders spawned for a wave spend their own. (Design rationale: `docs/rationale/bulk-execute-rationale.md`, not read at runtime.)
 
-- **Re-size the group at Phase 3.** If the plan does not fit, drop stories before writing any code (`references/set-selection.md`, **Dropping a story**).
 - **Commit per story, push after each**, so an unexpected end leaves whole stories on the branch.
-- **A pull request only ever closes stories it built.** If the budget runs out with stories unbuilt, drop them and open the PR for what was built.
-- **90-minute timeout.** Before each wave and each phase, check the elapsed time. Past 90 minutes: commit and push, drop the unbuilt stories, then run Phase 7 for a real pull request covering the built ones and carry on into Phases 8 to 10. A group not yet started is dropped whole (`wf drop-group`). If nothing is shippable, leave the branch pushed, set every claimed issue to `stage-attention` with a comment listing what remains, file follow-ups, and run **Exit cleanup**.
+- Only when the group does not fit the budget, a story has to be dropped, or the 90-minute timeout is reached, read `references/timeout-and-drop.md` and follow it.
 
 ## Mode selection
 
@@ -168,9 +166,4 @@ Group 1's pull request is merged, or stopped at a condition Phase 10 names. Befo
 
 ## Escape hatches
 
-Read `skills/execute/references/escape-hatches.md` when a run leaves the happy path, with these substitutions for a set:
-
-- **Blocked.** One story blocking does not block the run. Drop it (`references/set-selection.md`, **Dropping a story**, then `/synergy:block-story` for it) and carry on. Block the whole run only when the set drops below one buildable story and no code exists yet.
-- **Dependency.** A dependency *inside* the set needs no hatch: `plan-set` already built it into the waves. A dependency on an open issue *outside* the set that appears mid-run drops that story. Never chain a bulk branch off another feature branch.
-- **Too large.** Shrink the group, do not slice a story. Leave the dropped ones in the pool for their own run.
-- **Failure reporting.** Comment the failure on **every** claimed issue before exiting and set each to `Needs attention`. Once the pull request is open, comment on the PR instead and leave the stages at `In Review`.
+Read `skills/execute/references/escape-hatches.md` when a run leaves the happy path. Only then, also read `references/escape-hatch-substitutions.md` for what a set changes in each hatch.

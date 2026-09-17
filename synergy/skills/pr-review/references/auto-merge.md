@@ -182,11 +182,4 @@ Drive the PR to a merged state. Conflicts and red CI are **blockers to clear, no
 
    It then runs the **unblock sweep**, because closing this PR's own issues is only half of a merge. In a full payload it is `unblocked`; report all three of its parts: `released` (blocked issues whose native blocked-by edges have all closed — name each by number and title, they are back in the pool), `partials` (still held, but a blocker just merged something, so a person has to judge whether that freed them), and the `no_edges` count (labelled blocked with no dependency edge, so the sweep cannot speak to them either way — the number only, never the list). A `settled` array that came back empty does **not** mean there was nothing to do: a PR that deliberately closes nothing can still release work, and the sweep is what finds it. Use `--no-unblock` only when running `wf unblock` separately.
 
-   **Fallback** when `wf` cannot run (Python missing, or it returns `error`): read the linked issues yourself and settle them by hand —
-   ```bash
-   gh pr view <number> --repo <org>/<repo> --json closingIssuesReferences \
-     --jq '.closingIssuesReferences[].number'
-   # for each still-open issue:
-   gh issue close <N> --repo <org>/<repo> --comment "Closing — resolved by merged PR #<number>."
-   # then set its stage with: wf stage-set {number} --stage stage-done
-   ```
+   Only when `wf post-merge` cannot run at all, read `references/post-merge-fallback.md` and follow it.
