@@ -72,7 +72,7 @@ Implement by `templates/coding-method.md`, code and tests together, following th
 
 Run the quality gate command from `ClaudeProject.md`. On a failure, read the error output, fix the failing check and re-run, up to 3 retries. Near the token budget or the timeout, stop after 2.
 
-Still failing after that, the gate is red and the cause is likely outside the story's scope: stop retrying, commit what you have, set the gate-failed flag (`mkdir -p .claude && touch .claude/gate-failed.flag`; Phase 10 reads it long after this decision, and a compaction in between would otherwise lose it and merge a red PR), and go to Phase 7. Phase 7 opens a real PR, never a draft, that enters review as changes-requested and carries a "Quality gate failed" section, so a person sees it and the label blocks the merge.
+When retries are exhausted and the gate is still red, read `references/gate-failure.md` and follow it — the cause is likely outside the story's scope.
 
 ## Phase 6 — Commit
 
@@ -80,6 +80,6 @@ Stage only relevant files, never `.env`, credentials or generated files that sho
 
 ## Phases 7 to 10 — Finish, review, rework, merge
 
-**Do not review your own diff anywhere in the run.** The session that wrote the code shares every assumption it was built on. That decides whose judgement counts, not whether the run continues: you still spawn the reviewer, own what it returns, and hand the PR to nobody (not the user, not a later session, not a standalone `/synergy:pr-review`). Phase 8's last-resort inline fallback is the one exception, and it is disclosed.
+**Do not review your own diff anywhere in the run.** Only when you want the full reasoning and the one exception, read `references/no-self-review.md`.
 
 The moment the PR exists, read `skills/execute/references/review-and-merge.md` and follow it to the end of the run, in the same turn. The review is unconditional. Merging is opt-in through `Auto-Merge on Approval` in `review.config.md`, off by default; a project that has not opted in ends at an approved PR waiting for a person, which is a complete run. The conditions that stop a merge decide only whether an already-reviewed PR merges, never whether it is reviewed.

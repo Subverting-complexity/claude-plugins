@@ -29,13 +29,7 @@ Your session planned this change and wrote it, so it cannot review it independen
 
    **Read-only is not optional here.** You still own the branch, and a reviewer pushing to it while you hold it would collide with your own commits. Read-only mode evaluates without claiming the PR, without editing files, and without merging, and it checks out **detached** because git refuses to check out a branch that another worktree already holds — which yours does. Because that agent changes no files, the worktree the harness gives it is discarded cleanly (see `docs/worktree-config.md`).
 
-3. **If no subagent can be spawned at all** — the harness offers no agent-spawning tool, or nested spawning is unavailable because execute is itself running as a subagent — do not skip the review. **Try the general-purpose subagent first**: the usual cause is that the `synergy:Reviewer` agent type is unavailable, not that spawning is impossible, and a general-purpose agent in a fresh context is still genuinely independent. Only when that also fails, run `/synergy:pr-review {pr_number} --read-only` inline in this session, and record that this happened — `mkdir -p .claude && touch .claude/self-review.flag` — so the disclosure below survives a compaction the way the other flags do. The severity rubric governs an inline review exactly as it governs an agent's.
-
-   An inline review is a **self-review**: the same context that wrote the code judges it, so it is weaker evidence than this phase is designed to produce, and it pulls that skill's whole hot path into this session. It does **not** stop the merge. What it obliges you to do is say so in both places a person will look — the PR comment and your final report:
-
-   > ⚠ This review was **not independent**. No separate agent context could be spawned, so the session that wrote this code also reviewed it. Its findings are worth less than a fresh reviewer's.
-
-   Merging on a disclosed self-review is deliberate (why: `docs/rationale/execute-rationale.md`). The gates that do stop the merge — a failing quality gate, an unapproved verdict, red or absent CI — all still apply, and they are the ones carrying real evidence about the code.
+3. **If no subagent can be spawned at all**, read `references/self-review-fallback.md` and follow it exactly — do not skip the review or improvise the fallback.
 
 4. **Sift what comes back.** Drop anything the agent raised that the rubric says is not a finding, and take the stricter reading where a finding is genuinely ambiguous between blocking and quick fix. What survives is the findings list; one agent means there is nothing to reconcile.
 

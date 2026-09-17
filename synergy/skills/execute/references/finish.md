@@ -27,7 +27,7 @@ Read this at Phase 7 of the `execute` workflow (quality gate passed, work commit
 
    It pushes the branch, checks for another open PR that already closes the issue immediately before creating, opens the PR with a duplicate warning line at the top when it finds one, adds any missing `Closes #N` line, reads the body back and rewrites it once if it came back corrupt.
 
-   - **`ok`**, one line — `pr` and `url` are the new PR. When `duplicates` is present, another open PR closes the same issue: report it by number and title. Do not pick the winner or close the other PR here; code review reconciles them, and Phase 10 does not merge.
+   - **`ok`**, one line — `pr` and `url` are the new PR. Only when `duplicates` is present, read `references/duplicate-pr.md` and follow it.
    - **`partial`** (exit 24) — the PR exists but its body still fails the check (`problems`). Warn the user that the body may need editing by hand, and carry on.
    - **`error`** (exit 20) — the push or the create failed, and `reason` says which. No PR exists; fix the cause and re-run. A re-run on a branch whose PR already exists checks that PR rather than opening a second.
 
