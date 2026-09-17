@@ -5,6 +5,7 @@ findings, and apply `--fix`.
 Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
 
+import glob
 import os
 import re
 
@@ -17,7 +18,8 @@ from wf_config import (
     repo_root,
 )
 from wf_io import (
-    EXIT_CAPABILITY, EXIT_DRIFT, EXIT_ENV, EXIT_OK, emit, gh_graphql, run,
+    EXIT_CAPABILITY, EXIT_DRIFT, EXIT_ENV, EXIT_OK, emit, gh_graphql, gh_json,
+    run,
 )
 from wf_issue_io import issue_field_values
 from wf_post_merge import (
@@ -526,6 +528,155 @@ def _fix_retired_labels(cfg, labelled, repo=None):
     return done, blocked
 
 
+def _detect_quality_gate(root):
+    """The local quality-gate command a project's own files imply, or ''.
+
+    Mirrors `skills/preflight/references/local-checks.md`'s shell detection:
+    the first recognised project file wins, checked in the same order.
+    """
+    pkg = os.path.join(root, 'package.json')
+    if os.path.isfile(pkg):
+        try:
+            with open(pkg, encoding='utf-8') as fh:
+                text = fh.read()
+            if re.search(r'"(test|lint|build|check)"\s*:', text):
+                return 'package.json scripts'
+        except OSError:
+            pass
+    if os.path.isfile(os.path.join(root, 'Makefile')):
+        return 'make (Makefile)'
+    if os.path.isfile(os.path.join(root, 'Cargo.toml')):
+        return 'cargo test'
+    if any(os.path.isfile(os.path.join(root, name))
+           for name in ('pyproject.toml', 'pytest.ini', 'tox.ini')):
+        return 'pytest'
+    if os.path.isfile(os.path.join(root, 'go.mod')):
+        return 'go test ./...'
+    if glob.glob(os.path.join(root, '*.sln')):
+        return 'dotnet test'
+    return ''
+
+
+def cmd_preflight_local(args):
+    """`wf preflight --local`: read-only checks for a project with no
+    `ClaudeProject.md` -- local work rather than GitHub story work. Always
+    exits 0; nothing here ever blocks, and nothing is written.
+    """
+    root = repo_root()
+    code, _, _ = run(['git', 'rev-parse', '--is-inside-work-tree'])
+    git_repo = code == 0
+    branch, git_op, conflicts, dirty = '', False, False, 0
+    if git_repo:
+        _, out, _ = run(['git', 'branch', '--show-current'])
+        branch = (out or '').strip()
+        _, gitdir, _ = run(['git', 'rev-parse', '--git-dir'])
+        gitdir = (gitdir or '').strip()
+        if gitdir:
+            git_op = (os.path.isdir(os.path.join(gitdir, 'rebase-merge'))
+                     or os.path.isdir(os.path.join(gitdir, 'rebase-apply'))
+                     or os.path.isfile(os.path.join(gitdir, 'MERGE_HEAD')))
+        _, status, _ = run(['git', 'status', '--porcelain'])
+        lines = [ln for ln in (status or '').splitlines() if ln.strip()]
+        conflicts = any(ln.startswith('UU') for ln in lines)
+        dirty = len(lines)
+    claude_md = os.path.isfile(os.path.join(root, 'CLAUDE.md'))
+    ecosystem = None
+    if os.path.isfile(os.path.join(root, '.claude', 'ecosystem.md')):
+        ecosystem = 'configured'
+    elif os.path.isfile(os.path.join(root, '.claude', 'ecosystem-declined')):
+        ecosystem = 'declined'
+    gate = _detect_quality_gate(root)
+
+    findings = wf_core.local_findings(git_repo, branch, git_op, conflicts,
+                                      dirty, claude_md, ecosystem, gate)
+    summary = wf_core.preflight_summary(findings)
+    payload = {'summary': summary}
+    if not args.quiet:
+        payload['findings'] = findings
+    emit('ok', EXIT_OK,
+         reason=('nothing blocks local work' if not summary['warning'] else
+                 '%d thing%s will run on a default'
+                 % (summary['warning'], '' if summary['warning'] == 1 else 's')),
+         **payload)
+
+
+_AUTOMERGE_RE = re.compile(r'auto-merge-on-approval\s*:?\s*(enabled|disabled)',
+                           re.IGNORECASE)
+_REQUIRE_CI_RE = re.compile(
+    r'require-ci-before-merge\s*:?\s*(true|false|enabled|disabled|if-present)',
+    re.IGNORECASE)
+_BYPASS_NOPIPELINE_RE = re.compile(
+    r'bypass-ci-when-no-pipeline\s*:?\s*(true|false)', re.IGNORECASE)
+
+
+def _automerge_config(root, project_md_text):
+    """The review-config path and its two settings, or (None, ...) when the
+    project has not opted into auto-merge. `review_config_reference` finds the
+    path `ClaudeProject.md` names; the default matches `docs/review.config.md`
+    when it names none."""
+    referenced = review_config_reference(project_md_text) or 'docs/review.config.md'
+    path = os.path.join(root, referenced)
+    if not os.path.isfile(path):
+        return None, None, None
+    with open(path, encoding='utf-8') as fh:
+        text = fh.read()
+    automerge = _AUTOMERGE_RE.search(text)
+    if not automerge or automerge.group(1).lower() != 'enabled':
+        return referenced, None, text
+    return referenced, True, text
+
+
+def _automerge_findings(cfg, root, project_md_text, repo=None):
+    """Findings from `references/review-auto-merge-checks.md`'s shell,
+    gathered here and judged in `wf_core`. Returns `(findings, checked)`.
+    Skipped entirely unless `docs/review.config.md` (or the file
+    `ClaudeProject.md` names) sets `auto-merge-on-approval: enabled` -- the
+    only thing that enables a merge anywhere in the plugin.
+    """
+    path, enabled, text = _automerge_config(root, project_md_text)
+    if not enabled:
+        return [], []
+
+    findings, checked = [], ['review-auto-merge']
+    slug = repo or '%s/%s' % (cfg['org'], cfg['repo'])
+
+    ok, repo_json, _err = gh_json(['api', 'repos/%s' % slug])
+    if ok and repo_json is not None:
+        checked.append('review-auto-merge-repo')
+        findings.extend(wf_core.automerge_repo_findings(
+            slug, bool(repo_json.get('allow_auto_merge')), path))
+
+        require_ci = None
+        m = _REQUIRE_CI_RE.search(text or '')
+        if m:
+            require_ci = m.group(1).lower()
+        required_checks = None
+        branch = (repo_json.get('default_branch') or '')
+        if branch:
+            ok2, contexts, _err2 = gh_json([
+                'api', 'repos/%s/branches/%s/protection/required_status_checks/'
+                'contexts' % (slug, branch)])
+            if ok2 and isinstance(contexts, list):
+                required_checks = len(contexts)
+        checked.append('review-auto-merge-ci')
+        findings.extend(wf_core.automerge_ci_findings(require_ci, required_checks,
+                                                       path))
+
+        bypass = None
+        m = _BYPASS_NOPIPELINE_RE.search(text or '')
+        if m:
+            bypass = m.group(1).lower()
+        ok3, workflows, _err3 = gh_json(
+            ['api', 'repos/%s/actions/workflows' % slug])
+        if ok3 and workflows is not None:
+            active = sum(1 for w in workflows.get('workflows') or ()
+                        if w.get('state') == 'active')
+            checked.append('review-auto-merge-nopipeline')
+            findings.extend(wf_core.automerge_nopipeline_findings(
+                active, bypass, path))
+    return findings, checked
+
+
 def cmd_preflight(args):
     """Is this project in a state a workflow command can run against?
 
@@ -535,6 +686,9 @@ def cmd_preflight(args):
     afterwards, so what it reports is the state it leaves behind rather than
     the state it found.
     """
+    if getattr(args, 'local', False):
+        return cmd_preflight_local(args)
+
     root = repo_root() or '.'
     source = config_paths(root)[1]
     source_rel = os.path.basename(source)
@@ -574,6 +728,12 @@ def cmd_preflight(args):
     findings.extend(audit)
     checked.extend(audit_checked)
     skipped.extend(audit_skipped)
+
+    if not args.offline:
+        automerge, automerge_checked = _automerge_findings(cfg, root, text,
+                                                            args.repo)
+        findings.extend(automerge)
+        checked.extend(automerge_checked)
 
     if not args.fix:
         return _emit_preflight(findings, checked, skipped, cfg, args, [], [])
@@ -620,6 +780,10 @@ def cmd_preflight(args):
     audit, audit_checked, audit_skipped, _ = collect_config_findings(
         cfg, args, root)
     findings.extend(audit)
+    if not args.offline:
+        automerge, _automerge_checked = _automerge_findings(cfg, root, text,
+                                                             args.repo)
+        findings.extend(automerge)
     return _emit_preflight(findings, checked, skipped, cfg, args, done, blocked)
 
 
@@ -650,6 +814,22 @@ def _emit_preflight(findings, checked, skipped, cfg, args, fixed, blocked):
                        '' if not summary['warning']
                        else '; %d more will degrade it' % summary['warning']),
              **payload)
+
+    # Nothing blocks: write the pass marker here rather than leaving the
+    # caller to do it in a second shell round-trip. `skills/preflight` used to
+    # write it itself after reading this JSON back; a command loading no
+    # skill at all (`block-story`, `report-issue`) still needs the marker to
+    # exist so the next command in the session can skip the check entirely.
+    root = repo_root()
+    if root:
+        try:
+            os.makedirs(os.path.join(root, '.claude'), exist_ok=True)
+            with open(os.path.join(root, '.claude', 'preflight-passed.txt'),
+                     'w', encoding='utf-8', newline='\n') as fh:
+                fh.write('preflight-passed\n')
+        except OSError:
+            pass  # best-effort; a failed write only costs the next run a check
+
     emit('ok', EXIT_OK,
          reason=('nothing blocks a workflow command'
                  + ('' if not summary['warning']

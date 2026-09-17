@@ -224,7 +224,6 @@ declare -a reply_writing_files=(
     "synergy/templates/CLAUDE.md"                    # the rules written into a target project
     "synergy/skills/build/SKILL.md"
     "synergy/skills/pr-review/references/local-review.md"
-    "synergy/skills/preflight/references/local-checks.md"
 )
 
 for f in "${reply_writing_files[@]}"; do

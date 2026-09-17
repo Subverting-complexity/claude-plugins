@@ -445,9 +445,15 @@ wf preflight
 
 # Repair what can be repaired, then re-run and report what is left.
 wf preflight --fix
+
+# A project with no ClaudeProject.md: read-only git-state, CLAUDE.md and
+# quality-gate checks. Always exits 0.
+wf preflight --local
 ```
 
 The file-level checks used to be shell blocks inside `skills/preflight/SKILL.md`: `gh auth status`, the required-section `grep`, the placeholder scan, the quality-gate read, the `CLAUDE.md` check. Two implementations of one gate is one too many. The shell one could not be tested, could not be reused by `bulk-execute`, and disagreed with this one about what counted as critical.
+
+`--local` and the opt-in auto-merge checks (`review-auto-merge-repo`, `review-auto-merge-ci`, `review-auto-merge-nopipeline`, run only when `docs/review.config.md` sets `auto-merge-on-approval: enabled`) moved out of `skills/preflight/references/local-checks.md` and `references/review-auto-merge-checks.md` for the same reason. `preflight` writes `.claude/preflight-passed.txt` itself on a clean or warning-only run, so a caller that only needs to know whether it can proceed never has to parse the JSON to do it.
 
 ### What it adds over `config-audit`
 

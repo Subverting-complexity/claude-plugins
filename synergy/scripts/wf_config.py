@@ -8,6 +8,7 @@ Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 import json
 import os
 import re
+import time
 
 import wf_core
 from wf_io import EXIT_ENV, EXIT_OK, emit, eprint, run
@@ -329,6 +330,70 @@ def cmd_scratch_clean(args):
         except OSError as exc:
             failed.append({'file': '.claude/' + name, 'reason': str(exc)})
     emit('ok', EXIT_OK, removed=removed, failed=failed, excluded=ignored)
+
+
+def cmd_run_init(args):
+    """`wf run-init`: the start-of-run housekeeping `execute` and
+    `bulk-execute` used to do as a hand-written shell block -- reset and set
+    the invocation-flag files, sweep the claim markers a hard-killed run left
+    behind, and report whether preflight is still cached and what the GitHub
+    API quota looks like. One command, one verdict, run exactly once per run
+    for the same reason the flag-file block was: a compaction re-running it
+    would drop a flag the arguments are no longer in context to restate.
+    """
+    root = repo_root()
+    claude_dir = os.path.join(root, '.claude')
+    os.makedirs(claude_dir, exist_ok=True)
+
+    for name in ('no-merge.flag', 'bypass-ci.flag', 'unattended.flag',
+                'gate-failed.flag', 'self-review.flag'):
+        try:
+            os.remove(os.path.join(claude_dir, name))
+        except OSError:
+            pass
+    if args.bulk:
+        try:
+            os.remove(os.path.join(claude_dir, 'bulk-set.json'))
+        except OSError:
+            pass
+
+    # Stray claim-marker scratch a hard-killed run left behind. `--others`
+    # (untracked only) spares a marker a project committed on purpose.
+    _, out, _ = run(['git', 'ls-files', '-z', '--others', '--',
+                    '.claude/claim-issue-*.sha'])
+    for rel in (out or '').split('\0'):
+        if rel:
+            try:
+                os.remove(os.path.join(root, rel))
+            except OSError:
+                pass
+
+    flags = {'no_merge': bool(args.no_merge), 'bypass_ci': bool(args.bypass_ci),
+             'unattended': bool(args.unattended)}
+    for key, flag_file in (('no_merge', 'no-merge.flag'),
+                           ('bypass_ci', 'bypass-ci.flag'),
+                           ('unattended', 'unattended.flag')):
+        if flags[key]:
+            open(os.path.join(claude_dir, flag_file), 'a').close()
+
+    source = config_paths(root)[1]
+    marker = os.path.join(claude_dir, 'preflight-passed.txt')
+    marker_mtime = os.path.getmtime(marker) if os.path.isfile(marker) else None
+    source_mtime = os.path.getmtime(source) if os.path.isfile(source) else None
+    preflight_cached = wf_core.preflight_marker_fresh(
+        marker_mtime, source_mtime, time.time())
+
+    remaining = None
+    code, out, _err = run(['gh', 'api', 'rate_limit', '--jq', '.rate.remaining'])
+    if code == 0:
+        try:
+            remaining = int((out or '').strip())
+        except ValueError:
+            remaining = None
+
+    emit('ok', EXIT_OK, flags=flags, preflight_cached=preflight_cached,
+         quota={'remaining': remaining,
+                'low': wf_core.quota_low(remaining)})
 
 
 def cmd_config(args):
