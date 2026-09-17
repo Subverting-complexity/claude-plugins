@@ -82,6 +82,9 @@ def cmd_tree_clean(args):
         chosen = [e for e in entries
                   if e['path'].rstrip('/') in wanted
                   or any(e['path'].startswith(w + '/') for w in wanted)]
+        # A rename is one change: discarding its new path restores the old one.
+        origs = {e['orig'] for e in chosen if e.get('orig')}
+        chosen += [e for e in entries if e['path'] in origs and e not in chosen]
     refused = discard(chosen)
     left = tree_entries() or []
     if left:
@@ -231,10 +234,19 @@ def _start_group(args, cfg):
     discarded, dirty = start_clean()
     default = cfg['default_branch']
     run(['git', 'fetch', 'origin', default])
-    code, _, err = run(['git', 'checkout', '-b', args.branch, 'origin/%s' % default])
+    # A re-run after a failed claim push finds the branch already made, so an
+    # existing branch is checked out rather than created a second time.
+    exists = run(['git', 'rev-parse', '--verify', '--quiet',
+                  'refs/heads/%s' % args.branch])[0] == 0
+    if exists:
+        code, _, err = run(['git', 'checkout', args.branch])
+    else:
+        code, _, err = run(['git', 'checkout', '-b', args.branch, 'origin/%s' % default])
     checked_out = code == 0
-    branch_msg = ('created from origin/%s' % default if checked_out
-                  else 'could not create branch (%s)' % err.strip())
+    branch_msg = (('checked out the existing branch' if exists
+                   else 'created from origin/%s' % default) if checked_out
+                  else 'could not %s branch (%s)'
+                  % ('check out' if exists else 'create', err.strip()))
     pushed = False
     if checked_out:
         pcode, _, perr = run(['git', 'push', '-u', 'origin', args.branch])

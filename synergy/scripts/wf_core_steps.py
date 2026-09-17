@@ -59,17 +59,22 @@ def parse_porcelain(text):
             if len(token) < 4:
                 continue
             code = token[:2]
-            entries.append({'code': code, 'path': token[3:]})
+            entry = {'code': code, 'path': token[3:]}
+            entries.append(entry)
             if code[0] in 'RC' and i < len(tokens) and tokens[i]:
+                entry['orig'] = tokens[i]
                 entries.append({'code': code, 'path': tokens[i]})
                 i += 1
         return entries
     for line in (text or '').splitlines():
         if len(line) < 4:
             continue
-        paths = line[3:].split(' -> ', 1)
-        for path in reversed(paths):
-            entries.append({'code': line[:2], 'path': path.strip('"')})
+        paths = [p.strip('"') for p in line[3:].split(' -> ', 1)]
+        entry = {'code': line[:2], 'path': paths[-1]}
+        entries.append(entry)
+        if len(paths) == 2:
+            entry['orig'] = paths[0]
+            entries.append({'code': line[:2], 'path': paths[0]})
     return entries
 
 

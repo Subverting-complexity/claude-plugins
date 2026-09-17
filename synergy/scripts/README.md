@@ -613,7 +613,7 @@ It **always exits 0**: once the pull request exists, none of this is a reason to
 
 ### `start`
 
-`start --issue N` is everything between a claim and the first edit when `pick --checkout` did not do it: it re-takes the claim (one this checkout holds is kept), sets `In Progress`, resets a tree provisioned dirty (restore and `git clean -fd`, never `-x`, never `stash`) and creates or checks out the story branch. `start --group G --branch B` does the same for a bulk group: every story's claim in `.claude/bulk-set.json`, the reset, a fresh branch from `origin/{default-branch}`, the push and `bulk-mark`. Success is one line (exit 0); `lost` is exit 27, and a step that did not land is `partial`, exit 24, with `reason` naming it; in a group, `lost` lists stories another run holds and `claim_errors` those whose claim push failed, which a retry can still take.
+`start --issue N` is everything between a claim and the first edit when `pick --checkout` did not do it: it re-takes the claim (one this checkout holds is kept), sets `In Progress`, resets a tree provisioned dirty (restore and `git clean -fd`, never `-x`, never `stash`) and creates or checks out the story branch. `start --group G --branch B` does the same for a bulk group: every story's claim in `.claude/bulk-set.json`, the reset, a fresh branch from `origin/{default-branch}`, the push and `bulk-mark`. Success is one line (exit 0); `lost` is exit 27, and a step that did not land is `partial`, exit 24, with `reason` naming it; in a group, `lost` lists stories another run holds and `claim_errors` those whose claim push failed, which a re-run of the same `start` can still take: it checks out the branch the first run made.
 
 ### `exit-cleanup`
 
@@ -621,7 +621,7 @@ It **always exits 0**: once the pull request exists, none of this is a reason to
 
 ### `tree-clean`
 
-`tree-clean --discard PATH [...]` or `--all` discards what the caller chose (tracked paths restored, untracked ones cleaned) and re-checks the tree: one line when clean, `dirty` with `remaining` (and `refused`, the paths git would not restore or clean) when not. It reads `git status --porcelain -z`, so a non-ASCII name is matched as it is on disk, and a rename discards both its paths.
+`tree-clean --discard PATH [...]` or `--all` discards what the caller chose (tracked paths restored, untracked ones cleaned) and re-checks the tree: one line when clean, `dirty` with `remaining` (and `refused`, the paths git would not restore or clean) when not. It reads `git status --porcelain -z`, so a non-ASCII name is matched as it is on disk, and discarding a rename's new path also restores its old one.
 
 ### `pr-create`
 

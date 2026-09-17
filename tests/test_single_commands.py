@@ -298,6 +298,20 @@ class TestExitCleanup(_Repo):
 
 class TestTreeClean(_Repo):
 
+    def test_discarding_a_renames_new_path_restores_its_old_one(self):
+        states = iter(['R  new.py\0old.py\0 M keep.py\0', ''])
+        calls = []
+
+        def fake_run(cmd, input_text=None):
+            calls.append(list(cmd))
+            if cmd[:2] == ['git', 'status']:
+                return 0, next(states), ''
+            return 0, '', ''
+        with mock.patch.object(wf, 'run', fake_run):
+            code, _, payload = _capture(wf.cmd_tree_clean, _args('tree-clean', '--discard', 'new.py'))
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertIn(['git', 'restore', '--staged', '--worktree', '--', 'new.py', 'old.py'], calls)
+
     def test_chosen_paths_are_discarded_and_the_tree_rechecked(self):
         states = iter([' M a.py\n?? junk/\n', ''])
         calls = []
@@ -358,6 +372,21 @@ class TestStart(_Repo):
         self.assertEqual(payload['claim_errors'], [4])
         self.assertIn('claim push failed', payload['reason'])
 
+    def test_a_group_rerun_checks_out_the_branch_it_already_made(self):
+        self.touch('bulk-set.json', json.dumps({
+            'stories': [{'number': 4, 'group': 1}], 'groups': [{'group': 1}]}))
+        calls = []
+
+        def fake_run(cmd, input_text=None):
+            calls.append(list(cmd))
+            return 0, '', ''
+        with mock.patch.object(wf, 'run', fake_run),                 mock.patch.object(wf, 'holds_claim', lambda t: True):
+            code, _, payload = _capture(wf.cmd_start, _args(
+                'start', '--group', '1', '--branch', 'feature/4/set'))
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertIn(['git', 'checkout', 'feature/4/set'], calls)
+        self.assertFalse(any(c[:3] == ['git', 'checkout', '-b'] for c in calls))
+
     def test_a_group_branch_is_created_pushed_and_recorded(self):
         self.touch('bulk-set.json', json.dumps({
             'stories': [{'number': 4, 'group': 1}, {'number': 5, 'group': 2}],
@@ -366,6 +395,8 @@ class TestStart(_Repo):
 
         def fake_run(cmd, input_text=None):
             calls.append(list(cmd))
+            if cmd[:2] == ['git', 'rev-parse']:
+                return 1, '', ''
             return 0, '', ''
         with mock.patch.object(wf, 'run', fake_run), \
                 mock.patch.object(wf, 'holds_claim', lambda t: True):
@@ -373,6 +404,7 @@ class TestStart(_Repo):
                 'start', '--group', '1', '--branch', 'feature/4/set'))
         self.assertEqual(code, wf.EXIT_OK, payload)
         self.assertIn(['git', 'push', '-u', 'origin', 'feature/4/set'], calls)
+        self.assertIn(['git', 'checkout', '-b', 'feature/4/set', 'origin/main'], calls)
         with open(os.path.join(self.root, '.claude', 'bulk-set.json'), encoding='utf-8') as fh:
             self.assertEqual(json.load(fh)['groups'][0]['branch'], 'feature/4/set')
 
