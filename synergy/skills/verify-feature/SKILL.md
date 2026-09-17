@@ -38,7 +38,7 @@ Read `CLAUDE.md` for project rules if it exists.
 
 ## Output standard
 
-Everything a person reads follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear.
+Reached only when writing something for a person to read. Everything a person reads follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear.
 
 ## Step 1 — Scope
 
@@ -87,7 +87,7 @@ Each concern is a short comment to the person who wrote the code:
 
 Keep the uncertainty that is there, ask questions rather than issue instructions when intent is unclear, do not paste code back, and stop once the point and the question are clear. Severity goes in the heading, never in the prose.
 
-Before presenting the report, read `skills/tone/SKILL.md` and apply it to the concerns, so they read in the user's own voice.
+Only when there are concerns to present, read `skills/tone/SKILL.md` and apply it to them, so they read in the user's own voice.
 
 ## Step 5 — Report
 

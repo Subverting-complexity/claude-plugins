@@ -11,7 +11,7 @@ Turn a feature, change, requirement or brand-new project into buildable stories.
 
 ## Output standard
 
-Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
+Reached only when writing something for a person to read. Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
 ## Skills Used
 
@@ -120,7 +120,7 @@ A story the interview left genuinely open keeps that uncertainty in the words th
 - Dependencies must be explicit and acyclic.
 - Assign a size estimate to each story: `small` (< 50k tokens), `medium` (50–100k), `large` (needs splitting). It is carried by the `Effort` field on the spec entry and nowhere else — do not also write it into the body, where nothing reads it and it goes stale the first time somebody re-estimates.
 - When a story is flagged as too large, automatically split it and explain the split to the user before proceeding.
-- **One story, one party.** A story whose work is partly a code agent's and partly a browser agent's or a person's is split along that line, however small the manual half is, because `Ownership` is one value and the half nothing can route would otherwise sit unfinished inside a story the pool thinks is buildable. The manual half becomes its own story, and the code story takes a `blocked_by` edge to it where it genuinely cannot start first. The rule is stated in `writing-github-issues` → **Scope: one issue, one party**, which is also where the `[Manual] ` and `[Browser] ` title prefixes are defined.
+- **One story, one party.** A story whose work is partly a code agent's and partly a browser agent's or a person's is split along that line, however small the manual half is, because `Ownership` is one value and the half nothing can route would otherwise sit unfinished inside a story the pool thinks is buildable. The manual half becomes its own story, and the code story takes a `blocked_by` edge to it where it genuinely cannot start first. Only when a story needs this split, read `skills/writing-github-issues/references/scope-and-hierarchy.md` → **Scope: one issue, one party**, which is also where the `[Manual] ` and `[Browser] ` title prefixes are defined.
 
 ### Deferred speccing (large features)
 

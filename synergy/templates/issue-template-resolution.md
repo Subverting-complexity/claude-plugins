@@ -4,7 +4,7 @@ Shared procedure for every command that **creates an issue** (`report-issue`, th
 
 A repository can define issue templates that GitHub pre-fills into the body when someone opens an issue in the web UI. **Creating an issue through the API or `gh issue create --body-file` applies no template**: the body is used exactly as supplied. So a project that has gone to the trouble of defining a template gets ignored by every issue this plugin files, unless the plugin fetches the template and fills it in itself. That is what this procedure does.
 
-Like the rest of the issue-creation path, it is **best-effort**. A project with no template keeps the built-in standard in `skills/writing-github-issues/SKILL.md` with no error and no warning. Most repositories have no template, so that is the common case, not a failure.
+Like the rest of the issue-creation path, it is **best-effort**. Only where a project has no template — the common case — read `skills/writing-github-issues/SKILL.md` and keep to its built-in standard, with no error and no warning.
 
 Inputs:
 
@@ -61,7 +61,7 @@ Read the chosen form with the contents API and decode it.
 
 ## Step 4 — Fill a markdown template
 
-The template's structure wins. The standard in `skills/writing-github-issues/SKILL.md` still governs everything else: what goes in each section, how much to write, and what gets cut.
+The template's structure wins. Only for everything else it does not cover — what goes in each section, how much to write, and what gets cut — read `skills/writing-github-issues/SKILL.md`.
 
 - **Keep its headings, wording and order exactly.** Do not rename a section to the standard's name, do not reorder, and do not add a section the template does not have unless you genuinely need it.
 - **Delete the guidance comments.** `<!-- ... -->` blocks are instructions to whoever fills the template in. Once a section is written they are noise, so remove them.
@@ -98,7 +98,7 @@ A template can carry frontmatter (markdown) or top-level keys (forms). Handle ea
 
 ## Step 7 — No template
 
-Write the body to the built-in standard in `skills/writing-github-issues/SKILL.md`: `## Summary` plus only the sections that carry information.
+Only here, write the body to the built-in standard in `skills/writing-github-issues/SKILL.md`: `## Summary` plus only the sections that carry information.
 
 This is the expected outcome for most repositories. Do not warn about it, and do not offer to create a template.
 
