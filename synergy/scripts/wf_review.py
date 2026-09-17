@@ -13,8 +13,8 @@ from wf_capabilities import fetch_repo_state
 from wf_claim import acquire_claim, holds_claim, release_claims
 from wf_config import prepare_cfg, repo_root
 from wf_io import (
-    EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, emit, eprint,
-    gh_graphql, gh_json, run,
+    EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, emit, emit_line,
+    eprint, gh_graphql, gh_json, run,
 )
 from wf_stage import set_stages
 
@@ -144,19 +144,68 @@ def cmd_update_next(args):
     emit('ok', EXIT_OK, **result)
 
 
+REVIEW_POOL_QUERY = (
+    'query($owner:String!,$repo:String!){'
+    ' repository(owner:$owner,name:$repo){'
+    ' pullRequests(states:OPEN, first:100, orderBy:{field:CREATED_AT, direction:ASC}){'
+    ' pageInfo { hasNextPage }'
+    ' nodes { number title url headRefName headRefOid isDraft'
+    ' labels(first:30){ nodes { name } }'
+    ' comments(last:30){ nodes { body createdAt } }'
+    ' reviews(last:30){ nodes { body createdAt } } } } } }'
+)
+
+
+def assemble_review_prs(cfg):
+    """Every open PR with its head and the SHA its last review footer names.
+
+    One query, so the picker can see a PR whose head moved since its last
+    review without reading each PR's comments. Returns (ok, prs, err).
+    """
+    ok, data, err = gh_graphql(REVIEW_POOL_QUERY, owner=cfg['org'], repo=cfg['repo'])
+    if not ok or not data:
+        return False, None, err or 'no data'
+    try:
+        pulls = data['repository']['pullRequests']
+        nodes = pulls['nodes']
+    except (KeyError, TypeError):
+        return False, None, 'unexpected pullRequests shape'
+    # `no-candidates` is conclusive, so a pool it could not read whole is an
+    # error rather than an answer.
+    if (pulls.get('pageInfo') or {}).get('hasNextPage'):
+        return False, None, 'more than 100 open PRs; the picker reads only the first 100'
+    prs = []
+    for node in nodes or ():
+        posts = (((node.get('comments') or {}).get('nodes') or [])
+                 + ((node.get('reviews') or {}).get('nodes') or []))
+        posts.sort(key=lambda p: p.get('createdAt') or '')
+        prs.append({
+            'number': node['number'], 'title': node.get('title') or '',
+            'url': node.get('url') or '', 'branch': node.get('headRefName') or '',
+            'labels': [l['name'] for l in (node.get('labels') or {}).get('nodes') or ()],
+            'head_sha': node.get('headRefOid') or '', 'draft': bool(node.get('isDraft')),
+            'reviewed_sha': wf_core.last_reviewed_sha(p.get('body') for p in posts),
+        })
+    return True, prs, ''
+
+
 def cmd_review_next(args):
     cfg = prepare_cfg()
     names = wf_core.review_names(cfg.get('review_labels'))
-    ok, prs, err = assemble_prs(cfg, mine=False)
+    ok, prs, err = assemble_review_prs(cfg)
     if not ok:
         emit('error', EXIT_ENV, reason='PR fetch failed: %s' % err)
-    pool = wf_core.select_review_pool(prs, names)
+    # Labels and moved heads both count, so an empty pool is the answer: no
+    # PR carries a review state and none has commits its last review missed.
+    pool = wf_core.select_review_next(prs, names)
     if not pool:
-        emit('no-candidates', EXIT_NO_CANDIDATES, reason='no open PRs need review')
+        emit_line('no-candidates', EXIT_NO_CANDIDATES,
+                  reason='no open PR needs review, rework or a re-review')
 
     def marker(pr):
         labels = set(pr['labels'])
-        prior = names['needs-re-review'] if names['needs-re-review'] in labels else names['needs-review']
+        prior = next((names[k] for k in ('needs-re-review', 'needs-review')
+                      if names[k] in labels), None)
         apply_pr_labels(cfg, pr['number'], add=names['reviewing'], remove=prior)
 
     no_claim = getattr(args, 'no_claim', False)
@@ -171,6 +220,7 @@ def cmd_review_next(args):
              reason='every candidate PR is already claimed by another agent',
              side_effects=side_effects)
 
+    moved = wf_core.head_changed(selected.get('head_sha'), selected.get('reviewed_sha'))
     result = {
         'kind': 'pr-review',
         'number': selected['number'], 'title': selected['title'],
@@ -180,6 +230,8 @@ def cmd_review_next(args):
         # there is no claim ref to release and the `reviewing` marker is absent.
         'claimed': not no_claim,
         'claim_ref': None if no_claim else 'refs/claims/pr-%d' % selected['number'],
+        'prior_state': wf_core.review_prior_state(selected['labels'], names, moved),
+        'head_changed': moved,
         'side_effects': side_effects, 'checked_out': False,
     }
     if args.checkout:
@@ -418,6 +470,12 @@ def cmd_handoff(args):
         except OSError:
             pass
 
+    if (pr_claimed == 'won' and pr_labelled
+            and all(i['stage_set'] and i['claim_released'] for i in issues)):
+        emit_line('ok', EXIT_OK, pr=args.pr,
+                  reason='PR #%d claimed and labelled %s; %s In Review and released'
+                         % (args.pr, state_label,
+                            ', '.join('#%d' % i['number'] for i in issues) or 'no issue'))
     emit('ok', EXIT_OK, pr=args.pr, pr_claimed=pr_claimed, pr_labelled=pr_labelled,
          review_label=state_label, issues=issues,
          reason='PR #%d labelled %s; %d issue(s) handed to review'

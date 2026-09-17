@@ -33,106 +33,43 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" preflight-cached
 
 ## Steps
 
-### 1. Read configuration
+### 1. Write the blocker comment
 
-Read `ClaudeProject.md` and extract:
+Write it to `.claude/block-body.md` with the Write tool (`templates/body-file-write.md`: a body always goes in a file). Say what the blocker is, what was attempted, what failed or is missing, and a suggested resolution if known. The blocker narrative stays in the comment; do not restate it in the issue body. If you edit the body for any other reason, the result has to satisfy `../skills/writing-github-issues/SKILL.md`.
 
-- `org`, `repo` from Identity
+### 2. Block it
 
-No board is needed: the block is a write to the issue's own `Stage` field.
-
-### 2. Comment the blocker
-
-Post a comment — write it following `templates/body-file-write.md` (temp file + `--body-file`):
-
-```
-gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
-```
-
-The comment should include: the blocker reason, what was attempted, what failed or is missing, and a suggested resolution if known.
-
-If the blocker is another issue, record it as a **native blocked-by edge** (the spec below, still part of this step). That edge is the only thing that lets `wf unblock` release the issue when `#N` closes; a sentence in the body does nothing.
-
-The blocker narrative stays in the comment. Do not restate it in the body, and leave the rest of the body as it is. If you are editing the body for any other reason, the result has to satisfy `../skills/writing-github-issues/SKILL.md`.
-
-**Record the blocker where the tooling reads it.** The native blocked-by edge is the source of truth for auto-unblock and for selection. Nothing else records "why" in a structured field — the reason is prose, it belongs in the Step 2 comment, and a field holding a sentence is a field nothing can select on. Write a one-entry spec and apply it:
+One call, whichever kind of blocker it is:
 
 ```bash
-mkdir -p .claude
-cat > .claude/block-spec.json <<'JSON'
-{"issues": [{"number": {number}, "blocked_by": [{blocking issue numbers}]}]}
-JSON
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/block-spec.json
+# Another issue (repeat --blocked-by for every issue this one waits on)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" block --issue {number} --body-file .claude/block-body.md --blocked-by {N}
+
+# Something outside the tracker: a decision, access, an upstream fix
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" block --issue {number} --body-file .claude/block-body.md
+
+# The work itself needs a person or a browser, so no code agent can do it
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" block --issue {number} --body-file .claude/block-body.md --non-code human
 ```
 
-`blocked_by` is the **complete set** of edges, not an addition to it: the issues it names are added and any the issue already carries that the list omits are removed. So name every issue this one waits on, not just the newest, and leave the key out altogether if you only mean to leave the existing edges alone.
+It posts the comment, then records the blocker where the tooling reads it:
 
-This writes the edge but **does not** change the stage, and Step 4 is still required. `issue-apply` only writes a stage it owns (blank, `Backlog`, `Blocked` or `Non-code`), and a story being blocked is `In Progress`, which it keeps and reports as `stage_kept`. That is deliberate: updating an in-flight issue must not drag it out of the stage the run gave it. Read the exit code: **0** applied it; **22** (`spec-invalid`) means the spec is wrong, so fix it; **24** (`partial`) means some of it landed, so report what did not.
+- **`--blocked-by`** writes native blocked-by edges, the only thing that lets `wf unblock` release the issue when they close. They are the **complete set**: an edge the issue already carries that the list omits is removed, so name every issue this one waits on.
+- **`--non-code human|browser`** sets `Ownership` to `Human` or `Browser agent`, adds the matching `[Manual] ` or `[Browser] ` title prefix, and sets the stage to `Non-code` rather than `Blocked`. An edge would hand the work back to a code agent when it closed; `Ownership` keeps it out of the pool for good.
 
-Skip this step entirely when the blocker is not an issue: there is no edge to write, and Step 4 sets the stage either way.
+Then it checks for an open pull request that already closes the issue, and only if there is none releases the claim, unassigns `@me` and sets the stage.
 
-### 3. Release the claim and unassign
+Read the result by `status`:
 
-**First, the open-PR guard.** Blocking returns the issue to the unassigned pool. If the story **already has an open PR**, that would let another agent pick it up and open a *second* PR for the same work. A story with a live PR is not "blocked from starting" — it is in review:
+- **`ok`** (exit 0), one line — blocked, unassigned and released.
+- **`has-pr`** (exit 11) — an open PR closes this story, so it was left assigned and in its stage: returning it to the pool would let another agent open a second PR for the same work. The comment was still posted. Tell the user the blocker belongs on that PR (push a fix, request changes, or close it), naming the PR by number and title, and stop.
+- **`partial`** (exit 24) — `reason` names each step that did not land, such as an edge write refused or a stage write that failed. A failed stage write matters: the issue is still available and the next `pick` will offer it. Report it plainly.
+- **`error`** (exit 20) — the issue or the open-PR check could not be read, so nothing was returned to the pool. Report it.
 
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number}
-```
+### 3. Reconcile the working tree to clean
 
-Exit 0 with `found: 0` means no PR closes it. Exit 20 means the lookup failed — say so and stop rather than returning the issue to the pool on an unverified answer.
+There is no cross-session resume, so uncommitted work left in the worktree is stranded, and a dirty tree is never reaped (`docs/worktree-config.md`). Commit real partial work to the story branch and push it (`git push -u origin HEAD`); the pushed branch is what a future session builds on. Then discard the rest and re-check with `wf tree-clean --discard {path}` (or `--all`) until it prints `ok`, as **End clean** in `templates/worktree-hygiene.md` describes. Never `git stash`: the stash is shared across every worktree on the clone.
 
-If an open PR closes this issue, **do not unassign and do not return the issue to the pool**. Tell the user the story has an open PR (#N) and that the blocker should be handled on the PR (push a fix, request changes via review, or close the PR) rather than by blocking the issue. Record the blocker comment (Step 2) if useful, then stop without unassigning. The assignment keeps the issue out of the pick pool so no duplicate PR is created.
-
-Otherwise (no open PR), release the atomic claim ref so the issue can be claimed again, then remove the assignee so the issue returns to the unassigned pool and can be picked up by another agent or re-picked later:
-
-```
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
-gh issue edit {number} --repo {org}/{repo} --remove-assignee @me
-```
-
-The claim-ref delete is idempotent — ignore an error if the ref is already gone.
-
-### 4. Set the stage to Blocked
-
-This is the block. There is no label to apply alongside it: the issue's `Stage` **is** its state, and until it leaves `Backlog` the issue is still in the pick pool.
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-blocked
-```
-
-It **always exits 0** so a failed write never costs the run its work, but read `set` and `reason`. If the write did not happen, say so plainly ("Stage update failed: {reason}. Continuing."): the issue is still available and the next `pick` will offer it.
-
-**When the blocker is the work's own nature** — it needs a browser console, or a person with a device — do not use this step at all. Blocked means an open edge, and `wf unblock` releases it when that edge closes, which for non-code work would hand it back to an agent that cannot do it. Set `Ownership` instead, which is what actually routes the work, and set the stage to `Non-code`:
-
-```bash
-mkdir -p .claude
-cat > .claude/non-code-spec.json <<'JSON'
-{"issues": [{"number": {number},
-             "title": "{[Browser] |[Manual] }{existing title}",
-             "fields": {"field-ownership": "{Browser agent|Human}"}}]}
-JSON
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/non-code-spec.json
-```
-
-Then set the stage, because the story is `In Progress` and `issue-apply` keeps an in-flight stage:
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-non-code
-```
-
-The field is what keeps the issue out of the pool for good — `pick` refuses an issue whose `Ownership` is not `Code agent`, so it stays refused even if someone later sets its stage back to `Backlog`. The prefix and the field have to agree, `[Manual] ` with `Human` and `[Browser] ` with `Browser agent`; a spec where they contradict each other is refused rather than applied, because one issue has one owner.
-
-### 5. Reconcile the working tree to clean
-
-Do **not** leave uncommitted work sitting in the worktree. There is no cross-session resume, so a worktree left dirty "for a later session to inspect" is never inspected — the work is stranded **and** the dirty tree blocks the harness from ever reaping the worktree (`docs/worktree-config.md`).
-
-Run the **End clean** procedure in `templates/worktree-hygiene.md`:
-
-- **Real partial work** worth keeping — commit it to the story branch and **push** it (`git push -u origin HEAD`) so it survives the worktree being reaped. The pushed branch, not local state, is what a future session can build on.
-- **Disposable scratch / generated noise** — discard it.
-
-Do **not** `git stash` — the stash is shared across every worktree on this clone, so shelving here can collide with another agent's work. End with `git status --porcelain` empty. Releasing the claim (above) returns the story to the backlog; reconciling the tree lets the worktree be reaped.
-
-### 6. Report
+### 4. Report
 
 Display what was blocked — naming the story by number **and** title together (e.g. `#42 Add login button`, never the number alone) — why, and which stage it now has. Suggest running `/synergy:execute` to continue with the next story.

@@ -13,7 +13,7 @@ from wf_config import check_environment, load_config, prepare_cfg
 from wf_deps import known_edges
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, EXIT_USAGE, emit,
-    eprint, run,
+    emit_line, eprint, run,
 )
 from wf_pick_select import _pick_round, claim_validate_walk, prerequisite_pick
 from wf_pick_tree import fetch_issue_candidate
@@ -55,6 +55,9 @@ def cmd_pick(args):
                 finish_pick(args, cfg, selected, side_effects, None, **extra)
         selected, side_effects = claim_validate_walk(cfg, [cand], None, siblings,
                                                      start_date=args.checkout)
+        if cand.get('reset_from_pr'):
+            side_effects.insert(0, {'issue': args.issue, 'action': 'reset-abandoned-pr',
+                                    'pr': cand['reset_from_pr']})
         if not selected:
             emit('all-blocked', EXIT_ALL_BLOCKED,
                  reason='issue #%d is not workable (claimed away, blocked, or '
@@ -204,4 +207,6 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode, container=None,
             if not checked_out:
                 eprint('wf: %s' % branch_msg)
 
-    emit('ok', EXIT_OK, **result)
+    # Compact by default: no body unless `--body`, and no message for a step
+    # that succeeded. `execute` asks for the body; nothing else reads it.
+    emit_line('ok', EXIT_OK, **wf_core.compact_pick(result, getattr(args, 'body', False)))

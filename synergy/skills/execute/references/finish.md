@@ -4,38 +4,7 @@ Read this at Phase 7 of the `execute` workflow (quality gate passed, work commit
 
 ## Phase 7 — Finish
 
-1. **Push and duplicate-PR detection in parallel** (one tool-call batch — no ordering dependency):
-
-   - Push the branch:
-     ```
-     git push -u origin HEAD
-     ```
-   - Check for a sibling open PR that already closes this issue on a different branch:
-     ```bash
-     bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number} --exclude-branch {branch}
-     ```
-     Exit 0 with `found: 0` is the expected answer; exit 20 means the
-     lookup failed, so say so rather than reporting no duplicate.
-
-   Wait for both before proceeding: the push must finish before Step 2's PR create; the sibling result optionally prepends a flag line to the PR body.
-
-   Holding the issue claim through PR creation already serializes builders, so a sibling should never be found — this is the backstop for a sub-second race. `--exclude-branch` already drops your own PR, so anything returned is someone else's. If one is found, still create your PR in Step 2, but prepend:
-
-   ```
-   > ⚠ Possible duplicate of #{sibling_number} — both close #{number}. Pending reconciliation by code review, which keeps the better-implemented PR and closes the other.
-   ```
-
-   Report the duplicate to the user. Do not pick the winner or close the other PR here — that is code review's job.
-
-   The lookup can go stale before PR creation: immediately before composing the body in Step 2, re-verify a found sibling with `gh pr view {sibling_number} --repo {org}/{repo} --json state --jq '.state'`; if it is no longer `OPEN`, drop the flag line and proceed normally.
-
-2. Create a real PR (never a draft). Write the body to a file with the Write tool and pass `--body-file` — never `--body "..."`. The rule and the read-back check are in `templates/body-file-write.md`:
-
-   ```
-   gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}
-   ```
-
-   The body has the fixed shape in `skills/pr-body/SKILL.md`, never one invented per story:
+1. **Write the body** to `.claude/pr-body.md` with the Write tool, never as a shell argument. It has the fixed shape in `skills/pr-body/SKILL.md`, never one invented per story:
 
    ```markdown
    ## Summary
@@ -45,13 +14,22 @@ Read this at Phase 7 of the `execute` workflow (quality gate passed, work commit
    ## Test plan
    ```
 
-   - Title under 70 chars.
    - `## Summary` is two to four plain sentences on what was built and why, for a reviewer who has not seen the issue. `## Changes` is one bullet per change, under `###` sub-headings only past three areas. `## Test plan` says how it was verified and which acceptance criteria that covers.
-   - **Always** close the associated issue: each linked issue on its own line as `Closes #42`, at the very end of the body, under no heading. A story PR must never omit this.
+   - **Always** close the associated issue: each linked issue on its own line as `Closes #42`, at the very end of the body, under no heading.
    - Add no other top-level section, except `## Manual step` when finishing the story needs a person, and `## Quality gate failed` when `.claude/gate-failed.flag` exists (written in Phase 5), which goes above `## Summary` with the last error output.
    - Write every paragraph on one line.
 
-2b. Validate the PR body — read it back and apply the corruption test and retry in `templates/body-file-write.md` (**Validate** + **Retry**). For a PR body the test also requires a `Closes #N` line for every linked issue; if any is missing, add it via `gh pr edit --body-file` before proceeding.
+2. **Push and open a real PR (never a draft)** in one call. Title under 70 characters:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pr-create --title "{title}" --body-file .claude/pr-body.md --issue {number}
+   ```
+
+   It pushes the branch, checks for another open PR that already closes the issue immediately before creating, opens the PR with a duplicate warning line at the top when it finds one, adds any missing `Closes #N` line, reads the body back and rewrites it once if it came back corrupt.
+
+   - **`ok`**, one line — `pr` and `url` are the new PR. When `duplicates` is present, another open PR closes the same issue: report it by number and title. Do not pick the winner or close the other PR here; code review reconciles them, and Phase 10 does not merge.
+   - **`partial`** (exit 24) — the PR exists but its body still fails the check (`problems`). Warn the user that the body may need editing by hand, and carry on.
+   - **`error`** (exit 20) — the push or the create failed, and `reason` says which. No PR exists; fix the cause and re-run. A re-run on a branch whose PR already exists checks that PR rather than opening a second.
 
 3. **Hand the story to review** — labels, stage and claim in one call:
 
@@ -61,9 +39,9 @@ Read this at Phase 7 of the `execute` workflow (quality gate passed, work commit
 
    Repeat `--issue N` for every issue the PR closes. Add `--gate-failed` when `.claude/gate-failed.flag` exists, which enters review as changes-requested rather than needs-review — the PR is real work, but it is not ready to approve and the label has to say so.
 
-   The command takes the PR's review claim (`refs/claims/pr-{pr_number}`), labels the PR with the review-state entry label, sets each issue's `Stage` to `In Review`, releases the issue's claim ref, and deletes `.claude/plan.md`. The review claim comes first, so the work is never held by no lock: a scheduled `/synergy:pr-review` run that fires before Phase 8 finds the PR claimed and moves on. `pr_claimed` in the payload says whether it was taken; `lost` means another agent already holds the review, which Phase 8 step 1 handles.
+   The command takes the PR's review claim (`refs/claims/pr-{pr_number}`), labels the PR with the review-state entry label, sets each issue's `Stage` to `In Review`, releases the issue's claim ref, and deletes `.claude/plan.md`. The review claim comes first, so the work is never held by no lock: a scheduled `/synergy:pr-review` run that fires before Phase 8 finds the PR claimed and moves on. A `pr_claimed` of `lost` in a full payload means another agent already holds the review, which Phase 8 step 1 handles.
 
-   It **always exits 0**, because none of these is a reason to stop once the PR exists. Read the payload instead: `pr_labelled` and `review_label`, and per issue `stage_set` with a `stage_message`. Report anything false loudly ("Stage update failed: {reason}. Continuing.") — it is worth a line, not a halt, but it does mean the issue's state still says `In Progress`.
+   It **always exits 0**, because none of these is a reason to stop once the PR exists. When everything landed it prints one line and there is nothing more to read. Otherwise the full payload names what did not: `pr_claimed`, `pr_labelled`, and per issue `stage_set` with a `stage_message` and `claim_released`. Report anything false loudly ("Stage update failed: {reason}. Continuing.") — it is worth a line, not a halt, but it does mean the issue's state still says `In Progress`.
 
    Releasing the claim here is deliberate. The open PR plus the assignment are the ownership markers from this point on, so holding the ref longer only risks leaking it. The issue stays assigned to @me through review.
 

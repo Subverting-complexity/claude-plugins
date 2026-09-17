@@ -91,6 +91,9 @@ import wf_bulk_build  # noqa: E402
 import wf_post_merge  # noqa: E402
 import wf_review  # noqa: E402
 import wf_preflight  # noqa: E402
+import wf_steps  # noqa: E402
+import wf_block  # noqa: E402
+import wf_pr_create  # noqa: E402
 
 _SHELL_MODULES = (
     wf_io,
@@ -114,6 +117,9 @@ _SHELL_MODULES = (
     wf_post_merge,
     wf_review,
     wf_preflight,
+    wf_steps,
+    wf_block,
+    wf_pr_create,
 )
 
 for _module in _SHELL_MODULES:
@@ -143,6 +149,7 @@ class _Shell(types.ModuleType):
 
 sys.modules[__name__].__class__ = _Shell
 
+from wf_block import cmd_block
 from wf_board_sync import SYNC_CLOSED_DAYS, cmd_board_sync
 from wf_bulk_build import cmd_bulk_integrate, cmd_bulk_schedule
 from wf_capabilities import cmd_org_capabilities
@@ -156,12 +163,14 @@ from wf_pick import cmd_pick, cmd_refine
 from wf_pick_candidates import cmd_candidates
 from wf_plan import cmd_bulk_mark, cmd_drop_group, cmd_drop_story, cmd_plan_set
 from wf_post_merge import cmd_post_merge
+from wf_pr_create import cmd_pr_create
 from wf_preflight import cmd_config_audit, cmd_preflight
 from wf_review import (
     cmd_handoff, cmd_labels_ensure, cmd_review_finish, cmd_review_next,
     cmd_sibling_pr, cmd_update_next,
 )
 from wf_stage import cmd_stage_set
+from wf_steps import cmd_exit_cleanup, cmd_start, cmd_tree_clean
 from wf_unblock import cmd_unblock
 
 
@@ -194,6 +203,8 @@ def build_parser():
                       help='an issue being built alongside this one on the same branch '
                            '(repeatable); a dependency on one of them does not block the '
                            'pick, because this run writes it too')
+    pick.add_argument('--body', action='store_true',
+                      help='include the issue body in the result (left out by default)')
     pick.add_argument('--unattended', action='store_true',
                       help='nobody is there to answer questions: an unclear issue '
                            'ahead of the pick is set to Needs refinement and passed '
@@ -474,8 +485,8 @@ def build_parser():
     rf.set_defaults(func=cmd_refine)
 
     ss = sub.add_parser('stage-set',
-                        help="set an issue's Stage field (always exits 0; "
-                             '`set` says whether it landed)')
+                        help="set an issue's Stage field (exits 20 when the "
+                             'write did not land)')
     ss.add_argument('number', type=int, help='issue number')
     ss.add_argument('--stage', required=True,
                     help='option name ("In Review") or purpose key (stage-in-review)')
@@ -542,6 +553,55 @@ def build_parser():
                     help='the quality gate failed, so enter review as '
                          'changes-requested rather than needs-review')
     ho.set_defaults(func=cmd_handoff)
+
+    st = sub.add_parser('start',
+                        help='claim, stage, clean tree and branch before a build: '
+                             '--issue N, or --group G --branch B for a bulk group')
+    st.add_argument('--issue', type=int, default=None, help='the story to start')
+    st.add_argument('--group', type=int, default=None, help='the bulk group to start')
+    st.add_argument('--branch', default=None, help="with --group, the group's branch")
+    st.set_defaults(func=cmd_start)
+
+    ec = sub.add_parser('exit-cleanup',
+                        help='end a run: release claims, reconcile a held review '
+                             'claim, delete scratch files, report the tree')
+    ec.add_argument('--issue', type=int, action='append', default=None,
+                    help='issue claim to release (repeatable)')
+    ec.add_argument('--bulk', action='store_true',
+                    help='also release every story in .claude/bulk-set.json')
+    ec.add_argument('--pr', type=int, default=None,
+                    help="the run's PR; its review claim is reconciled and "
+                         'released only when this checkout won it')
+    ec.set_defaults(func=cmd_exit_cleanup)
+
+    tc = sub.add_parser('tree-clean',
+                        help='discard uncommitted paths the caller chose, then '
+                             're-check the tree')
+    tc.add_argument('--discard', action='append', default=None,
+                    help='a path to discard (repeatable)')
+    tc.add_argument('--all', action='store_true', help='discard every uncommitted path')
+    tc.set_defaults(func=cmd_tree_clean)
+
+    pc = sub.add_parser('pr-create',
+                        help='push, flag duplicate PRs, open the PR and check its body')
+    pc.add_argument('--title', required=True, help='the PR title')
+    pc.add_argument('--body-file', required=True, help='the PR body')
+    pc.add_argument('--issue', type=int, action='append', default=None,
+                    help='an issue the PR closes (repeatable, at least one)')
+    pc.add_argument('--base', default=None, help='base branch (default: the configured one)')
+    pc.set_defaults(func=cmd_pr_create)
+
+    bk = sub.add_parser('block',
+                        help='block a story: comment, record the blocker, release, '
+                             'unassign and set Blocked (or Non-code)')
+    bk.add_argument('--issue', type=int, required=True, help='the story to block')
+    bk.add_argument('--body-file', required=True, help='the blocker comment')
+    bk.add_argument('--blocked-by', type=int, action='append', default=None,
+                    help='an issue this one waits on (repeatable; the complete set)')
+    bk.add_argument('--non-code', choices=['human', 'browser'], default=None,
+                    help='the work needs a person or a browser agent: set '
+                         'Ownership and Non-code instead of Blocked')
+    bk.set_defaults(func=cmd_block)
 
     return parser
 

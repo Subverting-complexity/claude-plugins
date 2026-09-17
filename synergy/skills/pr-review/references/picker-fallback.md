@@ -1,9 +1,9 @@
 # Step 1 — Inline PR picker (fallback)
 
-Read this only when `wf review-next` reports `no-candidates` or `error`, or Python is missing. `no-candidates` is not conclusive: a PR whose head SHA changed since its last review needs review without carrying a label, and `wf` does not detect that.
+Read this only when `wf review-next` reports `error`, or Python is missing.
 
 ```bash
-gh pr list --state open --repo <org>/<repo> --json number,title,labels,headRefName,baseRefName,headRefOid
+gh pr list --state open --repo <org>/<repo> --json number,title,labels,headRefName,baseRefName,headRefOid,comments
 ```
 
 Skip any PR that has:
@@ -14,11 +14,10 @@ Skip any PR that has:
 
 For each remaining PR, decide whether it needs attention:
 
-1. Read its comments: `gh pr view <number> --repo <org>/<repo> --json comments`.
-2. Find Claude's most recent review comment by the footer marker defined in `review.config.md`.
-3. No such comment → it needs review. A `needs-review` label is the normal first-review case.
-4. A comment exists → extract its `Reviewed at <SHA>` line. If that SHA differs from `headRefOid`, it needs review; otherwise skip it.
-5. A PR carrying `changes-requested` always needs attention: rework, then re-review.
+1. In the comments the list returned, find Claude's most recent review comment by the footer marker defined in `review.config.md`.
+2. No such comment → it needs review. A `needs-review` label is the normal first-review case.
+3. A comment exists → extract its `Reviewed at <SHA>` line. If that SHA differs from `headRefOid`, it needs review; otherwise skip it.
+4. A PR carrying `changes-requested` always needs attention: rework, then re-review.
 
 Pick by three tiers, highest first, lowest PR number within a tier:
 

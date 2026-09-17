@@ -69,7 +69,7 @@ Default mode is `story`. Override with `$ARGUMENTS.mode`: `feature` or `maintena
 
 ## Exit cleanup
 
-Run `skills/execute/references/exit-cleanup.md` once, after the last group, with one substitution: its step 1 releases **one** issue claim, and this run holds one per story. Release them all in one `wf claim-release` call with `--issue` once per story in `.claude/bulk-set.json`. Its step 2 deletes `bulk-set.json` with the other scratch files. Everything else applies unchanged.
+Run `skills/execute/references/exit-cleanup.md` once, after the last group, with one substitution: pass `--bulk` in place of `--issue`, which releases the claim on every story in `.claude/bulk-set.json` in one push before the scratch files, `bulk-set.json` among them, are deleted. Everything else applies unchanged.
 
 ---
 
@@ -87,16 +87,16 @@ Run Phases 2 to 10 for group 1, then **Between groups**, then Phases 2 to 10 for
 
 ## Phase 2 — Start
 
-1. **Confirm the claims.** Re-run `wf claim --issue {number}` for a story only if Phase 1's claim state was lost to compaction; a still-held claim is a no-op. Never issue a bare `--add-assignee @me` as a claim.
-2. **Start clean.** Run the **Start clean** check in `templates/worktree-hygiene.md` before branching. A worktree provisioned dirty is inherited junk: reset it to a pristine baseline and report it.
-3. **Create the group's branch.** Render the `branch-convention` from `ClaudeProject.md` with `{number}` = the group's **lead** story's number and a slug describing what the **group** has in common (`feature/41/label-resolution`, not `feature/41/fix-missing-status-label`), then record it:
+One call confirms every claim in the group, resets a worktree provisioned dirty, creates the group's branch from a fresh `origin/{default-branch}`, pushes it and records it in the bulk set. Render the `branch-convention` from `ClaudeProject.md` with `{number}` = the group's **lead** story's number and a slug describing what the **group** has in common (`feature/41/label-resolution`, not `feature/41/fix-missing-status-label`):
 
-   ```
-   git fetch origin {default-branch}
-   git checkout -b {branch} origin/{default-branch}
-   git push -u origin {branch}
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" bulk-mark --group {G} --branch {branch}
-   ```
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" start --group {G} --branch {branch}
+```
+
+- **`ok`** (exit 0), one line — on the branch, ready to plan. If `reason` names discarded paths, the worktree was provisioned dirty: report them.
+- **`partial`** (exit 24) — `reason` names what did not happen. A story in `lost` is held by another run and is dropped (`wf drop-story`, which comments why); a story in `claim_errors` is not lost, so re-run `wf start` once; a branch that could not be created, pushed or recorded is a stop: report it and run **Exit cleanup**.
+
+Never issue a bare `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
 
 ## Phase 3 — Plan the set as one change
 
