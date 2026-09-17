@@ -407,6 +407,9 @@ def cmd_post_merge(args):
         cleared = {str(s['issue']): s['lifecycle_label_cleared'] for s in settled
                    if s['lifecycle_label_cleared']}
         extra = {'cleared': cleared} if cleared else {}
+        no_edges = ((unblocked or {}).get('no_edges') or {}).get('count')
+        if no_edges:
+            extra['no_edges'] = no_edges
         emit_line('ok', EXIT_OK, pr=args.pr, settled=[s['issue'] for s in settled],
                   containers_closed=containers, released=released, **extra,
                   reason='PR #%d settled: %d issue(s) closed and Done, %d '

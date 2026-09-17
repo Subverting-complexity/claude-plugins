@@ -94,7 +94,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" start --group {G} --branch {branch}
 ```
 
 - **`ok`** (exit 0), one line — on the branch, ready to plan. If `reason` names discarded paths, the worktree was provisioned dirty: report them.
-- **`partial`** (exit 24) — `reason` names what did not happen. A story whose claim was lost to another run is dropped (`wf drop-story`, which comments why); a branch that could not be created, pushed or recorded is a stop: report it and run **Exit cleanup**.
+- **`partial`** (exit 24) — `reason` names what did not happen. A story in `lost` is held by another run and is dropped (`wf drop-story`, which comments why); a story in `claim_errors` is not lost, so re-run `wf start` once; a branch that could not be created, pushed or recorded is a stop: report it and run **Exit cleanup**.
 
 Never issue a bare `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
 

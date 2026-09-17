@@ -76,8 +76,13 @@ class TestPorcelain(unittest.TestCase):
 
     def test_entries_split_into_tracked_and_untracked(self):
         entries = wf_core.parse_porcelain(' M a.py\n?? new/\nR  old.py -> new.py\n')
-        self.assertEqual(wf_core.tracked(entries), ['a.py', 'new.py'])
+        self.assertEqual(wf_core.tracked(entries), ['a.py', 'new.py', 'old.py'])
         self.assertEqual(wf_core.untracked(entries), ['new/'])
+
+    def test_z_output_keeps_unescaped_names_and_both_rename_paths(self):
+        entries = wf_core.parse_porcelain(' M caf\u00e9.py\0R  new.py\0old.py\0?? n\u00e4me/\0')
+        self.assertEqual(wf_core.tracked(entries), ['caf\u00e9.py', 'new.py', 'old.py'])
+        self.assertEqual(wf_core.untracked(entries), ['n\u00e4me/'])
 
 
 class TestBodyChecks(unittest.TestCase):
@@ -184,11 +189,12 @@ class TestReviewNext(unittest.TestCase):
             self._pr(4, [NAMES['needs-re-review']]),
             self._pr(5, [NAMES['approved']], reviewed='abcdef1'),        # settled
             self._pr(6, [NAMES['reviewing']], reviewed='1234567'),       # busy
-            self._pr(7, [], reviewed=None),                              # nobody asked
+            self._pr(7, [], reviewed=None),                              # never reviewed
             self._pr(8, [NAMES['needs-review']], draft=True),
+            self._pr(9, [NAMES['approved']], reviewed=None),             # approved by hand
         ]
         order = [p['number'] for p in wf_core.select_review_next(prs, NAMES)]
-        self.assertEqual(order, [4, 2, 1, 3])
+        self.assertEqual(order, [4, 2, 1, 3, 7])
 
     def test_a_moved_changes_requested_pr_is_reviewed_not_reworked(self):
         pr = self._pr(2, [NAMES['changes-requested']], reviewed='1234567')
@@ -255,6 +261,13 @@ class TestExitCleanup(_Repo):
         self.assertEqual(code, wf.EXIT_PARTIAL)
         self.assertEqual(payload['status'], 'dirty')
         self.assertEqual(payload['remaining'], [{'code': ' M', 'path': 'src/a.py'}])
+
+    def test_a_dirty_tree_still_names_a_failed_release(self):
+        with mock.patch.object(wf, 'release_claims', lambda t: {x: False for x in t}):
+            code, _, payload = self._run(['--issue', '3'], status=' M src/a.py\n')
+        self.assertEqual(payload['status'], 'dirty')
+        self.assertIn('could not release issue-3', payload['reason'])
+        self.assertNotIn('claims and scratch done', payload['reason'])
 
     def test_a_pr_claim_not_won_is_never_touched(self):
         calls = []
@@ -332,6 +345,19 @@ class TestStart(_Repo):
         self.assertEqual(code, wf.EXIT_LOST)
         stage.assert_not_called()
 
+    def test_a_failed_group_claim_push_is_not_reported_lost(self):
+        self.touch('bulk-set.json', json.dumps({
+            'stories': [{'number': 4, 'group': 1}], 'groups': [{'group': 1}]}))
+        with mock.patch.object(wf, 'run', lambda cmd, input_text=None: (0, '', '')), \
+                mock.patch.object(wf, 'holds_claim', lambda t: False), \
+                mock.patch.object(wf, 'acquire_claim', lambda t: 'error'):
+            code, _, payload = _capture(wf.cmd_start, _args(
+                'start', '--group', '1', '--branch', 'feature/4/set'))
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+        self.assertEqual(payload['lost'], [])
+        self.assertEqual(payload['claim_errors'], [4])
+        self.assertIn('claim push failed', payload['reason'])
+
     def test_a_group_branch_is_created_pushed_and_recorded(self):
         self.touch('bulk-set.json', json.dumps({
             'stories': [{'number': 4, 'group': 1}, {'number': 5, 'group': 2}],
@@ -394,6 +420,12 @@ class TestBlock(_Repo):
         self.assertEqual(payload['status'], 'has-pr')
         self.assertIn('#12 Other PR', payload['reason'])
         self.assertFalse(any('--remove-assignee' in c for c in calls))
+
+    def test_non_code_work_with_an_open_pr_is_not_relabelled(self):
+        code, payload, applied, _ = self._run(
+            ['--non-code', 'human'], siblings=[{'number': 12, 'title': 'Other PR'}])
+        self.assertEqual(payload['status'], 'has-pr')
+        self.assertEqual(applied, [])
 
     def test_non_code_work_sets_ownership_and_the_prefix(self):
         code, payload, applied, _ = self._run(['--non-code', 'human'])
@@ -506,6 +538,14 @@ class TestReviewNextCommand(_Repo):
         self.assertEqual(code, wf.EXIT_OK, payload)
         self.assertEqual(payload['number'], 5)
         self.assertTrue(payload['head_changed'])
+
+    def test_a_pool_past_one_page_is_an_error_not_no_candidates(self):
+        data = {'repository': {'pullRequests': {
+            'pageInfo': {'hasNextPage': True}, 'nodes': []}}}
+        with mock.patch.object(wf, 'gh_graphql', lambda q, **f: (True, data, '')):
+            code, _, payload = _capture(wf.cmd_review_next, _args('review-next'))
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertIn('more than 100', payload['reason'])
 
     def test_nothing_to_review_is_one_line(self):
         data = {'repository': {'pullRequests': {'nodes': []}}}

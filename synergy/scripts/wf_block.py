@@ -81,14 +81,7 @@ def cmd_block(args):
         problems.append('comment not posted (%s)' % cerr.strip())
 
     recorded = None
-    if args.non_code:
-        prefix, owner = NON_CODE[args.non_code]
-        entry = {'title': title if title.startswith(prefix) else prefix + title,
-                 'fields': {'field-ownership': owner}}
-        recorded, why = _apply_spec(number, entry)
-        if not recorded:
-            problems.append('ownership not set (%s)' % why)
-    elif args.blocked_by:
+    if args.blocked_by and not args.non_code:
         recorded, why = _apply_spec(number, {'blocked_by': list(args.blocked_by)})
         if not recorded:
             problems.append('blocked-by edges not written (%s)' % why)
@@ -107,6 +100,16 @@ def cmd_block(args):
              reason='%s has an open PR (%s); handle the blocker on the PR. The '
                     'issue stays assigned and in its stage'
                     % (label, ', '.join('#%d %s' % (p['number'], p['title']) for p in prs)))
+
+    # The open-PR check comes before the non-code write: a story with an
+    # open PR is handled on the PR, so its title and Ownership stay as they are.
+    if args.non_code:
+        prefix, owner = NON_CODE[args.non_code]
+        entry = {'title': title if title.startswith(prefix) else prefix + title,
+                 'fields': {'field-ownership': owner}}
+        recorded, why = _apply_spec(number, entry)
+        if not recorded:
+            problems.append('ownership not set (%s)' % why)
 
     released = release_claims(['issue-%d' % number]).get('issue-%d' % number, False)
     if not released:

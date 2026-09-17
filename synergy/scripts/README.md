@@ -540,7 +540,7 @@ Nothing did this. `post-merge` settles only the issues a pull request *closes*, 
 | -------------- | ------------------------------------------------- | --------------- | --------------------- | ------------ |
 | `pick`         | Every open issue, judged by the rules below       | `issue-{n}` ref | `Stage` In Progress   | execute |
 | `update-next`  | My open PRs with actionable review feedback       | `pr-{n}` ref    | `updating` (keeps the feedback label) | pr-review |
-| `review-next`  | Open PRs labelled `needs-re-review`, `changes-requested` or `needs-review`, or whose head moved since the last review footer | `pr-{n}` ref | `reviewing` (removes prior) | pr-review |
+| `review-next`  | Open PRs labelled `needs-re-review`, `changes-requested` or `needs-review`, whose head moved since the last review footer, or never footered by a review | `pr-{n}` ref | `reviewing` (removes prior) | pr-review |
 
 All share the same atomic claim/checkout core and JSON contract. `--checkout` creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
 
@@ -569,7 +569,7 @@ The pool is ordered by `Priority`, then `Effort`, then issue number. `--mode` an
 ## Scope / deferrals
 
 - **`pick`** — `--mode story` / `feature` / `maintenance`, reading the open, unassigned issues whose `Stage` is blank or `Backlog` as the pool, from the repository's issues rather than a board. One GraphQL query (`fetch_issue_facets`) reads the native type, the `Priority` field and the `Classification` field for the open backlog, and the pool is ordered by `Priority` — `Urgent` → `High` → `Medium` → `Low`, then lowest issue number. An issue with no `Priority` value sorts last and is named on stderr; there is no label fallback, on purpose. No mode offers an `Epic`: it is the outcome its features and stories deliver, not a piece of work. **Type has none**: `feature` and `maintenance` filter on the native `issueType` alone, so an issue the org has not typed — or a `Feature` it left unclassified — is out of the pool and named on stderr rather than guessed at from a `type-*` label or a `[PREFIX]` title. An org whose backlog carries no native type at all cannot answer those modes and `pick` exits `no-capabilities` (21) saying so; `--mode story` is unaffected. Membership of the pool is the `Stage` field's answer: an issue is in it because its `Stage` is blank or `Backlog` and nobody is assigned, whether or not it has a card on any board. Every other stage takes an issue out of the pool. No label is read at any point in the selection.
-- **`review-next`** — three tiers, lowest number first within each: `needs-re-review`; `changes-requested`; then `needs-review` or a head that moved since the SHA the last `Reviewed at` footer names (one GraphQL read of every open PR's comments and reviews, `wf_core.select_review_next`). Drafts and PRs carrying `reviewing` or `updating` are skipped. `no-candidates` is conclusive and prints one line. The result carries `prior_state` (the label it was selected by; a moved `changes-requested` PR reports none, because it is picked for review, not rework) and `head_changed`. Pass `--no-claim` for a read-only review (no push access): it selects the next PR without writing a claim ref or applying the `reviewing` marker, and the JSON reports `claimed: false`.
+- **`review-next`** — three tiers, lowest number first within each: `needs-re-review`; `changes-requested`; then `needs-review`, a head that moved since the SHA the last `Reviewed at` footer names, or a PR no review has footered and nobody approved (one GraphQL read of every open PR's comments and reviews, `wf_core.select_review_next`). Drafts and PRs carrying `reviewing` or `updating` are skipped. `no-candidates` is conclusive and prints one line; more than 100 open PRs is an `error`, because the read covers one page. The result carries `prior_state` (the label it was selected by; a moved `changes-requested` PR reports none, because it is picked for review, not rework) and `head_changed`. Pass `--no-claim` for a read-only review (no push access): it selects the next PR without writing a claim ref or applying the `reviewing` marker, and the JSON reports `claimed: false`.
 
 ## Locks, stage and handoff
 
@@ -613,7 +613,7 @@ It **always exits 0**: once the pull request exists, none of this is a reason to
 
 ### `start`
 
-`start --issue N` is everything between a claim and the first edit when `pick --checkout` did not do it: it re-takes the claim (one this checkout holds is kept), sets `In Progress`, resets a tree provisioned dirty (restore and `git clean -fd`, never `-x`, never `stash`) and creates or checks out the story branch. `start --group G --branch B` does the same for a bulk group: every story's claim in `.claude/bulk-set.json`, the reset, a fresh branch from `origin/{default-branch}`, the push and `bulk-mark`. Success is one line (exit 0); `lost` is exit 27, and a step that did not land is `partial`, exit 24, with `reason` naming it.
+`start --issue N` is everything between a claim and the first edit when `pick --checkout` did not do it: it re-takes the claim (one this checkout holds is kept), sets `In Progress`, resets a tree provisioned dirty (restore and `git clean -fd`, never `-x`, never `stash`) and creates or checks out the story branch. `start --group G --branch B` does the same for a bulk group: every story's claim in `.claude/bulk-set.json`, the reset, a fresh branch from `origin/{default-branch}`, the push and `bulk-mark`. Success is one line (exit 0); `lost` is exit 27, and a step that did not land is `partial`, exit 24, with `reason` naming it; in a group, `lost` lists stories another run holds and `claim_errors` those whose claim push failed, which a retry can still take.
 
 ### `exit-cleanup`
 
@@ -621,7 +621,7 @@ It **always exits 0**: once the pull request exists, none of this is a reason to
 
 ### `tree-clean`
 
-`tree-clean --discard PATH [...]` or `--all` discards what the caller chose (tracked paths restored, untracked ones cleaned) and re-checks the tree: one line when clean, `dirty` with `remaining` when not.
+`tree-clean --discard PATH [...]` or `--all` discards what the caller chose (tracked paths restored, untracked ones cleaned) and re-checks the tree: one line when clean, `dirty` with `remaining` (and `refused`, the paths git would not restore or clean) when not. It reads `git status --porcelain -z`, so a non-ASCII name is matched as it is on disk, and a rename discards both its paths.
 
 ### `pr-create`
 

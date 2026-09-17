@@ -42,18 +42,34 @@ def exit_pr_action(state, labels, names):
 # ── the working tree ─────────────────────────────────────────────────────────
 
 def parse_porcelain(text):
-    """`git status --porcelain` as [{'code': 'XY', 'path': path}], in order.
+    """`git status --porcelain -z` as [{'code': 'XY', 'path': path}], in order.
 
-    A rename reports its new path, which is the one still in the tree.
+    `-z` output is used because it neither quotes nor escapes a path, so a
+    non-ASCII name matches the file on disk. A rename or copy reports both
+    paths: the new one still in the tree and the old one it removed, so one
+    discard restores both. Newline-separated output is accepted as well.
     """
     entries = []
+    if '\0' in (text or ''):
+        tokens = text.split('\0')
+        i = 0
+        while i < len(tokens):
+            token = tokens[i]
+            i += 1
+            if len(token) < 4:
+                continue
+            code = token[:2]
+            entries.append({'code': code, 'path': token[3:]})
+            if code[0] in 'RC' and i < len(tokens) and tokens[i]:
+                entries.append({'code': code, 'path': tokens[i]})
+                i += 1
+        return entries
     for line in (text or '').splitlines():
         if len(line) < 4:
             continue
-        path = line[3:]
-        if ' -> ' in path:
-            path = path.split(' -> ', 1)[1]
-        entries.append({'code': line[:2], 'path': path.strip('"')})
+        paths = line[3:].split(' -> ', 1)
+        for path in reversed(paths):
+            entries.append({'code': line[:2], 'path': path.strip('"')})
     return entries
 
 
@@ -236,8 +252,9 @@ def select_review_next(prs, names):
     not carry `needs-re-review`.
 
     Each PR carries `labels`, and may carry `head_sha`, `reviewed_sha` and
-    `draft`. A PR with no review footer and no state label is somebody's work
-    nobody has asked to be reviewed, so it is left alone.
+    `draft`. A PR no review has ever footered is tier 2 whatever its labels,
+    unless it is `approved`, so a PR a person opened without a label is still
+    found.
     """
     busy = {names['reviewing'], names['updating']}
     ranked = []
@@ -252,7 +269,9 @@ def select_review_next(prs, names):
             tier = 1
         elif moved:
             tier = 2
-        elif names['needs-review'] in labels and names['approved'] not in labels:
+        elif names['approved'] in labels:
+            continue
+        elif names['needs-review'] in labels or not pr.get('reviewed_sha'):
             tier = 2
         else:
             continue
@@ -267,7 +286,8 @@ def review_prior_state(labels, names, moved=False):
     A `changes-requested` PR whose head moved was selected for a review of
     the new commits, not for rework, so it does not report that label.
     """
-    keys = ('needs-re-review', 'needs-review') if moved else         ('needs-re-review', 'changes-requested', 'needs-review')
+    keys = (('needs-re-review', 'needs-review') if moved
+            else ('needs-re-review', 'changes-requested', 'needs-review'))
     for key in keys:
         if names[key] in (labels or ()):
             return names[key]

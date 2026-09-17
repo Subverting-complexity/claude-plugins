@@ -169,6 +169,15 @@ class TestPostMergeCallCount(_Counted):
         self.assertEqual(four['cleared'], {str(n): _RETIRED for n in (5, 6, 7, 8)})
         self.assertEqual(four['containers_closed'], [])
 
+    def test_the_one_line_result_keeps_the_no_edges_count(self):
+        hub = _GitHub(linked=[5])
+        sweep = {'released': [], 'rescoped': [], 'partials': [], 'held': [],
+                 'no_edges': {'count': 2, 'issues': [8, 9]}}
+        with mock.patch('wf_post_merge.unblock_scan', lambda cfg: sweep):
+            code, payload = self._drive(hub, ['post-merge', '--pr', '50'])
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(payload['no_edges'], 2)
+
     def test_no_close_goes_through_the_cli_one_issue_at_a_time(self):
         _, calls = self._post_merge([5, 6, 7, 8])
         self.assertFalse(any(c[:3] in (['gh', 'issue', 'close'], ['gh', 'issue', 'view'],

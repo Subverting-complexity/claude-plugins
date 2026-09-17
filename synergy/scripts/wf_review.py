@@ -148,6 +148,7 @@ REVIEW_POOL_QUERY = (
     'query($owner:String!,$repo:String!){'
     ' repository(owner:$owner,name:$repo){'
     ' pullRequests(states:OPEN, first:100, orderBy:{field:CREATED_AT, direction:ASC}){'
+    ' pageInfo { hasNextPage }'
     ' nodes { number title url headRefName headRefOid isDraft'
     ' labels(first:30){ nodes { name } }'
     ' comments(last:30){ nodes { body createdAt } }'
@@ -165,12 +166,18 @@ def assemble_review_prs(cfg):
     if not ok or not data:
         return False, None, err or 'no data'
     try:
-        nodes = data['repository']['pullRequests']['nodes']
+        pulls = data['repository']['pullRequests']
+        nodes = pulls['nodes']
     except (KeyError, TypeError):
         return False, None, 'unexpected pullRequests shape'
+    # `no-candidates` is conclusive, so a pool it could not read whole is an
+    # error rather than an answer.
+    if (pulls.get('pageInfo') or {}).get('hasNextPage'):
+        return False, None, 'more than 100 open PRs; the picker reads only the first 100'
     prs = []
     for node in nodes or ():
-        posts = ((node.get('comments') or {}).get('nodes') or []) +                 ((node.get('reviews') or {}).get('nodes') or [])
+        posts = (((node.get('comments') or {}).get('nodes') or [])
+                 + ((node.get('reviews') or {}).get('nodes') or []))
         posts.sort(key=lambda p: p.get('createdAt') or '')
         prs.append({
             'number': node['number'], 'title': node.get('title') or '',

@@ -29,7 +29,7 @@ EXIT_DIRTY = EXIT_PARTIAL
 
 def tree_entries():
     """The working tree's porcelain entries, or None when git cannot say."""
-    code, out, _ = run(['git', 'status', '--porcelain'])
+    code, out, _ = run(['git', 'status', '--porcelain', '-z'])
     if code != 0:
         return None
     return wf_core.parse_porcelain(out)
@@ -38,13 +38,20 @@ def tree_entries():
 def discard(entries):
     """Restore tracked paths and remove untracked ones. Never `-x`, so a
     gitignored `.env` or `node_modules` is not touched; never `stash`, which
-    every worktree on the clone shares."""
-    paths = wf_core.tracked(entries)
-    if paths:
-        run(['git', 'restore', '--staged', '--worktree', '--'] + paths)
-    extra = wf_core.untracked(entries)
-    if extra:
-        run(['git', 'clean', '-fd', '--'] + extra)
+    every worktree on the clone shares. Returns the paths git refused.
+
+    One unmatched path makes git abort the whole command, so a failed batch
+    is retried path by path and only the paths that still fail are returned.
+    """
+    refused = []
+    for cmd, paths in ((['git', 'restore', '--staged', '--worktree', '--'],
+                        wf_core.tracked(entries)),
+                       (['git', 'clean', '-fd', '--'], wf_core.untracked(entries))):
+        paths = list(dict.fromkeys(paths))
+        if not paths or run(cmd + paths)[0] == 0:
+            continue
+        refused.extend(p for p in paths if run(cmd + [p])[0] != 0)
+    return refused
 
 
 def start_clean():
@@ -53,7 +60,8 @@ def start_clean():
     if not entries:
         return [], []
     discard(entries)
-    return [e['path'] for e in entries], [e['path'] for e in tree_entries() or []]
+    discarded = list(dict.fromkeys(e['path'] for e in entries))
+    return discarded, [e['path'] for e in tree_entries() or []]
 
 
 def cmd_tree_clean(args):
@@ -74,11 +82,11 @@ def cmd_tree_clean(args):
         chosen = [e for e in entries
                   if e['path'].rstrip('/') in wanted
                   or any(e['path'].startswith(w + '/') for w in wanted)]
-    discard(chosen)
+    refused = discard(chosen)
     left = tree_entries() or []
     if left:
         emit('dirty', EXIT_DIRTY, discarded=[e['path'] for e in chosen],
-             remaining=left,
+             remaining=left, refused=refused,
              reason='%d path(s) still uncommitted: commit each that is work, '
                     'then discard the rest' % len(left))
     emit_line('ok', EXIT_OK, reason='tree clean; discarded %d path(s)' % len(chosen))
@@ -158,10 +166,12 @@ def cmd_exit_cleanup(args):
     fields = dict(released=[t for t in targets if released.get(t)], failed=failed,
                   pr_action=pr_action, problems=problems)
     if entries:
+        done = ('also: %s' % '; '.join(problems) if problems
+                else 'claims and scratch done')
         emit('dirty', EXIT_DIRTY, remaining=entries, **fields,
-             reason='claims and scratch done; %d uncommitted path(s): commit '
-                    'each that is work (and push), then `wf tree-clean` the rest'
-                    % len(entries))
+             reason='%d uncommitted path(s): commit each that is work (and '
+                    'push), then `wf tree-clean` the rest; %s'
+                    % (len(entries), done))
     if problems:
         emit('partial', EXIT_PARTIAL, reason='; '.join(problems), **fields)
     parts = ['released %s' % ', '.join(fields['released']) if fields['released']
@@ -215,7 +225,9 @@ def _start_group(args, cfg):
         emit('usage', EXIT_USAGE, reason='no readable .claude/bulk-set.json; run plan-set --claim first')
     if not record_issues:
         emit('usage', EXIT_USAGE, reason='group %d has no stories in the bulk set' % args.group)
-    lost = [n for n in record_issues if _claim('issue-%d' % n) != 'won']
+    outcomes = {n: _claim('issue-%d' % n) for n in record_issues}
+    lost = [n for n, o in outcomes.items() if o == 'lost']
+    claim_errors = [n for n, o in outcomes.items() if o == 'error']
     discarded, dirty = start_clean()
     default = cfg['default_branch']
     run(['git', 'fetch', 'origin', default])
@@ -232,6 +244,7 @@ def _start_group(args, cfg):
     mcode, _ = call_command(cmd_bulk_mark, argparse.Namespace(
         group=args.group, branch=args.branch, built=None)) if checked_out else (1, None)
     return dict(group=args.group, stories=record_issues, lost=lost,
+                claim_errors=claim_errors,
                 branch=args.branch, checked_out=checked_out, pushed=pushed,
                 recorded=mcode == EXIT_OK, branch_message=branch_msg,
                 discarded=discarded, dirty=dirty)
@@ -264,6 +277,9 @@ def cmd_start(args):
     if result.get('lost'):
         failures.append('claims lost to another run: %s'
                         % ', '.join('#%d' % n for n in result['lost']))
+    if result.get('claim_errors'):
+        failures.append('claim push failed, not lost (retry `wf start`): %s'
+                        % ', '.join('#%d' % n for n in result['claim_errors']))
     if result['dirty']:
         failures.append('tree still dirty after reset')
     if failures:
