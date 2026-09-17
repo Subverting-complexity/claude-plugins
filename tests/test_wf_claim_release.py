@@ -206,7 +206,7 @@ class TestHandoffReportsTheRelease(unittest.TestCase):
     def test_a_successful_release_is_reported(self):
         code, payload = self._handoff(_fake_git())
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertIs(payload['issues'][0]['claim_released'], True)
+        self.assertIn('#3 In Review and released', payload['reason'])
 
 
 @unittest.skipUnless(_git_available(), 'git is required for the real-remote tests')

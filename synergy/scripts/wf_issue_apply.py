@@ -16,7 +16,7 @@ from wf_config import field_name, label, load_config
 from wf_deps import issue_edges_map
 from wf_io import (
     EXIT_CAPABILITY, EXIT_ENV, EXIT_OK, EXIT_PARTIAL, EXIT_SPEC, EXIT_VERIFY,
-    emit, eprint, run,
+    emit, eprint, gh_json, run,
 )
 from wf_issue_io import (
     _values_match, add_sub_issue, issue_field_values, issue_mismatches,
@@ -622,6 +622,33 @@ def lifecycle_phase(cfg, plans, results):
     return results
 
 
+def resolve_current_milestone(cfg, entries, repo=None):
+    """Replace `"milestone": "current"` with the sprint's title, in place.
+
+    The current sprint is the open milestone with the earliest due date that
+    still has open issues (`wf_core.current_milestone`). When there is none,
+    the key is dropped, so the issue is filed without a milestone, and the
+    note returned says why. Returns the note, or None.
+    """
+    wanting = [e for e in entries
+               if isinstance(e, dict) and e.get('milestone') == wf_core.CURRENT_MILESTONE]
+    if not wanting:
+        return None
+    repo = repo or '%s/%s' % (cfg['org'], cfg['repo'])
+    ok, data, err = gh_json(['api', 'repos/%s/milestones?state=open&per_page=100' % repo])
+    if ok and isinstance(data, list):
+        title, note = wf_core.current_milestone(data)
+    else:
+        title, note = None, ('could not read the open milestones (%s), so the '
+                             'issue is filed without one' % (err or 'no detail'))
+    for entry in wanting:
+        if title:
+            entry['milestone'] = title
+        else:
+            entry.pop('milestone', None)
+    return note if not title else 'filed in milestone %s' % title
+
+
 def cmd_issue_apply(args):
     ok, cfg, err = load_config()
     if not ok:
@@ -687,6 +714,7 @@ def cmd_issue_apply(args):
                 referenced.add(ref)
             elif isinstance(ref, str) and ref.isdigit():
                 referenced.add(int(ref))
+    milestone_note = resolve_current_milestone(cfg, entries, args.repo)
     milestones = [e['milestone'] for e in entries if e.get('milestone')]
     ok, ctx, err = resolve_spec_context(cfg, label_names, referenced, args.repo,
                                         milestones)
@@ -769,6 +797,8 @@ def cmd_issue_apply(args):
     payload = {'spec': args.spec, 'applied': results,
                'skipped_fields': sorted(skipped),
                'numbers_written_back': wrote_back}
+    if milestone_note:
+        payload['milestone_note'] = milestone_note
     if not wrote_back:
         payload['write_back_error'] = wb_err
 

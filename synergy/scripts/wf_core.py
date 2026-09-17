@@ -39,12 +39,13 @@ import wf_core_preflight
 import wf_core_repair
 import wf_core_scratch
 import wf_core_schedule
+import wf_core_steps
 
 _MODULES = (
     wf_core_findings, wf_core_fields, wf_core_refs, wf_core_stage, wf_core_spec,
     wf_core_audit, wf_core_select, wf_core_bulk, wf_core_claims, wf_core_drift,
     wf_core_pool, wf_core_review, wf_core_preflight, wf_core_repair,
-    wf_core_scratch, wf_core_schedule,
+    wf_core_scratch, wf_core_schedule, wf_core_steps,
 )
 
 for _module in _MODULES:

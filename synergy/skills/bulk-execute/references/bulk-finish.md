@@ -4,43 +4,9 @@ Read this at Phase 7 of the `bulk-execute` workflow: every story in the current 
 
 Throughout, **"the set" means the current group's stories actually built**: the entries in `.claude/bulk-set.json` with this `group` whose `built` is `true`. Stories dropped along the way are already back in the backlog, and the other group's stories take no part in anything below.
 
-## 1. Push, and check each story for a sibling pull request
+## 1. Write the body
 
-Run these together in one tool-call batch — there is no ordering dependency between them:
-
-- Push the branch:
-  ```
-  git push -u origin HEAD
-  ```
-- Check every built story at once for an open pull request that already closes it on a different branch:
-  ```bash
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr {number} {number} ... --exclude-branch {branch}
-  ```
-  Exit 0 with `found: 0` is the expected answer, and `by_issue` answers each story; exit 20 means the lookup failed, so say so rather than reporting no duplicate.
-
-Wait for both before continuing: the push must finish before step 2 creates the PR, and any sibling found changes the PR body.
-
-Holding every story's claim through PR creation already serializes builders, so a sibling should never be found. `--exclude-branch` already drops your own PR, so anything returned is someone else's. Still create the pull request, but prepend one line per affected story:
-
-```
-> ⚠ Possible duplicate of #{sibling_number} — both close #{story_number}. Pending reconciliation by code review, which keeps the better-implemented PR and closes the other.
-```
-
-Report each duplicate to the user. Do not pick a winner or close the other PR here — that is code review's job. A duplicate against **any** story in the set stops the Phase 10 merge for the whole pull request, because a bulk PR cannot be split.
-
-The lookup can go stale before the PR is created. Immediately before composing the body, re-verify each found sibling with `gh pr view {sibling_number} --repo {org}/{repo} --json state --jq '.state'`; drop the flag line for any that is no longer `OPEN`.
-
-## 2. Create one real pull request (never a draft)
-
-Write the body to a file with the Write tool and pass `--body-file` — never `--body "..."`. The rule and the read-back check are in `templates/body-file-write.md`. Then:
-
-```
-gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --body-file {tempfile}
-```
-
-**Title.** Under 70 characters, naming what the set does as a whole rather than any one story: "Resolve labels by purpose key throughout the picker", not "Fix #41 and #43 and #47". A reader scanning the pull request list should be able to tell what changed without opening it.
-
-**Body.** A bulk pull request asks more of a reviewer than a single-story one, so it adds one section to the fixed shape in `skills/pr-body/SKILL.md` and keeps everything else the same. Use these headings, with these names, in this order, on every bulk pull request:
+Write it to `.claude/pr-body.md` with the Write tool, never as a shell argument. A bulk pull request asks more of a reviewer than a single-story one, so it adds one section to the fixed shape in `skills/pr-body/SKILL.md` and keeps everything else the same. Use these headings, with these names, in this order, on every bulk pull request:
 
 ```markdown
 ## Summary
@@ -56,16 +22,26 @@ gh pr create --repo {org}/{repo} --base {default-branch} --title "{title}" --bod
 2. **`## Stories`** — a table, each row giving the issue **number and title** together, plus one line on what it asked for. Never a bare list of numbers: a reader should not have to open three issues to find out what the pull request does.
 3. **`## Changes`** — a `###` sub-section per story, in build order, saying what was implemented and which acceptance criteria it answers.
 4. **`## Test plan`** — how to verify the change, with the per-story steps kept distinguishable so a tester can check each story separately.
-5. **`Closes #N` lines** — at the very end of the body, one per built story, each on its own line and under no heading. This is what settles the issues on merge, so it must be exact:
-   - Every built story gets one. A missing line leaves that issue open after the merge, assigned and at `In Review`, with nothing left to pick it up.
-   - **No story that was not built gets one.** A `Closes` line for a dropped or unfinished story closes it on merge with no code behind it, which is the worst outcome this workflow can produce. Read `.claude/bulk-set.json` rather than trusting memory here.
-6. **`## Quality gate failed`** — only when `.claude/gate-failed.flag` exists (`test -f .claude/gate-failed.flag`, written in Phase 5). It is the one section that goes **above** `## Summary`. Give the last error output, and say which stories were built and which were released back to the backlog because of it.
+5. **`Closes #N` lines** — at the very end of the body, one per built story, each on its own line and under no heading. **No story that was not built gets one**: a `Closes` line for a dropped or unfinished story closes it on merge with no code behind it, which is the worst outcome this workflow can produce. Read `.claude/bulk-set.json` rather than trusting memory here.
+6. **`## Quality gate failed`** — only when `.claude/gate-failed.flag` exists (written in Phase 5). It is the one section that goes **above** `## Summary`. Give the last error output, and say which stories were built and which were released back to the backlog because of it.
 
-Add no other top-level section, and write every paragraph on one line — `templates/body-file-write.md` has the no-wrapping rule.
+Add no other top-level section, and write every paragraph on one line.
 
-## 2b. Validate the body
+## 2. Push and open one real pull request (never a draft)
 
-Read the body back and apply the corruption test and retry in `templates/body-file-write.md` (**Validate** + **Retry**). For a bulk pull request the test has one extra requirement: **the set of `Closes #N` lines must match the built stories exactly** — no missing line, and no extra one. If it does not, fix it with `gh pr edit --body-file` before going on. Count them; do not eyeball them.
+**Title.** Under 70 characters, naming what the set does as a whole rather than any one story: "Resolve labels by purpose key throughout the picker", not "Fix #41 and #43 and #47".
+
+Repeat `--issue N` once per **built** story (`built` is `true` in `.claude/bulk-set.json`), and for no other:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pr-create --title "{title}" --body-file .claude/pr-body.md   --issue {number} --issue {number} ...
+```
+
+It pushes the branch, checks every built story for another open pull request that already closes it immediately before creating, puts a duplicate warning line at the top of the body for each one found, adds any missing `Closes #N` line, reads the body back and rewrites it once if it came back corrupt.
+
+- **`ok`**, one line — `pr` and `url` are the new pull request. When `duplicates` is present, report each by story and PR, number and title. Do not pick a winner or close the other PR here; code review reconciles them. A duplicate against **any** story stops the Phase 10 merge for the whole pull request, because a bulk PR cannot be split.
+- **`partial`** (exit 24) — the pull request exists but its body still fails the check (`problems`). Warn the user that it may need editing by hand, and carry on.
+- **`error`** (exit 20) — the push or the create failed. No pull request exists; fix the cause and re-run.
 
 ## 3. Hand every story to review
 
@@ -80,7 +56,7 @@ Add `--gate-failed` when `.claude/gate-failed.flag` exists, which enters review 
 
 It takes the pull request's review claim first, so the set is never held by no lock between the build and the review, then labels the pull request with the review-state entry label once, then for **each** issue sets its `Stage` to `In Review` and releases its claim ref — so the per-story release that used to be its own step is done here. Finally it deletes `.claude/plan.md` and `label-cache.json`.
 
-It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read the payload instead — `pr_labelled` and `review_label`, and per issue `stage_set` and a `stage_message`. A failure on one issue does not affect the others; report what failed by issue number **and** title and carry on. The review matters more than a label.
+It **always exits 0**: once the pull request exists, none of this is a reason to stop. When everything landed it prints one line. Otherwise the full payload names what did not — `pr_labelled`, and per issue `stage_set`, a `stage_message` and `claim_released`. A failure on one issue does not affect the others; report what failed by issue number **and** title and carry on. The review matters more than a label.
 
 Keep `.claude/bulk-set.json`: Phases 8 to 10 still read it for the story list, and **Exit cleanup** deletes it at the end of the run. Every issue stays assigned to @me through review.
 

@@ -1,6 +1,6 @@
 # Step 1 — Inline PR picker (fallback)
 
-Read this only when `wf review-next` reports `no-candidates` or `error`, or Python is missing. `no-candidates` is not conclusive: a PR whose head SHA changed since its last review needs review without carrying a label, and `wf` does not detect that.
+Read this only when `wf review-next` reports `error`, or Python is missing.
 
 ```bash
 gh pr list --state open --repo <org>/<repo> --json number,title,labels,headRefName,baseRefName,headRefOid

@@ -163,14 +163,11 @@ class TestPostMergeCallCount(_Counted):
         # The PR, the issue read, the close-and-strip write, the `Stage` write
         # and the parent read.
         self.assertEqual(len(four_calls), 5)
-        self.assertEqual(len(four['settled']), 4)
-        for entry in one['settled'] + four['settled']:
-            self.assertTrue(entry['closed_now'])
-            self.assertTrue(entry['closed'])
-            self.assertTrue(entry['stage_set'])
-            self.assertEqual(entry['lifecycle_label_cleared'], _RETIRED)
+        # Every close, strip and `Stage` write landed, so each is one line.
+        self.assertEqual(one['settled'], [5])
+        self.assertEqual(four['settled'], [5, 6, 7, 8])
+        self.assertEqual(four['cleared'], {str(n): _RETIRED for n in (5, 6, 7, 8)})
         self.assertEqual(four['containers_closed'], [])
-        self.assertEqual(four['container_errors'], [])
 
     def test_no_close_goes_through_the_cli_one_issue_at_a_time(self):
         _, calls = self._post_merge([5, 6, 7, 8])
@@ -209,7 +206,7 @@ class TestHandoffCallCount(_Counted):
         self.assertEqual(len(pushes), 2)
         self.assertEqual(pushes[1][3:], [':refs/claims/issue-%d' % n
                                          for n in (3, 4, 5, 6)])
-        self.assertTrue(all(i['claim_released'] for i in four['issues']))
+        self.assertIn('#3, #4, #5, #6 In Review and released', four['reason'])
 
     def test_a_release_the_remote_still_holds_is_reported_per_issue(self):
         payload, calls = self._handoff(

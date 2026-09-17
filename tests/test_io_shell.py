@@ -307,7 +307,7 @@ class TestBulkPickPaths(WfCommandTestCase):
         stage.assert_called_once()          # the Stage write still happens
         branch.assert_not_called()          # the branch does not
         self.assertTrue(payload['stage_set'])
-        self.assertIsNone(payload['branch'])
+        self.assertIsNone(payload.get('branch'))
         self.assertFalse(payload['checked_out'])
 
     def test_checkout_without_no_branch_still_branches(self):
@@ -1133,8 +1133,8 @@ class TestShapeRegressionGuards(unittest.TestCase):
                 mock.patch.object(wf, 'run', side_effect=fake_run):
             code, payload = _capture(args.func, args)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual([s['issue'] for s in payload['settled']], [5])
-        self.assertTrue(payload['settled'][0]['closed_now'])
+        # Everything landed: one line naming what settled.
+        self.assertEqual(payload['settled'], [5])
 
     def test_graphql_args_keep_digit_only_id_as_string(self):
         """A digit-only single-select option id must stay a `-f` string; a real
@@ -3127,9 +3127,9 @@ class TestHandoffAndClaims(unittest.TestCase):
         # whole hand-off and there is no label to swap.
         self.assertFalse(any('issue edit' in c for c in joined))
         self.assertTrue(any('refs/claims/issue-3' in c for c in joined))
-        self.assertEqual(payload['issues'][0]['stage_set'], True)
-        self.assertEqual(payload['issues'][0]['stage_message'],
-                         'Stage set to In Review')
+        # Everything landed, so the result is one line with nothing to read.
+        self.assertNotIn('issues', payload)
+        self.assertIn('#3 In Review and released', payload['reason'])
 
     def test_handoff_takes_the_pr_claim_before_freeing_the_issue_claim(self):
         """#164: the PR is locked from the moment it is handed to review, so a
@@ -3140,7 +3140,7 @@ class TestHandoffAndClaims(unittest.TestCase):
         claim = next(i for i, c in enumerate(pushes) if 'refs/claims/pr-7' in c)
         release = next(i for i, c in enumerate(pushes) if 'refs/claims/issue-3' in c)
         self.assertLess(claim, release)
-        self.assertEqual(payload['pr_claimed'], 'won')
+        self.assertIn('PR #7 claimed', payload['reason'])
 
     def test_claim_keeps_a_pr_claim_this_checkout_already_holds(self):
         """After handoff took it, Phase 8's `wf claim --pr` must not read its
@@ -3202,7 +3202,7 @@ class TestHandoffAndClaims(unittest.TestCase):
         calls = []
         _, payload = self._run(
             ['handoff', '--pr', '7', '--issue', '3', '--gate-failed'], calls)
-        self.assertEqual(payload['review_label'], 'review-changes-requested')
+        self.assertIn('labelled review-changes-requested', payload['reason'])
 
     def test_handoff_reports_an_unwritten_stage_without_failing(self):
         """A failed write leaves the issue in the stage it was in; the PR still
@@ -3244,7 +3244,7 @@ class TestHandoffAndClaims(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()):
             code, payload = _capture(args.func, args)
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertTrue(payload['pr_labelled'])
+        self.assertIn('labelled review-needs-review', payload['reason'])
         joined = [' '.join(c) for c in calls]
         self.assertTrue(any(c.startswith('gh label create review-needs-review ')
                             for c in joined))
@@ -3285,16 +3285,14 @@ class TestHandoffAndClaims(unittest.TestCase):
         code, payload = self._run(['stage-set', '3', '--stage', 'stage-done'],
                                   [], written=(True, 'Stage set to Done'))
         self.assertEqual(code, wf.EXIT_OK)
-        self.assertEqual(payload['stage'], 'Done')
-        self.assertTrue(payload['set'])
-        self.assertIn('Done', payload['reason'])
+        self.assertEqual(payload, {'status': 'ok', 'reason': '#3 Stage set to Done'})
 
-    def test_stage_set_reports_a_failed_write_and_still_exits_zero(self):
+    def test_stage_set_exits_non_zero_on_a_failed_write(self):
         """`Stage` is the state, so a failed write leaves the issue where it
-        was — said out loud, and never fatal to the caller."""
+        was. The exit code says so, so a caller reads nothing on success."""
         code, payload = self._run(['stage-set', '3', '--stage', 'In Review'],
                                   [], written=(False, wf.NO_STAGE_FIELD))
-        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(code, wf.EXIT_ENV)
         self.assertFalse(payload['set'])
         self.assertEqual(payload['stage'], 'In Review')
         self.assertIn(wf.NO_STAGE_FIELD, payload['reason'])
@@ -3934,7 +3932,7 @@ class TestStageTransitions(unittest.TestCase):
             code, payload = _capture(args.func, args)
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(hub.writes, [(3, 'In Review')])
-        self.assertTrue(payload['issues'][0]['stage_set'])
+        self.assertIn('#3 In Review', payload['reason'])
 
     def test_a_merge_settles_its_issues_as_done(self):
         hub, calls = _StageHub(), []
@@ -3968,8 +3966,7 @@ class TestStageTransitions(unittest.TestCase):
             code, payload = _capture(args.func, args)
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(hub.writes, [(5, 'Done')])
-        self.assertTrue(payload['settled'][0]['stage_set'])
-        self.assertTrue(payload['settled'][0]['closed_now'])
+        self.assertEqual(payload['settled'], [5])
 
     def test_an_unblock_returns_a_released_issue_to_backlog(self):
         hub, calls = _StageHub(), []

@@ -77,6 +77,12 @@ def issue_field_values(issue):
     """
     out = {}
     for node in ((issue.get('issueFieldValues') or {}).get('nodes')) or []:
+        # A value whose type matches none of the query's inline fragments
+        # comes back as null. `createIssue`'s inline payload returned one in a
+        # batched create, and crashing here stopped the run after the issues
+        # were written and before their edges and `Stage` were.
+        if not isinstance(node, dict):
+            continue
         field = (node.get('field') or {}).get('name')
         if not field:
             continue

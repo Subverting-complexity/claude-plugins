@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import wf_core
 from wf_capabilities import resolve_org_capabilities
 from wf_config import field_name, prepare_cfg
-from wf_io import EXIT_OK, emit, gh_json, run
+from wf_io import EXIT_ENV, EXIT_OK, emit, emit_line, gh_json, run
 from wf_issue_io import (
     _batch_result, _graphql_json, resolve_issue_ids, set_issue_fields,
 )
@@ -227,10 +227,9 @@ def cmd_stage_set(args):
     stage = wf_core.stage_name(args.stage) or args.stage
     written, message = set_stage(cfg, args.number, args.stage)
     if written:
-        emit('ok', EXIT_OK, number=args.number, stage=stage, set=True,
-             reason='#%d Stage set to %s' % (args.number, stage))
-    # A failed write is reported and never fatal, but it is not harmless
-    # either: `Stage` *is* the state, so an issue whose write failed keeps the
-    # stage it had. Callers surface the reason.
-    emit('ok', EXIT_OK, number=args.number, stage=stage, set=False,
+        emit_line('ok', EXIT_OK, reason='#%d Stage set to %s' % (args.number, stage))
+    # `Stage` *is* the state, so an issue whose write failed keeps the stage it
+    # had. A non-zero exit means a caller no longer reads `set` on success to
+    # find out; it reports the reason and carries on.
+    emit('error', EXIT_ENV, number=args.number, stage=stage, set=False,
          reason='Stage not set: %s' % message)

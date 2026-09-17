@@ -5,6 +5,8 @@ Process and GitHub plumbing: exit codes, the stdout JSON contract, and the
 Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -40,6 +42,41 @@ def emit(status, exit_code, **fields):
     json.dump(payload, sys.stdout, indent=2)
     sys.stdout.write('\n')
     sys.exit(exit_code)
+
+
+def emit_line(status, exit_code, **fields):
+    """`emit` on one compact line, for a result the caller need not read further.
+
+    A command whose every step succeeded prints this: the status and a short
+    `reason`, with nothing else to parse. A partial or failed result uses
+    `emit` instead and names what did not happen.
+    """
+    payload = {'status': status}
+    payload.update(fields)
+    sys.stdout.write(json.dumps(payload, separators=(',', ':')) + '\n')
+    sys.exit(exit_code)
+
+
+def call_command(func, args):
+    """Run a `cmd_*` in this process and return (exit_code, payload).
+
+    Every command ends by emitting one JSON object and exiting, so a command
+    built from others captures that object instead of re-implementing them.
+    Their stderr passes through, so a warning still reaches the caller.
+    """
+    buf = io.StringIO()
+    code = 0
+    with contextlib.redirect_stdout(buf):
+        try:
+            func(args)
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else 1
+    out = buf.getvalue().strip()
+    try:
+        payload = json.loads(out) if out else {}
+    except json.JSONDecodeError:
+        payload = {'status': 'error', 'reason': out[:200]}
+    return code, payload
 
 
 # git and gh must fail rather than ask for credentials. An unattended run (a

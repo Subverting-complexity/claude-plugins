@@ -1,50 +1,28 @@
 # Execute — Exit cleanup (canonical procedure)
 
-The single canonical specification of exit cleanup — every other mention points here. Run it on **every** exit path (finish, block, unrecoverable failure, timeout, rate-limit pause, one-session overflow), in this order, as the **final** step **after** any commit/push (so the pushed branch, not local state, is the source of truth). All three steps are idempotent.
+The single canonical specification of exit cleanup — every other mention points here. Run it on **every** exit path (finish, block, unrecoverable failure, timeout, rate-limit pause, one-session overflow), as the **final** step **after** any commit and push, so the pushed branch, not local state, is the source of truth. It is idempotent.
 
-## 1. Release the claim refs
-
-```
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue {number}
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" exit-cleanup --issue {number} --pr {pr_number}
 ```
 
-`claim-release` is idempotent, so releasing a ref Phase 7 step 4 or `block-story` already released is a no-op rather than an error.
+Leave out `--pr` when no PR was opened. It releases the issue claim, and the PR's review claim only when this checkout won it: then it first records a review that never reached a verdict as changes-requested, so the picker can find the PR again. A claim another agent holds is never touched. It deletes the run's scratch files under `.claude/` and keeps the caches, and needs no network for that part.
 
-If the run **won** a review claim on its own PR, in Phase 7's `handoff` or in Phase 8, release that too. The test is the file Acquire writes only on a win:
+Read the result by `status`:
 
-```
-test -f .claude/claim-pr-{pr_number}.sha || echo "NO PR CLAIM — skip this whole step"
-```
+- **`ok`** (exit 0), one line — done. The worktree is clean and can be reaped.
+- **`dirty`** (exit 24) — `remaining` lists what is still uncommitted. Everything else is done. Decide each path, because only you know which is work:
+  - **A story file you forgot to commit** — commit it to the feature branch and push. Never discard real work.
+  - **Formatting on files outside the story** (a repo-wide formatter, line endings) — commit it separately as `chore: formatting` and push, so the feature diff stays focused.
+  - **Generated noise** you do not track — discard it. If it keeps reappearing it should be gitignored; tell the user.
 
-When that file is absent, do **nothing** here. A run that never reached the Phase 7 hand-off has no claim, and on the claim-lost path another agent owns the review: deleting its claim ref or label needs only push access, so acting would unlock a PR that agent is reviewing.
+  Then discard what is left and re-check in one call, repeating until it prints `ok`:
 
-When it is present, reconcile the marker **before** deleting the ref, so a rival never claims the PR and then has its own marker stripped. Phase 8's claim applied the `reviewing` marker, Release frees only the lock, and the picker skips a PR carrying that marker, so an exit before a verdict would orphan the PR. Read the PR once to decide:
+  ```bash
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" tree-clean --discard {path} --discard {path}
+  ```
 
-```
-gh pr view {pr_number} --repo {org}/{repo} --json state,labels
-```
-
-- Still `OPEN` **and** carrying `reviewing` → no verdict was recorded. Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict changes-requested`. That is the honest state for an unfinished review, and a tier the picker selects.
-- Merged, or already carrying a verdict label → Phase 8 or Phase 9 already reconciled it. Change nothing.
-- Still `OPEN`, carrying `needs-review` and no `reviewing` → no review started. Change nothing: the picker selects that label.
-- Any other open state (no `reviewing`, no verdict: label drift) → run the same reconcile, because an open PR carrying no marker matches no picker tier.
-
-Then release the lock:
-
-```
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --pr {pr_number}
-```
-
-## 2. Delete the scratch files
-
-```
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" scratch-clean
-```
-
-It deletes every per-run file under `.claude/` (the plan, the claim markers, the `.flag` files, `bulk-set.json`, spec and body files) and keeps the caches. It needs no network, so it runs even when `wf` could not reach GitHub. The `.flag` files carry an invocation flag or a phase outcome across compaction, so they must not outlive the run that wrote them.
-
-## 3. Reconcile the working tree to clean
-
-Run **End clean** in `templates/worktree-hygiene.md` (the canonical tree-reconcile procedure) until `git status --porcelain` ends empty. **Never `git stash`** — the stash is shared across every worktree on the clone.
+  `--all` discards every remaining path. It restores tracked files and removes untracked ones, never touches gitignored files, and never stashes: the stash is shared by every worktree on the clone.
+- **`partial`** (exit 24) — `reason` names what did not happen, such as a claim that could not be released. Report it and carry on; a held claim is freed by `claim-reap`.
 
 (design rationale: `docs/rationale/exit-cleanup-rationale.md` — not read at runtime.)

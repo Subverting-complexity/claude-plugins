@@ -29,15 +29,15 @@ Run `gh auth status` first. If it fails, stop and tell the user to run `gh auth 
 
 **A pinned PR.** When the invocation names a PR (`$ARGUMENTS.pr`, or a number a user or calling skill passed), review that one and do not run the picker, which would choose a different PR by priority. Claim it (Step 2) and check out its branch, then continue at Step 1b if it carries `changes-requested`, otherwise at Step 2b. If the claim is lost, report that and exit rather than moving to a different PR.
 
-**Otherwise, run the picker.** It selects **and claims** the next PR carrying `needs-re-review`, `changes-requested` or `needs-review` (in that tier order, lowest number first) and checks out its branch:
+**Otherwise, run the picker.** It selects, claims and checks out the next PR: `needs-re-review`, then `changes-requested`, then `needs-review` or a head moved since the last review footer.
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-next --checkout
 ```
 
-- **`ok`** — the JSON gives `number`, `title`, `url`, `branch`, `labels`, `claimed`, `claim_ref` and `prior_state`. The `reviewing` marker is applied and the claim is held. Do not re-derive the choice, and surface any `side_effects`. A `prior_state` of `changes-requested` goes to Step 1b; anything else to Step 2b.
-- **`all-blocked`** — every reviewable PR is claimed by another review agent. Report that and exit; a blind re-scan would surface nothing new.
-- When the picker reports **`no-candidates`** or **`error`**, or Python is missing, follow `references/picker-fallback.md`.
+- **`ok`** — the claim is held and `reviewing` applied. Do not re-derive the choice; surface any `side_effects`. A `prior_state` of `changes-requested` goes to Step 1b, anything else to Step 2b.
+- **`all-blocked`** or **`no-candidates`** — every reviewable PR is claimed by another agent, or none needs review. Report that and exit; both are conclusive, so never scan by hand.
+- **`error`**, or Python is missing — follow `references/picker-fallback.md`.
 
 ### Step 1b — Rework cascade (changes-requested PRs only)
 

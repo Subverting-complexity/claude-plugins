@@ -7,17 +7,15 @@ Read the section `execute`'s `SKILL.md` sends you to: an explicit story number, 
 Claim it through the same engine, aimed at one issue. The in-flight guard is part of the call: it refuses, with `all-blocked` and the reason, an issue that is closed, already closed by an open pull request, assigned, owned by a person, or at `In Progress`, `In Review`, `Non-code` or `Done`.
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue {number} --checkout --body
 ```
+
+An issue that is assigned or `In Review` only because a pull request closing it was **closed without merging** is reset first: unassigned, returned to `Backlog` with a comment, and then claimed. The result carries a `reset-abandoned-pr` side effect naming that PR; report it. A merged PR never counts, because it means the work is done.
 
 Read the result as Phase 1 does, plus:
 
 - `open_prs` is present → do not start fresh work. Report the existing PR by number **and** title and tell the user to run `/synergy:pr-review`, which handles review and rework. Stop.
-- `assignees` is present or `stage` is `In Review`, with no `open_prs` → look for a pull request that GitHub links to the issue and that was **closed without merging** (a merged one means the work is done, never abandoned):
-  ```
-  gh pr list --repo {org}/{repo} --state closed --search "#{number}" --json number,title,mergedAt,closingIssuesReferences --jq '[.[] | select(.mergedAt == null and any(.closingIssuesReferences[]; .number == {number}))]'
-  ```
-  If there is one, the PR was abandoned: unassign, run `wf stage-set {number} --stage stage-backlog` (that write returns it to the pool), comment `"Resetting — PR #{N} closed without merge."`, and pick it again. If there is none, report who holds it and stop.
+- `assignees` is present or `stage` is `In Review` → somebody holds it and no abandoned PR explains it. Report who holds it and stop.
 - `ok` with `prerequisite_for` → the story waits on open work this run can build, so `number` is its first prerequisite, already claimed. `SKILL.md` Phase 1 says how to go on.
 - `all-blocked` whose reason names a blocker → the story waits on work nobody here may build. Report the reason and stop.
 - A `closed-already-resolved` side effect followed by `all-blocked` → the story was already finished: report that and pick the **next** story rather than stopping.
@@ -39,15 +37,17 @@ It sets the stage to `Needs refinement` first, then comments, unassigns and rele
 
 ## Phase 2 recovery
 
-`wf pick --checkout` normally does all of this. Redo only the step its `ok` result says did not happen, or the claim state lost to compaction.
+`wf pick --checkout` normally does all of this. Only when its `ok` result says a step did not happen (`stage_set` or `checked_out` false), or the claim state was lost to compaction, redo it in one call:
 
-1. **The claim.** Never issue a bare `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock. Re-take it (a claim you already hold is a no-op) with `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim --issue {number}`. Exit 0: you hold it. Exit 27 (`lost`): another agent does, so stop and pick a different story. Exit 20: a broken environment, not a rival; report it.
-2. **The stage.** `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set {number} --stage stage-in-progress`. It always exits 0, but the stage is the issue's state, so a write that did not happen leaves the issue reading as available. Read `set` and `reason` and report a failure loudly ("Stage update failed: {reason}. Continuing.").
-3. **Start clean.** Before branching by hand, run the **Start clean** check in `templates/worktree-hygiene.md`. A worktree provisioned dirty is inherited junk: reset it to a pristine baseline and report it.
-4. **Branch.**
-   ```
-   git fetch origin {default-branch}
-   git checkout -b {branch} origin/{default-branch}
-   ```
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" start --issue {number}
+```
 
-**Claim–stage consistency.** If the stage write fails and the run is abandoned rather than continued, release the claim (`wf claim-release --issue {number}`), remove the `@me` assignment, and set the stage back to `stage-backlog`, which is the write that returns the issue to the pool.
+It re-takes the claim (a claim this checkout holds is kept), sets `In Progress`, resets a tree provisioned dirty, and creates or checks out the story branch from `origin/{default-branch}`. Never issue a bare `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
+
+- **`ok`** (exit 0), one line — on the branch, ready to build. If `reason` names discarded paths, the worktree was provisioned dirty: report them.
+- **`lost`** (exit 27) — another agent holds the story. Stop and pick a different one.
+- **`partial`** (exit 24) — `reason` names what did not happen. A failed stage write is worth a loud line ("Stage update failed: {reason}. Continuing."), because the issue still reads as available. A branch that could not be created is a stop: run `/synergy:block-story`.
+- **`error`** (exit 20) — a broken environment, not a rival. Report it.
+
+**Claim–stage consistency.** If the stage write fails and the run is abandoned rather than continued, run `wf exit-cleanup --issue {number}`, remove the `@me` assignment, and set the stage back with `wf stage-set {number} --stage stage-backlog`, which is the write that returns the issue to the pool.

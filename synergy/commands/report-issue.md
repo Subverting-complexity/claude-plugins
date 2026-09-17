@@ -52,15 +52,9 @@ Then settle the three field values every issue must carry. They are written in S
 
 An issue too vague to implement without a refinement session is not filed into the pool: file it with `"state": "refinement"` on the spec entry, which sets its stage to `Needs refinement` instead of `Backlog` and is what keeps it out.
 
-### 4. Detect current milestone
+### 4. The current milestone
 
-If in sprint mode, find the current milestone so the new issue lands in the right sprint:
-
-```
-gh api repos/{org}/{repo}/milestones --jq 'map(select(.due_on != null)) | sort_by(.due_on) | .[] | select(.open_issues > 0) | .title' | head -1
-```
-
-Milestones without a due date are filtered out before sorting — `sort_by(.due_on)` misorders nulls. If open milestones exist but **all** lack due dates, sprint mode is not detected: say so explicitly ("open milestones found, but none has a due date — creating without a milestone") rather than silently skipping. If this returns nothing (that case, flat backlog mode, or no open milestones), the issue is created without a milestone — do **not** pass an empty `--milestone` flag, as `gh` rejects it.
+Nothing to look up. In sprint mode, Step 5's spec says `"milestone": "current"` and `wf issue-apply` files the issue in the open milestone with the earliest due date that still has open issues. A milestone with no due date cannot be ordered and is left out. When no milestone qualifies, it files the issue without one and says why in `milestone_note`; report that note.
 
 ### 4c. Resolve the repository's issue template
 
@@ -82,7 +76,7 @@ cat > .claude/report-spec.json <<'JSON'
 {"issues": [{"title": "{title}",
              "body_file": ".claude/report-body.md",
              "kind": "{bug|security|architecture|tech debt}",
-             "milestone": "{current_milestone}",
+             "milestone": "current",
              "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                         "field-effort": "{Low|Medium|High}",
                         "field-ownership": "{Code agent|Browser agent|Human}",
@@ -94,7 +88,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/report-spec.json
 
 The body goes in a file and the spec names it (`body_file`) rather than carrying the text, because a body has backticks, `$`, quotes and blank lines in it and hand-building that into a JSON string is where bodies get mangled.
 
-Drop the `milestone` key entirely in flat-backlog mode, or whenever Step 4 found no current milestone. It takes the milestone's title, and a title that names no **open** milestone fails the spec rather than filing the issue outside the sprint.
+Drop the `milestone` key entirely in flat-backlog mode. Any value other than `current` is a milestone title, and a title that names no **open** milestone fails the spec rather than filing the issue outside the sprint.
 
 **The title carries no prefix**, with two exceptions. No `[BUG]`, `[SECURITY]`, `[ARCH]` or `[DEBT]`, no priority and no size. GitHub renders the issue type and the fields beside the title already. `wf issue-apply` strips such a prefix if one slips in, and reports that it did.
 

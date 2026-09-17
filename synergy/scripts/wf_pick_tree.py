@@ -9,7 +9,7 @@ import wf_core
 from wf_candidates import _norm_issue, load_issue_facets
 from wf_config import field_name
 from wf_deps import issue_dependency_facts
-from wf_io import EXIT_ALL_BLOCKED, EXIT_ENV, emit, gh_graphql, gh_json
+from wf_io import EXIT_ALL_BLOCKED, EXIT_ENV, emit, gh_graphql, gh_json, run
 
 
 # Stages an explicitly named issue may be picked from, beside a blank one. The
@@ -120,6 +120,11 @@ def fetch_issue_candidate(cfg, number):
              number=number, open_prs=facts['open_prs'])
 
     assignees = [a.get('login') for a in data.get('assignees') or []]
+    reset_from = None
+    if assignees:
+        reset_from = reset_abandoned(cfg, number, assignees)
+        if reset_from:
+            assignees = []
     if assignees:
         emit('all-blocked', EXIT_ALL_BLOCKED,
              reason='issue #%d is assigned to %s, so it is already somebody\'s. '
@@ -141,6 +146,12 @@ def fetch_issue_candidate(cfg, number):
              number=number, ownership=ownership)
 
     stage = (facets.get('stage') or {}).get(number)
+    if reset_from:
+        stage = None
+    elif stage == wf_core.STAGE_NAMES['stage-in-review']:
+        reset_from = reset_abandoned(cfg, number, [])
+        if reset_from:
+            stage = None
     if stage and stage not in PICKABLE_BY_NAME:
         emit('all-blocked', EXIT_ALL_BLOCKED,
              reason="issue #%d has `%s` set to `%s`, so it is not available to "
@@ -150,4 +161,32 @@ def fetch_issue_candidate(cfg, number):
              number=number, stage=stage)
     cand = _norm_issue(data)
     cand.update(facts)
+    if reset_from:
+        cand['reset_from_pr'] = reset_from
     return cand
+
+
+def reset_abandoned(cfg, number, assignees):
+    """Return an issue whose pull request was closed unmerged to the pool.
+
+    An assigned or `In Review` issue with no open PR is either somebody's work
+    or the remains of a PR that was abandoned. Only the second is reset: the
+    assignees removed, `Stage` set to Backlog and a comment saying why. A
+    merged PR means the work is done, so it never counts. Returns the PR
+    number when the issue was reset, else None.
+    """
+    from wf_stage import set_stage
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    ok, prs, _ = gh_json(['pr', 'list', '--repo', repo, '--state', 'closed',
+                          '--search', '#%d' % number, '--json',
+                          'number,title,mergedAt,closingIssuesReferences'])
+    pr = wf_core.abandoned_pr(prs, number) if ok and isinstance(prs, list) else None
+    if not pr:
+        return None
+    for login in assignees:
+        run(['gh', 'issue', 'edit', str(number), '--repo', repo,
+             '--remove-assignee', login])
+    set_stage(cfg, number, wf_core.STAGE_NAMES[wf_core.POOL_STAGE])
+    run(['gh', 'issue', 'comment', str(number), '--repo', repo, '--body',
+         'Resetting — PR #%d closed without merge.' % pr['number']])
+    return pr['number']

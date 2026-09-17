@@ -75,7 +75,7 @@ If mode is `audit`, do not run the phases below — read `references/audit-mode.
 `wf pick` collapses select, claim, stage and branch into one deterministic call, and it is the only way to pick a story. A `wf` that cannot run is a stop, not a detour. From the repo root:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout --mode {mode}
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout --body --mode {mode}
 ```
 
 `{mode}` is `$ARGUMENTS.mode`, default `story`. Add `--unattended` when `.claude/unattended.flag` exists (the shared rules write it). It reads every open issue, judges each by the pick rules in `scripts/README.md`, sorts by `Priority` then `Effort`, and **claims the top candidate before any side effect**, walking down the list on a lost claim, setting a genuinely blocked issue to `Blocked`, closing one a merged PR already resolved, and releasing a `Blocked` issue whose blockers have all closed in the same round.
@@ -87,15 +87,15 @@ Read the result by its `status`; the exit code mirrors it:
 | `ok` | 0 | A story is claimed and you are on its branch. **Stop selecting — do not re-derive anything.** |
 | `no-candidates` | 10 | Nothing was pickable. Stop with "No stories available for pickup". |
 | `all-blocked` | 11 | Every candidate was blocked or already claimed. Stop the same way. |
-| `needs-refinement` | 12 | The next pick is too unclear to build; nothing was claimed and `detail` says why. Run `/synergy:grill` on issue `number` with the user, then `pick --issue {number} --checkout`; for an Epic or Feature, run `refinement-skill` and re-run `pick`. If they skip it, send it to refinement (`references/pick-paths.md`) and re-run `pick`. |
+| `needs-refinement` | 12 | The next pick is too unclear to build; nothing was claimed and `detail` says why. Run `/synergy:grill` on issue `number` with the user, then `pick --issue {number} --checkout --body`; for an Epic or Feature, run `refinement-skill` and re-run `pick`. If they skip it, send it to refinement (`references/pick-paths.md`) and re-run `pick`. |
 | `unsupported` | 30 | `wf` deferred this configuration (reserved). Stop and report what it named. |
 | `error` | 20, or Python is missing | `wf` cannot run here. Stop and name the prerequisite: Python 3.8+ on `PATH` and an authenticated `gh`. Do not select a story by hand. |
 
-On `ok` the JSON carries `number`, `title`, `url`, `labels`, `milestone`, `body`, `claim_ref`, `branch`, `checked_out`, `stage_set`, `stage_message`, `start_date_set` and `side_effects`. The stage is `In Progress`, `@me` is assigned, and the claim ref is held. Surface any `side_effects`. If `checked_out` is false, read `branch_message` (a rebase conflict, say) and run `/synergy:block-story` instead of building.
+On `ok` the one-line JSON carries `number`, `title`, `url`, `body`, `branch`, `checked_out` and `stage_set`, plus `labels`, `milestone` and `side_effects` when they are not empty. A step's message appears only when that step did not happen. The stage is `In Progress`, `@me` is assigned, and the claim ref `refs/claims/issue-{number}` is held. Surface any `side_effects`. If `checked_out` is false, read `branch_message` (a rebase conflict, say) and run `/synergy:block-story` instead of building.
 
 When the pick came through an Epic or Feature, `container` names it and `offered` lists its other pickable stories. Leave them in the pool and name them in the final report: this run builds one story, and `/synergy:bulk-execute --parent {container}` builds several together.
 
-`unblocks` lists the stories waiting on this one: name them in the final report, because this merge frees them. `prerequisite_for` means the story you asked for waits on open work this run can build, so `wf` claimed its first prerequisite instead and set the requested story to `Blocked`; `build_order` is the whole chain. Build and merge the prerequisite as a normal run. Then, if the session budget and the timeout leave room, run `pick --issue {prerequisite_for.number} --checkout` and carry on with what it returns; otherwise report the requested story as next.
+`unblocks` lists the stories waiting on this one: name them in the final report, because this merge frees them. `prerequisite_for` means the story you asked for waits on open work this run can build, so `wf` claimed its first prerequisite instead and set the requested story to `Blocked`; `build_order` is the whole chain. Build and merge the prerequisite as a normal run. Then, if the session budget and the timeout leave room, run `pick --issue {prerequisite_for.number} --checkout --body` and carry on with what it returns; otherwise report the requested story as next.
 
 **When `$ARGUMENTS.story_number` is given**, do not run the pick above. Follow **An explicit story number** in `references/pick-paths.md`, which guards against a story already in flight and then claims it.
 

@@ -13,13 +13,14 @@ A body is prose — fenced code, backticks, `$`, quotes, blank lines — and a s
 Then name the file rather than the text:
 
 - **Issues** — `wf issue-apply` with `"body_file"` on the entry. It is the only path that creates or updates an issue body.
-- **PRs and comments** — the `gh` command with `--body-file {file}`, plus whatever flags the caller specifies.
+- **A new PR** — `wf pr-create --body-file {file}`. It does the read-back, the corruption test and the retry below itself, and adds any missing `Closes #N` line, so a caller runs none of it by hand.
+- **An edited PR body, and comments** — the `gh` command with `--body-file {file}`, plus whatever flags the caller specifies.
 
 Put anything a later step re-reads in `.claude/` and leave it there for a re-run; delete a temp file once the command returns.
 
 ## Validate (read back, apply the corruption test)
 
-Immediately read the body back and confirm it was stored correctly:
+For a body written with `gh ... edit --body-file`, immediately read it back and confirm it was stored correctly. `wf pr-create` and `wf issue-apply` already do this:
 
 ```
 # pick the matching read for what you wrote:

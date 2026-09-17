@@ -34,6 +34,9 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_issue_audit.py` | `issue-audit` | 166 |
 | `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 659 |
 | `wf_board_sync.py` | `board-sync` | 287 |
+| `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 274 |
+| `wf_block.py` | `block` | 129 |
+| `wf_pr_create.py` | `pr-create` | 128 |
 | `wf_core.py` | Facade: re-exports the rules below | 50 |
 | `wf_core_findings.py` | The finding record and the helpers findings are worded with | 46 |
 | `wf_core_fields.py` | Label resolution, native issue types, field vocabularies and ranks | 419 |
@@ -51,6 +54,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 307 |
 | `wf_core_scratch.py` | Which `.claude/` files are run scratch, the managed `info/exclude` block | 70 |
 | `wf_core_schedule.py` | Reading `.claude/plan.md`, a bulk set record by group, which stories in a wave share files, parallel batches | 210 |
+| `wf_core_steps.py` | Exit cleanup's review reconcile, the tree's porcelain, PR body checks, the current milestone, the compact pick result, abandoned PRs, the review picker's moved-head tier | 274 |
 
 ## Commands
 
@@ -69,6 +73,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick
 
 # …also set the issue's Stage to In Progress and create/check out the branch
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout
+
+# …and include the issue body, which the compact one-line result leaves out
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout --body
 
 # Target one specific issue instead of auto-selecting (same claim/validate;
 # auto-closes it + sets its Stage to Done if a merged PR already resolved it)
@@ -97,6 +104,22 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" refine --issue 42 --body-file .claude
 
 # Delete this run's scratch files under .claude/ (caches and the preflight marker stay)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" scratch-clean
+
+# Before the first edit when pick did not branch: claim, In Progress, reset an
+# inherited dirty tree, branch (or --group G --branch B for a bulk group)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" start --issue 42
+
+# End a run: release claims, reconcile a won review claim, delete scratch, report the tree
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" exit-cleanup --issue 42 --pr 123
+
+# Discard the uncommitted paths the caller chose, then re-check the tree
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" tree-clean --discard dist/out.js
+
+# Push, flag duplicate PRs, open the PR, add missing Closes lines, check the body
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pr-create --title "Add login" --body-file .claude/pr-body.md --issue 42
+
+# Block a story: comment, blocked-by edges (or --non-code human|browser), release, unassign, Stage
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" block --issue 42 --body-file .claude/block-body.md --blocked-by 41
 
 # After merging a PR: close any still-open linked issue and set its Stage to Done,
 # close any Epic or Feature above it whose sub-issues are now all closed,
@@ -284,7 +307,7 @@ A JSON object with an `issues` list (a bare list is accepted too). An entry with
 | `blocked_by` | A list of issue numbers and/or `key`s. **The complete set**: an issue already carrying an edge the list omits has it removed, and `[]` removes them all. Leave the key out to leave the edges alone. |
 | `state` | `backlog`, `refinement` or `parked`: the stage to write, overriding the one the issue's fields name. Absent means the fields decide. It never moves `Browser agent` or `Human` work out of Non-code. |
 | `fields` | Purpose key → value. Names resolve through `ClaudeProject.md`'s `## Issue Types & Fields`, then `wf_core.FIELD_NAME_DEFAULTS`. |
-| `milestone` | An open milestone's title, so a sprint placement rides in the same write. A title that names no open milestone fails the spec before anything is written. |
+| `milestone` | An open milestone's title, so a sprint placement rides in the same write. A title that names no open milestone fails the spec before anything is written. `current` means the open milestone with the earliest due date that still has open issues; when none qualifies the issue is filed without one and `milestone_note` says why. |
 
 Created numbers are **written back into the spec file**, which is what makes a re-run after a partial failure complete the remainder rather than creating everything a second time.
 
@@ -517,7 +540,7 @@ Nothing did this. `post-merge` settles only the issues a pull request *closes*, 
 | -------------- | ------------------------------------------------- | --------------- | --------------------- | ------------ |
 | `pick`         | Every open issue, judged by the rules below       | `issue-{n}` ref | `Stage` In Progress   | execute |
 | `update-next`  | My open PRs with actionable review feedback       | `pr-{n}` ref    | `updating` (keeps the feedback label) | pr-review |
-| `review-next`  | Open PRs labelled `needs-review` / `needs-re-review` | `pr-{n}` ref | `reviewing` (removes prior) | pr-review |
+| `review-next`  | Open PRs labelled `needs-re-review`, `changes-requested` or `needs-review`, or whose head moved since the last review footer | `pr-{n}` ref | `reviewing` (removes prior) | pr-review |
 
 All share the same atomic claim/checkout core and JSON contract. `--checkout` creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
 
@@ -546,7 +569,7 @@ The pool is ordered by `Priority`, then `Effort`, then issue number. `--mode` an
 ## Scope / deferrals
 
 - **`pick`** — `--mode story` / `feature` / `maintenance`, reading the open, unassigned issues whose `Stage` is blank or `Backlog` as the pool, from the repository's issues rather than a board. One GraphQL query (`fetch_issue_facets`) reads the native type, the `Priority` field and the `Classification` field for the open backlog, and the pool is ordered by `Priority` — `Urgent` → `High` → `Medium` → `Low`, then lowest issue number. An issue with no `Priority` value sorts last and is named on stderr; there is no label fallback, on purpose. No mode offers an `Epic`: it is the outcome its features and stories deliver, not a piece of work. **Type has none**: `feature` and `maintenance` filter on the native `issueType` alone, so an issue the org has not typed — or a `Feature` it left unclassified — is out of the pool and named on stderr rather than guessed at from a `type-*` label or a `[PREFIX]` title. An org whose backlog carries no native type at all cannot answer those modes and `pick` exits `no-capabilities` (21) saying so; `--mode story` is unaffected. Membership of the pool is the `Stage` field's answer: an issue is in it because its `Stage` is blank or `Backlog` and nobody is assigned, whether or not it has a card on any board. Every other stage takes an issue out of the pool. No label is read at any point in the selection.
-- **`review-next`** — the *label-driven* subset. A PR whose head SHA changed since its last review (needing review without a label) is **not** detected here, so `pr-review` treats `no-candidates` as non-conclusive and falls back to its inline SHA check. Pass `--no-claim` for a read-only review (no push access): it selects the next PR without writing a claim ref or applying the `reviewing` marker, and the JSON reports `claimed: false`.
+- **`review-next`** — three tiers, lowest number first within each: `needs-re-review`; `changes-requested`; then `needs-review` or a head that moved since the SHA the last `Reviewed at` footer names (one GraphQL read of every open PR's comments and reviews, `wf_core.select_review_next`). Drafts and PRs carrying `reviewing` or `updating` are skipped. `no-candidates` is conclusive and prints one line. The result carries `prior_state` (the label it was selected by; a moved `changes-requested` PR reports none, because it is picked for review, not rework) and `head_changed`. Pass `--no-claim` for a read-only review (no push access): it selects the next PR without writing a claim ref or applying the `reviewing` marker, and the JSON reports `claimed: false`.
 
 ## Locks, stage and handoff
 
@@ -572,7 +595,7 @@ The ref is the lock but it is ephemeral, so on success the command also advertis
 
 `stage-set N --stage stage-in-review` writes an issue's `Stage` field, which is the only place its state is recorded. `--stage` takes a purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, `stage-blocked`, `stage-non-code`, `stage-refinement`, `stage-parked`, `stage-attention`, `stage-done`) or the stage name itself. No board is read or written.
 
-It **always exits 0**, so a failed write never costs a run its work. Read `set`, `stage` (the name) and `reason`. A write that did not happen is reported loudly, because the stage is the issue's state: an issue whose `In Progress` write failed still reads as available.
+A write that landed prints one line and exits 0, so a caller reads nothing on success. A write that did not happen exits 20 with `set: false`, `stage` (the name) and `reason`, because the stage is the issue's state: an issue whose `In Progress` write failed still reads as available.
 
 ### `sibling-pr`
 
@@ -586,7 +609,27 @@ It **always exits 0**, so a failed write never costs a run its work. Read `set`,
 
 `handoff --pr P --issue N [--issue M …]` ends a build: it takes the PR's review claim (`refs/claims/pr-P`) first, so the work is never unlocked between the build and its review, and reports that as `pr_claimed` (`won`, `lost` or `error`). A later `claim --pr P --keep-held` from the same checkout keeps the claim it holds; without `--keep-held` it reports `lost`, so a second session sharing the checkout cannot take the PR. Then it labels the PR with the review-state entry label, then sets each issue's `Stage` to `In Review` and releases every issue claim ref in one push, as `claim-release` does, with one `ls-remote` to tell which refs are still held when that push fails. Finally it deletes `.claude/plan.md` and `label-cache.json`; the preflight marker stays, so an issue filed during review does not re-run preflight. `--gate-failed` enters review as changes-requested rather than needs-review.
 
-It **always exits 0**: once the pull request exists, none of this is a reason to stop. Read `pr_labelled` and the per-issue `stage_set` and `stage_message` instead. A failure on one issue does not affect the others.
+It **always exits 0**: once the pull request exists, none of this is a reason to stop. When every step landed it prints one line. Otherwise it prints the full payload: `pr_claimed`, `pr_labelled` and the per-issue `stage_set`, `stage_message` and `claim_released`. A failure on one issue does not affect the others.
+
+### `start`
+
+`start --issue N` is everything between a claim and the first edit when `pick --checkout` did not do it: it re-takes the claim (one this checkout holds is kept), sets `In Progress`, resets a tree provisioned dirty (restore and `git clean -fd`, never `-x`, never `stash`) and creates or checks out the story branch. `start --group G --branch B` does the same for a bulk group: every story's claim in `.claude/bulk-set.json`, the reset, a fresh branch from `origin/{default-branch}`, the push and `bulk-mark`. Success is one line (exit 0); `lost` is exit 27, and a step that did not land is `partial`, exit 24, with `reason` naming it.
+
+### `exit-cleanup`
+
+`exit-cleanup [--issue N ...] [--bulk] [--pr P]` is the last step of every run. It releases the issue claims (`--bulk` adds every story in the bulk set) in one push. When `.claude/claim-pr-P.sha` shows this checkout won the review claim, it reads the PR once and, per `wf_core.exit_pr_action`, records an unfinished review as changes-requested before releasing that claim too; a claim another agent holds is never touched. Then it runs `scratch-clean` and reads the tree. Everything done and the tree clean is one line (exit 0). `dirty` (exit 24) lists `remaining` paths for the caller to commit or discard; `partial` (exit 24) names a release or delete that failed.
+
+### `tree-clean`
+
+`tree-clean --discard PATH [...]` or `--all` discards what the caller chose (tracked paths restored, untracked ones cleaned) and re-checks the tree: one line when clean, `dirty` with `remaining` when not.
+
+### `pr-create`
+
+`pr-create --title T --body-file F --issue N [...] [--base B]` pushes `HEAD`, runs the `sibling-pr` check for every issue immediately before creating, puts a duplicate warning line at the top of the body for each open PR found, adds any missing `Closes #N` line, opens the PR, reads the body back and applies `wf_core.body_problems`, rewriting it once when it is corrupt. A re-run on a branch whose PR exists checks that PR instead. Success is one line with `pr`, `url` and any `duplicates`; a body still failing is `partial` (exit 24) with `problems`; a failed push or create is `error` (exit 20).
+
+### `block`
+
+`block --issue N --body-file F [--blocked-by M ...] [--non-code human|browser]` comments the blocker, writes the complete set of blocked-by edges through `issue-apply` (or, for non-code work, the `Ownership` value and the `[Manual] ` / `[Browser] ` prefix), then checks for an open PR. With one it stops as `has-pr` (exit 11) and leaves the assignee and stage, so no second PR is opened for the same work. Otherwise it releases the claim, unassigns `@me` and sets `Blocked` or `Non-code`. Success is one line; a step that did not land is `partial` (exit 24).
 
 ### `board-sync`
 

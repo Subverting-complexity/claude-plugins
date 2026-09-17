@@ -8,7 +8,7 @@ import wf_core
 from wf_capabilities import gh_graphql_partial
 from wf_config import prepare_cfg
 from wf_io import (
-    EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_OK, emit, gh_json, run,
+    EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_OK, emit, emit_line, gh_json, run,
 )
 from wf_issue_io import _batch_result, _graphql_json
 from wf_stage import _chunks, set_stage, set_stages
@@ -392,6 +392,26 @@ def cmd_post_merge(args):
 
     unblocked = unblock_scan(cfg) if not args.no_unblock else None
 
+    clean = (all(s['closed'] and s['stage_set'] for s in settled)
+             and not container_errors
+             and not (unblocked or {}).get('error')
+             and not (unblocked or {}).get('rescoped')
+             and not (unblocked or {}).get('partials')
+             and all(r.get('stage_set', True) and not r.get('still_assigned')
+                     for r in ((unblocked or {}).get('released') or [])
+                     + ((unblocked or {}).get('rescoped') or [])))
+    if clean:
+        # Everything landed: one line, with only what the report names.
+        released = [{'issue': r['issue'], 'title': r.get('title')}
+                    for r in (unblocked or {}).get('released') or ()]
+        cleared = {str(s['issue']): s['lifecycle_label_cleared'] for s in settled
+                   if s['lifecycle_label_cleared']}
+        extra = {'cleared': cleared} if cleared else {}
+        emit_line('ok', EXIT_OK, pr=args.pr, settled=[s['issue'] for s in settled],
+                  containers_closed=containers, released=released, **extra,
+                  reason='PR #%d settled: %d issue(s) closed and Done, %d '
+                         'container(s) closed, %d issue(s) released'
+                         % (args.pr, len(settled), len(containers), len(released)))
     emit('ok', EXIT_OK, pr=args.pr, base=data.get('baseRefName'), settled=settled,
          containers_closed=containers, container_errors=container_errors,
          unblocked=unblocked)
