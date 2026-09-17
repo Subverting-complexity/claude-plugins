@@ -3441,6 +3441,152 @@ class TestAddConfigPointer(unittest.TestCase):
         self.assertEqual(wf_core.add_config_pointer(once), (once, False))
 
 
+class TestPreflightMarkerFresh(unittest.TestCase):
+    """What `wf run-init` reports in place of the shell `find -mmin -240
+    -newer` check."""
+
+    def test_no_marker_is_not_fresh(self):
+        self.assertFalse(wf_core.preflight_marker_fresh(None, 100, 200))
+
+    def test_a_marker_newer_than_the_config_and_within_the_window_is_fresh(self):
+        self.assertTrue(wf_core.preflight_marker_fresh(150, 100, 150 + 100))
+
+    def test_a_marker_older_than_the_config_is_stale(self):
+        self.assertFalse(wf_core.preflight_marker_fresh(100, 150, 100 + 10))
+
+    def test_a_marker_outside_the_four_hour_window_is_stale(self):
+        self.assertFalse(wf_core.preflight_marker_fresh(0, None, 14401))
+
+    def test_a_marker_at_the_edge_of_the_window_is_still_fresh(self):
+        self.assertTrue(wf_core.preflight_marker_fresh(0, None, 14399))
+
+    def test_no_config_file_never_makes_a_marker_stale_on_that_ground(self):
+        self.assertTrue(wf_core.preflight_marker_fresh(100, None, 200))
+
+
+class TestQuotaLow(unittest.TestCase):
+
+    def test_below_the_threshold_is_low(self):
+        self.assertTrue(wf_core.quota_low(50))
+
+    def test_at_or_above_the_threshold_is_not_low(self):
+        self.assertFalse(wf_core.quota_low(100))
+        self.assertFalse(wf_core.quota_low(500))
+
+    def test_an_unreadable_quota_is_never_treated_as_low(self):
+        self.assertFalse(wf_core.quota_low(None))
+
+    def test_a_custom_threshold_is_honoured(self):
+        self.assertTrue(wf_core.quota_low(40, threshold=50))
+
+
+class TestLocalFindings(unittest.TestCase):
+    """Read-only checks for a project with no ClaudeProject.md."""
+
+    CLEAN = dict(git_repo=True, branch='main', git_op=False, conflicts=False,
+                dirty=0, claude_md=True, ecosystem='configured',
+                quality_gate='pnpm test')
+
+    def test_a_clean_project_reports_nothing(self):
+        self.assertEqual(wf_core.local_findings(**self.CLEAN), [])
+
+    def test_no_git_repo_short_circuits_everything_else(self):
+        kwargs = dict(self.CLEAN, git_repo=False, claude_md=False)
+        found = wf_core.local_findings(**kwargs)
+        self.assertEqual(_checks(found), ['local-git-repo'])
+
+    def test_detached_head_is_reported(self):
+        found = wf_core.local_findings(**dict(self.CLEAN, branch=''))
+        self.assertEqual(_checks(found), ['local-git-branch'])
+
+    def test_a_merge_or_rebase_in_progress_is_reported(self):
+        found = wf_core.local_findings(**dict(self.CLEAN, git_op=True))
+        self.assertEqual(_checks(found), ['local-git-op'])
+
+    def test_unresolved_conflicts_are_reported(self):
+        found = wf_core.local_findings(**dict(self.CLEAN, conflicts=True))
+        self.assertEqual(_checks(found), ['local-git-conflicts'])
+
+    def test_a_dirty_tree_names_the_count(self):
+        found = wf_core.local_findings(**dict(self.CLEAN, dirty=3))
+        self.assertEqual(_checks(found), ['local-git-tree'])
+        self.assertIn('3', found[0]['detail'])
+
+    def test_a_missing_claude_md_is_reported(self):
+        found = wf_core.local_findings(**dict(self.CLEAN, claude_md=False))
+        self.assertEqual(_checks(found), ['local-claude-md'])
+
+    def test_ecosystem_declined_is_not_reported(self):
+        found = wf_core.local_findings(**dict(self.CLEAN, ecosystem='declined'))
+        self.assertEqual(found, [])
+
+    def test_ecosystem_never_configured_is_reported(self):
+        found = wf_core.local_findings(**dict(self.CLEAN, ecosystem=None))
+        self.assertEqual(_checks(found), ['local-ecosystem'])
+
+    def test_no_quality_gate_found_is_reported(self):
+        found = wf_core.local_findings(**dict(self.CLEAN, quality_gate=''))
+        self.assertEqual(_checks(found), ['local-quality-gate'])
+
+    def test_every_finding_is_a_warning_and_none_is_fixable(self):
+        found = wf_core.local_findings(
+            git_repo=True, branch='', git_op=True, conflicts=True, dirty=1,
+            claude_md=False, ecosystem=None, quality_gate='')
+        self.assertEqual(_levels(found), [wf_core.WARNING] * len(found))
+        for entry in found:
+            self.assertNotIn(entry['check'], wf_core.FIXABLE_CHECKS)
+
+
+class TestAutomergeFindings(unittest.TestCase):
+    """The opt-in auto-merge safety checks, moved out of shell."""
+
+    def test_allow_auto_merge_on_is_clean(self):
+        self.assertEqual(
+            wf_core.automerge_repo_findings('acme/repo', True), [])
+
+    def test_allow_auto_merge_off_is_reported(self):
+        found = wf_core.automerge_repo_findings('acme/repo', False)
+        self.assertEqual(_checks(found), ['review-auto-merge-repo'])
+        self.assertIn('acme/repo', found[0]['fix'])
+
+    def test_require_ci_true_is_clean_even_with_no_required_checks(self):
+        self.assertEqual(wf_core.automerge_ci_findings('true', None), [])
+
+    def test_if_present_is_clean(self):
+        self.assertEqual(wf_core.automerge_ci_findings('if-present', None), [])
+
+    def test_required_status_checks_alone_is_clean(self):
+        self.assertEqual(wf_core.automerge_ci_findings(None, 2), [])
+
+    def test_neither_gate_is_reported(self):
+        found = wf_core.automerge_ci_findings(None, 0)
+        self.assertEqual(_checks(found), ['review-auto-merge-ci'])
+        found = wf_core.automerge_ci_findings(None, None)
+        self.assertEqual(_checks(found), ['review-auto-merge-ci'])
+
+    def test_no_workflows_and_bypass_set_is_clean(self):
+        self.assertEqual(wf_core.automerge_nopipeline_findings(0, 'true'), [])
+
+    def test_no_workflows_and_bypass_unset_is_reported(self):
+        found = wf_core.automerge_nopipeline_findings(0, None)
+        self.assertEqual(_checks(found), ['review-auto-merge-nopipeline'])
+
+    def test_workflows_present_and_bypass_set_is_a_contradiction(self):
+        found = wf_core.automerge_nopipeline_findings(2, 'true')
+        self.assertEqual(_checks(found), ['review-auto-merge-nopipeline'])
+        self.assertIn('2', found[0]['detail'])
+
+    def test_workflows_present_and_bypass_unset_is_clean(self):
+        self.assertEqual(wf_core.automerge_nopipeline_findings(2, None), [])
+
+    def test_every_finding_is_a_warning_and_never_escalates(self):
+        for found in (wf_core.automerge_repo_findings('a/b', False),
+                      wf_core.automerge_ci_findings(None, 0),
+                      wf_core.automerge_nopipeline_findings(0, None)):
+            self.assertEqual(_levels(found), [wf_core.WARNING])
+            self.assertNotIn(found[0]['check'], wf_core.FIXABLE_CHECKS)
+
+
 # ── closing a finished container (#240) ──────────────────────────────────────
 
 def _container(number, kind, *children, state='OPEN', repo=None):

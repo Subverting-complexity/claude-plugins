@@ -293,6 +293,144 @@ CLAUDE_MD_POINTER = (
     '(ClaudeProject.md). Read it before running a workflow command.')
 
 
+def preflight_marker_fresh(marker_mtime, source_mtime, now, window_seconds=14400):
+    """Whether a cached `preflight-passed.txt` still stands: it must be newer
+    than `ClaudeProject.md` and inside the four-hour window
+    `find -mmin -240 -newer` used to check. `marker_mtime` of `None` means the
+    marker does not exist; `source_mtime` of `None` means `ClaudeProject.md`
+    does not (nothing to be stale against)."""
+    if marker_mtime is None:
+        return False
+    if source_mtime is not None and marker_mtime < source_mtime:
+        return False
+    return (now - marker_mtime) < window_seconds
+
+
+def quota_low(remaining, threshold=100):
+    """Whether the GitHub API quota is low enough to pause a run. `None`
+    (the quota could not be read) is never treated as low -- an unknown
+    answer must not stop a run that a real answer would have let through."""
+    return remaining is not None and remaining < threshold
+
+
+def local_findings(git_repo, branch, git_op, conflicts, dirty, claude_md,
+                   ecosystem, quality_gate):
+    """Read-only checks for a project with no `ClaudeProject.md` -- local work
+    rather than GitHub story work. Moved out of
+    `skills/preflight/references/local-checks.md`'s shell block for the same
+    reason as the checks above: untestable duplicated logic.
+
+    Every finding here is a `WARNING` and none is ever repaired automatically
+    -- these describe the project's own state, not something the tooling
+    owns. `branch` is `''` for a detached HEAD; `ecosystem` is `'configured'`,
+    `'declined'` or `None`; `quality_gate` is the detected command or `''`.
+    """
+    if not git_repo:
+        return [finding(WARNING, 'local-git-repo', 'this is not a git repository',
+                        'run `git init`, or open the intended project folder')]
+    out = []
+    if not branch:
+        out.append(finding(WARNING, 'local-git-branch', 'HEAD is detached',
+                           'check out a branch: `git switch <branch>` or '
+                           '`git switch -c <new>`'))
+    if git_op:
+        out.append(finding(WARNING, 'local-git-op',
+                           'a merge or rebase is in progress',
+                           'finish or abort it before starting new work'))
+    if conflicts:
+        out.append(finding(WARNING, 'local-git-conflicts',
+                           'there are unresolved merge conflicts',
+                           'finish or abort the merge/rebase before new work'))
+    if dirty:
+        out.append(finding(WARNING, 'local-git-tree',
+                           '%d uncommitted change%s in the working tree'
+                           % (dirty, '' if dirty == 1 else 's'),
+                           'commit or stash the changes so new work starts '
+                           'from a clean tree'))
+    if not claude_md:
+        out.append(finding(WARNING, 'local-claude-md', 'no CLAUDE.md was found',
+                           'add one with project rules and the quality-gate '
+                           'command'))
+    if ecosystem is None:
+        out.append(finding(WARNING, 'local-ecosystem',
+                           'the companion tools are not set up',
+                           'run `/synergy:ecosystem-setup`, or skip it'))
+    if not quality_gate:
+        out.append(finding(WARNING, 'local-quality-gate',
+                           'no test/build command was found',
+                           'tell Claude the test command, or record it in '
+                           'CLAUDE.md'))
+    return out
+
+
+# ── preflight: auto-merge safety checks (opt-in) ──────────────────────────────
+# Deep checks for the opt-in `auto-merge-on-approval` feature, moved out of
+# `skills/preflight/references/review-auto-merge-checks.md`'s shell block.
+# `preflight` runs these only when `docs/review.config.md` enables auto-merge
+# -- gathered in `wf_preflight.py`, judged here.
+
+def automerge_repo_findings(slug, allow_auto_merge, path='docs/review.config.md'):
+    """The repo's own "Allow auto-merge" setting, without which a queued
+    merge never fires."""
+    if allow_auto_merge:
+        return []
+    return [finding(WARNING, 'review-auto-merge-repo',
+                    "auto-merge-on-approval is enabled but the repo's "
+                    "'Allow auto-merge' setting is off -- queued merges will "
+                    "not fire",
+                    "enable it with `gh api -X PATCH repos/%s -F "
+                    "allow_auto_merge=true` or re-run /synergy:setup harden"
+                    % slug, path)]
+
+
+def automerge_ci_findings(require_ci, required_checks,
+                          path='docs/review.config.md'):
+    """Whether something enforces "CI green before merge" -- GitHub required
+    status checks, or the plugin's own `require-ci-before-merge`.
+
+    `require_ci` is the `require-ci-before-merge` setting (`'true'`,
+    `'if-present'` or `None`); `required_checks` is the branch's required
+    status check count, or `None` when it could not be read.
+    """
+    if require_ci in ('true', 'if-present'):
+        return []
+    if required_checks:
+        return []
+    return [finding(WARNING, 'review-auto-merge-ci',
+                    'auto-merge-on-approval is enabled but neither GitHub '
+                    'required status checks nor require-ci-before-merge is '
+                    'configured -- an approved PR can merge with no CI '
+                    'guarantee',
+                    'run /synergy:setup harden to wire up the gate', path)]
+
+
+def automerge_nopipeline_findings(workflow_count, bypass_setting,
+                                  path='docs/review.config.md'):
+    """A repo with no active GitHub Actions workflow never reports a check,
+    so `bypass-ci-when-no-pipeline` has to be set for auto-merge to fire --
+    and a project that sets it while workflows exist is a setting that can
+    never apply."""
+    if workflow_count == 0:
+        if bypass_setting == 'true':
+            return []
+        return [finding(WARNING, 'review-auto-merge-nopipeline',
+                        'this repo has no active GitHub Actions workflows, so '
+                        'its PRs never report a check, and '
+                        'bypass-ci-when-no-pipeline is not true -- every '
+                        'approved PR will pause at the no-checks guard and '
+                        'need a human or --bypass-ci',
+                        "set it true in %s if this project's CI is not "
+                        'visible to GitHub' % path, path)]
+    if bypass_setting == 'true':
+        return [finding(WARNING, 'review-auto-merge-nopipeline',
+                        'bypass-ci-when-no-pipeline=true but this repo has '
+                        '%d active workflow(s), and the setting requires '
+                        'zero -- it can never apply and is ignored'
+                        % workflow_count,
+                        'did you mean bypass-ci-on-billing-failure?', path)]
+    return []
+
+
 def add_config_pointer(text, pointer=CLAUDE_MD_POINTER):
     """Append the `ClaudeProject.md` pointer to a CLAUDE.md that lacks one.
 
