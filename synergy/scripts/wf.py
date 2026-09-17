@@ -147,7 +147,9 @@ from wf_board_sync import SYNC_CLOSED_DAYS, cmd_board_sync
 from wf_bulk_build import cmd_bulk_integrate, cmd_bulk_schedule
 from wf_capabilities import cmd_org_capabilities
 from wf_claim import cmd_claim, cmd_claim_reap, cmd_claim_release
-from wf_config import cmd_config, cmd_scratch_clean
+from wf_config import (
+    cmd_config, cmd_preflight_cached, cmd_run_init, cmd_scratch_clean,
+)
 from wf_issue_apply import cmd_issue_apply
 from wf_issue_audit import AUDIT_SPEC_DEFAULT, cmd_issue_audit
 from wf_pick import cmd_pick, cmd_refine
@@ -358,6 +360,26 @@ def build_parser():
                              "keep them in the clone's info/exclude (no network)")
     sc.set_defaults(func=cmd_scratch_clean)
 
+    ri = sub.add_parser('run-init',
+                        help='start-of-run housekeeping for execute/bulk-execute: '
+                             'reset and set the invocation-flag files, sweep stray '
+                             'claim markers, report the cached preflight state and '
+                             'the API quota')
+    ri.add_argument('--no-merge', action='store_true', help='set .claude/no-merge.flag')
+    ri.add_argument('--bypass-ci', action='store_true', help='set .claude/bypass-ci.flag')
+    ri.add_argument('--unattended', action='store_true',
+                    help='set .claude/unattended.flag')
+    ri.add_argument('--bulk', action='store_true',
+                    help='also clear .claude/bulk-set.json (bulk-execute only)')
+    ri.set_defaults(func=cmd_run_init)
+
+    pc = sub.add_parser('preflight-cached',
+                        help='read-only: does a clean or warning-only `wf '
+                             'preflight` still stand within the last four '
+                             "hours? (`block-story`, `report-issue` -- doesn't "
+                             'touch the invocation-flag files `run-init` does)')
+    pc.set_defaults(func=cmd_preflight_cached)
+
     caps = sub.add_parser('org-capabilities',
                           help="resolve the org's enabled native issue types and its "
                                'issue fields (with option ids) into '
@@ -436,6 +458,10 @@ def build_parser():
                     help='report counts only, keeping the exit code, for CI')
     pf.add_argument('--refresh', action='store_true',
                     help='re-query org capabilities instead of reading the cache')
+    pf.add_argument('--local', action='store_true',
+                    help='read-only checks for a project with no '
+                         'ClaudeProject.md (git state, CLAUDE.md, quality '
+                         'gate); never blocks')
     pf.set_defaults(func=cmd_preflight)
 
     rf = sub.add_parser('refine',

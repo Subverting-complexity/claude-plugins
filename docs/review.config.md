@@ -96,7 +96,7 @@ This repo is instruction text plus a small amount of tooling. What that means fo
 
 - **Purpose keys, never literal names.** Review labels resolve through this file's Labels table, and stages through `wf_core.STAGE_NAMES`. A hardcoded label string in a skill is a finding: it silently breaks every project that renamed that label.
 - **Nothing project-specific in a skill.** Repo names, board IDs, and label names belong in `ClaudeProject.md` or this file. The skills are generic.
-- **Local paths must not need GitHub.** `build`, `pr-review`'s `references/local-review.md` and `preflight`'s `references/local-checks.md` serve projects with no `ClaudeProject.md` and no tracker. Anything they load must not assume GitHub, a board or an issue.
+- **Local paths must not need GitHub.** `build`, `pr-review`'s `references/local-review.md` and `preflight`'s `wf preflight --local` serve projects with no `ClaudeProject.md` and no tracker. Anything they load must not assume GitHub, a board or an issue.
 - **References are cited, not duplicated.** See the canonical-specification rule above; this is its architectural form.
 
 ## Security Specifics

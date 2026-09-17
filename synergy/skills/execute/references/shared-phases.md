@@ -6,49 +6,36 @@
 
 Every phase flows into the next without pausing for user input, except at a stop the skill names. Opening the pull request is not a stopping point: Phases 8 to 10 need no permission, no confirmation and no green CI, so keep going in the same turn. A run that reports its new PR and offers to review and merge it if asked has stopped half way, however finished it sounds.
 
-## Invocation flags
+## Invocation flags, preflight cache and API quota
 
-`--no-merge` and `--bypass-ci` are read in Phase 10, long after they are parsed, so record them on disk now. Run each line below as its own command rather than one compound script: a permission layer that evaluates a whole multi-command block at once can read several flag files being touched together as one large, safety-sounding change, where the same lines run individually each match one narrow, already-granted pattern.
+`--no-merge` and `--bypass-ci` are read in Phase 10, long after they are parsed, so `wf run-init` records them on disk now, in the same call that resets what a hard-killed prior run left behind, sweeps stray claim markers, and reports whether preflight is still cached and what the GitHub API quota looks like — one command in place of the hand-written shell this used to be. Run it exactly once, here:
 
 ```
-mkdir -p .claude
-rm -f .claude/no-merge.flag .claude/bypass-ci.flag .claude/unattended.flag \
-      .claude/gate-failed.flag .claude/self-review.flag
-rm -f .claude/bulk-set.json    # bulk-execute only
-git ls-files -z --others -- '.claude/claim-issue-*.sha' | xargs -0 -r rm -f
-touch .claude/no-merge.flag    # only when --no-merge was passed
-touch .claude/bypass-ci.flag   # only when --bypass-ci was passed
-touch .claude/unattended.flag  # only when nobody is present to answer
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" run-init \
+  --no-merge      # only when --no-merge was passed \
+  --bypass-ci     # only when --bypass-ci was passed \
+  --unattended    # only when nobody is present to answer \
+  --bulk          # bulk-execute only, also clears .claude/bulk-set.json
 ```
 
 **Unattended** means nobody will answer a question: this run was spawned as an agent (the `synergy:Builder`), runs in a scheduled routine or a non-interactive `claude -p`, or the user asked for it to run without questions. Every step that would ask a person checks `.claude/unattended.flag` and takes its unattended branch instead.
 
-**If this block is blocked.** `synergy/agents/builder.md` already carries the Bash allow patterns this block needs — `Bash(mkdir *)`, `Bash(rm -f .claude/*)`, `Bash(touch .claude/*)`, `Bash(xargs -0 -r rm -f)`, `Bash(git ls-files *)` — and `docs/rationale/builder-tools-rationale.md` records why. A spawned `synergy:Builder` running under that allowlist should never see a permission prompt here (confirmed empirically running this exact block while building issue #314). A configuration that still denies it — a host-side classifier judging command *content* rather than matching the allow patterns — is outside what a tool allowlist can fix from inside the agent; grant the patterns above explicitly rather than trying to word the commands around it.
+**Run it exactly once, here.** Re-running it after a compaction would wipe the `gate-failed.flag` Phase 5 wrote, the `self-review.flag` Phase 8 wrote and the set Phase 1 recorded, and would drop `no-merge.flag` if the arguments are gone from context. Later phases only read these files and the `run-init` result.
 
-The `rm -f` lines clear what a hard-killed run left behind; an inherited `bypass-ci.flag` would quietly disarm the CI gate. Sweeping claim markers is safe here and nowhere else, because this run holds no claim yet: `--others` spares markers a project committed, and `claim-issue-*` spares a `claim-pr-*.sha` a review session in this checkout may still hold.
-
-**Run the block exactly once, here.** Re-running it after a compaction would wipe the `gate-failed.flag` Phase 5 wrote, the `self-review.flag` Phase 8 wrote and the set Phase 1 recorded, and would drop `no-merge.flag` if the arguments are gone from context. Later phases only read these files.
+**If this call is blocked.** `synergy/agents/builder.md` already carries the Bash allow pattern this needs (`Bash(bash *wf.sh*)`) and `docs/rationale/builder-tools-rationale.md` records why. A spawned `synergy:Builder` running under that allowlist should never see a permission prompt here. A configuration that still denies it — a host-side classifier judging command *content* rather than matching the allow patterns — is outside what a tool allowlist can fix from inside the agent; grant the pattern explicitly rather than trying to word the command around it.
 
 ## Preflight and project configuration
 
 The skill's auto-loaded configuration block has already run.
 
 1. If it printed "ClaudeProject.md NOT FOUND", stop with exactly one message, "ClaudeProject.md not found — run /synergy:setup.", and do not chain into preflight for the same cause.
-2. Run `[ -n "$(find .claude/preflight-passed.txt -mmin -240 -newer ClaudeProject.md 2>/dev/null)" ] && echo "PREFLIGHT_ALREADY_PASSED"`. A clean or warning-only preflight writes the marker, and it stands for four hours unless `ClaudeProject.md` changes, so back-to-back runs skip the check. Otherwise invoke `/synergy:preflight`. Unattended, a critical finding is a stop: report it verbatim and exit. With a user present, on "Configure now", wait for setup and ask the user to re-run the command, because the loaded configuration is stale; on "Continue anyway" or "Don't remind me", proceed.
+2. Read `preflight_cached` from the `run-init` result above. `true` means a clean or warning-only preflight already passed within the last four hours and `ClaudeProject.md` has not changed since, so skip straight to step 3. Otherwise invoke `/synergy:preflight`. Unattended, a critical finding is a stop: report it verbatim and exit. With a user present, on "Configure now", wait for setup and ask the user to re-run the command, because the loaded configuration is stale; on "Continue anyway" or "Don't remind me", proceed.
 3. The projection must contain both `## Identity` and `## Quality Gate`. If either is missing, stop with "ClaudeProject.md is missing required section: {name} — run /synergy:setup."
 4. Read `CLAUDE.md` for project rules and build principles.
 
 The projection drops sections needed only later. When a later phase resolves the org issue fields, `Stage` included, read `## Issue Types & Fields` straight from `ClaudeProject.md`.
 
-## API quota
-
-Read the quota at the start and again before Phase 7, keeping the result in context only:
-
-```
-gh api rate_limit --jq '.rate.remaining'
-```
-
-Below **100**, pause: commit and push current work, set every claimed issue to `Needs attention` (`wf stage-set {number} --stage stage-attention`) with a comment noting the pause, run **Exit cleanup**, and exit. The next session resumes from the pushed branch. **Once the PR is open (Phase 8 onward)**, leave the stages at `In Review` and note the pause on the PR instead, so the stages and the PR's review state agree. Never retry rate-limited requests in a loop.
+Read `quota.remaining` from the `run-init` result above, and again before Phase 7 — `gh api rate_limit --jq '.rate.remaining'` directly, keeping the result in context only; never `run-init` again, which would reset the flag files this section exists to protect. Below **100**, pause: commit and push current work, set every claimed issue to `Needs attention` (`wf stage-set {number} --stage stage-attention`) with a comment noting the pause, run **Exit cleanup**, and exit. The next session resumes from the pushed branch. **Once the PR is open (Phase 8 onward)**, leave the stages at `In Review` and note the pause on the PR instead, so the stages and the PR's review state agree. Never retry rate-limited requests in a loop.
 
 ## Session budget
 

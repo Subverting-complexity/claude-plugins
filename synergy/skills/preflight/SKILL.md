@@ -5,13 +5,9 @@ description: 'Check a project is ready for synergy work: its ClaudeProject.md wo
 
 # Preflight Check
 
-Verify project configuration is complete and consistent before running workflow commands.
+Verify project configuration is complete and consistent before running workflow commands. Most runs pass and end with Section 2's silent return — the output standard only matters once Section 3 has something to say, so it is cited there rather than here.
 
-**A local project.** When a person runs this directly in a project with no `ClaudeProject.md`, the project is not set up for GitHub story work and that is not a fault. Ignore the `wf preflight` result below and run `references/local-checks.md` instead.
-
-## Output standard
-
-Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
+**A local project.** When a person runs this directly in a project with no `ClaudeProject.md`, the project is not set up for GitHub story work and that is not a fault. Ignore the `wf preflight` result below and run `wf preflight --local` instead (`bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" preflight --local`), which reports read-only git-state, `CLAUDE.md` and quality-gate findings and never blocks. Summarise its `findings` as a short pass/warn list, one line per warning with the `fix` it carries, and say plainly that nothing was changed.
 
 ## 1. Run the check
 
@@ -44,16 +40,15 @@ The object carries `summary` (counts by level and by check), `checked` and `skip
 - `auto: true` — a run can repair this without guessing. `fixable` says how.
 - `auto: false` — it must not. `fixable` says why: the value is the project's to choose, or two configured things disagree and either could be the right one, or the repair happens in the org settings rather than through the API.
 
-**If `summary.critical` is `0`.** Nothing blocks. Write the pass marker so later commands in this session skip the re-run, then return control **silently** — do not compose a report, and do not mention preflight:
+**If `summary.critical` is `0`.** Nothing blocks, and `wf preflight` has already written the pass marker so later commands in this session skip the re-run. Return control **silently** — do not compose a report, and do not mention preflight.
 
-```
-mkdir -p .claude
-echo "preflight-passed" > .claude/preflight-passed.txt
-```
-
-If `summary.warning` is above zero, print **one** line first naming what is running on a default (e.g. "Quality gate not configured; run `/synergy:setup` to set one") and then do exactly the same. A warning is a thing that still works, so it never prompts and never blocks.
+If `summary.warning` is above zero, print **one** line first naming what is running on a default (e.g. "Quality gate not configured; run `/synergy:setup` to set one") and then return the same way. A warning is a thing that still works, so it never prompts and never blocks.
 
 **If `summary.critical` is above zero.** Go to Section 3. Report every critical finding's `detail` and `fix` **verbatim** rather than paraphrasing — the fix for an unpinned field is a specific form in the org settings, and a paraphrase loses it.
+
+## Output standard
+
+Reached only once Section 2 found something to report. Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
 ## 3. Present the findings and ask
 
@@ -114,4 +109,4 @@ It will not create a `CLAUDE.md` that does not exist, invent an `## Identity` se
 
 ## Auto-merge safety checks
 
-`wf preflight` reports `review-config` when the file `ClaudeProject.md` names is missing. It does not check the repo's own "Allow auto-merge" setting or whether a CI gate exists, because both cost a round trip that only matters to a project that opted in. If `docs/review.config.md` sets `auto-merge-on-approval: enabled`, read `references/review-auto-merge-checks.md` and run its two checks. Otherwise skip it entirely.
+`wf preflight` reports `review-config` when the file `ClaudeProject.md` names is missing, and — only when that file sets `auto-merge-on-approval: enabled` — also runs the repo's own "Allow auto-merge" setting and whether a CI gate exists, as `review-auto-merge-repo`, `review-auto-merge-ci` and `review-auto-merge-nopipeline`. Both cost a round trip that only matters to a project that opted in, so a project that has not is charged nothing for them. Nothing further to run here: report any finding with that prefix the same way as every other warning.
