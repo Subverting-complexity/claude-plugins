@@ -1,6 +1,6 @@
-# Body-file write + validation
+# Body-file write
 
-Canonical procedure for **every** multi-line body this plugin writes — an issue body, a pull request description, a comment — so the write mechanics, the line formatting and the corruption test never drift between callers. Run it wherever a caller says "write the body following `templates/body-file-write.md`".
+Canonical procedure for **every** multi-line body this plugin writes — an issue body, a pull request description, a comment — so the write mechanics and the line formatting never drift between callers. Run it wherever a caller says "write the body following `templates/body-file-write.md`".
 
 What goes *in* the file is decided elsewhere — only where the caller has not already pointed you at it, `skills/_shared/body-standard.md`, through `skills/writing-github-issues/SKILL.md` for an issue or `skills/pr-body/SKILL.md` for a pull request. The one rule these mechanics make easy to break: **never hard-wrap**. Each paragraph is one line, however long it runs.
 

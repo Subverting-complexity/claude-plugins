@@ -6,9 +6,9 @@ description: 'File a bug, security, architecture or tech debt issue. Trigger: "r
 
 Create a bug, security, architecture, or tech debt issue discovered during development.
 
-**Issue wording.** Only once you are ready to write the title and body in Step 5, read `../skills/writing-github-issues/SKILL.md` and follow it. It is the standard for every issue this plugin files, and it is short: open with the actual problem, use `## Summary` plus only the sections that carry information, cut the investigation history, and keep any uncertainty the source had.
+**Issue wording.** Read `../skills/writing-github-issues/SKILL.md` and follow it. It is the standard for every issue this plugin files, and it is short: open with the actual problem, use `## Summary` plus only the sections that carry information, cut the investigation history, and keep any uncertainty the source had.
 
-**Output standard.** Reached only when writing something for a person to read. Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `../skills/_shared/wording-standard.md` for how it reads, `../skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `../skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one. Inside the issue body the issue standard above governs structure and length; banned patterns still apply there in full.
+**Output standard.** Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `../skills/_shared/wording-standard.md` for how it reads, `../skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `../skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one. Inside the issue body the issue standard above governs structure and length; banned patterns still apply there in full.
 
 ## Preflight
 
@@ -74,7 +74,7 @@ If a template carries frontmatter labels, add them as a `labels` list on the spe
 
 One write, through `wf issue-apply`. It is the only path that creates an issue: it applies the title rules, the native issue type, the org's field values, the labels and the milestone together, so an issue filed here is shaped exactly like one filed by `feature-discovery` or `execute`.
 
-Only now, write the issue body to the standard in `../skills/writing-github-issues/SKILL.md`, which is also where the title rules live. Write it to `.claude/report-body.md` with the Write tool, and the spec beside it (`templates/body-file-write.md` — a body always goes in a file, never into a shell argument or a JSON string):
+Write the issue body to the standard in `../skills/writing-github-issues/SKILL.md`, which is also where the title rules live. Write it to `.claude/report-body.md` with the Write tool, and the spec beside it (`templates/body-file-write.md` — a body always goes in a file, never into a shell argument or a JSON string):
 
 ```bash
 mkdir -p .claude
@@ -117,7 +117,7 @@ The exceptions are `[Manual] `, for an issue a person has to do, and `[Browser] 
 
 **Read the exit code.** **0** created it. **21** (`no-capabilities`) means the org defines no issue types or fields — report that the issue could not be classified rather than filing an unclassified one by hand. **22** (`spec-invalid`) means the spec is wrong (an unknown label, a milestone that is not open, a missing required field, a parent of the wrong type, or an org that defines no `Priority`, `Effort` or `Ownership` field at all): fix it and re-run. **23** and **24** mean the issue exists but some metadata did not land — report which, by number and title, and carry on. Re-running the same spec after a partial failure completes the remainder rather than filing a duplicate.
 
-**Body shape.** Only when writing the body, follow `../skills/writing-github-issues/SKILL.md`.
+**Body shape.** Follow `../skills/writing-github-issues/SKILL.md`.
 
 Where Step 4c found a template, use its headings and order instead of the list below, filling them per `templates/issue-template-resolution.md` (Step 4 or 5). The rules on what to write and what to cut are unchanged.
 

@@ -17,7 +17,7 @@ Everything here happens on your machine. There is no issue to claim, no pull req
 
 ## Output standard
 
-Reached only when writing something for a person to read. Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
+Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
 ## Project context (auto-loaded)
 
@@ -136,7 +136,7 @@ After committing, run the **Exit cleanup** below so the tree ends clean.
 
 ## Phase 6 -- Report
 
-Only when composing this report, follow `skills/user-facing-communication/SKILL.md`. Open with what was built and the current state, and be exact about that state: this run ends at a **commit on your branch**. Nothing is pushed, no pull request exists, and nothing is merged unless you say otherwise. Say so plainly, because a report that only says "done" reads as shipped.
+Write this to `skills/user-facing-communication/SKILL.md`. Open with what was built and the current state, and be exact about that state: this run ends at a **commit on your branch**. Nothing is pushed, no pull request exists, and nothing is merged unless you say otherwise. Say so plainly, because a report that only says "done" reads as shipped.
 
 Then include only the parts that carry information:
 
