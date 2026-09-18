@@ -670,7 +670,9 @@ def _automerge_findings(cfg, root, project_md_text, repo=None):
             ['api', 'repos/%s/actions/workflows' % slug])
         if ok3 and workflows is not None:
             active = sum(1 for w in workflows.get('workflows') or ()
-                        if w.get('state') == 'active')
+                        if w.get('state') == 'active'
+                        and (w.get('path') or '').startswith(
+                            '.github/workflows/'))
             checked.append('review-auto-merge-nopipeline')
             findings.extend(wf_core.automerge_nopipeline_findings(
                 active, bypass, path))

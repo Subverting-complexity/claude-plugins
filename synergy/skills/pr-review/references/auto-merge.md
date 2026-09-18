@@ -8,7 +8,16 @@ Read **`require-ci-before-merge`** from the Auto-Merge on Approval section of `r
 - **`true`** — the skill must see a **green CI gate** before it merges: a PR with no checks at all, or with a failing check it cannot fix, is **paused**, not merged. An absolute gate, even on a repo with no pipeline — the only things that can satisfy it without green checks are `bypass-ci-on-billing-failure` and `bypass-ci-when-no-pipeline` below, and only against the evidence steps 3a and 3b of `references/ci-bypass.md` demand.
 - **`if-present`** — gate on CI **only when CI exists**: a PR whose head SHA has checks must see them green (a red check it cannot fix pauses). A PR with **no checks at all** is handled by the no-checks guard in step 3 (CI status unknown — explicit confirmation required).
 
-**Scope of the CI gate.** Every CI decision in this file reads the checks GitHub reports for the PR's head SHA (`gh pr checks`) — in practice GitHub Actions, plus any external CI that posts its status back to GitHub. A pipeline that runs entirely outside GitHub (Buildkite, CircleCI, Jenkins, …) without reporting to GitHub is **invisible** to this gate. That is why a PR reporting **no checks at all** is treated as CI status **UNKNOWN**, never as passing — see the no-checks guard in step 3.
+**Scope of the CI gate.** Every CI decision in this file reads the checks GitHub reports for the PR's head SHA — in practice GitHub Actions, plus any external CI that posts its status back to GitHub. A pipeline that runs entirely outside GitHub (Buildkite, CircleCI, Jenkins, …) without reporting to GitHub is **invisible** to this gate. That is why a PR reporting **no checks at all** is treated as CI status **UNKNOWN**, never as passing — see the no-checks guard in step 3.
+
+**Reading the rollup — CI checks only, not every check GitHub shows.** GitHub also posts checks from things that are not a pipeline validating the diff: an automatic reviewer app (e.g. Copilot's `copilot-pull-request-reviewer`), a required-review bot, or any other App-based check with no build behind it. These never gate anything here, in either direction — a red one is not a CI failure to fix, and its presence does not make a PR with no real CI look like it has some. `gh pr checks --json` distinguishes them for you: a check tied to an Actions run carries a non-empty `workflow` field; an App-posted check does not. Every rollup read in this file and in `references/ci-bypass.md` uses the filtered form:
+
+```bash
+gh pr checks <number> --repo <org>/<repo> --json name,bucket,state,link,workflow \
+  --jq '[.[] | select(.workflow != null and .workflow != "")]'
+```
+
+Add `--required` for the required-only variant. Treat this filtered list as "the rollup" everywhere below and in `ci-bypass.md` — a PR whose only checks are App-posted ones is a PR with **no checks at all** for every purpose here.
 
 The exact branches are in step 3 below.
 
@@ -33,9 +42,10 @@ Drive the PR to a merged state. Conflicts and red CI are **blockers to clear, no
 
    Only if the skill was invoked with `--bypass-ci`, or `bypass-ci-on-billing-failure` or `bypass-ci-when-no-pipeline` is `true`, read `references/ci-bypass.md` and follow it first (the `--bypass-ci` override and steps 3a and 3b); it merges through step 4 or sends you back here.
 
-   Otherwise, or when `references/ci-bypass.md` sends you back, read the required-check rollup:
+   Otherwise, or when `references/ci-bypass.md` sends you back, read the required-check rollup (the filtered form from the scope note above, `--required` added):
    ```bash
-   gh pr checks <number> --repo <org>/<repo> --required
+   gh pr checks <number> --repo <org>/<repo> --required --json name,bucket,state,link,workflow \
+     --jq '[.[] | select(.workflow != null and .workflow != "")]'
    ```
    - Any **required** check **failing** → fetch the failure detail and fix the cause on the branch:
      ```bash
@@ -65,9 +75,10 @@ Drive the PR to a merged state. Conflicts and red CI are **blockers to clear, no
      merge over a genuinely red required check.
    - Required checks **pending** (including right after you pushed a fix) → enqueue auto-merge: step 4 (`--auto`).
    - Required checks **passing** → merge now (step 4, immediate path), provided you pushed nothing in steps 2–3 (a push leaves checks pending → enqueue `--auto` instead).
-   - **No required checks reported** → the branch is unprotected. Read the full check rollup (not just required ones):
+   - **No required checks reported** → the branch is unprotected. Read the full check rollup (not just required ones — the filtered form from the scope note above):
      ```bash
-     gh pr checks <number> --repo <org>/<repo>
+     gh pr checks <number> --repo <org>/<repo> --json name,bucket,state,link,workflow \
+       --jq '[.[] | select(.workflow != null and .workflow != "")]'
      ```
      - **No checks at all** on the head SHA → the **no-checks guard**
        applies, for every `require-ci-before-merge` value. CI status is
