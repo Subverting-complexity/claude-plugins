@@ -16,7 +16,7 @@ Resolve `{org}`, `{repo}`, `{branch}` from `ClaudeProject.md`. Each sub-step is 
    ```
    **Read it back** — some orgs accept the PATCH (200) but silently keep it `false` via policy. If `allowed` is not `true`, warn: repo-level auto-merge is blocked by org/repo policy; an admin must enable "Allow auto-merge" in Settings → Pull Requests, or queued merges never fire.
 
-2. **Branch protection + required checks.** Find candidate check contexts — the job names in `.github/workflows/*.yml`, or the check names on a recent PR (`gh pr checks <recent-pr> --repo {org}/{repo}`). Ask the user which contexts must pass before merge. Apply protection with **strict** mode (require branches up to date):
+2. **Branch protection + required checks.** Find candidate check contexts — the job names in `.github/workflows/*.yml`, or the check names on a recent PR (`gh pr checks <recent-pr> --repo {org}/{repo}`). Leave out any check that is not a repo-authored pipeline (an automatic reviewer App like Copilot's `copilot-pull-request-reviewer`, for example) — requiring it would gate merges on something that never validates the diff. Ask the user which contexts must pass before merge. Apply protection with **strict** mode (require branches up to date):
    ```bash
    gh api -X PUT repos/{org}/{repo}/branches/{branch}/protection \
      --input - <<'JSON'

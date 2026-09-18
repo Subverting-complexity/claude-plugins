@@ -14,10 +14,11 @@ Also read **`bypass-ci-when-no-pipeline`** from the same Auto-Merge on Approval 
 
    **CI bypass override.** If the skill was invoked with `--bypass-ci`, skip this entire step: do **not** read the check rollup, fix a failing check for the gate's sake, or pause on red/absent CI. Treat the CI gate as satisfied and go to **step 4's immediate path** — and because CI is being overridden (a red or never-completing pipeline must not strand the merge behind `--auto`), prefer the immediate `--squash --delete-branch` merge, falling back to `--admin` if branch protection requires an approving review. Do this even if you pushed a conflict resolution in step 2. This override is for when CI cannot run for reasons outside the PR (e.g. Actions billing); it does **not** bypass the step-2 conflict resolution, only the CI gate. Skip the rest of this step.
 
-   **3a — CI that cannot run for billing reasons (config bypass).** If `--bypass-ci` was **not** passed but `review.config.md`'s `bypass-ci-on-billing-failure` is `true`, work out whether GitHub Actions is *unable to run* before treating anything here as a real failure. Read the full rollup first — which of the two branches below applies depends on whether it is empty:
+   **3a — CI that cannot run for billing reasons (config bypass).** If `--bypass-ci` was **not** passed but `review.config.md`'s `bypass-ci-on-billing-failure` is `true`, work out whether GitHub Actions is *unable to run* before treating anything here as a real failure. Read the full rollup first, using the filtered form from `auto-merge.md`'s scope note (App-posted checks like an automatic reviewer are never CI and never counted here) — which of the two branches below applies depends on whether it is empty:
 
    ```bash
-   gh pr checks <number> --repo <org>/<repo>
+   gh pr checks <number> --repo <org>/<repo> --json name,bucket,state,link,workflow \
+     --jq '[.[] | select(.workflow != null and .workflow != "")]'
    ```
 
    **3a-i — checks exist and some are failing.** Inspect each non-green check's run:
@@ -38,10 +39,10 @@ Also read **`bypass-ci-when-no-pipeline`** from the same Auto-Merge on Approval 
 
    **3a-ii — the rollup is empty.** This is the ordinary symptom of exhausted Actions billing: no runs are created, so there is no failing check to inspect and the PR looks identical to one in a repo with no CI. That ambiguity is why an empty rollup is never bypassed on assumption — only when all three of these hold:
 
-   1. **Workflows exist that should have run.** At least one is active:
+   1. **Workflows exist that should have run.** At least one repo-authored one is active — filter to `.github/workflows/*`, because GitHub also lists App-based automations here (an automatic PR reviewer, for example) under a synthetic `dynamic/agents/...` path, and those never produce a run to wait for:
       ```bash
       gh api "repos/<org>/<repo>/actions/workflows" \
-        --jq '[.workflows[] | select(.state == "active")] | length'
+        --jq '[.workflows[] | select(.state == "active" and (.path | startswith(".github/workflows/")))] | length'
       ```
       Zero → the project has no GitHub-hosted CI and nothing is being
       bypassed. Fall through to the no-checks guard.
@@ -60,11 +61,11 @@ Also read **`bypass-ci-when-no-pipeline`** from the same Auto-Merge on Approval 
 
    **3b — a project with no GitHub-visible pipeline (config bypass).** If neither path above merged and `review.config.md`'s `bypass-ci-when-no-pipeline` is `true`, an empty rollup may be this project's permanent condition rather than an unknown. Bypass it only when **all three** hold:
 
-   1. **The rollup is genuinely empty** — no checks at all on the head SHA (`gh pr checks <number> --repo <org>/<repo>`, if step 3a did not read it). Any check present, in any state → the setting does not apply; fall through. A red check is still red.
+   1. **The rollup is genuinely empty** — no checks at all on the head SHA, using the filtered form from `auto-merge.md`'s scope note (if step 3a did not already read it). Any check present, in any state → the setting does not apply; fall through. A red check is still red.
    2. **The repo has no active workflows** — step 3a-ii's call, read for the opposite outcome:
       ```bash
       gh api "repos/<org>/<repo>/actions/workflows" \
-        --jq '[.workflows[] | select(.state == "active")] | length'
+        --jq '[.workflows[] | select(.state == "active" and (.path | startswith(".github/workflows/")))] | length'
       ```
       Zero → no GitHub-hosted pipeline exists, so no run was ever coming.
       Non-zero → workflows exist and should have produced a run; that is
