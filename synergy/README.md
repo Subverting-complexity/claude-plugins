@@ -195,6 +195,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | `writing-github-issues` | Standard for every issue title and body         |
 | `user-facing-communication` | Standard for every reply the user reads    |
 | `acceptance-criteria` | Authors acceptance criteria                       |
+| `release-notes`       | Writes user and internal release notes, grouped by product area |
 | `pr-body`             | Authors PR bodies to the fixed shape, or the component format where there is no `ClaudeProject.md` |
 | `ecosystem-setup`     | Sets up companion tools, writes `ecosystem.md`    |
 | `support-request`     | Support-request and incident write-ups            |
