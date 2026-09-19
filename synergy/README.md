@@ -53,7 +53,7 @@ synergy/
 Run `/synergy:setup` to onboard your project. The wizard:
 
 1. Auto-detects your org, repo, default branch, and package manager.
-2. Checks that the org defines the `Stage` issue field with its nine options, and records your project board if you have one.
+2. Checks that the org defines the `Stage` issue field with its ten options, and records your project board if you have one. It also checks the repository has its area epics, the permanent parts of the product every issue sits under ([`references/area-epics.md`](references/area-epics.md)).
 3. Checks for milestones to determine sprint vs flat backlog mode.
 4. Asks for your branch convention and quality gate.
 5. Generates `ClaudeProject.md` (project settings) and `CLAUDE.md` (project rules) at your repo root.
@@ -116,7 +116,7 @@ A `## Label Map` left in an older `ClaudeProject.md` is still read. A row naming
 
 ## Stage and boards
 
-An issue's state is its org `Stage` field, and nowhere else. There is no label to keep in step and no board column is read. The nine stages (Backlog, In Progress, In Review, Blocked, Non-code, Needs refinement, Parked, Needs attention, Done) and what each one means are in one place, [`docs/issue-fields.md`](../docs/issue-fields.md). They resolve by purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, …).
+An issue's state is its org `Stage` field, and nowhere else. There is no label to keep in step and no board column is read. The ten stages (Backlog, In Progress, In Review, Blocked, Non-code, Needs refinement, Parked, Needs attention, Done, Area) and what each one means are in one place, [`docs/issue-fields.md`](../docs/issue-fields.md). They resolve by purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, …).
 
 | The issue is | Stage |
 | ------------ | ----- |
@@ -129,8 +129,11 @@ An issue's state is its org `Stage` field, and nowhere else. There is no label t
 | deliberately set aside | Parked |
 | stopped part-way and needing a person | Needs attention |
 | closed | Done |
+| a permanent area epic, never picked, closed or moved | Area |
 
-**The `Stage` field is required, with all nine options.** The pick pool is the open, unassigned issues whose `Stage` is blank or `Backlog`, read from the repository's issues, so an issue with no board card is still pickable. Preflight fails the run when the org has no `Stage` field or when it lacks an option. Creating the field is a manual step in the GitHub UI: org settings → *Planning* → *Issue fields*.
+**The `Stage` field is required, with all ten options.** The pick pool is the open, unassigned issues whose `Stage` is blank or `Backlog`, read from the repository's issues, so an issue with no board card is still pickable. Preflight fails the run when the org has no `Stage` field or when it lacks an option. Creating the field is a manual step in the GitHub UI: org settings → *Planning* → *Issue fields*.
+
+**Every issue sits under an area.** An area epic is an `Epic` at `Stage` `Area`: one permanent part of the product, such as Library or Listening, that is never closed. A `Feature` sits under an area, a `User Story` under a feature, and a `Bug` or `Chore` under a feature or directly under an area. Release notes are grouped by area, so each repository keeps its own area epics and every finished issue must resolve to one. [`references/area-epics.md`](references/area-epics.md) covers the hierarchy and how to move an existing project onto it.
 
 **Boards are for people to look at.** Set each board view's "Column by" to `Stage` and the board shows every issue's state. GitHub's built-in "Auto-add to project" workflow and the scheduled `board-sync` job keep cards on boards; agents never move cards. A `## Project Board` section in `ClaudeProject.md` is optional and informational.
 

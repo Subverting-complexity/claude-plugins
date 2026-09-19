@@ -66,6 +66,7 @@ Stages are resolved by **purpose key**: the field name through `field-stage` in 
 | `stage-non-code`    | `Non-code`         | a browser agent or a person owns it; no sweep ever releases it |
 | `stage-parked`      | `Parked`           | deliberately set aside; will resume |
 | `stage-done`        | `Done`             | the issue is closed |
+| `stage-area`        | `Area`             | a permanent area epic; never picked, closed or moved |
 
 **Which command writes which stage:**
 
@@ -80,9 +81,12 @@ Stages are resolved by **purpose key**: the field name through `field-stage` in 
 | Needs attention (`stage-attention`) | execute and bulk-execute, when a run gives up |
 | Backlog (`stage-backlog`)      | `wf issue-apply` (`"state": "backlog"`), `wf unblock` (every blocked-by edge closed), a reverted claim |
 | Done (`stage-done`)            | `wf post-merge` (at merge), `wf pick` (closing an issue already resolved) |
+| Area (`stage-area`)            | a person, or `wf issue-apply` (`"state": "area"` on an `epic` entry) |
 
 `issue-apply` writes only an issue whose `Stage` is blank, `Backlog`, `Blocked` or `Non-code`, unless the entry names a `"state"`. Any other stage is kept (`stage_kept`), so an update never drags in-flight work back into the pool.
 
+**An `Area` issue is an area epic**, one permanent part of the product that every other issue sits under, and no command moves it: it is never picked, `wf post-merge` and `preflight --fix` never close it, `wf board-sync` never changes its stage, and `wf issue-audit` does not ask it for `Priority`, `Effort` or `Ownership`. `synergy/references/area-epics.md` covers the hierarchy and how to move an existing project onto it.
+
 **`Blocked` with no blocked-by edge was set by a person**, and the plugin never changes it. `wf unblock` only releases a `Blocked` issue that has edges, and only once every one of them is closed.
 
-**The `Stage` field is required, with all nine options.** Preflight reports an org with no `Stage` field as `CRITICAL stage-absent`, and a `Stage` missing an option as `CRITICAL stage-options`, naming it. A project board is not required: boards are views for people, grouped by `Stage`, and GitHub's "Auto-add to project" workflow keeps cards on them, and the scheduled `wf board-sync` adds any it missed. Agents never move cards.
+**The `Stage` field is required, with all ten options.** Preflight reports an org with no `Stage` field as `CRITICAL stage-absent`, and a `Stage` missing an option as `CRITICAL stage-options`, naming it. A project board is not required: boards are views for people, grouped by `Stage`, and GitHub's "Auto-add to project" workflow keeps cards on them, and the scheduled `wf board-sync` adds any it missed. Agents never move cards.

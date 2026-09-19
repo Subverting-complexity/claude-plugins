@@ -67,7 +67,7 @@ An issue says what kind of work it is **once**, through GitHub's native issue ty
 
 ## Hierarchy and party scoping
 
-Only when the issue attaches to an epic or feature, or needs scoping to a single party (`[Manual] `, `[Browser] ` or an unprefixed code-agent issue), read `references/scope-and-hierarchy.md` and follow it: **Hierarchy: epic, feature, story** covers parenting; **Scope: one issue, one party** covers the three parties, marking a scoped issue, and splitting an issue that needs two parties. A straightforward bug or chore usually needs neither.
+Only when the issue needs a parent (an area or a feature), or needs scoping to a single party (`[Manual] `, `[Browser] ` or an unprefixed code-agent issue), read `references/scope-and-hierarchy.md` and follow it: **Hierarchy: area, feature, story** covers parenting; **Scope: one issue, one party** covers the three parties, marking a scoped issue, and splitting an issue that needs two parties.
 
 ## One write path
 

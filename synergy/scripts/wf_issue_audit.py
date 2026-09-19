@@ -101,13 +101,21 @@ def cmd_issue_audit(args):
                                        % (repo, err), repo=repo)
 
     open_numbers = {i['number'] for i in issues}
+    # Every scanned issue's parent, stage and type, so each issue's area (the
+    # nearest area epic above it) is found without a read per issue. Only once
+    # the project has an area epic at all: before that, every issue would be a
+    # `no-area` gap with one cause, and `preflight` names it once as
+    # `area-epics` instead.
+    chain = wf_core.area_chain_map(issues, cfg.get('fields') or {})
+    if not any(wf_core.is_area_stage(stage) for _, stage, _ in chain.values()):
+        chain = None
     audited = [wf_core.audit_issue(issue, caps['field_map'],
                                    type_capable=caps['type_capable'],
                                    project_map=cfg.get('labels') or {},
                                    project_fields=cfg.get('fields') or {},
                                    open_numbers=open_numbers,
                                    type_map=caps.get('type_map') or {},
-                                   parents=args.parents)
+                                   parents=args.parents, chain=chain)
                for issue in issues]
     with_gaps = [a for a in audited if a['gaps']]
     summary = wf_core.audit_summary(audited)

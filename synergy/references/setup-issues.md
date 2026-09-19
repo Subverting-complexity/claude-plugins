@@ -20,4 +20,6 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/issue-audit-spec.
 
 The audit proposes no dependency edges, because there is nothing to propose them against: a native blocked-by edge is the only record a dependency has, so it cannot disagree with anything. The one thing it ever reads out of a body is the parent an issue claims, and only when you pass `--parents`. To add or remove an edge, put a `blocked_by` list on the spec entry yourself. It is the complete set, so the edges it names are added and any the issue carries that it omits are removed.
 
+A `no-area` gap is an open issue whose parent chain reaches no area epic (an `Epic` at `Stage` `Area`). The audit never proposes a parent for it, because which area an issue belongs to is a judgement about the work: list the areas with `wf areas`, read their bodies, and add a `parent` to the entry yourself, an area or an open feature in it. Area epics themselves are not asked for `Priority`, `Effort` or `Ownership`. When the project has no area epics at all, follow `references/area-epics.md` first.
+
 Report the counts by gap kind and name what you changed.

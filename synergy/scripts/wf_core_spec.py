@@ -10,9 +10,13 @@ from wf_core_fields import (
     NEVER_WRITTEN_FIELD_KEYS, OPTIONAL_FIELD_KEYS, native_type_for, resolve_field_name,
 )
 from wf_core_stage import (
-    OWNERSHIP_FIELD_OPTIONS, SCOPE_CODE, SCOPE_PREFIXES, ownership_scope,
-    scope_from_title, spec_state_stage,
+    AREA_STAGE, OWNERSHIP_FIELD_OPTIONS, SCOPE_CODE, SCOPE_PREFIXES,
+    ownership_scope, scope_from_title, spec_state_stage,
 )
+
+# The only native type an area epic may be. An area groups Features and the
+# Bugs and Chores filed straight under it, which is what an `Epic` already is.
+AREA_TYPE = 'Epic'
 
 
 # ── issue hierarchy: epic → feature → user story ─────────────────────────────
@@ -106,6 +110,18 @@ def spec_hierarchy_errors(plans, issue_types=None, issue_parents=None,
     errors = []
     for plan in plans:
         entry = plan['entry']
+        if plan.get('state') == AREA_STAGE and plan.get('type') is None:
+            # An update asking for `area` without restating its type is judged
+            # by the type the issue already carries. `validate_spec` has
+            # already refused a create with no type, and an explicit one.
+            own = as_number(entry.get('number'))
+            live_type = issue_types.get(own) if own is not None else None
+            if live_type != AREA_TYPE:
+                errors.append("%s: asks for `\"state\": \"area\"` but is %s, and "
+                              'only an `%s` can be an area epic'
+                              % (entry_label(entry),
+                                 "a '%s'" % live_type if live_type else 'untyped',
+                                 AREA_TYPE))
         ref = entry.get('parent')
         type_name = plan.get('type')
         if type_name is None and ref is not None:
@@ -376,6 +392,9 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
         if err:
             errors.append('%s: %s' % (name, err))
         plan['state'] = state_stage
+        # An area epic is a permanent part of the product, not work: nothing
+        # ranks, sizes or routes it, so it carries none of the fields work must.
+        is_area = state_stage == AREA_STAGE
 
         # Native type.
         type_name, err = resolve_entry_type(entry, type_map)
@@ -388,6 +407,15 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
                                                  ', '.join(sorted(type_map)) or 'none'))
             else:
                 plan['type'] = type_name
+        if is_area and not err:
+            if type_name and type_name != AREA_TYPE:
+                errors.append("%s: asks for `\"state\": \"area\"` but is a '%s', "
+                              'and only an `%s` can be an area epic'
+                              % (name, type_name, AREA_TYPE))
+            elif not type_name and not entry.get('number'):
+                errors.append("%s: asks for `\"state\": \"area\"` with no type; "
+                              'an area epic is an `%s`, so add `"type": "%s"`'
+                              % (name, AREA_TYPE, AREA_TYPE))
 
         # Field values, including the ones the entry did not name but must.
         wanted = dict(entry.get('fields') or {})
@@ -420,7 +448,7 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
                                  purpose))
                 wanted.pop(purpose)
 
-        for purpose in mandatory_keys:
+        for purpose in () if is_area else mandatory_keys:
             concrete = resolve_field_name(purpose, project_fields)
             if concrete not in field_map:
                 # Refused, not skipped. Priority, Effort and Ownership are what
@@ -446,7 +474,7 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
 
         # The optional two. A gap here is recorded on the plan rather than
         # raised, and the writer turns it into a comment on the issue.
-        plan['unset_optional'] = sorted(
+        plan['unset_optional'] = [] if is_area else sorted(
             resolve_field_name(purpose, project_fields)
             for purpose in OPTIONAL_FIELD_KEYS
             if resolve_field_name(purpose, project_fields) in field_map
@@ -648,3 +676,42 @@ def spec_cycles(entries):
         if state.get(node) is None:
             walk(node, [])
     return cycles
+
+
+def unparented_creates(entries):
+    """The entries this spec creates whose parent chain ends with no parent.
+
+    Each such issue resolves to no area, because an issue's area is the nearest
+    area epic above it. Walked within the spec only: a chain that reaches an
+    existing issue (a number, or an entry that updates one) is trusted rather
+    than read, and one that reaches an entry asking for `"state": "area"` has
+    found its area. A reference that names nothing is left to the checks that
+    refuse it. Call before anything is created, while a create still has no
+    number. Returns the entries, in spec order.
+    """
+    by_ref = {}
+    for entry in entries or ():
+        for ref in _entry_refs(entry):
+            by_ref[ref] = entry
+
+    def ends_unparented(entry):
+        seen, current = set(), entry
+        while id(current) not in seen:
+            seen.add(id(current))
+            if spec_state_stage(current.get('state'))[0] == AREA_STAGE:
+                return False
+            if current is not entry and current.get('number') is not None:
+                return False
+            ref = current.get('parent')
+            if ref is None:
+                return True
+            nxt = by_ref.get(ref)
+            if nxt is None and isinstance(ref, str) and ref.strip().isdigit():
+                nxt = by_ref.get(int(ref.strip()))
+            if nxt is None:
+                return False
+            current = nxt
+        return False
+
+    return [e for e in entries or ()
+            if e.get('number') is None and ends_unparented(e)]

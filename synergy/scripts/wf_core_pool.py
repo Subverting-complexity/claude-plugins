@@ -13,7 +13,8 @@ from wf_core_select import (
     _filter_effort, _sort_candidates, is_maintenance_classification,
 )
 from wf_core_stage import (
-    SCOPE_CODE, STAGE_NAMES, effective_scope, is_available_stage, stage_name,
+    SCOPE_CODE, STAGE_NAMES, effective_scope, is_area_stage, is_available_stage,
+    stage_name,
 )
 
 
@@ -217,6 +218,9 @@ def evaluate_pool(issues, mode='story', type_map=None, classification_map=None,
         n = issue['number']
         type_name = kind(n)
         stage = issue.get('stage')
+        if is_area_stage(stage):
+            excluded[n] = 'an area epic, a permanent part of the product, never picked'
+            continue
         if not is_available_stage(stage) and n not in release:
             excluded[n] = '`Stage` is `%s`' % stage
             continue

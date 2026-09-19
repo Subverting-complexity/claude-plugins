@@ -187,6 +187,8 @@ UNFIXABLE_REASONS = {
     'quality-gate': 'nobody but the project knows what its gate should run',
     'review-config': "the file's contents are the project's to choose",
     'pin-unknown': 'nothing is known to be wrong yet',
+    'area-epics': 'which parts of the product are permanent areas, and what '
+                  "each covers, is the project's decision",
 }
 
 

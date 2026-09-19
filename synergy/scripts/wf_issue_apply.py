@@ -763,6 +763,8 @@ def cmd_issue_apply(args):
                            'fields': sorted(p['fields'])} for p in plans],
              skipped_fields=sorted(skipped))
 
+    # Decided before anything is created, while a create still has no number.
+    unparented = {id(e) for e in wf_core.unparented_creates(entries)}
     plan_by_entry = {id(p['entry']): p for p in plans}
     resolved = {e['key']: int(e['number']) for e in entries
                 if e.get('key') and e.get('number')}
@@ -799,6 +801,16 @@ def cmd_issue_apply(args):
                'numbers_written_back': wrote_back}
     if milestone_note:
         payload['milestone_note'] = milestone_note
+    # Not a refusal: an issue with no parent is legal, and a person may mean
+    # it. It is said out loud because an issue under no area epic has no area,
+    # so its release notes have nowhere to be grouped.
+    notes = ['#%d was filed with no parent, so it resolves to no area'
+             % r['number']
+             for p, r in zip(ordered_plans, results)
+             if id(p['entry']) in unparented and r.get('action') == 'create'
+             and r.get('number') and not r['errors']]
+    if notes:
+        payload['notes'] = notes
     if not wrote_back:
         payload['write_back_error'] = wb_err
 

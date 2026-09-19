@@ -70,7 +70,7 @@ All eleven resolve to their default names.
 
 `Classification` is a **multi-select**; `Stage` and the rest are single-select, date or text as `wf_core.FIELD_DATA_TYPES` records.
 
-`field-priority`, `field-effort` and `field-ownership` are **required** on every issue: they are the pool's order, its size ceiling and whether a code agent may take the issue at all, so `wf issue-apply` refuses a spec that leaves one blank. `field-stage` is the issue's state, with nine options (`Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention`, `Done`); a blank `Stage` means available, the same as `Backlog`. `field-type` and `field-origin` are optional — nothing selects on them, and a create that leaves one unset gets a comment on the issue saying so.
+`field-priority`, `field-effort` and `field-ownership` are **required** on every issue: they are the pool's order, its size ceiling and whether a code agent may take the issue at all, so `wf issue-apply` refuses a spec that leaves one blank. `field-stage` is the issue's state, with ten options (`Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention`, `Done`, `Area`); a blank `Stage` means available, the same as `Backlog`. `Area` marks a permanent area epic that other issues sit under (`synergy/references/area-epics.md`); it is never picked, closed or moved. `field-type` and `field-origin` are optional — nothing selects on them, and a create that leaves one unset gets a comment on the issue saying so.
 
 ### Missing
 

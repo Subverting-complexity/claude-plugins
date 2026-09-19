@@ -94,6 +94,7 @@ import wf_preflight  # noqa: E402
 import wf_steps  # noqa: E402
 import wf_block  # noqa: E402
 import wf_pr_create  # noqa: E402
+import wf_areas  # noqa: E402
 
 _SHELL_MODULES = (
     wf_io,
@@ -120,6 +121,7 @@ _SHELL_MODULES = (
     wf_steps,
     wf_block,
     wf_pr_create,
+    wf_areas,
 )
 
 for _module in _SHELL_MODULES:
@@ -149,6 +151,7 @@ class _Shell(types.ModuleType):
 
 sys.modules[__name__].__class__ = _Shell
 
+from wf_areas import cmd_areas
 from wf_block import cmd_block
 from wf_board_sync import SYNC_CLOSED_DAYS, cmd_board_sync
 from wf_bulk_build import cmd_bulk_integrate, cmd_bulk_schedule
@@ -440,6 +443,17 @@ def build_parser():
     au.add_argument('--refresh', action='store_true',
                     help='re-query org capabilities instead of reading the cache')
     au.set_defaults(func=cmd_issue_audit)
+
+    ar = sub.add_parser('areas',
+                        help="list the repository's open area epics (an Epic "
+                             'whose Stage is Area), or with --issue the area '
+                             'one issue resolves to')
+    ar.add_argument('--repo', default=None,
+                    help='read this owner/name instead of the configured repo')
+    ar.add_argument('--issue', type=int, default=None,
+                    help="resolve this issue's area: the nearest area epic at "
+                         'or above it in its parent chain')
+    ar.set_defaults(func=cmd_areas)
 
     ca = sub.add_parser('config-audit',
                         help='report configuration and label drift between '

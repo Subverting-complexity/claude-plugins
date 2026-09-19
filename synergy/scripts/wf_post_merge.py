@@ -8,11 +8,11 @@ import json
 
 import wf_core
 from wf_capabilities import gh_graphql_partial
-from wf_config import prepare_cfg
+from wf_config import field_name, prepare_cfg
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_OK, emit, emit_line, gh_json, run,
 )
-from wf_issue_io import _batch_result, _graphql_json
+from wf_issue_io import _batch_result, _graphql_json, issue_field_values
 from wf_stage import _chunks, release_note_inputs, set_stage, set_stages
 from wf_unblock import unblock_scan
 
@@ -36,15 +36,25 @@ CONTAINER_SWEEP_COMMENT = (
     '--fix`; reopen this if more work is planned under it.')
 SETTLE_COMMENT = 'Closing — resolved by merged PR #%d.'
 
+# The single-select field values, which is where `Stage` lives. A container's
+# stage is read because an area epic (`Stage` is `Area`) is never closed,
+# however many of the issues under it have closed.
+STAGE_VALUES_SELECTION = (
+    ' issueFieldValues(first:20){ nodes {'
+    '  ... on IssueFieldSingleSelectValue {'
+    '   field { ... on IssueFieldSingleSelect { name } } name } } }')
+
 _CONTAINER_NODE = ('number title state issueType { name }'
                    ' repository { nameWithOwner }'
-                   ' subIssues(first:100){ nodes { number state } }')
+                   ' subIssues(first:100){ nodes { number state } }'
+                   + STAGE_VALUES_SELECTION)
 
 
-def _container_node(node):
+def _container_node(node, stage_field='Stage'):
     return {'number': node['number'], 'title': node.get('title') or '',
             'state': node.get('state') or '',
             'type': (node.get('issueType') or {}).get('name'),
+            'stage': issue_field_values(node).get(stage_field),
             'repo': (node.get('repository') or {}).get('nameWithOwner'),
             'children': [{'number': c.get('number'), 'state': c.get('state')}
                          for c in (node.get('subIssues') or {}).get('nodes') or []]}
@@ -106,6 +116,7 @@ def fetch_parent_chains(cfg, numbers):
     a read per issue.
     """
     wanted = list(dict.fromkeys(int(n) for n in numbers or ()))
+    stage_field = field_name(cfg, 'field-stage')
     out = {}
     for number, ok, node, err in _aliased_repository_read(
             cfg, wanted, 'p', 'parent { %s }' % _chain_selection(CONTAINER_CHAIN_DEPTH)):
@@ -114,7 +125,7 @@ def fetch_parent_chains(cfg, numbers):
             continue
         parent, chain = (node or {}).get('parent'), []
         while parent:
-            chain.append(_container_node(parent))
+            chain.append(_container_node(parent, stage_field))
             parent = parent.get('parent')
         out[number] = (True, chain, '')
     return out
@@ -180,11 +191,15 @@ def _fix_finished_containers(cfg, containers):
 
     The preflight half of #240: the merge closes what it finishes from now
     on, and `fetch_open_issue_state` finds the ones that finished before it did.
+    An area epic is never among them (`container_finished` says so), and one
+    that arrives anyway is left open rather than trusted.
     """
     if not containers:
         return [], []
     closed, failed = [], []
     for container in containers:
+        if wf_core.is_area_stage(container.get('stage')):
+            continue
         result = close_container(cfg, container['number'], CONTAINER_SWEEP_COMMENT)
         if result['closed']:
             closed.append(container['number'])
@@ -241,17 +256,21 @@ def _fix_stage_drift(cfg, drifted):
 def read_linked_issues(cfg, numbers):
     """Each linked issue's node id, state and labels. {number: (ok, issue, err)}.
 
-    `issue` is {'id', 'state', 'labels': [{'id', 'name'}]}. The label ids come
-    back with the names because removing a retired label by mutation takes
-    its id. One aliased read for every issue (#300).
+    `issue` is {'id', 'state', 'stage', 'labels': [{'id', 'name'}]}. The label
+    ids come back with the names because removing a retired label by mutation
+    takes its id, and the `Stage` because an area epic a pull request names is
+    never closed. One aliased read for every issue (#300).
     """
+    stage_field = field_name(cfg, 'field-stage')
     out = {}
     for number, ok, node, err in _aliased_repository_read(
-            cfg, numbers, 'i', 'id state labels(first:50){ nodes { id name } }'):
+            cfg, numbers, 'i', 'id state labels(first:50){ nodes { id name } }'
+            + STAGE_VALUES_SELECTION):
         if ok and not node:
             ok, err = False, 'issue #%d not found' % number
         out[number] = (ok, None if not ok else {
             'id': node.get('id'), 'state': (node.get('state') or '').upper(),
+            'stage': issue_field_values(node).get(stage_field),
             'labels': [l for l in (node.get('labels') or {}).get('nodes') or []
                        if l and l.get('name')]}, err)
     return out
@@ -343,6 +362,13 @@ def cmd_post_merge(args):
             linked.append(extra)
 
     issues = read_linked_issues(cfg, linked) if linked else {}
+    # An area epic is permanent, so a `Closes #N` naming one is a mistake in
+    # the pull request rather than a request to close it. It is left open, its
+    # `Stage` untouched, and reported so the reference can be corrected.
+    skipped_areas = [n for n in linked
+                     if wf_core.is_area_stage(((issues.get(n) or (False, None, ''))[1]
+                                               or {}).get('stage'))]
+    linked = [n for n in linked if n not in skipped_areas]
     facts, plan = {}, []
     for number in linked:
         ok, issue, _ = issues.get(number, (False, None, ''))
@@ -422,6 +448,10 @@ def cmd_post_merge(args):
              and all(r.get('stage_set', True) and not r.get('still_assigned')
                      for r in ((unblocked or {}).get('released') or [])
                      + ((unblocked or {}).get('rescoped') or [])))
+    areas = [{'issue': n, 'reason': 'issue #%d is an area epic, which is '
+                                    'permanent, so it was left open and its '
+                                    '`Stage` unchanged' % n}
+             for n in skipped_areas]
     if clean:
         # Everything landed: one line, with only what the report names.
         released = [{'issue': r['issue'], 'title': r.get('title')}
@@ -429,6 +459,8 @@ def cmd_post_merge(args):
         cleared = {str(s['issue']): s['lifecycle_label_cleared'] for s in settled
                    if s['lifecycle_label_cleared']}
         extra = {'cleared': cleared} if cleared else {}
+        if areas:
+            extra['skipped_areas'] = [a['issue'] for a in areas]
         no_edges = ((unblocked or {}).get('no_edges') or {}).get('count')
         if no_edges:
             extra['no_edges'] = no_edges
@@ -441,6 +473,7 @@ def cmd_post_merge(args):
                          'container(s) closed, %d issue(s) released'
                          % (args.pr, len(settled), len(containers), len(released)))
     emit('ok', EXIT_OK, pr=args.pr, base=data.get('baseRefName'), settled=settled,
+         skipped_areas=areas,
          containers_closed=containers, container_errors=container_errors,
          release_note_errors=note_errors, unblocked=unblocked)
 

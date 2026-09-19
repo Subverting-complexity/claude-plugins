@@ -6,7 +6,7 @@ Moved verbatim out of wf_core.py; `scripts/README.md` has the module map.
 
 from wf_core_findings import WARNING, finding
 from wf_core_select import HIERARCHY_CONTAINER_TYPES
-from wf_core_stage import STAGE_NAMES
+from wf_core_stage import STAGE_NAMES, is_area_stage
 
 
 # ── closing a finished container (#240) ──────────────────────────────────────
@@ -17,14 +17,21 @@ from wf_core_stage import STAGE_NAMES
 def container_finished(node, closed=()):
     """Whether an Epic or Feature is finished: open, and every sub-issue closed.
 
-    `node` is `{'number', 'type', 'state', 'children': [{'number', 'state'}]}`.
-    `closed` names issues this run has just closed, whose read may predate it.
+    `node` is `{'number', 'type', 'state', 'stage', 'children': [{'number',
+    'state'}]}`. `closed` names issues this run has just closed, whose read may
+    predate it.
+
+    An area epic (`Stage` is `Area`) is never finished: it is a permanent part
+    of the product, and its last story closing means only that nothing is
+    under way there now.
 
     Any close counts, including "not planned": a container held open by one
     dropped story would stay open for ever. A container with no sub-issues is
     never finished, because an empty Epic may be a placeholder.
     """
     if node.get('type') not in HIERARCHY_CONTAINER_TYPES:
+        return False
+    if is_area_stage(node.get('stage')):
         return False
     if (node.get('state') or '').upper() != 'OPEN':
         return False
@@ -42,8 +49,9 @@ def ancestors_to_close(origin, chain, closed=(), repo=None):
     `chain` is `origin`'s parents, nearest first, each shaped as
     `container_finished` reads it plus `repo`. The walk stops at the first
     parent that is not finished, because every ancestor above it has it as an
-    open child, and at the first one in another repository, which this
-    repository has no business closing.
+    open child, at the first one in another repository, which this
+    repository has no business closing, and at an area epic, which is never
+    finished.
 
     Returns [{'number', 'finished_by'}], where `finished_by` is the child whose
     close finished it -- `origin` for the nearest, the one below for the rest.
@@ -94,3 +102,23 @@ def stage_drift_findings(drifted, path='ClaudeProject.md'):
            ', '.join('#%d (should be %s)' % (d['number'], STAGE_NAMES[d['stage']])
                      for d in drifted)),
         'set each to the stage named, or run `wf preflight --fix`', path)]
+
+
+def area_epic_findings(open_issues, path='ClaudeProject.md'):
+    """One warning when the repository has no open area epic.
+
+    `open_issues` is every open issue as `{'number', 'type', 'stage'}`. An
+    area epic is an open `Epic` whose `Stage` is `Area`; with none, no issue
+    resolves to an area and release notes have nothing to group by.
+    """
+    if any(i.get('type') == 'Epic' and is_area_stage(i.get('stage'))
+           for i in open_issues or ()):
+        return []
+    return [finding(
+        WARNING, 'area-epics',
+        'No open area epics, so no issue resolves to an area and release notes '
+        'cannot be grouped',
+        'create one `Epic` per permanent part of the product, set its `Stage` '
+        'to `Area`, and describe what it covers in its body; '
+        '`references/area-epics.md` walks through migrating an existing project',
+        path)]

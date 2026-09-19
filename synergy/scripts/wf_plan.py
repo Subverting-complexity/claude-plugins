@@ -60,6 +60,10 @@ def _admit_named(pool, seeds):
         elif issue.get('open_prs'):
             reasons[number] = 'open pull request %s already closes it' % ', '.join(
                 '#%d' % p for p in issue['open_prs'])
+        elif wf_core.is_area_stage(issue.get('stage')):
+            reasons[number] = ('it is an area epic, a permanent part of the '
+                               'product that is never built; name the stories '
+                               'under it')
         elif issue.get('type') in wf_core.HIERARCHY_CONTAINER_TYPES:
             reasons[number] = ('it is %s %s; name its stories, or pass --parent %d'
                                % ('an' if issue['type'] == 'Epic' else 'a',

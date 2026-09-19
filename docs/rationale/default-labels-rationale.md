@@ -36,7 +36,7 @@ From 10.0.0 until 12.0.0 the state was the `Status` column of the issue's card o
 
 ### The stages
 
-An issue moves between nine stages and is at exactly one of them, or at none, which means the same as `Backlog`.
+An issue moves between nine working stages and is at exactly one of them, or at none, which means the same as `Backlog`. A tenth, `Area`, is not part of that flow: it marks a permanent area epic, one part of the product that other issues sit under, and nothing ever moves an issue into or out of it.
 
 ```
                                     ┌──► Needs refinement ──┐  (too thin to build)
@@ -49,6 +49,8 @@ An issue moves between nine stages and is at exactly one of them, or at none, wh
                   └───── Parked   ◄────── (a person set it aside)
 
 Non-code  ◄────── Ownership is Human or Browser agent  (never enters the pool)
+
+Area      (a permanent area epic: set once, never picked, closed or moved)
 ```
 
 A blank or `Backlog` stage is the pool, and it is the only opt-in: `pick` and `candidates` read the repository's open, unassigned issues at those stages and nothing else, so every other stage holds an issue out of the pool. An issue with no board card is still in it.
@@ -61,7 +63,7 @@ The durable owner of in-flight work is the **assignment plus the stage**, *not* 
 
 ### The required field
 
-The org must define `Stage` with all nine options. Preflight emits `CRITICAL stage-absent` when the field is missing, because no state can be written or read, and `CRITICAL stage-options` naming any missing option, because a transition to it fails. Setup cannot create an org issue field, so it asks a person to add it in the org settings. A project board is not required.
+The org must define `Stage` with all ten options. Preflight emits `CRITICAL stage-absent` when the field is missing, because no state can be written or read, and `CRITICAL stage-options` naming any missing option, because a transition to it fails. Setup cannot create an org issue field, so it asks a person to add it in the org settings. A project board is not required.
 
 ## Native issue types beyond GitHub's five defaults
 
