@@ -135,7 +135,6 @@ class TestCompactPick(unittest.TestCase):
               'body': 'long', 'claim_ref': 'refs/claims/issue-1', 'mode': 'story',
               'backlog_mode': None, 'side_effects': [], 'checked_out': True,
               'stage_set': True, 'stage_message': 'Stage set to In Progress',
-              'start_date_set': False, 'start_date_message': 'no field',
               'branch': 'feature/1/x', 'branch_message': 'created'}
 
     def test_success_messages_nulls_and_the_body_go(self):
@@ -143,7 +142,8 @@ class TestCompactPick(unittest.TestCase):
         for key in ('body', 'claim_ref', 'labels', 'milestone', 'backlog_mode',
                     'side_effects', 'stage_message', 'branch_message'):
             self.assertNotIn(key, out, key)
-        self.assertEqual(out['start_date_message'], 'no field')
+        failed = wf_core.compact_pick(dict(self.RESULT, stage_set=False))
+        self.assertEqual(failed['stage_message'], 'Stage set to In Progress')
 
     def test_the_body_stays_when_asked_for(self):
         self.assertEqual(wf_core.compact_pick(self.RESULT, True)['body'], 'long')

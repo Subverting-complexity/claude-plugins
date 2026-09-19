@@ -104,8 +104,7 @@ def parse_claude_project(text):
         'branch_convention': 'feature/{number}/{short-desc}',
         'labels': {}, 'review_labels': {}, 'fields': {},
         'type_capable': False,
-        'board': {'project_node_id': None, 'project_title': None,
-                  'start_date_field_id': None},
+        'board': {'project_node_id': None, 'project_title': None},
     }
 
     for cells in _rows(_section(text, 'Identity')):
@@ -159,8 +158,6 @@ def parse_claude_project(text):
                 cfg['board']['project_node_id'] = None if val in ('n/a', '') else val
             elif key == 'project-title':
                 cfg['board']['project_title'] = val
-            elif key == 'start-date-field-id':
-                cfg['board']['start_date_field_id'] = None if val in ('n/a', '') else val
     # No `status-field-*` row and no `### Status Options` table is read any
     # more. An issue's state is the org's `Stage` field since 12.0.0, so a
     # board's own Status field is a view setting nothing here writes.

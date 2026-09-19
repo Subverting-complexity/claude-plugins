@@ -63,8 +63,6 @@ Every purpose key the workflow writes, mapped to the field name **this** owner u
 | field-type           | `Classification` |
 | field-origin         | `Origin`         |
 | field-ownership      | `Ownership`      |
-| field-start          | `Start date`     |
-| field-target         | `Target date`    |
 | field-user-release-notes     | `User release notes`     |
 | field-internal-release-notes | `Internal release notes` |
 | field-shipped-version        | `Shipped in version`     |
@@ -114,8 +112,6 @@ Informational only. A board is a view for people: group its columns by `Stage` a
 | project-number      | `{n}`      |
 | project-title       | `{title}`  |
 | project-node-id     | `{id}`     |
-| start-date-field-id | `{id}`     |
-| end-date-field-id   | `{id}`     |
 
 ## Reference Docs (optional)
 

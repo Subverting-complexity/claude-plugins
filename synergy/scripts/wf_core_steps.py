@@ -174,7 +174,6 @@ def current_milestone(milestones):
 
 # Messages that only matter when the step they describe did not happen.
 _QUIET_ON_SUCCESS = (('stage_set', 'stage_message'),
-                     ('start_date_set', 'start_date_message'),
                      ('checked_out', 'branch_message'))
 
 
