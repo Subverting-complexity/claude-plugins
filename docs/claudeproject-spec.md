@@ -49,7 +49,7 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 - **Label map rows**: kept only when the purpose key matches `^[a-z]+-[a-z-]+$`. The workflow applies no issue label, so a map is read only in a file that still has one, and a row naming a retired label is reported as `label-deprecated` and should be deleted.
 - **Ready gate and agent gating**: both gone — the gate as of 9.0.0, the gating as of 10.0.0. A `## Ready Gate` or `## Agent Gating` section left in a file is read and ignored. The pool is the open, unassigned issues whose `Stage` is blank or `Backlog`, which no setting turns off, and human approval is the issue's `Stage` rather than a label anyone applies.
 - **Type capability**: the literal phrase `is type-capable` (bold tolerated) anywhere in the file switches on native issue-type handling.
-- **Project board**: `project-number`, `project-title`, `project-node-id`, `start-date-field-id`, `end-date-field-id`. Informational, for people and for GitHub's own "Auto-add to project" workflow. Nothing in the workflow reads a column from the board.
+- **Project board**: `project-number`, `project-title`, `project-node-id`. Informational, for people and for GitHub's own "Auto-add to project" workflow. Nothing in the workflow reads a column from the board.
 - **Placeholders**: unreplaced `{org}`-style tokens anywhere trigger a preflight WARNING listing the offending lines. Not repaired by `--fix`: the replacement values are the project's to supply.
 
 ## Behaviour on deviation

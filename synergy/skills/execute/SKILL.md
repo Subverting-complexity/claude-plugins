@@ -103,7 +103,7 @@ When the pick came through an Epic or Feature, `container` names it and `offered
 
 ## Phase 2 — Start
 
-`wf pick --checkout` already took the claim, set the stage and start date, and created the branch. Only when its `ok` result says a step did not happen (`stage_set` or `checked_out` false), or the claim state was lost to compaction, follow **Phase 2 recovery** in `references/pick-paths.md`.
+`wf pick --checkout` already took the claim, set the stage, and created the branch. Only when its `ok` result says a step did not happen (`stage_set` or `checked_out` false), or the claim state was lost to compaction, follow **Phase 2 recovery** in `references/pick-paths.md`.
 
 **Interactive discovery gate.** When a user is present and mode is `story` or `feature`, run `/synergy:grill` on the story's requirements before planning. Skip it when `.claude/unattended.flag` exists, in `maintenance` or `audit` mode, or when the issue body already has discovery output (`## Stories` or `## Architecture`).
 

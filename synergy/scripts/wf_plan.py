@@ -27,7 +27,7 @@ from wf_io import (
 from wf_issue_io import _batch_result, _graphql_json, add_comments, resolve_issue_ids
 from wf_pick_select import read_plan_pool
 from wf_pick_tree import PICKABLE_BY_NAME, _tree_unread, fetch_container_tree
-from wf_stage import set_stages, start_date_input
+from wf_stage import set_stages
 from wf_unblock import UNBLOCK_COMMENT
 
 
@@ -165,7 +165,7 @@ def cmd_plan_set(args):
 
 def claim_plan(cfg, args, pool, plan, stories, common):
     """Claim a plan: every claim ref at once, then one assignment mutation and
-    one Stage and Start date mutation for the whole set. Emits and exits.
+    one Stage mutation for the whole set. Emits and exits.
 
     The build order is rebuilt from the edges each claim reads, not the ones
     the plan read: an edge added or closed in between changes which story waits
@@ -233,8 +233,6 @@ def claim_plan(cfg, args, pool, plan, stories, common):
     kept_numbers = [s['number'] for s in kept]
     ids = {n: by_num[n].get('id') for n in kept_numbers}
     assigned = assign_many(ids)
-    value, date_msg = start_date_input(cfg)
-    extra = {n: [value] for n in kept_numbers} if value is not None else None
     stage = wf_core.STAGE_NAMES['stage-in-progress']
     wanted = {n: stage for n in kept_numbers}
     releasing = [e for e in common.get('released') or () if e['number'] not in wanted]
@@ -242,10 +240,7 @@ def claim_plan(cfg, args, pool, plan, stories, common):
     stage_ids = dict(ids)
     stage_ids.update({e['number']: (by_num.get(e['number']) or {}).get('id')
                       for e in releasing})
-    results = set_stages(cfg, wanted, stage_ids, extra)
-    failed = [n for n in kept_numbers if not results[n][0]]
-    if failed and extra:
-        results.update(set_stages(cfg, {n: stage for n in failed}, ids))
+    results = set_stages(cfg, wanted, stage_ids)
     comments = {e['number']: (stage_ids.get(e['number']), UNBLOCK_COMMENT % ', '.join(
                     wf_core.ref_label(b) for b in e['closed_blockers']))
                 for e in releasing if results[e['number']][0]}
@@ -260,7 +255,6 @@ def claim_plan(cfg, args, pool, plan, stories, common):
         story['unblocks'] = [m['number'] for m in kept if n in m['blocked_by']]
         story['stage_set'], story['stage_message'] = results[n]
         story['assigned'] = assigned[n][0]
-        story['start_date_set'] = bool(extra) and n not in failed
 
     kept = [s for g in groups for n in (m for wave in g['waves'] for m in wave)
             for s in kept if s['number'] == n]
@@ -276,7 +270,7 @@ def claim_plan(cfg, args, pool, plan, stories, common):
     emit('ok', EXIT_OK, claimed=True, lead=record['lead'], stories=kept,
          groups=groups, weight=weight, dropped=dropped_list,
          bulk_set=BULK_SET.replace(os.sep, '/'),
-         start_date_message=None if extra else date_msg, **common,
+         **common,
          reason='claimed ' + _summary(kept, groups, weight, common['budget']))
 
 

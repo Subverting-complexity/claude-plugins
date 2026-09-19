@@ -287,8 +287,6 @@ FIELD_NAME_DEFAULTS = {
     'field-ownership':     'Ownership',
     'field-type':          'Classification',
     'field-origin':        'Origin',
-    'field-start':         'Start date',
-    'field-target':        'Target date',
     'field-stage':         'Stage',
 }
 
@@ -298,8 +296,6 @@ FIELD_DATA_TYPES = {
     'field-ownership':     'single-select',
     'field-type':          'multi-select',
     'field-origin':        'single-select',
-    'field-start':         'date',
-    'field-target':        'date',
     'field-stage':         'single-select',
 }
 
