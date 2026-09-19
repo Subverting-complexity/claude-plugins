@@ -18,7 +18,7 @@ from wf_io import (
 from wf_pick_select import _pick_round, claim_validate_walk, prerequisite_pick
 from wf_pick_tree import fetch_issue_candidate
 from wf_stage import (
-    best_effort, checkout_branch, set_stage, set_start_date, stage_in_progress,
+    best_effort, checkout_branch, set_stage, stage_in_progress,
 )
 
 
@@ -53,8 +53,7 @@ def cmd_pick(args):
                 selected, side_effects, extra = prerequisite_pick(
                     args, cfg, cand, waiting_on)
                 finish_pick(args, cfg, selected, side_effects, None, **extra)
-        selected, side_effects = claim_validate_walk(cfg, [cand], None, siblings,
-                                                     start_date=args.checkout)
+        selected, side_effects = claim_validate_walk(cfg, [cand], None, siblings)
         if cand.get('reset_from_pr'):
             side_effects.insert(0, {'issue': args.issue, 'action': 'reset-abandoned-pr',
                                     'pr': cand['reset_from_pr']})
@@ -177,7 +176,7 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode, container=None,
         result['prerequisite_for'] = prerequisite_for
 
     if args.checkout:
-        # The claim walk wrote both already, in one mutation, when it could.
+        # The claim walk wrote the `Stage` already, when it could.
         if '_stage_result' in selected:
             written, stage_msg = selected['_stage_result']
         else:
@@ -187,12 +186,6 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode, container=None,
         result['stage_message'] = stage_msg
         if not written:
             eprint('wf: Stage not set — %s' % stage_msg)
-        if '_date_result' in selected:
-            dated, date_msg = selected['_date_result']
-        else:
-            dated, date_msg = best_effort(set_start_date, cfg, selected['number'])
-        result['start_date_set'] = dated
-        result['start_date_message'] = date_msg
         if getattr(args, 'no_branch', False):
             # Bulk runs: every story in the set gets the claim, the marker and
             # the Stage write, but they all share one branch the caller creates

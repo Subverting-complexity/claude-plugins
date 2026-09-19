@@ -22,7 +22,7 @@ from wf_stage import set_stage, set_stages
 from wf_unblock import UNBLOCK_COMMENT
 
 
-def claim_validate_walk(cfg, pool, backlog_mode, siblings=(), start_date=False):
+def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
     """Walk the ordered pool: claim the top, validate only that one, act.
 
     The single claim-first/validate-lazily loop shared by auto-pick and the
@@ -39,8 +39,7 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=(), start_date=False):
 
     `siblings` is passed straight to `validate_issue` — the other stories of a
     bulk set, whose still-open state does not block a candidate that is being
-    built alongside them. `start_date` stamps `Start date` in the same write
-    as the stage.
+    built alongside them.
 
     Returns (selected_or_None, side_effects). Emits + exits on a hard claim
     error (no push access / remote failure), never on a lost claim.
@@ -93,7 +92,7 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=(), start_date=False):
                                  'pr': detail, 'stage_set': done_set,
                                  'claim_released': released})
             continue
-        apply_in_progress(cfg, cand, start_date)
+        apply_in_progress(cfg, cand)
         return cand, side_effects
     return None, side_effects
 
@@ -186,8 +185,7 @@ def prerequisite_pick(args, cfg, cand, blockers):
     ready = [by_num[s['number']] for s in plan['selected']
              if not s['blocked_by'] and s['number'] != number
              and s['number'] in by_num]
-    selected, effects = claim_validate_walk(cfg, ready, None, (),
-                                            start_date=args.checkout)
+    selected, effects = claim_validate_walk(cfg, ready, None, ())
     side_effects.extend(effects)
     if not selected:
         emit('all-blocked', EXIT_ALL_BLOCKED, number=number,
@@ -337,8 +335,7 @@ def _pick_round(cfg, args, siblings, side_effects):
         tried.update(c['number'] for c in walk)
         if not walk:
             continue
-        selected, effects = claim_validate_walk(cfg, walk, backlog_mode, siblings,
-                                                start_date=args.checkout)
+        selected, effects = claim_validate_walk(cfg, walk, backlog_mode, siblings)
         side_effects.extend(effects)
         if not selected:
             continue

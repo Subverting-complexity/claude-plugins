@@ -38,7 +38,6 @@ import sys
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
 from unittest import mock
 
 # ── Subject under test ───────────────────────────────────────────────────────
@@ -98,9 +97,8 @@ _BASE_CFG = {
     'type_capable': False,
     # A board is a view and nothing more since 12.0.0: an issue's state is the
     # org's `Stage` field, so nothing here reads or writes a board item. What
-    # is left of the section is the project's own id and its start-date field.
-    'board': {'project_node_id': 'PVT_base', 'project_title': None,
-              'start_date_field_id': None},
+    # is left of the section is the project's own id and title.
+    'board': {'project_node_id': 'PVT_base', 'project_title': None},
 }
 
 
@@ -356,66 +354,10 @@ class TestBulkPickPaths(WfCommandTestCase):
         self.assertNotIn('#7', payload['side_effects'][0]['detail'])
 
 
-class TestStartDateStamp(unittest.TestCase):
-    """`set_start_date` writes a field, and everything about it is best-effort.
-
-    It is capability-gated, so an org with no `Start date` field returns early
-    and the mutation call is never reached. That is why unpacking two values
-    from `set_issue_fields` -- which answers (ok, node, err) -- survived: the
-    ValueError only fired on orgs that define the field, and only after the
-    claim, the label, the assignment and the `Stage` write had already landed.
-    The run then looked failed and was not.
-    """
-
-    def _caps(self, data_type='date'):
-        return (True, {'field_map': {'Start date': {'id': 'F_1',
-                                                    'data_type': data_type}}}, '')
-
-    def test_a_successful_write_reports_the_date(self):
-        with mock.patch.object(wf, 'resolve_org_capabilities',
-                               return_value=self._caps()),                 mock.patch.object(wf, 'gh_json',
-                                  return_value=(True, {'id': 'I_1'}, '')),                 mock.patch.object(wf, 'set_issue_fields',
-                                  return_value=(True, {'id': 'I_1'}, '')) as write:
-            done, msg = wf.set_start_date(_cfg(), 1)
-        self.assertTrue(done, msg)
-        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-        self.assertIn(today, msg)
-        # The date reached the mutation as a date-typed field input.
-        self.assertEqual(write.call_args[0][1],
-                         [{'fieldId': 'F_1', 'dateValue': today}])
-
-    def test_a_rejected_write_reports_the_mutation_error(self):
-        with mock.patch.object(wf, 'resolve_org_capabilities',
-                               return_value=self._caps()),                 mock.patch.object(wf, 'gh_json',
-                                  return_value=(True, {'id': 'I_1'}, '')),                 mock.patch.object(wf, 'set_issue_fields',
-                                  return_value=(False, None, 'field is read-only')):
-            done, msg = wf.set_start_date(_cfg(), 1)
-        self.assertFalse(done)
-        self.assertEqual(msg, 'field is read-only')
-
-    def test_an_org_without_the_field_never_reaches_the_mutation(self):
-        with mock.patch.object(wf, 'resolve_org_capabilities',
-                               return_value=(True, {'field_map': {}}, '')),                 mock.patch.object(wf, 'set_issue_fields') as write:
-            done, msg = wf.set_start_date(_cfg(), 1)
-        self.assertFalse(done)
-        self.assertIn('does not define', msg)
-        write.assert_not_called()
-
-    def test_a_non_date_field_is_reported_not_crashed(self):
-        """A `Start date` the org typed as text still shapes a valid input."""
-        with mock.patch.object(wf, 'resolve_org_capabilities',
-                               return_value=self._caps('text')),                 mock.patch.object(wf, 'gh_json',
-                                  return_value=(True, {'id': 'I_1'}, '')),                 mock.patch.object(wf, 'set_issue_fields',
-                                  return_value=(True, {'id': 'I_1'}, '')):
-            done, msg = wf.set_start_date(_cfg(), 1)
-        self.assertTrue(done, msg)
-
-
 class TestBestEffortSteps(WfCommandTestCase):
     """A cosmetic side effect must never cost the run its branch.
 
-    The `Stage` write and the start-date stamp sit between the claim and the
-    branch. If one of them raises, `checkout_branch` never runs and the story
+    The `Stage` write sits between the claim and the branch. If it raises, `checkout_branch` never runs and the story
     is left claimed with nowhere to work -- the one outcome the caller cannot
     recover from on its own.
     """
@@ -442,21 +384,9 @@ class TestBestEffortSteps(WfCommandTestCase):
             code, payload = _capture(wf.cmd_pick, _pick_args('--checkout'))
         return code, payload, branch
 
-    def test_a_raising_start_date_still_leaves_a_branch(self):
-        code, payload, branch = self._pick_with(
-            stage_in_progress={'return_value': (True, 'Stage set to In Progress')},
-            set_start_date={'side_effect': ValueError('boom')})
-        self.assertEqual(code, wf.EXIT_OK)
-        branch.assert_called_once()
-        self.assertEqual(payload['branch'], 'feature/1/x')
-        self.assertTrue(payload['checked_out'])
-        self.assertFalse(payload['start_date_set'])
-        self.assertIn('set start date', payload['start_date_message'])
-
     def test_a_raising_stage_write_still_leaves_a_branch(self):
         code, payload, branch = self._pick_with(
-            stage_in_progress={'side_effect': RuntimeError('field API down')},
-            set_start_date={'return_value': (True, 'stamped')})
+            stage_in_progress={'side_effect': RuntimeError('field API down')})
         self.assertEqual(code, wf.EXIT_OK)
         branch.assert_called_once()
         self.assertFalse(payload['stage_set'])
@@ -1335,7 +1265,7 @@ _ORG_CAPS_RESPONSE = {
              'name': 'Classification',
              'options': [{'id': 'o_newfeat', 'name': 'New Feature'}]},
             {'__typename': 'IssueFieldDate', 'id': 'IFD_start',
-             'name': 'Start date'},
+             'name': 'Due date'},
             {'__typename': 'IssueFieldText', 'id': 'IFT_notes',
              'name': 'Notes'},
         ]},
@@ -1353,7 +1283,7 @@ class TestParseOrgCapabilities(unittest.TestCase):
         self.assertEqual(types, {'Bug': 'IT_bug', 'User Story': 'IT_story'})
         self.assertEqual(fields['Priority']['data_type'], 'single-select')
         self.assertEqual(fields['Classification']['data_type'], 'multi-select')
-        self.assertEqual(fields['Start date']['data_type'], 'date')
+        self.assertEqual(fields['Due date']['data_type'], 'date')
         self.assertEqual(fields['Notes']['data_type'], 'text')
 
     def test_multi_select_option_ids_survive(self):
@@ -1703,7 +1633,25 @@ class TestFieldNameOverrides(unittest.TestCase):
         self.assertEqual(cfg['fields']['field-priority'], 'Urgency')
         self.assertEqual(wf.field_name(cfg, 'field-priority'), 'Urgency')
         # An unlisted key still falls through to the default inventory.
-        self.assertEqual(wf.field_name(cfg, 'field-target'), 'Target date')
+        self.assertEqual(wf.field_name(cfg, 'field-origin'), 'Origin')
+
+    def test_a_retired_purpose_key_is_read_and_ignored(self):
+        """A project file written before 17.10.0 still lists `field-start` and
+        `field-target`. It keeps parsing, and neither key reaches the inventory
+        anything iterates, so no pick or preflight looks for either field."""
+        cfg = wf.parse_claude_project(
+            '# P\n\n## Issue Types & Fields\n\n'
+            '| Purpose key | Field name |\n| --- | --- |\n'
+            '| field-priority | `Priority` |\n'
+            '| field-start | `Kick-off` |\n'
+            '| field-target | `Deadline` |\n'
+            '\n## Project Board\n\n| Setting | Value |\n| --- | --- |\n'
+            '| start-date-field-id | `n/a` |\n')
+        self.assertEqual(wf.field_name(cfg, 'field-priority'), 'Priority')
+        self.assertNotIn('field-start', wf_core.FIELD_NAME_DEFAULTS)
+        self.assertNotIn('field-target', wf_core.FIELD_NAME_DEFAULTS)
+        self.assertEqual(set(cfg['board']), {'project_node_id', 'project_title'})
+        self.assertIsNone(wf_core.field_purpose_for_name('Kick-off', cfg['fields']))
 
     def test_absent_section_leaves_every_default_in_place(self):
         cfg = wf.parse_claude_project('# P\n\n## Identity\n\n| org | acme |\n')
@@ -3337,8 +3285,7 @@ class TestHandoffAndClaims(unittest.TestCase):
     """The commands that replaced the mechanism templates."""
 
     def _cfg(self):
-        return _cfg(board={'project_node_id': None, 'project_title': None,
-                           'start_date_field_id': None})
+        return _cfg(board={'project_node_id': None, 'project_title': None})
 
     def _run(self, argv, calls, written=(True, 'Stage set to In Review'), rc=0):
         args = wf.build_parser().parse_args(argv)
@@ -4147,6 +4094,18 @@ class TestStageTransitions(unittest.TestCase):
         self.assertIn('--add-assignee @me', joined)
         self.assertNotIn('--add-label', joined)
 
+    def test_a_claim_reuses_the_node_id_the_pool_read(self):
+        """The pool read already holds the node id, so the claim writes the
+        `Stage` without reading it again, and leaves the result on the issue
+        so `finish_pick` does not write it a second time."""
+        hub, calls = _StageHub(), []
+        issue = {'number': 7, 'id': 'I_7', 'labels': []}
+        with hub.wired(calls):
+            wf.apply_in_progress(_cfg(), issue)
+        self.assertEqual(hub.writes, [(7, 'In Progress')])
+        self.assertFalse([q for q in hub.queries if 'issue(number:' in q])
+        self.assertTrue(issue['_stage_result'][0], issue['_stage_result'])
+
     def test_giving_a_claim_back_returns_the_issue_to_the_pool(self):
         hub, calls = _StageHub(), []
         with hub.wired(calls):
@@ -4641,8 +4600,7 @@ class TestPreflight(unittest.TestCase):
             ['preflight', '--scan', self.scan, *argv])
         if live_labels is None:
             live_labels = list(wf_core.REVIEW_DEFAULT_LABELS.values())
-        cfg = _cfg(board={'project_node_id': 'PVT_1', 'project_title': 'Board',
-                          'start_date_field_id': None})
+        cfg = _cfg(board={'project_node_id': 'PVT_1', 'project_title': 'Board'})
 
         def gh_graphql(query, **fields):
             if 'issues(states:OPEN' in query:

@@ -62,13 +62,11 @@ All eleven resolve to their default names.
 | field-ownership      | `Ownership`      |
 | field-type           | `Classification` |
 | field-origin         | `Origin`         |
-| field-start          | `Start date`     |
-| field-target         | `Target date`    |
 | field-user-release-notes     | `User release notes`     |
 | field-internal-release-notes | `Internal release notes` |
 | field-shipped-version        | `Shipped in version`     |
 
-`Classification` is a **multi-select**; `Stage` and the rest are single-select, date or text as `wf_core.FIELD_DATA_TYPES` records.
+`Classification` is a **multi-select**; `Stage` and the rest are single-select or text as `wf_core.FIELD_DATA_TYPES` records.
 
 `field-priority`, `field-effort` and `field-ownership` are **required** on every issue: they are the pool's order, its size ceiling and whether a code agent may take the issue at all, so `wf issue-apply` refuses a spec that leaves one blank. `field-stage` is the issue's state, with ten options (`Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention`, `Done`, `Area`); a blank `Stage` means available, the same as `Backlog`. `Area` marks a permanent area epic that other issues sit under (`synergy/references/area-epics.md`); it is never picked, closed or moved. `field-type` and `field-origin` are optional — nothing selects on them, and a create that leaves one unset gets a comment on the issue saying so.
 
@@ -108,8 +106,6 @@ Board: **claude-plugins** (org project #8) —
 | project-number      | `8`                              |
 | project-title       | `claude-plugins`                 |
 | project-node-id     | `PVT_kwDODj6aos4BZkaL`           |
-| start-date-field-id | `n/a`                            |
-| end-date-field-id   | `n/a`                            |
 
 This section is informational. The board is a view for people, with its columns grouped by `Stage`, and it is recorded here for them and for GitHub's own "Auto-add to project" workflow. Nothing in the workflow reads a column from it or moves a card on it.
 

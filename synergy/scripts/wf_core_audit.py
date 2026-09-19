@@ -267,8 +267,8 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
                                           kind, source)})
 
     # The three required fields plus the two the workflow fills in when it can.
-    # The other fields an org defines — a start date, a target date, a free-text
-    # parent — are situational, and the backfill has never proposed a value for
+    # The other fields an org defines — a date, a free-text parent — are
+    # situational, and the backfill has never proposed a value for
     # one. Reporting them anyway made every issue in a fully classified backlog
     # come back as "missing metadata": 275 findings across 69 issues on one real
     # repo, every one of them a field nobody was ever going to fill. An audit

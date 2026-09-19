@@ -1,17 +1,15 @@
 """
-Stage writes, the start date, branch checkout, and the `stage-set` subcommand.
+Stage writes, branch checkout, and the `stage-set` subcommand.
 
 Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
 
-from datetime import datetime, timezone
-
 import wf_core
 from wf_capabilities import resolve_org_capabilities
 from wf_config import field_name, prepare_cfg
-from wf_io import EXIT_ENV, EXIT_OK, emit, emit_line, gh_json, run
+from wf_io import EXIT_ENV, EXIT_OK, emit, emit_line, run
 from wf_issue_io import (
-    _batch_result, _graphql_json, resolve_issue_ids, set_issue_fields,
+    _batch_result, _graphql_json, resolve_issue_ids,
 )
 
 
@@ -20,11 +18,11 @@ from wf_issue_io import (
 def best_effort(step, *args):
     """Run one best-effort side effect. Returns (ok, message) and never raises.
 
-    The steps between the claim and the branch — the `Stage` write, the start
-    date — are recoverable, and the branch is not. A story that is claimed with
+    The step between the claim and the branch — the `Stage` write — is
+    recoverable, and the branch is not. A story that is claimed with
     no branch to work on is the worst outcome available here: the caller has
     nothing to build in and someone has to reap the claim by hand. So an
-    unexpected failure inside one of these is reported in its own message and
+    unexpected failure inside it is reported in its own message and
     the run carries on, exactly as a returned error would be.
     """
     try:
@@ -68,8 +66,8 @@ def set_stages(cfg, wanted, ids=None, extra=None):
     read of the node ids and one aliased `setIssueFieldValue`, twenty issues to
     a request. `ids` is {number: node id} for issues the caller has already
     read, which skips the id read for them. `extra` is {number: [field
-    input]} for other fields to write in the same mutation, such as the start
-    date a claim stamps beside `In Progress`.
+    input]} for other fields to write in the same mutation, such as the
+    release notes a merge records beside `Done`.
 
     Nothing here touches a board. Every board an issue is on groups by `Stage`,
     so the value written is the value every board shows, and an issue with no
@@ -144,35 +142,13 @@ def _chunks(items, size):
         yield items[start:start + size]
 
 
-def start_date_input(cfg):
-    """Today's value for the org's `Start date` field. (input, message).
-
-    `input` is None, with `message` saying why, when the org defines no such
-    field or its capabilities cannot be read: best-effort in both directions,
-    because neither is a misconfiguration a claim should stop on.
-    """
-    ok, caps, err = resolve_org_capabilities(cfg)
-    if not ok:
-        return None, 'org capabilities unavailable (%s)' % (err or 'no detail')
-    name = field_name(cfg, 'field-start')
-    meta = (caps.get('field_map') or {}).get(name)
-    if not meta:
-        return None, 'the org does not define a %s field' % name
-    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    value, verr = wf_core.field_value_input(meta, today)
-    if verr:
-        return None, verr
-    return value, 'set %s to %s' % (name, today)
-
-
 def release_note_inputs(cfg, texts):
     """Field inputs for one issue's release notes. (inputs, written, skipped).
 
     `texts` is {'user': text, 'internal': text}, blanks already left out by
     `wf_core.parse_release_notes`. `written` names each field an input was
-    built for; `skipped` says why a text has no input. Capability-gated like
-    the start date: an org without a field skips that text, and that is not a
-    failure.
+    built for; `skipped` says why a text has no input. Capability-gated: an
+    org without a field skips that text, and that is not a failure.
     """
     inputs, written, skipped = [], [], []
     if not texts:
@@ -197,32 +173,6 @@ def release_note_inputs(cfg, texts):
         inputs.append(value)
         written.append(name)
     return inputs, written, skipped
-
-
-def set_start_date(cfg, number):
-    """Stamp the org's `Start date` issue field with today. Returns (set, why).
-
-    Best-effort and capability-gated in both directions: an org that does not
-    define the field is not misconfigured, and neither is one that denies the
-    field API to this token.
-    """
-    value, why = start_date_input(cfg)
-    if value is None:
-        return False, why
-    name = field_name(cfg, 'field-start')
-    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    ok, data, jerr = gh_json(['issue', 'view', str(number), '--repo',
-                              '%s/%s' % (cfg['org'], cfg['repo']), '--json', 'id'])
-    if not ok or not data or not data.get('id'):
-        return False, 'could not read the issue node id (%s)' % jerr.strip()
-    # Three values, not two: `set_issue_fields` answers (ok, node, err) like
-    # every other `_mutation_result` caller. Unpacking two raised ValueError
-    # *after* the claim, the label, the assignment and the Stage write had all
-    # landed, so the run looked failed and was not.
-    applied, _, merr = set_issue_fields(data['id'], [value])
-    if not applied:
-        return False, merr
-    return True, 'set %s to %s' % (name, today)
 
 
 def checkout_branch(cfg, issue):

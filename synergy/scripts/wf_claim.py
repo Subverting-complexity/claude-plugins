@@ -15,7 +15,7 @@ from wf_config import check_environment, prepare_cfg, repo_root
 from wf_io import (
     EXIT_ENV, EXIT_LOST, EXIT_OK, EXIT_USAGE, emit, eprint, gh_json, run,
 )
-from wf_stage import set_stage, set_stages, start_date_input
+from wf_stage import set_stage, set_stages
 
 
 # ── claim + markers ──────────────────────────────────────────────────────────
@@ -165,7 +165,7 @@ def release_claims(targets):
     return released
 
 
-def apply_in_progress(cfg, issue, start_date=False):
+def apply_in_progress(cfg, issue):
     """Take durable ownership: assign @me and set `Stage` to In Progress.
 
     Neither is a label any more -- an issue in progress is one that is assigned
@@ -174,33 +174,16 @@ def apply_in_progress(cfg, issue, start_date=False):
     The `Stage` write is what takes the issue out of the pool, so a failed one
     is said out loud.
 
-    With `start_date`, today's `Start date` is written in the same mutation as
-    the `Stage`, using the node id the pool read already holds, and both
-    results are left on the issue as `_stage_result` and `_date_result` so
-    `finish_pick` does not write either a second time. A combined write the
-    date makes fail is retried with the `Stage` alone.
+    The write uses the node id the pool read already holds, and its result is
+    left on the issue as `_stage_result` so `finish_pick` does not write the
+    `Stage` a second time.
     """
-    if start_date:
-        _assign(cfg, issue)
-        number = int(issue['number'])
-        stage = wf_core.STAGE_NAMES['stage-in-progress']
-        ids = {number: issue['id']} if issue.get('id') else None
-        value, date_msg = start_date_input(cfg)
-        extra = {number: [value]} if value is not None else None
-        written, message = set_stages(cfg, {number: stage}, ids, extra)[number]
-        dated = written and extra is not None
-        if not written and extra is not None:
-            date_msg = 'not set: the combined write failed (%s)' % message
-            written, message = set_stages(cfg, {number: stage}, ids)[number]
-        issue['_stage_result'] = (written, message)
-        issue['_date_result'] = (dated, date_msg)
-        if not written:
-            eprint('wf: warning — could not set #%s to In Progress (%s)'
-                   % (issue['number'], message))
-        return
     _assign(cfg, issue)
-    written, message = set_stage(cfg, issue['number'],
-                                 wf_core.STAGE_NAMES['stage-in-progress'])
+    number = int(issue['number'])
+    ids = {number: issue['id']} if issue.get('id') else None
+    written, message = set_stages(
+        cfg, {number: wf_core.STAGE_NAMES['stage-in-progress']}, ids)[number]
+    issue['_stage_result'] = (written, message)
     if not written:
         eprint('wf: warning — could not set #%s to In Progress (%s)'
                % (issue['number'], message))

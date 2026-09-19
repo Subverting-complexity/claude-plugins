@@ -1558,11 +1558,11 @@ class TestValidateSpec(unittest.TestCase):
         """An org is allowed fewer fields than the default inventory; it is the
         mandatory five it may not be missing."""
         entry = _entry(fields=dict(_entry()['fields'],
-                                   **{'field-target': '2026-01-01'}))
+                                   **{'field-due': '2026-01-01'}))
         errors, skipped, plans = wf_core.validate_spec([entry], _FIELD_MAP, _TYPE_MAP)
         self.assertEqual(errors, [])
-        self.assertEqual(skipped, {'Target date'})
-        self.assertNotIn('Target date', plans[0]['fields'])
+        self.assertEqual(skipped, {'field-due'})
+        self.assertNotIn('field-due', plans[0]['fields'])
 
     def test_an_option_the_field_does_not_offer_is_an_error(self):
         entry = _entry(fields=dict(_entry()['fields'],
@@ -1894,13 +1894,13 @@ class TestAuditIssue(unittest.TestCase):
         self.assertEqual(fields['field-origin'], wf_core.SPEC_PLACEHOLDER)
 
     def test_a_situational_field_is_not_a_gap(self):
-        """A start date nobody set is not missing metadata.
+        """A due date nobody set is not missing metadata.
 
         The backfill has never proposed a value for one, so reporting it only
         ensured a fully classified backlog could never come back clean — 275
         such findings across 69 issues on one real repo.
         """
-        result = wf_core.audit_issue(_node(), {'Start date': {}, 'Target date': {}})
+        result = wf_core.audit_issue(_node(), {'Due date': {}, 'Parent': {}})
         self.assertEqual(_kinds(result), [])
         self.assertNotIn('fields', result['proposed'])
 
@@ -1914,7 +1914,7 @@ class TestAuditIssue(unittest.TestCase):
                           _field_value('Origin', 'Development'),
                           _field_value('Ownership', 'Code agent')]})
         result = wf_core.audit_issue(issue, dict(_AUDIT_FIELDS, **{
-            'Start date': {}, 'Target date': {}}))
+            'Due date': {}, 'Parent': {}}))
         self.assertEqual(_kinds(result), [])
 
     def test_the_proposed_entry_is_a_valid_apply_spec_once_filled(self):
