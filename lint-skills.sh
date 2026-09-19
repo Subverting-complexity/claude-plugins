@@ -165,6 +165,29 @@ for f in "${body_authoring_files[@]}"; do
     fi
 done
 
+# Change-reading wiring: _shared/reading-changes.md is the one procedure for
+# reading a branch, PR or notes and grouping it by what a user notices.
+# acceptance-criteria turns the groups into test steps and release-notes into
+# changelog lines; both must cite it, or the two drift into reading the same
+# change two ways.
+declare -a change_reading_files=(
+    "synergy/skills/acceptance-criteria/SKILL.md"
+    "synergy/skills/release-notes/SKILL.md"
+)
+if [ ! -f "synergy/skills/_shared/reading-changes.md" ]; then
+    echo "FAIL: synergy/skills/_shared/reading-changes.md is missing"
+    status=1
+fi
+for f in "${change_reading_files[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is listed as a change-reading skill but does not exist"
+        status=1
+    elif ! grep -qF 'reading-changes.md' "$f"; then
+        echo "FAIL: $f reads a change but does not cite _shared/reading-changes.md"
+        status=1
+    fi
+done
+
 # A repository can publish an issue template that GitHub pre-fills in the web
 # UI but that --body-file silently bypasses. The paths that CREATE an issue
 # have to resolve it, or every issue the plugin files ignores the project's own
@@ -224,6 +247,7 @@ declare -a reply_writing_files=(
     "synergy/templates/CLAUDE.md"                    # the rules written into a target project
     "synergy/skills/build/SKILL.md"
     "synergy/skills/pr-review/references/local-review.md"
+    "synergy/skills/release-notes/SKILL.md"
 )
 
 for f in "${reply_writing_files[@]}"; do

@@ -14,8 +14,8 @@ Read `_shared/wording-standard.md` and `_shared/banned-patterns.md` before writi
 
 ## Process
 
-1. Read the branch diff (`git diff master...HEAD`) and commit history to understand what changed
-2. Identify the user-facing impacts of the changes
+1. Read the change and group it by what a user would notice, following `_shared/reading-changes.md`. It covers a branch (the default), a pull request number, or pasted notes.
+2. Keep the user-facing groups and drop the internal-only ones.
 3. Write acceptance criteria focused on what a tester can verify through the UI or system behavior
 
 ---

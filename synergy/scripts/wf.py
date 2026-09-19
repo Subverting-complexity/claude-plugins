@@ -316,6 +316,12 @@ def build_parser():
     pm.add_argument('--issue', type=int, action='append', default=None,
                     help='also settle this issue (repeatable) — for a reference GitHub did '
                          'not parse into closingIssuesReferences')
+    pm.add_argument('--notes', default=None,
+                    help='a JSON file of release notes, {"<issue>": {"user": text, '
+                         '"internal": text}}, written to the User release notes and '
+                         'Internal release notes fields in the same write as Done; '
+                         'blank texts are left blank, and Shipped in version is never '
+                         'written')
     pm.add_argument('--no-unblock', action='store_true',
                     help='settle the linked issues without running the unblock sweep '
                          'afterwards (the sweep is the half that releases whatever was '

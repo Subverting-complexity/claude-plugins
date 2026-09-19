@@ -16,6 +16,7 @@
 **/.claude/issue-fields-cache.json
 **/.claude/issue-audit-spec.json
 **/.claude/bulk-set.json
+**/.claude/release-notes.json
 **/.claude/*.flag
 **/.claude/*-spec.json
 **/.claude/*-body.md

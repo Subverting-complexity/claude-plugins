@@ -4,6 +4,8 @@ After a merge: closing finished containers and the `post-merge` subcommand.
 Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
 
+import json
+
 import wf_core
 from wf_capabilities import gh_graphql_partial
 from wf_config import prepare_cfg
@@ -11,7 +13,7 @@ from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_OK, emit, emit_line, gh_json, run,
 )
 from wf_issue_io import _batch_result, _graphql_json
-from wf_stage import _chunks, set_stage, set_stages
+from wf_stage import _chunks, release_note_inputs, set_stage, set_stages
 from wf_unblock import unblock_scan
 
 
@@ -360,8 +362,22 @@ def cmd_post_merge(args):
                          'close': state == 'OPEN', 'label_ids': label_ids})
 
     outcomes = settle_issues(plan, args.pr) if plan else {}
-    stages = set_stages(cfg, {n: wf_core.STAGE_NAMES['stage-done'] for n in linked},
-                        ids={n: facts[n]['id'] for n in linked if facts[n]['id']})
+    notes, note_errors = read_release_notes(getattr(args, 'notes', None))
+    note_inputs, note_facts = release_note_writes(cfg, linked, notes)
+    done = wf_core.STAGE_NAMES['stage-done']
+    ids = {n: facts[n]['id'] for n in linked if facts[n]['id']}
+    stages = set_stages(cfg, {n: done for n in linked}, ids=ids,
+                        extra=note_inputs)
+    # The notes ride in the `Stage` write, so a text the API refuses would
+    # hold the issue out of Done. Retry the stage alone for any issue whose
+    # combined write failed: the transition matters more than the notes.
+    retry = [n for n in note_inputs if not stages.get(n, (False,))[0]]
+    if retry:
+        again = set_stages(cfg, {n: done for n in retry}, ids=ids)
+        for n in retry:
+            note_facts[n]['error'] = stages[n][1]
+            note_facts[n]['written'] = []
+            stages[n] = again[n]
 
     settled = []
     for number in linked:
@@ -374,10 +390,13 @@ def cmd_post_merge(args):
             closed = bool(outcome.get('closed'))
         cleared = ', '.join(fact['stale']) if outcome.get('cleared') else None
         done_set, stage_msg = stages.get(int(number), (False, 'not attempted'))
-        settled.append({'issue': number, 'closed_now': bool(fact['was_open'] and closed),
-                        'closed': closed,
-                        'lifecycle_label_cleared': cleared,
-                        'stage_set': done_set, 'stage_message': stage_msg})
+        entry = {'issue': number, 'closed_now': bool(fact['was_open'] and closed),
+                 'closed': closed,
+                 'lifecycle_label_cleared': cleared,
+                 'stage_set': done_set, 'stage_message': stage_msg}
+        if number in note_facts:
+            entry['release_notes'] = note_facts[number]
+        settled.append(entry)
 
     # Settling the issues the PR closed is only half of a merge. The other half
     # is releasing whatever was waiting on them, and nothing used to do it: a
@@ -393,6 +412,9 @@ def cmd_post_merge(args):
     unblocked = unblock_scan(cfg) if not args.no_unblock else None
 
     clean = (all(s['closed'] and s['stage_set'] for s in settled)
+             and not note_errors
+             and not any((s.get('release_notes') or {}).get('error')
+                         for s in settled)
              and not container_errors
              and not (unblocked or {}).get('error')
              and not (unblocked or {}).get('rescoped')
@@ -410,6 +432,9 @@ def cmd_post_merge(args):
         no_edges = ((unblocked or {}).get('no_edges') or {}).get('count')
         if no_edges:
             extra['no_edges'] = no_edges
+        noted = {str(n): f['written'] for n, f in note_facts.items() if f['written']}
+        if noted:
+            extra['release_notes'] = noted
         emit_line('ok', EXIT_OK, pr=args.pr, settled=[s['issue'] for s in settled],
                   containers_closed=containers, released=released, **extra,
                   reason='PR #%d settled: %d issue(s) closed and Done, %d '
@@ -417,4 +442,41 @@ def cmd_post_merge(args):
                          % (args.pr, len(settled), len(containers), len(released)))
     emit('ok', EXIT_OK, pr=args.pr, base=data.get('baseRefName'), settled=settled,
          containers_closed=containers, container_errors=container_errors,
-         unblocked=unblocked)
+         release_note_errors=note_errors, unblocked=unblocked)
+
+
+def read_release_notes(path):
+    """The `--notes` file, parsed. ({number: texts}, errors).
+
+    No path is no notes, and not an error: a run that wrote none (a project
+    without the fields, a PR merged by hand) settles exactly as before.
+    """
+    if not path:
+        return {}, []
+    try:
+        with open(path, encoding='utf-8') as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return {}, ['could not read %s (%s)' % (path, exc)]
+    return wf_core.parse_release_notes(data)
+
+
+def release_note_writes(cfg, linked, notes):
+    """The field inputs to write beside each linked issue's `Stage`.
+
+    Returns (extra, facts): `extra` is {number: [field input]} for
+    `set_stages`, and `facts` is {number: {'written': [field names],
+    'skipped': [why]}} for the report. Only the issues this PR closes are
+    written: a container `post-merge` closes because its children finished
+    is never passed here, and a note for an issue the PR does not close is
+    ignored.
+    """
+    extra, facts = {}, {}
+    for number in linked:
+        if number not in notes:
+            continue
+        inputs, written, skipped = release_note_inputs(cfg, notes[number])
+        facts[number] = {'written': written, 'skipped': skipped}
+        if inputs:
+            extra[number] = inputs
+    return extra, facts
