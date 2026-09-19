@@ -1,12 +1,12 @@
 ---
 name: release-notes
-description: 'Write user and internal release notes for a branch, PR or story, grouped by product area. Trigger on release notes or "what shipped".'
+description: 'Write user and internal release notes for a branch, PR or story, shown under the area epic each issue sits in. Trigger on release notes or "what shipped".'
 ---
 # Release Notes
 
 Writes two short texts for one change: **user release notes**, what someone using the product would notice, and **internal release notes**, what changed under the hood. They are the values `execute` and `bulk-execute` write to the org's `User release notes` and `Internal release notes` issue fields when a story reaches Done, and a person can ask for them on any branch.
 
-Each story's notes are written to be concatenated. A project builds its changelog by collecting the notes of every closed issue in a release, grouping the user lines by area and putting the internal lines last, so each line must stand on its own beside lines written for other stories:
+Each story's notes are written to be concatenated. A project builds its changelog by collecting the notes of every closed issue in a release, grouping the user lines by each issue's area and putting the internal lines last, so each line must stand on its own beside lines written for other stories:
 
 ```
 User-facing
@@ -28,15 +28,17 @@ Read `_shared/wording-standard.md` and `_shared/banned-patterns.md` before writi
 ## Process
 
 1. Read the change and group it by what a user would notice, following `_shared/reading-changes.md`. The input is the current branch (the default), a pull request number, one story's commits inside a branch, or pasted notes.
-2. Write each user-facing group as one user line, under the area a user would look for it in.
+2. Write each user-facing group as one user line.
 3. Write each internal-only group, and the internal part of a user-facing group worth recording, as one internal line.
 4. Merge lines that say the same thing, and drop anything too small to mention: a typo, a version bump, a renamed variable.
 
 ## Areas
 
-An area is the part of the product a user would look for the change under: a screen or feature (`Library and reading`, `Settings`), or a quality that cuts across screens (`Performance`, `Playback and accessibility`). Name it the way a user would, in two to four words, and use the same name for the same part of the product every time, because the changelog groups on the name as written.
+The notes never name an area. An issue's area is the nearest area epic above it in its parent chain (`references/area-epics.md`), and the changelog groups each issue's lines under that epic's title. That is one source every release tool reads, and a person fixes a wrong area by moving the issue, not by editing the text.
 
-When `ClaudeProject.md` has a `## Release Notes` section listing areas, choose from that list, and use `Other` for a change none of them fits.
+So this skill takes no area decision. A change a user would notice in two areas stays one issue with one area: say what changed in plain words, and the person reviewing the release can move the line.
+
+**Run by hand** on a branch or pull request, show the area the notes will be grouped under, so the output looks like the final changelog. Take the issue from the pull request's closing issue or the number in the branch name, then run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas --issue {number}` and use `area.title` as the heading. With no issue, or `area` null, show the lines with no heading and say the issue sits under no area epic.
 
 ## Output format
 
@@ -45,7 +47,6 @@ Two blocks, in this order, each inside its own fenced code block so it can be co
 ```
 User release notes
 
-Library and reading
 * Scrolling mode no longer freezes or stops after a fling, and scrolls more smoothly overall.
 ```
 
@@ -55,7 +56,7 @@ Internal release notes
 * Laid the groundwork for full-text search in books.
 ```
 
-The first line of each block is its label and is not part of the field value. In the user block each area name sits on its own line, followed by its lines; several areas are separated by a blank line. The internal block has no areas.
+The first line of each block is its label and is not part of the field value. Neither block names an area. Only when run by hand does the user block carry one heading line, the area from **Areas**, between the label and the lines; it is display only and never part of the field value.
 
 A block with nothing to say reads `None.` under its label: a chore or internal fix has no user release notes, and a wording-only change may have no internal ones. Never invent a user-facing effect to fill the block.
 
@@ -69,4 +70,4 @@ A block with nothing to say reads `None.` under its label: a chore or internal f
 
 ## When another skill calls this
 
-`execute` and `bulk-execute` read this file before the merge and follow it for each story, with no reply to the user in between. They need the two texts as data, not the two blocks: for each story, the user text is the user block without its label line, and the internal text is the internal block without its label line. A block that reads `None.` becomes an empty string, so the field is left blank. The calling workflow says where to write them.
+`execute` and `bulk-execute` read this file before the merge and follow it for each story, with no reply to the user in between. They need the two texts as data, not the two blocks: for each story, the user text is the user block without its label line, and the internal text is the internal block without its label line. Neither carries an area heading, so skip the **Run by hand** step. A block that reads `None.` becomes an empty string, so the field is left blank. The calling workflow says where to write them.
