@@ -804,7 +804,7 @@ def cmd_issue_apply(args):
     # Not a refusal: an issue with no parent is legal, and a person may mean
     # it. It is said out loud because an issue under no area epic has no area,
     # so its release notes have nowhere to be grouped.
-    notes = ['#%d was filed with no parent, so it resolves to no area'
+    notes = ['#%d was filed with no area: its parent chain ends without reaching one'
              % r['number']
              for p, r in zip(ordered_plans, results)
              if id(p['entry']) in unparented and r.get('action') == 'create'

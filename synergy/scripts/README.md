@@ -374,7 +374,7 @@ After the edges are written, `issue-apply` writes each issue's `Stage`. Nothing 
 
 Each entry's result carries `stage` (the stage the issue now has), `stage_kept`, `stage_set`, and a `stage_message` saying why when the write did not happen.
 
-**A created issue with no parent is named in `notes`.** When a create's parent chain within the spec ends with no parent at all, neither another entry that has one nor an existing issue, the result carries `"notes": ["#N was filed with no parent, so it resolves to no area"]`. It is not a refusal: an issue with no parent is legal. A chain that reaches an existing issue is trusted rather than read, and one that reaches an entry asking for `"state": "area"` has found its area.
+**A created issue with no parent is named in `notes`.** When a create's parent chain within the spec ends with no parent at all, neither another entry that has one nor an existing issue, the result carries `"notes": ["#N was filed with no area: its parent chain ends without reaching one"]`. It is not a refusal: an issue with no parent is legal. A chain that reaches an existing issue is trusted rather than read, and one that reaches an entry asking for `"state": "area"` has found its area.
 
 **An issue whose edges or stage cannot be read is not written**, and its entry fails. A failed read is not the answer "nothing blocks it", and re-running the spec completes the write because every write before it is idempotent.
 
@@ -411,7 +411,7 @@ It **never writes**. Both write transports are stubbed out in its tests to prove
 | `missing-parent` | `--parents` only. The body says it is part of an issue and GitHub shows it as free-standing. |
 | `parent-closed` | `--parents` only. The parent the body names is not open. |
 | `parent-differs` | `--parents` only. The body names one parent and the hierarchy has another. Reported, never changed. |
-| `no-area` | No area epic sits above the issue in its parent chain, so it belongs to no part of the product and its release notes cannot be grouped. Reported and never proposed: which area an issue belongs to is a judgement about the product. Judged only on a chain read in full within the scan, ending at an issue with no parent; a parent the scan did not read (closed, in another repository, or past `--limit`) is not guessed at. Not reported at all until the repository has an area epic, because before then every issue would carry it for one cause, and `preflight`'s `area-epics` names that once. |
+| `no-area` | No area epic sits above the issue in its parent chain, so it belongs to no part of the product and its release notes cannot be grouped. Reported and never proposed: which area an issue belongs to is a judgement about the product. Judged only on a chain read in full within the scan, ending at an issue with no parent; a parent the scan did not read (closed, in another repository, or past `--limit`) is not guessed at. Not reported at all unless the scan read an area epic, so with `--limit` or `--since` it is reported only when an area epic falls inside that slice. Before a repository has an area epic it is not reported because before then every issue would carry it for one cause, and `preflight`'s `area-epics` names that once. |
 
 An area epic (`Stage` is `Area`) is exempt from `missing-field`, `missing-optional-field` and the ownership gaps: it is a permanent part of the product rather than work, so nothing ranks, sizes or routes it. When another gap puts one in the backfill spec, its entry carries `"state": "area"` so `issue-apply` applies the same exemption.
 

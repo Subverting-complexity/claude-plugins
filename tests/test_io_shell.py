@@ -2310,8 +2310,8 @@ class TestIssueApplyAreas(_ApplyCase):
         self.assertEqual(code, wf.EXIT_OK)
         number = payload['applied'][0]['number']
         self.assertEqual(payload['notes'],
-                         ['#%d was filed with no parent, so it resolves to no '
-                          'area' % number])
+                         ['#%d was filed with no area: its parent chain ends '
+                          'without reaching one' % number])
 
     def test_a_create_under_an_existing_issue_is_trusted(self):
         hub = _FakeHub([_existing(50, type='Feature', fields=dict(_FULL_FIELDS))],
