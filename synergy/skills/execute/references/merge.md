@@ -20,8 +20,7 @@ Follow **steps 1 to 6** of `skills/pr-review/references/auto-merge.md`, the sing
 Before step 4, write the release notes each issue the PR closes will carry once it is Done. Read `skills/release-notes/SKILL.md` and follow its **When another skill calls this** section for each issue: in `execute` the change is the whole branch; in `bulk-execute` it is only that story's commits, so each story gets its own text. Write the result with the Write tool, never through a shell string, to `.claude/release-notes.json`:
 
 ```json
-{"41": {"user": "Settings
-* The Library header is more compact.", "internal": "* Moved header state into one store."}}
+{"41": {"user": "Settings\n* The Library header is more compact.", "internal": "* Moved header state into one store."}}
 ```
 
 A blank text leaves that field blank, and the Done write still lands. Never write `Shipped in version`: the project's release script stamps it. Writing the notes asks nothing of the user and needs no reply.

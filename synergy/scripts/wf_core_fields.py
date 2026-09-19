@@ -379,7 +379,8 @@ def parse_release_notes(data):
         texts = {}
         for short in RELEASE_NOTE_FIELD_KEYS:
             text = entry.get(short)
-            if isinstance(text, str) and text.strip()                     and text.strip().lower() != 'none.':
+            if (isinstance(text, str) and text.strip()
+                    and text.strip().lower() != 'none.'):
                 texts[short] = text.strip()
         unknown = sorted(set(entry) - set(RELEASE_NOTE_FIELD_KEYS))
         if unknown:

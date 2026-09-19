@@ -176,6 +176,20 @@ class TestPostMergeWritesReleaseNotes(unittest.TestCase):
         self.assertEqual(entry['release_notes']['written'], [])
         self.assertEqual(entry['release_notes']['error'], 'text refused')
 
+    def test_an_unreadable_notes_file_still_settles_and_says_so(self):
+        with open(self.path, 'w', encoding='utf-8') as fh:
+            fh.write('{"5": {"user": "a')
+        notes, errors = wf.read_release_notes(self.path)
+        self.assertEqual(notes, {})
+        self.assertEqual(len(errors), 1)
+        with mock.patch.object(wf, 'read_release_notes',
+                               return_value=({}, errors)):
+            code, payload, calls = self._post_merge({})
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(calls, [({5: 'Done'}, {})])
+        self.assertTrue(payload['settled'][0]['stage_set'])
+        self.assertEqual(payload['release_note_errors'], errors)
+
     def test_no_notes_file_is_no_notes(self):
         notes, errors = wf.read_release_notes(None)
         self.assertEqual((notes, errors), ({}, []))
