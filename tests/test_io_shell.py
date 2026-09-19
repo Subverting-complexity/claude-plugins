@@ -38,7 +38,6 @@ import sys
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
 from unittest import mock
 
 # ── Subject under test ───────────────────────────────────────────────────────
@@ -3851,6 +3850,18 @@ class TestStageTransitions(unittest.TestCase):
         joined = ' '.join(' '.join(c) for c in calls)
         self.assertIn('--add-assignee @me', joined)
         self.assertNotIn('--add-label', joined)
+
+    def test_a_claim_reuses_the_node_id_the_pool_read(self):
+        """The pool read already holds the node id, so the claim writes the
+        `Stage` without reading it again, and leaves the result on the issue
+        so `finish_pick` does not write it a second time."""
+        hub, calls = _StageHub(), []
+        issue = {'number': 7, 'id': 'I_7', 'labels': []}
+        with hub.wired(calls):
+            wf.apply_in_progress(_cfg(), issue)
+        self.assertEqual(hub.writes, [(7, 'In Progress')])
+        self.assertFalse([q for q in hub.queries if 'issue(number:' in q])
+        self.assertTrue(issue['_stage_result'][0], issue['_stage_result'])
 
     def test_giving_a_claim_back_returns_the_issue_to_the_pool(self):
         hub, calls = _StageHub(), []

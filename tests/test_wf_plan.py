@@ -151,7 +151,6 @@ class TestPlanSet(Harness):
                                   side_effect=lambda target: outcomes[target]), \
                 mock.patch.object(wf, 'release_claims',
                                   side_effect=lambda t: {x: True for x in t}) as release, \
-\
                 mock.patch.object(wf, 'set_stages',
                                   side_effect=lambda cfg, wanted, ids=None:
                                   {n: (True, 'Stage set') for n in wanted}) as stages, \
