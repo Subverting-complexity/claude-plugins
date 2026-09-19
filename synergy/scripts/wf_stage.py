@@ -58,14 +58,16 @@ def stage_field_meta(cfg):
     return True, meta, ''
 
 
-def set_stages(cfg, wanted, ids=None):
+def set_stages(cfg, wanted, ids=None, extra=None):
     """Write many issues' `Stage` at once. {number: (written, message)}.
 
     `wanted` is {issue number: option name or `stage-*` purpose key}. Two round
     trips whatever the size, after the capability record (cached): one aliased
     read of the node ids and one aliased `setIssueFieldValue`, twenty issues to
     a request. `ids` is {number: node id} for issues the caller has already
-    read, which skips the id read for them.
+    read, which skips the id read for them. `extra` is {number: [field
+    input]} for other fields to write in the same mutation, such as the
+    release notes a merge records beside `Done`.
 
     Nothing here touches a board. Every board an issue is on groups by `Stage`,
     so the value written is the value every board shows, and an issue with no
@@ -112,7 +114,8 @@ def set_stages(cfg, wanted, ids=None):
                         'issueFields:$%s_f}){ issue { id } }'
                         % (alias, alias, alias))
             variables['%s_i' % alias] = ids[number]
-            variables['%s_f' % alias] = [inputs[number][1]]
+            variables['%s_f' % alias] = ([inputs[number][1]]
+                                         + list((extra or {}).get(number) or ()))
         code, raw, merr = _graphql_json('mutation(%s){ %s }'
                                         % (','.join(decls), ' '.join(body)),
                                         variables)
@@ -137,6 +140,39 @@ def set_stage(cfg, number, stage, node_id=None):
 def _chunks(items, size):
     for start in range(0, len(items), size):
         yield items[start:start + size]
+
+
+def release_note_inputs(cfg, texts):
+    """Field inputs for one issue's release notes. (inputs, written, skipped).
+
+    `texts` is {'user': text, 'internal': text}, blanks already left out by
+    `wf_core.parse_release_notes`. `written` names each field an input was
+    built for; `skipped` says why a text has no input. Capability-gated: an
+    org without a field skips that text, and that is not a failure.
+    """
+    inputs, written, skipped = [], [], []
+    if not texts:
+        return inputs, written, skipped
+    ok, caps, err = resolve_org_capabilities(cfg)
+    if not ok:
+        return [], [], ['org capabilities unavailable (%s)' % (err or 'no detail')]
+    field_map = caps.get('field_map') or {}
+    for short, purpose in wf_core.RELEASE_NOTE_FIELD_KEYS.items():
+        text = texts.get(short)
+        if not text:
+            continue
+        name = field_name(cfg, purpose)
+        meta = field_map.get(name)
+        if not meta:
+            skipped.append('the org does not define a %s field' % name)
+            continue
+        value, verr = wf_core.field_value_input(meta, text)
+        if verr:
+            skipped.append('%s: %s' % (name, verr))
+            continue
+        inputs.append(value)
+        written.append(name)
+    return inputs, written, skipped
 
 
 def checkout_branch(cfg, issue):

@@ -7,7 +7,7 @@ Moved verbatim out of wf_core.py; `scripts/README.md` has the module map.
 
 from wf_core_fields import (
     AREA_CLASSIFICATION_OPTIONS, MANDATORY_FIELD_KEYS, NATIVE_TYPE_MAP,
-    OPTIONAL_FIELD_KEYS, native_type_for, resolve_field_name,
+    NEVER_WRITTEN_FIELD_KEYS, OPTIONAL_FIELD_KEYS, native_type_for, resolve_field_name,
 )
 from wf_core_stage import (
     OWNERSHIP_FIELD_OPTIONS, SCOPE_CODE, SCOPE_PREFIXES, ownership_scope,
@@ -410,6 +410,15 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
                 wanted.pop('field-type')
             else:
                 wanted['field-type'] = settled
+
+        # A release script stamps these, never the workflow.
+        for purpose in NEVER_WRITTEN_FIELD_KEYS:
+            if purpose in wanted:
+                errors.append("%s: '%s' (%s) is set by the project's release "
+                              'script, never by a spec; remove it'
+                              % (name, resolve_field_name(purpose, project_fields),
+                                 purpose))
+                wanted.pop(purpose)
 
         for purpose in mandatory_keys:
             concrete = resolve_field_name(purpose, project_fields)

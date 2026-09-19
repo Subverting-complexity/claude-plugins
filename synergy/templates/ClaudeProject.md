@@ -63,10 +63,15 @@ Every purpose key the workflow writes, mapped to the field name **this** owner u
 | field-type           | `Classification` |
 | field-origin         | `Origin`         |
 | field-ownership      | `Ownership`      |
+| field-user-release-notes     | `User release notes`     |
+| field-internal-release-notes | `Internal release notes` |
+| field-shipped-version        | `Shipped in version`     |
 
 **Three of these are required**, and the line is whether a decision reads the value: `field-priority` is the pool's order, `field-effort` its size ceiling, `field-ownership` whether a code agent may take the issue at all (`wf_core.MANDATORY_FIELD_KEYS`). An org that has not defined one is a critical preflight finding, and `wf issue-apply` refuses a spec that leaves one blank rather than creating an issue nothing can rank, size or route.
 
 `field-type` (`Classification`) and `field-origin` are **optional**: nothing selects on them, so a create that leaves one unset gets a comment on the issue naming it and carries on. The rest are set where they apply.
+
+`field-user-release-notes` and `field-internal-release-notes` are text fields written once, when a story reaches Done: `execute` and `bulk-execute` write the text the `release-notes` skill produced for that story, and a blank text leaves its field blank. Nothing ever reports them missing, and an org without them skips the write. `field-shipped-version` is mapped only so the workflow knows it: each project's own release script stamps it, and no `wf` command writes it.
 
 `field-stage` answers a different question: **state**. The org must define it, but an issue may leave it blank. It is a single-select with nine options, `Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention` and `Done`, and a blank `Stage` means available, the same as `Backlog`. Preflight fails the run when the org has no `Stage` field (`stage-absent`) or when it lacks one of the nine options (`stage-options`), because a transition to a missing option fails.
 

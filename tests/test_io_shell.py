@@ -1056,7 +1056,7 @@ class TestShapeRegressionGuards(unittest.TestCase):
         with mock.patch.object(wf, 'check_environment', return_value=None), \
                 mock.patch.object(wf, 'load_config', return_value=(True, cfg, '')), \
                 mock.patch.object(wf, 'set_stages',
-                                  lambda cfg, wanted, ids=None:
+                                  lambda cfg, wanted, ids=None, extra=None:
                                   {int(n): (True, 'Stage set to Done') for n in wanted}), \
                 mock.patch.object(wf, 'close_finished_ancestors',
                                   return_value=([], [])), \
@@ -1129,7 +1129,7 @@ class TestPostMergeClosesFinishedContainers(unittest.TestCase):
                 mock.patch.object(wf, 'set_stage',
                                   return_value=(True, 'Stage set to Done')), \
                 mock.patch.object(wf, 'set_stages',
-                                  lambda cfg, wanted, ids=None:
+                                  lambda cfg, wanted, ids=None, extra=None:
                                   {int(n): (True, 'Stage set to Done') for n in wanted}), \
                 mock.patch.object(wf, 'fetch_parent_chains',
                                   lambda cfg, numbers: {int(n): (True, chain, '')
@@ -1606,7 +1606,7 @@ class TestFieldNameOverrides(unittest.TestCase):
         self.assertEqual(wf.field_name(cfg, 'field-origin'), 'Origin')
 
     def test_a_retired_purpose_key_is_read_and_ignored(self):
-        """A project file written before 17.9.0 still lists `field-start` and
+        """A project file written before 17.10.0 still lists `field-start` and
         `field-target`. It keeps parsing, and neither key reaches the inventory
         anything iterates, so no pick or preflight looks for either field."""
         cfg = wf.parse_claude_project(

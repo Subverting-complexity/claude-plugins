@@ -60,6 +60,7 @@ gh auth status 2>&1 | head -3
 > - "Build this" or `/synergy:build` → Plan, build, run the quality gate and commit on your machine. Nothing is posted anywhere.
 > - "Is this ready?" or `/synergy:pr-review` on uncommitted work, a branch or a commit → Review a local change in the chat.
 > - `/synergy:verify-feature` → Write the report a person reads before merging, in the chat only.
+> - `/synergy:release-notes` → Write the user and internal release notes for a branch or PR, grouped by product area. `execute` and `bulk-execute` write them onto each story when it reaches Done.
 >
 > **Review and audit:**
 >
