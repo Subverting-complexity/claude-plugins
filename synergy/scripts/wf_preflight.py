@@ -21,7 +21,6 @@ from wf_io import (
     EXIT_CAPABILITY, EXIT_DRIFT, EXIT_ENV, EXIT_OK, emit, gh_graphql, gh_json,
     run,
 )
-from wf_issue_io import issue_field_values
 from wf_post_merge import (
     _container_node, _fix_finished_containers, _fix_stage_drift,
 )
@@ -62,12 +61,13 @@ OPEN_ISSUE_STATE_QUERY = (
 def fetch_open_issue_state(cfg, repo=None):
     """What the label, container and stage checks need about the open issues.
 
-    Returns (ok, labelled, finished, drifted, err) -- every open issue that
-    carries any label at all, every open Epic or Feature whose sub-issues are
-    all closed (`{'number', 'title'}`), and every issue whose `Stage` says it is
-    available while an assignee or an open pull request says the work has
+    Returns (ok, labelled, finished, drifted, typed, err) -- every open issue
+    that carries any label at all, every open Epic or Feature whose sub-issues
+    are all closed (`{'number', 'title'}`), every issue whose `Stage` says it
+    is available while an assignee or an open pull request says the work has
     started (`{'number', 'title', 'stage'}`, `stage` being the purpose key it
-    belongs in).
+    belongs in), and every open issue's type and `Stage` (`{'number', 'type',
+    'stage'}`), which is what the area-epic check reads.
 
     Nothing here asks whether an issue is on a board. It used to, because the
     pool was a board column and an issue with no card could not be picked;
@@ -75,14 +75,14 @@ def fetch_open_issue_state(cfg, repo=None):
     """
     owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
     stage_field = field_name(cfg, 'field-stage')
-    labelled, finished, drifted, cursor = [], [], [], None
+    labelled, finished, drifted, typed, cursor = [], [], [], [], None
     while True:
         fields = {'owner': owner, 'repo': name}
         if cursor:
             fields['after'] = cursor
         ok, data, err = gh_graphql(OPEN_ISSUE_STATE_QUERY, **fields)
         if not ok or not data:
-            return False, None, None, None, err
+            return False, None, None, None, None, err
         page = ((data.get('repository') or {}).get('issues')) or {}
         for node in page.get('nodes') or []:
             names = [n['name'] for n
@@ -90,14 +90,17 @@ def fetch_open_issue_state(cfg, repo=None):
                      if n.get('name')]
             if names:
                 labelled.append({'number': node['number'], 'labels': names})
-            if wf_core.container_finished(_container_node(node)):
+            container = _container_node(node, stage_field)
+            typed.append({'number': node['number'], 'type': container['type'],
+                          'stage': container['stage']})
+            if wf_core.container_finished(container):
                 finished.append({'number': node['number'],
                                  'title': node.get('title') or ''})
             prs = [pr for pr in ((node.get('closedByPullRequestsReferences')
                                   or {}).get('nodes') or [])
                    if pr and (pr.get('state') or '').upper() == 'OPEN']
             target = wf_core.stage_drift_target(
-                issue_field_values(node).get(stage_field),
+                container['stage'],
                 assigned=bool((node.get('assignees') or {}).get('nodes')),
                 open_prs=prs)
             if target:
@@ -106,7 +109,7 @@ def fetch_open_issue_state(cfg, repo=None):
                                 'stage': target})
         info = page.get('pageInfo') or {}
         if not info.get('hasNextPage'):
-            return True, labelled, finished, drifted, ''
+            return True, labelled, finished, drifted, typed, ''
         cursor = info.get('endCursor')
 
 
@@ -239,7 +242,8 @@ def collect_config_findings(cfg, args, root):
         skipped = ['label-reference', 'config-label', 'review-label', 'label-drift',
                    'field-unpinned', 'field-unmapped', 'field-absent',
                    'field-options', 'stage-absent', 'stage-options',
-                   'label-retired', 'container-finished', 'stage-drift']
+                   'label-retired', 'container-finished', 'stage-drift',
+                   'area-epics']
         return findings, ['config-section', 'instructions-retired'], skipped, context
 
     # ── the repo: labels ─────────────────────────────────────────────────────
@@ -262,11 +266,13 @@ def collect_config_findings(cfg, args, root):
                     'label-deprecated'])
     context['labels'] = live
 
-    # One walk of the open issues answers three questions: which still carry a
+    # One walk of the open issues answers four questions: which still carry a
     # label that decides nothing, which Epic or Feature is finished with
-    # nothing having closed it (#240), and which issue's `Stage` still says it
-    # is available after the work on it started.
-    ok, labelled, finished, drifted, err = fetch_open_issue_state(cfg, args.repo)
+    # nothing having closed it (#240), which issue's `Stage` still says it
+    # is available after the work on it started, and whether the repository
+    # has any area epic for an issue to resolve to.
+    ok, labelled, finished, drifted, typed, err = fetch_open_issue_state(
+        cfg, args.repo)
     if not ok:
         findings.append(wf_core.finding(
             wf_core.WARNING, 'label-retired',
@@ -274,13 +280,16 @@ def collect_config_findings(cfg, args, root):
             'retired label, are a finished Epic or Feature, or have a `Stage` '
             'behind their work is unverified' % err,
             'check the token and re-run', source_rel))
-        skipped.extend(['label-retired', 'container-finished', 'stage-drift'])
+        skipped.extend(['label-retired', 'container-finished', 'stage-drift',
+                        'area-epics'])
     else:
         findings.extend(wf_core.retired_label_findings(
             labelled, cfg.get('labels'), source_rel))
         findings.extend(wf_core.finished_container_findings(finished, source_rel))
         findings.extend(wf_core.stage_drift_findings(drifted, source_rel))
-        checked.extend(['label-retired', 'container-finished', 'stage-drift'])
+        findings.extend(wf_core.area_epic_findings(typed, source_rel))
+        checked.extend(['label-retired', 'container-finished', 'stage-drift',
+                        'area-epics'])
         context['retired_labels'] = labelled
         context['finished_containers'] = finished
         context['stage_drift'] = drifted

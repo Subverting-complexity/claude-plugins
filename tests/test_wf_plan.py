@@ -469,5 +469,33 @@ class TestPickBuildsThePrerequisite(Harness):
         self.assertIn('assigned', payload['reason'])
 
 
+class TestAnAreaIsNeverNamed(Harness):
+    """An area epic is a permanent part of the product and is never built,
+    whichever way it is named (#348)."""
+
+    def test_plan_set_leaves_a_named_area_out_and_says_why(self):
+        area = issue(5, stage='Area')
+        area['type'] = 'Epic'
+        with self.pool([area], {}):
+            code, payload = capture(['plan-set', '--issue', '5'])
+        self.assertNotEqual(code, wf.EXIT_OK)
+        reasons = {e['number']: e['reason'] for e in payload['excluded']}
+        self.assertIn('area epic', reasons[5])
+
+    def test_pick_issue_refuses_an_area_before_asking_who_owns_it(self):
+        view = {'number': 5, 'title': 'Reading', 'labels': [], 'body': '',
+                'milestone': None, 'url': '', 'state': 'OPEN', 'assignees': []}
+        the_facets = {'stage': {5: 'Area'}, 'ownership': {}, 'types': {5: 'Epic'}}
+        with mock.patch.object(wf, 'gh_json', return_value=(True, view, '')), \
+                mock.patch.object(wf, 'issue_dependency_facts', return_value={}), \
+                mock.patch.object(wf, 'load_issue_facets', return_value=the_facets), \
+                mock.patch.object(wf, 'acquire_claim') as claim:
+            code, payload = capture(['pick', '--issue', '5'])
+        self.assertEqual(code, wf.EXIT_ALL_BLOCKED)
+        self.assertIn('area epic', payload['reason'])
+        self.assertEqual(payload['stage'], 'Area')
+        claim.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()

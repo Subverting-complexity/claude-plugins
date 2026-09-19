@@ -44,7 +44,20 @@ STAGE_NAMES = {
     'stage-parked':      'Parked',
     'stage-attention':   'Needs attention',
     'stage-done':        'Done',
+    'stage-area':        'Area',
 }
+
+# The stage that marks an area epic: a native `Epic` that stands for one
+# permanent part of the product. An issue's area is the nearest area epic above
+# it in its parent chain. An area is never picked, never closed, never moved by
+# a sweep and never audited for the fields work carries, because it is not
+# work: it is where work is filed.
+AREA_STAGE = 'stage-area'
+
+
+def is_area_stage(value):
+    """Whether a `Stage` value (name or purpose key) is `Area`."""
+    return stage_name(value) == STAGE_NAMES[AREA_STAGE]
 
 # The stage the picker selects from, beside a blank `Stage`, which means the
 # same thing: nobody has decided anything about this issue yet. Every other
@@ -247,15 +260,17 @@ def scope_findings(issues, ownership_map=None):
     return findings
 
 
-# What a spec entry may ask for in `state`, and the stage each asks for. Three
-# and not nine: these are the states a *writer* can know. In Progress, In
+# What a spec entry may ask for in `state`, and the stage each asks for. Four
+# and not ten: these are the states a *writer* can know. In Progress, In
 # Review and Done are written by the run that does the work, and Needs
 # attention by the run that gives up on it, so a spec naming one of those would
-# be describing something that has not happened.
+# be describing something that has not happened. `area` files an area epic, and
+# `validate_spec` refuses it on anything but an `Epic`.
 SPEC_STATE_STAGES = {
     'backlog':    'stage-backlog',
     'refinement': 'stage-refinement',
     'parked':     'stage-parked',
+    'area':       AREA_STAGE,
 }
 
 # The stages `issue-apply` may change on its own. Everything else is a state
@@ -285,8 +300,10 @@ def spec_state_stage(value):
 def stage_for(scope, open_blockers, requested=None):
     """The stage purpose key an issue in this state belongs in.
 
-    Five inputs in one order, and the order is the whole rule:
+    Six inputs in one order, and the order is the whole rule:
 
+      area        the spec asked for `area`. An area epic is owned by nobody,
+                  because it is not work, so this wins even over the owner.
       non-code    `scope` is a browser agent or a person, so the stage is
                   Non-code. This wins over everything below it: the owner is a
                   property of the work, it survives every blocker closing, and
@@ -306,6 +323,8 @@ def stage_for(scope, open_blockers, requested=None):
     the written value is the one a board groups under a column a person
     recognises instead of `No Stage`.
     """
+    if requested == AREA_STAGE:
+        return AREA_STAGE
     if scope in (SCOPE_BROWSER, SCOPE_HUMAN):
         return 'stage-non-code'
     if requested:
@@ -333,8 +352,11 @@ def may_set_stage(current_stage, requested=None):
 
 # Stages `board-sync` never writes, whatever the issue looks like. Each one is a
 # person's decision, and nothing readable on the issue can show it was undone.
+# `Area` is here because an area epic is permanent: it is never moved, and a
+# closed one is not marked Done, because closing it was a mistake to repair
+# rather than a state to record.
 SYNC_PROTECTED_STAGES = frozenset({'Parked', 'Needs refinement',
-                                   'Needs attention', 'Non-code'})
+                                   'Needs attention', 'Non-code', 'Area'})
 
 
 def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
@@ -350,8 +372,9 @@ def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
 
     The rules, in the order they are tried:
 
-      protected   Parked, Needs refinement, Needs attention and Non-code are
-                  left alone, and so is a value that is not a stage at all.
+      protected   Parked, Needs refinement, Needs attention, Non-code and Area
+                  are left alone, open or closed, and so is a value that is not
+                  a stage at all.
       closed      a closed issue is Done.
       non-code    work owned by a browser agent or a person that is blank,
                   Backlog or Blocked goes to Non-code, as `stage_for` puts it

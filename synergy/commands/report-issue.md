@@ -38,7 +38,19 @@ Determine the type:
 - **Architecture** — Layer violation, coupling, design problem
 - **Tech Debt** — Working but needs improvement
 
-A bug, a security problem and tech debt need no parent. Only for an architecture report, read `../skills/writing-github-issues/references/scope-and-hierarchy.md` → **Hierarchy**: it is filed as a `Feature`, and where an open epic covers the work, pass its number as `parent` in Step 5; otherwise file it without one. Do not file an epic to hold one report.
+### 2b. Choose the parent
+
+Every new issue gets a parent that resolves to an **area**: an `Epic` at `Stage` `Area`, one permanent part of the product. Release notes are grouped by area, so an issue with none cannot be placed in them. List the open area epics and read their bodies, which say what each covers:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas
+```
+
+Pick the area whose body best covers the problem. A bug, a security problem or tech debt goes directly under that area, or under an open `Feature` in it when one clearly fits. An architecture report is filed as a `Feature` directly under the area. Do not file an epic or an area to hold one report.
+
+When nothing fits well, file under the closest area and add one line to the issue body saying the fit is loose, so a person can move it.
+
+When `wf areas` returns a `count` of 0, the project has no area epics yet. File the issue without a parent, and tell the user the project has no area epics and that `../references/area-epics.md` covers setting them up.
 
 ### 3. Assess severity, size and owner
 
@@ -82,6 +94,7 @@ cat > .claude/report-spec.json <<'JSON'
 {"issues": [{"title": "{title}",
              "body_file": ".claude/report-body.md",
              "kind": "{bug|security|architecture|tech debt}",
+             "parent": {area or feature number},
              "milestone": "current",
              "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                         "field-effort": "{Low|Medium|High}",
@@ -102,13 +115,14 @@ The exceptions are `[Manual] `, for an issue a person has to do, and `[Browser] 
 
 **Pass no labels** beyond a template's own. `kind` supplies the native issue type and the default `Classification` value, `field-type` adds the areas, and the three required fields carry the rest. `wf issue-apply` drops any retired label a spec does name.
 
-**You do not choose the stage.** `issue-apply` decides it from the issue's own fields and writes it itself, in this order: `Ownership` of `Human` or `Browser agent` goes to Non-code; an explicit `"state"` on the spec entry (`backlog`, `refinement` or `parked`) goes to that stage; an `Ownership` that is missing or unrecognised goes to Needs refinement, because nothing can route it; an open blocked-by edge goes to Blocked; everything else goes to Backlog.
+**You do not choose the stage.** `issue-apply` decides it from the issue's own fields and writes it itself, in this order: `Ownership` of `Human` or `Browser agent` goes to Non-code; an explicit `"state"` on the spec entry (`backlog`, `refinement` or `parked`; `area` is for creating an area epic and never used here) goes to that stage; an `Ownership` that is missing or unrecognised goes to Needs refinement, because nothing can route it; an open blocked-by edge goes to Blocked; everything else goes to Backlog.
 
 **Leave the assignee blank.** The spec has no assignee key, and you must not follow up with `gh issue edit --add-assignee`. Creating an issue is never an act of claiming it: new issues must enter the unassigned pool so `execute` (which queries `--assignee ""`) can select them. Assignment happens only at claim time (`execute` Acquire).
 
 **Field values.**
 
-- `kind` is the Step 2 classification in lower case. For `architecture`, add `"parent": {epic number}` beside it when an epic covers the work.
+- `kind` is the Step 2 classification in lower case.
+- `parent` is the area or feature number Step 2b chose. Leave the key out only when the project has no area epics.
 - `field-priority`, `field-effort` and `field-ownership` are the three values Step 3 settled. All three are **required**: `issue-apply` refuses a spec that leaves one blank rather than filing work nothing can rank, size or route.
 - `field-type` is the kind of change (**Bug Fix**, **Security**, **Architecture** or **Tech Debt**, or a better one) plus each area the work touches, such as **Front end** — only when adding an area, follow `../skills/writing-github-issues/SKILL.md` → **Adding areas**. Never areas alone. Where the org defines no area options, leave the key out and `kind` supplies the value.
 - `field-origin` is **Development**, or **Security Audit** if this report came out of a security audit session. It is optional — leave it out and the created issue gets a comment saying it was filed without one.
@@ -144,4 +158,4 @@ Read `stage` and `stage_set` from the command's output and report them. A `stage
 
 ### 7. Report
 
-Display the created issue by number **and** title together (e.g. `#42 Fix login crash`, never the number alone) plus its URL, whether it blocks the current story or is deferred, and its stage.
+Display the created issue by number **and** title together (e.g. `#42 Fix login crash`, never the number alone) plus its URL, whether it blocks the current story or is deferred, its stage, and the area it was filed under (or that the project has no area epics).

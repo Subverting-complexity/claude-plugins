@@ -1078,12 +1078,13 @@ class TestShapeRegressionGuards(unittest.TestCase):
         self.assertEqual(args[n_idx - 1], '-F')
 
 
-def _settle_graphql(argv, input_text, state='OPEN', close_fails=()):
+def _settle_graphql(argv, input_text, state='OPEN', close_fails=(), areas=()):
     """Answer post-merge's aliased issue read and its settle mutation (#300).
 
     Returns a `run` result for either, and None for any other command. Every
     issue reads as `state` with no labels; a close for an issue in
-    `close_fails` is refused the way GitHub refuses one alias of a batch.
+    `close_fails` is refused the way GitHub refuses one alias of a batch. An
+    issue in `areas` reads as an area epic (`Stage` is `Area`).
     """
     if argv[:3] != ['gh', 'api', 'graphql']:
         return None
@@ -1091,7 +1092,10 @@ def _settle_graphql(argv, input_text, state='OPEN', close_fails=()):
         query = next((a for a in argv if a.startswith('query=')), '')
         numbers = re.findall(r'i(\d+): issue\(number:\d+\)', query)
         return 0, json.dumps({'data': {'repository': {
-            'i%s' % n: {'id': 'I_%s' % n, 'state': state, 'labels': {'nodes': []}}
+            'i%s' % n: {'id': 'I_%s' % n, 'state': state, 'labels': {'nodes': []},
+                        'issueFieldValues': {'nodes': (
+                            [{'field': {'name': 'Stage'}, 'name': 'Area'}]
+                            if int(n) in areas else [])}}
             for n in numbers}}}), ''
     body = json.loads(input_text)['query']
     data, errors = {}, []
@@ -1108,19 +1112,27 @@ def _settle_graphql(argv, input_text, state='OPEN', close_fails=()):
 class TestPostMergeClosesFinishedContainers(unittest.TestCase):
     """A merge closes the Epic or Feature its last story finished (#240)."""
 
-    def _post_merge(self, chain, close_fails=False):
+    def _post_merge(self, chain, close_fails=False, linked=(5,), areas=()):
         cfg, calls = _cfg(), []
+        self.stage_writes, self.mutations = [], []
 
         def fake_run(argv, input_text=None):
             calls.append(argv)
+            if input_text is not None:
+                self.mutations.append(input_text)
             if argv[:3] == ['gh', 'pr', 'view']:
                 return 0, json.dumps({
                     'number': 50, 'state': 'MERGED', 'mergedAt': '2026-09-10T00:00:00Z',
                     'baseRefName': 'main',
-                    'closingIssuesReferences': [{'number': 5}]}), ''
+                    'closingIssuesReferences': [{'number': n} for n in linked]}), ''
             return _settle_graphql(argv, input_text,
-                                   close_fails=(5,) if close_fails else ()) \
+                                   close_fails=(5,) if close_fails else (),
+                                   areas=areas) \
                 or (0, '', '')
+
+        def set_stages(cfg, wanted, ids=None, extra=None):
+            self.stage_writes.extend(int(n) for n in wanted)
+            return {int(n): (True, 'Stage set to Done') for n in wanted}
 
         args = wf.build_parser().parse_args(['post-merge', '--pr', '50', '--no-unblock'])
         with mock.patch.object(wf, 'check_environment', return_value=None), \
@@ -1128,15 +1140,33 @@ class TestPostMergeClosesFinishedContainers(unittest.TestCase):
                 mock.patch.object(wf, 'run', side_effect=fake_run), \
                 mock.patch.object(wf, 'set_stage',
                                   return_value=(True, 'Stage set to Done')), \
-                mock.patch.object(wf, 'set_stages',
-                                  lambda cfg, wanted, ids=None, extra=None:
-                                  {int(n): (True, 'Stage set to Done') for n in wanted}), \
+                mock.patch.object(wf, 'set_stages', set_stages), \
                 mock.patch.object(wf, 'fetch_parent_chains',
                                   lambda cfg, numbers: {int(n): (True, chain, '')
                                                         for n in numbers}):
             code, payload = _capture(args.func, args)
         closes = [c for c in calls if c[:3] == ['gh', 'issue', 'close']]
         return code, payload, closes
+
+    def test_an_area_above_the_last_story_is_never_closed(self):
+        """An area epic is permanent: its last story closing means only that
+        nothing is under way there now (#348)."""
+        area = dict(self._node(1, 'Epic', (10, 'OPEN')), stage='Area')
+        chain = [self._node(10, 'Feature', (5, 'OPEN')), area]
+        code, payload, closes = self._post_merge(chain)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual([c['issue'] for c in payload['containers_closed']], [10])
+        self.assertNotIn('1', [c[3] for c in closes])
+
+    def test_an_area_a_pull_request_names_as_closed_is_left_open(self):
+        """`Closes #1` on an area is a mistake in the pull request. The area
+        is neither closed nor set to Done, and the result says so."""
+        code, payload, _ = self._post_merge([], linked=(5, 1), areas=(1,))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['settled'], [5])
+        self.assertEqual(payload['skipped_areas'], [1])
+        self.assertNotIn(1, self.stage_writes)
+        self.assertFalse(any('c1: closeIssue' in m for m in self.mutations))
 
     @staticmethod
     def _node(number, kind, *children):
@@ -2213,6 +2243,189 @@ class _ApplyCase(unittest.TestCase):
         return entry
 
 
+_AREA_CAPS = dict(_APPLY_CAPS, type_map=dict(_APPLY_CAPS['type_map'],
+                                             Feature='IT_feat'))
+_FULL_FIELDS = {'Priority': 'High', 'Effort': 'Medium', 'Ownership': 'Code agent',
+                'Classification': ['New Feature']}
+
+
+class TestIssueApplyAreas(_ApplyCase):
+    """Area epics in a spec, and issues filed under none (#348)."""
+
+    def test_a_create_with_no_parent_is_noted_not_refused(self):
+        hub = _FakeHub()
+        code, payload, _, _ = self._run([self._full()], hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        number = payload['applied'][0]['number']
+        self.assertEqual(payload['notes'],
+                         ['#%d was filed with no area: its parent chain ends '
+                          'without reaching one' % number])
+
+    def test_a_create_under_an_existing_issue_is_trusted(self):
+        hub = _FakeHub([_existing(50, type='Feature', fields=dict(_FULL_FIELDS))],
+                       type_map=_AREA_CAPS['type_map'])
+        code, payload, _, _ = self._run([self._full(parent=50)], hub,
+                                        caps=_AREA_CAPS)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertNotIn('notes', payload)
+
+    def test_an_area_epic_is_filed_with_none_of_the_fields_and_stage_area(self):
+        hub = _FakeHub()
+        code, payload, _, _ = self._run(
+            [{'key': 'r', 'title': 'Reading', 'type': 'Epic', 'state': 'area',
+              'body': 'What reading covers.'}], hub)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        number = payload['applied'][0]['number']
+        self.assertEqual(hub.stage_writes, [(number, 'Area')])
+        self.assertNotIn('notes', payload)
+        self.assertEqual(hub.sent[0][1].get('issueFields'), None)
+
+    def test_an_area_that_is_not_an_epic_is_refused_before_any_write(self):
+        hub = _FakeHub()
+        code, payload, _, _ = self._run([self._full(state='area')], hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertEqual(hub.mutations, [])
+
+    def test_the_migration_retypes_an_epic_and_moves_its_features_up(self):
+        """What `references/area-epics.md` asks of a project: an old Epic
+        becomes a Feature under an area, and the Features it held move up to
+        the area, in one spec of update entries."""
+        hub = _FakeHub([_existing(1, type='Epic', title='Reading'),
+                        _existing(10, type='Epic', fields=dict(_FULL_FIELDS)),
+                        _existing(11, type='Feature', parent=10,
+                                  parent_type='Epic', fields=dict(_FULL_FIELDS))],
+                       stages={1: 'Area', 10: 'Backlog', 11: 'Backlog'},
+                       type_map=_AREA_CAPS['type_map'])
+        code, payload, _, _ = self._run(
+            [{'number': 10, 'kind': 'feature', 'parent': 1},
+             {'number': 11, 'parent': 1}], hub, caps=_AREA_CAPS)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(hub.issues[10]['type'], 'Feature')
+        self.assertEqual(hub.issues[10]['parent'], 1)
+        self.assertEqual(hub.issues[11]['parent'], 1)
+        # The area itself is never written, and keeps its stage.
+        self.assertNotIn(1, [n for n, _ in hub.stage_writes])
+
+    def test_the_migration_needs_the_fields_an_old_epic_never_carried(self):
+        """A Feature is work, so an Epic retyped to one must carry Priority,
+        Effort and Ownership, in the spec or already on the issue."""
+        hub = _FakeHub([_existing(1, type='Epic', title='Reading'),
+                        _existing(10, type='Epic')],
+                       stages={1: 'Area'}, type_map=_AREA_CAPS['type_map'])
+        code, payload, _, _ = self._run(
+            [{'number': 10, 'kind': 'feature', 'parent': 1}], hub,
+            caps=_AREA_CAPS)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertTrue(any('Priority' in e for e in payload['errors']))
+        self.assertEqual(hub.mutations, [])
+
+
+def _stage_values(stage):
+    return {'nodes': [{'field': {'name': 'Stage'}, 'name': stage}] if stage else []}
+
+
+class TestAreasCommand(unittest.TestCase):
+    """`wf areas`: the open area epics, or the one an issue resolves to."""
+
+    def _run(self, argv, gh_graphql):
+        args = wf.build_parser().parse_args(['areas', *argv])
+        with mock.patch.object(wf, 'load_config', lambda: (True, _cfg(), '')), \
+                mock.patch.object(wf, 'gh_graphql', gh_graphql), \
+                mock.patch.object(wf, '_graphql_json',
+                                  side_effect=AssertionError('areas must not write')), \
+                contextlib.redirect_stderr(io.StringIO()):
+            return _capture(args.func, args)
+
+    @staticmethod
+    def _scan(nodes):
+        def gh_graphql(query, **fields):
+            return True, {'repository': {'issues': {
+                'pageInfo': {'hasNextPage': False, 'endCursor': None},
+                'nodes': nodes}}}, ''
+        return gh_graphql
+
+    @staticmethod
+    def _open(number, title, type_name='Epic', stage='Area'):
+        return {'number': number, 'title': title, 'body': 'Covers %s.' % title,
+                'url': 'https://github.com/acme/widgets/issues/%d' % number,
+                'issueType': {'name': type_name},
+                'issueFieldValues': _stage_values(stage)}
+
+    def test_it_lists_the_open_area_epics_by_title(self):
+        nodes = [self._open(3, 'Syncing'), self._open(1, 'Reading'),
+                 self._open(2, 'Not an area', stage='Backlog'),
+                 self._open(4, 'A Feature in Area', type_name='Feature')]
+        code, payload = self._run([], self._scan(nodes))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['count'], 2)
+        self.assertEqual([a['number'] for a in payload['areas']], [1, 3])
+        self.assertEqual(payload['areas'][0], {
+            'number': 1, 'title': 'Reading', 'body': 'Covers Reading.',
+            'url': 'https://github.com/acme/widgets/issues/1'})
+
+    def test_no_area_is_still_ok(self):
+        code, payload = self._run([], self._scan([]))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual((payload['areas'], payload['count']), ([], 0))
+
+    def test_a_failed_read_is_an_error(self):
+        code, payload = self._run(['--repo', 'acme/other'],
+                                  lambda query, **fields: (False, None, 'HTTP 502'))
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertEqual(payload['status'], 'error')
+        self.assertIn('acme/other', payload['reason'])
+
+    @staticmethod
+    def _chain(*levels):
+        """The issue, then each parent, as `(number, title, stage)`."""
+        node = None
+        for number, title, stage in reversed(levels):
+            node = {'number': number, 'title': title,
+                    'url': 'https://github.com/acme/widgets/issues/%d' % number,
+                    'issueType': {'name': 'Epic'},
+                    'issueFieldValues': _stage_values(stage), 'parent': node}
+        return lambda query, **fields: (True, {'repository': {'issue': node}}, '')
+
+    def test_an_issue_resolves_to_the_nearest_area_above_it(self):
+        code, payload = self._run(['--issue', '30'], self._chain(
+            (30, 'Story', 'Backlog'), (20, 'Feature', None), (1, 'Reading', 'Area')))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['issue'], 30)
+        self.assertEqual(payload['area'], {
+            'number': 1, 'title': 'Reading',
+            'url': 'https://github.com/acme/widgets/issues/1'})
+
+    def test_an_area_resolves_to_itself(self):
+        _, payload = self._run(['--issue', '1'], self._chain((1, 'Reading', 'Area')))
+        self.assertEqual(payload['area']['number'], 1)
+
+    def test_a_chain_with_no_area_says_so(self):
+        code, payload = self._run(['--issue', '30'], self._chain(
+            (30, 'Story', 'Backlog'), (20, 'Feature', None)))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertIsNone(payload['area'])
+        self.assertIn('#30', payload['reason'])
+
+    def test_a_chain_past_the_read_depth_is_not_called_arealess_outright(self):
+        levels = [(100 + i, 'level %d' % i, None)
+                  for i in range(wf.AREA_CHAIN_DEPTH + 1)]
+        _, payload = self._run(['--issue', '100'], self._chain(*levels))
+        self.assertIsNone(payload['area'])
+        self.assertIn('beyond', payload['reason'])
+
+    def test_the_query_reads_the_stage_at_every_level(self):
+        query = wf.area_chain_query(2)
+        self.assertEqual(query.count('issueFieldValues'), 2)
+        self.assertEqual(query.count('parent {'), 2)
+
+    def test_a_missing_issue_is_an_error(self):
+        code, payload = self._run(
+            ['--issue', '9'],
+            lambda query, **fields: (True, {'repository': {'issue': None}}, ''))
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertIn('#9', payload['reason'])
+
+
 class TestIssueApply(_ApplyCase):
     """One command, everything on the issue, and every write read back."""
 
@@ -2994,6 +3207,36 @@ class TestIssueAudit(_ApplyCase):
         self.assertEqual(code, wf.EXIT_CAPABILITY)
         self.assertEqual(payload['status'], 'no-capabilities')
 
+    # ── area epics (#348) ────────────────────────────────────────────────────
+
+    def _area(self, number):
+        return self._issue(number, title='Reading', issueType={'name': 'Epic'},
+                           issueFieldValues={'nodes': [
+                               {'field': {'name': 'Stage'}, 'name': 'Area'}]})
+
+    def test_an_issue_under_no_area_is_a_gap_nothing_is_proposed_for(self):
+        under = self._classified(3, issueType={'name': 'Bug'},
+                                 parent={'number': 1, 'issueType': {'name': 'Epic'}})
+        code, payload, _, spec = self._run([self._area(1), self._classified(2),
+                                            under])
+        self.assertEqual(code, wf.EXIT_GAPS)
+        gaps = {i['number']: [g['kind'] for g in i['gaps']]
+                for i in payload['issues']}
+        self.assertEqual(gaps, {2: ['no-area']})
+        # Which area an issue belongs to is a judgement, so no parent is
+        # proposed: the entry only carries the values the issue already has.
+        self.assertEqual([e['number'] for e in spec['issues']], [2])
+        self.assertNotIn('parent', spec['issues'][0])
+
+    def test_an_area_epic_is_audited_for_none_of_the_fields_work_carries(self):
+        code, payload, _, _ = self._run([self._area(1)])
+        self.assertEqual(code, wf.EXIT_OK, payload)
+
+    def test_a_project_with_no_area_yet_is_not_told_so_per_issue(self):
+        """Preflight's `area-epics` names that once, for the whole project."""
+        code, _, _, _ = self._run([self._classified(1)])
+        self.assertEqual(code, wf.EXIT_OK)
+
 
 class TestConfigCacheFreshness(unittest.TestCase):
     """#289: the cache carries the review-label names, so a review config
@@ -3406,7 +3649,7 @@ class TestConfigAudit(unittest.TestCase):
                                'subIssues': {'nodes': []},
                                'labels': {'nodes': [{'name': name}
                                                     for name in names]}}
-                              for n, names in labelled]}}}, ''
+                              for n, names in labelled] + [_AREA_EPIC_NODE]}}}, ''
             sent.append('repo')
             return True, {'repository': {'labels': {
                 'pageInfo': {'hasNextPage': False, 'endCursor': None},
@@ -4216,6 +4459,15 @@ class TestMarkBlocked(unittest.TestCase):
         self.assertIn('#9', body)
 
 
+# An open area epic: every fake repository has one, so the `area-epics`
+# warning appears only in the tests about it.
+_AREA_EPIC_NODE = {'number': 900, 'title': 'Area: Reading', 'state': 'OPEN',
+                   'issueType': {'name': 'Epic'}, 'subIssues': {'nodes': []},
+                   'labels': {'nodes': []},
+                   'issueFieldValues': {'nodes': [
+                       {'field': {'name': 'Stage'}, 'name': 'Area'}]}}
+
+
 class TestPreflight(unittest.TestCase):
     """The one gate every workflow command runs first.
 
@@ -4274,6 +4526,52 @@ class TestPreflight(unittest.TestCase):
         self.assertIn('completed', closes[0])
         self.assertTrue(any('#40' in line for line in payload['fixed']))
 
+    # ── area epics (#348) ────────────────────────────────────────────────────
+
+    def test_a_repository_with_no_area_epic_is_warned_once(self):
+        code, payload, _ = self._run(areas=False)
+        found = [f for f in payload['findings'] if f['check'] == 'area-epics']
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]['level'], wf_core.WARNING)
+        self.assertFalse(found[0]['auto'])
+        self.assertIn('references/area-epics.md', found[0]['fix'])
+        self.assertIn('area-epics', payload['checked'])
+
+    def test_an_open_area_epic_answers_the_check(self):
+        _, payload, _ = self._run()
+        self.assertNotIn('area-epics', [f['check'] for f in payload['findings']])
+
+    def test_offline_skips_the_area_check(self):
+        _, payload, _ = self._run(['--offline'])
+        self.assertIn('area-epics', payload['skipped'])
+
+    def test_an_area_whose_every_child_closed_is_not_finished(self):
+        """The area fixture has no sub-issues; give it a closed one."""
+        area = dict(_AREA_EPIC_NODE,
+                    subIssues={'nodes': [{'number': 901, 'state': 'CLOSED'}]})
+        with mock.patch.dict(globals(), {'_AREA_EPIC_NODE': area}):
+            _, payload, calls = self._run(['--fix'])
+        self.assertNotIn('container-finished',
+                         [f['check'] for f in payload['findings']])
+        self.assertFalse([c for c in calls if c[:3] == ['gh', 'issue', 'close']])
+
+    def test_fix_never_closes_an_area_above_a_finished_feature(self):
+        area = {'number': 1, 'title': 'e', 'state': 'OPEN', 'type': 'Epic',
+                'stage': 'Area', 'repo': None,
+                'children': [{'number': 40, 'state': 'OPEN'}]}
+        with mock.patch.object(wf, 'fetch_parent_chains',
+                               lambda cfg, numbers: {int(n): (True, [area], '')
+                                                     for n in numbers}):
+            _, _, calls = self._run(['--fix'], finished=[40])
+        closed = [c[3] for c in calls if c[:3] == ['gh', 'issue', 'close']]
+        self.assertEqual(closed, ['40'])
+
+    def test_the_container_reads_carry_the_stage(self):
+        self.assertIn('issueFieldValues', wf._chain_selection(1))
+        node = wf._container_node({'number': 1, 'issueFieldValues': {'nodes': [
+            {'field': {'name': 'Stage'}, 'name': 'Area'}]}})
+        self.assertEqual(node['stage'], 'Area')
+
     def test_fix_walks_up_to_an_epic_the_closed_container_finished(self):
         """The same rule as post-merge, so one `--fix` is enough."""
         epic = {'number': 1, 'title': 'e', 'state': 'OPEN', 'type': 'Epic',
@@ -4297,7 +4595,7 @@ class TestPreflight(unittest.TestCase):
         self.assertFalse(any('could not close' in line for line in payload['unfixed']))
 
     def _run(self, argv=(), env_err=None, finished=(), labelled=(), caps=None,
-             drifted=(), stages=None, live_labels=None):
+             drifted=(), stages=None, live_labels=None, areas=True):
         args = wf.build_parser().parse_args(
             ['preflight', '--scan', self.scan, *argv])
         if live_labels is None:
@@ -4331,7 +4629,8 @@ class TestPreflight(unittest.TestCase):
                                  {'state': 'OPEN', 'isDraft': d} for d in drafts]},
                              'issueFieldValues': {'nodes': [
                                  {'field': {'name': 'Stage'}, 'name': 'Backlog'}]}}
-                            for n, assigned, drafts in drifted])
+                            for n, assigned, drafts in drifted]
+                         + ([_AREA_EPIC_NODE] if areas else []))
                 return True, {'repository': {'issues': {
                     'pageInfo': {'hasNextPage': False, 'endCursor': None},
                     'nodes': nodes}}}, ''

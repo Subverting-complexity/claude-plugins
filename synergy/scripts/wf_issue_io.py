@@ -37,7 +37,7 @@ ISSUE_FIELD_VALUES_SELECTION = (
 )
 
 ISSUE_SELECTION = (
-    '  id number title body'
+    '  id number title body url'
     '  repository { nameWithOwner }'
     '  issueType { name }'
     '  milestone { title }'

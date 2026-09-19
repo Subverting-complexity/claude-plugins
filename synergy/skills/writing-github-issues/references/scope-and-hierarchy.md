@@ -1,12 +1,19 @@
 # Writing GitHub issues — hierarchy and party scoping
 
-Read this only when an issue needs a parent (an epic or feature relationship) or needs to be scoped to a single party (`[Manual] `, `[Browser] ` or an unprefixed code-agent issue). Most issues need neither: a straightforward bug or chore carries no parent and no prefix.
+Read this only when an issue needs a parent (an area or feature relationship) or needs to be scoped to a single party (`[Manual] `, `[Browser] ` or an unprefixed code-agent issue).
 
-## Hierarchy: epic, feature, story
+## Hierarchy: area, feature, story
 
-The native types are a tree, not a flat list. A `User Story` sits under a `Feature`, and `wf issue-apply` refuses one without that parent, or under the wrong type, wherever the org has `Feature` enabled. A `Feature` sits under an `Epic` when the work has one. An epic groups several features toward one outcome, so a feature that would be an epic's only child is filed on its own rather than under an epic that restates it; a feature that does have a parent must have an `Epic` one. `Bug` and `Chore` sit outside the tree: a parent is allowed on either and never required.
+The native types are a tree, not a flat list, and every issue sits somewhere under an **area**.
 
-Attach before creating. Where the work belongs to an epic or feature that already exists, name it as the `parent` by issue number rather than filing a second one.
+- **Area.** An `Epic` whose `Stage` is `Area`: one permanent part of the product, such as Library or Listening, never closed. Its body says what it covers. Planned work never gets an `Epic` of its own.
+- **Feature.** A piece of planned work, under an area. A `Feature` that has a parent must have an `Epic` one.
+- **User Story.** Under a `Feature`. `wf issue-apply` refuses one without that parent, or under the wrong type, wherever the org has `Feature` enabled.
+- **Bug** and **Chore.** Under a feature, or directly under an area.
+
+An issue's area is the nearest area epic above it in its parent chain, and release notes are grouped by it, so every issue needs a parent chain that reaches one. `wf areas` lists the open area epics with their bodies; pick the one whose body best covers the work, and when nothing fits well, file under the closest and say so in one line of the body. `wf issue-audit` reports an open issue whose chain reaches no area as `no-area`. Only when the project has no area epics yet, read `references/area-epics.md` at the plugin root, which covers creating them and moving an existing backlog onto them.
+
+Attach before creating. Where the work belongs to a feature that already exists, name it as the `parent` by issue number rather than filing a second one.
 
 The parent is GitHub's native Parent issue relationship, which the spec's `parent` writes. It is not a sentence in the body; a body line saying "Part of #N" parents nothing.
 

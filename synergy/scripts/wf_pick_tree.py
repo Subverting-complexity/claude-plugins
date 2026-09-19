@@ -91,8 +91,8 @@ def fetch_issue_candidate(cfg, number):
     hand back work no code agent can finish — and do the same to an issue
     somebody else was already assigned to.
 
-    Refused, in order: not found, already closed, assigned to somebody,
-    `Ownership` that is not `Code agent`, and a `Stage` that means the issue is
+    Refused, in order: not found, already closed, assigned to somebody, an
+    area epic, `Ownership` that is not `Code agent`, and a `Stage` that means the issue is
     not available. Dependencies are not checked here — `claim_validate_walk`
     does that for every path.
     """
@@ -133,6 +133,14 @@ def fetch_issue_candidate(cfg, number):
              number=number, assignees=assignees)
 
     facets = load_issue_facets(cfg, [number])
+    if wf_core.is_area_stage((facets.get('stage') or {}).get(number)):
+        # Before the owner, which an area never has: "owned by nobody" would
+        # send a person to set an `Ownership` that would not make it work.
+        emit('all-blocked', EXIT_ALL_BLOCKED,
+             reason='issue #%d is an area epic, a permanent part of the product '
+                    'that is never picked. Name one of the stories under it.'
+                    % number,
+             number=number, stage=wf_core.STAGE_NAMES[wf_core.AREA_STAGE])
     ownership = (facets.get('ownership') or {}).get(number)
     scope = wf_core.effective_scope(ownership, (facets.get('types') or {}).get(number))
     if scope != wf_core.SCOPE_CODE:
