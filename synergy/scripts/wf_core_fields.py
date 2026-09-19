@@ -290,6 +290,9 @@ FIELD_NAME_DEFAULTS = {
     'field-start':         'Start date',
     'field-target':        'Target date',
     'field-stage':         'Stage',
+    'field-user-release-notes':     'User release notes',
+    'field-internal-release-notes': 'Internal release notes',
+    'field-shipped-version':        'Shipped in version',
 }
 
 FIELD_DATA_TYPES = {
@@ -301,6 +304,9 @@ FIELD_DATA_TYPES = {
     'field-start':         'date',
     'field-target':        'date',
     'field-stage':         'single-select',
+    'field-user-release-notes':     'text',
+    'field-internal-release-notes': 'text',
+    'field-shipped-version':        'text',
 }
 
 # The fields a decision reads. An issue missing one of these is an issue the
@@ -330,6 +336,57 @@ MANDATORY_FIELD_KEYS = ('field-priority', 'field-effort', 'field-ownership')
 # comment on the issue naming what was left unset, so the gap is visible to
 # whoever reads the issue instead of only to whoever reads stderr.
 OPTIONAL_FIELD_KEYS = ('field-type', 'field-origin')
+
+# What an issue shipped, written by `post-merge` in the same mutation that sets
+# `Stage` to Done, from the text the `release-notes` skill wrote for that
+# issue. Keyed by the short name a notes file uses. Neither is required, and
+# neither is reported missing: an open issue has shipped nothing yet, and a
+# chore has no user release notes. An org without the field skips the write.
+RELEASE_NOTE_FIELD_KEYS = {
+    'user':     'field-user-release-notes',
+    'internal': 'field-internal-release-notes',
+}
+
+# Fields the workflow knows by name and never writes. `Shipped in version` is
+# stamped by each project's own release script, when a release is cut, and a
+# value written earlier would name a version that does not exist yet. Mapped
+# so preflight does not report it as a field nothing sets.
+NEVER_WRITTEN_FIELD_KEYS = ('field-shipped-version',)
+
+
+def parse_release_notes(data):
+    """A release-notes file, read into {issue number: {'user', 'internal'}}.
+
+    Returns (notes, errors). The file is {"<number>": {"user": text,
+    "internal": text}}; either text may be absent or blank, and a blank one is
+    left out rather than written, so the field stays empty. A key that is not
+    an issue number, or an entry that is not an object, is an error and is
+    left out; the rest still apply.
+    """
+    notes, errors = {}, []
+    if not isinstance(data, dict):
+        return {}, ['a release-notes file is an object keyed by issue number']
+    for key, entry in data.items():
+        try:
+            number = int(str(key).lstrip('#'))
+        except ValueError:
+            errors.append("'%s' is not an issue number" % key)
+            continue
+        if not isinstance(entry, dict):
+            errors.append('#%d: expected an object with user and internal text'
+                          % number)
+            continue
+        texts = {}
+        for short in RELEASE_NOTE_FIELD_KEYS:
+            text = entry.get(short)
+            if isinstance(text, str) and text.strip()                     and text.strip().lower() != 'none.':
+                texts[short] = text.strip()
+        unknown = sorted(set(entry) - set(RELEASE_NOTE_FIELD_KEYS))
+        if unknown:
+            errors.append('#%d: ignored %s (a notes file carries only user and '
+                          'internal)' % (number, ', '.join(unknown)))
+        notes[number] = texts
+    return notes, errors
 
 
 def unset_optional_comment(names):

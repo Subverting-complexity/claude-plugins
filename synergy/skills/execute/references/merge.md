@@ -13,6 +13,18 @@ Follow **steps 1 to 6** of `skills/pr-review/references/auto-merge.md`, the sing
 - "The SHA you reviewed" is the head SHA you recorded in Phase 8 or Phase 9. "The review comment from Step 9" is the consolidated comment you posted.
 - Where it fixes a failing check the way pr-review's Step 7 does, apply Phase 9's fix discipline instead. Its fallbacks that file a conflict or a failing check stand: each leaves the PR open and unmerged. A check that fails because of this PR's own diff is fixed on the branch, never filed.
 - Its step 5 report format is the final report at the end of `review-and-merge.md`.
+- Its step 6 passes `--notes .claude/release-notes.json`, written as **Release notes** below says.
+
+## Release notes
+
+Before step 4, write the release notes each issue the PR closes will carry once it is Done. Read `skills/release-notes/SKILL.md` and follow its **When another skill calls this** section for each issue: in `execute` the change is the whole branch; in `bulk-execute` it is only that story's commits, so each story gets its own text. Write the result with the Write tool, never through a shell string, to `.claude/release-notes.json`:
+
+```json
+{"41": {"user": "Settings
+* The Library header is more compact.", "internal": "* Moved header state into one store."}}
+```
+
+A blank text leaves that field blank, and the Done write still lands. Never write `Shipped in version`: the project's release script stamps it. Writing the notes asks nothing of the user and needs no reply.
 
 You are sitting on the branch being merged, and the merge deletes it. Stay on it through steps 1 to 3, where a conflict resolution or CI fix is committed. Immediately before step 4, detach, because another worktree usually holds the default branch:
 

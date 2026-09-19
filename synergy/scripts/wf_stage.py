@@ -165,6 +165,40 @@ def start_date_input(cfg):
     return value, 'set %s to %s' % (name, today)
 
 
+def release_note_inputs(cfg, texts):
+    """Field inputs for one issue's release notes. (inputs, written, skipped).
+
+    `texts` is {'user': text, 'internal': text}, blanks already left out by
+    `wf_core.parse_release_notes`. `written` names each field an input was
+    built for; `skipped` says why a text has no input. Capability-gated like
+    the start date: an org without a field skips that text, and that is not a
+    failure.
+    """
+    inputs, written, skipped = [], [], []
+    if not texts:
+        return inputs, written, skipped
+    ok, caps, err = resolve_org_capabilities(cfg)
+    if not ok:
+        return [], [], ['org capabilities unavailable (%s)' % (err or 'no detail')]
+    field_map = caps.get('field_map') or {}
+    for short, purpose in wf_core.RELEASE_NOTE_FIELD_KEYS.items():
+        text = texts.get(short)
+        if not text:
+            continue
+        name = field_name(cfg, purpose)
+        meta = field_map.get(name)
+        if not meta:
+            skipped.append('the org does not define a %s field' % name)
+            continue
+        value, verr = wf_core.field_value_input(meta, text)
+        if verr:
+            skipped.append('%s: %s' % (name, verr))
+            continue
+        inputs.append(value)
+        written.append(name)
+    return inputs, written, skipped
+
+
 def set_start_date(cfg, number):
     """Stamp the org's `Start date` issue field with today. Returns (set, why).
 

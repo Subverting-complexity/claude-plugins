@@ -26,6 +26,7 @@ SCRATCH_IGNORE = (
     '.claude/claim-*.sha',
     '.claude/wf-config.json',
     '.claude/bulk-set.json',
+    '.claude/release-notes.json',
     '.claude/*.flag',
     '.claude/*-spec.json',
     '.claude/*-body.md',
@@ -38,7 +39,8 @@ SCRATCH_IGNORE = (
 # next run a request, and the preflight marker the whole preflight skill.
 SCRATCH_RUN = (
     'plan.md', 'label-cache.json', 'candidates.json',
-    'claim-*.sha', 'bulk-set.json', '*.flag', '*-spec.json', '*-body.md',
+    'claim-*.sha', 'bulk-set.json', 'release-notes.json', '*.flag',
+    '*-spec.json', '*-body.md',
 )
 
 EXCLUDE_BEGIN = '# synergy scratch files (managed by wf; do not edit)'
