@@ -5390,7 +5390,7 @@ class TestBoardSyncWorkflow(unittest.TestCase):
 
     def test_only_a_schedule_or_a_manual_dispatch_starts_it(self):
         self.assertIn('schedule:', self.code)
-        self.assertIn("cron: '17 */6 * * *'", self.code)
+        self.assertIn("cron: '17 * * * *'", self.code)
         self.assertIn('workflow_dispatch:', self.code)
         self.assertNotIn('pull_request', self.code)
         self.assertNotIn('push:', self.code)
