@@ -116,4 +116,4 @@ This section is informational. The board is a view for people, with its columns 
 
 ## Bundled Skills
 
-Available as `/synergy:*`: acceptance-criteria, build, bulk-execute, code-architect, pr-review, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, support-request, tone, user-story, user-facing-communication, verify-feature, writing-github-issues.
+Available as `/synergy:*`: acceptance-criteria, build, bulk-execute, code-architect, pr-review, ecosystem-setup, execute, feature-discovery, grill, pr-body, preflight, spec-hardening, support-request, tone, user-story, user-facing-communication, verify-feature, writing-github-issues.

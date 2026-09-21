@@ -82,7 +82,8 @@ jobs:
         # Lowered in 17.0.0: shorter SessionStart message and agent and skill descriptions, and user-story left the every-chat tier.
         # Raised in 17.3.0: verify-feature, tone, support-request, acceptance-criteria, user-story and user-facing-communication are visible to Claude again, because a hidden skill fails when asked for in plain words or named mid-message.
         # Raised in 17.9.0: the release-notes skill joins the visible skills, so a person can ask for release notes in plain words.
-        run: bash count-tokens.sh --every-chat --budget 1260
+        # Raised in 17.12.0: the spec-hardening skill joins the visible skills, so a person can ask for a spec check in plain words.
+        run: bash count-tokens.sh --every-chat --budget 1320
 
       - name: Prove the load counter assigns tiers as documented
         shell: bash
