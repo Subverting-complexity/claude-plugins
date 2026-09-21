@@ -350,11 +350,12 @@ def may_set_stage(current_stage, requested=None):
     return False, current
 
 
-# Stages `board-sync` never writes, whatever the issue looks like. Each one is a
-# person's decision, and nothing readable on the issue can show it was undone.
-# `Area` is here because an area epic is permanent: it is never moved, and a
-# closed one is not marked Done, because closing it was a mistake to repair
-# rather than a state to record.
+# Stages `board-sync` never moves an open issue out of. Each one is a person's
+# decision, and nothing readable on the issue can show it was undone. Closing
+# the issue does end it, so a closed issue in any of them but `Area` is Done.
+# `Area` is protected closed as well: an area epic is permanent, and a closed
+# one is not marked Done, because closing it was a mistake to repair rather
+# than a state to record.
 SYNC_PROTECTED_STAGES = frozenset({'Parked', 'Needs refinement',
                                    'Needs attention', 'Non-code', 'Area'})
 
@@ -372,10 +373,11 @@ def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
 
     The rules, in the order they are tried:
 
-      protected   Parked, Needs refinement, Needs attention, Non-code and Area
-                  are left alone, open or closed, and so is a value that is not
-                  a stage at all.
-      closed      a closed issue is Done.
+      closed      a closed issue is Done, whatever stage it sat in and whether
+                  it was closed as completed or as not planned. Only Area is
+                  exempt, and so is a value that is not a stage at all.
+      protected   an open issue in Parked, Needs refinement, Needs attention,
+                  Non-code or Area is left alone.
       non-code    work owned by a browser agent or a person that is blank,
                   Backlog or Blocked goes to Non-code, as `stage_for` puts it
                   when the issue is written. Once a person has moved such work
@@ -407,11 +409,13 @@ def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
     current = stage_name(stage) or ''
     if (stage or '').strip() and not current:
         return None
+    done = STAGE_NAMES['stage-done']
+    if not is_open and current != STAGE_NAMES[AREA_STAGE]:
+        # Closing an issue, as completed or as not planned, ends whatever a
+        # person parked it for, so a closed issue is Done from any stage.
+        return None if current == done else done
     if current in SYNC_PROTECTED_STAGES:
         return None
-    done = STAGE_NAMES['stage-done']
-    if not is_open:
-        return None if current == done else done
 
     prs = list(open_prs or ())
     backlog = STAGE_NAMES['stage-backlog']

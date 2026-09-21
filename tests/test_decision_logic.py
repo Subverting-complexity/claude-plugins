@@ -3731,11 +3731,16 @@ class TestReconcileStage(unittest.TestCase):
             [{'isDraft': True}] if draft_pr else [])
         return wf_core.reconcile_stage(**facts)
 
-    def test_a_protected_stage_is_never_changed_even_once_closed(self):
+    def test_a_protected_stage_is_never_changed_while_open(self):
         for stage in wf_core.SYNC_PROTECTED_STAGES:
             self.assertIsNone(self.r(stage=stage, open_blockers=1, blockers=1,
                                      open_pr=True))
-            self.assertIsNone(self.r(stage=stage, is_open=False))
+
+    def test_a_closed_issue_is_done_even_from_a_protected_stage(self):
+        """Closed as not planned lands here too: nothing else is left to do."""
+        for stage in wf_core.SYNC_PROTECTED_STAGES - {'Area'}:
+            self.assertEqual(self.r(stage=stage, is_open=False), 'Done', stage)
+        self.assertIsNone(self.r(stage='Area', is_open=False))
 
     def test_a_value_that_is_not_a_stage_is_left_alone(self):
         self.assertIsNone(self.r(stage='Ready', open_blockers=1, blockers=1))
@@ -3796,6 +3801,8 @@ class TestReconcileStage(unittest.TestCase):
                 self.assertIsNone(self.r(stage=stage, assigned=True, scope=scope))
             self.assertIsNone(self.r(stage='Parked', scope=scope))
             self.assertEqual(self.r(is_open=False, scope=scope), 'Done')
+            self.assertEqual(self.r(is_open=False, stage='Parked', scope=scope),
+                             'Done')
 
     def test_code_work_is_not_moved_to_non_code(self):
         self.assertIsNone(self.r(stage='Backlog', scope=wf_core.SCOPE_CODE))
