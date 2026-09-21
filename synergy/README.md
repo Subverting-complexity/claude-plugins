@@ -191,6 +191,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | `build`               | Orchestrator for local work: plan → build → verify → commit, no issue or PR |
 | `pr-review`           | Deep PR review, labels, optional auto-merge; also reviews a local change, with a React Native checklist |
 | `verify-feature`      | A report to read before merging: what a branch or PR touches, concerns, nitpicks, acceptance criteria. Changes nothing |
+| `spec-hardening`      | A report on a spec before it is built: what it misses, gets wrong or leaves open, checked against the codebase. Changes nothing |
 | `preflight`           | Checks project-config health before a run; `wf preflight --fix` repairs what it safely can |
 | `feature-discovery`   | Breaks features into stories; plans a new project's foundations |
 | `grill`               | Stress-tests a plan or design by interviewing you |
