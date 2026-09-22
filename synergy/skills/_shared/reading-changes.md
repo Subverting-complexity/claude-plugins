@@ -13,8 +13,8 @@ The single procedure for turning a branch, a pull request or a set of notes into
 
 1. **One group per change a person would notice.** Several code changes that produce one visible behaviour are one group; one file that changes two visible behaviours is two. Group by what the person sees, never by file, module or commit.
 2. **Sort each group into one of two kinds.**
-   - **User-facing**: something a person using the product can see, do, or measure differently: a screen, a setting, a message, an error that no longer happens, a speed they would feel.
-   - **Internal-only**: nothing a person using the product would notice: refactors, renames, test-only changes, build and tooling changes, documentation, a migration with no visible effect, groundwork for a feature that is not switched on yet.
-3. **Describe each group by its effect, in plain words.** Name the part of the product a person would look for it under, and what now happens there. Keep code identifiers (class names, method names, field paths) out unless the person types them into a configuration screen.
+   - **User-facing**: something a person using the product can see, do, or measure differently: a screen, a setting, a message, an error that no longer happens, a speed they would feel. The person is someone using the product, never a developer, tester or the team.
+   - **Internal-only**: nothing a person using the product would notice: refactors, renames, test-only changes, developer and test tooling, build, CI and release tooling, documentation, store listing text, a migration with no visible effect, groundwork for a feature that is not switched on yet.
+3. **Describe each group by its effect, in plain words.** Name the part of the product a person would look for it under inside the description itself ("the reader's header is now one row"), never as a separate heading or label. Keep code identifiers (class names, method names, field paths) out unless the person types them into a configuration screen.
 
 A change that is both, such as a fix whose visible effect is small and whose internal work is large, belongs in the user-facing kind, described by its visible effect. A skill that also records internal work, as `release-notes` does, describes the internal part separately.
