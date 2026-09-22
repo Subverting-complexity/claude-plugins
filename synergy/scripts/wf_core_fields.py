@@ -5,6 +5,8 @@ Label resolution, native issue types and the org issue field vocabularies
 Moved verbatim out of wf_core.py; `scripts/README.md` has the module map.
 """
 
+import re
+
 from wf_core_findings import _drift_key, _names
 
 
@@ -349,15 +351,48 @@ RELEASE_NOTE_FIELD_KEYS = {
 # so preflight does not report it as a field nothing sets.
 NEVER_WRITTEN_FIELD_KEYS = ('field-shipped-version',)
 
+_NOTE_HEADING = re.compile(r'^#+\s')
+_NOTE_BULLET = re.compile(r'^(?:[*\-•]|\d+[.)])\s+')
+_NOTE_SENTENCE_END = re.compile('[.!?][)"\'”’]*$')
+_NOTE_LABEL_MAX_WORDS = 6
+
+
+def _note_lines(text):
+    """A release-notes text as its plain lines, without the `* ` marker.
+
+    The changelog adds each issue's area heading itself, from its area epic,
+    so a heading, or a short line that is not a sentence ("Library and
+    reading"), is a label the writer copied in and is dropped. Bold and code
+    marks are removed, and a repeated line is kept once.
+    """
+    lines, seen = [], set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or _NOTE_HEADING.match(line):
+            continue
+        line = _NOTE_BULLET.sub('', line).replace('**', '').replace('`', '')
+        line = line.strip()
+        if not line or line.lower() == 'none.':
+            continue
+        if (not _NOTE_SENTENCE_END.search(line)
+                and len(line.split()) <= _NOTE_LABEL_MAX_WORDS):
+            continue
+        if line.casefold() not in seen:
+            seen.add(line.casefold())
+            lines.append(line)
+    return lines
+
 
 def parse_release_notes(data):
     """A release-notes file, read into {issue number: {'user', 'internal'}}.
 
     Returns (notes, errors). The file is {"<number>": {"user": text,
     "internal": text}}; either text may be absent or blank, and a blank one is
-    left out rather than written, so the field stays empty. A key that is not
-    an issue number, or an entry that is not an object, is an error and is
-    left out; the rest still apply.
+    left out rather than written, so the field stays empty. Each text is
+    written as `* ` lines only (`_note_lines`), and an internal line that
+    repeats a user line is dropped. A key that is not an issue number, or an
+    entry that is not an object, is an error and is left out; the rest still
+    apply.
     """
     notes, errors = {}, []
     if not isinstance(data, dict):
@@ -372,12 +407,16 @@ def parse_release_notes(data):
             errors.append('#%d: expected an object with user and internal text'
                           % number)
             continue
-        texts = {}
+        texts, user_lines = {}, set()
         for short in RELEASE_NOTE_FIELD_KEYS:
             text = entry.get(short)
-            if (isinstance(text, str) and text.strip()
-                    and text.strip().lower() != 'none.'):
-                texts[short] = text.strip()
+            lines = _note_lines(text) if isinstance(text, str) else []
+            if short == 'user':
+                user_lines = {line.casefold() for line in lines}
+            else:
+                lines = [ln for ln in lines if ln.casefold() not in user_lines]
+            if lines:
+                texts[short] = '\n'.join('* ' + line for line in lines)
         unknown = sorted(set(entry) - set(RELEASE_NOTE_FIELD_KEYS))
         if unknown:
             errors.append('#%d: ignored %s (a notes file carries only user and '

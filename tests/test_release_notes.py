@@ -63,9 +63,9 @@ class TestParseReleaseNotes(unittest.TestCase):
 
     def test_both_texts_are_kept_per_issue(self):
         notes, errors = wf_core.parse_release_notes(
-            {'5': {'user': 'Settings\n* A thing.', 'internal': '* Refactored.'}})
+            {'5': {'user': '* A thing.', 'internal': '* Refactored.'}})
         self.assertEqual(errors, [])
-        self.assertEqual(notes, {5: {'user': 'Settings\n* A thing.',
+        self.assertEqual(notes, {5: {'user': '* A thing.',
                                      'internal': '* Refactored.'}})
 
     def test_a_blank_or_none_text_is_left_out_so_the_field_stays_blank(self):
@@ -76,15 +76,45 @@ class TestParseReleaseNotes(unittest.TestCase):
 
     def test_a_bad_key_or_entry_is_an_error_and_the_rest_still_apply(self):
         notes, errors = wf_core.parse_release_notes(
-            {'x': {'user': 'a'}, '8': 'text', '9': {'internal': '* b'}})
-        self.assertEqual(notes, {9: {'internal': '* b'}})
+            {'x': {'user': 'a'}, '8': 'text', '9': {'internal': '* Refactored.'}})
+        self.assertEqual(notes, {9: {'internal': '* Refactored.'}})
         self.assertEqual(len(errors), 2)
 
     def test_a_version_in_the_file_is_ignored_and_said_so(self):
         notes, errors = wf_core.parse_release_notes(
-            {'5': {'internal': '* b', 'version': '1.2.0'}})
-        self.assertEqual(notes, {5: {'internal': '* b'}})
+            {'5': {'internal': '* Refactored.', 'version': '1.2.0'}})
+        self.assertEqual(notes, {5: {'internal': '* Refactored.'}})
         self.assertIn('version', errors[0])
+
+    def test_an_area_or_section_label_is_dropped_because_the_changelog_adds_it(self):
+        notes, _ = wf_core.parse_release_notes({'5': {
+            'user': 'Library and reading\n* You can now search a book.\n'
+                    '* Playback and accessibility\n### Reading\n'
+                    '**Settings**\n* A new switch hides the text.'}})
+        self.assertEqual(notes[5]['user'], '* You can now search a book.\n'
+                                           '* A new switch hides the text.')
+
+    def test_every_line_becomes_a_plain_star_bullet(self):
+        notes, _ = wf_core.parse_release_notes({'5': {
+            'user': '- Turn it off with **Tap to hide** in Settings.\n'
+                    'Double tap a sentence to read from there.',
+            'internal': '1. Added `readerChrome` for the rule.'}})
+        self.assertEqual(notes[5], {
+            'user': '* Turn it off with Tap to hide in Settings.\n'
+                    '* Double tap a sentence to read from there.',
+            'internal': '* Added readerChrome for the rule.'})
+
+    def test_a_repeated_line_is_kept_once_and_internal_never_repeats_user(self):
+        notes, _ = wf_core.parse_release_notes({'5': {
+            'user': '* Added a reset button.\n* Added a reset button.',
+            'internal': '* Added a reset button.\n* Stored the rate per device.'}})
+        self.assertEqual(notes[5], {'user': '* Added a reset button.',
+                                    'internal': '* Stored the rate per device.'})
+
+    def test_a_long_line_without_a_full_stop_is_kept(self):
+        notes, _ = wf_core.parse_release_notes({'5': {
+            'internal': '* Renamed the fast lane to internal in the deploy tooling'}})
+        self.assertIn('Renamed the fast lane', notes[5]['internal'])
 
 
 class TestPostMergeWritesReleaseNotes(unittest.TestCase):
@@ -135,7 +165,7 @@ class TestPostMergeWritesReleaseNotes(unittest.TestCase):
         wanted, extra = calls[0]
         self.assertEqual(wanted, {5: 'Done'})
         self.assertEqual(extra[5], [
-            {'fieldId': 'F_user', 'textValue': 'Settings\n* A thing.'},
+            {'fieldId': 'F_user', 'textValue': '* A thing.'},
             {'fieldId': 'F_int', 'textValue': '* Refactored.'}])
         self.assertEqual(payload['release_notes'],
                          {'5': ['User release notes', 'Internal release notes']})
@@ -147,7 +177,7 @@ class TestPostMergeWritesReleaseNotes(unittest.TestCase):
                                            'textValue': '* Cleaned up.'}])
 
     def test_shipped_in_version_is_never_written(self):
-        _, _, calls = self._post_merge({'5': {'user': 'A\n* b', 'internal': '* c',
+        _, _, calls = self._post_merge({'5': {'user': '* A thing.', 'internal': '* Refactored.',
                                               'version': '1.2.0'}})
         ids = [i['fieldId'] for i in calls[0][1][5]]
         self.assertNotIn('F_ver', ids)
@@ -155,12 +185,12 @@ class TestPostMergeWritesReleaseNotes(unittest.TestCase):
     def test_a_note_for_an_issue_the_pr_does_not_close_is_not_written(self):
         """Only issues closed by their own PR: a container, or anything else
         named in the file, gets nothing."""
-        _, _, calls = self._post_merge({'10': {'user': 'A\n* b'}})
+        _, _, calls = self._post_merge({'10': {'user': '* A thing.'}})
         self.assertEqual(calls[0][1], {})
 
     def test_an_org_without_the_fields_settles_exactly_as_before(self):
         code, payload, calls = self._post_merge(
-            {'5': {'user': 'A\n* b', 'internal': '* c'}}, field_map={})
+            {'5': {'user': '* A thing.', 'internal': '* Refactored.'}}, field_map={})
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(calls, [({5: 'Done'}, {})])
         self.assertEqual(payload['settled'], [5])
@@ -168,7 +198,7 @@ class TestPostMergeWritesReleaseNotes(unittest.TestCase):
 
     def test_a_refused_text_still_lets_the_issue_reach_done(self):
         code, payload, calls = self._post_merge(
-            {'5': {'user': 'A\n* b'}}, fail_combined=True)
+            {'5': {'user': '* A thing.'}}, fail_combined=True)
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(calls[1], ({5: 'Done'}, {}))
         entry = payload['settled'][0]
