@@ -4,7 +4,7 @@ description: 'Write user and internal release notes for a branch, PR or story, s
 ---
 # Release Notes
 
-Writes two short texts for one change: **user release notes**, what someone using the product would notice, and **internal release notes**, what changed under the hood. They are the values `execute` and `bulk-execute` write to the org's `User release notes` and `Internal release notes` issue fields when a story reaches Done, and a person can ask for them on any branch.
+Writes two short texts for one change: **user release notes**, what someone using the product would notice, and **internal release notes**, what changed under the hood. They are the values `execute` and `bulk-execute` write to the org's `User release notes` and `Internal release notes` issue fields when a story reaches Done — or, when a merge is finished by a standalone `pr-review` pass instead, the values that step's auto-merge fallback writes in their place — and a person can ask for them on any branch.
 
 Each story's notes are written to be concatenated. A project builds its changelog by collecting the notes of every closed issue in a release, grouping the user lines by each issue's area and putting the internal lines last, so each line must stand on its own beside lines written for other stories:
 
