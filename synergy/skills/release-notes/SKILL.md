@@ -4,7 +4,7 @@ description: 'Write user and internal release notes for a branch, PR or story, s
 ---
 # Release Notes
 
-Writes two short texts for one change: **user release notes**, what someone using the product would notice, and **internal release notes**, what changed under the hood. They are the values `execute` and `bulk-execute` write to the org's `User release notes` and `Internal release notes` issue fields when a story reaches Done, and a person can ask for them on any branch.
+Writes two short texts for one change: **user release notes**, what someone using the product would notice, and **internal release notes**, what changed under the hood. They are the values `execute` and `bulk-execute` write to the org's `User release notes` and `Internal release notes` issue fields when a story reaches Done — or, when a merge is finished by a standalone `pr-review` pass instead, the values that step's auto-merge fallback writes in their place — and a person can ask for them on any branch.
 
 Each story's notes are written to be concatenated. A project builds its changelog by collecting the notes of every closed issue in a release, grouping the user lines by each issue's area and putting the internal lines last, so each line must stand on its own beside lines written for other stories:
 
@@ -70,4 +70,4 @@ A block with nothing to say reads `None.` under its label: a chore or internal f
 
 ## When another skill calls this
 
-`execute` and `bulk-execute` read this file before the merge and follow it for each story, with no reply to the user in between. They need the two texts as data, not the two blocks: for each story, the user text is the user block without its label line, and the internal text is the internal block without its label line. Neither carries an area heading, so skip the **Run by hand** step. A block that reads `None.` becomes an empty string, so the field is left blank. The calling workflow says where to write them.
+`execute` and `bulk-execute` read this file before the merge and follow it for each story, with no reply to the user in between. `pr-review`'s auto-merge fallback (`references/auto-merge.md` step 6) reads it the same way, only when a merge finishes without `execute`/`bulk-execute` having already written `.claude/release-notes.json`. They need the two texts as data, not the two blocks: for each story, the user text is the user block without its label line, and the internal text is the internal block without its label line. Neither carries an area heading, so skip the **Run by hand** step. A block that reads `None.` becomes an empty string, so the field is left blank. The calling workflow says where to write them.
