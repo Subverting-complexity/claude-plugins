@@ -438,6 +438,12 @@ def build_parser():
                          'none. Off by default: an issue created from a spec '
                          'already carries its parent, so this is for a backlog '
                          'written before that, or issues filed by hand')
+    au.add_argument('--blockers', action='store_true',
+                    help='also read the blockers each body names ("Blocked by: '
+                         '#N") and propose a blocked-by edge for any that is '
+                         'open and has none. Off by default. Scan the whole '
+                         'backlog: with --limit or --since a blocker outside '
+                         'the scan is not known to be open and is skipped')
     au.add_argument('--quiet', action='store_true',
                     help='report counts only, keeping the exit code, for CI')
     au.add_argument('--refresh', action='store_true',

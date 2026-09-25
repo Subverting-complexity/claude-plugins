@@ -115,7 +115,8 @@ def cmd_issue_audit(args):
                                    project_fields=cfg.get('fields') or {},
                                    open_numbers=open_numbers,
                                    type_map=caps.get('type_map') or {},
-                                   parents=args.parents, chain=chain)
+                                   parents=args.parents, chain=chain,
+                                   blockers=args.blockers)
                for issue in issues]
     with_gaps = [a for a in audited if a['gaps']]
     summary = wf_core.audit_summary(audited)

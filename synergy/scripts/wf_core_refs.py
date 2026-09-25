@@ -44,6 +44,37 @@ _PARENT_PATTERNS = [
 
 DEP_LIMIT = 5
 
+# The one place the body is read for dependencies, and only by `issue-audit
+# --blockers`, to find an edge that was never written. Nothing else reads it:
+# `pick`, `unblock` and `issue-apply` still act on native edges alone, so a
+# sentence here can prompt a proposal but never holds an issue back.
+#
+# It is narrow because the parser removed above was not. A line has to *start*
+# with the phrase, and the first thing after it has to be an issue reference,
+# so "Nothing. This was blocked by #980" and "Blocked by nothing; see #12" name
+# no one. Only the run of references at the front of the line counts, so a
+# quoted title after them cannot add one.
+_BLOCKERS_LINE = re.compile(
+    r'^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?(?:blocked[ \t]+by|depends[ \t]+on)[ \t]*:?(?:\*\*)?[ \t]*'
+    r'((?<![\w/])#\d+(?:[ \t]*(?:,|\band\b|&)[ \t]*(?<![\w/])#\d+)*)',
+    re.IGNORECASE | re.MULTILINE)
+
+
+def parse_blockers(body):
+    """The local issue numbers the body says it is blocked by, in order.
+
+    Fixed phrasing only: a line starting `Blocked by` or `Depends on`, with or
+    without bold and a colon, then `#N` references separated by commas or
+    `and`. A reference to another repository (`org/other#5`) is not read,
+    because the number alone would name a different local issue.
+    """
+    found = []
+    for m in _BLOCKERS_LINE.finditer(body or ''):
+        for n in re.findall(r'#(\d+)', m.group(1)):
+            if int(n) not in found:
+                found.append(int(n))
+    return found
+
 
 def parse_parent(body):
     """The issue this one says it is part of, or None.
