@@ -48,7 +48,7 @@ Do not reach for these out of habit, and do not add a "Definition of done" secti
 
 ## The one convention the workflow reads
 
-A dependency is a **native blocked-by edge**, written from a spec's `blocked_by` by `wf issue-apply`. Selection skips a story with an open edge, and `wf unblock` releases it when every edge closes. Prose is not parsed, so a `Blocked by #N` sentence with no edge behind it holds nothing back.
+A dependency is a **native blocked-by edge**, written from a spec's `blocked_by` by `wf issue-apply`. Selection skips a story with an open edge, and `wf unblock` releases it when every edge closes. Prose is not parsed, so a `Blocked by #N` sentence with no edge behind it holds nothing back. `wf issue-audit --blockers-only` finds those where the blocker is still open and writes the edges to add.
 
 ## What not to include
 

@@ -157,6 +157,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --repo acme/other --limit
 # …and read the parent each body claims, for a backlog that predates spec-created issues
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --parents
 
+# …and find bodies that say "Blocked by: #N" where no blocked-by edge exists
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --blockers
+
+# …or write a spec of only those edges, with no placeholder, and apply it as it stands
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --blockers-only
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/issue-audit-spec.json
+
 # List the open area epics (an Epic whose Stage is Area), sorted by title
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas
 
@@ -411,6 +418,7 @@ It **never writes**. Both write transports are stubbed out in its tests to prove
 | `missing-parent` | `--parents` only. The body says it is part of an issue and GitHub shows it as free-standing. |
 | `parent-closed` | `--parents` only. The parent the body names is not open. |
 | `parent-differs` | `--parents` only. The body names one parent and the hierarchy has another. Reported, never changed. |
+| `missing-blocker-edge` | `--blockers` only. The body says `Blocked by: #N`, #N is open, and the issue has no blocked-by edge to it. The proposal is a `blocked_by` list holding the edges the issue already has plus the missing ones. A closed blocker is not a gap: it holds nothing back. |
 | `no-area` | No area epic sits above the issue in its parent chain, so it belongs to no part of the product and its release notes cannot be grouped. Reported and never proposed: which area an issue belongs to is a judgement about the product. Judged only on a chain read in full within the scan, ending at an issue with no parent; a parent the scan did not read (closed, in another repository, or past `--limit`) is not guessed at. Not reported at all unless the scan read an area epic, so with `--limit` or `--since` it is reported only when an area epic falls inside that slice. Before a repository has an area epic it is not reported because before then every issue would carry it for one cause, and `preflight`'s `area-epics` names that once. |
 
 An area epic (`Stage` is `Area`) is exempt from `missing-field`, `missing-optional-field` and the ownership gaps: it is a permanent part of the product rather than work, so nothing ranks, sizes or routes it. When another gap puts one in the backfill spec, its entry carries `"state": "area"` so `issue-apply` applies the same exemption.
@@ -427,7 +435,11 @@ One gap above comes from body prose, and it is worth understanding before trusti
 
 This one is **opt-in**, and the reason is worth stating rather than treating as caution. A story created through `feature-discovery` carries `"parent"` in the spec that creates it, so on a repo whose issues all arrive that way, parsing the sentence back out of the body only re-derives what the pipeline already knew, and every issue that politely repeats its epic in the first line shows up as a gap. Where the prose is the only record — a backlog written before any of this existed, or an issue typed into the GitHub UI — pass `--parents` and the three gaps above come back.
 
-The parent is the **only** thing read out of a body. Dependencies used to be read the same way, and it went badly enough to be worth recording: the parser missed a `## Blocked by` heading whose references sat on the next line, and read "Nothing. This **was** blocked by #980" as a live dependency — wrong in both directions on the same backlog, and each fault silently invisible. A sentence is not structured data and no amount of regex makes it so, so the audit no longer proposes an edge from one. What it checks in that slot instead is **scope**, where the three signals genuinely can be compared against each other.
+**A blocker is the native blocked-by edge, and the body is read only to find an edge that was never written.** Dependencies used to be read from prose everywhere, and it went badly enough to be worth recording: the parser missed a `## Blocked by` heading whose references sat on the next line, and read "Nothing. This **was** blocked by #980" as a live dependency — wrong in both directions on the same backlog, and each fault silently invisible. So `pick`, `unblock` and `issue-apply` still read edges alone, and a sentence never holds an issue back.
+
+`--blockers` is the one place a sentence is read, to repair an issue written with `Blocked by: #N` and no edge (#2146 in CadenceReader was one: the sentence said it, the edge list was empty). `wf_core.parse_blockers` is narrow on purpose. The line has to start `Blocked by` or `Depends on`, and the references have to follow on the **same line** with nothing in between, so "This **was** blocked by #980", "Blocked by nothing; see #12" and a reference on the next line all name no one. Only open blockers count, so the scan has to be the whole backlog: with `--limit` or `--since` a blocker outside the slice is not known to be open and is skipped. An issue whose edges were not fully read is skipped too. It is opt-in for the same reason as `--parents`. With `--blockers` the proposal sits in the ordinary spec, beside every other gap the issue has and the `TODO`s a person has to fill first. `--blockers-only` (`wf_core.blockers_only`) is the self-heal: it reports and writes only the missing edges, each entry just `number` and `blocked_by`, so the spec has nothing to fill in and `issue-apply` takes it as it stands. `issue-audit` itself still writes nothing to GitHub. `issue-apply` still checks each issue against its live state, so an issue that lacks a required field is refused there, not here.
+
+What the audit checks in the dependency slot otherwise is **scope**, where the three signals genuinely can be compared against each other.
 
 ## Area epics — `areas`
 

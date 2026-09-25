@@ -502,6 +502,105 @@ class TestParentGaps(unittest.TestCase):
         self.assertNotIn('parent', entry['proposed'])
 
 
+class TestParseBlockers(unittest.TestCase):
+    def test_fixed_phrasings(self):
+        for body, expected in (
+            ('**Blocked by:** #111 "Collections in the Library". Build after.', [111]),
+            ('Blocked by #111', [111]),
+            ('blocked by: #4, #5 and #6', [4, 5, 6]),
+            ('- Depends on #7', [7]),
+            ('Intro\n\nBlocked by #8 & #9\n', [8, 9]),
+            ('**Blocked by**: #10', [10]),
+        ):
+            self.assertEqual(wf_core.parse_blockers(body), expected, body)
+
+    def test_prose_that_names_no_live_blocker_is_ignored(self):
+        for body in (
+            'Nothing. This was blocked by #980.',
+            'Blocked by nothing; see #12 for context.',
+            'It is blocked by #12 until the release.',
+            'Blocked by org/other#5',
+            'Blocked by #12abc',
+            'Blocked by:\n\n#12',
+            '',
+            None,
+        ):
+            self.assertEqual(wf_core.parse_blockers(body), [], body)
+
+    def test_a_quoted_title_cannot_add_a_reference(self):
+        self.assertEqual(
+            wf_core.parse_blockers('Blocked by #111 "Follow up to #99"'), [111])
+
+
+class TestBlockerEdgeGaps(unittest.TestCase):
+    """`--blockers`: the body names a blocker the edges do not have."""
+
+    BODY = '**Blocked by:** #111 "Collections in the Library".'
+
+    def _audit(self, node, open_numbers, blockers=True):
+        return wf_core.audit_issue(node, _AUDIT_FIELDS, open_numbers=open_numbers,
+                                   blockers=blockers)
+
+    def test_an_open_blocker_with_no_edge_is_proposed(self):
+        entry = self._audit(_audit_node(2146, body=self.BODY), {2146, 111})
+        self.assertIn('missing-blocker-edge', _gap_kinds(entry))
+        self.assertEqual(entry['proposed']['blocked_by'], [111])
+
+    def test_existing_edges_are_carried_into_the_proposal(self):
+        """`blocked_by` is the complete set, so omitting one would remove it."""
+        node = _audit_node(2146, body=self.BODY, blocked_by=[50])
+        entry = self._audit(node, {2146, 111, 50})
+        self.assertEqual(entry['proposed']['blocked_by'], [50, 111])
+
+    def test_a_closed_blocker_is_not_a_gap(self):
+        entry = self._audit(_audit_node(2146, body=self.BODY), {2146})
+        self.assertNotIn('missing-blocker-edge', _gap_kinds(entry))
+        self.assertNotIn('blocked_by', entry['proposed'])
+
+    def test_a_matching_edge_is_not_a_gap(self):
+        node = _audit_node(2146, body=self.BODY, blocked_by=[111])
+        entry = self._audit(node, {2146, 111})
+        self.assertNotIn('missing-blocker-edge', _gap_kinds(entry))
+
+    def test_an_issue_is_never_blocked_by_itself(self):
+        entry = self._audit(_audit_node(2146, body='Blocked by #2146'), {2146})
+        self.assertNotIn('missing-blocker-edge', _gap_kinds(entry))
+
+    def test_a_partial_edge_read_is_skipped(self):
+        node = _audit_node(2146, body=self.BODY)
+        node['blockedBy']['totalCount'] = 60
+        entry = self._audit(node, {2146, 111})
+        self.assertNotIn('missing-blocker-edge', _gap_kinds(entry))
+
+    def test_off_by_default(self):
+        entry = self._audit(_audit_node(2146, body=self.BODY), {2146, 111},
+                            blockers=False)
+        self.assertNotIn('missing-blocker-edge', _gap_kinds(entry))
+
+
+class TestBlockersOnly(unittest.TestCase):
+    """`--blockers-only`: a spec that carries nothing but the missing edges."""
+
+    def test_only_blocker_gaps_and_a_minimal_proposal_survive(self):
+        with_edge_gap = _audit_node(
+            2146, body='**Blocked by:** #111', blocked_by=[50])
+        other_gaps_only = _audit_node(7, body='nothing')
+        audited = [wf_core.audit_issue(n, _AUDIT_FIELDS, open_numbers={2146, 111, 50, 7},
+                                       blockers=True)
+                   for n in (with_edge_gap, other_gaps_only)]
+        self.assertTrue(audited[1]['gaps'])  # it has gaps, just not blocker ones
+        narrowed = wf_core.blockers_only(audited)
+        self.assertEqual([e['number'] for e in narrowed], [2146])
+        self.assertEqual(_gap_kinds(narrowed[0]), ['missing-blocker-edge'])
+        self.assertEqual(narrowed[0]['proposed'],
+                         {'number': 2146, 'blocked_by': [50, 111]})
+
+    def test_nothing_to_report_is_empty(self):
+        entry = wf_core.audit_issue(_audit_node(7), _AUDIT_FIELDS,
+                                    open_numbers={7}, blockers=True)
+        self.assertEqual(wf_core.blockers_only([entry]), [])
+
+
 class TestParentsAreOptIn(unittest.TestCase):
     """Without `--parents` the body's claim is not read at all.
 

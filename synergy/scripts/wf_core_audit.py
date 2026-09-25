@@ -11,7 +11,9 @@ from wf_core_fields import (
     MANDATORY_FIELD_KEYS, OPTIONAL_FIELD_KEYS, classification_conflicts,
     native_type_for, resolve_field_name, resolve_label,
 )
-from wf_core_refs import parse_parent
+from wf_core_refs import (
+    edges_incomplete, local_blocker_numbers, parse_blockers, parse_parent,
+)
 from wf_core_spec import (
     SPEC_PLACEHOLDER, _is_supplied, default_classification, hierarchy_error,
 )
@@ -192,7 +194,7 @@ def resolves_to_no_area(number, chain):
 
 def audit_issue(issue, field_map, type_capable=True, project_map=None,
                 project_fields=None, open_numbers=None, type_map=None,
-                parents=False, chain=None):
+                parents=False, chain=None, blockers=False):
     """Every gap on one issue, plus the spec entry that would close them.
 
     `issue` is a read-back node. Returns a dict carrying `gaps` (each with a
@@ -201,9 +203,12 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
     `validate_spec()` refuses the spec until a person fills them in — silence
     must not pass for a value.
 
-    Dependency edges are not audited, because there is nothing to audit them
-    against: the native `blockedBy` edge is the only record of a dependency, so
-    it cannot disagree with anything. What is audited in its place is
+    Dependency edges are not audited by default, because there is nothing to
+    audit them against: the native `blockedBy` edge is the only record of a
+    dependency, so it cannot disagree with anything. `blockers` (off by
+    default, like `parents`) is the exception for an issue whose body names an
+    open blocker that was never written as an edge; see below. What is audited
+    in its place is
     **ownership** — whether the `Ownership` field and the title prefix agree
     about which of the three parties owns the issue — and **hierarchy**, whether
     a Feature sits under an Epic and a User Story under a Feature.
@@ -389,6 +394,29 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
                                'of the product and its release notes cannot be '
                                'grouped; file it under a Feature or an area epic'})
 
+    # A blocker the body names and the edges do not have. Opt-in like parents,
+    # and for the same reason: an issue created from a spec already carries its
+    # edges. Only an *open* blocker is a gap. A closed one waits on nothing, so
+    # an edge to it would be a record and not a hold; and a number outside the
+    # scan is unknown, which is why a narrowed scan (`--limit`, `--since`)
+    # under-reports here. An issue whose edges were not fully read is skipped,
+    # since "no matching edge" cannot be told from "not on the page".
+    # The proposal restates the whole set, as `issue-apply` reads `blocked_by`,
+    # so the edges the issue already has are carried, not dropped.
+    proposed_blockers = None
+    if (blockers and open_numbers is not None
+            and not edges_incomplete(issue.get('blockedBy'))):
+        held = local_blocker_numbers(issue)
+        missing = [n for n in parse_blockers(issue.get('body'))
+                   if n != number and n not in held and n in open_numbers]
+        if missing:
+            for n in missing:
+                gaps.append({'kind': 'missing-blocker-edge',
+                             'detail': 'the body says it is blocked by #%s, which '
+                                       'is open, and there is no blocked-by edge '
+                                       'to it' % n})
+            proposed_blockers = sorted(held + missing)
+
     # No title: an update now writes the title it is given, and the one read
     # here would strip a prefix or undo an edit made after the audit.
     proposed = {'number': number}
@@ -402,7 +430,30 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
         proposed['fields'] = proposed_fields
     if proposed_parent:
         proposed['parent'] = proposed_parent
+    if proposed_blockers:
+        proposed['blocked_by'] = proposed_blockers
     return {'number': number, 'title': title, 'gaps': gaps, 'proposed': proposed}
+
+
+def blockers_only(audited):
+    """The audit narrowed to the missing-blocker-edge gaps and nothing else.
+
+    Each entry that has one keeps only those gaps, and its proposal shrinks to
+    `number` and `blocked_by`. An update entry names only what it changes, so
+    that spec carries no placeholder and `issue-apply` can take it as it stands;
+    the full proposal would drag along every other gap the issue has, and the
+    `TODO`s a person has to fill first.
+    """
+    narrowed = []
+    for entry in audited:
+        gaps = [g for g in entry['gaps'] if g['kind'] == 'missing-blocker-edge']
+        if not gaps:
+            continue
+        narrowed.append({'number': entry['number'], 'title': entry['title'],
+                         'gaps': gaps,
+                         'proposed': {'number': entry['number'],
+                                      'blocked_by': entry['proposed']['blocked_by']}})
+    return narrowed
 
 
 def audit_summary(audited):
