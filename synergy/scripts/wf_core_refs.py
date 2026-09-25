@@ -55,8 +55,8 @@ DEP_LIMIT = 5
 # no one. Only the run of references at the front of the line counts, so a
 # quoted title after them cannot add one.
 _BLOCKERS_LINE = re.compile(
-    r'^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?(?:blocked[ \t]+by|depends[ \t]+on)[ \t]*:?(?:\*\*)?[ \t]*'
-    r'((?<![\w/])#\d+(?:[ \t]*(?:,|\band\b|&)[ \t]*(?<![\w/])#\d+)*)',
+    r'^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?(?:blocked[ \t]+by|depends[ \t]+on)[ \t]*(?:\*\*)?[ \t]*:?[ \t]*(?:\*\*)?[ \t]*'
+    r'((?<![\w/])#\d+(?!\w)(?:[ \t]*(?:,|\band\b|&)[ \t]*(?<![\w/])#\d+(?!\w))*)',
     re.IGNORECASE | re.MULTILINE)
 
 

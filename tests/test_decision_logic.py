@@ -510,6 +510,7 @@ class TestParseBlockers(unittest.TestCase):
             ('blocked by: #4, #5 and #6', [4, 5, 6]),
             ('- Depends on #7', [7]),
             ('Intro\n\nBlocked by #8 & #9\n', [8, 9]),
+            ('**Blocked by**: #10', [10]),
         ):
             self.assertEqual(wf_core.parse_blockers(body), expected, body)
 
@@ -519,6 +520,7 @@ class TestParseBlockers(unittest.TestCase):
             'Blocked by nothing; see #12 for context.',
             'It is blocked by #12 until the release.',
             'Blocked by org/other#5',
+            'Blocked by #12abc',
             'Blocked by:\n\n#12',
             '',
             None,
