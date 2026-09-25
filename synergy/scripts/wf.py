@@ -444,6 +444,10 @@ def build_parser():
                          'open and has none. Off by default. Scan the whole '
                          'backlog: with --limit or --since a blocker outside '
                          'the scan is not known to be open and is skipped')
+    au.add_argument('--blockers-only', action='store_true',
+                    help='like --blockers, but report and write only the missing '
+                         'blocked-by edges. The spec holds no placeholder, so it '
+                         'can be applied with issue-apply as it stands')
     au.add_argument('--quiet', action='store_true',
                     help='report counts only, keeping the exit code, for CI')
     au.add_argument('--refresh', action='store_true',

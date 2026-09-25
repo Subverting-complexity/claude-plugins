@@ -160,6 +160,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --parents
 # …and find bodies that say "Blocked by: #N" where no blocked-by edge exists
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --blockers
 
+# …or write a spec of only those edges, with no placeholder, and apply it as it stands
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --blockers-only
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/issue-audit-spec.json
+
 # List the open area epics (an Epic whose Stage is Area), sorted by title
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas
 
@@ -433,7 +437,7 @@ This one is **opt-in**, and the reason is worth stating rather than treating as 
 
 **A blocker is the native blocked-by edge, and the body is read only to find an edge that was never written.** Dependencies used to be read from prose everywhere, and it went badly enough to be worth recording: the parser missed a `## Blocked by` heading whose references sat on the next line, and read "Nothing. This **was** blocked by #980" as a live dependency — wrong in both directions on the same backlog, and each fault silently invisible. So `pick`, `unblock` and `issue-apply` still read edges alone, and a sentence never holds an issue back.
 
-`--blockers` is the one place a sentence is read, to repair an issue written with `Blocked by: #N` and no edge (#2146 in CadenceReader was one: the sentence said it, the edge list was empty). `wf_core.parse_blockers` is narrow on purpose. The line has to start `Blocked by` or `Depends on`, and the references have to follow on the **same line** with nothing in between, so "This **was** blocked by #980", "Blocked by nothing; see #12" and a reference on the next line all name no one. Only open blockers count, so the scan has to be the whole backlog: with `--limit` or `--since` a blocker outside the slice is not known to be open and is skipped. An issue whose edges were not fully read is skipped too. It is opt-in for the same reason as `--parents`, and the proposal is applied like any other: review the spec, then `issue-apply`. It is not applied unattended, because the spec also carries any other gap the issue has.
+`--blockers` is the one place a sentence is read, to repair an issue written with `Blocked by: #N` and no edge (#2146 in CadenceReader was one: the sentence said it, the edge list was empty). `wf_core.parse_blockers` is narrow on purpose. The line has to start `Blocked by` or `Depends on`, and the references have to follow on the **same line** with nothing in between, so "This **was** blocked by #980", "Blocked by nothing; see #12" and a reference on the next line all name no one. Only open blockers count, so the scan has to be the whole backlog: with `--limit` or `--since` a blocker outside the slice is not known to be open and is skipped. An issue whose edges were not fully read is skipped too. It is opt-in for the same reason as `--parents`. With `--blockers` the proposal sits in the ordinary spec, beside every other gap the issue has and the `TODO`s a person has to fill first. `--blockers-only` (`wf_core.blockers_only`) is the self-heal: it reports and writes only the missing edges, each entry just `number` and `blocked_by`, so the spec has nothing to fill in and `issue-apply` takes it as it stands. `issue-audit` itself still writes nothing to GitHub. `issue-apply` still checks each issue against its live state, so an issue that lacks a required field is refused there, not here.
 
 What the audit checks in the dependency slot otherwise is **scope**, where the three signals genuinely can be compared against each other.
 

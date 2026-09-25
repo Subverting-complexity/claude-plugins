@@ -116,10 +116,16 @@ def cmd_issue_audit(args):
                                    open_numbers=open_numbers,
                                    type_map=caps.get('type_map') or {},
                                    parents=args.parents, chain=chain,
-                                   blockers=args.blockers)
+                                   blockers=args.blockers or args.blockers_only)
                for issue in issues]
+    scanned = len(audited)
+    if args.blockers_only:
+        audited = wf_core.blockers_only(audited)
     with_gaps = [a for a in audited if a['gaps']]
     summary = wf_core.audit_summary(audited)
+    # After narrowing, `audited` is only the issues with a gap, so its length
+    # would report "2 of 2 open issues" for a backlog of 184.
+    summary['issues_scanned'] = scanned
 
     # Normalised because `repo_root()` comes back from git with forward
     # slashes and `os.path.join` adds the platform's, which produced a mixed
@@ -146,6 +152,9 @@ def cmd_issue_audit(args):
         payload['issues'] = [{'number': a['number'], 'title': a['title'],
                               'gaps': a['gaps']} for a in with_gaps]
 
+    if not with_gaps and args.blockers_only:
+        emit('ok', EXIT_OK, reason='no open issue in %s names an open blocker '
+                                   'it has no blocked-by edge to' % repo, **payload)
     if not with_gaps:
         emit('ok', EXIT_OK, reason='every open issue in %s carries its type, its '
                                    'field values, an owner and a place in the '
@@ -167,6 +176,15 @@ def cmd_issue_audit(args):
             relative = spec_path
         if not relative.startswith('..'):
             shown = relative
+    if args.blockers_only:
+        emit('gaps', EXIT_GAPS,
+             reason='%d of %d open issues in %s name an open blocker with no '
+                    'blocked-by edge. %s holds only those edges and no '
+                    'placeholder, so it can be applied as it stands: '
+                    'wf.sh issue-apply %s'
+                    % (summary['issues_with_gaps'], summary['issues_scanned'],
+                       repo, shown, shown),
+             **payload)
     emit('gaps', EXIT_GAPS,
          reason='%d of %d open issues in %s are missing metadata. Review %s, '
                 'fill in every %s, then run: wf.sh issue-apply %s'

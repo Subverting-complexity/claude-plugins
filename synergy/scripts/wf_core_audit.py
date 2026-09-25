@@ -435,6 +435,27 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
     return {'number': number, 'title': title, 'gaps': gaps, 'proposed': proposed}
 
 
+def blockers_only(audited):
+    """The audit narrowed to the missing-blocker-edge gaps and nothing else.
+
+    Each entry that has one keeps only those gaps, and its proposal shrinks to
+    `number` and `blocked_by`. An update entry names only what it changes, so
+    that spec carries no placeholder and `issue-apply` can take it as it stands;
+    the full proposal would drag along every other gap the issue has, and the
+    `TODO`s a person has to fill first.
+    """
+    narrowed = []
+    for entry in audited:
+        gaps = [g for g in entry['gaps'] if g['kind'] == 'missing-blocker-edge']
+        if not gaps:
+            continue
+        narrowed.append({'number': entry['number'], 'title': entry['title'],
+                         'gaps': gaps,
+                         'proposed': {'number': entry['number'],
+                                      'blocked_by': entry['proposed']['blocked_by']}})
+    return narrowed
+
+
 def audit_summary(audited):
     """Count the gaps by kind, so a run reports a shape rather than a wall."""
     counts = {}

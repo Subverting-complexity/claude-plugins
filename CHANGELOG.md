@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 17.14.0
+
+**`issue-audit` can find a dependency that was written in the body and never as an edge.** `wf issue-audit --blockers` reports `missing-blocker-edge` where a body line starts `Blocked by` or `Depends on` and names an open issue the issue has no blocked-by edge to. `--blockers-only` writes a spec of just those edges (`number` and `blocked_by`, with the issue's existing edges kept), with no placeholder, so `wf issue-apply` can take it as it stands. Both are opt-in. `pick`, `unblock` and `issue-apply` still read native edges only, and a closed blocker is not a gap. Run it against the whole backlog: with `--limit` or `--since` a blocker outside the slice is skipped.
+
 ## synergy 17.5.0
 
 **`bulk-execute` fills an effort budget instead of counting linked stories.** `wf plan-set` takes stories by priority, linked or not, until their `Effort` reaches 7 (Low 1, Medium 2, High 6), keeps every story within one `Priority` level of the rest, and splits the set into at most two pull requests on the feature/maintenance boundary. The groups are built, reviewed and merged one after another; when group 1's review had to run inline, `wf drop-group` returns group 2 to the backlog unbuilt. `--max-groups 1` keeps a run with no tool to start agents to one pull request. All of it is enforced in `wf` and covered by offline tests.
