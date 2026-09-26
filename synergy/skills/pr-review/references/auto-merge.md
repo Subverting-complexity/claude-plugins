@@ -181,21 +181,34 @@ Drive the PR to a merged state. Conflicts and red CI are **blockers to clear, no
    - You took the **Enqueue** path but `autoMergeRequest` is null and `state` is still `OPEN` → the `--auto` call did not take (repo auto-merge disabled). Pause per step 4: post the one-line comment, leave `approved`, and exit. Do not claim success.
    - Neither merged nor queued → report exactly why the merge did not complete. Do not claim success.
 
-6. **Settle the linked issues — close them and set their stage to Done.** Run this **only when Step 5 confirmed `state` is `MERGED`** (the immediate path). On the **queued** path (`autoMergeRequest` non-null, still `OPEN`), the PR has not merged yet — skip this step; `wf post-merge` would correctly refuse with `not-merged`. The issue is settled when the queued merge lands (by GitHub's auto-close, and `wf post-merge` once the merge has landed for the stage), not in this run.
+6. **Settle the linked issues: write the release notes, close the issues and set their stage to Done.** Do this in order.
 
-   Do **not** assume the merge closed the issue. GitHub auto-closes a linked issue only when the PR carried a recognised closing keyword **and** merged into the default branch — a chained-story PR (non-default base) or an unparsed reference leaves the issue open, and even a clean auto-close never changes the stage from `In Review`. Make both deterministic with one call (the branch was already deleted by the merge):
+   **a. Release notes.** If `.claude/release-notes.json` does not already exist (neither `execute` nor `bulk-execute` wrote one, the normal case for a standalone `pr-review` pass), write it now. Fetch the PR's closing issues with `gh pr view <number> --repo <org>/<repo> --json closingIssuesReferences`, read `synergy/skills/release-notes/SKILL.md`'s "When another skill calls this" section and follow it for every issue returned, treating the PR's whole merged diff as the change. Write `{"<number>": {"user": "...", "internal": "..."}}` with the Write tool. If the file exists but does not name every closing issue, add the missing ones. Then post it as **Release notes on the PR** below says, if that has not been done.
+
+   **b. Queued merge.** If Step 5 found `autoMergeRequest` non-null and the PR still `OPEN`, stop here: `wf post-merge` would refuse with `not-merged`. The notes are on the PR, and the `wf settle-merged` that starts every `execute`, `bulk-execute` and `pr-review` settles it once it lands. Say so in the report.
+
+   **c. Settle.** Only when Step 5 confirmed `state` is `MERGED`. Do **not** assume the merge closed the issue. GitHub auto-closes a linked issue only when the PR carried a recognised closing keyword **and** merged into the default branch, and even a clean auto-close never changes the stage from `In Review`. One call does both (the branch was already deleted by the merge):
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr <number>
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr <number> --notes .claude/release-notes.json
    ```
 
-   If `.claude/release-notes.json` does not already exist — meaning neither `execute` nor `bulk-execute` wrote one for this run, which is the normal case for a merge finished by a standalone `pr-review` pass — generate it here, before settling. Fetch the PR's own closing issues, since nothing earlier in this file has read them yet:
-   ```bash
-   gh pr view <number> --repo <org>/<repo> --json closingIssuesReferences
-   ```
-   Read `synergy/skills/release-notes/SKILL.md`'s "When another skill calls this" section and follow it, treating the PR's whole merged diff as the change, for every issue this returns. Write the result with the Write tool to `.claude/release-notes.json`, in the same `{"<number>": {"user": "...", "internal": "..."}}` shape `execute`'s own `merge.md` documents. This write is already capability-gated on the org's own issue fields, inside `wf_stage.release_note_inputs` — a project without the fields is unaffected, so nothing needs to be checked up front.
+   Always pass `--notes`. Without it the command reads the notes comment from the PR instead, and a linked issue with no notes, in an org that has the fields, comes back as an error rather than a success.
 
-   It reads the PR's own `closingIssuesReferences`, force-closes any of those issues still open, and sets every one of them to the **Done** stage, which is where the issue's state is recorded. When every close, stage write and release landed, it prints one line: `settled` lists the issues now closed and `Done`, `containers_closed` each Epic or Feature whose sub-issues are all closed, and `released` each blocked issue now back in the pool. Report each by number and title. Otherwise the full payload follows, and the rest of this step says how to read it: report each `settled` entry whose `closed_now` or `stage_set` is false by number and title. If the PR body used a closing keyword GitHub did not parse, pass the issue explicitly: `... post-merge --pr <number> --issue <N>`. Whenever `.claude/release-notes.json` exists — written by `execute`/`bulk-execute` before calling this file, or by this step just above — add `--notes .claude/release-notes.json`: each issue's `User release notes` and `Internal release notes` are written in the same write as Done, and the one-line result lists them under `release_notes`. A `settled` entry whose `release_notes.error` is set reached Done without its notes; report it by number and title. A notes file that could not be read is reported in `release_note_errors`: report it too, because no issue received its notes.
+   **Release notes on the PR.** Post the notes JSON as one PR comment, so a merge finished outside this run can still write them. Write the body to `.claude/release-notes-comment.md` with the Write tool, then run `gh pr comment <number> --repo <org>/<repo> --body-file .claude/release-notes-comment.md`. The body is exactly:
+
+   ````markdown
+   <!-- synergy:release-notes -->
+   Release notes, written into each issue's fields when it is settled as Done.
+
+   ```json
+   {"41": {"user": "* ...", "internal": "* ..."}}
+   ```
+   ````
+
+   The newest such comment wins, so post a new one rather than editing when the notes change.
+
+   It reads the PR's own `closingIssuesReferences`, force-closes any of those issues still open, and sets every one of them to the **Done** stage, which is where the issue's state is recorded. When every close, stage write and release landed, it prints one line: `settled` lists the issues now closed and `Done`, `containers_closed` each Epic or Feature whose sub-issues are all closed, and `released` each blocked issue now back in the pool. Report each by number and title. Otherwise the full payload follows, and the rest of this step says how to read it: report each `settled` entry whose `closed_now` or `stage_set` is false by number and title. If the PR body used a closing keyword GitHub did not parse, pass the issue explicitly: `... post-merge --pr <number> --issue <N>`. With `--notes`, each issue's `User release notes` and `Internal release notes` are written in the same write as Done, and the one-line result lists them under `release_notes`. A `settled` entry whose `release_notes.error` is set reached Done without its notes, and the command exits `partial`: add the missing notes to the file and re-run it. Do the same for any entry whose `stage_set` is false. Re-run once; anything still failing is reported by number and title as outstanding, never as settled. A notes file that could not be read is reported in `release_note_errors`: report it too, because no issue received its notes.
 
    It then runs the **unblock sweep**, because closing this PR's own issues is only half of a merge. In a full payload it is `unblocked`; report all three of its parts: `released` (blocked issues whose native blocked-by edges have all closed — name each by number and title, they are back in the pool), `partials` (still held, but a blocker just merged something, so a person has to judge whether that freed them), and the `no_edges` count (labelled blocked with no dependency edge, so the sweep cannot speak to them either way — the number only, never the list). A `settled` array that came back empty does **not** mean there was nothing to do: a PR that deliberately closes nothing can still release work, and the sweep is what finds it. Use `--no-unblock` only when running `wf unblock` separately.
 

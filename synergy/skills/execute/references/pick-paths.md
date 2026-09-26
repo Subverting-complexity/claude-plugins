@@ -47,7 +47,7 @@ It re-takes the claim (a claim this checkout holds is kept), sets `In Progress`,
 
 - **`ok`** (exit 0), one line — on the branch, ready to build. If `reason` names discarded paths, the worktree was provisioned dirty: report them.
 - **`lost`** (exit 27) — another agent holds the story. Stop and pick a different one.
-- **`partial`** (exit 24) — `reason` names what did not happen. A failed stage write is worth a loud line ("Stage update failed: {reason}. Continuing."), because the issue still reads as available. A branch that could not be created is a stop: run `/synergy:block-story`.
+- **`partial`** (exit 24) — `reason` names what did not happen. A failed stage write is retried once with `wf stage-set {number} --stage stage-in-progress`, because the issue still reads as available; if it still fails, list it as outstanding in the final report. A branch that could not be created is a stop: run `/synergy:block-story`.
 - **`error`** (exit 20) — a broken environment, not a rival. Report it.
 
 **Claim–stage consistency.** If the stage write fails and the run is abandoned rather than continued, run `wf exit-cleanup --issue {number}`, remove the `@me` assignment, and set the stage back with `wf stage-set {number} --stage stage-backlog`, which is the write that returns the issue to the pool.

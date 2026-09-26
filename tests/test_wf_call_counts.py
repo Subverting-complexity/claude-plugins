@@ -153,7 +153,9 @@ class TestPostMergeCallCount(_Counted):
     def _post_merge(self, numbers, **hub_args):
         hub = _GitHub(linked=numbers, **hub_args)
         code, payload = self._drive(hub, ['post-merge', '--pr', '50', '--no-unblock'])
-        self.assertEqual(code, wf.EXIT_OK)
+        # A refused close is a gap, so it exits partial rather than ok.
+        self.assertEqual(code, wf.EXIT_PARTIAL if hub_args.get('close_fails')
+                         else wf.EXIT_OK)
         return payload, hub.calls
 
     def test_one_issue_and_four_cost_the_same(self):

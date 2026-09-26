@@ -71,7 +71,7 @@ Only when the issue needs a parent (an area or a feature), or needs scoping to a
 
 ## One write path
 
-Every issue this plugin files is created by `wf issue-apply` from a spec, so the title rules above, the native type and the field values are applied in one place rather than reinvented per command. Do not call `gh issue create` directly.
+Every issue this plugin files is created by `wf issue-apply` from a spec, so the title rules above, the native type and the field values are applied in one place rather than reinvented per command. Do not call `gh issue create` directly: an issue created that way has no `Priority`, `Effort`, `Ownership` or `Stage`. A `partial` result (exit 24) means the issue exists but a field, type or edge did not land: re-run the same spec, which fills only what is missing, and never report the issue as filed while any of the three required fields or its `Stage` is unset.
 
 ## Repository templates
 

@@ -1,6 +1,6 @@
 # Execute — Phase 10 merge mechanics
 
-Read this only when Phase 10 in `review-and-merge.md` found none of its stop conditions: `Auto-Merge on Approval` is `enabled`, `--no-merge` was not passed, the quality gate is green, no duplicate is flagged, and the verdict is Approved. `bulk-execute` reads it on the same condition.
+Its **Release notes** section applies on every run with an Approved verdict. Read the rest only when Phase 10 in `review-and-merge.md` found none of its stop conditions: `Auto-Merge on Approval` is `enabled`, `--no-merge` was not passed, the quality gate is green, no duplicate is flagged, and the verdict is Approved. `bulk-execute` reads it on the same condition.
 
 A self-review (`test -f .claude/self-review.flag`) does not stop the merge. Check the flag here only to confirm Phase 8 step 3's disclosure is on the PR comment, and repeat it in your final report.
 
@@ -23,6 +23,8 @@ Before step 4, write the release notes each issue the PR closes will carry once 
 {"41": {"user": "* The Library header is more compact.", "internal": "* Moved header state into one store."}}
 ```
 
+Then post the same JSON on the PR, so a merge that lands after this run (queued, or by a person) can still write it. Follow **Release notes on the PR** in `skills/pr-review/references/auto-merge.md`.
+
 A blank text leaves that field blank, and the Done write still lands. Never write `Shipped in version`: the project's release script stamps it. Writing the notes asks nothing of the user and needs no reply.
 
 You are sitting on the branch being merged, and the merge deletes it. Stay on it through steps 1 to 3, where a conflict resolution or CI fix is committed. Immediately before step 4, detach, because another worktree usually holds the default branch:
@@ -38,7 +40,7 @@ If `git status --porcelain --untracked-files=no` is not empty, run **End clean**
 
 The mechanics can stop short: a head SHA that moved since the review, a conflict needing judgment, a red check that is not yours to fix, absent CI, repo-level auto-merge disabled, checks still pending when the watch window closes, or an auto-mode denial of the merge as `Merge Without Review`, which **Auto-mode denial** in `escape-hatches.md` covers. Each leaves the PR approved and unmerged with a comment saying why. That is a correct outcome.
 
-In each of those cases also run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict needs-re-review`, because the review picker skips a plain `approved` PR and nothing would select it again. The exception is the successful enqueue (`autoMergeRequest` non-null at step 5): GitHub merges that PR on its own.
+In each of those cases also run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr {pr_number} --verdict needs-re-review`, because the review picker skips a plain `approved` PR and nothing would select it again. The exception is the successful enqueue (`autoMergeRequest` non-null at step 5): GitHub merges that PR on its own, and the next run's `wf settle-merged` sets its issues to Done with the notes you posted.
 
 ## Report
 

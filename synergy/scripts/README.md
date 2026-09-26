@@ -127,6 +127,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" block --issue 42 --body-file .claude/
 # then release whatever that merge freed
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr 123
 
+# Settle every recently merged PR whose issues are not yet Done (a queued or hand merge)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" settle-merged
+
 # Release the blocked issues whose dependencies have all closed (--dry-run reports)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" unblock --dry-run
 
@@ -558,6 +561,14 @@ It will not create a `CLAUDE.md`, invent an `## Identity` section, create or del
 **An area epic is never closed.** One the pull request names as closed (`Closes #N`) is left open with its `Stage` unchanged and reported in `skipped_areas` (`[{"issue", "reason"}]`, or a list of numbers on the one-line result), because naming a permanent part of the product as finished is a mistake in the pull request. The walk up from a closed story stops at an area too: closing the last story under one means only that nothing is under way there now. `preflight --fix` follows the same rule.
 
 `--notes <file>` writes release notes in the same `Stage` write. The file is `{"<issue>": {"user": text, "internal": text}}`, as the `release-notes` skill produces it; each non-blank text goes to `User release notes` or `Internal release notes`, and a blank one leaves its field blank. Only an issue the PR closes is written, never a container the merge finished. An org without a field skips that text. When the API refuses a text, the `Stage` write is retried alone, so the issue still reaches Done and the entry's `release_notes.error` says what was not written. `Shipped in version` is never written: the project's release script stamps it, and `issue-apply` refuses a spec that sets it.
+
+Without `--notes`, the notes come from the newest PR comment carrying `<!-- synergy:release-notes -->` and a fenced JSON block of the same shape, which `execute`, `bulk-execute` and `pr-review` post on every approved PR. In an org that defines either notes field, a linked issue with no notes, or a text the field refused, is reported in its `release_notes.error`.
+
+**Anything that did not land exits `partial` (24), never `ok`.** A stage left out of Done, missing notes, a refused close or a container not closed each make the result partial, so a caller cannot report the PR as settled.
+
+## Settling merges that landed later — `settle-merged`
+
+`post-merge` runs only inside a synergy run, so a queued auto-merge that lands after the run, or a person merging an approved PR, used to leave its issues at `In Review` with no release notes. `settle-merged [--limit 30]` lists the most recent merged PRs, finds those with a closing issue not at `Done` (area epics aside), and runs `post-merge` on each without `--notes`, so it reads the notes comment. It prints one line when every PR settled, and exits `partial` naming each that did not. `execute`, `bulk-execute` and `pr-review` run it at the start of every run.
 
 ## Releasing what a merge freed — `unblock`
 

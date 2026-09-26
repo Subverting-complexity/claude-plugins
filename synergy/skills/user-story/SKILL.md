@@ -8,7 +8,7 @@ Read `_shared/wording-standard.md` and `_shared/banned-patterns.md` before writi
 
 `skills/user-facing-communication/SKILL.md` shapes what you say to the person **around** the story: lead with the outcome and the current state, keep it short, and surface anything outstanding or assumed. It governs your reply, not the story itself.
 
-**If the story is going into a GitHub issue, the issue standard wins.** The format below is built for pasting into a project management tool. When the destination is a GitHub issue, write it to the `writing-github-issues` standard instead (story shape in `references/story-template.md`): a `## Summary` that stands on its own, then only the sections that carry information. Ask which one you are producing if it is not clear from the request.
+**If the story is going into a GitHub issue, the issue standard wins.** The format below is built for pasting into a project management tool. When the destination is a GitHub issue, write it to the `writing-github-issues` standard instead (story shape in `references/story-template.md`): a `## Summary` that stands on its own, then only the sections that carry information. If you are also creating that issue, file it through `wf issue-apply` as `writing-github-issues` says, never `gh issue create`, so its `Priority`, `Effort`, `Ownership` and `Stage` are set. Ask which one you are producing if it is not clear from the request.
 
 Whichever destination it has, the story is a tracker body, so `_shared/body-standard.md` applies: standard section names, plain sentences, exact identifiers, and **each paragraph on one unwrapped line**. Never break prose at 72, 80 or any other column.
 
