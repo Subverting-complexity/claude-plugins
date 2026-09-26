@@ -12,7 +12,7 @@ gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
 
 The comment should include: phase name, error summary, branch name, whether commits were pushed, what was completed, and what remains. Delete the temp file after.
 
-Then run `wf stage-set {number} --stage stage-attention` so the failure is visible on the issue — the stage is the issue's state, so this is what stops the next run picking it up as available. If it exits non-zero, report "Stage update failed: {reason}. Continuing." Do **not** open a PR for failed/incomplete work.
+Then run `wf stage-set {number} --stage stage-attention` so the failure is visible on the issue — the stage is the issue's state, so this is what stops the next run picking it up as available. If it exits non-zero, retry once, then list it as outstanding in the final report ("Stage update failed: {reason}"). Do **not** open a PR for failed/incomplete work.
 
 **Once the PR is open (Phase 8 onward), do not move the issue backwards.** Phase 7 already set the stage to `In Review`, and the open, labelled PR is the visible record of the work. Comment the failure on the **PR** instead, leave the stage at `In Review`, and let the next `/synergy:pr-review` run take it from there. Setting it to `Needs attention` would put the stage and the PR's review state at odds.
 

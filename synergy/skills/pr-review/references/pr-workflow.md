@@ -29,6 +29,8 @@ Run `gh auth status` first. If it fails, stop and tell the user to run `gh auth 
 
 **A pinned PR.** When the invocation names a PR (`$ARGUMENTS.pr`, or a number a user or calling skill passed), review that one and do not run the picker, which would choose a different PR by priority. Claim it (Step 2) and check out its branch, then continue at Step 1b if it carries `changes-requested`, otherwise at Step 2b. If the claim is lost, report that and exit rather than moving to a different PR.
 
+**Before picking, outside read-only mode,** run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" settle-merged` once. It sets Done and writes the release notes for any PR merged since the run that approved it (a queued auto-merge, or a person merging). Report a `partial` result by number and title and carry on.
+
 **Otherwise, run the picker.** It selects, claims and checks out the next PR: `needs-re-review`, then `changes-requested`, then `needs-review`, a head moved since the last review footer, or a PR no review has footered.
 
 ```bash
@@ -186,7 +188,7 @@ When every remaining issue is a concrete, fixable problem, load `references/rewo
 
 ### Step 11 — Auto-merge on approval (if enabled)
 
-Runs only when the verdict is **Approved**. Check before reading any merge mechanics: the session is not read-only, and `review.config.md`'s Auto-Merge on Approval is `enabled` (no file or no section means `disabled`: never merge). If either fails, the review is complete at Step 10.
+Runs only when the verdict is **Approved**. Check before reading any merge mechanics: the session is not read-only, and `review.config.md`'s Auto-Merge on Approval is `enabled` (no file or no section means `disabled`: never merge). If either fails, the review is complete at Step 10, except that outside read-only mode you still write the release notes and post them as **Release notes on the PR** in `references/auto-merge.md` describes, so whoever merges it later leaves `wf settle-merged` something to write.
 
 Only when both hold, load `references/auto-merge.md` and follow it, passing `$ARGUMENTS.bypass-ci` through when set. It handles the CI gate settings and drives the PR to merged, then reports in the **Final report format** below.
 

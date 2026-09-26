@@ -69,6 +69,8 @@ If the verdict is **Approved** with no blocking findings and no quick fixes wort
 
 Merging is **opt-in**. The switch is `Auto-Merge on Approval` in `review.config.md`, the same one pr-review's Step 11 reads, so one setting decides unattended merges wherever a PR is merged from. Read it from `docs/review.config.md`, then `./review.config.md`; an absent file or section means `disabled`.
 
+**First, when the verdict is Approved, write and post the release notes** as **Release notes** in `references/merge.md` says, whatever happens next. A PR left for a person to merge is settled later by `wf settle-merged`, which reads the notes from the PR; without them it reports the gap and the issue gets none.
+
 **Check these before reading any merge mechanics.** If any holds, do not attempt the merge: leave the PR open with its verdict on it, say in your final report which condition it was, and exit through **Exit cleanup**:
 
 - `Auto-Merge on Approval` is not `enabled`, the default. The PR is reviewed, approved and deliberately waiting for a person: leave it `approved`, add no other label, and report it as ready to merge.

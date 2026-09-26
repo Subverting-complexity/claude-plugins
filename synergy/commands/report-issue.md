@@ -154,7 +154,7 @@ Do not narrate how you found the problem, and do not add a section that would be
 
 `issue-apply` writes the `Stage` of every issue it touches itself, to the stage the ladder above names. There is no stage step to run by hand, and no stage to choose: the fields decide it, in one place, for created and updated issues alike.
 
-Read `stage` and `stage_set` from the command's output and report them. A `stage_set` of `false` carries a `stage_message` saying why. The issue exists either way, so this does not undo the filing, but the stage **is** the issue's state, so report a failed write loudly ("Stage update failed: {reason}. Continuing.") rather than as a clean filing.
+Read `stage` and `stage_set` from the command's output and report them. A `stage_set` of `false` carries a `stage_message` saying why. The issue exists either way, so this does not undo the filing, but the stage **is** the issue's state, so retry it once with `wf stage-set {number} --stage <stage>`; if it still fails, report it as outstanding ("Stage update failed: {reason}"), never as a clean filing.
 
 ### 7. Report
 

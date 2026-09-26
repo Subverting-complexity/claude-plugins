@@ -5,12 +5,15 @@ Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
 
 import json
+import re
+from types import SimpleNamespace
 
 import wf_core
-from wf_capabilities import gh_graphql_partial
+from wf_capabilities import gh_graphql_partial, resolve_org_capabilities
 from wf_config import field_name, prepare_cfg
 from wf_io import (
-    EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_OK, emit, emit_line, gh_json, run,
+    EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_OK, EXIT_PARTIAL, call_command, emit,
+    emit_line, gh_json, run,
 )
 from wf_issue_io import _batch_result, _graphql_json, issue_field_values
 from wf_stage import _chunks, release_note_inputs, set_stage, set_stages
@@ -344,7 +347,8 @@ def cmd_post_merge(args):
     cfg = prepare_cfg()
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     ok, data, err = gh_json(['pr', 'view', str(args.pr), '--repo', repo,
-                             '--json', 'number,state,mergedAt,baseRefName,closingIssuesReferences'])
+                             '--json', 'number,state,mergedAt,baseRefName,'
+                             'closingIssuesReferences,comments'])
     if not ok or not data:
         emit('error', EXIT_ENV, reason='could not read PR #%d (%s)' % (args.pr, err))
     if (data.get('state') or '').upper() != 'MERGED':
@@ -388,8 +392,30 @@ def cmd_post_merge(args):
                          'close': state == 'OPEN', 'label_ids': label_ids})
 
     outcomes = settle_issues(plan, args.pr) if plan else {}
-    notes, note_errors = read_release_notes(getattr(args, 'notes', None))
+    if getattr(args, 'notes', None):
+        notes, note_errors = read_release_notes(args.notes)
+    else:
+        # A merge finished outside the run that wrote the notes (a queued
+        # auto-merge, a person pressing merge) has no notes file. The run
+        # posted them on the pull request, so read them back from there.
+        notes, note_errors = notes_from_comments(data.get('comments'))
     note_inputs, note_facts = release_note_writes(cfg, linked, notes)
+    # A linked issue with no notes, in an org that defines the fields, is a
+    # gap, not a quiet success: without this the result read `ok` and nobody
+    # wrote the notes.
+    has_fields = notes_fields_defined(cfg)
+    if has_fields:
+        for number in linked:
+            if number not in notes:
+                note_facts[number] = {
+                    'written': [], 'skipped': [],
+                    'error': 'no release notes were supplied for #%d; write '
+                             'them and re-run with --notes' % number}
+    # A text the org has a field for but could not take is a gap too. An org
+    # with neither field skips every text, and that is not a failure.
+    for fact in note_facts.values() if has_fields else ():
+        if fact.get('skipped') and not fact.get('error'):
+            fact['error'] = '; '.join(fact['skipped'])
     done = wf_core.STAGE_NAMES['stage-done']
     ids = {n: facts[n]['id'] for n in linked if facts[n]['id']}
     stages = set_stages(cfg, {n: done for n in linked}, ids=ids,
@@ -472,7 +498,10 @@ def cmd_post_merge(args):
                   reason='PR #%d settled: %d issue(s) closed and Done, %d '
                          'container(s) closed, %d issue(s) released'
                          % (args.pr, len(settled), len(containers), len(released)))
-    emit('ok', EXIT_OK, pr=args.pr, base=data.get('baseRefName'), settled=settled,
+    # Something did not land: a stage left out of Done, notes not written, a
+    # container not closed. Exit non-zero so the caller cannot read it as done.
+    emit('partial', EXIT_PARTIAL, pr=args.pr, base=data.get('baseRefName'),
+         settled=settled,
          skipped_areas=areas,
          containers_closed=containers, container_errors=container_errors,
          release_note_errors=note_errors, unblocked=unblocked)
@@ -492,6 +521,88 @@ def read_release_notes(path):
     except (OSError, ValueError) as exc:
         return {}, ['could not read %s (%s)' % (path, exc)]
     return wf_core.parse_release_notes(data)
+
+
+NOTES_MARKER = '<!-- synergy:release-notes -->'
+_NOTES_FENCE = re.compile(r'```(?:json)?\s*(\{.*?\})\s*```', re.S)
+
+
+def notes_from_comments(comments):
+    """Release notes read from the newest PR comment carrying NOTES_MARKER.
+
+    The comment holds the same JSON a `--notes` file does, in a fenced block.
+    No such comment is no notes, and not an error here: the caller decides
+    whether a missing note is a gap.
+    """
+    for comment in reversed(comments or []):
+        body = (comment or {}).get('body') or ''
+        if NOTES_MARKER not in body:
+            continue
+        match = _NOTES_FENCE.search(body)
+        if not match:
+            return {}, ['the release-notes comment has no JSON block']
+        try:
+            data = json.loads(match.group(1))
+        except ValueError as exc:
+            return {}, ['the release-notes comment is not valid JSON (%s)' % exc]
+        return wf_core.parse_release_notes(data)
+    return {}, []
+
+
+def notes_fields_defined(cfg):
+    """Whether the org defines either release-notes field."""
+    ok, caps, _ = resolve_org_capabilities(cfg)
+    if not ok:
+        return False
+    field_map = caps.get('field_map') or {}
+    return any(field_name(cfg, purpose) in field_map
+               for purpose in wf_core.RELEASE_NOTE_FIELD_KEYS.values())
+
+
+def cmd_settle_merged(args):
+    """Settle every recently merged PR whose closed issues are not yet Done.
+
+    `post-merge` runs only inside a synergy run, so a merge that lands later
+    (a queued auto-merge, a person merging an approved PR) left its issues out
+    of Done and its release notes unwritten. This finds them and runs
+    `post-merge` on each, reading the notes the run posted on the PR.
+    """
+    cfg = prepare_cfg()
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    ok, prs, err = gh_json(['pr', 'list', '--repo', repo, '--state', 'merged',
+                            '--limit', str(args.limit),
+                            '--json', 'number,closingIssuesReferences'])
+    if not ok:
+        emit('error', EXIT_ENV, reason='could not list merged PRs (%s)' % err)
+    linked = {p['number']: wf_core.closing_issue_numbers(
+        p.get('closingIssuesReferences')) for p in prs or []}
+    numbers = sorted({n for ns in linked.values() for n in ns})
+    issues = read_linked_issues(cfg, numbers) if numbers else {}
+    done = wf_core.STAGE_NAMES['stage-done']
+
+    def unsettled(n):
+        ok_, issue, _ = issues.get(n, (False, None, ''))
+        if not ok_ or not issue:
+            return False
+        stage = issue.get('stage')
+        return stage != done and not wf_core.is_area_stage(stage)
+
+    pending = sorted(pr for pr, ns in linked.items() if any(unsettled(n) for n in ns))
+    results, failed = [], []
+    for pr in pending:
+        code, payload = call_command(cmd_post_merge, SimpleNamespace(
+            pr=pr, issue=None, notes=None, no_unblock=True))
+        results.append({'pr': pr, 'status': payload.get('status'),
+                        'settled': payload.get('settled')})
+        if code != EXIT_OK:
+            failed.append({'pr': pr, 'status': payload.get('status'),
+                           'detail': payload})
+    if failed:
+        emit('partial', EXIT_PARTIAL, settled=results, failed=failed,
+             reason='%d of %d merged PR(s) did not settle cleanly'
+                    % (len(failed), len(pending)))
+    emit_line('ok', EXIT_OK, settled=[r['pr'] for r in results],
+              reason='%d merged PR(s) settled' % len(results))
 
 
 def release_note_writes(cfg, linked, notes):

@@ -199,7 +199,8 @@ class TestPostMergeWritesReleaseNotes(unittest.TestCase):
     def test_a_refused_text_still_lets_the_issue_reach_done(self):
         code, payload, calls = self._post_merge(
             {'5': {'user': '* A thing.'}}, fail_combined=True)
-        self.assertEqual(code, wf.EXIT_OK)
+        # Done landed but the notes did not, so the run is partial, not ok.
+        self.assertEqual(code, wf.EXIT_PARTIAL)
         self.assertEqual(calls[1], ({5: 'Done'}, {}))
         entry = payload['settled'][0]
         self.assertTrue(entry['stage_set'])
@@ -215,14 +216,71 @@ class TestPostMergeWritesReleaseNotes(unittest.TestCase):
         with mock.patch.object(wf, 'read_release_notes',
                                return_value=({}, errors)):
             code, payload, calls = self._post_merge({})
-        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(code, wf.EXIT_PARTIAL)
         self.assertEqual(calls, [({5: 'Done'}, {})])
         self.assertTrue(payload['settled'][0]['stage_set'])
         self.assertEqual(payload['release_note_errors'], errors)
 
+    def test_an_issue_with_no_notes_is_a_gap_not_a_success(self):
+        code, payload, _ = self._post_merge({'10': {'user': '* Elsewhere.'}})
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+        entry = payload['settled'][0]
+        self.assertTrue(entry['stage_set'])
+        self.assertIn('no release notes', entry['release_notes']['error'])
+
+    def test_without_a_file_the_notes_come_from_the_pr_comment(self):
+        comments = [{'body': 'unrelated'},
+                    {'body': wf.NOTES_MARKER + '\nNotes.\n\n```json\n'
+                             '{"5": {"user": "* From the PR."}}\n```'}]
+        notes, errors = wf.notes_from_comments(comments)
+        self.assertEqual(errors, [])
+        self.assertEqual(notes, {5: {'user': '* From the PR.'}})
+
+    def test_no_notes_comment_is_no_notes(self):
+        self.assertEqual(wf.notes_from_comments([{'body': 'hi'}]), ({}, []))
+
     def test_no_notes_file_is_no_notes(self):
         notes, errors = wf.read_release_notes(None)
         self.assertEqual((notes, errors), ({}, []))
+
+
+class TestSettleMerged(unittest.TestCase):
+    """A merge that landed after the run (queued, or by a person) is settled
+    by the next run's sweep, and only PRs with an issue out of Done are."""
+
+    def _sweep(self, stages, post_merge_code=0):
+        prs = [{'number': 50, 'closingIssuesReferences': [{'number': 5}]},
+               {'number': 51, 'closingIssuesReferences': [{'number': 6}]},
+               {'number': 52, 'closingIssuesReferences': [{'number': 7}]}]
+        issues = {n: (True, {'stage': s}, '') for n, s in stages.items()}
+        settled = []
+
+        def post_merge(args):
+            settled.append(args.pr)
+            status = 'ok' if post_merge_code == 0 else 'partial'
+            wf.emit(status, post_merge_code, settled=[])
+
+        args = wf.build_parser().parse_args(['settle-merged'])
+        with mock.patch.object(wf, 'check_environment', return_value=None), \
+                mock.patch.object(wf, 'load_config', return_value=(True, _cfg(), '')), \
+                mock.patch.object(wf, 'gh_json', return_value=(True, prs, '')), \
+                mock.patch.object(wf, 'read_linked_issues', return_value=issues), \
+                mock.patch.object(wf, 'cmd_post_merge', post_merge):
+            code, payload = _capture(args.func, args)
+        return code, payload, settled
+
+    def test_only_prs_with_an_issue_out_of_done_are_settled(self):
+        code, payload, settled = self._sweep(
+            {5: 'Done', 6: 'In Review', 7: 'Area'})
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(settled, [51])
+        self.assertEqual(payload['settled'], [51])
+
+    def test_a_pr_that_does_not_settle_makes_the_sweep_partial(self):
+        code, payload, _ = self._sweep({5: 'In Review', 6: 'Done', 7: 'Done'},
+                                       post_merge_code=wf.EXIT_PARTIAL)
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+        self.assertEqual(payload['failed'][0]['pr'], 50)
 
 
 if __name__ == '__main__':

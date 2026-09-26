@@ -32,6 +32,7 @@ The skill's auto-loaded configuration block has already run.
 2. Read `preflight_cached` from the `run-init` result above. `true` means a clean or warning-only preflight already passed within the last four hours and `ClaudeProject.md` has not changed since, so skip straight to step 3. Otherwise invoke `/synergy:preflight`. Unattended, a critical finding is a stop: report it verbatim and exit. With a user present, on "Configure now", wait for setup and ask the user to re-run the command, because the loaded configuration is stale; on "Continue anyway" or "Don't remind me", proceed.
 3. The projection must contain both `## Identity` and `## Quality Gate`. If either is missing, stop with "ClaudeProject.md is missing required section: {name} — run /synergy:setup."
 4. Read `CLAUDE.md` for project rules and build principles.
+5. Settle any merge that landed after an earlier run ended: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" settle-merged`. A queued auto-merge or a person merging an approved PR leaves its issues out of Done and its release notes unwritten, and nothing else comes back for them. It runs `post-merge` on each such PR, reading the notes the earlier run posted on it. Report a `partial` result by PR and issue number and title; it does not stop this run.
 
 The projection drops sections needed only later. When a later phase resolves the org issue fields, `Stage` included, read `## Issue Types & Fields` straight from `ClaudeProject.md`.
 

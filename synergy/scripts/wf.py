@@ -165,7 +165,7 @@ from wf_issue_audit import AUDIT_SPEC_DEFAULT, cmd_issue_audit
 from wf_pick import cmd_pick, cmd_refine
 from wf_pick_candidates import cmd_candidates
 from wf_plan import cmd_bulk_mark, cmd_drop_group, cmd_drop_story, cmd_plan_set
-from wf_post_merge import cmd_post_merge
+from wf_post_merge import cmd_post_merge, cmd_settle_merged
 from wf_pr_create import cmd_pr_create
 from wf_preflight import cmd_config_audit, cmd_preflight
 from wf_review import (
@@ -330,6 +330,13 @@ def build_parser():
                          'afterwards (the sweep is the half that releases whatever was '
                          'waiting on them, so skip it only when running it separately)')
     pm.set_defaults(func=cmd_post_merge)
+
+    sm = sub.add_parser('settle-merged',
+                        help='run post-merge on every recently merged PR whose closed '
+                             'issues are not yet Done (a queued or hand merge)')
+    sm.add_argument('--limit', type=int, default=30,
+                    help='how many of the most recent merged PRs to check (default 30)')
+    sm.set_defaults(func=cmd_settle_merged)
 
     ub = sub.add_parser('unblock',
                         help='release every blocked issue whose native blocked-by '

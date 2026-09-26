@@ -6,6 +6,14 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 17.15.0
+
+- A merge that lands after the run (a queued auto-merge, or a person merging an approved PR) is now settled: the new `wf settle-merged`, run at the start of every `execute`, `bulk-execute` and `pr-review`, sets its issues to Done and writes their release notes. Before, nothing came back for them.
+- Release notes are written and posted on the PR whenever the verdict is Approved, not only when the run merges, and `post-merge` reads them from that comment when no `--notes` file is given.
+- `post-merge` exits `partial` instead of `ok` when a stage, a release note, a close or a container did not land, and a linked issue with no notes is reported as a gap in orgs that have the fields.
+- A failed stage write is retried once and then listed as outstanding, rather than "Continuing.".
+- `user-story` and `writing-github-issues` say an issue must be filed through `wf issue-apply`, and a `partial` filing is re-run rather than reported as filed, so `Priority`, `Effort`, `Ownership` and `Stage` are always set.
+
 ## synergy 17.14.0
 
 **`issue-audit` can find a dependency that was written in the body and never as an edge.** `wf issue-audit --blockers` reports `missing-blocker-edge` where a body line starts `Blocked by` or `Depends on` and names an open issue the issue has no blocked-by edge to. `--blockers-only` writes a spec of just those edges (`number` and `blocked_by`, with the issue's existing edges kept), with no placeholder, so `wf issue-apply` can take it as it stands. Both are opt-in. `pick`, `unblock` and `issue-apply` still read native edges only, and a closed blocker is not a gap. Run it against the whole backlog: with `--limit` or `--since` a blocker outside the slice is skipped.
