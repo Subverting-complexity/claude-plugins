@@ -12,14 +12,16 @@ Requires: a story in progress with a known blocker.
 
 ## What "blocked" means
 
-An issue is **blocked** when it cannot make progress because of something outside its own control: another unfinished issue, an external decision, missing access or credentials, or an upstream fix. Blocked is **not** "I gave up" and **not** "this needs more spec" — that second case is the `Needs refinement` stage, a different state.
+An issue is **blocked** when it cannot make progress because of something outside its own control: another unfinished issue or an upstream fix. Blocked is **not** "this needs more spec", which is the `Needs refinement` stage.
+
+When what stops the issue is a decision, research, an approval, access only a person can grant, or a run that gave up, a person owns the next step. Block it with `--non-code human`: `Ownership` becomes `Human` and the stage `Non-code`, never `Blocked`.
 
 A blocked issue has its `Stage` field set to **Blocked**, and that field is the whole of the state. The pool is the open, unassigned issues whose `Stage` is blank or `Backlog`, so a `Blocked` issue is out of it; there is no second record to apply, and nothing that can disagree with the field about whether an issue is blocked.
 
 **How it becomes unblocked:**
 
 - **Automatically** — when the blocker is another issue recorded as a native blocked-by edge, `wf unblock` reads the `Blocked` issues, finds every one of that issue's edges closed, sets its `Stage` to `Backlog`, and comments. That write is the release. A `Blocked` issue with no edge at all was set by a person and is never changed by the plugin, which is deliberate: most blocked issues are waiting on the world rather than on an issue.
-- **Manually** — for non-issue blockers (a decision, access granted), a person sets `Stage` back to `Backlog` or clears it. That is the entire act: a blank or `Backlog` stage is what available means.
+- **Manually** — for a blocker outside the tracker (an upstream fix), a person sets `Stage` back to `Backlog` or clears it. An issue handed to a person with `--non-code human` returns to a code agent when that person sets `Ownership` to `Code agent`, removes the `[Manual] ` prefix and sets `Stage` to `Backlog`. That is the entire act: a blank or `Backlog` stage is what available means.
 
 ## Preflight
 
@@ -45,10 +47,11 @@ One call, whichever kind of blocker it is:
 # Another issue (repeat --blocked-by for every issue this one waits on)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" block --issue {number} --body-file .claude/block-body.md --blocked-by {N}
 
-# Something outside the tracker: a decision, access, an upstream fix
+# Something outside the tracker: an upstream fix
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" block --issue {number} --body-file .claude/block-body.md
 
-# The work itself needs a person or a browser, so no code agent can do it
+# A person has to act: a decision, research, access, an approval, a run that gave up
+# (use --non-code browser when a browser agent can do it instead)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" block --issue {number} --body-file .claude/block-body.md --non-code human
 ```
 

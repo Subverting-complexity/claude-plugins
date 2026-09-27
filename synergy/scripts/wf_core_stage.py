@@ -42,7 +42,6 @@ STAGE_NAMES = {
     'stage-non-code':    'Non-code',
     'stage-refinement':  'Needs refinement',
     'stage-parked':      'Parked',
-    'stage-attention':   'Needs attention',
     'stage-done':        'Done',
     'stage-area':        'Area',
 }
@@ -356,8 +355,8 @@ def may_set_stage(current_stage, requested=None):
 # `Area` is protected closed as well: an area epic is permanent, and a closed
 # one is not marked Done, because closing it was a mistake to repair rather
 # than a state to record.
-SYNC_PROTECTED_STAGES = frozenset({'Parked', 'Needs refinement',
-                                   'Needs attention', 'Non-code', 'Area'})
+SYNC_PROTECTED_STAGES = frozenset({'Parked', 'Needs refinement', 'Non-code',
+                                   'Area'})
 
 
 def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
@@ -376,8 +375,8 @@ def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
       closed      a closed issue is Done, whatever stage it sat in and whether
                   it was closed as completed or as not planned. Only Area is
                   exempt, and so is a value that is not a stage at all.
-      protected   an open issue in Parked, Needs refinement, Needs attention,
-                  Non-code or Area is left alone.
+      protected   an open issue in Parked, Needs refinement, Non-code or Area
+                  is left alone.
       non-code    work owned by a browser agent or a person that is blank,
                   Backlog or Blocked goes to Non-code, as `stage_for` puts it
                   when the issue is written. Once a person has moved such work
@@ -460,7 +459,7 @@ def stage_drift_target(stage, assigned=False, open_prs=()):
 
     Only a blank or `Backlog` stage is judged. Every other stage was written
     on purpose by a run or a person, and an assignee or a pull request does not
-    overrule `Blocked`, `Parked` or `Needs attention`.
+    overrule `Blocked`, `Parked` or `Non-code`.
 
     `open_prs` is every open pull request that closes the issue, each as
     `{'isDraft': bool}`. The order is the rule:

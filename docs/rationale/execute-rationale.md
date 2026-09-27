@@ -8,15 +8,15 @@ A single execute run loads a large instruction surface before any feature code i
 
 ## Why the 45-minute timeout check
 
-The harness can kill a long-running session mid-work. Checking elapsed time before each phase and, past ~45 minutes, getting to a committable state and exiting cleanly means the harness never kills the session with nothing saved. A partial PR with clear "remaining work" notes is worth more than an abandoned session with no artifact — which is why the timeout path ships a real PR when the work is shippable, and otherwise sets the stage to `Needs attention` with a comment rather than opening a PR for incomplete work.
+The harness can kill a long-running session mid-work. Checking elapsed time before each phase and, past ~45 minutes, getting to a committable state and exiting cleanly means the harness never kills the session with nothing saved. A partial PR with clear "remaining work" notes is worth more than an abandoned session with no artifact — which is why the timeout path ships a real PR when the work is shippable, and otherwise hands the issue to a person (`Ownership` `Human`, stage `Non-code`) with a comment rather than opening a PR for incomplete work.
 
 ## Why the rate-limit pause
 
-GitHub's authenticated API allows 5,000 requests/hour. A long autonomous session accumulates many `gh` calls, and exhausting the quota mid-run leaves work in an unknown state. Pausing when remaining quota drops below ~100 — commit, push, set the stage to `Needs attention`, exit — lets the next session resume from the pushed branch. Retrying rate-limited requests in a loop only deepens the hole, so the rule is to stop, not retry.
+GitHub's authenticated API allows 5,000 requests/hour. A long autonomous session accumulates many `gh` calls, and exhausting the quota mid-run leaves work in an unknown state. Pausing when remaining quota drops below ~100 — commit, push, hand the issue to a person (`Ownership` `Human`, stage `Non-code`), exit — keeps the pushed branch as the place to resume from, and a person decides when a code agent takes it back. Retrying rate-limited requests in a loop only deepens the hole, so the rule is to stop, not retry.
 
 ## Why no draft PRs
 
-Every shippable exit opens a **real** PR, never a draft. A draft signals "not ready to look at," but the workflow's contract is that an opened PR is a finished, reviewable slice — even a partial slice is complete and self-contained, with follow-up issues filed for the remainder. Incomplete work that is *not* shippable does not get a PR at all; it stays on the pushed branch with the stage at `Needs attention`.
+Every shippable exit opens a **real** PR, never a draft. A draft signals "not ready to look at," but the workflow's contract is that an opened PR is a finished, reviewable slice — even a partial slice is complete and self-contained, with follow-up issues filed for the remainder. Incomplete work that is *not* shippable does not get a PR at all; it stays on the pushed branch, and the issue goes to a person at `Non-code`.
 
 ## Why one reviewer, and why the severity rubric
 

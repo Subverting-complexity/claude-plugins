@@ -42,7 +42,7 @@ Each of these is optional. An empty or obvious one is worse than none, and none 
 | `## Verification` | Verification needs more than the acceptance criteria convey: a physical device, several environments, a regression check, specific commands. |
 | `## Dependencies` | Rarely. A dependency between two issues is a native blocked-by edge, not a sentence; use this section for the *reason*, or for a dependency on something outside GitHub. |
 | `## Out of scope` | There is a realistic risk the work expands into something that should stay separate. |
-| `## Manual step` | The story cannot be finished by a code agent. Say exactly what has to be done and why. A story with this section also takes the matching title prefix and `Ownership` value — `[Manual] ` with `Human`, `[Browser] ` with `Browser agent` — so it is visible in a list and never picked up by an agent that cannot finish it. Work of the other kind that belongs to a *different* story is that story, linked by a native blocked-by edge. |
+| `## Manual step` | The story cannot be finished by a code agent, including a decision or research a person has to make. Say exactly what has to be done and why. A story with this section also takes the matching title prefix and `Ownership` value — `[Manual] ` with `Human`, `[Browser] ` with `Browser agent` — so it is visible in a list and never picked up by an agent that cannot finish it. Work of the other kind that belongs to a *different* story is that story, linked by a native blocked-by edge. |
 
 Do not reach for these out of habit, and do not add a "Definition of done" section: the acceptance criteria and the project's quality gate already cover it.
 

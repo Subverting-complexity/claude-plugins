@@ -166,8 +166,7 @@ class TestStorySelection(unittest.TestCase):
         path takes the label off when it touches it.
         """
         for stale in ('status-parked', 'status-blocked', 'status-in-progress',
-                      'status-in-review', 'status-needs-attention',
-                      'status-ready', 'needs-refinement'):
+                      'status-in-review', 'status-ready', 'needs-refinement'):
             with self.subTest(stale=stale):
                 picked = _story([_issue(1, [stale], priority='Urgent')])
                 self.assertEqual(picked['number'], 1)
@@ -329,7 +328,7 @@ class TestLabelResolution(unittest.TestCase):
     def test_all_lifecycle_purpose_keys_resolve_to_non_empty_string(self):
         lifecycle_keys = [
             'status-ready', 'needs-refinement', 'status-in-progress',
-            'status-parked', 'status-blocked', 'status-in-review', 'status-needs-attention',
+            'status-parked', 'status-blocked', 'status-in-review',
         ]
         for key in lifecycle_keys:
             result = resolve_label(key, {})
@@ -2639,7 +2638,7 @@ class TestStageNames(unittest.TestCase):
     def test_every_lifecycle_state_has_a_stage(self):
         for key in ('stage-backlog', 'stage-in-progress', 'stage-in-review',
                     'stage-blocked', 'stage-non-code', 'stage-refinement',
-                    'stage-parked', 'stage-attention', 'stage-done'):
+                    'stage-parked', 'stage-done'):
             self.assertIn(key, wf_core.STAGE_NAMES)
 
     def test_the_pool_stage_is_backlog(self):
@@ -2663,7 +2662,6 @@ class TestStageNames(unittest.TestCase):
             'stage-non-code':    'Non-code',
             'stage-refinement':  'Needs refinement',
             'stage-parked':      'Parked',
-            'stage-attention':   'Needs attention',
             'stage-done':        'Done',
             'stage-area':        'Area',
         })
@@ -2676,7 +2674,8 @@ class TestStageNames(unittest.TestCase):
     def test_anything_else_resolves_to_nothing(self):
         """Not passed through: a write naming an option the field does not have
         fails at GitHub, and saying so before the round trip is cheaper."""
-        for value in (None, '', 'Ready', 'col-in-review'):
+        for value in (None, '', 'Ready', 'col-in-review', 'Needs attention',
+                      'stage-attention'):
             self.assertIsNone(wf_core.stage_name(value), value)
 
     def test_a_blank_stage_or_backlog_is_available(self):
@@ -2687,8 +2686,7 @@ class TestStageNames(unittest.TestCase):
 
     def test_every_other_stage_is_one_an_issue_is_not_available_from(self):
         for value in ('In Progress', 'Blocked', 'Parked', 'Non-code',
-                      'Needs refinement', 'Needs attention', 'In Review',
-                      'Done'):
+                      'Needs refinement', 'In Review', 'Done'):
             self.assertFalse(wf_core.is_available_stage(value), value)
 
 
@@ -2919,7 +2917,7 @@ class TestMaySetStage(unittest.TestCase):
         phase puts an unroutable issue and where a person withholds approval,
         and releasing one would release the other."""
         for stage in ('In Progress', 'In Review', 'Parked', 'Needs refinement',
-                      'Needs attention', 'Done'):
+                      'Done'):
             self.assertEqual(wf_core.may_set_stage(stage), (False, stage), stage)
 
     def test_an_explicit_request_overrides_that(self):
@@ -3151,6 +3149,21 @@ class TestValidateSpecStructure(unittest.TestCase):
             {'User Story': 's'})
         self.assertEqual(len(errors), 1)
         self.assertIn('one issue, one party', errors[0])
+
+    def test_a_spike_is_owned_by_a_person(self):
+        """Research is a person's work, so a spike a code agent owns is
+        refused rather than put in the pool."""
+        errors, _, _ = wf_core.validate_spec(
+            [self._entry(kind='spike')], self.FIELDS, {'User Story': 's'})
+        self.assertEqual(len(errors), 1)
+        self.assertIn('spike', errors[0])
+        errors, _, _ = wf_core.validate_spec(
+            [self._entry(kind='spike', title='[Manual] Compare the SDKs',
+                         fields={'field-priority': 'High',
+                                 'field-effort': 'Medium',
+                                 'field-ownership': 'Human'})],
+            self.FIELDS, {'User Story': 's'})
+        self.assertEqual(errors, [])
 
     def test_ownership_takes_an_issue_out_of_the_pool(self):
         """The teeth. Everything else here is bookkeeping if this does not hold."""
@@ -3816,7 +3829,7 @@ class TestStageDrift(unittest.TestCase):
         """An assigned `Blocked` issue, or a `Parked` one with a draft, is a
         decision; only blank and `Backlog` claim the work is free."""
         for stage in ('In Progress', 'In Review', 'Blocked', 'Parked',
-                      'Needs attention', 'Needs refinement', 'Non-code'):
+                      'Needs refinement', 'Non-code'):
             self.assertIsNone(wf_core.stage_drift_target(
                 stage, assigned=True, open_prs=[{'isDraft': False}]), stage)
 

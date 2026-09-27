@@ -55,7 +55,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/project-config.sh"
 Stay under ~100k tokens: **one story per session**, scoped to a merged PR or an open one whose review state is recorded. (Design rationale: `docs/rationale/execute-rationale.md`, not read at runtime.)
 
 - **Too large for one session** → implement the highest-priority slice, open a PR for it, and file follow-ups with `/synergy:report-issue`.
-- **45-minute timeout.** Past 45 minutes, commit and push everything. **Shippable** → run Phase 7 for a real PR, never a draft, and carry on into Phases 8 to 10, starting a rework round only if you can finish it. **Not shippable** → leave the branch pushed, run `wf stage-set {number} --stage stage-attention` with a comment listing what remains, and open no PR. Either way, file follow-ups for unfinished work, run **Exit cleanup** (`references/exit-cleanup.md`), and exit without starting a phase you may not finish.
+- **45-minute timeout.** Past 45 minutes, commit and push everything. **Shippable** → run Phase 7 for a real PR, never a draft, and carry on into Phases 8 to 10, starting a rework round only if you can finish it. **Not shippable** → leave the branch pushed, hand the issue to a person with `wf block --issue {number} --body-file {file} --non-code human`, the comment listing what remains, and open no PR. Either way, file follow-ups for unfinished work, run **Exit cleanup** (`references/exit-cleanup.md`), and exit without starting a phase you may not finish.
 
 ## Mode selection
 

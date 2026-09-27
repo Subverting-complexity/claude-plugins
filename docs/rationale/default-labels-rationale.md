@@ -36,19 +36,19 @@ From 10.0.0 until 12.0.0 the state was the `Status` column of the issue's card o
 
 ### The stages
 
-An issue moves between nine working stages and is at exactly one of them, or at none, which means the same as `Backlog`. A tenth, `Area`, is not part of that flow: it marks a permanent area epic, one part of the product that other issues sit under, and nothing ever moves an issue into or out of it.
+An issue moves between eight working stages and is at exactly one of them, or at none, which means the same as `Backlog`. A ninth, `Area`, is not part of that flow: it marks a permanent area epic, one part of the product that other issues sit under, and nothing ever moves an issue into or out of it.
 
 ```
                                     ┌──► Needs refinement ──┐  (too thin to build)
                                     │                       ▼
 (new issue) ──► Backlog ──────────► In Progress ──────► In Review ──► Done
                   ▲  ▲               │                     (PR open)
-                  │  │               └──► Needs attention   (run failed, work still in flight)
                   │  └── Blocked  ◄────── (an open blocked-by edge, or a person; wf unblock returns only the first)
                   │
                   └───── Parked   ◄────── (a person set it aside)
 
-Non-code  ◄────── Ownership is Human or Browser agent  (never enters the pool)
+Non-code  ◄────── Ownership is Human or Browser agent: a decision, research, a run that
+                  gave up, or work no code agent can do  (never enters the pool)
 
 Area      (a permanent area epic: set once, never picked, closed or moved)
 ```
@@ -63,7 +63,7 @@ The durable owner of in-flight work is the **assignment plus the stage**, *not* 
 
 ### The required field
 
-The org must define `Stage` with all ten options. Preflight emits `CRITICAL stage-absent` when the field is missing, because no state can be written or read, and `CRITICAL stage-options` naming any missing option, because a transition to it fails. Setup cannot create an org issue field, so it asks a person to add it in the org settings. A project board is not required.
+The org must define `Stage` with all nine options. Preflight emits `CRITICAL stage-absent` when the field is missing, because no state can be written or read, and `CRITICAL stage-options` naming any missing option, because a transition to it fails. Setup cannot create an org issue field, so it asks a person to add it in the org settings. A project board is not required.
 
 ## Native issue types beyond GitHub's five defaults
 
