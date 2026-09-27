@@ -12,12 +12,12 @@ Skip any PR that has:
 - the `updating` state label (a builder agent is addressing feedback);
 - the `approved` state label, **unless** it also has `needs-re-review`.
 
-For each remaining PR, decide whether it needs attention:
+For each remaining PR, decide whether it needs work:
 
 1. In the comments the list returned, find Claude's most recent review comment by the footer marker defined in `review.config.md`.
 2. No such comment → it needs review. A `needs-review` label is the normal first-review case.
 3. A comment exists → extract its `Reviewed at <SHA>` line. If that SHA differs from `headRefOid`, it needs review; otherwise skip it.
-4. A PR carrying `changes-requested` always needs attention: rework, then re-review.
+4. A PR carrying `changes-requested` always needs work: rework, then re-review.
 
 Pick by three tiers, highest first, lowest PR number within a tier:
 

@@ -36,7 +36,7 @@ The skill's auto-loaded configuration block has already run.
 
 The projection drops sections needed only later. When a later phase resolves the org issue fields, `Stage` included, read `## Issue Types & Fields` straight from `ClaudeProject.md`.
 
-Read `quota.remaining` from the `run-init` result above, and again before Phase 7 — `gh api rate_limit --jq '.rate.remaining'` directly, keeping the result in context only; never `run-init` again, which would reset the flag files this section exists to protect. Below **100**, pause: commit and push current work, set every claimed issue to `Needs attention` (`wf stage-set {number} --stage stage-attention`) with a comment noting the pause, run **Exit cleanup**, and exit. The next session resumes from the pushed branch. **Once the PR is open (Phase 8 onward)**, leave the stages at `In Review` and note the pause on the PR instead, so the stages and the PR's review state agree. Never retry rate-limited requests in a loop.
+Read `quota.remaining` from the `run-init` result above, and again before Phase 7 — `gh api rate_limit --jq '.rate.remaining'` directly, keeping the result in context only; never `run-init` again, which would reset the flag files this section exists to protect. Below **100**, pause: commit and push current work, hand every claimed issue to a person (`wf block --issue {number} --body-file {file} --non-code human`, the comment noting the pause), run **Exit cleanup**, and exit. The next session resumes from the pushed branch. **Once the PR is open (Phase 8 onward)**, leave the stages at `In Review` and note the pause on the PR instead, so the stages and the PR's review state agree. Never retry rate-limited requests in a loop.
 
 ## Session budget
 
@@ -53,7 +53,7 @@ One rule governs every problem a run finds, from the first line of the build to 
 - **In the PR's own diff, or in any story it closes** — fix it here, on this branch, before the PR merges. Never file it: a defect in work this run is building is this run's work to finish.
 - **Anywhere else** — a pre-existing bug in untouched code, a problem noticed in passing, work belonging to a story this run does not close — file it with `/synergy:report-issue` and carry on. Fixing it inline widens the diff the reviewer has to judge.
 
-Two exceptions stay filed: a finding only a person can settle (an ambiguous requirement, an architectural choice with several defensible answers), filed as the question with the PR left open on that verdict; and scope deliberately deferred or dropped, which is backlog work rather than a review finding.
+Two exceptions stay filed: a finding only a person can settle (an ambiguous requirement, an architectural choice with several defensible answers), filed as the question with `Ownership` `Human`, so it sits at `Non-code`, and the PR left open on that verdict; and scope deliberately deferred or dropped, which is backlog work rather than a review finding.
 
 ## Exit cleanup
 

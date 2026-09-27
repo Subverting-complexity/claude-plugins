@@ -113,7 +113,7 @@ Fix concrete, objectively wrong problems directly on the PR branch, and fix **bo
 
 Neither tier includes a stylistic preference where several approaches are valid, or anything needing product, design or architectural judgment: raise those in the comment, or file them. Commit each fix or small logical group with a clear message, `git push`, and update the recorded SHA to the new `HEAD`.
 
-**File what you did not fix.** For every problem detected but not fixed on the branch, run `/synergy:report-issue` autonomously with its actual type (bug, security, architecture or tech debt), naming the source PR (`Detected during review of #<pr-number>`) and the `file:line`. Read the stage it reports back rather than assuming `Backlog`. Record each issue's number, title and type for Step 9 and the final report. Filing a non-blocking issue does not force Changes Requested.
+**File what you did not fix.** For every problem detected but not fixed on the branch, run `/synergy:report-issue` autonomously with its actual type (bug, security, architecture or tech debt), naming the source PR (`Detected during review of #<pr-number>`) and the `file:line`. A problem that needs a decision or research rather than a fix is filed with `Ownership` `Human`, which puts it at `Non-code`. Read the stage it reports back rather than assuming `Backlog`. Record each issue's number, title and type for Step 9 and the final report. Filing a non-blocking issue does not force Changes Requested.
 
 ### Step 8 — Determine the verdict
 

@@ -31,9 +31,9 @@ gh repo view --json owner,name,defaultBranchRef --jq '{org: .owner.login, repo: 
 
 **Quality gate**: look for `scripts/*quality*` or `scripts/*test*`, `package.json` scripts (test, lint, typecheck), `Makefile` targets (test, check, lint), or `dotnet test`.
 
-**The `Stage` field:** an issue's state is the org issue field `Stage`, a single-select with ten options: `Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Needs attention`, `Done` and `Area`. A blank `Stage` means available, the same as `Backlog`. `Area` marks a permanent area epic (Step 8b). Setup does not create the field and does not create or rename board columns. Step 5e reads whether the org has it.
+**The `Stage` field:** an issue's state is the org issue field `Stage`, a single-select with nine options: `Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Done` and `Area`. A blank `Stage` means available, the same as `Backlog`. `Area` marks a permanent area epic (Step 8b). Setup does not create the field and does not create or rename board columns. Step 5e reads whether the org has it.
 
-When the field or an option is missing, stop and ask the user to add it by hand, because the API this runs on cannot create an org issue field: org settings → *Planning* → *Issue fields* → create `Stage` as a single-select with the ten options, then pin it to every enabled issue type. Without it no transition can be written and preflight fails with `stage-absent` or `stage-options`.
+When the field or an option is missing, stop and ask the user to add it by hand, because the API this runs on cannot create an org issue field: org settings → *Planning* → *Issue fields* → create `Stage` as a single-select with the nine options, then pin it to every enabled issue type. Without it no transition can be written and preflight fails with `stage-absent` or `stage-options`.
 
 **Project board (optional):** a board is a view for people. Nothing in the workflow reads a column from it or moves a card on it, so a project without one works the same. A board can be owned by an **organization** or by a **user**, so query both (the org query errors or returns empty when `{org}` is a personal account):
 
@@ -120,7 +120,7 @@ Then write `## Issue Types & Fields` into `ClaudeProject.md` following the templ
 
 "This org has none" and "nobody wrote this section" must not look the same. `wf config-audit` reports a missing section as CRITICAL, so leaving it out breaks preflight in the consumer's repo.
 
-Flag `field-stage` if it is missing or lacks one of its ten options (the manual step in Step 3). Flag the three mandatory fields, `field-priority`, `field-effort` and `field-ownership`, if any is missing, because `wf issue-apply` refuses to create an issue without them: they are the pool's order, its size ceiling, and whether a code agent may take the issue at all. `field-type` (`Classification`) and `field-origin` are optional; an issue created without one gets a comment saying so. For `Origin`, point the user at the owner's *Issue fields* settings to add it as a single-select (Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request).
+Flag `field-stage` if it is missing or lacks one of its nine options (the manual step in Step 3). Flag the three mandatory fields, `field-priority`, `field-effort` and `field-ownership`, if any is missing, because `wf issue-apply` refuses to create an issue without them: they are the pool's order, its size ceiling, and whether a code agent may take the issue at all. `field-type` (`Classification`) and `field-origin` are optional; an issue created without one gets a comment saying so. For `Origin`, point the user at the owner's *Issue fields* settings to add it as a single-select (Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request).
 
 On exit **20** the capability read failed (auth, network, no `wf`). Say so and leave any existing section alone.
 
@@ -172,7 +172,7 @@ Confirm all required sections are present in `ClaudeProject.md`. Report what was
 - Package manager
 - Quality gate
 - Backlog mode (sprint or flat)
-- `Stage` field (present with all ten options, or what is missing)
+- `Stage` field (present with all nine options, or what is missing)
 - Area epics (how many are open, or none)
 - Board (recorded or none)
 - Labels configured

@@ -358,6 +358,7 @@ Everything decidable offline is decided before the first mutation, because a hal
 - **A label or referenced issue that does not exist** in the repo exits 22, named, before the first mutation.
 - **An issue outside the epic tree.** A `User Story` with no `Feature` parent, or a story or feature under the wrong type, exits 22. A `Feature` with no parent is allowed: it sits under an `Epic` when the work has one, and an epic invented to hold a single feature would only restate it. A parent that already exists is judged by its live type, and an update that does not restate its parent is judged by the parent it already has. Enforced only where the org has the parent type enabled; `Bug`, `Chore` and `Epic` need no parent. `wf_core.HIERARCHY_PARENT_TYPE` is the rule.
 - **One issue, two parties.** A title prefix and an `Ownership` value that disagree, such as `[Manual]` owned by `Code agent` or `Human` with no prefix, exits 22. One of the two is wrong, and the issue would mislead whoever reads it.
+- **Research owned by an agent.** A `spike` entry whose `Ownership` is not `Human` exits 22. Research produces a finding a person has to weigh, so it belongs at `Non-code`, not in the pool.
 - **A `state` that is not one of the four** exits 22. There is no `ready`.
 - **An area that is not an `Epic`.** `"state": "area"` on any other type exits 22, and so does a create that names no type. An update that does not restate its type is judged by the type the issue already has.
 - **A field this org does not define** is skipped, not an error — an org is allowed fewer fields than the default inventory. It is reported once for the run on stderr, not once per issue.
@@ -380,7 +381,7 @@ After the edges are written, `issue-apply` writes each issue's `Stage`. Nothing 
 | pointing at least one open edge | Blocked |
 | none of these | Backlog |
 
-**A stage this phase does not own is kept.** It may write `Backlog`, `Blocked` and `Non-code`, and fill a blank `Stage`; an issue at `In Progress`, `In Review`, `Parked`, `Needs refinement`, `Needs attention` or `Done` keeps its stage and is reported as `stage_kept`. Found live: an update setting one field on an in-progress issue sent it back to the pool, where a second agent could pick up the same work. An entry that names a `state` overrides this, because asking for a stage is a decision rather than an inference.
+**A stage this phase does not own is kept.** It may write `Backlog`, `Blocked` and `Non-code`, and fill a blank `Stage`; an issue at `In Progress`, `In Review`, `Parked`, `Needs refinement` or `Done` keeps its stage and is reported as `stage_kept`. Found live: an update setting one field on an in-progress issue sent it back to the pool, where a second agent could pick up the same work. An entry that names a `state` overrides this, because asking for a stage is a decision rather than an inference.
 
 Each entry's result carries `stage` (the stage the issue now has), `stage_kept`, `stage_set`, and a `stage_message` saying why when the write did not happen.
 
@@ -470,7 +471,7 @@ Three things describe how a project works, and they drift apart quietly: `Claude
 | `field-unpinned` | critical | An enabled issue type is not pinned to a field the tooling writes, `Stage` included. |
 | `field-absent` | critical | The org defines no `Priority`, `Effort` or `Ownership` field, and the picker reads all three. |
 | `stage-absent` | critical | The org defines no `Stage` field, so no issue's state can be written or read. |
-| `stage-options` | critical | `Stage` lacks one of its ten options, `Area` included, named, so a transition to it fails. |
+| `stage-options` | critical | `Stage` lacks one of its nine options, `Area` included, named, so a transition to it fails. |
 | `field-options` | critical / warning | An option on a mandatory field that no decision knows. Critical on `Ownership`, where nothing can route the issue; a warning on `Priority` (sorts last) and `Effort` (sized as `Medium`). |
 | `label-deprecated` | warning | The label map still names a label nothing reads. |
 | `review-label` | warning | A review-state label the repo lacks, so a pull request cannot carry that state. `--fix` creates it, as `labels-ensure` does. |
@@ -651,7 +652,7 @@ The ref is the lock but it is ephemeral, so on success the command also advertis
 
 ### `stage-set`
 
-`stage-set N --stage stage-in-review` writes an issue's `Stage` field, which is the only place its state is recorded. `--stage` takes a purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, `stage-blocked`, `stage-non-code`, `stage-refinement`, `stage-parked`, `stage-attention`, `stage-done`, `stage-area`) or the stage name itself. No board is read or written.
+`stage-set N --stage stage-in-review` writes an issue's `Stage` field, which is the only place its state is recorded. `--stage` takes a purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, `stage-blocked`, `stage-non-code`, `stage-refinement`, `stage-parked`, `stage-done`, `stage-area`) or the stage name itself. No board is read or written.
 
 A write that landed prints one line and exits 0, so a caller reads nothing on success. A write that did not happen exits 20 with `set: false`, `stage` (the name) and `reason`, because the stage is the issue's state: an issue whose `In Progress` write failed still reads as available.
 
@@ -696,7 +697,7 @@ It **always exits 0**: once the pull request exists, none of this is a reason to
 - **Cards.** Each open issue gets a card on every open board linked to its repository (`Repository.projectsV2`) that does not already hold one. GitHub's own "Auto-add to project" workflow stays the primary way issues reach a board; this adds what it missed. A repository with no linked board gets no cards.
 - **Stage.** Each open issue, and each issue closed in the last `--closed-days` days (default 7), has its `Stage` set by `wf_core.reconcile_stage`: `Done` when closed, as completed or as not planned, from any stage but `Area`; `Non-code` when its `Ownership` is `Human` or `Browser agent` and it is blank, `Backlog` or `Blocked` (such work a person has moved to `In Progress` or `In Review` is left there); for a blank or `Backlog` issue somebody has started, `In Review` for a ready pull request and `In Progress` for a draft one or an assignee, which is `wf_core.stage_drift_target`, the same rule `preflight --fix` repairs `stage-drift` with; `In Review` for `In Progress` work once a ready pull request closes it; `Backlog` (or `Blocked`, if an edge is still open) when it sits in `In Progress` or `In Review` with no assignee, no `refs/claims/issue-N` and no open pull request; `Blocked` when it is blank or `Backlog` with an open blocked-by edge and nobody has started it; and, when it is `Blocked` and every blocker has closed, `Backlog`, or straight to where the started rule puts it; and `Backlog` for any open issue whose `Stage` is still blank after those rules, so no card sits under "No Stage". The plugin itself still treats a blank `Stage` as available; only the sync writes it.
 
-It never changes `Parked`, `Needs refinement`, `Needs attention`, `Non-code` or `Area`, open or closed, and it never clears a `Blocked` that has no blocked-by edge, because a person set that. A claim ref it cannot read counts as held, so an unreadable lock never releases somebody's work. For the same reason a blocked-by edge it cannot read counts as open, and an issue with more edges than one page reads is left as it is unless an open one was seen. Every result is a fixed point, so a second run over unchanged issues writes nothing.
+It never changes `Parked`, `Needs refinement`, `Non-code` or `Area`, open or closed, and it never clears a `Blocked` that has no blocked-by edge, because a person set that. A claim ref it cannot read counts as held, so an unreadable lock never releases somebody's work. For the same reason a blocked-by edge it cannot read counts as open, and an issue with more edges than one page reads is left as it is unless an open one was seen. Every result is a fixed point, so a second run over unchanged issues writes nothing.
 
 The output is **totals only** (`repos`, `repos_with_boards`, `repos_failed`, `claims_unread`, `issues_read`, `cards_added`, `cards_failed`, `stages_set`, `stages_failed`, `stages_by_value`). A workflow's logs are public on a public repository, so no repository name, issue number, title or error text is printed. `--dry-run` counts what would change and writes nothing. It exits 0 when everything landed, 24 (`partial`) when any repository could not be read or any write failed, 21 when the org has no `Stage` field, and 20 when the org cannot be read at all.
 

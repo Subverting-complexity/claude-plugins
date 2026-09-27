@@ -84,7 +84,7 @@ Named here so a finding can be acted on without reading the source. `wf prefligh
 | `file-config` | critical | There is no `ClaudeProject.md`, so every value the workflow reads is a default nobody chose. |
 | `config-section` | critical | A section the plugin reads is absent, so its values fall back silently. |
 | `stage-absent` | critical | The org defines no `Stage` field, so no issue's state can be written or read. |
-| `stage-options` | critical | `Stage` lacks one of its ten options (`Area` included), named. A transition to that stage fails. |
+| `stage-options` | critical | `Stage` lacks one of its nine options (`Area` included), named. A transition to that stage fails. |
 | `field-absent` | critical | The org defines no `Priority`, `Effort` or `Ownership`, and the picker reads all three. |
 | `label-reference` | critical | An instruction file tells an agent to apply a label the repo does not have. `gh` refuses it and the issue stays as it was. |
 | `field-unpinned` | critical | An issue type does not pin a field the tooling writes (`Stage` included), so values written to it never appear on the issue form. |

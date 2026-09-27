@@ -35,7 +35,7 @@ Three parties do work on a backlog, and they cannot substitute for each other.
 
 **Browser agent.** Filling non-credential fields, pressing save, reading identifiers back out of a console. It **cannot** sign in, clear two-factor, download a file, accept an agreement, or touch anything financial. When it meets one of those it stops and hands back rather than working around it. Because it needs a session a person opened, a `[Browser]` issue is not picked up on its own either.
 
-**Human.** A physical device in someone's hand, money, a legal agreement, a credential being moved, a business decision. Signing in, downloading, accepting terms and making a declaration to a third party are human every time, even when the work around them is console clicking. A device pass is human, not browser: a browser agent has no phone, no speaker and no screen reader.
+**Human.** A physical device in someone's hand, money, a legal agreement, a credential being moved, a decision of any kind (product, design, architecture, business), research or an investigation whose output is a finding rather than a commit, and a run that gave up and needs someone to say what happens next. Signing in, downloading, accepting terms and making a declaration to a third party are human every time, even when the work around them is console clicking. A device pass is human, not browser: a browser agent has no phone, no speaker and no screen reader.
 
 ### Marking a scoped issue
 

@@ -6,6 +6,13 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.0.0
+
+- **Breaking:** the `Needs attention` stage is gone. `Stage` now has nine options, and nothing reads or writes the old one. Issues still at `Needs attention` need moving by hand.
+- A run that gives up, times out with nothing shippable, or pauses on the rate limit now hands each claimed issue to a person with `wf block --non-code human`: `Ownership` becomes `Human`, the title gets `[Manual] `, and the stage becomes `Non-code`.
+- Anything that needs a decision, research or an investigation is owned by `Human` and sits at `Non-code`: block-story, report-issue, feature-discovery, execute and pr-review all route it there, and `Blocked` is now only for waiting on another issue or an upstream fix.
+- `wf issue-apply` refuses a `spike` entry that is not owned by `Human`.
+
 ## synergy 17.15.0
 
 - A merge that lands after the run (a queued auto-merge, or a person merging an approved PR) is now settled: the new `wf settle-merged`, run at the start of every `execute`, `bulk-execute` and `pr-review`, sets its issues to Done and writes their release notes. Before, nothing came back for them.

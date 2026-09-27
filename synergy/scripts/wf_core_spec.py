@@ -10,7 +10,7 @@ from wf_core_fields import (
     NEVER_WRITTEN_FIELD_KEYS, OPTIONAL_FIELD_KEYS, native_type_for, resolve_field_name,
 )
 from wf_core_stage import (
-    AREA_STAGE, OWNERSHIP_FIELD_OPTIONS, SCOPE_CODE, SCOPE_PREFIXES,
+    AREA_STAGE, OWNERSHIP_FIELD_OPTIONS, SCOPE_CODE, SCOPE_HUMAN, SCOPE_PREFIXES,
     ownership_scope, scope_from_title, spec_state_stage,
 )
 
@@ -504,6 +504,14 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
             conflict = ownership_conflict(entry['title'], owner_plan['value'])
             if conflict:
                 errors.append('%s: %s' % (name, conflict))
+        # Research is a person's work. A spike owned by a code agent would be
+        # picked and "built", when what it produces is a finding somebody has
+        # to weigh; owned by a person it sits at Non-code instead.
+        if (entry.get('kind') == 'spike' and owner_plan
+                and ownership_scope(owner_plan['value']) != SCOPE_HUMAN):
+            errors.append('%s: is a spike, which is research, so it is owned by '
+                          '%s, not %s' % (name, OWNERSHIP_FIELD_OPTIONS[SCOPE_HUMAN],
+                                          owner_plan['value']))
 
         plans.append(plan)
 

@@ -524,7 +524,7 @@ _RETIRED_INSTRUCTION_PATTERNS = (
     (r'status[-:_ ]ready|claude-ready|`?Ready`? (?:label|column|gate|status)|##\s*Ready Gate',
      'the `Ready` opt-in, which no longer exists -- the pool is every issue '
      'whose `Stage` is blank or `Backlog`'),
-    (r'status[-:_](?:in-progress|blocked|parked|non-code|in-review|needs-attention)|'
+    (r'status[-:_](?:in-progress|blocked|parked|non-code|in-review)|'
      r'\bneeds-refinement\b|\bhuman-required\b|\bbrowser-agent\b|priority[-:](?:critical|high|medium|low)',
      'a lifecycle, scope or priority label that decided something and no '
      'longer does'),

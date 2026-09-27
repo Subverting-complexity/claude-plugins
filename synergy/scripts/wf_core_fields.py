@@ -87,7 +87,6 @@ RETIRED_LABELS = {
     'status-blocked': 'status-blocked',
     'status-non-code': 'status-non-code',
     'status-in-review': 'status-in-review',
-    'status-needs-attention': 'status-needs-attention',
     'needs-refinement': 'needs-refinement',
     'scope-browser': 'browser-agent',
     'scope-human': 'human-required',
