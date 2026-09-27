@@ -420,9 +420,12 @@ def cmd_post_merge(args):
     # gap, not a quiet success: without this the result read `ok` and nobody
     # wrote the notes.
     has_fields = notes_fields_defined(cfg)
+    # An issue whose fields already hold notes is not a gap: re-settling a PR
+    # for the one issue that lacks them must not fail the rest.
     if has_fields:
         for number in linked:
-            if number not in notes:
+            already = ((issues.get(number) or (False, None, ''))[1] or {}).get('has_notes')
+            if number not in notes and not already:
                 note_facts[number] = {
                     'written': [], 'skipped': [],
                     'error': 'no release notes were supplied for #%d; write '

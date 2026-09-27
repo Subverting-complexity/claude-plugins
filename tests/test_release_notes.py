@@ -228,6 +228,16 @@ class TestPostMergeWritesReleaseNotes(unittest.TestCase):
         self.assertTrue(entry['stage_set'])
         self.assertIn('no release notes', entry['release_notes']['error'])
 
+    def test_an_issue_that_already_has_notes_is_not_a_gap(self):
+        # Re-settling a PR for its one issue without notes must not fail the
+        # issues whose fields were written earlier.
+        noted = {5: (True, {'id': 'I_5', 'state': 'CLOSED', 'stage': 'Done',
+                            'has_notes': True, 'labels': []}, '')}
+        with mock.patch.object(wf, 'read_linked_issues', return_value=noted):
+            code, payload, _ = self._post_merge({})
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['settled'], [5])
+
     def test_without_a_file_the_notes_come_from_the_pr_comment(self):
         comments = [{'body': 'unrelated'},
                     {'body': wf.NOTES_MARKER + '\nNotes.\n\n```json\n'
