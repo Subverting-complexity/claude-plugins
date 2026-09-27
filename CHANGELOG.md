@@ -6,6 +6,11 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.2.0
+
+- `execute` and `bulk-execute` write the release notes and post them on the pull request as soon as it opens, before the review, and the reviewer checks them. `pr-review` checks the notes on any pull request it reviews and writes them when there are none.
+- `wf settle-merged` treats an issue at Done with no release notes as unsettled, in an org that has the fields. The board sync and a notes-less `post-merge` both set Done, so the old Done-only test let missing notes stay missing for good. A pull request still without notes is listed under `needs_notes`, and the run writes them and settles it again.
+
 ## synergy 18.0.0
 
 - **Breaking:** the `Needs attention` stage is gone. `Stage` now has nine options, and nothing reads or writes the old one. Issues still at `Needs attention` need moving by hand.

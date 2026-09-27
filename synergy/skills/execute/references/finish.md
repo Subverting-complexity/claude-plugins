@@ -31,6 +31,8 @@ Read this at Phase 7 of the `execute` workflow (quality gate passed, work commit
    - **`partial`** (exit 24) — the PR exists but its body still fails the check (`problems`). Warn the user that the body may need editing by hand, and carry on.
    - **`error`** (exit 20) — the push or the create failed, and `reason` says which. No PR exists; fix the cause and re-run. A re-run on a branch whose PR already exists checks that PR rather than opening a second.
 
+   **Write and post the release notes now**, before the handoff: follow `skills/release-notes/references/on-the-pr.md`. They go on the PR before anyone reviews it, so the review checks them and any merge, by this run, a queued auto-merge or a person, has notes to write. This is not skipped when merging is switched off.
+
 3. **Hand the story to review** — labels, stage and claim in one call:
 
    ```bash

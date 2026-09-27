@@ -185,7 +185,7 @@ Drive the PR to a merged state. Conflicts and red CI are **blockers to clear, no
 
 6. **Settle the linked issues: write the release notes, close the issues and set their stage to Done.** Do this in order.
 
-   **a. Release notes.** If `.claude/release-notes.json` does not already exist (neither `execute` nor `bulk-execute` wrote one, the normal case for a standalone `pr-review` pass), write it now. Fetch the PR's closing issues with `gh pr view <number> --repo <org>/<repo> --json closingIssuesReferences`, read `synergy/skills/release-notes/SKILL.md`'s "When another skill calls this" section and follow it for every issue returned, treating the PR's whole merged diff as the change. Write `{"<number>": {"user": "...", "internal": "..."}}` with the Write tool. If the file exists but does not name every closing issue, add the missing ones. Then post it as **Release notes on the PR** below says, if that has not been done.
+   **a. Release notes.** If `.claude/release-notes.json` does not already exist (neither `execute` nor `bulk-execute` wrote one, the normal case for a standalone `pr-review` pass), write it now. Fetch the PR's closing issues with `gh pr view <number> --repo <org>/<repo> --json closingIssuesReferences`, read `synergy/skills/release-notes/SKILL.md`'s "When another skill calls this" section and follow it for every issue returned, treating the PR's whole merged diff as the change. Write `{"<number>": {"user": "...", "internal": "..."}}` with the Write tool. If the file exists but does not name every closing issue, add the missing ones. Then post it as `skills/release-notes/references/on-the-pr.md` says, if that has not been done.
 
    **b. Queued merge.** If Step 5 found `autoMergeRequest` non-null and the PR still `OPEN`, stop here: `wf post-merge` would refuse with `not-merged`. The notes are on the PR, and the `wf settle-merged` that starts every `execute`, `bulk-execute` and `pr-review` settles it once it lands. Say so in the report.
 
@@ -197,18 +197,7 @@ Drive the PR to a merged state. Conflicts and red CI are **blockers to clear, no
 
    Always pass `--notes`. Without it the command reads the notes comment from the PR instead, and a linked issue with no notes, in an org that has the fields, comes back as an error rather than a success.
 
-   **Release notes on the PR.** Post the notes JSON as one PR comment, so a merge finished outside this run can still write them. Write the body to `.claude/release-notes-comment.md` with the Write tool, then run `gh pr comment <number> --repo <org>/<repo> --body-file .claude/release-notes-comment.md`. The body is exactly:
-
-   ````markdown
-   <!-- synergy:release-notes -->
-   Release notes, written into each issue's fields when it is settled as Done.
-
-   ```json
-   {"41": {"user": "* ...", "internal": "* ..."}}
-   ```
-   ````
-
-   The newest such comment wins, so post a new one rather than editing when the notes change.
+   **Release notes on the PR.** Post them as `skills/release-notes/references/on-the-pr.md` says.
 
    It reads the PR's own `closingIssuesReferences`, force-closes any of those issues still open, and sets every one of them to the **Done** stage, which is where the issue's state is recorded. When every close, stage write and release landed, it prints one line: `settled` lists the issues now closed and `Done`, `containers_closed` each Epic or Feature whose sub-issues are all closed, and `released` each blocked issue now back in the pool. Report each by number and title. Otherwise the full payload follows, and the rest of this step says how to read it: report each `settled` entry whose `closed_now` or `stage_set` is false by number and title. If the PR body used a closing keyword GitHub did not parse, pass the issue explicitly: `... post-merge --pr <number> --issue <N>`. With `--notes`, each issue's `User release notes` and `Internal release notes` are written in the same write as Done, and the one-line result lists them under `release_notes`. A `settled` entry whose `release_notes.error` is set reached Done without its notes, and the command exits `partial`: add the missing notes to the file and re-run it. Do the same for any entry whose `stage_set` is false. Re-run once; anything still failing is reported by number and title as outstanding, never as settled. A notes file that could not be read is reported in `release_note_errors`: report it too, because no issue received its notes.
 

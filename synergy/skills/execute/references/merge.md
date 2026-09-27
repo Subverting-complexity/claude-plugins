@@ -1,6 +1,6 @@
 # Execute — Phase 10 merge mechanics
 
-Its **Release notes** section applies on every run with an Approved verdict. Read the rest only when Phase 10 in `review-and-merge.md` found none of its stop conditions: `Auto-Merge on Approval` is `enabled`, `--no-merge` was not passed, the quality gate is green, no duplicate is flagged, and the verdict is Approved. `bulk-execute` reads it on the same condition.
+Its **Release notes** section applies on every merge. Read the rest only when Phase 10 in `review-and-merge.md` found none of its stop conditions: `Auto-Merge on Approval` is `enabled`, `--no-merge` was not passed, the quality gate is green, no duplicate is flagged, and the verdict is Approved. `bulk-execute` reads it on the same condition.
 
 A self-review (`test -f .claude/self-review.flag`) does not stop the merge. Check the flag here only to confirm Phase 8 step 3's disclosure is on the PR comment, and repeat it in your final report.
 
@@ -17,15 +17,7 @@ Follow **steps 1 to 6** of `skills/pr-review/references/auto-merge.md`, the sing
 
 ## Release notes
 
-Before step 4, write the release notes each issue the PR closes will carry once it is Done. Read `skills/release-notes/SKILL.md` and follow its **When another skill calls this** section for each issue: in `execute` the change is the whole branch; in `bulk-execute` it is only that story's commits, so each story gets its own text. Write the result with the Write tool, never through a shell string, to `.claude/release-notes.json`:
-
-```json
-{"41": {"user": "* The Library header is more compact.", "internal": "* Moved header state into one store."}}
-```
-
-Then post the same JSON on the PR, so a merge that lands after this run (queued, or by a person) can still write it. Follow **Release notes on the PR** in `skills/pr-review/references/auto-merge.md`.
-
-A blank text leaves that field blank, and the Done write still lands. Never write `Shipped in version`: the project's release script stamps it. Writing the notes asks nothing of the user and needs no reply.
+Phase 7 wrote the notes and posted them on the PR, as `skills/release-notes/references/on-the-pr.md` says. When Phase 9 rework or the review changed what a user would notice, rewrite `.claude/release-notes.json` and post a new comment the same way before step 4: the newest comment wins. Before step 4, check the file exists and names every issue the PR closes; if the run lost it, write it again from the newest notes comment on the PR.
 
 You are sitting on the branch being merged, and the merge deletes it. Stay on it through steps 1 to 3, where a conflict resolution or CI fix is committed. Immediately before step 4, detach, because another worktree usually holds the default branch:
 
