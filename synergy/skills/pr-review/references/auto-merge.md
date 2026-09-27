@@ -36,7 +36,7 @@ Drive the PR to a merged state. Conflicts and red CI are **blockers to clear, no
 
 2. **Resolve merge conflicts if there are any.** When `mergeable` is `CONFLICTING`, do not bail: load `references/conflict-resolution.md` and follow it, with the PR branch (already checked out) as the working branch and `<baseRef>` as the incoming branch. On success, update your recorded SHA to the new `HEAD` and append a line to the review comment noting the conflict resolution.
 
-   If the reference **escalates** (it aborted the merge because the resolution genuinely needs human judgment), file the rebase to the backlog with `/synergy:report-issue` (autonomous, referencing this PR and the conflicting files) so it is picked up automatically — no human approval needed. Post a one-line comment naming the filed issue, leave the `approved` verdict, and exit. Do not guess at the merge.
+   If the reference **escalates** (it aborted the merge because the resolution genuinely needs human judgment), file the decision with `/synergy:report-issue` (autonomous, referencing this PR and the conflicting files) with `Ownership` `Human`, so it sits at `Non-code` for a person to settle. Post a one-line comment naming the filed issue, leave the `approved` verdict, and exit. Do not guess at the merge.
 
 3. **Fix a failing pipeline if there is one.**
 
@@ -70,7 +70,9 @@ Drive the PR to a merged state. Conflicts and red CI are **blockers to clear, no
      judgment): file the failing check to the backlog with
      `/synergy:report-issue` (autonomous,
      referencing this PR and naming the check) so the fix is picked up
-     automatically — no human approval needed. Post a one-line comment
+     automatically — no human approval needed. A fix that needs design
+     judgment is a decision, so file it with `Ownership` `Human`, which
+     puts it at `Non-code` for a person to settle. Post a one-line comment
      naming the filed issue, leave `approved`, and exit. Never force a
      merge over a genuinely red required check.
    - Required checks **pending** (including right after you pushed a fix) → enqueue auto-merge: step 4 (`--auto`).

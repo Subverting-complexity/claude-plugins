@@ -4,19 +4,17 @@ Read this file when one of the escape conditions named in the `execute` `SKILL.m
 
 ## Failure reporting
 
-If execution fails at any phase and cannot recover, leave a structured comment on the issue before exiting. Write the comment body to a temporary file and post using `--body-file` (avoids Windows shell-escaping issues):
+If execution fails at any phase and cannot recover, a person has to decide what happens next, so hand the issue to one. Write a comment to `.claude/block-body.md` with the Write tool (`templates/body-file-write.md`) saying the phase name, error summary, branch name, whether commits were pushed, what was completed, and what remains. Then, in one call:
 
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" block --issue {number} --body-file .claude/block-body.md --non-code human
 ```
-gh issue comment {number} --repo {org}/{repo} --body-file {tempfile}
-```
 
-The comment should include: phase name, error summary, branch name, whether commits were pushed, what was completed, and what remains. Delete the temp file after.
+It posts the comment, sets `Ownership` to `Human`, adds the `[Manual] ` title prefix, sets the stage to `Non-code`, releases the claim and unassigns `@me`. `Ownership` is what keeps the issue out of the next run's pool; a person hands it back to a code agent by setting `Ownership` to `Code agent`, removing the prefix and setting the stage to `Backlog`. Read the result as `/synergy:block-story` Step 2 describes; a `partial` result goes in the final report as outstanding. Do **not** open a PR for failed/incomplete work.
 
-Then run `wf stage-set {number} --stage stage-attention` so the failure is visible on the issue — the stage is the issue's state, so this is what stops the next run picking it up as available. If it exits non-zero, retry once, then list it as outstanding in the final report ("Stage update failed: {reason}"). Do **not** open a PR for failed/incomplete work.
+**Once the PR is open (Phase 8 onward), do not move the issue backwards.** Phase 7 already set the stage to `In Review`, and the open, labelled PR is the visible record of the work. Comment the failure on the **PR** instead, leave the stage at `In Review`, and let the next `/synergy:pr-review` run take it from there. Handing the issue to a person would put the stage and the PR's review state at odds.
 
-**Once the PR is open (Phase 8 onward), do not move the issue backwards.** Phase 7 already set the stage to `In Review`, and the open, labelled PR is the visible record of the work. Comment the failure on the **PR** instead, leave the stage at `In Review`, and let the next `/synergy:pr-review` run take it from there. Setting it to `Needs attention` would put the stage and the PR's review state at odds.
-
-This ensures the next session (or human) can pick up exactly where this one failed without guessing what happened. After the comment is posted, run **Exit cleanup** (`references/exit-cleanup.md` — it releases the claim ref so the issue can be picked again) before exiting.
+This ensures the next session (or human) can pick up exactly where this one failed without guessing what happened. Then run **Exit cleanup** (`references/exit-cleanup.md`) before exiting.
 
 ## Auto-mode denial
 
@@ -25,6 +23,8 @@ If auto mode denies Phase 8 step 5's label call as `Self-Approval`, or Phase 10'
 ## Blocked
 
 If any phase cannot proceed, run `/synergy:block-story` with details (it releases the claim for you), then run **Exit cleanup** (`references/exit-cleanup.md`; the claim release is a no-op at this point) and exit. One run builds one story, so the next story is the next run's.
+
+When what stops the story is a decision, research, an approval or anything else only a person can settle, block it with `--non-code human`, which sets `Ownership` to `Human` and the stage to `Non-code`. `Blocked` is only for waiting on another issue or an upstream fix.
 
 ## Problem found (unrelated to this story)
 
