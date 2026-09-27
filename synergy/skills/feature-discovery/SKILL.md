@@ -97,11 +97,11 @@ Break the work into features and stories, each placed under an area.
 Every project keeps its issues under **area epics**: an `Epic` at `Stage` `Area` is one permanent part of the product, such as Library or Listening, and is never closed. Release notes are grouped by area, so every issue has to resolve to one. Planned work never gets an `Epic` of its own: this skill files features and stories, and never an epic.
 
 - **Feature**: one piece of planned work under an area. Title and a one-paragraph goal. Work that would once have been an epic is a feature, and what would have been its features are its stories, or features beside it under the same area.
-- **User story**: one session of buildable work (sizing below), under its feature. `wf issue-apply` refuses a story with no feature parent, and a story or feature under the wrong type, wherever the org has the parent type enabled.
+- **User story**: one session of buildable work (sizing below), under its feature, or directly under an area when it fits no feature. `wf issue-apply` refuses a story with no parent, and a story or feature under the wrong type.
 
 **Choose each feature's area.** Once, before planning the tree, list the open area epics and read their bodies, which say what each covers: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas`. Give each feature the area whose body best covers it. When nothing fits well, use the closest area and say so in one line of the feature's body, so a person can move it. Do not create an area: that is a decision for a person. Only when the command returns a `count` of 0, the project has no area epics: file the features without a parent, and tell the user so, pointing at `references/area-epics.md`.
 
-Attach before creating. When the work extends a feature that already exists, parent the new stories to it by issue number rather than filing a second one. A small change is one story under an existing feature. Where no feature fits, the plan proposes one under an area.
+Attach before creating. When the work extends a feature that already exists, parent the new stories to it by issue number rather than filing a second one. A small change is one story under an existing feature. Where no feature fits a single story, file it directly under its area rather than inventing a feature to hold it; where several stories share a goal no feature covers, the plan proposes a feature under an area.
 
 Bugs and chores sit under a feature or directly under an area. Where the org has no `Chore` type, `chore` and `tech debt` are filed as `User Story` and `Feature` instead, and then they are in the tree like any other.
 

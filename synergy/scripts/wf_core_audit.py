@@ -211,7 +211,7 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
     in its place is
     **ownership** — whether the `Ownership` field and the title prefix agree
     about which of the three parties owns the issue — and **hierarchy**, whether
-    a Feature sits under an Epic and a User Story under a Feature.
+    a Feature sits under an Epic and a User Story under a Feature or an Epic.
 
     An area epic (`Stage` is `Area`) is exempt from every field and ownership
     gap: it is a permanent part of the product rather than work, so nothing

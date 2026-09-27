@@ -2985,11 +2985,28 @@ class TestSpecHierarchy(unittest.TestCase):
         plans = [_hplan('User Story', key='s', title='S', parent=50)]
         self.assertEqual(self._errors(plans, types={50: 'Feature'}), [])
 
-    def test_a_story_straight_under_an_epic_is_refused(self):
+    def test_a_story_straight_under_an_epic_is_clean(self):
+        """A story that fits no Feature goes directly under its area epic."""
         plans = [_hplan('User Story', key='s', title='S', parent=50)]
-        errors = self._errors(plans, types={50: 'Epic'})
+        self.assertEqual(self._errors(plans, types={50: 'Epic'}), [])
+
+    def test_a_story_under_another_story_is_refused(self):
+        plans = [_hplan('User Story', key='s', title='S', parent=50)]
+        errors = self._errors(plans, types={50: 'User Story'})
         self.assertEqual(len(errors), 1)
-        self.assertIn("belongs under a 'Feature'", errors[0])
+        self.assertIn("belongs under a 'Feature' or 'Epic'", errors[0])
+
+    def test_a_story_still_needs_a_parent(self):
+        errors = self._errors([_hplan('User Story', key='s', title='S')])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("needs a 'Feature' or 'Epic' parent", errors[0])
+
+    def test_an_org_without_features_is_still_not_held_to_the_tree(self):
+        """Allowing an Epic parent must not start refusing parentless stories
+        in an org that never had Features to put them under."""
+        type_map = {'Epic': 'e', 'User Story': 's', 'Bug': 'b'}
+        self.assertEqual(self._errors([_hplan('User Story', key='s', title='S')],
+                                      type_map=type_map), [])
 
     def test_a_feature_may_stand_without_an_epic(self):
         """An epic invented to hold one feature would only restate it."""
@@ -3026,14 +3043,16 @@ class TestSpecHierarchy(unittest.TestCase):
         self.assertEqual(self._errors(plans, type_map={'User Story': 's'}), [])
 
     def test_an_update_that_moves_its_parent_is_judged_by_its_live_type(self):
-        """Found live: a story re-parented onto an epic by an entry that named
-        no `kind` went straight through."""
+        """Found live: a story re-parented by an entry that named no `kind`
+        went straight through without its type being checked."""
         plans = [_hplan(None, number=7, parent=40)]
-        errors = self._errors(plans, types={7: 'User Story', 40: 'Epic'})
+        errors = self._errors(plans, types={7: 'User Story', 40: 'Bug'})
         self.assertEqual(len(errors), 1)
-        self.assertIn("belongs under a 'Feature'", errors[0])
+        self.assertIn("belongs under a 'Feature' or 'Epic'", errors[0])
         self.assertEqual(
             self._errors(plans, types={7: 'User Story', 40: 'Feature'}), [])
+        self.assertEqual(
+            self._errors(plans, types={7: 'User Story', 40: 'Epic'}), [])
 
 
 class TestSpecLiveErrors(unittest.TestCase):

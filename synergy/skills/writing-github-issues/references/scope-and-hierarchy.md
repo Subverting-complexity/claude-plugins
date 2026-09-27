@@ -8,10 +8,10 @@ The native types are a tree, not a flat list, and every issue sits somewhere und
 
 - **Area.** An `Epic` whose `Stage` is `Area`: one permanent part of the product, such as Library or Listening, never closed. Its body says what it covers. Planned work never gets an `Epic` of its own.
 - **Feature.** A piece of planned work, under an area. A `Feature` that has a parent must have an `Epic` one.
-- **User Story.** Under a `Feature`. `wf issue-apply` refuses one without that parent, or under the wrong type, wherever the org has `Feature` enabled.
+- **User Story.** Under a `Feature`, or directly under an area when no feature fits. `wf issue-apply` refuses one with no parent, or under any other type.
 - **Bug** and **Chore.** Under a feature, or directly under an area.
 
-An issue's area is the nearest area epic above it in its parent chain, and release notes are grouped by it, so every issue needs a parent chain that reaches one. `wf areas` lists the open area epics with their bodies; pick the one whose body best covers the work, and when nothing fits well, file under the closest and say so in one line of the body. `wf issue-audit` reports an open issue whose chain reaches no area as `no-area`. Only when the project has no area epics yet, read `references/area-epics.md` at the plugin root, which covers creating them and moving an existing backlog onto them.
+Whatever the shape, every issue maps back to an area. An issue's area is the nearest area epic above it in its parent chain, and release notes are grouped by it, so every issue needs a parent chain that reaches one. `wf areas` lists the open area epics with their bodies; pick the one whose body best covers the work, and when nothing fits well, file under the closest and say so in one line of the body. `wf issue-audit` reports an open issue whose chain reaches no area as `no-area`. Only when the project has no area epics yet, read `references/area-epics.md` at the plugin root, which covers creating them and moving an existing backlog onto them.
 
 Attach before creating. Where the work belongs to a feature that already exists, name it as the `parent` by issue number rather than filing a second one.
 
