@@ -2850,19 +2850,27 @@ class TestIssueHierarchy(_ApplyCase):
     def _story(self, **over):
         return self._full(**over)
 
-    def test_a_story_with_no_feature_parent_is_refused(self):
+    def test_a_story_with_no_parent_is_refused(self):
         hub = _FakeHub()
         code, payload, _, _ = self._run([self._story()], hub, caps=_FEATURE_CAPS)
         self.assertEqual(code, wf.EXIT_SPEC)
-        self.assertIn("'Feature' parent", ' '.join(payload['errors']))
+        self.assertIn("'Feature' or 'Epic' parent", ' '.join(payload['errors']))
         self.assertEqual(hub.mutations, [])
 
-    def test_a_story_under_an_epic_is_refused(self):
+    def test_a_story_straight_under_an_epic_is_accepted(self):
+        """A story that fits no Feature goes directly under its area epic."""
         hub = _FakeHub([_existing(50, type='Epic')])
         code, payload, _, _ = self._run([self._story(parent=50)], hub,
                                         caps=_FEATURE_CAPS)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(hub.issues[payload['applied'][0]['number']]['parent'], 50)
+
+    def test_a_story_under_another_story_is_refused(self):
+        hub = _FakeHub([_existing(50, type='User Story')])
+        code, payload, _, _ = self._run([self._story(parent=50)], hub,
+                                        caps=_FEATURE_CAPS)
         self.assertEqual(code, wf.EXIT_SPEC)
-        self.assertIn("#50 is a 'Epic'", ' '.join(payload['errors']))
+        self.assertIn("#50 is a 'User Story'", ' '.join(payload['errors']))
 
     def test_a_story_under_an_existing_feature_is_accepted(self):
         hub = _FakeHub([_existing(50, type='Feature')])
@@ -2921,17 +2929,17 @@ class TestIssueHierarchy(_ApplyCase):
         self.assertEqual(hub.issues[payload['applied'][0]['number']]['type'],
                          'Feature')
 
-    def test_an_update_moving_a_story_onto_an_epic_is_refused(self):
+    def test_an_update_moving_a_story_under_the_wrong_type_is_refused(self):
         """Found live: the entry named no `kind`, so the check never ran and
-        a User Story was re-parented straight onto an Epic."""
-        hub = _FakeHub([_existing(40, type='Epic'),
+        a User Story was re-parented without its type being checked."""
+        hub = _FakeHub([_existing(40, type='User Story'),
                         _existing(50, type='Feature'),
                         _existing(7, type='User Story', parent=50,
                                   parent_type='Feature')])
         code, payload, _, _ = self._run([{'number': 7, 'parent': 40}], hub,
                                         caps=_FEATURE_CAPS)
         self.assertEqual(code, wf.EXIT_SPEC, payload)
-        self.assertIn("#40 is a 'Epic'", ' '.join(payload['errors']))
+        self.assertIn("#40 is a 'User Story'", ' '.join(payload['errors']))
         self.assertEqual(hub.mutations, [])
 
     def test_an_update_need_not_restate_the_fields_the_issue_carries(self):

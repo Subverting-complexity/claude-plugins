@@ -6,7 +6,7 @@ Every project that uses this plugin organises its issues under **area epics**. R
 
 - **Area.** An `Epic` whose `Stage` is `Area`: one permanent part of the product, such as Library or Listening. It is never closed. Its body says what the area covers, in a sentence or a short list, because that is what an agent reads to choose an area.
 - **Feature.** A piece of planned work, under an area.
-- **User Story.** One buildable slice, under a feature.
+- **User Story.** One buildable slice, under a feature. When no feature fits, it goes directly under an area rather than under a feature invented to hold it.
 - **Bug** and **Chore.** Under a feature, or directly under an area.
 
 An issue's area is the nearest area epic above it in its parent chain. An `Area` issue is never picked, never closed by `wf post-merge` or `preflight --fix`, and never moved by `wf board-sync`, and `wf issue-audit` does not ask it for `Priority`, `Effort` or `Ownership`.
@@ -49,6 +49,6 @@ Preflight warns `area-epics` while the repository has no open area epic, and `wf
 
    Here #120 was the epic, #121 and #122 were its features, and #301 is the area. Where the old epic's work spans two areas, choose its main one; a child feature that clearly belongs to another area goes under that one instead.
 
-3. **Attach what has no parent.** Give each parentless bug, chore and feature a `parent`: an area, or an open feature in that area when one clearly fits. A story still needs a feature parent.
+3. **Attach what has no parent.** Give each parentless bug, chore and feature a `parent`: an area, or an open feature in that area when one clearly fits. A story needs a parent too: a feature, or the area directly when no feature fits.
 
 4. **Check.** Run `wf issue-audit` (`references/setup-issues.md`) and fix each `no-area` it still reports. Repeat until none is left.

@@ -21,7 +21,7 @@ AREA_TYPE = 'Epic'
 
 # ── issue hierarchy: epic → feature → user story ─────────────────────────────
 # The native types are a hierarchy and not a flat vocabulary, so a Feature
-# belongs to an Epic and a User Story belongs to a Feature. Recorded here, and
+# belongs to an Epic and a User Story to a Feature or, failing one, an Epic. Recorded here, and
 # enforced when an issue is written, because the alternative is where every
 # backlog ends up: a scattering of stories that each made sense on the day and
 # no epic that shows what they add up to. GitHub renders the tree and reports
@@ -30,9 +30,14 @@ AREA_TYPE = 'Epic'
 # `Bug` and `Chore` are absent on purpose. Both arrive unplanned, both are
 # frequently self-contained, and requiring an epic for a typo fix would mean
 # inventing one. A parent on either is allowed and never required.
+#
+# Each type maps to the parent types it may sit under, the preferred one
+# first. A User Story that fits no Feature goes straight under its area epic:
+# a Feature invented to hold one story would only restate it, and what matters
+# is that the chain still reaches an area, which `no-area` reports.
 HIERARCHY_PARENT_TYPE = {
-    'Feature':    'Epic',
-    'User Story': 'Feature',
+    'Feature':    ('Epic',),
+    'User Story': ('Feature', 'Epic'),
 }
 
 # A feature is expected under an epic, not required to be. An epic groups
@@ -51,20 +56,25 @@ def hierarchy_error(type_name, parent_type, type_map=None, parent_label=None):
     in the org settings would be a workflow this plugin broke rather than one
     it protects.
     """
-    required = HIERARCHY_PARENT_TYPE.get(type_name)
-    if not required:
+    allowed = HIERARCHY_PARENT_TYPE.get(type_name)
+    if not allowed:
         return None
-    if type_map is not None and required not in type_map:
-        return None
+    # Keyed on the preferred parent: an org with no `Feature` never held its
+    # stories to the tree, and allowing an `Epic` must not start to.
+    if type_map is not None:
+        if allowed[0] not in type_map:
+            return None
+        allowed = tuple(t for t in allowed if t in type_map)
+    wanted = ' or '.join("'%s'" % t for t in allowed)
     if not parent_type:
         if type_name in HIERARCHY_OPTIONAL_PARENT:
             return None
-        return ("a '%s' needs a '%s' parent, and this one has none -- give it "
-                '`parent` (an existing %s issue number, or the spec key of one '
-                'this spec creates)' % (type_name, required, required))
-    if parent_type != required:
-        return ("a '%s' belongs under a '%s', but %s is a '%s'"
-                % (type_name, required,
+        return ("a '%s' needs a %s parent, and this one has none -- give it "
+                '`parent` (an existing issue number, or the spec key of one '
+                'this spec creates)' % (type_name, wanted))
+    if parent_type not in allowed:
+        return ("a '%s' belongs under a %s, but %s is a '%s'"
+                % (type_name, wanted,
                    parent_label or 'its parent', parent_type))
     return None
 
