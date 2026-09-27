@@ -47,6 +47,16 @@ STAGE_VALUES_SELECTION = (
     '  ... on IssueFieldSingleSelectValue {'
     '   field { ... on IssueFieldSingleSelect { name } } name } } }')
 
+# A linked issue's `Stage` and its release-notes texts. `settle-merged` reads
+# the texts because Done alone does not mean settled: the hourly board sync
+# and a notes-less `post-merge` both set Done without writing a note.
+LINKED_VALUES_SELECTION = (
+    ' issueFieldValues(first:30){ nodes {'
+    '  ... on IssueFieldSingleSelectValue {'
+    '   field { ... on IssueFieldSingleSelect { name } } name }'
+    '  ... on IssueFieldTextValue {'
+    '   field { ... on IssueFieldText { name } } value } } }')
+
 _CONTAINER_NODE = ('number title state issueType { name }'
                    ' repository { nameWithOwner }'
                    ' subIssues(first:100){ nodes { number state } }'
@@ -259,21 +269,27 @@ def _fix_stage_drift(cfg, drifted):
 def read_linked_issues(cfg, numbers):
     """Each linked issue's node id, state and labels. {number: (ok, issue, err)}.
 
-    `issue` is {'id', 'state', 'stage', 'labels': [{'id', 'name'}]}. The label
-    ids come back with the names because removing a retired label by mutation
-    takes its id, and the `Stage` because an area epic a pull request names is
-    never closed. One aliased read for every issue (#300).
+    `issue` is {'id', 'state', 'stage', 'has_notes', 'labels': [{'id',
+    'name'}]}. The label ids come back with the names because removing a
+    retired label by mutation takes its id, the `Stage` because an area epic a
+    pull request names is never closed, and `has_notes` (either release-notes
+    field is set) because an issue at Done with no notes is not settled. One
+    aliased read for every issue (#300).
     """
     stage_field = field_name(cfg, 'field-stage')
+    note_fields = [field_name(cfg, purpose)
+                   for purpose in wf_core.RELEASE_NOTE_FIELD_KEYS.values()]
     out = {}
     for number, ok, node, err in _aliased_repository_read(
             cfg, numbers, 'i', 'id state labels(first:50){ nodes { id name } }'
-            + STAGE_VALUES_SELECTION):
+            + LINKED_VALUES_SELECTION):
         if ok and not node:
             ok, err = False, 'issue #%d not found' % number
+        values = issue_field_values(node) if ok else {}
         out[number] = (ok, None if not ok else {
             'id': node.get('id'), 'state': (node.get('state') or '').upper(),
-            'stage': issue_field_values(node).get(stage_field),
+            'stage': values.get(stage_field),
+            'has_notes': any(str(values.get(f) or '').strip() for f in note_fields),
             'labels': [l for l in (node.get('labels') or {}).get('nodes') or []
                        if l and l.get('name')]}, err)
     return out
@@ -404,9 +420,12 @@ def cmd_post_merge(args):
     # gap, not a quiet success: without this the result read `ok` and nobody
     # wrote the notes.
     has_fields = notes_fields_defined(cfg)
+    # An issue whose fields already hold notes is not a gap: re-settling a PR
+    # for the one issue that lacks them must not fail the rest.
     if has_fields:
         for number in linked:
-            if number not in notes:
+            already = ((issues.get(number) or (False, None, ''))[1] or {}).get('has_notes')
+            if number not in notes and not already:
                 note_facts[number] = {
                     'written': [], 'skipped': [],
                     'error': 'no release notes were supplied for #%d; write '
@@ -566,6 +585,14 @@ def cmd_settle_merged(args):
     (a queued auto-merge, a person merging an approved PR) left its issues out
     of Done and its release notes unwritten. This finds them and runs
     `post-merge` on each, reading the notes the run posted on the PR.
+
+    An issue is unsettled while it is out of Done, or while it is Done with
+    neither release-notes field set in an org that defines them. Done alone
+    was the test once, and it let the gap close over: the hourly board sync
+    sets a closed issue to Done, and so does a `post-merge` that found no
+    notes, so the next sweep saw Done and never came back for them. A PR whose
+    issues are still without notes is listed under `needs_notes`, for the
+    caller to write them and re-run `post-merge --notes`.
     """
     cfg = prepare_cfg()
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
@@ -579,16 +606,19 @@ def cmd_settle_merged(args):
     numbers = sorted({n for ns in linked.values() for n in ns})
     issues = read_linked_issues(cfg, numbers) if numbers else {}
     done = wf_core.STAGE_NAMES['stage-done']
+    wants_notes = notes_fields_defined(cfg) if numbers else False
 
     def unsettled(n):
         ok_, issue, _ = issues.get(n, (False, None, ''))
         if not ok_ or not issue:
             return False
         stage = issue.get('stage')
-        return stage != done and not wf_core.is_area_stage(stage)
+        if wf_core.is_area_stage(stage):
+            return False
+        return stage != done or (wants_notes and not issue.get('has_notes'))
 
     pending = sorted(pr for pr, ns in linked.items() if any(unsettled(n) for n in ns))
-    results, failed = [], []
+    results, failed, needs_notes = [], [], []
     for pr in pending:
         code, payload = call_command(cmd_post_merge, SimpleNamespace(
             pr=pr, issue=None, notes=None, no_unblock=True))
@@ -597,12 +627,23 @@ def cmd_settle_merged(args):
         if code != EXIT_OK:
             failed.append({'pr': pr, 'status': payload.get('status'),
                            'detail': payload})
+            missing = missing_note_issues(payload)
+            if missing:
+                needs_notes.append({'pr': pr, 'issues': missing})
     if failed:
         emit('partial', EXIT_PARTIAL, settled=results, failed=failed,
+             needs_notes=needs_notes,
              reason='%d of %d merged PR(s) did not settle cleanly'
                     % (len(failed), len(pending)))
     emit_line('ok', EXIT_OK, settled=[r['pr'] for r in results],
               reason='%d merged PR(s) settled' % len(results))
+
+
+def missing_note_issues(payload):
+    """The issues a `post-merge` payload settled without their notes."""
+    return [entry['issue'] for entry in (payload or {}).get('settled') or []
+            if isinstance(entry, dict)
+            and (entry.get('release_notes') or {}).get('error')]
 
 
 def release_note_writes(cfg, linked, notes):

@@ -569,7 +569,7 @@ Without `--notes`, the notes come from the newest PR comment carrying `<!-- syne
 
 ## Settling merges that landed later — `settle-merged`
 
-`post-merge` runs only inside a synergy run, so a queued auto-merge that lands after the run, or a person merging an approved PR, used to leave its issues at `In Review` with no release notes. `settle-merged [--limit 30]` lists the most recent merged PRs, finds those with a closing issue not at `Done` (area epics aside), and runs `post-merge` on each without `--notes`, so it reads the notes comment. It prints one line when every PR settled, and exits `partial` naming each that did not. `execute`, `bulk-execute` and `pr-review` run it at the start of every run.
+`post-merge` runs only inside a synergy run, so a queued auto-merge that lands after the run, or a person merging an approved PR, used to leave its issues at `In Review` with no release notes. `settle-merged [--limit 30]` lists the most recent merged PRs, finds those with a closing issue not at `Done`, or at `Done` with neither release-notes field set in an org that defines them (area epics aside), and runs `post-merge` on each without `--notes`, so it reads the notes comment. Done alone is not the test because the board sync sets a closed issue to Done without notes. It prints one line when every PR settled, and exits `partial` naming each that did not, with `needs_notes` listing each PR and issue still without notes for the caller to write. `execute`, `bulk-execute` and `pr-review` run it at the start of every run.
 
 ## Releasing what a merge freed — `unblock`
 

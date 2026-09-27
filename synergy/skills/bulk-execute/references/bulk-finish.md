@@ -43,6 +43,8 @@ It pushes the branch, checks every built story for another open pull request tha
 - **`partial`** (exit 24) — the pull request exists but its body still fails the check (`problems`). Warn the user that it may need editing by hand, and carry on.
 - **`error`** (exit 20) — the push or the create failed. No pull request exists; fix the cause and re-run.
 
+**Then write and post the release notes**, before the handoff: follow `skills/release-notes/references/on-the-pr.md`, one entry per built story from that story's own commits. They go on the pull request before the review, so the reviewer checks them and a merge by a person still has notes to write.
+
 ## 3. Hand every story to review
 
 One call, whatever the size of the set — repeat `--issue N` once per **built** story (the ones whose `built` is `true` in `.claude/bulk-set.json`):

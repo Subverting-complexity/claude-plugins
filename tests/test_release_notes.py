@@ -228,6 +228,16 @@ class TestPostMergeWritesReleaseNotes(unittest.TestCase):
         self.assertTrue(entry['stage_set'])
         self.assertIn('no release notes', entry['release_notes']['error'])
 
+    def test_an_issue_that_already_has_notes_is_not_a_gap(self):
+        # Re-settling a PR for its one issue without notes must not fail the
+        # issues whose fields were written earlier.
+        noted = {5: (True, {'id': 'I_5', 'state': 'CLOSED', 'stage': 'Done',
+                            'has_notes': True, 'labels': []}, '')}
+        with mock.patch.object(wf, 'read_linked_issues', return_value=noted):
+            code, payload, _ = self._post_merge({})
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['settled'], [5])
+
     def test_without_a_file_the_notes_come_from_the_pr_comment(self):
         comments = [{'body': 'unrelated'},
                     {'body': wf.NOTES_MARKER + '\nNotes.\n\n```json\n'
@@ -248,23 +258,27 @@ class TestSettleMerged(unittest.TestCase):
     """A merge that landed after the run (queued, or by a person) is settled
     by the next run's sweep, and only PRs with an issue out of Done are."""
 
-    def _sweep(self, stages, post_merge_code=0):
+    def _sweep(self, stages, post_merge_code=0, noted=None, fields=False,
+               post_merge_settled=None):
         prs = [{'number': 50, 'closingIssuesReferences': [{'number': 5}]},
                {'number': 51, 'closingIssuesReferences': [{'number': 6}]},
                {'number': 52, 'closingIssuesReferences': [{'number': 7}]}]
-        issues = {n: (True, {'stage': s}, '') for n, s in stages.items()}
+        # Every issue carries notes unless `noted` names the ones that do.
+        issues = {n: (True, {'stage': s, 'has_notes': noted is None or n in noted}, '')
+                  for n, s in stages.items()}
         settled = []
 
         def post_merge(args):
             settled.append(args.pr)
             status = 'ok' if post_merge_code == 0 else 'partial'
-            wf.emit(status, post_merge_code, settled=[])
+            wf.emit(status, post_merge_code, settled=post_merge_settled or [])
 
         args = wf.build_parser().parse_args(['settle-merged'])
         with mock.patch.object(wf, 'check_environment', return_value=None), \
                 mock.patch.object(wf, 'load_config', return_value=(True, _cfg(), '')), \
                 mock.patch.object(wf, 'gh_json', return_value=(True, prs, '')), \
                 mock.patch.object(wf, 'read_linked_issues', return_value=issues), \
+                mock.patch.object(wf, 'notes_fields_defined', return_value=fields), \
                 mock.patch.object(wf, 'cmd_post_merge', post_merge):
             code, payload = _capture(args.func, args)
         return code, payload, settled
@@ -281,6 +295,29 @@ class TestSettleMerged(unittest.TestCase):
                                        post_merge_code=wf.EXIT_PARTIAL)
         self.assertEqual(code, wf.EXIT_PARTIAL)
         self.assertEqual(payload['failed'][0]['pr'], 50)
+
+    def test_an_issue_at_done_with_no_notes_is_still_unsettled(self):
+        # The board sync and a notes-less post-merge both set Done, so Done
+        # alone once hid the gap from every later sweep.
+        code, _, settled = self._sweep(
+            {5: 'Done', 6: 'Done', 7: 'Done'}, noted={5, 7}, fields=True)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(settled, [51])
+
+    def test_missing_notes_are_not_chased_in_an_org_without_the_fields(self):
+        _, _, settled = self._sweep(
+            {5: 'Done', 6: 'Done', 7: 'Done'}, noted=set(), fields=False)
+        self.assertEqual(settled, [])
+
+    def test_a_pr_still_without_notes_is_named_for_the_caller(self):
+        entry = {'issue': 6, 'stage_set': True,
+                 'release_notes': {'written': [], 'skipped': [],
+                                   'error': 'no release notes were supplied for #6'}}
+        code, payload, _ = self._sweep(
+            {5: 'Done', 6: 'Done', 7: 'Done'}, noted={5, 7}, fields=True,
+            post_merge_code=wf.EXIT_PARTIAL, post_merge_settled=[entry])
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+        self.assertEqual(payload['needs_notes'], [{'pr': 51, 'issues': [6]}])
 
 
 if __name__ == '__main__':
