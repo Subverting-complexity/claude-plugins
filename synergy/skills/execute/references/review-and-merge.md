@@ -84,4 +84,16 @@ Only when none of them holds, read `references/merge.md` and follow it: it drive
 
 ## Final report
 
-Run **Exit cleanup** (`references/exit-cleanup.md`) as the final step, which also releases the `pr-{pr_number}` claim. Then report the run in full: the story implemented, whether the PR merged or which condition stopped it, what the review found and what you changed in response, anything filed to the backlog, and the issues now closed. Keep filed and closed apart, and say why each filed item was filed: unrelated to this PR, or an open question for a person. If `.claude/self-review.flag` exists, repeat Phase 8 step 3's disclosure. A run that fixed its findings and filed nothing is the ordinary outcome.
+Before Exit cleanup deletes it, read `.claude/release-notes.json`, or the newest notes comment on the PR if the file is gone. Run **Exit cleanup** (`references/exit-cleanup.md`) as the final step, which also releases the `pr-{pr_number}` claim.
+
+Open the report with the release notes, so the user sees what changed for them before anything else:
+
+```markdown
+## Summary
+
+- #41 Compact the Library header: The Library header is more compact.
+```
+
+One bullet per issue the PR closes: its number and title, then its `user` note exactly as written to the issue, without its leading `* `. A note with several bullets keeps them as sub-bullets under the issue's line. When `user` is blank, use `internal` and say it is internal; when both are blank, say there is no user-facing change. The heading states the notes, not the PR's state, so say in the next line whether it merged.
+
+Then report the run in full: the story implemented, whether the PR merged or which condition stopped it, what the review found and what you changed in response, anything filed to the backlog, and the issues now closed. Keep filed and closed apart, and say why each filed item was filed: unrelated to this PR, or an open question for a person. If `.claude/self-review.flag` exists, repeat Phase 8 step 3's disclosure. A run that fixed its findings and filed nothing is the ordinary outcome.
