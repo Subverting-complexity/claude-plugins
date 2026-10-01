@@ -8,7 +8,7 @@ update appears to do nothing.
 
 ## synergy 18.5.0
 
-- `acceptance-criteria` now writes criteria that cover what the change does, each behaviour once, rather than a full test plan. Length follows the change, with no fixed cap. It names a few example screens rather than every one, leaves out existing behaviour (such as going back), other routes to the same screen and edge cases, and folds or drops a knock-on adjustment that only protects the main change. The examples show the shape.
+- `acceptance-criteria` now writes criteria that cover what the change does, each behaviour once, rather than a full test plan. Length follows the change, with no fixed cap. It names a few example screens rather than every one, leaves out existing behaviour (such as going back), other routes to the same screen and edge cases, and folds or drops a knock-on adjustment that only protects the main change.
 
 ## synergy 18.4.0
 

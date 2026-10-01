@@ -30,7 +30,7 @@ Return acceptance criteria inside a single fenced code block so the user can cop
 Each change group is one bullet with sub-bullets for test steps:
 
 ```
-* Fixed [what changed] so that [why/what it enables]. Test the following:
+* Updated [what changed] so that [why/what it enables]. Test the following:
    * [Test step 1]
    * [Test step 2]
 ```
@@ -43,7 +43,7 @@ Each change group is one bullet with sub-bullets for test steps:
 - **Sub-bullets**: Each is one thing to do and confirm, written for someone using the product, not reading the code. Write a step for each behaviour the change adds, so a feature with several parts gets several steps.
 - **Test what the change does.** Cover its main behaviours, and the one or two things a person would be caught out by, such as a note surviving a reopen, a warning before data is lost, or an unchanged screen when the feature is not used. Do not test what already worked before the change, such as tapping back to go to the previous screen, or the same screen reached by another route.
 - **Examples, not coverage.** When a change reaches many screens or records, name a few as examples ("for example Count, Place Order and Log Delivery") and ask the tester to try several. Never list each one, and never ask for the same check on every screen.
-- **Leave out the exhaustive.** Skip empty states, error paths, rapid repeats and combinations unless one of them is the point of the change.
+- **Do not hunt for edge cases.** Skip rapid repeats and combinations. Include an empty state or error path only when the change is about it or a person would plainly hit it, such as a filter that matches nothing.
 - **Group by user-facing change**, not by file or module. Multiple code changes that produce one visible behavior change are a single bullet.
 - **Skip purely internal changes** that have no user-facing or testable impact (refactors, renames, test-only changes, .gitignore updates).
 - Keep the total output as short as the change allows. A PR that does one thing gets one bullet. Do not pad a bullet to look thorough, and do not split one behaviour across several bullets.
@@ -55,51 +55,40 @@ Each change group is one bullet with sub-bullets for test steps:
 
 ## Examples
 
-### Example 1: A fix that reaches many screens
+### Example 1: Resilient work item creation
 
 ```
-* Fixed the back button arrow being invisible in light mode, which also made screen titles look shifted to the right. Test the following:
-   * In light mode, open several Inventory screens that have a back button (for example Count, Count Summary, Place Order, Log Delivery and Supplier Item Codes) and confirm a dark arrow shows at the top left of each one
-   * Switch to dark mode, repeat a few of the screens above, and confirm the arrow is still visible (light on the dark background)
+* Updated DevOps work item creation to be phased so that missing or invalid custom fields no longer block work item creation. Test the following:
+   * Send a support request and ensure all fields (tags, priority, category, client name) populate as expected
+   * Send a support request for a tenant whose name isn't in the Client Name picklist. Work item should still be created with a comment noting the field couldn't be set
+   * Send a follow-up email on an existing thread and confirm the support request summary, urgency, and category update correctly
+   * Use the chatbot agent to create a DevOps work item and confirm all fields populate correctly
 ```
 
-The same PR also kept the arrow white on one red header so it stays visible. That is a knock-on of the fix, so it has no bullet of its own.
-
-### Example 2: A feature with several parts
+### Example 2: New UI filter
 
 ```
-* Added an item note (one per item) on the count screen. Each item card now has a speech-bubble button to the left of the quantity box. Test the following:
-   * Tap the button on a counted item. Confirm a full-screen note opens with the item name at the top, the keyboard up and a character count (max 500)
-   * Save a note, tap Save Progress, leave and reopen the count. Confirm the button is filled and the note is still there
-   * Go to Count Summary and confirm the note shows in a small bordered strip under that item
-* Added a count note (one for the whole count) on Count Summary. A speech-bubble button sits in the header, to the right of the title. Test the following:
-   * Tap it, add a note and save. Confirm it appears in a "Note" card under the totals card
-   * Type a count note, go back to the count screen and tap back. Confirm you're warned it will be lost
+* Added a date range filter to the audit report page. Test the following:
+   * Select a start and end date and confirm the report filters to that range
+   * Clear the filter and confirm all records reappear
+   * Select a range with no data and confirm an empty state message displays
 ```
 
-### Example 3: Showing existing data on a read-only screen
-
-```
-* Added notes to Count Details (read-only, opened from Count History). Test the following:
-   * Open a submitted count that has both kinds of note
-   * Confirm the count note shows in a "Note" card at the top of the list, above the first category
-   * Confirm each item note shows in a small bordered strip under its item
-   * Confirm a long note shows two lines with Show more, and expands when tapped
-   * Open a count with no notes and confirm it looks the same as before
-```
-
-### Example 4: Bug fix
+### Example 3: Bug fix
 
 ```
 * Fixed scheduled scripts creating duplicate tenant tracker entries when run concurrently. Test the following:
-   * Run the same script twice in quick succession and confirm only one tracker entry is created
+   * Trigger a scheduled script and confirm only one tracker entry is created
+   * Run the same script twice in quick succession and confirm no duplicates appear
 ```
 
-### Example 5: Two separate changes in one PR
+### Example 4: Multiple changes in one PR
 
 ```
 * Updated the notification email to include the client name in the subject line. Test the following:
    * Trigger a notification and confirm the email subject contains the client name
+   * Trigger a notification for a tenant with no client name configured and confirm the email still sends with a fallback subject
 * Fixed the data slicer crashing when the target field is null. Test the following:
    * Run a data slicer with a null target field and confirm it completes without error
+   * Run a data slicer with a valid target field and confirm results are unchanged
 ```
