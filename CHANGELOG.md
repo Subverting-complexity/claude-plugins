@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.5.0
+
+- `acceptance-criteria` now writes criteria that cover what the change does, each behaviour once, rather than a full test plan. Length follows the change, with no fixed cap. It names a few example screens rather than every one, leaves out existing behaviour (such as going back), other routes to the same screen and edge cases, and folds or drops a knock-on adjustment that only protects the main change.
+
 ## synergy 18.4.0
 
 - `verify-feature` now checks modularity (one job per unit, layering, dependency direction), extensibility (whether the next case of the same kind means editing code in several places) and adherence to the repository's formatter, linter and neighbouring-code conventions. Each concern's heading carries its category. The skill body is tighter.

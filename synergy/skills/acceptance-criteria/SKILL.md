@@ -4,7 +4,9 @@ description: 'Write test steps a tester or stakeholder can follow in the UI for 
 ---
 # Acceptance Criteria Skill
 
-Produces short, user-facing acceptance criteria for testing a feature or PR. The audience is testers and stakeholders who interact with the product through the UI, not developers reading code.
+Produces acceptance criteria for a feature or PR: what a tester does to see the change working. The audience is testers and stakeholders who interact with the product through the UI, not developers reading code.
+
+This is not a test plan. It covers what the change does, each thing once, and does not try to cover everything that could be tested. How long it runs follows the change: a one-line fix needs a step or two, and a feature with several behaviours needs a step for each.
 
 Read `_shared/wording-standard.md` and `_shared/banned-patterns.md` before writing. Both apply to acceptance criteria. Write each step in plain language a tester who is not involved in this codebase can follow, and explain what a feature does rather than naming internal identifiers.
 
@@ -16,7 +18,8 @@ Read `_shared/wording-standard.md` and `_shared/banned-patterns.md` before writi
 
 1. Read the change and group it by what a user would notice, following `_shared/reading-changes.md`. It covers a branch (the default), a pull request number, or pasted notes.
 2. Keep the user-facing groups and drop the internal-only ones.
-3. Write acceptance criteria focused on what a tester can verify through the UI or system behavior
+3. Fold or drop the knock-on groups. A group that only keeps something looking or working as it did before, because of the main change, is not its own bullet. Fold it into the main bullet if a tester would miss it, otherwise drop it.
+4. For each group that is left, write the steps that show each new behaviour working, then stop. If the change comes in two variants a person sees (light and dark mode, signed in and signed out), add one step for the other variant.
 
 ---
 
@@ -28,9 +31,8 @@ Each change group is one bullet with sub-bullets for test steps:
 
 ```
 * Updated [what changed] so that [why/what it enables]. Test the following:
-   * [Test step or verification 1]
-   * [Test step or verification 2]
-   * [Test step or verification 3]
+   * [Test step 1]
+   * [Test step 2]
 ```
 
 ---
@@ -38,10 +40,13 @@ Each change group is one bullet with sub-bullets for test steps:
 ## Writing Rules
 
 - **Lead bullet**: One sentence. Starts with a bold past-tense verb (**Updated**, **Added**, **Fixed**, **Removed**, **Changed**). States what changed and why in plain language. Ends with "Test the following:"
-- **Sub-bullets**: Each is a specific thing to do or verify. Written for someone using the product, not reading the code.
-- **Group by user-facing change**, not by file or module. Multiple code changes that produce one visible behavior change should be a single bullet.
+- **Sub-bullets**: Each is one thing to do and confirm, written for someone using the product, not reading the code. Write a step for each behaviour the change adds, so a feature with several parts gets several steps.
+- **Test what the change does.** Cover its main behaviours, and the one or two things a person would be caught out by, such as a note surviving a reopen, a warning before data is lost, or an unchanged screen when the feature is not used. Do not test what already worked before the change, such as tapping back to go to the previous screen, or the same screen reached by another route.
+- **Examples, not coverage.** When a change reaches many screens or records, name a few as examples ("for example Count, Place Order and Log Delivery") and ask the tester to try several. Never list each one, and never ask for the same check on every screen.
+- **Do not hunt for edge cases.** Skip rapid repeats and combinations. Include an empty state or error path only when the change is about it or a person would plainly hit it, such as a filter that matches nothing.
+- **Group by user-facing change**, not by file or module. Multiple code changes that produce one visible behavior change are a single bullet.
 - **Skip purely internal changes** that have no user-facing or testable impact (refactors, renames, test-only changes, .gitignore updates).
-- Keep the total output short. Aim for 2-5 top-level bullets. If the PR only does one thing, one bullet is fine.
+- Keep the total output as short as the change allows. A PR that does one thing gets one bullet. Do not pad a bullet to look thorough, and do not split one behaviour across several bullets.
 - No em dashes. Use commas, periods, or parentheses instead.
 - No code identifiers (class names, method names, field paths) unless the user directly interacts with them in a config editor or similar.
 - No developer jargon. Write for someone who knows the product but not the codebase.
