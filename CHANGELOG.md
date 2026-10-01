@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.4.0
+
+- `verify-feature` now checks modularity (one job per unit, layering, dependency direction), extensibility (whether the next case of the same kind means editing code in several places) and adherence to the repository's formatter, linter and neighbouring-code conventions. Each concern's heading carries its category. The skill body is tighter.
+
 ## synergy 18.2.0
 
 - `execute` and `bulk-execute` write the release notes and post them on the pull request as soon as it opens, before the review, and the reviewer checks them. `pr-review` checks the notes on any pull request it reviews and writes them when there are none.
