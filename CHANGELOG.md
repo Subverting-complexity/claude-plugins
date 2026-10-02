@@ -6,6 +6,11 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.8.0
+
+- New `wf worktree-reap` removes the finished `agent-*` worktrees of a clone, and `exit-cleanup` runs it at the end of every run. The harness makes one worktree per subagent and removes it only in its own sweep (30 days by default), so a project that installs dependencies in each one piled up gigabytes between sweeps. A run cannot delete the worktree it is standing in, so each run now removes the ones before it. A worktree is removed only when it is not the current one, is not locked, has been idle for six hours, has no uncommitted or untracked-and-unignored file, and, on a detached HEAD, has a branch or tag holding its commit. Its branch stays. Symlinks and junctions inside it (the harness links `node_modules`) are unlinked first, so a delete never reaches the shared install. `--dry-run`, `--min-age-hours` and `--pattern` are the options; a person's named session worktrees are left alone unless a pattern names them.
+- `docs/worktree-config.md` no longer recommends two settings that its source does not support. `cleanupPeriodDays: 1` also deletes session transcripts and checkpoints after a day, and `worktree.bgIsolation` is documented as a boolean where `true` turns isolation off, not the strings the guide showed. It now explains why worktrees pile up and how the sweep works.
+
 ## synergy 18.7.0
 
 - `writing-github-issues` now treats a person's half of a privacy policy change as a checkbox in the project's pre-release privacy issue instead of a separate `[Manual]` issue. That half is approving and publishing the wording, confirming the live page, entering the store privacy answers (the App Store privacy label and the Play Data safety form), and a release check that the policy covers something before it reaches readers. The issue is found from the `pre-release-privacy-title` setting in an optional `## Pre-release privacy pass` section of `ClaudeProject.md` (added to the template), never from a title or number written into the plugin. The wording stays a code story and a decision stays its own issue. A project with no such section files the work as before.
