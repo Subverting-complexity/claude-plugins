@@ -35,7 +35,9 @@ Three parties do work on a backlog, and they cannot substitute for each other.
 
 **Browser agent.** Filling non-credential fields, pressing save, reading identifiers back out of a console. It **cannot** sign in, clear two-factor, download a file, accept an agreement, or touch anything financial. When it meets one of those it stops and hands back rather than working around it. Because it needs a session a person opened, a `[Browser]` issue is not picked up on its own either.
 
-**Human.** A physical device in someone's hand, money, a legal agreement, a credential being moved, a decision of any kind (product, design, architecture, business), research or an investigation whose output is a finding rather than a commit, and a run that gave up and needs someone to say what happens next. Signing in, downloading, accepting terms and making a declaration to a third party are human every time, even when the work around them is console clicking. A device pass is human, not browser: a browser agent has no phone, no speaker and no screen reader.
+**Human.** A physical device in someone's hand, money, a legal agreement, a credential being moved, a decision of any kind (product, design, architecture, business), research or an investigation whose output is a finding rather than a commit, and a run that gave up and needs someone to say what happens next. Signing in, downloading, accepting terms and making a declaration to a third party are human every time, even when the work around them is console clicking. A device check is human, not browser: a browser agent has no phone, no speaker and no screen reader.
+
+**A check that only a device or a real browser can answer is a checkbox, not an issue, where the project keeps a pre-release test issue.** If the project's `ClaudeProject.md` has a `## Pre-release test pass` section, read its `pre-release-test-title` setting, search open issues for that title text, and add the check to the one it finds. Never take the title or number from anywhere else, because the issue changes each release. If none is open, or more than one matches, say so and ask rather than filing one or choosing. The section's own text says how that project adds a check. Add the check under the right heading with what to do, what a pass looks like and which story it comes from, and do not file a `[Manual]` issue of its own. Read the body before writing it back, because an edit overwrites it. A failure found by the pass is still its own code-agent issue. Where the project has no such section, file the check as a `[Manual]` issue as below. Human work that is not a test (credentials, store consoles, legal copy, decisions) and an investigation whose output is a finding still get their own issue either way.
 
 ### Marking a scoped issue
 
@@ -54,7 +56,7 @@ Include a `## Manual step` section saying what has to happen and why the other t
 
 The old shape looks finished and is not. A code story that does its half and says "then a person sets the value" sits in Backlog, gets picked up, gets a merged pull request, and the console step is never done because it never had an issue of its own.
 
-Ask what the issue produces: a commit, a saved console form, or neither. **Two answers means two issues.**
+Ask what the issue produces: a commit, a saved console form, or neither. **Two answers means two issues.** The one exception is a device-only check where the project's `ClaudeProject.md` has a `## Pre-release test pass` section (see **Human** above): that half is a checkbox in it, not a second issue.
 
 Where the two halves interleave, say so in both, in order, rather than leaving it to whoever picks one up. Two issues that hand back and forth once is normal and fine; four issues for four alternating steps is not.
 

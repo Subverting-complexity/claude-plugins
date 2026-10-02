@@ -95,6 +95,14 @@ The purpose→value maps — which native type each kind of work becomes, and th
 
 Skill the execute flow offers when a story is too thin to implement: `feature-discovery` (default). It runs the `grill` interview and turns the answers into a fuller spec with acceptance criteria. A story a person has not approved yet belongs at `Stage` `Needs refinement`, which keeps it out of the pool without needing a label.
 
+## Pre-release test pass (optional)
+
+| Setting                | Value                  |
+| ---------------------- | ---------------------- |
+| pre-release-test-title | `{title text to find}` |
+
+Remove this section if the project files each device check as its own `[Manual]` issue. Where it is present, a check that only a device or a real browser can answer is added as a checkbox to the one open issue whose title contains the value, instead of becoming an issue of its own (`writing-github-issues` → `references/scope-and-hierarchy.md`). The value is a piece of title text, never an issue number, because the issue changes each release. Say in this section how to add a check and when the pass is closed and replaced.
+
 ## Session Budget
 
 Target ~100k tokens per session. One story per session, run start-to-finish. Commit and push early so work survives an unexpected end.
