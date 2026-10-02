@@ -13,5 +13,5 @@ Because the worktree starts clean, there is no "foreign work I didn't author" ca
 A worktree should never *start* dirty and a session should never *end* dirty. When it happens, the cause is almost always one of:
 
 1. **A whole-repo formatter in the quality gate.** A gate that runs `prettier --write .` (or `lint --fix` across the tree) reformats files the change never touched, manufacturing foreign-looking dirt in unrelated packages every run. Fix at the source: format **staged/changed files only** (lint-staged style), or make the gate **check-only** (`prettier --check`) so it fails loudly instead of silently rewriting.
-2. **A reused worktree.** A prior dirty session was never reaped, so the next session inherited its mess. Keep `cleanupPeriodDays` low and use a `WorktreeRemove` hook (`docs/worktree-config.md`) so dirty worktrees do not linger to be reused.
+2. **A reused worktree.** A prior dirty session was never reaped, so the next session inherited its mess. Run `wf worktree-reap` and, on Windows, use a `WorktreeRemove` hook (`docs/worktree-config.md`) so finished worktrees do not linger to be reused. Do not lower `cleanupPeriodDays` for this: it also deletes session transcripts.
 3. **Line-ending churn.** `core.autocrlf` rewriting LF↔CRLF leaves files "modified" with no content change. Run `bootstrap.{sh,ps1}` once per clone (`docs/worktree-config.md`).

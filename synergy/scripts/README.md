@@ -36,6 +36,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 659 |
 | `wf_board_sync.py` | `board-sync` | 287 |
 | `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 274 |
+| `wf_worktrees.py` | Reading a worktree's age and state, removing one (links first), the sweep, `worktree-reap` | 281 |
 | `wf_block.py` | `block` | 129 |
 | `wf_pr_create.py` | `pr-create` | 128 |
 | `wf_core.py` | Facade: re-exports the rules below | 50 |
@@ -56,6 +57,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_scratch.py` | Which `.claude/` files are run scratch, the managed `info/exclude` block | 70 |
 | `wf_core_schedule.py` | Reading `.claude/plan.md`, a bulk set record by group, which stories in a wave share files, parallel batches | 210 |
 | `wf_core_steps.py` | Exit cleanup's review reconcile, the tree's porcelain, PR body checks, the current milestone, the compact pick result, abandoned PRs, the review picker's moved-head tier | 274 |
+| `wf_core_worktrees.py` | Reading `git worktree list`, which worktrees a sweep covers, and the verdict on each | 134 |
 
 ## Commands
 
@@ -115,6 +117,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" exit-cleanup --issue 42 --pr 123
 
 # Discard the uncommitted paths the caller chose, then re-check the tree
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" tree-clean --discard dist/out.js
+
+# Remove the finished agent worktrees of this clone (exit-cleanup does this too)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" worktree-reap --dry-run
 
 # Push, flag duplicate PRs, open the PR, add missing Closes lines, check the body
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pr-create --title "Add login" --body-file .claude/pr-body.md --issue 42
@@ -676,11 +681,19 @@ It **always exits 0**: once the pull request exists, none of this is a reason to
 
 ### `exit-cleanup`
 
-`exit-cleanup [--issue N ...] [--bulk] [--pr P]` is the last step of every run. It releases the issue claims (`--bulk` adds every story in the bulk set) in one push. When `.claude/claim-pr-P.sha` shows this checkout won the review claim, it reads the PR once and, per `wf_core.exit_pr_action`, records an unfinished review as changes-requested before releasing that claim too; a claim another agent holds is never touched. Then it runs `scratch-clean` and reads the tree. Everything done and the tree clean is one line (exit 0). `dirty` (exit 24) lists `remaining` paths for the caller to commit or discard; `partial` (exit 24) names a release or delete that failed.
+`exit-cleanup [--issue N ...] [--bulk] [--pr P]` is the last step of every run. It releases the issue claims (`--bulk` adds every story in the bulk set) in one push. When `.claude/claim-pr-P.sha` shows this checkout won the review claim, it reads the PR once and, per `wf_core.exit_pr_action`, records an unfinished review as changes-requested before releasing that claim too; a claim another agent holds is never touched. Then it runs `scratch-clean`, runs the `worktree-reap` sweep (a sweep that fails never changes the result) and reads the tree. Everything done and the tree clean is one line (exit 0), which says how many finished worktrees the sweep removed. `dirty` (exit 24) lists `remaining` paths for the caller to commit or discard; `partial` (exit 24) names a release or delete that failed.
 
 ### `tree-clean`
 
 `tree-clean --discard PATH [...]` or `--all` discards what the caller chose (tracked paths restored, untracked ones cleaned) and re-checks the tree: one line when clean, `dirty` with `remaining` (and `refused`, the paths git would not restore or clean) when not. It reads `git status --porcelain -z`, so a non-ASCII name is matched as it is on disk, and discarding a rename's new path also restores its old one.
+
+### `worktree-reap`
+
+`worktree-reap [--dry-run] [--min-age-hours N] [--pattern GLOB ...]` removes the finished worktrees under `.claude/worktrees/` of this clone, from outside them. The harness makes one per subagent and removes it only on its own schedule, and a project that installs dependencies per worktree carries a full `node_modules` in each, so they pile up between sweeps. A run cannot delete the worktree it is standing in, which is why the next run does it.
+
+A worktree is removed when its folder name matches a pattern (default `agent-*`, the harness's own; a person's named session worktrees are left alone unless `--pattern` names them), it is not the worktree the command runs in, it is not locked, nothing in it has changed for `--min-age-hours` (default 6, read from its git HEAD and index and any run scratch files), and nothing would be lost: no uncommitted or untracked-and-unignored file, and, for a detached HEAD, a branch or tag that holds the commit. The branch of a removed worktree stays. The rules are `wf_core.reap_verdict`.
+
+Symlinks and junctions near the top of a worktree (the harness links `node_modules` into each) are unlinked before the folder is deleted, because a recursive delete that follows one deletes the target. When `git worktree remove` cannot finish, for a path too long for Windows or a read-only pack file, the folder is deleted directly, only if it sits directly under `.claude/worktrees/`, and the record is pruned. Success is one line with `removed`, naming what was kept and why; `--dry-run` prints the full lists and removes nothing; a worktree that could not be removed is `partial` (exit 24) with `failed`.
 
 ### `pr-create`
 

@@ -95,6 +95,7 @@ import wf_steps  # noqa: E402
 import wf_block  # noqa: E402
 import wf_pr_create  # noqa: E402
 import wf_areas  # noqa: E402
+import wf_worktrees  # noqa: E402
 
 _SHELL_MODULES = (
     wf_io,
@@ -122,6 +123,7 @@ _SHELL_MODULES = (
     wf_block,
     wf_pr_create,
     wf_areas,
+    wf_worktrees,
 )
 
 for _module in _SHELL_MODULES:
@@ -175,6 +177,7 @@ from wf_review import (
 from wf_stage import cmd_stage_set
 from wf_steps import cmd_exit_cleanup, cmd_start, cmd_tree_clean
 from wf_unblock import cmd_unblock
+from wf_worktrees import cmd_worktree_reap
 
 
 def build_parser():
@@ -618,6 +621,19 @@ def build_parser():
                     help='a path to discard (repeatable)')
     tc.add_argument('--all', action='store_true', help='discard every uncommitted path')
     tc.set_defaults(func=cmd_tree_clean)
+
+    wr = sub.add_parser('worktree-reap',
+                        help='remove the finished agent worktrees of this clone '
+                             '(exit-cleanup runs this at the end of every run)')
+    wr.add_argument('--dry-run', action='store_true',
+                    help='list what would be removed without removing anything')
+    wr.add_argument('--min-age-hours', type=float, default=wf_core.WORKTREE_MIN_AGE_HOURS,
+                    help='hours without git activity before a worktree counts as '
+                         'finished (default %d)' % wf_core.WORKTREE_MIN_AGE_HOURS)
+    wr.add_argument('--pattern', action='append', default=None,
+                    help='a folder-name glob under .claude/worktrees to sweep '
+                         '(repeatable; default %s)' % ', '.join(wf_core.WORKTREE_PATTERNS))
+    wr.set_defaults(func=cmd_worktree_reap)
 
     pc = sub.add_parser('pr-create',
                         help='push, flag duplicate PRs, open the PR and check its body')

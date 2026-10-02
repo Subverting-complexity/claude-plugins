@@ -26,21 +26,20 @@ Add these to your Claude Code settings (`.claude/settings.json` for the project,
 ```jsonc
 {
   "worktree": {
-    // Keep background/parallel agents isolated in their own worktree.
-    // NEVER set this to "none" — that lets parallel agents share one
-    // working tree and corrupt each other's checkout.
-    "bgIsolation": "worktree",
-
     // Symlink heavy generated directories instead of copying them into
     // every worktree. This is the single biggest win on Windows: one
     // shared node_modules instead of one copy per agent.
     "symlinkDirectories": ["node_modules"]
-  },
-
-  // Reap stale worktrees sooner so locks and long paths don't pile up.
-  "cleanupPeriodDays": 1
+  }
 }
 ```
+
+Two settings earlier versions of this guide recommended are **not** recommended, because Claude Code's documentation (checked 2 October 2026) says something different:
+
+- **`worktree.bgIsolation` is a boolean, and `true` turns isolation off.** Background sessions then edit the working copy directly. Leave it unset: unset means each background session gets its own worktree. The string values `"worktree"` and `"none"` this guide used to show are not documented.
+- **Do not set `cleanupPeriodDays` low to reap worktrees sooner.** It is not a worktree setting. The default is 30 days and the minimum is 1, and the same value decides when Claude Code deletes session transcripts, subagent transcripts, checkpoint file history, plans, debug logs and caches. At 1, a session left for a day cannot be resumed and its checkpoints are gone. Use `wf worktree-reap` (below) to remove finished worktrees instead.
+
+The documentation does not say whether a `symlinkDirectories` entry can be a nested path such as `backend/node_modules`, so a monorepo with a second install should assume it cannot. `wf worktree-reap` unlinks links at either depth before it deletes a worktree, so a link the harness made does not delete what it points at.
 
 ### Make secrets available inside worktrees
 
@@ -61,7 +60,7 @@ On Windows, removal frequently fails because a process still holds a file open o
 - delete a stale `.git/worktrees/<name>/index.lock`, and
 - abort any in-progress rebase (`git rebase --abort`) so removal is clean.
 
-Treat this as a best-effort safety net, not a substitute for `symlinkDirectories` and a short `cleanupPeriodDays`.
+Treat this as a best-effort safety net, not a substitute for `symlinkDirectories` and `wf worktree-reap`.
 
 ---
 
@@ -112,9 +111,25 @@ The model is: *start clean → everything dirty at the end is therefore this ses
 
 ---
 
+## Why worktrees pile up, and `wf worktree-reap`
+
+Claude Code removes a subagent or background-session worktree in a periodic sweep, and only once the worktree is older than `cleanupPeriodDays` (30 days by default). The sweep keeps a worktree with changed or untracked files or unpushed commits. A run started with `-p` does not clean up when it ends, so those worktrees wait for the sweep. In a project that installs dependencies in each worktree, a month of runs is gigabytes: one project measured 106 worktrees and 46 GB.
+
+The documentation does not define "unpushed commits". Where a branch was squash-merged and deleted on the remote, its commits are on no remote branch, so the sweep may count them as unpushed and keep that worktree past 30 days. That is a working theory, not something confirmed.
+
+A run cannot delete the worktree it is standing in, so the sweep that fixes the pile has to run from somewhere else. `wf worktree-reap` does, and `exit-cleanup` runs it at the end of every run, so each run removes what the runs before it finished. A worktree is removed only when nothing in it is lost by deleting the folder:
+
+- its folder name matches `agent-*` (the harness's own; a person's named session worktrees are left alone, because their session can be resumed),
+- it is not the worktree the command runs in, and is not locked,
+- nothing in it has changed for six hours (a git HEAD or index write, or a run scratch file),
+- it has no uncommitted or untracked-and-unignored file, and
+- if its HEAD is detached, a branch or tag holds the commit.
+
+The branch of a removed worktree stays, so committed work survives. Run `wf worktree-reap --dry-run` to see what it would remove and what it would keep and why. `--min-age-hours` and `--pattern` change the age and the folder names.
+
 ## Manual reap routine
 
-When the harness leaves stale worktrees behind (cleanup failed, a session was killed, or you see "worktree is locked" errors), reap them by hand:
+When the harness leaves stale worktrees behind (cleanup failed, a session was killed, or you see "worktree is locked" errors), `wf worktree-reap` removes the finished ones. For one it keeps, for example a worktree with uncommitted changes you have decided to drop, reap it by hand:
 
 ```bash
 # 1. See what worktrees exist and which are stale.
@@ -164,9 +179,10 @@ Deleting a claim ref never touches the issue's assignment or its stage — those
 
 | Setting | Recommended value | Why |
 | --- | --- | --- |
-| `worktree.bgIsolation` | `"worktree"` (never `"none"`) | Isolate parallel agents |
+| `worktree.bgIsolation` | leave unset (`true` turns isolation off) | Isolate parallel agents |
 | `worktree.symlinkDirectories` | `["node_modules"]` | Avoid per-worktree duplication |
 | `.worktreeinclude` | list `.env` / secrets | Make untracked config available |
-| `cleanupPeriodDays` | `1` (lower) | Reap stale worktrees sooner |
+| `cleanupPeriodDays` | leave at the default (30) | It also deletes transcripts and checkpoints |
+| `wf worktree-reap` | runs in `exit-cleanup`; or by hand | Remove finished `agent-*` worktrees |
 | `WorktreeRemove` hook | optional (Windows) | Clear locks / `index.lock` / rebases |
 | `core.autocrlf` / `core.eol` | `false` / `lf` (repo-local) | Stop CRLF churn that leaves worktrees "dirty" |

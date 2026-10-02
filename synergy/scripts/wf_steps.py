@@ -21,6 +21,7 @@ from wf_io import (
     emit_line, gh_json, run,
 )
 from wf_stage import checkout_branch, set_stage
+from wf_worktrees import reap_finished
 
 EXIT_DIRTY = EXIT_PARTIAL
 
@@ -161,6 +162,10 @@ def cmd_exit_cleanup(args):
     for item in scratch.get('failed') or ():
         problems.append('could not delete %s (%s)' % (item['file'], item['reason']))
 
+    # Earlier runs' finished worktrees go now, from outside them: a run cannot
+    # remove the worktree it is standing in, but this one can remove the last.
+    reaped = reap_finished()
+
     entries = tree_entries()
     if entries is None:
         problems.append('git status failed')
@@ -168,6 +173,8 @@ def cmd_exit_cleanup(args):
 
     fields = dict(released=[t for t in targets if released.get(t)], failed=failed,
                   pr_action=pr_action, problems=problems)
+    if reaped:
+        fields['worktrees_removed'] = reaped
     if entries:
         done = ('also: %s' % '; '.join(problems) if problems
                 else 'claims and scratch done')
@@ -182,6 +189,8 @@ def cmd_exit_cleanup(args):
     if pr_action in ('changes-requested', 'kept'):
         parts.append('PR #%d review %s' % (args.pr, pr_action))
     parts.append('scratch deleted, tree clean')
+    if reaped:
+        parts.append('removed %d finished worktree(s)' % reaped)
     emit_line('ok', EXIT_OK, reason='; '.join(parts))
 
 
