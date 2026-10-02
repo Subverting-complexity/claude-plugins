@@ -103,6 +103,14 @@ Skill the execute flow offers when a story is too thin to implement: `feature-di
 
 Remove this section if the project files each device check as its own `[Manual]` issue. Where it is present, a check that only a device or a real browser can answer is added as a checkbox to the one open issue whose title contains the value, instead of becoming an issue of its own (`writing-github-issues` → `references/scope-and-hierarchy.md`). The value is a piece of title text, never an issue number, because the issue changes each release. Say in this section how to add a check and when the pass is closed and replaced.
 
+## Pre-release privacy pass (optional)
+
+| Setting                   | Value                  |
+| ------------------------- | ---------------------- |
+| pre-release-privacy-title | `{title text to find}` |
+
+Remove this section if the project files each privacy policy publish or store privacy answer as its own `[Manual]` issue. Where it is present, a person's half of a privacy policy change (approving and publishing the wording, confirming the live page, entering the store privacy answers, and a release check that the policy covers something) is added as a checkbox to the one open issue whose title contains the value, instead of becoming an issue of its own (`writing-github-issues` → `references/scope-and-hierarchy.md`). The wording stays a code story, and a decision stays its own issue. The value is a piece of title text, never an issue number, because the issue changes each release. Say in this section how to add a check and when the pass is closed and replaced.
+
 ## Session Budget
 
 Target ~100k tokens per session. One story per session, run start-to-finish. Commit and push early so work survives an unexpected end.

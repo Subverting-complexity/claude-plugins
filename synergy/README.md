@@ -79,7 +79,7 @@ Required sections: Identity, Package Manager, Quality Gate, Branch Convention, I
 
 Recommended sections: Story Template, Session Budget, Refinement.
 
-Optional sections: Project Board, Reference Docs, Bundled Skills, Pre-release test pass.
+Optional sections: Project Board, Reference Docs, Bundled Skills, Pre-release test pass, Pre-release privacy pass.
 
 **`CLAUDE.md`** (required) — Project rules, build principles, and session hygiene.
 

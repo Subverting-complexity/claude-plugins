@@ -34,7 +34,7 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 
 **Recommended** — read by commands, default-covered when absent: `## Story Template`, `## Session Budget`, `## Refinement`.
 
-**Optional** — remove if unused: `## Project Board`, `## Reference Docs`, `## Bundled Skills`, `## Pre-release test pass`. The last holds one setting, `pre-release-test-title`: the title text of the open issue that device and real-browser checks are added to as checkboxes instead of becoming `[Manual]` issues of their own. A `## Label Map` from an older file is still read, but the workflow applies no label it names and nothing requires it.
+**Optional** — remove if unused: `## Project Board`, `## Reference Docs`, `## Bundled Skills`, `## Pre-release test pass`, `## Pre-release privacy pass`. `## Pre-release test pass` holds one setting, `pre-release-test-title`: the title text of the open issue that device and real-browser checks are added to as checkboxes instead of becoming `[Manual]` issues of their own. `## Pre-release privacy pass` holds one setting, `pre-release-privacy-title`, which does the same for a person's half of a privacy policy change: publishing the wording and entering the store privacy answers. A `## Label Map` from an older file is still read, but the workflow applies no label it names and nothing requires it.
 
 ## Heading rules
 
