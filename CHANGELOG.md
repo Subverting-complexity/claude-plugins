@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.7.0
+
+- `writing-github-issues` now treats a person's half of a privacy policy change as a checkbox in the project's pre-release privacy issue instead of a separate `[Manual]` issue. That half is approving and publishing the wording, confirming the live page, entering the store privacy answers (the App Store privacy label and the Play Data safety form), and a release check that the policy covers something before it reaches readers. The issue is found from the `pre-release-privacy-title` setting in an optional `## Pre-release privacy pass` section of `ClaudeProject.md` (added to the template), never from a title or number written into the plugin. The wording stays a code story and a decision stays its own issue. A project with no such section files the work as before.
+
 ## synergy 18.6.0
 
 - `writing-github-issues` now treats a check that only a device can answer as a checkbox in the project's pre-release test issue instead of a separate `[Manual]` issue. The issue is found from the `pre-release-test-title` setting in an optional `## Pre-release test pass` section of `ClaudeProject.md` (added to the template), never from a title or number written into the plugin. A project with no such section files the check as before, and human work that is not a test still gets its own issue.
