@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.6.0
+
+- `writing-github-issues` now treats a check that only a device can answer as a checkbox in the project's pre-release test issue instead of a separate `[Manual]` issue. The issue is found from the `pre-release-test-title` setting in an optional `## Pre-release test pass` section of `ClaudeProject.md` (added to the template), never from a title or number written into the plugin. A project with no such section files the check as before, and human work that is not a test still gets its own issue.
+
 ## synergy 18.5.0
 
 - `acceptance-criteria` now writes criteria that cover what the change does, each behaviour once, rather than a full test plan. Length follows the change, with no fixed cap. It names a few example screens rather than every one, leaves out existing behaviour (such as going back), other routes to the same screen and edge cases, and folds or drops a knock-on adjustment that only protects the main change.
