@@ -32,7 +32,7 @@ A plugin that files GitHub issues also carries a `writing-github-issues` skill. 
 
 Write every reply in the style of ASD-STE100 Simplified Technical English, about 80% of the way. This is a controlled form of English made so that each sentence is hard to misread. Aim for clear and direct. Do not twist a sentence to satisfy a rule.
 
-- Say one idea in each sentence. Aim for 20 words or fewer, and split anything longer.
+- Say one idea in each sentence. Aim for 20 words or fewer, and split anything longer. That is a ceiling, not a target, so sentence length can still vary.
 - Say who does what. Use the active voice, and the imperative for an instruction: "Restart the router."
 - Use the simplest word that is exact. Write "use", not "utilise", and "start", not "initiate". Avoid idioms and phrasal verbs that have several meanings.
 - Use one word for one thing, and keep it. Do not swap "task", "job" and "item" for the same thing.
