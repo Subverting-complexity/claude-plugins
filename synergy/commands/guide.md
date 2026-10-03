@@ -76,7 +76,7 @@ gh auth status 2>&1 | head -3
 >
 > **How replies are written:**
 >
-> - `/synergy:user-facing-communication` → The standard for everything the plugin says back to you: what was done and the current state first, then anything outstanding, blocked or assumed. It is on in every session automatically, so you only need to ask for it by name when you want an answer rewritten shorter or clearer.
+> - `/synergy:user-facing-communication` → The standard for everything the plugin says back to you: what was done and the current state first, then anything outstanding, blocked or assumed, in short, direct sentences (simplified technical English, ASD-STE100). It is on in every session automatically, so you only need to ask for it by name when you want an answer rewritten shorter or clearer.
 >
 > **Faster, better-grounded runs (optional):**
 >

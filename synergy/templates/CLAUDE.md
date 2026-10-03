@@ -21,6 +21,7 @@ Every reply is written to the `user-facing-communication` standard the plugin sh
 - Show any meaningful assumption or anything that could not be verified.
 - Name every issue and pull request by number **and** title. A bare number is not enough.
 - Leave out the investigation history, the file list, the test names and anything else whose only job is to show the work was thorough.
+- Write in simple technical English (ASD-STE100, about 80% of the way): one idea per sentence, active voice, the simplest exact word, one word for one thing.
 
 Ask for `user-facing-communication` directly when a reply is too long, too technical, or unclear about what is actually finished.
 

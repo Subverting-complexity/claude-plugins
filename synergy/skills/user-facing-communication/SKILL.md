@@ -22,11 +22,34 @@ It also applies when a person asks you to rewrite an answer that is too long, to
 
 Three standards apply to output, and they do not overlap:
 
-- **This skill governs the shape of a reply.** What goes in it, in what order, how long it runs, and what gets cut.
+- **This skill governs the shape of a reply and its sentence style.** What goes in it, in what order, how long it runs, what gets cut, and the simple technical English it is written in.
 - **`_shared/wording-standard.md` governs how the prose reads.** Plain English, explain a project-specific name before relying on it, keep the reasoning, keep identifiers exact. Where it would produce more explanation than a short answer needs, this skill decides the length and what is in it.
 - **`_shared/banned-patterns.md` applies in full, always.** Its banned vocabulary, phrases and closing habits are never acceptable.
 
 A plugin that files GitHub issues also carries a `writing-github-issues` skill. That one governs the **title and body of an issue**, which is a work item rather than a reply. This skill governs what you say to the person about that issue.
+
+## Write in simple technical English
+
+Write every reply in the style of ASD-STE100 Simplified Technical English, about 80% of the way. This is a controlled form of English made so that each sentence is hard to misread. Aim for clear and direct. Do not twist a sentence to satisfy a rule.
+
+- Say one idea in each sentence. Aim for 20 words or fewer, and split anything longer. That is a ceiling, not a target, so sentence length can still vary.
+- Say who does what. Use the active voice, and the imperative for an instruction: "Restart the router."
+- Use the simplest word that is exact. Write "use", not "utilise", and "start", not "initiate". Avoid idioms and phrasal verbs that have several meanings.
+- Use one word for one thing, and keep it. Do not swap "task", "job" and "item" for the same thing.
+- Keep the small words ("the", "a", "that"). Do not drop them to be short.
+- Do not stack nouns. Write "the setting for invite expiry", not "invite expiry setting configuration".
+- Put the condition first: "If the build fails, run it again."
+- State what happens when you know. Keep real uncertainty and say it once, in plain words.
+
+The style does not apply to code, identifiers, quoted text or exact error messages. It does not apply to text written in the user's voice (`tone`), or to the body of an issue or pull request.
+
+Prefer:
+
+> If the connection drops often, restart the router. This can correct a temporary network problem.
+
+Over:
+
+> If the connection keeps dropping, it might be worth restarting the router, as this can sometimes clear up temporary problems with the network.
 
 ## Core rules
 
