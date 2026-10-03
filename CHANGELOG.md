@@ -6,6 +6,11 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.9.0
+
+- Replies, progress notes and questions are now written in ASD-STE100 Simplified Technical English, about 80% of the way: one idea per sentence, active voice, the simplest exact word, one word for one thing, and the condition before the action. The rules live once, in `user-facing-communication`, which every skill, command and agent already cites, and the `SessionStart` message repeats them so a plain question gets the style too. Text in the user's voice (`tone`) and the body of an issue or pull request are not changed. `lint-skills.sh` fails if the skill or the hook drops the style.
+- The target-project `CLAUDE.md` template carries a one-line version of the same rule.
+
 ## synergy 18.8.0
 
 - New `wf worktree-reap` removes the finished `agent-*` worktrees of a clone, and `exit-cleanup` runs it at the end of every run. The harness makes one worktree per subagent and removes it only in its own sweep (30 days by default), so a project that installs dependencies in each one piled up gigabytes between sweeps. A run cannot delete the worktree it is standing in, so each run now removes the ones before it. A worktree is removed only when it is not the current one, is not locked, has been idle for six hours, has no uncommitted or untracked-and-unignored file, and, on a detached HEAD, has a branch or tag holding its commit. Its branch stays. Symlinks and junctions inside it (the harness links `node_modules`) are unlinked first, so a delete never reaches the shared install. `--dry-run`, `--min-age-hours` and `--pattern` are the options; a person's named session worktrees are left alone unless a pattern names them.

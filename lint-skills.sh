@@ -269,6 +269,18 @@ for f in synergy/skills/*/SKILL.md; do
     fi
 done
 
+# The sentence style (ASD-STE100, about 80%) lives in user-facing-communication,
+# the one standard every skill cites, and the hook repeats it so a plain question
+# in a fresh session gets it too. Dropping either would leave replies unstyled.
+if ! grep -qF 'ASD-STE100' synergy/skills/user-facing-communication/SKILL.md; then
+    echo "FAIL: synergy/skills/user-facing-communication/SKILL.md does not state the ASD-STE100 sentence style"
+    status=1
+fi
+if ! grep -qF 'ASD-STE100' synergy/hooks/hooks.json; then
+    echo "FAIL: synergy/hooks/hooks.json does not carry the ASD-STE100 sentence style in the SessionStart message"
+    status=1
+fi
+
 # Interview wiring: grill is the one interview procedure. feature-discovery runs
 # it rather than carrying its own posture and mechanics, and has no validation
 # mode to route a stress-test into.
