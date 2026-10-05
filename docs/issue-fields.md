@@ -76,7 +76,7 @@ Stages are resolved by **purpose key**: the field name through `field-stage` in 
 | Blocked (`stage-blocked`)      | `wf pick` (an open blocked-by edge), `wf issue-apply` (an open blocked-by edge), block-story |
 | Non-code (`stage-non-code`)    | `wf issue-apply`, `wf unblock` (`Ownership` is `Human` or `Browser agent`), `wf block --non-code` (block-story; execute and bulk-execute when a run gives up, times out, pauses or needs a decision) |
 | Needs refinement (`stage-refinement`) | `wf issue-apply` (`"state": "refinement"` on the entry), feature-discovery (a deferred story), execute (a story too thin to build) |
-| Parked (`stage-parked`)        | a person, or `wf issue-apply` (`"state": "parked"` on the entry) |
+| Parked (`stage-parked`)        | a person, or `wf issue-apply` (`"state": "parked"` on an update; a create that asks for it is refused, because a new issue is never filed as `Parked`) |
 | Backlog (`stage-backlog`)      | `wf issue-apply` (`"state": "backlog"`), `wf unblock` (every blocked-by edge closed), a reverted claim |
 | Done (`stage-done`)            | `wf post-merge` (at merge), `wf pick` (closing an issue already resolved) |
 | Area (`stage-area`)            | a person, or `wf issue-apply` (`"state": "area"` on an `epic` entry) |

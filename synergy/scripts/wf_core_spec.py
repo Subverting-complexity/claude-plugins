@@ -401,6 +401,14 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
         state_stage, err = spec_state_stage(entry.get('state'))
         if err:
             errors.append('%s: %s' % (name, err))
+        # Parked means work a person set aside and will resume, so nothing can
+        # be parked before it exists. A create that cannot be built yet is
+        # still filed into Backlog, where its edges and fields say why it
+        # waits, instead of into a stage no sweep ever releases.
+        if state_stage == 'stage-parked' and not number:
+            errors.append("%s: a new issue is never filed as parked — leave "
+                          "`state` out, so its fields decide, or use "
+                          "'backlog' or 'refinement'" % name)
         plan['state'] = state_stage
         # An area epic is a permanent part of the product, not work: nothing
         # ranks, sizes or routes it, so it carries none of the fields work must.

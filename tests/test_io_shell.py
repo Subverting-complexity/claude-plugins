@@ -2686,6 +2686,23 @@ class TestIssueApply(_ApplyCase):
         self.assertEqual(code, wf.EXIT_SPEC)
         self.assertEqual(hub.mutations, [])
 
+    def test_a_new_issue_is_never_filed_as_parked(self):
+        """Parked is work a person set aside, so it needs an issue that
+        already exists. A create that cannot be built yet goes to Backlog."""
+        hub = _FakeHub()
+        code, payload, _, _ = self._run([self._full(state='parked')], hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertIn('never filed as parked', ' '.join(payload['errors']))
+        self.assertEqual(hub.mutations, [])
+
+    def test_a_parked_issue_is_released_by_asking_for_backlog(self):
+        hub = _FakeHub([_existing(7, type='Feature')], stages={7: 'Parked'})
+        code, payload, _, _ = self._run([self._full(number=7, state='backlog')],
+                                        hub)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['applied'][0]['stage'], 'Backlog')
+        self.assertEqual(hub.stage_writes, [(7, 'Backlog')])
+
     def test_a_backlog_issue_is_still_re_staged_by_its_state(self):
         """Backlog is a stage this phase owns, so an edge written on an issue
         sitting there moves it to Blocked."""

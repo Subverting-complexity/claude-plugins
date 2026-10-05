@@ -327,7 +327,7 @@ A JSON object with an `issues` list (a bare list is accepted too). An entry with
 | `labels` | Literal names, or purpose keys a surviving label map resolves. Labels decide nothing and the workflow passes none: a `type-*` label or a retired one (`status-*`, `priority-*`, a scope label) is dropped. |
 | `parent` | An issue number, or another entry's `key`. A `User Story` needs a `Feature` parent; a `Feature` that has a parent needs an `Epic` one (see below). |
 | `blocked_by` | A list of issue numbers and/or `key`s. **The complete set**: an issue already carrying an edge the list omits has it removed, and `[]` removes them all. Leave the key out to leave the edges alone. |
-| `state` | `backlog`, `refinement`, `parked` or `area`: the stage to write, overriding the one the issue's fields name. Absent means the fields decide. It never moves `Browser agent` or `Human` work out of Non-code, except `area`, which files an area epic (see below). |
+| `state` | `backlog`, `refinement`, `parked` or `area`: the stage to write, overriding the one the issue's fields name. Absent means the fields decide. `parked` is for an update only: a new issue is never filed as `Parked`. `backlog` puts an issue in the pool whatever stage it had, which is how a `Parked` or `Needs refinement` issue is released. It never moves `Browser agent` or `Human` work out of Non-code, except `area`, which files an area epic (see below). |
 | `fields` | Purpose key → value. Names resolve through `ClaudeProject.md`'s `## Issue Types & Fields`, then `wf_core.FIELD_NAME_DEFAULTS`. |
 | `milestone` | An open milestone's title, so a sprint placement rides in the same write. A title that names no open milestone fails the spec before anything is written. `current` means the open milestone with the earliest due date that still has open issues; when none qualifies the issue is filed without one and `milestone_note` says why. |
 
@@ -365,6 +365,7 @@ Everything decidable offline is decided before the first mutation, because a hal
 - **One issue, two parties.** A title prefix and an `Ownership` value that disagree, such as `[Manual]` owned by `Code agent` or `Human` with no prefix, exits 22. One of the two is wrong, and the issue would mislead whoever reads it.
 - **Research owned by an agent.** A `spike` entry whose `Ownership` is not `Human` exits 22. Research produces a finding a person has to weigh, so it belongs at `Non-code`, not in the pool.
 - **A `state` that is not one of the four** exits 22. There is no `ready`.
+- **A create that asks for `parked`** exits 22. `Parked` is work a person set aside and will resume, so it applies only to an issue that already exists. A new issue that cannot be built yet is still filed at `Backlog`, or at `Blocked` when a `blocked_by` edge says what it waits on.
 - **An area that is not an `Epic`.** `"state": "area"` on any other type exits 22, and so does a create that names no type. An update that does not restate its type is judged by the type the issue already has.
 - **A field this org does not define** is skipped, not an error — an org is allowed fewer fields than the default inventory. It is reported once for the run on stderr, not once per issue.
 - **A refused capability read** exits 21 rather than falling back to labels, for the reason `org-capabilities` gives above.

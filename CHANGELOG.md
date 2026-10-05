@@ -6,6 +6,11 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.10.0
+
+- A new issue is never filed as `Parked`. `wf issue-apply` refuses a create that asks for `"state": "parked"` (exit 22), and `feature-discovery` and `report-issue` no longer offer it. A feature or story that cannot be built now is still filed at `Backlog`, or at `Blocked` when a `blocked_by` edge says what it waits on. `Parked` stays available on an update, for work a person sets aside.
+- `"state": "backlog"` on an update puts a `Parked` or `Needs refinement` issue back in the pool. This already worked; the spec reference and the creation instructions now say so.
+
 ## synergy 18.9.0
 
 - Replies, progress notes and questions are now written in ASD-STE100 Simplified Technical English, about 80% of the way: one idea per sentence, active voice, the simplest exact word, one word for one thing, and the condition before the action. The rules live once, in `user-facing-communication`, which every skill, command and agent already cites, and the `SessionStart` message repeats them so a plain question gets the style too. Text in the user's voice (`tone`) and the body of an issue or pull request are not changed. `lint-skills.sh` fails if the skill or the hook drops the style.
