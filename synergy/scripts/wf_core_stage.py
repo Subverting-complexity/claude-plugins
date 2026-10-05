@@ -264,7 +264,9 @@ def scope_findings(issues, ownership_map=None):
 # Review and Done are written by the run that does the work, and Needs
 # attention by the run that gives up on it, so a spec naming one of those would
 # be describing something that has not happened. `area` files an area epic, and
-# `validate_spec` refuses it on anything but an `Epic`.
+# `validate_spec` refuses it on anything but an `Epic`. `parked` is for an
+# issue that already exists: `validate_spec` refuses it on a create, because
+# nothing is set aside before it has been filed.
 SPEC_STATE_STAGES = {
     'backlog':    'stage-backlog',
     'refinement': 'stage-refinement',
