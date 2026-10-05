@@ -31,6 +31,7 @@ fi
 - `PREFLIGHT_ALREADY_PASSED` — preflight passed in the last four hours and `ClaudeProject.md` has not changed since. **Return silently and immediately**; the calling command proceeds.
 - `PREFLIGHT_SUPPRESSED` — the user dismissed preflight reminders. Return silently; the calling command proceeds. They re-enable by deleting `.claude/preflight-dismiss.md` or running `/synergy:setup`.
 - `PREFLIGHT_UNAVAILABLE` — the plugin's scripts are not on disk, so nothing was checked. Say so in one line and let the command proceed; do not substitute a hand-run version of the checks.
+- `PREFLIGHT_EXIT` is any value other than `0` or `26` — `wf preflight` crashed or could not run, so no check ran and nothing passed. Never read this as "nothing blocks". Tell the user plainly that the preflight checks did not run, and give the exit code and the last line of the error (a Python traceback ends with it). Then let the calling command proceed, as with `PREFLIGHT_UNAVAILABLE`; no pass marker was written, so the next command runs preflight again.
 - Otherwise read the JSON object it printed. `PREFLIGHT_EXIT` is `0` when nothing blocks and `26` when something does.
 
 ## 2. Read the result

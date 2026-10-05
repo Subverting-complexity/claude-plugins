@@ -186,10 +186,24 @@ def scan_plugin_labels(roots, base=None):
                         text = fh.read()
                 except OSError:
                     continue
-                rel = os.path.relpath(path, base or root).replace(os.sep, '/')
+                rel = _shown_path(path, base or root).replace(os.sep, '/')
                 for ref in wf_core.scan_label_references(text):
                     references.append(dict(ref, file=rel))
     return references
+
+
+def _shown_path(path, base):
+    """`path` relative to `base`, or absolute when no relative path exists.
+
+    The plugin is usually installed in the user's cache, and on Windows that
+    can be a different drive from the project. `relpath` then raises
+    `ValueError` rather than returning anything, and before this guard the
+    traceback ended preflight with an exit code its callers read as a pass.
+    """
+    try:
+        return os.path.relpath(path, base)
+    except ValueError:
+        return os.path.abspath(path)
 
 
 def cmd_config_audit(args):

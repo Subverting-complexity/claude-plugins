@@ -3739,6 +3739,33 @@ class TestConfigAudit(unittest.TestCase):
         self.assertEqual(self._checks(payload), ['label-missing'])
         self.assertIn('set-selection.md', payload['findings'][0]['detail'])
 
+    def test_a_plugin_on_another_drive_still_completes(self):
+        """#374: the plugin cache on `C:`, the project on `Z:`.
+
+        Windows `relpath` raises across drives. The fake gives every path
+        under the plugin a `C:` drive and the project a `Z:` one, then asks
+        `ntpath` itself, so the test raises the real error on Linux CI too.
+        """
+        import ntpath
+        real = os.path.relpath
+
+        def cross_drive(path, start=os.curdir):
+            if os.path.abspath(path).startswith(self.scan + os.sep) \
+                    and not os.path.abspath(start).startswith(self.scan):
+                return ntpath.relpath('C:\\plugin\\x.md', 'Z:\\project')
+            return real(path, start)
+
+        self._write_instruction(
+            'set-selection.md',
+            'Mark it ready:\n\n    gh issue edit $n --add-label status-ready\n')
+        with mock.patch('os.path.relpath', cross_drive):
+            code, payload, _ = self._run(
+                labels=['status-in-progress'] + self._REVIEW)
+        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(self._checks(payload), ['label-missing'])
+        shown = os.path.join(self.scan, 'set-selection.md').replace(os.sep, '/')
+        self.assertIn(shown, payload['findings'][0]['detail'])
+
     def test_a_configured_label_the_repo_lacks_fails_the_run(self):
         code, payload, _ = self._run(
             cfg_over={'labels': {'claude-ready': 'claude-ready'}})
