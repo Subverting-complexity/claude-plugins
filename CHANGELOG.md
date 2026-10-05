@@ -6,6 +6,11 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.10.1
+
+- `wf preflight` and `wf config-audit` no longer crash on Windows when the plugin and the project are on different drives, for example the plugin cache on `C:` and the project on `Z:`. A plugin file that has no path relative to the project is named by its absolute path instead.
+- When `wf preflight` exits with any code other than 0 or 26, the preflight skill now says plainly that the checks did not run. Before, a crash read as "nothing blocks", so no preflight check ran in any project on another drive.
+
 ## synergy 18.10.0
 
 - A new issue is never filed as `Parked`. `wf issue-apply` refuses a create that asks for `"state": "parked"` (exit 22), and `feature-discovery` and `report-issue` no longer offer it. A feature or story that cannot be built now is still filed at `Backlog`, or at `Blocked` when a `blocked_by` edge says what it waits on. `Parked` stays available on an update, for work a person sets aside.
