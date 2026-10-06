@@ -5,6 +5,7 @@ findings, and apply `--fix`.
 Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
 
+import base64
 import glob
 import os
 import re
@@ -632,6 +633,26 @@ _BYPASS_NOPIPELINE_RE = re.compile(
     r'bypass-ci-when-no-pipeline\s*:?\s*(true|false)', re.IGNORECASE)
 
 
+def _workflow_runs_for_pr(slug, path, branch):
+    """Can the workflow file at `path` run for a pull request?
+
+    Reads the file from the default branch. A file that cannot be fetched or
+    decoded counts as a pipeline, so a read error never turns a real pipeline
+    into a missing one.
+    """
+    api = 'repos/%s/contents/%s' % (slug, path)
+    if branch:
+        api += '?ref=%s' % branch
+    ok, body, _err = gh_json(['api', api])
+    if not ok or not isinstance(body, dict):
+        return True
+    try:
+        text = base64.b64decode(body.get('content') or '').decode('utf-8')
+    except (ValueError, UnicodeDecodeError):
+        return True
+    return wf_core.workflow_runs_for_pull_request(text)
+
+
 def _automerge_config(root, project_md_text):
     """The review-config path and its two settings, or (None, ...) when the
     project has not opted into auto-merge. `review_config_reference` finds the
@@ -695,7 +716,8 @@ def _automerge_findings(cfg, root, project_md_text, repo=None):
             active = sum(1 for w in workflows.get('workflows') or ()
                         if w.get('state') == 'active'
                         and (w.get('path') or '').startswith(
-                            '.github/workflows/'))
+                            '.github/workflows/')
+                        and _workflow_runs_for_pr(slug, w['path'], branch))
             checked.append('review-auto-merge-nopipeline')
             findings.extend(wf_core.automerge_nopipeline_findings(
                 active, bypass, path))

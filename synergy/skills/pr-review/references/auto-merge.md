@@ -19,6 +19,13 @@ gh pr checks <number> --repo <org>/<repo> --json name,bucket,state,link,workflow
 
 Add `--required` for the required-only variant. Treat this filtered list as "the rollup" everywhere below and in `ci-bypass.md` — a PR whose only checks are App-posted ones is a PR with **no checks at all** for every purpose here.
 
+**Counting workflows — a pipeline workflow is one that can run for a pull request.** Wherever this file or `ci-bypass.md` counts active workflows, it counts only the repo-authored ones (a path under `.github/workflows/`) whose `on:` lists `pull_request`, `pull_request_target`, `push`, `merge_group` or `workflow_run`. A workflow that has only `schedule`, `workflow_dispatch`, `repository_dispatch`, `release` or other triggers that no pull request starts never produces a check on a PR, so it is not a pipeline and does not count, whether it is a daily health check, a billing check or a nightly job. List the active workflow paths, then read each file's `on:` from the default branch with `git show origin/<default-branch>:<path>`. A file that cannot be read, or an `on:` that cannot be understood, counts as a pipeline, which keeps the stricter behaviour.
+
+```bash
+gh api "repos/<org>/<repo>/actions/workflows" \
+  --jq '[.workflows[] | select(.state == "active" and (.path | startswith(".github/workflows/"))) | .path] | .[]'
+```
+
 The exact branches are in step 3 below.
 
 Also read **`bypass-ci-on-billing-failure`** and **`bypass-ci-when-no-pipeline`** from the same Auto-Merge on Approval section; absent ⇒ `false`. Only if one of them is `true`, or the skill was invoked with `--bypass-ci`, does step 3 load `references/ci-bypass.md`, which can override the CI gate described here. None of them ever bypasses a merge **conflict**.

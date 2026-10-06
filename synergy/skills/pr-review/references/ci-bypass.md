@@ -8,7 +8,7 @@ Read this only if the skill was invoked with `--bypass-ci`, or `review.config.md
 
 Also read **`bypass-ci-on-billing-failure`** from the same Auto-Merge on Approval section. Absent ⇒ `false`. When `true`, it is a **persistent, billing-scoped** form of `--bypass-ci`: when the only thing blocking the merge is that GitHub Actions **cannot run for a billing or account reason** (out of minutes, spending limit hit, payment failed), the CI gate is treated as satisfied. It covers both symptoms — a pipeline that ran and failed, and the commoner one where no run is created at all and the rollup is simply empty. Unlike `--bypass-ci` it stays narrow: a genuine red check is still fixed or filed, and an empty rollup is bypassed only against evidence. Handled in **step 3a**, which overrides the no-checks guard for every `require-ci-before-merge` value.
 
-Also read **`bypass-ci-when-no-pipeline`** from the same Auto-Merge on Approval section. Absent ⇒ `false`. When `true`, it is a **persistent, absent-pipeline-scoped** form of `--bypass-ci`, for a project whose CI is permanently invisible to GitHub — no pipeline at all, or one on a system that never posts a status back (Buildkite, Jenkins, CircleCI). There an empty rollup is not a transient unknown to wait out but the steady state of every PR, so without this setting each autonomous run stops at the no-checks guard and only a human, or `--bypass-ci` re-passed every time, can land the work. It is **narrower** than `--bypass-ci`, not broader: it applies only to a rollup with **no checks in it at all**, and only against evidence. Handled in **step 3b**, which like 3a overrides the no-checks guard for every `require-ci-before-merge` value. The two config bypasses are mutually exclusive by construction: 3a-ii requires at least one active workflow, 3b requires zero.
+Also read **`bypass-ci-when-no-pipeline`** from the same Auto-Merge on Approval section. Absent ⇒ `false`. When `true`, it is a **persistent, absent-pipeline-scoped** form of `--bypass-ci`, for a project whose CI is permanently invisible to GitHub — no pipeline at all, or one on a system that never posts a status back (Buildkite, Jenkins, CircleCI). There an empty rollup is not a transient unknown to wait out but the steady state of every PR, so without this setting each autonomous run stops at the no-checks guard and only a human, or `--bypass-ci` re-passed every time, can land the work. It is **narrower** than `--bypass-ci`, not broader: it applies only to a rollup with **no checks in it at all**, and only against evidence. Handled in **step 3b**, which like 3a overrides the no-checks guard for every `require-ci-before-merge` value. The two config bypasses are mutually exclusive by construction: 3a-ii requires at least one active pipeline workflow (one that can run for a pull request), 3b requires zero.
 
 ## Step 3 — the bypass checks
 
@@ -39,13 +39,14 @@ Also read **`bypass-ci-when-no-pipeline`** from the same Auto-Merge on Approval 
 
    **3a-ii — the rollup is empty.** This is the ordinary symptom of exhausted Actions billing: no runs are created, so there is no failing check to inspect and the PR looks identical to one in a repo with no CI. That ambiguity is why an empty rollup is never bypassed on assumption — only when all three of these hold:
 
-   1. **Workflows exist that should have run.** At least one repo-authored one is active — filter to `.github/workflows/*`, because GitHub also lists App-based automations here (an automatic PR reviewer, for example) under a synthetic `dynamic/agents/...` path, and those never produce a run to wait for:
+   1. **Workflows exist that should have run.** At least one pipeline workflow is active, counted as `auto-merge.md`'s "Counting workflows" paragraph defines it: repo-authored (under `.github/workflows/`, because GitHub also lists App-based automations under a synthetic `dynamic/agents/...` path that never produce a run to wait for) and able to run for a pull request. A schedule-only or manually started workflow does not count, because it never posts a check on a PR:
       ```bash
       gh api "repos/<org>/<repo>/actions/workflows" \
-        --jq '[.workflows[] | select(.state == "active" and (.path | startswith(".github/workflows/")))] | length'
+        --jq '[.workflows[] | select(.state == "active" and (.path | startswith(".github/workflows/"))) | .path] | .[]'
       ```
-      Zero → the project has no GitHub-hosted CI and nothing is being
-      bypassed. Fall through to the no-checks guard.
+      Read each listed file's `on:` as that paragraph says. No pipeline workflow
+      → the project has no GitHub-hosted CI and nothing is being bypassed. Fall
+      through to the no-checks guard.
    2. **No run was created for this head SHA, and it is not merely slow.** Give a slow start time to appear before concluding it never will:
       ```bash
       sleep 60
@@ -62,13 +63,14 @@ Also read **`bypass-ci-when-no-pipeline`** from the same Auto-Merge on Approval 
    **3b — a project with no GitHub-visible pipeline (config bypass).** If neither path above merged and `review.config.md`'s `bypass-ci-when-no-pipeline` is `true`, an empty rollup may be this project's permanent condition rather than an unknown. Bypass it only when **all three** hold:
 
    1. **The rollup is genuinely empty** — no checks at all on the head SHA, using the filtered form from `auto-merge.md`'s scope note (if step 3a did not already read it). Any check present, in any state → the setting does not apply; fall through. A red check is still red.
-   2. **The repo has no active workflows** — step 3a-ii's call, read for the opposite outcome:
+   2. **The repo has no active pipeline workflows** — step 3a-ii's count, read for the opposite outcome. A scheduled or manually started workflow, such as a daily health check, is not a pipeline workflow and does not stop this setting from applying:
       ```bash
       gh api "repos/<org>/<repo>/actions/workflows" \
-        --jq '[.workflows[] | select(.state == "active" and (.path | startswith(".github/workflows/")))] | length'
+        --jq '[.workflows[] | select(.state == "active" and (.path | startswith(".github/workflows/"))) | .path] | .[]'
       ```
-      Zero → no GitHub-hosted pipeline exists, so no run was ever coming.
-      Non-zero → workflows exist and should have produced a run; that is
+      Zero pipeline workflows → no GitHub-hosted pipeline exists, so no run
+      was ever coming.
+      One or more → a workflow exists that should have produced a run; that is
       3a-ii's territory or a real problem. Fall through.
    3. **The change was verified locally** — 3a-ii's third condition, for a stronger reason: no remote proof exists for this project at all, so local proof is the only thing between an approval and a merge. An absent `.claude/gate-failed.flag` is that proof for the `execute` caller; a review session runs the `ClaudeProject.md` gate now and sees it green. Red, or unrunnable here → do **not** bypass; pause per the no-checks guard.
 

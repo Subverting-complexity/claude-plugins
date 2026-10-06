@@ -65,14 +65,14 @@ Then ask the three follow-up questions below, only when auto-merge was enabled. 
 
 1. **"Should an approved PR refuse to merge unless CI is green?"** Record `require-ci-before-merge`: `true` if yes (or if branch protection cannot be configured), `if-present` for "only when the PR actually runs CI, otherwise just merge", and the default `false` otherwise.
 2. **"If CI can't run because of a GitHub Actions billing or account problem (out of minutes, spending limit hit, a failed payment), should an approved PR merge anyway?"** **Default to no.** Record `bypass-ci-on-billing-failure`.
-3. **No pipeline.** Count the active workflows rather than guessing — filter to `.github/workflows/*`, because GitHub also lists App-based automations here (an automatic PR reviewer, for example) under a synthetic `dynamic/agents/...` path, and those never produce a run:
+3. **No pipeline.** Count the active pipeline workflows rather than guessing. Filter to `.github/workflows/*`, because GitHub also lists App-based automations here (an automatic PR reviewer, for example) under a synthetic `dynamic/agents/...` path, and those never produce a run. Then read each file's `on:`. Only a workflow that can run for a pull request counts (`pull_request`, `pull_request_target`, `push`, `merge_group` or `workflow_run`, as `auto-merge.md`'s "Counting workflows" paragraph says). A schedule-only or manually started workflow, such as a daily health check, never posts a check on a PR and does not count:
 
    ```bash
    gh api "repos/{ORG}/{REPO}/actions/workflows" \
-     --jq '[.workflows[] | select(.state == "active" and (.path | startswith(".github/workflows/")))] | length'
+     --jq '[.workflows[] | select(.state == "active" and (.path | startswith(".github/workflows/"))) | .path] | .[]'
    ```
 
-   Non-zero: record `bypass-ci-when-no-pipeline: false` without asking. Only when the count is **zero** ask: **"This repo has no GitHub Actions workflows, so its PRs will never report a check. Should an approved PR merge anyway, on the strength of the local quality gate?"** **Default to no**, and say what it costs: every approved PR then pauses at the no-checks guard. At most one of the two bypass settings may be `true`.
+   One or more pipeline workflows: record `bypass-ci-when-no-pipeline: false` without asking. Only when the count is **zero** ask: **"This repo has no GitHub Actions workflows, so its PRs will never report a check. Should an approved PR merge anyway, on the strength of the local quality gate?"** **Default to no**, and say what it costs: every approved PR then pauses at the no-checks guard. At most one of the two bypass settings may be `true`.
 
 **Review comment footer:** Offer a default and let them customise.
 

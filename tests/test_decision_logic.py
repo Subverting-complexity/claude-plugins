@@ -3722,6 +3722,45 @@ class TestAutomergeFindings(unittest.TestCase):
     def test_workflows_present_and_bypass_unset_is_clean(self):
         self.assertEqual(wf_core.automerge_nopipeline_findings(2, None), [])
 
+    def test_scheduled_only_workflow_is_not_a_pipeline(self):
+        text = ('name: Billing checks\n'
+                'on:\n'
+                '  schedule:\n'
+                "    - cron: '0 6 * * *'  # daily\n"
+                '  workflow_dispatch:\n'
+                'jobs:\n'
+                '  check:\n'
+                '    runs-on: ubuntu-latest\n')
+        self.assertEqual(wf_core.workflow_triggers(text),
+                         ['schedule', 'workflow_dispatch'])
+        self.assertFalse(wf_core.workflow_runs_for_pull_request(text))
+
+    def test_pull_request_trigger_is_a_pipeline_in_every_yaml_shape(self):
+        for text in ('on: pull_request\n',
+                     'on: [push, workflow_dispatch]\n',
+                     'on: { pull_request: { branches: [main] } }\n',
+                     '"on":\n  pull_request:\n    branches: [main]\n',
+                     'on:\n  - schedule\n  - pull_request\n',
+                     'on:\n  workflow_run:\n    workflows: [Build]\n'):
+            self.assertTrue(wf_core.workflow_runs_for_pull_request(text), text)
+
+    def test_manual_or_dispatch_only_shapes_are_not_pipelines(self):
+        for text in ('on: workflow_dispatch\n',
+                     'on: [schedule, workflow_dispatch]\n',
+                     'on:\n  - release\n',
+                     'on:\n  repository_dispatch:\n    types: [go]\n'):
+            self.assertFalse(wf_core.workflow_runs_for_pull_request(text), text)
+
+    def test_an_unreadable_on_counts_as_a_pipeline(self):
+        for text in ('', 'name: no triggers here\n', 'on: [push\n',
+                     'on: ${{ inputs.x }}\n'):
+            self.assertTrue(wf_core.workflow_runs_for_pull_request(text), text)
+
+    def test_trigger_names_outside_the_on_block_are_ignored(self):
+        text = ('on:\n  schedule:\n    - cron: "0 6 * * *"\n'
+                'jobs:\n  a:\n    if: github.event_name == "pull_request"\n')
+        self.assertFalse(wf_core.workflow_runs_for_pull_request(text))
+
     def test_every_finding_is_a_warning_and_never_escalates(self):
         for found in (wf_core.automerge_repo_findings('a/b', False),
                       wf_core.automerge_ci_findings(None, 0),
