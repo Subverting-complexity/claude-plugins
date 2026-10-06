@@ -652,6 +652,16 @@ class TestStageIssues(unittest.TestCase):
         self.assertLessEqual(size, 100, 'GitHub rejects a page over 100 outright')
         self.assertEqual(size, wf.STAGE_PAGE_SIZE)
 
+    def test_the_page_size_leaves_room_for_the_nested_connections(self):
+        """A page of 100 with the pool's nested connections returns
+        RESOURCE_LIMITS_EXCEEDED on every node, even on a small repository, and
+        `plan-set`, `pick` and `candidates` all stop on it. A page of 50 reads
+        the same repository cleanly."""
+        self.assertLessEqual(wf.STAGE_PAGE_SIZE, 50)
+
+    def test_the_page_cap_still_reads_two_thousand_issues(self):
+        self.assertGreaterEqual(wf.STAGE_PAGE_SIZE * wf.STAGE_MAX_PAGES, 2000)
+
     def test_only_open_issues_are_asked_for(self):
         """The state filter is the query's, so a closed issue never arrives."""
         _, _, _, calls = self._run([_open_issue_page([])])
