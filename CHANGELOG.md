@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.10.2
+
+- `wf plan-set`, `wf pick`, `wf candidates` and `wf unblock` no longer fail with "Resource limits for this query exceeded". They read the open issues 100 at a time, with each issue's labels, field values, sub-issues, blockers and linked pull requests. GitHub rejected that page with `RESOURCE_LIMITS_EXCEEDED` on every issue, even in a repository with 153 open issues. They now read 50 at a time. The most they read in all is still 2000 open issues.
+
 ## synergy 18.10.1
 
 - `wf preflight` and `wf config-audit` no longer crash on Windows when the plugin and the project are on different drives, for example the plugin cache on `C:` and the project on `Z:`. A plugin file that has no path relative to the project is named by its absolute path instead.

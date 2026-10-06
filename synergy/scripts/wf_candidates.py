@@ -29,10 +29,15 @@ def _norm_issue(raw):
 
 
 # GitHub caps a connection page at 100 records, so the open-issue read pages.
-STAGE_PAGE_SIZE = 100
+# A page of 100 is within that cap but not within the query's resource limit:
+# every issue also asks for its labels, field values, sub-issues, blockers and
+# linked pull requests, and GitHub answers a page of 100 with
+# RESOURCE_LIMITS_EXCEEDED on every node, on a repository with only 153 open
+# issues. A page of 50 reads the same repository with no errors.
+STAGE_PAGE_SIZE = 50
 # A run that still has pages left when it reaches this cap is an error rather
-# than a short answer -- see `stage_issues`.
-STAGE_MAX_PAGES = 20
+# than a short answer -- see `stage_issues`. Kept at 2000 issues in all.
+STAGE_MAX_PAGES = 40
 
 
 def _stage_issues_query(paged, extra=''):
