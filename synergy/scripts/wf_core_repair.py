@@ -406,18 +406,129 @@ def automerge_ci_findings(require_ci, required_checks,
                     'run /synergy:setup harden to wire up the gate', path)]
 
 
+# Events that start a run for a pull request, or for the push that opens one.
+# `schedule`, `workflow_dispatch`, `repository_dispatch`, `release` and the
+# rest never put a check on a PR, so a workflow that lists only those is not
+# a pipeline for `bypass-ci-when-no-pipeline` or `bypass-ci-on-billing-failure`.
+PR_WORKFLOW_EVENTS = frozenset((
+    'pull_request', 'pull_request_target', 'push', 'merge_group',
+    'workflow_run'))
+
+_ON_KEY_RE = re.compile(r'''^(?:on|"on"|'on')\s*:\s*(.*)$''')
+_EVENT_NAME_RE = re.compile(r'[a-z_]+')
+
+
+def _strip_yaml_comment(line):
+    """Drop a trailing `# comment`, leaving a `#` inside quotes alone."""
+    quote = None
+    for i, ch in enumerate(line):
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in '"\'':
+            quote = ch
+        elif ch == '#' and (i == 0 or line[i - 1].isspace()):
+            return line[:i]
+    return line
+
+
+def _flow_event_names(value):
+    """The top-level names in a YAML flow value: `[a, b]`, `{a: {...}}` or `a`.
+
+    Returns `None` when the value is not understood, so the caller can fall
+    back to counting the workflow.
+    """
+    value = value.strip()
+    if not value:
+        return None
+    if value[0] not in '[{':
+        name = value.strip('"\'')
+        return [name] if _EVENT_NAME_RE.fullmatch(name) else None
+    closer = ']' if value[0] == '[' else '}'
+    if not value.endswith(closer):
+        return None
+    names, depth, token = [], 0, ''
+    for ch in value[1:-1] + ',':
+        if ch in '[{':
+            depth += 1
+        elif ch in ']}':
+            depth -= 1
+        if ch == ',' and depth == 0:
+            name = token.split(':', 1)[0].strip().strip('"\'')
+            if name:
+                if not _EVENT_NAME_RE.fullmatch(name):
+                    return None
+                names.append(name)
+            token = ''
+        else:
+            token += ch
+    return names if depth == 0 else None
+
+
+def workflow_triggers(text):
+    """The event names in a workflow file's `on:`, or `None` if unreadable.
+
+    Reads the three YAML shapes GitHub accepts (`on: push`, `on: [push, x]`
+    and the block map or list) without a YAML library, which the plugin does
+    not depend on.
+    """
+    lines = (text or '').splitlines()
+    for index, raw in enumerate(lines):
+        match = _ON_KEY_RE.match(_strip_yaml_comment(raw).rstrip())
+        if not match:
+            continue
+        inline = match.group(1).strip()
+        if inline:
+            return _flow_event_names(inline)
+        names, block_indent = [], None
+        for line in lines[index + 1:]:
+            body = _strip_yaml_comment(line).rstrip()
+            if not body.strip():
+                continue
+            indent = len(body) - len(body.lstrip())
+            if indent == 0:
+                break
+            if block_indent is None:
+                block_indent = indent
+            if indent != block_indent:
+                continue
+            item = body.strip()
+            if item.startswith('- '):
+                item = item[2:].strip()
+            name = item.split(':', 1)[0].strip().strip('"\'')
+            if not _EVENT_NAME_RE.fullmatch(name):
+                return None
+            names.append(name)
+        return names or None
+    return None
+
+
+def workflow_runs_for_pull_request(text):
+    """True when the workflow can run for a pull request.
+
+    A file that cannot be read, or an `on:` that cannot be understood, counts
+    as a pipeline, which keeps the stricter behaviour.
+    """
+    names = workflow_triggers(text)
+    if names is None:
+        return True
+    return any(name in PR_WORKFLOW_EVENTS for name in names)
+
+
 def automerge_nopipeline_findings(workflow_count, bypass_setting,
                                   path='docs/review.config.md'):
-    """A repo with no active GitHub Actions workflow never reports a check,
+    """A repo with no active pipeline workflow never reports a check on a PR,
     so `bypass-ci-when-no-pipeline` has to be set for auto-merge to fire --
-    and a project that sets it while workflows exist is a setting that can
-    never apply."""
+    and a project that sets it while pipeline workflows exist is a setting
+    that can never apply. A pipeline workflow is one that can run for a pull
+    request, so a scheduled or manually started workflow is not counted."""
     if workflow_count == 0:
         if bypass_setting == 'true':
             return []
         return [finding(WARNING, 'review-auto-merge-nopipeline',
-                        'this repo has no active GitHub Actions workflows, so '
-                        'its PRs never report a check, and '
+                        'this repo has no active GitHub Actions workflow that '
+                        'runs for a pull request, so its PRs never report a '
+                        'check, and '
                         'bypass-ci-when-no-pipeline is not true -- every '
                         'approved PR will pause at the no-checks guard and '
                         'need a human or --bypass-ci',
@@ -426,8 +537,8 @@ def automerge_nopipeline_findings(workflow_count, bypass_setting,
     if bypass_setting == 'true':
         return [finding(WARNING, 'review-auto-merge-nopipeline',
                         'bypass-ci-when-no-pipeline=true but this repo has '
-                        '%d active workflow(s), and the setting requires '
-                        'zero -- it can never apply and is ignored'
+                        '%d active pipeline workflow(s), and the setting '
+                        'requires zero -- it can never apply and is ignored'
                         % workflow_count,
                         'did you mean bypass-ci-on-billing-failure?', path)]
     return []

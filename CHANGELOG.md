@@ -6,6 +6,11 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.11.0
+
+- A workflow that no pull request starts is no longer counted as a CI pipeline. `bypass-ci-when-no-pipeline` needs zero active pipeline workflows, and `bypass-ci-on-billing-failure` needs at least one. Both used to count every active workflow under `.github/workflows/`, so a scheduled health check or billing check made a project with CI switched off look as if it had a pipeline. The merge then paused at the no-checks guard for a check that was never coming. Now only a workflow whose `on:` lists `pull_request`, `pull_request_target`, `push`, `merge_group` or `workflow_run` counts. A workflow with only `schedule`, `workflow_dispatch` or similar triggers is skipped. A file that cannot be read, or an `on:` that cannot be understood, still counts, which keeps the stricter behaviour.
+- `wf preflight` applies the same rule when it checks `bypass-ci-when-no-pipeline`. It reads each workflow file from the default branch. The definition is in `auto-merge.md`, under "Counting workflows", and `ci-bypass.md`, the config guide and the template point to it.
+
 ## synergy 18.10.2
 
 - `wf plan-set`, `wf pick`, `wf candidates` and `wf unblock` no longer fail with "Resource limits for this query exceeded". They read the open issues 100 at a time, with each issue's labels, field values, sub-issues, blockers and linked pull requests. GitHub rejected that page with `RESOURCE_LIMITS_EXCEEDED` on every issue, even in a repository with 153 open issues. They now read 50 at a time. The most they read in all is still 2000 open issues.
