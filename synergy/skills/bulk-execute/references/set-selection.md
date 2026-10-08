@@ -30,6 +30,7 @@ With neither, run it once without `--claim` and read the result:
 - **`no-candidates`** — nothing can be built. Report each `excluded` story by number, title and reason, and stop.
 - **`ok`** — `stories` group by group in build order, each with `group`, `wave`, `weight`, `blocked_by`, `unblocks`, `why` and a truncated body; `groups`, each with its `mode`, `lead`, `stories` and `waves`; `weight` against `budget`; and `excluded`.
   - A story too underspecified to build without guessing is left out now, before anything is claimed.
+  - When the `TYPESAFE_API_KEY` environment variable is set and the plan holds three or more stories, read `skills/jev/SKILL.md` and run its `readiness` check with `--issue` once for each story. Keep a story it answers `ready` at `high`, and judge the others yourself. `unavailable` means judge every story yourself as above.
   - Claim with `--issue` once for every story kept, so the claim takes exactly the plan you read.
 
 ## Read the claim

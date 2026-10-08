@@ -140,6 +140,7 @@ After decomposition:
 1. Build a text-based dependency graph showing the ordering.
 2. Validate the graph is a DAG — no cycles allowed. If a cycle is detected, surface it to the user and resolve before proceeding.
 3. Include the dependency graph in the Phase 5 review output.
+4. When the `TYPESAFE_API_KEY` environment variable is set and there are 2 to 12 stories, read `skills/jev/SKILL.md` and run its `depends` check on their titles and bodies. A pair it answers yes with no `blocked_by` between the two is a dependency that is probably missing: check it yourself, then add the edge or raise it in the Phase 5 review. `unavailable` means skip this step.
 
 ### Cross-referencing
 

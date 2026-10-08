@@ -57,7 +57,7 @@ Run `/synergy:setup` to onboard your project. The wizard:
 3. Checks for milestones to determine sprint vs flat backlog mode.
 4. Asks for your branch convention and quality gate.
 5. Generates `ClaudeProject.md` (project settings) and `CLAUDE.md` (project rules) at your repo root.
-6. Optionally sets up Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and writes `.claude/ecosystem.md` so `execute` and `pr-review` use them automatically. This step is the shared `ecosystem-setup` skill — run it again any time with `/synergy:setup ecosystem`.
+6. Optionally sets up Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow, TypeSafe's Jev) and writes `.claude/ecosystem.md` so `execute` and `pr-review` use them automatically. This step is the shared `ecosystem-setup` skill — run it again any time with `/synergy:setup ecosystem`.
 
 If you already have these files, the setup wizard detects them and offers to fill in missing sections rather than overwrite.
 
@@ -194,6 +194,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | `preflight`           | Checks project-config health before a run; `wf preflight --fix` repairs what it safely can |
 | `feature-discovery`   | Breaks features into stories; plans a new project's foundations |
 | `grill`               | Stress-tests a plan or design by interviewing you |
+| `jev`                 | How to use Jev, the TypeSafe decision model, for quick sort, score and yes/no judgments, through `wf jev`. Optional: with no `TYPESAFE_API_KEY` every workflow runs as before |
 | `user-story`          | Authors user stories                              |
 | `writing-github-issues` | Standard for every issue title and body         |
 | `user-facing-communication` | Standard for every reply the user reads    |

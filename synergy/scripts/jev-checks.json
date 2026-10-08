@@ -1,0 +1,77 @@
+{
+  "model": "jev-latest",
+  "batch": 20,
+  "max_text": 2000,
+  "max_pair_items": 12,
+  "thresholds": {
+    "confidence": {"high": 0.8, "medium": 0.5},
+    "noul": {"high": 0.9, "medium": 0.7}
+  },
+  "checks": {
+    "priority": {
+      "per": "item",
+      "type": "score",
+      "instructions": "How urgent is the work that `{path}` describes?",
+      "levels": [
+        ["Low", "Cosmetic work, minor cleanup or a nice-to-have"],
+        ["Medium", "Incorrect behaviour that has a workaround, or notable technical debt"],
+        ["High", "A broken feature, a clear regression, or work that blocks other work"],
+        ["Urgent", "A security hole, data loss, or a crash on a core path"]
+      ]
+    },
+    "effort": {
+      "per": "item",
+      "type": "score",
+      "instructions": "How much work is it to build what `{path}` describes?",
+      "levels": [
+        ["Low", "A targeted change in a few files"],
+        ["Medium", "Moderate scope that needs some investigation"],
+        ["High", "Broad impact, an architectural change, or significant unknowns"]
+      ]
+    },
+    "readiness": {
+      "per": "item",
+      "type": "score",
+      "instructions": "How ready is `{path}` for a developer to build from?",
+      "levels": [
+        ["unclear", "A builder cannot tell what is wanted"],
+        ["partial", "The goal is clear but details a builder needs are missing"],
+        ["ready", "A builder can start with no further questions"]
+      ]
+    },
+    "audience": {
+      "per": "item",
+      "type": "choice",
+      "instructions": "Who notices the change that `{path}` describes?",
+      "options": {
+        "user": "A person using the product sees or feels the change",
+        "internal": "Only the team notices: tests, CI, build or release tooling, documentation, refactoring",
+        "unsure": "The text does not say, or neither fits"
+      }
+    },
+    "duplicate": {
+      "per": "item",
+      "type": "noul",
+      "needs": "subject",
+      "instructions": "Do `subject` and `{path}` describe the same problem or the same piece of work, so that one of them is a duplicate?"
+    },
+    "depends": {
+      "per": "pair",
+      "type": "noul",
+      "instructions": "Must the work in `{a}` be finished before the work in `{b}` can be built?"
+    },
+    "draft": {
+      "per": "rule",
+      "type": "noul",
+      "needs": "draft",
+      "rules": {
+        "problem-first": "Does `draft` fail to state the problem or the outcome within its first few sentences?",
+        "history": "Does `draft` tell the history of an investigation, such as what was tried, searched or debugged?",
+        "undefined-jargon": "Does `draft` use jargon or an abbreviation that a capable reader outside the project would not know, without saying what it is?",
+        "filler": "Does `draft` contain filler, praise, enthusiasm or a closing summary that repeats what it already said?",
+        "vague": "Does `draft` leave what must be built or checked vague enough that two builders would build different things?",
+        "hard-wrapped": "Are the paragraphs in `draft` broken into short lines in the middle of sentences?"
+      }
+    }
+  }
+}

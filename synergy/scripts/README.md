@@ -58,6 +58,8 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_schedule.py` | Reading `.claude/plan.md`, a bulk set record by group, which stories in a wave share files, parallel batches | 210 |
 | `wf_core_steps.py` | Exit cleanup's review reconcile, the tree's porcelain, PR body checks, the current milestone, the compact pick result, abandoned PRs, the review picker's moved-head tier | 274 |
 | `wf_core_worktrees.py` | Reading `git worktree list`, which worktrees a sweep covers, and the verdict on each | 134 |
+| `wf_jev.py` | `jev`: one request per batch to Jev, the TypeSafe decision model, and the `unavailable` result when there is no key or no answer, and issues read from GitHub as items | 116 |
+| `wf_core_jev.py` | Building the requests for a check in `jev-checks.json`, and turning each answer into a row with a `high`, `medium` or `low` level | 189 |
 
 ## Commands
 
@@ -729,3 +731,5 @@ The workflow is triggered only by `schedule` and `workflow_dispatch`. It never r
 A claim push that fails is only a **lost claim** (a rival got there first) when the `refs/claims/<target>` ref actually exists on the remote afterward. `acquire_claim` probes with `git ls-remote`; if the ref is absent the push failed for another reason — no write access, auth, or network — and the picker emits `status: error` rather than walking the pool and reporting a phantom `all-blocked`. So "nothing to pick" always means the backlog is genuinely empty, never that claims could not be written.
 
 There is no inline fallback. The markdown procedures these commands replaced have been deleted, so a call site that cannot run `wf` fails with a message naming the missing prerequisite rather than quietly running a second implementation that nothing tests.
+
+`jev --check NAME [--input FILE] [--issue N ...] [--open-issues [LIMIT]]` asks Jev, the TypeSafe decision model, one of the checks in `jev-checks.json`: `priority`, `effort`, `readiness` and `audience` for each item, `duplicate` for each item against a `subject`, `depends` for each ordered pair of items, and `draft` for each writing rule against a `draft`. `--issue` and `--open-issues` read the items from GitHub, so issue bodies do not pass through the caller, and a yes or no check lists only the rows worth reading and counts the rest in `sure_no`. The file holds every question and both thresholds, so it is the one place to change either. The command prints one row per question with the answer and a `level`: `high` means use the answer, `medium` means look again, `low` means decide without it. Jev is optional: with no `TYPESAFE_API_KEY`, or when the service does not answer, the result is `unavailable` (exit 30) and the caller makes the judgment itself. The key is read from the environment and never printed. `skills/jev/SKILL.md` says when a workflow may use it.
