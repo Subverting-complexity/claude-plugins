@@ -44,7 +44,7 @@ curl -sS https://api.typesafe.ai/v1/systemone -H "Authorization: Bearer $TYPESAF
 | --- | --- | --- |
 | `choice` | One of a fixed set | `choice`, `probabilities`, `confidence` from 0 to 1 |
 | `noul` | Yes or no | `noul`, the probability of yes. There is no `confidence` |
-| `score` | A degree on 2 to 10 ordered levels | `score`, `probabilities`, `confidence` from 0 to 1 |
+| `score` | A degree on 2 to 10 ordered levels | `score`, counted from 0 for the first level and able to fall between levels, `probabilities`, `confidence` from 0 to 1 |
 
 Ask one judgment per question, put everything it needs in the state, and always give a `choice` an option for "none of these, or cannot tell". Retry once on `429` or `529`. For anything else, read `docs.typesafe.ai/api.md`.
 
