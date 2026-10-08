@@ -11,7 +11,7 @@ Set up commonly used Claude Code companion tools and record what was enabled in 
 
 Everything a person reads — plans, questions, findings, summaries, and anything posted or committed — follows `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. Every reply, not only the last one.
 
-This whole skill is **optional and additive** — skip any tool the user declines or that is not relevant. Ask once at the start, with a one-line sense of what is on offer: "Want to set up any Claude Code companion tools? They are optional and skippable — a codebase knowledge graph (Graphify) for graph-grounded answers, terminal/context token optimizers (RTK, Headroom), cost history (ccusage), a config security scanner (ecc-agentshield), and code intelligence for JS/TS projects only (Fallow)."
+This whole skill is **optional and additive** — skip any tool the user declines or that is not relevant. Ask once at the start, with a one-line sense of what is on offer: "Want to set up any Claude Code companion tools? They are optional and skippable — a codebase knowledge graph (Graphify) for graph-grounded answers, terminal/context token optimizers (RTK, Headroom), cost history (ccusage), a config security scanner (ecc-agentshield), code intelligence for JS/TS projects only (Fallow), and a fast decision model for sorting and scoring (TypeSafe's Jev)."
 
 **Filter what you offer** before asking, on two grounds:
 
@@ -277,6 +277,40 @@ the diff introduces.
 
 ---
 
+## TypeSafe — Jev, a fast decision model
+
+Jev is a model made by TypeSafe that answers typed questions (one of a set, a score, yes or no) with a confidence value. It does not write text or code. It is a paid outside service, and what it is asked about is sent to TypeSafe, so say both when you offer it. There are two parts, and the user may take either or both.
+
+**The key** is what the workflows use. Check for it without printing it:
+```
+test -n "$TYPESAFE_API_KEY" && echo set || echo "not set"
+```
+If it is not set, tell the user to create one at `console.typesafe.ai/keys` and set it as the `TYPESAFE_API_KEY` environment variable for their own account, then restart Claude Code. Never ask them to paste the key into the chat, and never write it to a file.
+
+**The TypeSafe plugin** is TypeSafe's own skill for designing Jev questions and writing a Jev integration in a project's code. Detect it with `claude plugin list`. If it is missing, give the user these to run in a normal terminal, at user scope:
+```
+claude plugin marketplace add typesafe-ai/skills
+claude plugin install typesafe@typesafe-ai
+```
+
+Ecosystem entry:
+```
+## TypeSafe — Jev, a fast decision model
+**What it is:** A model that answers typed questions (one of a set, a
+score, yes or no) with a confidence value. It does not write text or
+code. What it is asked about is sent to TypeSafe.
+**Use it:** `wf jev --check {priority|effort|readiness|audience|duplicate|depends|draft}`
+for the built-in checks (see the `jev` skill); `/typesafe:typesafe-ai`
+to design your own questions or build Jev into a project's code.
+**The workflow uses it:** only when `TYPESAFE_API_KEY` is set — report-issue
+(Priority, Effort, duplicates), bulk-execute and execute (which stories
+are ready), feature-discovery (missing dependencies), every issue and PR
+body (draft faults) and release-notes (user-facing or internal). With no
+key each of those runs as before.
+```
+
+---
+
 ## Commit reminder hook (optional)
 
 Offer a small Stop hook that nudges *you, the user* at the end of a session if work was left uncommitted — a deterministic backstop. A hook fires reliably because the harness runs it; a guideline in CLAUDE.md only fires if the agent remembers it.
@@ -305,7 +339,7 @@ If at least one tool was enabled:
    # Ecosystem Tools
 
    ```
-   Then append each enabled tool's section in the order: Graphify, RTK, Headroom, ccusage, ecc-agentshield, Fallow. If a tool was offered but skipped for a reason worth recording (e.g. Fallow on a non-TS/JS repo), add a one-line note under the title explaining the omission.
+   Then append each enabled tool's section in the order: Graphify, RTK, Headroom, ccusage, ecc-agentshield, Fallow, TypeSafe. If a tool was offered but skipped for a reason worth recording (e.g. Fallow on a non-TS/JS repo), add a one-line note under the title explaining the omission.
 
 2. **Point CLAUDE.md at it** — if the project's `CLAUDE.md` has a "Supplementary Files" table, add a row if not already present:
    ```

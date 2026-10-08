@@ -57,7 +57,7 @@ Run `/synergy:setup` to onboard your project. The wizard:
 3. Checks for milestones to determine sprint vs flat backlog mode.
 4. Asks for your branch convention and quality gate.
 5. Generates `ClaudeProject.md` (project settings) and `CLAUDE.md` (project rules) at your repo root.
-6. Optionally sets up Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow) and writes `.claude/ecosystem.md` so `execute` and `pr-review` use them automatically. This step is the shared `ecosystem-setup` skill — run it again any time with `/synergy:setup ecosystem`.
+6. Optionally sets up Claude Code companion tools (Graphify, RTK, ccusage, ecc-agentshield, Fallow, TypeSafe's Jev) and writes `.claude/ecosystem.md` so `execute` and `pr-review` use them automatically. This step is the shared `ecosystem-setup` skill — run it again any time with `/synergy:setup ecosystem`.
 
 If you already have these files, the setup wizard detects them and offers to fill in missing sections rather than overwrite.
 

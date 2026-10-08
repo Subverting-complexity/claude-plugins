@@ -45,25 +45,7 @@ Jev's answer replaces a judgment Claude would make and nothing more: every workf
 
 ## Your own question
 
-For a judgment no check covers, and only when the person asks for Jev, send one request with every question about the same state. Read `docs.typesafe.ai/api.md` first for the current fields.
-
-```bash
-curl -sS https://api.typesafe.ai/v1/systemone -H "Authorization: Bearer $TYPESAFE_API_KEY" -H "Content-Type: application/json" --data @request.json
-```
-
-```json
-{
-  "model": "jev-latest",
-  "state": { "ticket": { "text": "My payouts have failed for 3 days." } },
-  "questions": {
-    "team": { "type": "choice", "instructions": "Which team handles `ticket`?", "criteria": { "billing": "Money in or out", "access": "Login or permissions", "none": "Neither, or the text does not say" } },
-    "urgent": { "type": "noul", "instructions": "Does `ticket.text` describe a problem that costs the customer money now?" },
-    "tone": { "type": "score", "instructions": "How upset is the writer of `ticket`?", "criteria": ["Calm", "Annoyed", "Angry"] }
-  }
-}
-```
-
-A `choice` returns `choice` and `confidence`, a `score` returns `score` (counted from 0, and it can fall between levels) and `confidence`, and a `noul` returns only the probability of yes. Ask one judgment per question, and always give a `choice` an option for "none of these, or cannot tell".
+For a judgment no check covers, and only when the person asks for Jev, use TypeSafe's own skill, `/typesafe:typesafe-ai`: it says how to write the questions and reads the current API. If it is not installed, `/synergy:setup ecosystem` offers it, or read `docs.typesafe.ai/llms.txt`.
 
 ## Limits
 
