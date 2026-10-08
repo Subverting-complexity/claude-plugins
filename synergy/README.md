@@ -22,6 +22,7 @@ Run both from a normal shell, not inside a Claude Code session, then restart the
 | `/synergy:execute --no-merge`   | Skip the merge for one run on a project that has merging enabled |
 | `/synergy:bulk-execute`         | Plan the stories that fill an effort budget, blockers first, and build them as at most two PRs, each reviewed and merged |
 | `/synergy:bulk-execute 41 43 47` | Build exactly these stories together     |
+| `/synergy:orchestrate --parent 12` | Run `bulk-execute` in rounds, one at a time, over an Epic, a Feature, a list of stories or the open pool, checking each round against GitHub, until the scope is done or a stop condition holds |
 | `/synergy:pr-review`          | Review (or rework + re-review) the next PR |
 | `/synergy:build`                | Plan, build, verify and commit a local task, with no issue or PR |
 | `/synergy:block-story`          | Mark current story as blocked            |
@@ -186,6 +187,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | --------------------- | ------------------------------------------------- |
 | `execute`             | Orchestrator: pick → build → PR → review → merge   |
 | `bulk-execute`        | The same loop for the stories that fill an effort budget, as at most two PRs |
+| `orchestrate`         | Runs `bulk-execute` as a series of rounds over a scope, one round at a time, with a ledger checked against GitHub after each |
 | `code-architect`      | Architecture design and audit (SOLID + Clean)     |
 | `build`               | Orchestrator for local work: plan → build → verify → commit, no issue or PR |
 | `pr-review`           | Deep PR review, labels, optional auto-merge; also reviews a local change, with a React Native checklist |
@@ -221,6 +223,7 @@ Once installed, your scheduled task prompts become one-liners:
 | ------------------ | -------------------------------------------- |
 | Work on next story | `Run /synergy:execute`               |
 | Work through a related group | `Run /synergy:bulk-execute`  |
+| Work through a whole Epic | `Run /synergy:orchestrate --parent 12` |
 | Fix bugs           | `Run /synergy:execute --mode maintenance` |
 | Audit codebase     | `Run /synergy:execute --mode audit`  |
 | Review a PR, or apply review feedback | `Run /synergy:pr-review` |

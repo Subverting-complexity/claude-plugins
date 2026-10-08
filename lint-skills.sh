@@ -235,6 +235,7 @@ declare -a reply_writing_files=(
     "synergy/skills/execute/references/finish.md"
     "synergy/skills/bulk-execute/SKILL.md"
     "synergy/skills/bulk-execute/references/bulk-finish.md"
+    "synergy/skills/orchestrate/SKILL.md"
     "synergy/skills/pr-review/SKILL.md"
     "synergy/skills/preflight/SKILL.md"
     "synergy/skills/writing-github-issues/SKILL.md"  # states the precedence
