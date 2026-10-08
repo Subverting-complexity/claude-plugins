@@ -1,6 +1,6 @@
 ---
 name: jev
-description: 'How to use Jev, the TypeSafe decision model, for quick sort, score and yes/no judgments that come back with a confidence value. Optional, never required. Trigger on "use Jev" or "ask Jev".'
+description: 'Use Jev, the TypeSafe decision model, for quick sort, score and yes/no judgments. Optional. Trigger on "use Jev".'
 ---
 # Jev
 
