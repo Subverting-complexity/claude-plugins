@@ -6,6 +6,11 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.13.0
+
+- New `orchestrate` skill, run as `/synergy:orchestrate`. It runs `bulk-execute` in rounds over an Epic or Feature (`--parent`), a list of stories, or the open pool. It starts one `synergy:Builder` agent per round and never two at once. After each round it checks the reported merges and closed stories against GitHub, and it keeps a ledger of every story as waiting, built, merged, dropped or excluded. It stops when a round claims nothing, a pull request does not merge, the quality gate fails, the API quota falls below 300, the round limit (5 by default) is reached, or the same story is dropped in 2 rounds. The final report gives the outcome, a table of stories and pull requests, what needs a person, and why the run stopped.
+- The `synergy:Builder` agent now has a third job: it runs `/synergy:bulk-execute` when the prompt says to, instead of `/synergy:execute`.
+
 ## synergy 18.11.0
 
 - A workflow that no pull request starts is no longer counted as a CI pipeline. `bypass-ci-when-no-pipeline` needs zero active pipeline workflows, and `bypass-ci-on-billing-failure` needs at least one. Both used to count every active workflow under `.github/workflows/`, so a scheduled health check or billing check made a project with CI switched off look as if it had a pipeline. The merge then paused at the no-checks guard for a check that was never coming. Now only a workflow whose `on:` lists `pull_request`, `pull_request_target`, `push`, `merge_group` or `workflow_run` counts. A workflow with only `schedule`, `workflow_dispatch` or similar triggers is skipped. A file that cannot be read, or an `on:` that cannot be understood, still counts, which keeps the stricter behaviour.
