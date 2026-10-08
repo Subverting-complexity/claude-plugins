@@ -157,6 +157,8 @@ Use plain English and British spelling. Avoid filler openers such as:
 
 If yes, remove it.
 
+When the `TYPESAFE_API_KEY` environment variable is set, a second reader can check the finished body: read `skills/jev/SKILL.md` and run its `draft` check on it, then correct what it finds. `unavailable` means this checklist is the whole check.
+
 ---
 
 ## Related standards

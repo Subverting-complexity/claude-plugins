@@ -70,6 +70,8 @@ Then settle the three field values every issue must carry. They are written in S
 
 An issue too vague to implement without a refinement session is not filed into the pool: file it with `"state": "refinement"` on the spec entry, which sets its stage to `Needs refinement` instead of `Backlog` and is what keeps it out.
 
+**Jev (optional).** When the `TYPESAFE_API_KEY` environment variable is set, read `../skills/jev/SKILL.md` and run two things before Step 5. Its `priority` and `effort` checks on this one issue's title and summary measure every issue on the same scale: take a `high` answer as the value and settle the rest yourself. Its `duplicate` check, with this issue as the `subject` and `--open-issues` as the items, finds work that is already filed: on a `high` yes, do not file a second issue, and report the existing one by number and title. `unavailable` means carry on as above.
+
 ### 4. The current milestone
 
 Nothing to look up. In sprint mode, Step 5's spec says `"milestone": "current"` and `wf issue-apply` files the issue in the open milestone with the earliest due date that still has open issues. A milestone with no due date cannot be ordered and is left out. When no milestone qualifies, it files the issue without one and says why in `milestone_note`; report that note.

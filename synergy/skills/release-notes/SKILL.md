@@ -26,7 +26,7 @@ Read `_shared/wording-standard.md` and `_shared/banned-patterns.md` before writi
 ## Process
 
 1. Read the change and group it by what a user would notice, following `_shared/reading-changes.md`. The input is the current branch (the default), a pull request number, one story's commits inside a branch, or pasted notes.
-2. Sort each group with **Which block** below, and write each user-facing group as one user line.
+2. Sort each group with **Which block** below, and write each user-facing group as one user line. When the `TYPESAFE_API_KEY` environment variable is set and there are three or more groups, read `skills/jev/SKILL.md` and run its `audience` check with one item per group, a short description as its `body`; a `high` answer sorts that group and **Which block** sorts the rest. `unavailable` means sort them all yourself.
 3. Write an internal line only for what **Which block** says belongs there.
 4. Merge lines that say the same thing, drop anything too small to mention (a typo, a version bump, a renamed variable), then check every line against **Writing rules**.
 

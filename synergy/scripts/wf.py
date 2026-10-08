@@ -96,6 +96,7 @@ import wf_block  # noqa: E402
 import wf_pr_create  # noqa: E402
 import wf_areas  # noqa: E402
 import wf_worktrees  # noqa: E402
+import wf_jev  # noqa: E402
 
 _SHELL_MODULES = (
     wf_io,
@@ -124,6 +125,7 @@ _SHELL_MODULES = (
     wf_pr_create,
     wf_areas,
     wf_worktrees,
+    wf_jev,
 )
 
 for _module in _SHELL_MODULES:
@@ -164,6 +166,7 @@ from wf_config import (
 )
 from wf_issue_apply import cmd_issue_apply
 from wf_issue_audit import AUDIT_SPEC_DEFAULT, cmd_issue_audit
+from wf_jev import cmd_jev
 from wf_pick import cmd_pick, cmd_refine
 from wf_pick_candidates import cmd_candidates
 from wf_plan import cmd_bulk_mark, cmd_drop_group, cmd_drop_story, cmd_plan_set
@@ -384,6 +387,21 @@ def build_parser():
 
     cfg = sub.add_parser('config', help='emit .claude/wf-config.json from ClaudeProject.md')
     cfg.set_defaults(func=cmd_config)
+
+    jev = sub.add_parser('jev',
+                         help='ask Jev, the TypeSafe decision model, one check from '
+                              'jev-checks.json; exits 30 when Jev is not available')
+    jev.add_argument('--check', required=True,
+                     help='priority, effort, readiness, audience, duplicate, depends or draft')
+    jev.add_argument('--input', default=None,
+                     help='a JSON file: {"items": [{"id": ..., ...}]}, plus "subject" '
+                          'for duplicate, or {"draft": "..."} for draft')
+    jev.add_argument('--issue', type=int, action='append', default=None,
+                     help='add this issue as an item, read from GitHub; repeatable')
+    jev.add_argument('--open-issues', type=int, nargs='?', const=100, default=None,
+                     metavar='LIMIT',
+                     help='add the open issues as items, read from GitHub (default 100)')
+    jev.set_defaults(func=cmd_jev)
 
     sc = sub.add_parser('scratch-clean',
                         help="delete this run's scratch files under .claude/ and "

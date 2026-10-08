@@ -27,6 +27,7 @@ SCRATCH_IGNORE = (
     '.claude/wf-config.json',
     '.claude/bulk-set.json',
     '.claude/release-notes.json',
+    '.claude/jev-*.json',
     '.claude/*.flag',
     '.claude/*-spec.json',
     '.claude/*-body.md',
@@ -39,7 +40,7 @@ SCRATCH_IGNORE = (
 # next run a request, and the preflight marker the whole preflight skill.
 SCRATCH_RUN = (
     'plan.md', 'label-cache.json', 'candidates.json',
-    'claim-*.sha', 'bulk-set.json', 'release-notes.json', '*.flag',
+    'claim-*.sha', 'bulk-set.json', 'release-notes.json', 'jev-*.json', '*.flag',
     '*-spec.json', '*-body.md',
 )
 
