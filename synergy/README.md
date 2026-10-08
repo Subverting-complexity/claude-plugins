@@ -194,6 +194,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | `preflight`           | Checks project-config health before a run; `wf preflight --fix` repairs what it safely can |
 | `feature-discovery`   | Breaks features into stories; plans a new project's foundations |
 | `grill`               | Stress-tests a plan or design by interviewing you |
+| `jev`                 | How to use Jev, the TypeSafe decision model, for quick sort, score and yes/no judgments. Optional: no workflow needs it |
 | `user-story`          | Authors user stories                              |
 | `writing-github-issues` | Standard for every issue title and body         |
 | `user-facing-communication` | Standard for every reply the user reads    |

@@ -62,6 +62,7 @@ gh auth status 2>&1 | head -3
 > - `/synergy:spec-hardening` → Test a spec against the codebase before it is built and report its gaps, conflicts and missing cases, in the chat only.
 > - `/synergy:verify-feature` → Write the report a person reads before merging, in the chat only.
 > - `/synergy:release-notes` → Write the user and internal release notes for a branch or PR, grouped by product area. `execute` and `bulk-execute` write them onto each story when it reaches Done.
+> - "Use Jev" or `/synergy:jev` → Use Jev, the TypeSafe decision model, for quick sort, score and yes/no judgments. Optional: it needs a `TYPESAFE_API_KEY`, and no workflow needs it.
 >
 > **Review and audit:**
 >
