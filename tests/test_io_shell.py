@@ -662,6 +662,82 @@ class TestStageIssues(unittest.TestCase):
     def test_the_page_cap_still_reads_two_thousand_issues(self):
         self.assertGreaterEqual(wf.STAGE_PAGE_SIZE * wf.STAGE_MAX_PAGES, 2000)
 
+    RESOURCE_LIMIT = ('[{"type":"RESOURCE_LIMITS_EXCEEDED","message":'
+                      '"Resource limits for this query exceeded."}]')
+
+    def _run_with_failures(self, results):
+        """`results` is one (ok, data, err) per call, in order."""
+        calls = []
+
+        def fake(query, **fields):
+            calls.append((query, fields))
+            return results[len(calls) - 1]
+
+        with mock.patch.object(wf, 'gh_graphql', side_effect=fake):
+            ok, issues, err = wf.stage_issues(_cfg(), ('', 'Backlog'))
+        sizes = [int(re.search(r'issues\(first:(\d+)', q).group(1))
+                 for q, _ in calls]
+        return ok, issues, err, calls, sizes
+
+    def test_a_resource_limit_error_retries_the_same_page_smaller(self):
+        results = [(False, None, self.RESOURCE_LIMIT),
+                   (True, _open_issue_page([_open_issue(1)]), '')]
+        ok, issues, _, calls, sizes = self._run_with_failures(results)
+        self.assertTrue(ok)
+        self.assertEqual(sizes, [wf.STAGE_PAGE_SIZE, wf.STAGE_PAGE_SIZE // 2])
+        self.assertEqual([i['number'] for i in issues], [1])
+
+    def test_the_retry_keeps_the_cursor_and_the_smaller_size(self):
+        """Nothing is skipped or read twice, and later pages do not ask for
+        the size GitHub just refused."""
+        results = [
+            (True, _open_issue_page([_open_issue(1)], has_next=True,
+                                    cursor='CUR'), ''),
+            (False, None, self.RESOURCE_LIMIT),
+            (True, _open_issue_page([_open_issue(2)], has_next=True,
+                                    cursor='CUR2'), ''),
+            (True, _open_issue_page([_open_issue(3)]), ''),
+        ]
+        ok, issues, _, calls, sizes = self._run_with_failures(results)
+        self.assertTrue(ok)
+        half = wf.STAGE_PAGE_SIZE // 2
+        self.assertEqual(sizes, [wf.STAGE_PAGE_SIZE, wf.STAGE_PAGE_SIZE, half, half])
+        self.assertEqual([c[1].get('cursor') for c in calls],
+                         [None, "CUR", "CUR", "CUR2"])
+        self.assertEqual([i['number'] for i in issues], [1, 2, 3])
+
+    def test_the_retry_stops_halving_at_the_smallest_page_and_then_fails(self):
+        results = [(False, None, self.RESOURCE_LIMIT)] * 20
+        ok, issues, err, calls, sizes = self._run_with_failures(results)
+        self.assertFalse(ok)
+        self.assertIsNone(issues)
+        self.assertIn('Resource limits', err)
+        self.assertEqual(sizes[-1], wf.STAGE_MIN_PAGE_SIZE)
+        self.assertEqual(sizes, sorted(sizes, reverse=True))
+        self.assertEqual(len(calls), len(set(sizes)))
+
+    def test_another_error_is_not_retried(self):
+        results = [(False, None, 'HTTP 502 bad gateway')]
+        ok, _, err, calls, _ = self._run_with_failures(results)
+        self.assertFalse(ok)
+        self.assertEqual(len(calls), 1)
+        self.assertIn('502', err)
+
+    def test_smaller_pages_count_against_the_cap_by_the_issues_they_asked_for(self):
+        """A halved page must not let the run read more than the cap allows,
+        and must not cut the cap short either."""
+        half = wf.STAGE_PAGE_SIZE // 2
+        results = [(False, None, self.RESOURCE_LIMIT)] + [
+            (True, _open_issue_page([_open_issue(n)], has_next=True,
+                                    cursor='C%d' % n), '')
+            for n in range(1, wf.STAGE_MAX_PAGES * 2 + 2)]
+        ok, _, err, calls, sizes = self._run_with_failures(results)
+        self.assertFalse(ok)
+        self.assertIn('more than', err)
+        self.assertEqual(sum(sizes[1:]) // 1,
+                         wf.STAGE_PAGE_SIZE * wf.STAGE_MAX_PAGES)
+        self.assertEqual(set(sizes[1:]), {half})
+
     def test_only_open_issues_are_asked_for(self):
         """The state filter is the query's, so a closed issue never arrives."""
         _, _, _, calls = self._run([_open_issue_page([])])
