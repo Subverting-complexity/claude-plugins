@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.13.1
+
+- `wf plan-set`, `wf pick`, `wf candidates` and `wf unblock` now recover when GitHub still answers "Resource limits for this query exceeded" at 50 issues a page. They halve the page and ask for the same page again, down to 5 issues, and keep the smaller size for the pages that follow. No issue is skipped or read twice. Before, a repository with enough sub-issues and blockers could still stop the whole read. The read still covers at most 2000 open issues.
+
 ## synergy 18.13.0
 
 - New `orchestrate` skill, run as `/synergy:orchestrate`. It runs `bulk-execute` in rounds over an Epic or Feature (`--parent`), a list of stories, or the open pool. It starts one `synergy:Builder` agent per round and never two at once. After each round it checks the reported merges and closed stories against GitHub, and it keeps a ledger of every story as waiting, built, merged, dropped or excluded. It stops when a round claims nothing, a pull request does not merge, the quality gate fails, the API quota falls below 300, the round limit (5 by default) is reached, or the same story is dropped in 2 rounds. The final report gives the outcome, a table of stories and pull requests, what needs a person, and why the run stopped.

@@ -35,17 +35,32 @@ def _norm_issue(raw):
 # RESOURCE_LIMITS_EXCEEDED on every node, on a repository with only 153 open
 # issues. A page of 50 reads the same repository with no errors.
 STAGE_PAGE_SIZE = 50
+# The resource limit depends on how many issues, sub-issues and blockers a
+# repository holds, so no fixed page size is safe for ever. When GitHub still
+# answers RESOURCE_LIMITS_EXCEEDED, `stage_issues` halves the page and asks
+# for the same page again, down to this size, and keeps the smaller size for
+# the pages that follow.
+STAGE_MIN_PAGE_SIZE = 5
 # A run that still has pages left when it reaches this cap is an error rather
-# than a short answer -- see `stage_issues`. Kept at 2000 issues in all.
+# than a short answer -- see `stage_issues`. Kept at 2000 issues in all. The
+# cap counts the issues each page asked for, so a halved page uses half as
+# much of it.
 STAGE_MAX_PAGES = 40
 
 
-def _stage_issues_query(paged, extra=''):
+def _resource_limited(err):
+    """True when `err` is GitHub refusing a query as too large for one request."""
+    text = (err or '').lower()
+    return 'resource_limits_exceeded' in text or 'resource limits' in text
+
+
+def _stage_issues_query(paged, extra='', size=None):
     """The open-issues query, with the `after:` clause only when paging.
 
     `extra` is appended to the `Issue` selection. `unblock` asks for the native
     `blockedBy` edges that way, so reading every blocked issue and reading each
     one's dependencies is one request rather than one plus one per issue.
+    `size` is the page size and defaults to `STAGE_PAGE_SIZE`.
     """
     return (
         'query($owner:String!,$repo:String!%s){'
@@ -64,7 +79,7 @@ def _stage_issues_query(paged, extra=''):
         '      field { ... on IssueFieldMultiSelect { name } } options { name } } } }'
         '    %s'
         '   } } } }'
-        % (',$cursor:String!' if paged else '', STAGE_PAGE_SIZE,
+        % (',$cursor:String!' if paged else '', size or STAGE_PAGE_SIZE,
            ',after:$cursor' if paged else '', extra))
 
 
@@ -142,9 +157,10 @@ def stage_issues(cfg, stages, unassigned_only=True, extra=''):
     # judges them all, and a parent's stage decides its children.
     wanted = None if stages is None else {(s or '').strip().lower() for s in stages}
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    issues, cursor, pages = [], None, 0
+    issues, cursor = [], None
+    size, asked = STAGE_PAGE_SIZE, 0
     while True:
-        if pages >= STAGE_MAX_PAGES:
+        if asked >= STAGE_PAGE_SIZE * STAGE_MAX_PAGES:
             # A partial read is not a partial pool, it is an unknown one: the
             # issues this run never saw could be the whole of it.
             return False, None, (
@@ -157,8 +173,13 @@ def stage_issues(cfg, stages, unassigned_only=True, extra=''):
         args = {'owner': cfg['org'], 'repo': cfg['repo']}
         if cursor:
             args['cursor'] = cursor
-        ok, data, err = gh_graphql(_stage_issues_query(bool(cursor), extra),
-                                   **args)
+        ok, data, err = gh_graphql(
+            _stage_issues_query(bool(cursor), extra, size), **args)
+        if not ok and _resource_limited(err) and size > STAGE_MIN_PAGE_SIZE:
+            # The same cursor with a smaller page: nothing was read, so
+            # nothing is skipped or read twice.
+            size = max(STAGE_MIN_PAGE_SIZE, size // 2)
+            continue
         if not ok or not data:
             return False, None, 'open-issue query failed: %s' % err
         try:
@@ -196,7 +217,7 @@ def stage_issues(cfg, stages, unassigned_only=True, extra=''):
                 # is told apart from the local issue with its number.
                 'repo': repo,
             }))
-        pages += 1
+        asked += size
         page_info = connection.get('pageInfo') or {}
         cursor = page_info.get('endCursor')
         if not page_info.get('hasNextPage') or not cursor:
