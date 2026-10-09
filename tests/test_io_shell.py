@@ -120,6 +120,20 @@ def _cfg(**over):
     return cfg
 
 
+def _isolate_checkout(case):
+    """Point `wf.repo_root` at an empty temporary directory for one test.
+
+    A command that reads `.claude/` state (the issue-field cache, claim
+    markers) would otherwise read the checkout the tests run in, so a file a
+    synergy run left there changes the result (#376).
+    """
+    root = tempfile.mkdtemp()
+    case.addCleanup(shutil.rmtree, root, True)
+    patch = mock.patch.object(wf, 'repo_root', lambda: root)
+    patch.start()
+    case.addCleanup(patch.stop)
+
+
 # A body the unclear check passes: long enough, with acceptance criteria. A
 # fixture's body is not what most tests are about, so it must not be the reason
 # an issue leaves the pool.
@@ -1110,6 +1124,9 @@ class TestShapeRegressionGuards(unittest.TestCase):
     that consume them — complementing the pure-helper tests in
     test_decision_logic.py with the actual shell call sites."""
 
+    def setUp(self):
+        _isolate_checkout(self)
+
     def test_merged_pr_closing_reads_graphql_nodes_shape(self):
         """`closingIssuesReferences` arrives wrapped in `{nodes:[…]}` from GraphQL;
         merged_pr_closing must find the issue and return the PR number."""
@@ -1197,6 +1214,9 @@ def _settle_graphql(argv, input_text, state='OPEN', close_fails=(), areas=()):
 
 class TestPostMergeClosesFinishedContainers(unittest.TestCase):
     """A merge closes the Epic or Feature its last story finished (#240)."""
+
+    def setUp(self):
+        _isolate_checkout(self)
 
     def _post_merge(self, chain, close_fails=False, linked=(5,), areas=()):
         cfg, calls = _cfg(), []
