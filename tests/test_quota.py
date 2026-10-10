@@ -161,6 +161,10 @@ class TestDecision(unittest.TestCase):
         share = decide(at(3, 4), weekly=30, day_start_used=30, settings={'daily_share': 40})
         self.assertIn('times a 40% share, is 7%.', share['week']['budget_basis'])
 
+    def test_the_last_day_says_one_day_left(self):
+        week = decide(at(6, 4), weekly=80, day_start_used=80)['week']
+        self.assertIn('divided by 1 day left', week['budget_basis'])
+
     def test_a_stored_start_is_exact_and_carries_no_note(self):
         week = decide(at(3, 4), weekly=46, day_start_used=30, day_start_source='stored')['week']
         self.assertEqual(week['day_start_source'], 'stored')

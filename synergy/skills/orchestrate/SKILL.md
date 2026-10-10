@@ -70,7 +70,7 @@ A person sets their own defaults in `~/.claude/synergy/quota.json`, with the sam
 
 When the result has `unknown: true`, the limits were not checked. Say so in the final report.
 
-The day's budget counts all use of the plan from the first check of the day, not only this run. The command stores that first reading in `~/.claude/synergy/quota-state.json`. Use of the plan before that first check is not counted. When `week.day_start_note` is present, the start of the day is the reading itself, not an earlier stored one, so the room left today may be overstated. Say so when you report the budget.
+The day's budget counts all use of the plan from the first check of the day, not only this run. The command stores that first reading in `~/.claude/synergy/quota-state.json`. Use of the plan before that first check is not counted. `week.day_start_source` says where the start of the day came from (`stored`, `first_check` or `estimate`), and `week.day_started_at` gives when the day began. When `week.day_start_note` is present, the start of the day is the reading itself, not an earlier stored one, so the room left today may be overstated. Say so when you report the budget.
 
 **First use.** `configured: false` means this person has no settings file, so nobody has chosen yet. Ask once, with `AskUserQuestion` where the session has it: use the defaults, or set their own. Show the table above with the question.
 

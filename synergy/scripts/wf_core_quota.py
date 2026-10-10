@@ -122,9 +122,10 @@ def quota_day_budget(used_at_start, day, share):
 def quota_budget_basis(day_start, days_left, share, budget):
     """The sum behind a day's budget, in words, so a person can check it. Today
     counts as a whole day even when part of it has passed."""
-    return ('%g%% of the weekly limit was left when the day started, divided by %d days left '
+    return ('%g%% of the weekly limit was left when the day started, divided by %d %s left '
             '(today counts as a whole day), times a %g%% share, is %g%%.'
-            % (_round1(max(0.0, 100.0 - day_start)), days_left, share, _round1(budget)))
+            % (_round1(max(0.0, 100.0 - day_start)), days_left,
+               'day' if days_left == 1 else 'days', share, _round1(budget)))
 
 
 def quota_day_start_note(source, day, hours_into_day):
