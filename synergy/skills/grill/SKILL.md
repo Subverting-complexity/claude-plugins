@@ -27,10 +27,11 @@ A calling skill that is itself running unattended inherits this rule: it stops a
 1. **Get the plan.** If the user has not described it yet, ask them to, in one plain-text question with no options.
 2. **Look before asking.** Read what can answer questions without the user: the codebase, the README and project docs, the issue and its comments, anything they linked. See **Checking the sources first**.
 3. **Find where it will break.** Before the first question, decide which parts of this plan are most likely to fail or have not really been decided. Use **Where to push** as the checklist. Those are the first batch.
-4. **Question in batches.** Hardest topic first, one topic per turn. See **Pacing**.
+4. **Question in batches.** Hardest topic first, each batch as large as the questions allow. See **Pacing**.
 5. **Keep a record.** Track privately what has been settled, what was deferred and why, and which answers conflict. Do not show this record while the interview is running.
 6. **Check coverage.** When a calling skill supplied topics that must be covered, go through them now and question any that are still open. Topics the research already answered count as covered.
-7. **Close.** See **Closing**.
+7. **Sweep for what is still shaky, and go again.** See **Until nothing is shaky**. Steps 4 to 7 repeat until a sweep finds nothing.
+8. **Close.** See **Closing**.
 
 ## Where to push
 
@@ -49,7 +50,8 @@ Questions about preferences are cheap to answer and reveal little. Questions abo
 
 A grill should move quickly. Most slow interviews are slow because they ask one small question at a time.
 
-- **One topic per turn, every question on that topic together.** Three or four questions in a turn is normal.
+- **Ask everything that is ready, in one turn.** Every question on the topic goes together, and questions on other topics join the batch when their answers do not depend on each other. Five to ten questions in a turn is fine when the plan has that many open points. There is no cap of four.
+- **Hold back only what depends on the batch.** A question whose wording, or whose point, changes with an answer in this batch waits for the next turn.
 - **Hardest first.** A foundational answer that changes can make later questions pointless, so find it early.
 - **Push on a vague answer.** "It depends", "probably", and "we'll work that out" are not answers. Ask again with a sharper version of the question, and keep going until the answer is concrete or the user chooses to defer it and says why. Record a deferral with that reason; never skip a question silently.
 - **Let a settled answer go.** When an answer is clear and holds up, acknowledge it briefly and move on. Do not repeat it back.
@@ -77,7 +79,7 @@ Every question with a bounded set of answers goes through the `AskUserQuestion` 
 
 - 2 to 4 options per question, with short labels.
 - The recommended option comes first, with "(Recommended)" at the end of its label.
-- Up to 4 questions on the same topic in one call.
+- The tool takes at most 4 questions in one call. That is the limit of a call, not of a batch: a larger batch goes as several calls, one straight after the other with no reply between them, with the questions grouped by topic.
 - Each label and description carries the problem and the proposed answer on its own, because it is often all the reader sees.
 - The tool always offers "Other". If you want to add your own "Other" option, the question is open and belongs in plain text.
 - A chosen option is the recorded decision unless it needs probing.
@@ -96,14 +98,29 @@ When a source answers a question:
 
 Never settle a question silently from a source. Give the user room to point out that the code is about to change.
 
+## Until nothing is shaky
+
+One pass over the hard topics does not finish a grill. Answers open new questions, and a decision that sounded firm alone can be weak beside the others. After each round of batches, sweep the plan again:
+
+1. **Read the record as a whole and list every point that would still worry you if you owned this plan.** Look for an answer that was accepted but is thin, a decision that rests on something nobody checked, two decisions that hold together only if a third thing is true, a consequence of an answer that nobody followed, an item in **Where to push** that applies and was not tested, and a deferral whose reason a later answer has removed.
+2. **Check the sources** for each point first, as in **Checking the sources first**.
+3. **Ask the rest as the next batch**, and say in one line that this is a further round on what is still weak.
+4. **Sweep again.** The grill is finished when a sweep finds nothing.
+
+A point leaves the list in one of three ways only: the user gives a concrete answer that holds up, a source settles it and the user has seen that, or the user chooses to leave it and says why. A point never leaves because the interview has run long or because the user sounded confident. There is no fixed number of rounds.
+
+Do not invent worries to keep the interview going. A choice that is cheap to reverse, or that changes nothing whichever way it goes, is not shaky: state what you will assume, in one line, and move on unless the user objects.
+
+The user can stop at any time. Close then, and list every point the sweep had not cleared under **Still shaky**.
+
 ## Closing
 
-Propose closing when every significant question is answered or deferred with a reason, nothing still open blocks the next step, and any coverage list from a calling skill is complete.
+Propose closing when a sweep finds nothing: every question is answered or deferred with a reason, nothing still open blocks the next step, and any coverage list from a calling skill is complete.
 
 End with a brief recap, in the conversation itself, readable in under a minute. Do not write a file or a document.
 
 - **Decided:** the decisions, a line each.
 - **Open:** each deferred question and the reason it was deferred.
-- **Still shaky:** the one or two points that would still worry you if you owned this plan. Say it plainly. After an interview spent looking for weak points, the user is owed your honest read, not reassurance.
+- **Still shaky:** each point the sweep had not cleared when the user stopped the interview, and what it puts at risk. Say it plainly. After a grill that ran to the end this is empty, because a point the user chose to leave is under **Open**; write "nothing" then, and do not add a worry you never raised in the interview.
 
 When a calling skill ran the grill, the recap hands control back to it and its next phase starts from these decisions.

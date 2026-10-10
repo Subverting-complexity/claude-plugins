@@ -6,6 +6,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 19.1.0
+
+- `grill` now continues until no weak point of the plan is left. After each round of questions it reads the decisions as a whole, lists every point that is still weak, and asks about those. It closes when that sweep finds nothing. A point leaves the list only when the user answers it, a source settles it, or the user chooses to leave it and says why.
+- A batch of questions is no longer held to 4. `grill` asks every question that is ready in one turn, across topics when the answers do not depend on each other. `AskUserQuestion` takes 4 questions in a call, so a larger batch goes as several calls, one straight after the other.
+- The **Still shaky** part of the recap now lists only the points not cleared when the user stopped the interview early. It is empty after a grill that ran to the end.
+
 ## synergy 19.0.0
 
 **Breaking. Do this before you take this version.** A repository that has no `## Areas` table in `ClaudeProject.md` fails preflight with `areas-table`, so `execute`, `bulk-execute` and `pr-review` do not start.
