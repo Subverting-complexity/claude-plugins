@@ -13,10 +13,12 @@ Three checks, and a round starts only when all of them pass:
     or below the 5-hour ceiling.
   - `weekly`: the weekly percent used, plus what one round costs, stays at or
     below the weekly ceiling.
-  - `daily`: the same weekly figure stays at or below the allowance to date.
-    The week is cut into 7 days of 24 hours counted from the weekly reset, and
-    each day adds `daily_percent` to the allowance. A day's unused allowance
-    stays available for the rest of that week.
+  - `daily`: what today has used of the weekly limit, plus what one round
+    costs, stays at or below today's budget. The week is cut into 7 days of 24
+    hours counted from the weekly reset. Today's budget is what was left of
+    the weekly limit when the day started, divided by the days left in the
+    week with today counted, times `daily_share` percent. So a heavy day makes
+    every later day's budget smaller, and a light day makes it larger.
 
 What one round costs is the last round's measured rise where there is one, and
 the configured reserve before that.
@@ -37,7 +39,7 @@ QUOTA_ON_UNKNOWN = ('continue', 'stop')
 QUOTA_DEFAULTS = {
     'five_hour_ceiling': 85.0,
     'weekly_ceiling': 90.0,
-    'daily_percent': 100.0 / QUOTA_WEEK_DAYS,
+    'daily_share': 100.0,
     'round_reserve_five_hour': 15.0,
     'round_reserve_weekly': 3.0,
     'on_limit': 'stop',
@@ -45,7 +47,7 @@ QUOTA_DEFAULTS = {
     'on_unknown': 'continue',
 }
 
-_PERCENT_KEYS = ('five_hour_ceiling', 'weekly_ceiling', 'daily_percent',
+_PERCENT_KEYS = ('five_hour_ceiling', 'weekly_ceiling', 'daily_share',
                  'round_reserve_five_hour', 'round_reserve_weekly')
 _CHOICE_KEYS = {'on_limit': QUOTA_ON_LIMIT, 'on_unknown': QUOTA_ON_UNKNOWN}
 
@@ -105,6 +107,14 @@ def quota_week(weekly_resets, now):
     return day, started
 
 
+def quota_day_budget(used_at_start, day, share):
+    """The percent of the weekly limit one day may use: what was left when the
+    day started, spread evenly over the days left with this one counted, times
+    the share."""
+    days_left = QUOTA_WEEK_DAYS - day + 1
+    return max(0.0, 100.0 - used_at_start) / days_left * share / 100.0
+
+
 def quota_round_cost(used, before, reserve):
     """What one round costs: the measured rise from `before` to `used`, or the
     reserve when there is no earlier reading or the figure fell, which means
@@ -124,7 +134,8 @@ def quota_decide(reading, settings, now):
     `reading` holds `five_hour_used`, `five_hour_resets`, `weekly_used` and
     `weekly_resets` (percent and aware datetimes), and optionally
     `before_five_hour` and `before_weekly`, the reading taken before the last
-    round. Any of them may be None. Returns a dict with `decision`, `reason`,
+    round, and `day_start_used`, the weekly percent when today started. Any of
+    them may be None; with no `day_start_used` the day is taken to start now. Returns a dict with `decision`, `reason`,
     `resume_at`, `wait_seconds`, the three `checks`, and the figures behind them.
     """
     five_used, weekly_used = reading.get('five_hour_used'), reading.get('weekly_used')
@@ -167,20 +178,27 @@ def quota_decide(reading, settings, now):
               'The weekly limit is %s%% used and a round costs about %s%%, above the %s%% ceiling.')
         if weekly_resets is not None:
             day, started = quota_week(weekly_resets, now)
-            daily = settings['daily_percent']
-            allowed = min(100.0, day * daily)
+            share = settings['daily_share']
+            day_start = reading.get('day_start_used')
+            if day_start is None or day_start > weekly_used:
+                day_start = weekly_used
+            budget = quota_day_budget(day_start, day, share)
             result['week'] = {'day': day, 'of': QUOTA_WEEK_DAYS, 'started_at': quota_iso(started),
-                              'daily_percent': _round1(daily), 'allowed_percent': _round1(allowed),
-                              'used_percent': _round1(weekly_used)}
-            # The first day whose allowance covers the round, or the weekly
-            # reset when no day of this week does.
-            need = weekly_used + weekly_cost
-            first_day = int(math.ceil(need / daily - 1e-9)) if daily > 0 else QUOTA_WEEK_DAYS + 1
-            resume = (started + datetime.timedelta(days=first_day - 1)
-                      if first_day <= QUOTA_WEEK_DAYS else weekly_resets)
-            check('daily', weekly_used, weekly_cost, allowed, resume,
-                  'The weekly limit is %%s%%%% used and a round costs about %%s%%%%, above the '
-                  '%%s%%%% allowed by day %d of the week.' % day)
+                              'days_left': QUOTA_WEEK_DAYS - day + 1,
+                              'day_start_used': _round1(day_start),
+                              'day_budget': _round1(budget),
+                              'used_today': _round1(weekly_used - day_start)}
+            # The first later day whose budget covers one round, taking that
+            # day to start at the present reading, or the weekly reset when no
+            # day of this week does.
+            resume = weekly_resets
+            for later in range(day + 1, QUOTA_WEEK_DAYS + 1):
+                if weekly_cost <= quota_day_budget(weekly_used, later, share) + 1e-9:
+                    resume = started + datetime.timedelta(days=later - 1)
+                    break
+            check('daily', weekly_used - day_start, weekly_cost, budget, resume,
+                  'Day %d of the week has used %%s%%%% of the weekly limit and a round costs '
+                  'about %%s%%%%, above the %%s%%%% budget for the day.' % day)
 
     if not failed:
         result['reason'] = 'Every check passed.'

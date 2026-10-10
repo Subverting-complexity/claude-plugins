@@ -429,9 +429,10 @@ def build_parser():
     qt.add_argument('--weekly-ceiling', type=float, default=None,
                     help='a round must end at or below this percent of the weekly limit '
                          '(default %g)' % defaults['weekly_ceiling'])
-    qt.add_argument('--daily-percent', type=float, default=None,
-                    help='percent of the weekly limit each day of the week adds to the '
-                         'allowance (default %.1f, one seventh)' % defaults['daily_percent'])
+    qt.add_argument('--daily-share', type=float, default=None,
+                    help="percent of the day's budget a run may use; the budget is what "
+                         'was left of the weekly limit when the day started, divided by '
+                         'the days left in the week (default %g)' % defaults['daily_share'])
     qt.add_argument('--round-reserve-five-hour', type=float, default=None,
                     help='percent of the 5-hour limit one round is taken to cost until a '
                          'round is measured (default %g)' % defaults['round_reserve_five_hour'])
@@ -447,6 +448,12 @@ def build_parser():
     qt.add_argument('--on-unknown', choices=wf_core.QUOTA_ON_UNKNOWN, default=None,
                     help='when the limits cannot be read, continue or stop '
                          '(default %s)' % defaults['on_unknown'])
+    qt.add_argument('--save', action='store_true',
+                    help='write the setting flags of this call to the personal settings '
+                         'file and decide nothing; with no setting flag, record that the '
+                         'defaults were chosen')
+    qt.add_argument('--no-record', action='store_true',
+                    help="do not store today's starting figure (for a dry run)")
     qt.set_defaults(func=cmd_quota)
 
     sc = sub.add_parser('scratch-clean',

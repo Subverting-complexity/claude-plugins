@@ -1,7 +1,7 @@
 ---
 name: orchestrate
 description: 'Run bulk-execute in rounds over an Epic, Feature, story list or the open pool, checking each round against GitHub. Trigger on "orchestrate" or "work through this Epic".'
-argument-hint: '[--parent N | issue# issue# ...] [--mode story|feature|maintenance] [--rounds N] [--daily-percent N] [--on-limit stop|wait] [--dry-run]'
+argument-hint: '[--parent N | issue# issue# ...] [--mode story|feature|maintenance] [--rounds N] [--daily-share N] [--on-limit stop|wait] [--dry-run]'
 arguments:
   - name: parent
     description: 'An Epic or Feature number. Every round works the stories under it. Cannot be combined with story numbers.'
@@ -12,7 +12,7 @@ arguments:
   - name: rounds
     description: 'The most rounds to run. Default 5.'
   - name: quota
-    description: 'Optional Claude plan limit settings, passed to wf quota unchanged: --five-hour-ceiling, --weekly-ceiling, --daily-percent, --on-limit stop|wait, --max-wait-hours, --on-unknown continue|stop.'
+    description: 'Optional Claude plan limit settings, passed to wf quota unchanged: --five-hour-ceiling, --weekly-ceiling, --daily-share, --on-limit stop|wait, --max-wait-hours, --on-unknown continue|stop.'
   - name: dry_run
     description: '--dry-run shows the ledger, the plan limit decision and the first round, and starts nothing.'
 ---
@@ -46,28 +46,38 @@ Stop without starting a round if any of this holds:
 
 ## Claude plan limits
 
-A Claude plan has a 5-hour limit and a weekly limit. A round starts only when it is expected to end inside both, and inside the share of the week used up to now. `wf quota` makes that decision, so do not work it out yourself.
+A Claude plan has a 5-hour limit and a weekly limit. A round starts only when it is expected to end inside both, and inside the budget for the day. `wf quota` makes that decision, so do not work it out yourself.
 
 | Setting | Default | What it does |
 |---|---|---|
 | `--five-hour-ceiling` | 85 | A round must end at or below this percent of the 5-hour limit. |
 | `--weekly-ceiling` | 90 | A round must end at or below this percent of the weekly limit. |
-| `--daily-percent` | 14.3 | The percent of the weekly limit that each day of the week adds to the allowance. On day 3 the run may take the weekly limit to 42.9%. A day is 24 hours counted from the weekly reset, and an unused part stays available until that reset. |
+| `--daily-share` | 100 | The percent of the day's budget the run may use. The day's budget is what was left of the weekly limit when the day started, divided by the days left in the week. With 30% used after 3 days, 70% is left for 4 days, so the budget is 17.5% a day, and a share of 40 lets the run use 7%. A day is 24 hours counted from the weekly reset. |
 | `--round-reserve-five-hour` | 15 | The percent of the 5-hour limit one round is taken to cost, until a round is measured. |
 | `--round-reserve-weekly` | 3 | The same for the weekly limit. |
 | `--on-limit` | `stop` | At a limit, `stop` ends the run and names the time it can continue. `wait` pauses until then. |
 | `--max-wait-hours` | 5 | With `wait`, a longer pause than this ends the run instead. |
 | `--on-unknown` | `continue` | What to do when the limits cannot be read: `continue` or `stop`. |
 
-A person sets their own defaults in `~/.claude/synergy/quota.json`, with the same names written with underscores, such as `{"daily_percent": 10, "on_limit": "wait"}`. A flag on the command overrides the file. The file is personal because the limits belong to an account, not to a repository.
+A person sets their own defaults in `~/.claude/synergy/quota.json`, with the same names written with underscores, such as `{"daily_share": 40, "on_limit": "wait"}`. A flag on the command overrides the file. The file is personal because the limits belong to an account, not to a repository.
 
 **The plan limit check**, used before the first round and after every round:
 
 1. Read the limits. If the session has the `mcp__ccd_session_mgmt__get_usage` tool, which the Claude desktop app provides, call it. Take `percentUsed` and `resetsAt` from the window labelled `5-hour limit` and from the one labelled `Weekly · all models`. If the session has no such tool, or `plan.status` is not `ok`, there is no reading.
 2. Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" quota --five-hour-used {n} --five-hour-resets {time} --weekly-used {n} --weekly-resets {time}`, with every plan limit flag the person gave. With no reading, leave those 4 flags out. After a round, add `--before-five-hour {n} --before-weekly {n}` with the reading taken before that round, so the command measures what a round costs.
-3. Act on `decision`. `go`: continue. `stop`: do not start a round, and report `reason` and `resume_at`. `wait`: tell the person the time in `resume_at`, start `sleep {wait_seconds}` as a background command, do nothing until it ends, then do this check again from step 1.
+3. If the result has `configured: false`, do the first use step below, then run the command again.
+4. Act on `decision`. `go`: continue. `stop`: do not start a round, and report `reason` and `resume_at`. `wait`: tell the person the time in `resume_at`, start `sleep {wait_seconds}` as a background command, do nothing until it ends, then do this check again from step 1.
 
 When the result has `unknown: true`, the limits were not checked. Say so in the final report.
+
+The day's budget counts all use of the plan from the first check of the day, not only this run. The command stores that first reading in `~/.claude/synergy/quota-state.json`.
+
+**First use.** `configured: false` means this person has no settings file, so nobody has chosen yet. Ask once, with `AskUserQuestion` where the session has it: use the defaults, or set their own. Show the table above with the question.
+
+- **The defaults**: run `wf quota --save` with no other flag. This records the choice, and later changes to the defaults apply to this person.
+- **Their own**: ask for the daily share (100, 75, 50 or 25, or another number), what to do at a limit (`stop` or `wait`), and whether the two ceilings stay at 85 and 90. Then run `wf quota --save` with one flag for each answer that differs from the default.
+
+Do not ask again after the file exists. A person changes a setting later with `wf quota --save --{setting} {value}`. If nobody can answer, such as in a run with no person present, continue on the defaults and say in the final report that the choice is still open.
 
 ## Before the first round
 
@@ -78,7 +88,7 @@ When the result has `unknown: true`, the limits were not checked. Say so in the 
 
 Each story in the ledger has one state: `waiting`, `built`, `merged`, `dropped` (with a reason) or `excluded` (with a reason).
 
-**With `--dry-run`, stop here.** Do the plan limit check and build the ledger even if the check says `stop`. Then report the ledger, each of the 3 plan limit checks with its used, after-round and limit figures, the day of the week and the percent allowed by that day, the decision, the settings in use, and the exact task the first round would get. Start no agent and change nothing.
+**With `--dry-run`, stop here.** Do the plan limit check and build the ledger even if the check says `stop`. Add `--no-record` to the `wf quota` call, and do not do the first use step: say instead whether the settings are the person's own or the defaults nobody has confirmed. Then report the ledger, each of the 3 plan limit checks with its used, after-round and limit figures, the day of the week and the budget for the day, the decision, the settings in use, and the exact task the first round would get. Start no agent and change nothing.
 
 ## Each round
 
