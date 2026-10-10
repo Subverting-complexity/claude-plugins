@@ -1,0 +1,847 @@
+# `wf` — programmatic workflow picker
+
+`wf` collapses the mechanical "select the next story, claim it, validate it" loop into a single process call that returns one already-claimed work item as JSON. It exists so the workflow commands don't have to drive a dozen sequential `gh` round-trips through the model on the hot path.
+
+The selection rules are **not** duplicated here: the pure decision logic lives in the `wf_core_*` modules behind [`wf_core.py`](wf_core.py) (priority sort, mode/refinement/gating filters, dependency parsing, branch naming), which is the single canonical, offline-testable encoding of what the `templates/` describe in prose. The offline suite (`tests/test_decision_logic.py`) imports `wf_core` directly, so the rules the CLI runs are the rules the tests check, with no second copy to drift. The `wf_*` modules are the I/O shell that talks to `gh`/`git` around that core, and [`wf.py`](wf.py) is its entry point.
+
+## Module layout
+
+Code is split by concern into flat modules in this directory. Two rules hold the split together: no `wf_core_*` module runs a subprocess, reads a file or calls GitHub, and no `wf_*` shell module holds a decision rule that the tests would need a network to check.
+
+`wf.py` builds the argument parser, dispatches to a subcommand and re-exports every name the shell modules define, so `wf.X` keeps working. It also passes any assignment to `wf.X` on to each shell module that binds `X`, which is what lets the tests replace `wf.run` or `wf.gh_graphql` once for every caller. `wf_core.py` re-exports every name the `wf_core_*` modules define in the same way. New code goes in the module whose concern it belongs to, never in either facade.
+
+| Module | Responsibility | Lines |
+|--------|----------------|-------|
+| `wf.py` | Entry point: argument parser, dispatch, re-exports | 534 |
+| `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 142 |
+| `wf_config.py` | Repo root (asked of git once per working directory), `ClaudeProject.md` parsing with its areas table, release-targets table and Jev row, the config cache, `config` | 549 |
+| `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 498 |
+| `wf_issue_io.py` | Reading, writing and verifying single issues, the area label included; batched mutations; every label id a spec names, read to the last page | 516 |
+| `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 183 |
+| `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 540 |
+| `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 463 |
+| `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 268 |
+| `wf_unblock.py` | The unblock sweep, `unblock` | 288 |
+| `wf_pick.py` | The `pick` and `refine` entry point and the result a pick returns | 207 |
+| `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 360 |
+| `wf_pick_tree.py` | The sub-issue tree under an Epic or Feature, one named issue checked as a pick candidate | 153 |
+| `wf_pick_candidates.py` | `candidates`, including `--parent` | 271 |
+| `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 539 |
+| `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
+| `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, the release notes and release labels of a settled issue, `post-merge`, `settle-merged` | 771 |
+| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 572 |
+| `wf_issue_apply.py` | `issue-apply`, including the `area` key that writes an issue's 1 area label | 868 |
+| `wf_issue_audit.py` | `issue-audit` | 166 |
+| `wf_areas.py` | `areas`: the rows of the areas table, or the area an issue's label names | 89 |
+| `wf_area_set.py` | `area-set`: the area label for an issue that has none, from a sure Jev answer or the caller's choice | 170 |
+| `wf_release_targets.py` | `release-targets`: the folders each story of a pull request touched, the release targets Jev is sure of, and the ones left to the caller | 166 |
+| `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 659 |
+| `wf_board_sync.py` | `board-sync` | 287 |
+| `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 274 |
+| `wf_worktrees.py` | Reading a worktree's age and state, removing one (links first), the sweep, `worktree-reap` | 281 |
+| `wf_block.py` | `block` | 129 |
+| `wf_pr_create.py` | `pr-create` | 128 |
+| `wf_core.py` | Facade: re-exports the rules below | 58 |
+| `wf_core_findings.py` | The finding record and the helpers findings are worded with | 46 |
+| `wf_core_fields.py` | Label resolution, native issue types, field vocabularies and ranks | 419 |
+| `wf_core_stage.py` | `Stage` names, work scope, which stage an issue belongs in, stage drift targets | 452 |
+| `wf_core_select.py` | Candidate filter and sort, native type filtering, backlog mode | 308 |
+| `wf_core_pool.py` | The verdict on every open issue in the pool, waiting work, inherited priority and work mode | 584 |
+| `wf_core_refs.py` | Parent parsing, closing references, branch names, dependency edges, unblock verdicts | 268 |
+| `wf_core_bulk.py` | Filling a bulk set's effort budget, splitting it into groups, ordering each into waves | 477 |
+| `wf_core_claims.py` | Sibling PRs that would duplicate a claim, claim reaping | 110 |
+| `wf_core_spec.py` | The parent types an issue may have, spec validation with the `area` key, value shaping and batching | 797 |
+| `wf_core_audit.py` | What an existing issue is missing or contradicts | 344 |
+| `wf_core_review.py` | Review-state label names, pools and reconciliation | 192 |
+| `wf_core_labels.py` | The area and release labels the `ClaudeProject.md` tables name, and the plan for a repository to carry them: create, rename, conflict, unknown, differs; the area label on one issue, and what to add and remove so it carries exactly 1; the release targets of a closed issue, the labels it still lacks, and the paths of each story's own commits | 368 |
+| `wf_core_drift.py` | Finished containers, stage drift and the missing areas table | 96 |
+| `wf_core_preflight.py` | Config sections, label and field drift, instruction files | 584 |
+| `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 307 |
+| `wf_core_scratch.py` | Which `.claude/` files are run scratch, the managed `info/exclude` block | 70 |
+| `wf_core_schedule.py` | Reading `.claude/plan.md`, a bulk set record by group, which stories in a wave share files, parallel batches | 210 |
+| `wf_core_steps.py` | Exit cleanup's review reconcile, the tree's porcelain, PR body checks, the current milestone, the compact pick result, abandoned PRs, the review picker's moved-head tier | 274 |
+| `wf_core_worktrees.py` | Reading `git worktree list`, which worktrees a sweep covers, and the verdict on each | 134 |
+| `wf_quota.py` | `quota`: the personal settings file at `~/.claude/synergy/quota.json`, `--save` to write it, the flags that override it, the stored reading from the start of each day, and the printed decision | 145 |
+| `wf_core_quota.py` | Whether a round may start against the Claude plan limits: the 5-hour ceiling, the weekly ceiling, the budget for the day from what is left of the week, what a round costs, and when a stopped run can continue | 257 |
+| `wf_jev.py` | `jev`: one request per batch to Jev, the TypeSafe decision model, and the `unavailable` result when there is no key, the repository turns Jev off, a table a check needs is empty or there is no answer, and issues read from GitHub as items; `jev_ask` gives another command the same answer without printing it | 203 |
+| `wf_core_jev.py` | Building the requests for a check in `jev-checks.json`, filling `area` and `target` from the `ClaudeProject.md` tables, and turning each answer into a row with a `high`, `medium` or `low` level | 351 |
+| `wf_area_backfill.py` | `area-backfill`: the paged read of every issue, open and closed, the label ids, the batched label writes, and closing the area epics a repository had before 19.0.0 | 261 |
+| `wf_core_backfill.py` | Which issues are area epics from before 19.0.0 (the one read of the `Area` stage), which one an issue's parent chain reaches, and the backfill plan: what to label, what already carries a label, what differs, what has no area, and why a run must stop | 224 |
+
+## Commands
+
+```bash
+# One-time bootstrap: pin a dedicated Python virtualenv (reused thereafter)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" setup
+
+# Can this project be worked on at all? (0 = nothing blocks, 26 = something does)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" preflight
+
+# …and repair what can be repaired without guessing, then re-check
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" preflight --fix
+
+# Claim the next story (Priority field → lowest number → atomic claim), print it
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick
+
+# …also set the issue's Stage to In Progress and create/check out the branch
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout
+
+# …and include the issue body, which the compact one-line result leaves out
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --checkout --body
+
+# Target one specific issue instead of auto-selecting (same claim/validate;
+# auto-closes it + sets its Stage to Done if a merged PR already resolved it)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pick --issue 42 --checkout
+
+# List the pool without claiming anything
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --limit 0
+
+# …or plan a bulk set: the stories that fill an effort budget, split into at
+# most --max-groups pull requests, blockers first, from the pool, named stories
+# (--issue) or an Epic or Feature (--parent); --claim claims, assigns and sets
+# In Progress for every story in it
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --parent 42 --max-groups 2 --claim
+
+# Split one group's next waves into batches that share no planned file
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" bulk-schedule --group 1
+
+# Cherry-pick a wave's parallel builder branches onto the group's branch, push once
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" bulk-integrate --group 1 --wave 1
+
+# Return a whole unbuilt group to the pool
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" drop-group --group 2 --reason "review ran inline"
+
+# Send a claimed issue back: Stage to Needs refinement, comment, unassign, release
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" refine --issue 42 --body-file .claude/42-body.md
+
+# Delete this run's scratch files under .claude/ (caches and the preflight marker stay)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" scratch-clean
+
+# Before the first edit when pick did not branch: claim, In Progress, reset an
+# inherited dirty tree, branch (or --group G --branch B for a bulk group)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" start --issue 42
+
+# End a run: release claims, reconcile a won review claim, delete scratch, report the tree
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" exit-cleanup --issue 42 --pr 123
+
+# Discard the uncommitted paths the caller chose, then re-check the tree
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" tree-clean --discard dist/out.js
+
+# Remove the finished agent worktrees of this clone (exit-cleanup does this too)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" worktree-reap --dry-run
+
+# Push, flag duplicate PRs, open the PR, add missing Closes lines, check the body
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" pr-create --title "Add login" --body-file .claude/pr-body.md --issue 42
+
+# Block a story: comment, blocked-by edges (or --non-code human|browser), release, unassign, Stage
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" block --issue 42 --body-file .claude/block-body.md --blocked-by 41
+
+# After merging a PR: close any still-open linked issue and set its Stage to Done,
+# close any Epic or Feature above it whose sub-issues are now all closed,
+# then release whatever that merge freed
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr 123
+
+# Settle every recently merged PR whose issues are not yet Done (a queued or hand merge)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" settle-merged
+
+# Release the blocked issues whose dependencies have all closed (--dry-run reports)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" unblock --dry-run
+
+# Claim the next PR of mine that needs review feedback addressed (pr-review)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" update-next --checkout
+
+# Claim the next PR that needs reviewing (pr-review)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-next --checkout
+
+# Emit the parsed config cache (.claude/wf-config.json) from ClaudeProject.md
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config
+
+# Resolve the org's native issue types + issue fields (cached; --refresh re-queries)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" org-capabilities
+
+# Create or update fully classified issues from a spec file
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply spec.json
+
+# …check the spec against the org and report what would change, writing nothing
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply spec.json --dry-run
+
+# Report open issues missing a type, a field value, an owner or a place in the epic tree (writes a backfill spec)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit
+
+# …against another repo in the org, newest 50 only, counts only (for CI)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --repo acme/other --limit 50 --quiet
+
+# …and read the parent each body claims, for a backlog that predates spec-created issues
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --parents
+
+# …and find bodies that say "Blocked by: #N" where no blocked-by edge exists
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --blockers
+
+# …or write a spec of only those edges, with no placeholder, and apply it as it stands
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --blockers-only
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/issue-audit-spec.json
+
+# List the areas: the rows of the Areas table in ClaudeProject.md
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas
+
+# …or the area one issue carries, read from its label
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas --issue 42
+
+# Give each issue that has no area label one (0 = all set, 25 = choose a row)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-set --issue 42 --issue 43
+
+# …or set the area you chose on one issue, replacing any other area label
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-set --issue 42 --area "Library"
+
+# What decides where each issue a pull request closes will ship (writes nothing)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" release-targets --pr 87
+
+# Report configuration and label drift (what preflight runs)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit
+
+# …file-level checks only, no network
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit --offline
+
+# Count what the area backfill would label, per area, and write nothing
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-backfill --dry-run
+
+# Moving off area epics: add its area label to every issue under one, open and closed
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-backfill
+
+# …and close the area epics, once a run finds nothing left to label
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-backfill --close-epics
+
+# Lock one issue or PR (and advertise it: assignment / reviewing label)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim --issue 42
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim --pr 123 --no-marker
+
+# Let one or more locks go (idempotent)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue 42 --pr 123
+
+# Free every claim ref whose work has demonstrably moved on
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-reap --threshold 4 --dry-run
+
+# Set an issue's Stage (best-effort, always exit 0)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" stage-set 42 --stage stage-in-review
+
+# The open PRs that close each issue (duplicate detection), one read for all of them
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr 42 43 --exclude-branch feat/42-thing
+
+# Settle a PR's review-state labels (approved, changes-requested, needs-discussion, needs-re-review)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr 123 --verdict needs-re-review
+
+# Hand finished stories to review: label the PR, set each issue to In Review, free claims
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" handoff --pr 123 --issue 42 --issue 43
+```
+
+Run from the **target repo root** so the CLI can read `ClaudeProject.md` and the git remote.
+
+## The interpreter: a pinned virtualenv
+
+`wf.sh` / `wf.ps1` resolve which Python runs `wf.py` like this. Both hand the work to `wf_launch.py`, one stdlib-only implementation of the venv, its cache, the build lock and the installs; the launchers keep only finding the data dir, the cached-venv fast path, finding a base Python through `find-python.sh` / `find-python.ps1`, and `--install-python`.
+
+1. **A dedicated virtualenv.** It lives under `${CLAUDE_PLUGIN_DATA}/wf-venv` (the plugin's persistent data dir, which survives plugin updates), with `requirements.txt` installed into it. This is the steady state — pinned, isolated, never affected by PATH. `wf.sh setup` creates it explicitly, but so does the first ordinary call that finds none and a usable system Python: it builds the venv in place before running, silently, so most projects never need to run `setup` by hand.
+2. **A probed system Python**, only when no venv exists and the auto-bootstrap above could not build one (e.g. no `venv` module, a locked-down filesystem, or a losing race against another concurrent `wf` call already building it) — `python3` verified, then `py -3`, then `python` from `wf.sh`, and `py -3` first from `wf.ps1` (a candidate that will not run, such as the broken Windows `python3` Store shim, or that is older than Python 3.8, fails the probe and is skipped), with a one-line hint to run setup.
+3. **Nothing found** → exit 20; the caller falls back to the inline skill.
+
+Probing launches Python, about 420 ms on Windows, so the answer is cached: `wf.sh` writes the kind (`venv` or `base`) and the interpreter's absolute path to `wf-python` under the data dir, and `wf.ps1` to `wf-python-ps1`. A later call runs a cached venv interpreter directly while that path exists. A cached system Python runs `wf_launch.py`, which gives way to a venv as soon as one exists and otherwise tries to build it. If the cached interpreter will not launch (exit 126 or 127 in bash, command not found in PowerShell), the cache is deleted and the probe runs once. `setup` always rewrites it.
+
+`wf.sh setup` is idempotent: a valid venv is reused, `--force` rebuilds it. If no Python 3.8 or later is found it still exits 0 when the venv is already set up, asking the venv's own interpreter without rebuilding it; otherwise it prints the platform install command and stops (exit 20) — or, with the explicit `--install-python` opt-in, installs system Python via winget/brew/apt first. Wire it via `/synergy:setup wf` (or it's offered during full setup, Step 1b).
+
+## Contract
+
+A single JSON object goes to **stdout**; diagnostics go to **stderr**. Every run carries a `status` field and the exit code mirrors it:
+
+| Exit | `status`        | Meaning                                                        |
+| ---- | --------------- | -------------------------------------------------------------- |
+| 0    | `ok`            | An item was claimed (and checked out, if asked).               |
+| 10   | `no-candidates` | The ready pool was empty.                                      |
+| 11   | `all-blocked`   | Every candidate was claimed away, blocked, or already resolved.|
+| 12   | `needs-refinement` | The next pick is too unclear to build. Nothing was claimed. |
+| 20   | `error`         | Environment/auth problem (not a repo, no `gh`, no config).     |
+| 21   | `no-capabilities` | The org reports no issue types and no fields, or refused to say. |
+| 22   | `spec-invalid`  | An `issue-apply` spec is wrong. Nothing was written.           |
+| 23   | `verify-failed` | A write was accepted but does not read back. Issues exist.     |
+| 24   | `partial`       | Some entries applied, some failed. Re-run to finish.           |
+| 25   | `gaps`          | `issue-audit` found issues missing metadata. Nothing written. `area-set` uses the same code with `status: choose`: an issue still has no area label, and the caller chooses one. |
+| 26   | `drift`         | `config-audit` found a configuration problem that breaks work. |
+| 27   | `lost`          | `claim` — another agent holds this issue or PR. Change nothing.  |
+| 30   | `unsupported`   | Path not in the CLI yet — caller falls back to the skill.      |
+
+Mutations to the **winning** issue (claim, assign, the `In Progress` stage) are silent; mutations to **other** issues (setting a dependency-blocked one to `Blocked`, closing one already resolved by a merged PR, which also sets its stage to `Done`) are always reported in the `side_effects` array, each with `stage_set`.
+
+## Org capabilities — `org-capabilities`
+
+Resolves what the org can actually classify an issue with: its **enabled native issue types** and every **org issue field** with the option ids needed to write single-select and multi-select values. One GraphQL round trip, cached to `.claude/issue-fields-cache.json`; `--refresh` re-queries and rewrites its own keys while preserving any other key in that file. The record carries `fetched_at` and is trusted for an hour, or for five minutes when it lacks `Priority`, `Effort`, `Ownership`, `Stage` or a `Stage` option, because an org's fields change and the file outlives the run that wrote it — a new worktree can start with a copy of the main checkout's.
+
+The command is GraphQL and not REST because REST (`/orgs/{org}/issue-fields`) returns `null` for every option id, which makes those fields readable but not writable.
+
+Output beyond `type_map` and `field_map`:
+
+- `owner_kind` — `organization` or `user`.
+- `resolved_fields` — purpose key → the concrete field name that exists here.
+- `missing_fields` — the purpose keys that do not resolve, each with the name that was looked for.
+- `cached` — whether this run answered from the cache.
+
+Four outcomes a caller must tell apart:
+
+| Situation | Exit | `status` |
+| --------- | ---- | -------- |
+| Types and/or fields resolved | 0 | `ok`, `owner_kind: organization` |
+| A user-owned repo — issue types are an org-only feature | 0 | `ok`, `owner_kind: user` |
+| The account may not read a capability | 21 | `no-capabilities`, with `denied` |
+| The org resolves but reports neither types nor fields | 21 | `no-capabilities` |
+
+The last two are the cases that did not exist before, and both are the same underlying mistake: treating "we could not find out" as "there is nothing there". An under-scoped token, an expired one, or an account without org access all look identical to an org that has simply not enabled issue types, and carrying on regardless is how a repo ends up creating issues with blank metadata and no error anywhere.
+
+The denial case is worth calling out because GraphQL reports it *partially*: GitHub returns the issue fields the account may read alongside a `FORBIDDEN` error for the issue types it may not, so a naive read sees fields, sees no types, and concludes the org is not type-capable. `wf` reads the error list too, reports the denied paths in `denied`, and — importantly — **does not cache the result**, because a cached `type_capable: false` that really meant "not allowed to look" would make every later run fall back to labels in silence. The usual fix is `gh auth switch`; `gh auth status` shows which account is active and what scopes it has.
+
+`NOT_FOUND` counts as a denial for the same reason. GitHub returns it when the account may not see the organisation at all, and reading it as "no such org" recorded `owner_kind: user` — an org filed away as a personal account, cached with no expiry, every issue created after that with no type and no field values and nothing reporting it. An empty result is now only believed when it carries the current `CAPABILITY_CACHE_SCHEMA`, so a cache written by a version whose conclusion is no longer trusted heals itself on the next run instead of waiting for someone to know about `--refresh`.
+
+Field **names** are overridable per project in `ClaudeProject.md` → `## Issue Types & Fields`; the value maps behind them are Python data in `wf_core.py` (`NATIVE_TYPE_MAP`, `CLASSIFICATION_OPTIONS`, `FIELD_NAME_DEFAULTS`, `FIELD_DATA_TYPES`, `PRIORITY_FIELD_OPTIONS`, `EFFORT_FIELD_OPTIONS`, `ORIGIN_FIELD_OPTIONS`).
+
+## Classified issues — `issue-apply`
+
+`issue-apply <spec.json>` creates or updates issues carrying everything at once: native type, every org field value, labels, parent, and blocked-by edges. It exists because doing that by hand was ten-odd round trips per issue, each described as optional — and the measured result of "optional" in one consuming repo was 7 typed issues out of 82, no field values at all, and no error anywhere. So the command is deliberately strict.
+
+A spec can describe a whole epic tree, and one invocation applies all of it.
+
+### The spec
+
+A JSON object with an `issues` list (a bare list is accepted too). An entry with a `number` is an update; one without is a create.
+
+```json
+{
+  "issues": [
+    {
+      "key": "epic",
+      "title": "Ship the classifier",
+      "body": "Why this matters.",
+      "kind": "epic",
+      "fields": {"field-priority": "High", "field-effort": "High",
+                 "field-ownership": "Code agent", "field-origin": "Development"}
+    },
+    {
+      "key": "feature",
+      "title": "Classify issues from the org's own fields",
+      "kind": "feature",
+      "parent": "epic",
+      "fields": {"field-priority": "High", "field-effort": "Medium",
+                 "field-ownership": "Code agent", "field-origin": "Development"}
+    },
+    {
+      "key": "first-story",
+      "title": "Resolve org fields in Python",
+      "kind": "story",
+      "parent": "feature",
+      "blocked_by": [187],
+      "fields": {"field-priority": "High", "field-effort": "Medium",
+                 "field-ownership": "Code agent",
+                 "field-type": ["New Feature"], "field-origin": "Development"}
+    }
+  ]
+}
+```
+
+| Key | Meaning |
+| --- | ------- |
+| `key` | A spec-local name, so entries can reference each other before any of them has a number. Optional, but required to be referenced. |
+| `number` | An existing issue to update. Absent means create. |
+| `title`, `body` | As on GitHub. A create needs a title. A `[BUG]`-style kind prefix is stripped from the title — the native type says that. An update compares each with the issue and writes it only when it differs, so re-running a matching spec writes nothing; a written one is listed in `changed` and read back, and a read-back that does not match is a mismatch. An update entry that leaves one out leaves that one as it is. |
+| `body_file` | A path to read the body from, used when `body` is absent. A body is prose — fenced code, backticks, `$`, quotes — and building that into a JSON string by hand in a shell is where bodies get mangled. The spec file keeps saying `body_file` after a write-back; the body is never inlined into it. |
+| `kind` | One of `wf_core.NATIVE_TYPE_MAP`'s keys (`story`, `feature`, `epic`, `bug`, `spike`, …). Supplies both the native type and a default `Classification`. |
+| `type` | An explicit native type name, overriding what `kind` implies. |
+| `labels` | Literal names, or purpose keys a surviving label map resolves. Labels decide nothing about what is picked and the workflow passes none here: a `type-*` label or a retired one (`status-*`, `priority-*`, a scope label) is dropped. An `area:` name here is refused in a repository with an areas table: use `area`. |
+| `area` | The name of one row of the `## Areas` table in `ClaudeProject.md`, matched trimmed and without case. It is written as the `area: {name}` label, in the row's own spelling. Required on a create in a repository that has the table. On an update it replaces any other area label, in the same `gh issue edit` call, so the issue never carries 2; an update that leaves it out leaves the labels as they are. |
+| `parent` | Optional. An issue number, or another entry's `key`. A `User Story` that has a parent needs a `Feature` or an `Epic`; a `Feature` that has one needs an `Epic` (see below). |
+| `blocked_by` | A list of issue numbers and/or `key`s. **The complete set**: an issue already carrying an edge the list omits has it removed, and `[]` removes them all. Leave the key out to leave the edges alone. |
+| `state` | `backlog`, `refinement` or `parked`: the stage to write, overriding the one the issue's fields name. Absent means the fields decide. `parked` is for an update only: a new issue is never filed as `Parked`. `backlog` puts an issue in the pool whatever stage it had, which is how a `Parked` or `Needs refinement` issue is released. It never moves `Browser agent` or `Human` work out of Non-code. `area` is refused: it filed an area epic, and those were removed in 19.0.0. |
+| `fields` | Purpose key → value. Names resolve through `ClaudeProject.md`'s `## Issue Types & Fields`, then `wf_core.FIELD_NAME_DEFAULTS`. |
+| `milestone` | An open milestone's title, so a sprint placement rides in the same write. A title that names no open milestone fails the spec before anything is written. `current` means the open milestone with the earliest due date that still has open issues; when none qualifies the issue is filed without one and `milestone_note` says why. |
+
+Created numbers are **written back into the spec file**, which is what makes a re-run after a partial failure complete the remainder rather than creating everything a second time.
+
+### How a tree is applied
+
+Aliased multi-mutations let many issues be created in one request, but an alias cannot reference another alias's output — so a child's `parentIssueId` only exists once its parent's request has come back. The command therefore works in **hierarchy levels**, parents before children, and puts the dependency edges last:
+
+| Phase | Requests | What happens |
+| ----- | -------- | ------------ |
+| Prerequisite | 1 query | The repository id, every label id, and the node id of every issue the spec references but does not create — one lookup, not three. |
+| Per level | 1 mutation per `wf_core.BATCH_MAX_NODES` entries | Every issue at that level is created in one aliased `createIssue`. |
+| Link | 1 mutation per `BATCH_MAX_NODES` operations | Every `blocked_by` edge. |
+
+Edges come last so an edge may point at **any** issue in the tree regardless of level, including one created in the final batch.
+
+An epic with three features and nine stories is therefore **four mutations** (three levels plus the link phase) on top of the one prerequisite lookup, rather than the hundred-odd round trips a per-issue loop would take. There is a test that asserts exactly that count against a recorded transport, because it is the kind of property that silently regresses.
+
+Each `createIssue` asks for the full issue selection in its own payload, so GitHub returns the issue **as it now holds it** — verification comes back with the create rather than costing a round trip of its own.
+
+Updates are not batched. An update has to read the issue first to decide what differs, and the levels only exist to make creation possible; a re-applied spec is dominated by no-ops in any case.
+
+### What it refuses, and why
+
+Everything decidable offline is decided before the first mutation, because a half-applied epic tree is far harder to reason about than a refused spec:
+
+- **A missing required field** — Priority, Effort or Ownership — exits 22 naming the issue and the field. A create must name all three. An update names only what it changes, and is refused when a value it leaves out is not on the issue either; a `TODO` it writes is refused whatever the issue carries. That is the blank-metadata failure this command exists to stop, and the three are exactly what a decision reads: the pool's order, its size ceiling, and whether a code agent may take the issue at all. `wf_core.MANDATORY_FIELD_KEYS` is the list.
+- **An org that defines no such field** exits 22 as well, naming the field and saying to create it. Skipping is what let a repository run for weeks with no `Ownership` field while `config-audit` reported a clean configuration.
+- **A missing optional field** — Classification or Origin — is not refused. `wf_core.OPTIONAL_FIELD_KEYS` is that list, nothing selects on either, and a create that leaves one unset gets a comment on the issue naming it.
+- **A placeholder** (`TODO`) counts as missing, so an audit's proposal cannot quietly pass as a value.
+- **A dependency cycle** within the spec exits 22 before anything is written, and so does a **parent cycle** — a different fault, and equally unresolvable.
+- **A label or referenced issue that does not exist** in the repo exits 22, named, before the first mutation. That includes the area label an `area` names: the reason then says to run `wf labels-ensure`, which creates the labels the areas table names. Label names are matched without case, and a repository with more than 100 labels is read to the last page.
+- **An area that is missing or unknown.** In a repository with an areas table, a create with no `area` exits 22, and so does an `area` no row has; the error lists the valid names. An `area` in a repository with no table exits 22 too, because there is no label to write.
+- **An issue under the wrong type.** A story or feature under the wrong type exits 22. A story that has a parent sits under a `Feature` or an `Epic`, and a `Feature` that has one sits under an `Epic`. No issue needs a parent: an issue's area is its label, so a parent only groups work. A parent that already exists is judged by its live type, and an update that does not restate its parent is judged by the parent it already has. Enforced only where the org has the parent type enabled; a `Bug` or `Chore` may sit under anything. `wf_core.HIERARCHY_PARENT_TYPE` is the rule.
+- **One issue, two parties.** A title prefix and an `Ownership` value that disagree, such as `[Manual]` owned by `Code agent` or `Human` with no prefix, exits 22. One of the two is wrong, and the issue would mislead whoever reads it.
+- **Research owned by an agent.** A `spike` entry whose `Ownership` is not `Human` exits 22. Research produces a finding a person has to weigh, so it belongs at `Non-code`, not in the pool.
+- **A `state` that is not one of the three** exits 22. There is no `ready`, and `area` is refused with a reason that says to name a row of the Areas table in `area`.
+- **A create that asks for `parked`** exits 22. `Parked` is work a person set aside and will resume, so it applies only to an issue that already exists. A new issue that cannot be built yet is still filed at `Backlog`, or at `Blocked` when a `blocked_by` edge says what it waits on.
+- **A field this org does not define** is skipped, not an error — an org is allowed fewer fields than the default inventory. It is reported once for the run on stderr, not once per issue.
+- **A refused capability read** exits 21 rather than falling back to labels, for the reason `org-capabilities` gives above.
+
+### A dependency is an edge and nothing else
+
+A `blocked_by` becomes a native `addBlockedBy` edge. It used to become a `## Dependencies` section in the body as well, and the two drifted apart on nine of the fourteen issues carrying both on one real backlog — the prose stale every time. Prose is not parsed now, in any command: a body naming a blocker with no edge behind it is not blocked.
+
+### Every issue gets the stage its own state names
+
+After the edges are written, `issue-apply` writes each issue's `Stage`. Nothing did this before, so a spec could write an edge and leave the issue sitting in the pool, which put work whose dependency had not been built yet straight into `pick`'s reach.
+
+| The issue is | Stage |
+| --- | --- |
+| given `"state": "area"` on its spec entry | Area |
+| owned by a browser agent or a person (`Ownership`) | Non-code |
+| given a `state` on its spec entry | the stage it names |
+| owned by nobody | Needs refinement |
+| pointing at least one open edge | Blocked |
+| none of these | Backlog |
+
+**A stage this phase does not own is kept.** It may write `Backlog`, `Blocked` and `Non-code`, and fill a blank `Stage`; an issue at `In Progress`, `In Review`, `Parked`, `Needs refinement` or `Done` keeps its stage and is reported as `stage_kept`. Found live: an update setting one field on an in-progress issue sent it back to the pool, where a second agent could pick up the same work. An entry that names a `state` overrides this, because asking for a stage is a decision rather than an inference.
+
+Each entry's result carries `stage` (the stage the issue now has), `stage_kept`, `stage_set`, and a `stage_message` saying why when the write did not happen.
+
+**A created issue with no parent is named in `notes`.** When a create's parent chain within the spec ends with no parent at all, neither another entry that has one nor an existing issue, the result carries `"notes": ["#N was filed with no area: its parent chain ends without reaching one"]`. It is not a refusal: an issue with no parent is legal. A chain that reaches an existing issue is trusted rather than read, and one that reaches an entry asking for `"state": "area"` has found its area.
+
+**An issue whose edges or stage cannot be read is not written**, and its entry fails. A failed read is not the answer "nothing blocks it", and re-running the spec completes the write because every write before it is idempotent.
+
+Ownership wins over a dependency. It is a property of the work and survives every blocker closing, so an issue that is both ends up in the stage no sweep releases it from.
+
+**A retired label is taken off.** Whatever `status-*`, `priority-*`, scope or `needs-refinement` label an issue still carries from the label workflow is removed here, which is how an existing backlog migrates without anyone sweeping it. The removal is best-effort: the stage write is the part that decides anything.
+
+### Every write is read back
+
+An accepted mutation is not a changed value — an unpinned field or a permission that stops short of writing both return success. So the command compares every issue against the spec and exits 23 `verify-failed` naming each mismatch. An entry that names an `area` is a mismatch unless the issue reads back with exactly that 1 area label. The issues still exist; the command is telling you the metadata did not land.
+
+### Partial failure is reported, not swallowed
+
+A batch answers a partial failure with the aliases that worked and an error carrying the path of each one that did not, so one bad entry does not take its neighbours down with it. The command exits 24 `partial`, names the entries that failed, and writes the numbers of the ones that landed back into the spec — which turns them into no-op updates, so re-running the same spec completes the remainder rather than creating anything twice.
+
+## Copying areas to labels — `area-backfill`
+
+Until 19.0.0 an issue's area was the area epic above it in its parent chain. A repository that still has area epics must move each issue's area to its label before the epics mean nothing. `area-backfill` copies each issue's area to an `area: {name}` label, for every issue of the repository, open and closed. Run it once, when a repository moves off area epics (`references/area-epics.md`). Release notes for an old release then keep their headings after the area epics are closed.
+
+**The read.** One paged query reads every issue, 100 a page, oldest first: its type, state, parent, labels and `Stage`, and nothing else. When GitHub answers `RESOURCE_LIMITS_EXCEEDED`, the read halves the page and asks the same cursor again, down to 5 a page, and keeps the smaller size (`page_size` in the result). There is no page cap, because a partial read would leave old issues without a label. Against CadenceReader, with 2,126 issues and an area epic that has 100 direct children, the read took 22 requests at 100 a page with no resource-limit error.
+
+**The plan** (`wf_core.backfill_plan`). For this command only, an issue's area is the nearest area epic above it in its parent chain, at any depth, and a closed area epic still counts. The `epic` column of the `## Areas` table maps the epic to a row, and the row's label is `area: {name}`. The area epics themselves get no label. A closed `Epic` that a row names counts as the area epic whatever its `Stage`, because a merge that closed it wrote `Done` over `Area`. `wf_core.is_legacy_area_epic` is the one place the `Area` stage is read, and only this command and preflight call it: preflight to choose the `areas-table` fix, and to leave such an epic out of the finished containers.
+
+| List | Meaning |
+| ---- | ------- |
+| `counts` | Per area name: `to_label`, `already`, `differs` and `total`, as the read found them. |
+| `no_area` | `{number, title, reason}` for each issue that reaches no area epic and carries no area label. Never written. The reason is no parent, a parent in another repository, a parent the read did not return, or a chain that loops. |
+| `differs` | `{number, title, has, resolves_to}` for each issue that carries an area label other than the one it resolves to. Never written, because a person may have chosen that label. |
+| `failed` | `{number, reason}` for each label write GitHub refused. |
+
+**It stops before any write** (`status: refused`, exit 22) when the table and the repository disagree, and `stops` names each cause: `epics_without_row` (an area epic that no row names), `rows_without_area_epic` (a row whose `epic` is not an area epic of the repository), `duplicate_epic_rows` (two rows name one epic) and `missing_labels` (a label the repository lacks, which `labels-ensure` creates). No `## Areas` table at all is `status: error`, exit 20.
+
+**The write.** Each issue in `to_label` gets its label through aliased `addLabelsToLabelable` mutations, 20 issues a request. An issue that carries an area label is skipped, so a second run writes nothing, and a run that failed part way can be started again and finishes the rest. A refused write is `status: partial`, exit 24.
+
+**`--dry-run`** prints the same result with `dry_run: true`, `would_label` and `would_close`, and writes nothing. The GitHub guard treats it as a read.
+
+**`--close-epics`** closes each open area epic a row names, with `gh issue close --reason completed` and a comment that names the label. It closes only when the read of that same run found no issue to label and no entry in `differs`. A run that wrote labels closes nothing and says so in `close_refused`, so closing always takes a second run. The parent links and the `Stage` of the epics are left as they are, so a later `area-backfill` still resolves an issue through a closed epic. An epic that could not be closed is listed in `close_failed`, and the run is `partial`, exit 24.
+
+The result is `{"status", "repo", "scanned", "page_size", "labelled", "already", "counts", "no_area", "differs", "failed", "epics_closed"}`. `labelled` and `already` are counts. `--repo owner/name` reads and writes another repository with the table of the current one.
+
+## Finding the gaps — `issue-audit`
+
+`issue-audit` reads every open issue in a repo and reports what is missing. It exists because nothing did: the classification gap went unnoticed for months across 82 issues, of which 7 were typed and none carried a field value, with no error anywhere. It also produces the input to the backfill, so the unclassified remainder does not have to be handled one at a time.
+
+It **never writes**. Both write transports are stubbed out in its tests to prove it.
+
+### What it reports
+
+| Gap | Meaning |
+| --- | ------- |
+| `missing-type` | The org has issue types enabled and this issue has none. |
+| `missing-field` | One of the three required fields (`wf_core.MANDATORY_FIELD_KEYS`) this issue holds no value for. An unset `Ownership` is reported here, once. The proposal fills `Ownership` from a `[Manual] ` or `[Browser] ` prefix and leaves everything else it cannot know as `TODO`: no label is read, and an unprefixed title is not taken to mean `Code agent`. |
+| `missing-optional-field` | `Classification` or `Origin` unset. Worth filling in, never worth refusing an issue over. |
+| `type-contradiction` | The native type disagrees with a legacy `type-*` label or `[BUG]`-style title prefix the issue still carries. Reported so the stale one can be removed; neither is written any more. |
+| `classification-contradiction` | The `Classification` value cannot be true of the declared kind — a story classified `Bug Fix`, a bug classified `New Feature`. |
+| `scope-option` | An `Ownership` value the workflow does not recognise, usually a renamed option. |
+| `scope-prefix` | The `[Manual] `/`[Browser] ` title prefix and the `Ownership` value disagree. |
+| `hierarchy` | A story or feature under the wrong type. An issue with no parent is not a gap. Reported and never proposed: which feature a story belongs to is a judgement about the work. |
+| `missing-parent` | `--parents` only. The body says it is part of an issue and GitHub shows it as free-standing. |
+| `parent-closed` | `--parents` only. The parent the body names is not open. |
+| `parent-differs` | `--parents` only. The body names one parent and the hierarchy has another. Reported, never changed. |
+| `missing-blocker-edge` | `--blockers` only. The body says `Blocked by: #N`, #N is open, and the issue has no blocked-by edge to it. The proposal is a `blocked_by` list holding the edges the issue already has plus the missing ones. A closed blocker is not a gap: it holds nothing back. |
+| `no-area-label` | The issue carries no `area:` label, so it belongs to no part of the product and its release notes cannot be grouped. The proposal is `area: TODO`: which area an issue belongs to is a judgement about the product, so a person or `wf area-set` fills it. No parent is read. Not reported in a repository with no Areas table, where `preflight`'s `areas-table` names the cause once. |
+| `many-area-labels` | The issue carries more than 1 `area:` label. The proposal is the same `area: TODO`, and `issue-apply` removes every other area label when it writes the one named. |
+
+`Classification` is checked for **incompatibility**, not for agreement (`wf_core.INCOMPATIBLE_CLASSIFICATIONS`). It is a multi-select describing what the work touches, so a story classified `Documentation`, `Performance` or `Integration` is telling the truth and only a defect classification — `Bug Fix`, `Regression` — contradicts it, and vice versa for a bug. Requiring agreement instead produced false positives on every issue that had been classified carefully.
+
+A `[DEBT]` issue typed `Feature` is **not** a type contradiction on an org whose types are GitHub's five defaults: none of them can express tech debt, which is precisely what `Classification` is for. An org that has added a `Chore` type is a different case, and `wf_core.NATIVE_TYPE_PREFERENCES` is where that is said: `tech debt` and `chore` become `Chore` where the org has one, and the `Feature` default stands where it does not. Adding a preference has a consequence beyond the audit, so read `NATIVE_MAINTENANCE_TYPES` with it — a type that is not in that set cannot be picked by `execute mode=maintenance` at all.
+
+### Relationships
+
+One gap above comes from body prose, and it is worth understanding before trusting a proposal.
+
+**A parent is GitHub's native Parent issue relationship.** An issue whose first line says `Part of the Cadence Plus epic (#959)` and which GitHub renders as free-standing is invisible as a child: the epic shows no sub-issues and nothing reports that the two disagree. `wf_core.parse_parent` reads a fixed set of phrasings in precedence order, and an issue that **already has** a parent is left alone even when the body names a different one, because a deeper parent is usually the more specific truth and reparenting would flatten a hierarchy somebody built on purpose.
+
+This one is **opt-in**, and the reason is worth stating rather than treating as caution. A story created through `feature-discovery` carries `"parent"` in the spec that creates it, so on a repo whose issues all arrive that way, parsing the sentence back out of the body only re-derives what the pipeline already knew, and every issue that politely repeats its epic in the first line shows up as a gap. Where the prose is the only record — a backlog written before any of this existed, or an issue typed into the GitHub UI — pass `--parents` and the three gaps above come back.
+
+**A blocker is the native blocked-by edge, and the body is read only to find an edge that was never written.** Dependencies used to be read from prose everywhere, and it went badly enough to be worth recording: the parser missed a `## Blocked by` heading whose references sat on the next line, and read "Nothing. This **was** blocked by #980" as a live dependency — wrong in both directions on the same backlog, and each fault silently invisible. So `pick`, `unblock` and `issue-apply` still read edges alone, and a sentence never holds an issue back.
+
+`--blockers` is the one place a sentence is read, to repair an issue written with `Blocked by: #N` and no edge (#2146 in CadenceReader was one: the sentence said it, the edge list was empty). `wf_core.parse_blockers` is narrow on purpose. The line has to start `Blocked by` or `Depends on`, and the references have to follow on the **same line** with nothing in between, so "This **was** blocked by #980", "Blocked by nothing; see #12" and a reference on the next line all name no one. Only open blockers count, so the scan has to be the whole backlog: with `--limit` or `--since` a blocker outside the slice is not known to be open and is skipped. An issue whose edges were not fully read is skipped too. It is opt-in for the same reason as `--parents`. With `--blockers` the proposal sits in the ordinary spec, beside every other gap the issue has and the `TODO`s a person has to fill first. `--blockers-only` (`wf_core.blockers_only`) is the self-heal: it reports and writes only the missing edges, each entry just `number` and `blocked_by`, so the spec has nothing to fill in and `issue-apply` takes it as it stands. `issue-audit` itself still writes nothing to GitHub. `issue-apply` still checks each issue against its live state, so an issue that lacks a required field is refused there, not here.
+
+What the audit checks in the dependency slot otherwise is **scope**, where the three signals genuinely can be compared against each other.
+
+## Areas — `areas`
+
+An area is one part of the product: a row of the `## Areas` table in `ClaudeProject.md`. An issue's area is its 1 `area: {name}` label, and nothing reads the parent chain for it, because GitHub allows a parent at most 100 sub-issues. Area epics, an `Epic` whose `Stage` is `Area`, were removed in 19.0.0. An epic still at that stage is an ordinary `Epic`: its stage is a value no rule knows, so it is not in the pool and `board-sync` leaves it, and `post-merge` and `preflight --fix` close it when its last sub-issue closes.
+
+`areas` lists the table, in table order: `{"status": "ok", "areas": [{"name", "description", "label"}], "count": N}`, exit 0. A row's `name` is what a spec passes as `area`, and `label` is the label it becomes. A repository with no table is still `ok`, with an empty list and a `count` of 0. It reads `ClaudeProject.md` only and makes no GitHub request.
+
+`areas --issue N` reads one issue instead, in one request that asks for its number, title and labels and no parent. It returns `{"status": "ok", "issue": N, "area": {"name", "description", "label"}}`. `area` is `null` and `reason` says why when the issue carries no area label, carries more than 1, or carries one that names no row. None of those is guessed at: `area-set` is where the choice is made.
+
+Both take `--repo owner/name`. A read that fails, or an issue that does not exist, is `status: error`, exit 20. Neither writes anything.
+
+## The area label on a picked issue — `area-set`
+
+Every issue carries exactly 1 `area: {name}` label, named after a row of the `## Areas` table, so release notes can place it without a parent. `issue-apply` writes the label on an issue it files. `area-set --issue N [--issue M ...]` covers an issue that was filed before that, or by hand: `execute` and `bulk-execute` run it on each story they claim, before the build starts.
+
+It reads `number`, `title` and the labels of every issue named in one aliased request, then decides each issue:
+
+- **An issue with 1 area label** is `kept`. Nothing is written.
+- **An issue with none, or with more than 1,** is asked of Jev's `area` check, all such issues in one call. A `high` answer that names a row of the table is written, with `source: jev`.
+- **Every other issue** is returned under `choose`: no `TYPESAFE_API_KEY`, Jev off for the repository, no answer, a `medium` or `low` answer, or `unsure`. The caller takes the row in `rows` that best covers the issue and runs `area-set --issue N --area NAME`.
+
+`--area NAME` sets the area the caller chose. It takes exactly 1 `--issue`, never asks Jev, and replaces any other area label in the same `gh issue edit` call. An issue that already carries only that label is `kept`, so a second run writes nothing.
+
+| Situation | Exit | `status` |
+| --------- | ---- | -------- |
+| Every issue named carries its 1 area label | 0 | `ok`, on one line |
+| The repository has no areas table | 0 | `ok`, with a `reason` that says so. Nothing is read or written. |
+| At least one issue still needs an area | 25 | `choose` |
+| `--area` names no row of the table | 22 | `spec-invalid`, with `rows`. Nothing is written. |
+| A label write failed | 24 | `partial`, with `failed` |
+| An issue could not be read | 20 | `error` |
+| `--area` with more than 1 `--issue` | 2 | `usage` |
+
+The result is `{"status", "issues": [{"number", "title", "area", "action", "source"}], "choose": [{"number", "title"}], "rows": [{"name", "description"}], "jev"}`. `action` is `kept`, `set` (the issue had no area label) or `replaced` (it had another). `source` is `label`, `jev` or `caller`. `jev` is present when Jev was asked: `used` when at least one answer was written, `not-sure` when none was sure enough, and `unavailable` when Jev could not be asked. `choose` and `rows` are present on `choose` and `partial`; an `ok` result holds only `issues`, and `jev` when it was asked.
+
+A write that fails is listed in `failed` with the error. When `gh` says the label was not found, the error says to run `wf labels-ensure`, which creates the labels the table names. The issue text Jev reads is fetched inside the command, so it never passes through the caller, and nothing is sent when the repository's `## Jev` row says `off`.
+
+## Configuration drift — `config-audit`
+
+Three things describe how a project works, and they drift apart quietly: `ClaudeProject.md`, the labels the repo actually carries, and the org's issue types and fields. Nothing errors when they disagree. A label gets renamed and a call site keeps applying the old name — `gh` refuses the edit and the issue stays where it was. An issue type stops being pinned to a field and every value written to it is stored correctly and shown nowhere.
+
+`config-audit` compares all three, and it never writes. `preflight` below runs every one of these checks plus the file-level ones, and is what `skills/preflight` calls; reach for `config-audit` directly when only the drift half is wanted, or as a CI gate.
+
+### What it reports
+
+| Finding | Level | Meaning |
+| ------- | ----- | ------- |
+| `config-section` | critical | `ClaudeProject.md` is missing a section the plugin reads, so its values fall back to defaults silently. |
+| `label-missing` | critical | An instruction file tells an agent to apply a label the repo does not have. |
+| `config-label` | critical | A `## Label Map` left in `ClaudeProject.md` names a label the repo does not have. |
+| `field-unpinned` | critical | An enabled issue type is not pinned to a field the tooling writes, `Stage` included. |
+| `field-absent` | critical | The org defines no `Priority`, `Effort` or `Ownership` field, and the picker reads all three. |
+| `stage-absent` | critical | The org defines no `Stage` field, so no issue's state can be written or read. |
+| `stage-options` | critical | `Stage` lacks one of its eight options, named, so a transition to it fails. |
+| `field-options` | critical / warning | An option on a mandatory field that no decision knows. Critical on `Ownership`, where nothing can route the issue; a warning on `Priority` (sorts last) and `Effort` (sized as `Medium`). |
+| `label-deprecated` | warning | The label map still names a label nothing reads. |
+| `review-label` | warning | A review-state label the repo lacks, so a pull request cannot carry that state. `--fix` creates it, as `labels-ensure` does. |
+| `label-retired` | warning | Open issues still carry a label the fields replaced. `--fix` takes it off. |
+| `field-absent-optional` | warning | The org defines no `Classification` or `Origin`, so issues are filed with less on them. |
+| `label-drift` | warning | Two live labels mean the same thing (`type:bug` beside `type-bug`, `bug` beside `type-bug`). A pair of retired labels is `label-retired`'s, whose advice is the opposite: take both off. |
+| `pin-asymmetry` | warning | A field some enabled types pin and others do not. |
+| `field-unmapped` | warning | An org field no purpose key resolves to, so nothing ever sets it. |
+| `pin-unknown` | warning | `IssueType.pinnedFields` could not be read, so pinning is unverified. |
+
+### Why the split is where it is
+
+One question decides it: does the workflow produce a **wrong** result, or a **degraded** one? A missing section or a label that does not exist produces wrong behaviour — the command runs, GitHub accepts or refuses it, and the outcome is not what anyone asked for. An org field nobody mapped degrades gracefully, so it warns and the run continues.
+
+Pin asymmetry is the case that makes the distinction concrete. A type that cannot hold a field should not pin it, so a field that some enabled types carry and others do not can only ever be a warning, and only the three fields the tooling actually writes (`wf_core.MANDATORY_FIELD_KEYS`) are ever a failure.
+
+The fix text is written to be reported verbatim. For an unpinned field it names the type, the fields, and the form: org settings → Planning → Issue fields → the field's edit form → "Pin to issues". A paraphrase loses the only part that tells someone where to click.
+
+### Placeholders are not labels
+
+The label scan reads `--add-label`, `--remove-label` and `--label` out of every `.md` file under the plugin root (`--scan` points it elsewhere) and checks the names against the repo. It only ever checks **literals**. These files write "the label you resolved" as `{status_ready_label}`, `<verdict-label>` or a bare `X` in an example, and none of those is a claim about any particular label.
+
+### Cost
+
+Three round trips: one repo query carrying the labels, one walk of the open issues (which still carry a retired label), and one org query for the pinning. Org capabilities come from the cache. `--offline` runs only the checks that need no network, `--quiet` drops the per-finding detail and keeps the exit code, and exit 26 makes it usable as a CI gate.
+
+## Can this project be worked on at all — `preflight`
+
+`config-audit` answers "does `ClaudeProject.md` agree with the live repo and org?". `preflight` answers the question a command actually has before it runs: **can this project be worked on at all?** That is every `config-audit` check, plus the ones that read the two markdown files themselves, plus a `--fix` that repairs the subset a run can repair without guessing.
+
+```
+# Before a command. Exit 0 means nothing blocks; 26 means something does.
+wf preflight
+
+# Repair what can be repaired, then re-run and report what is left.
+wf preflight --fix
+
+# A project with no ClaudeProject.md: read-only git-state, CLAUDE.md and
+# quality-gate checks. Always exits 0.
+wf preflight --local
+```
+
+The file-level checks used to be shell blocks inside `skills/preflight/SKILL.md`: `gh auth status`, the required-section `grep`, the placeholder scan, the quality-gate read, the `CLAUDE.md` check. Two implementations of one gate is one too many. The shell one could not be tested, could not be reused by `bulk-execute`, and disagreed with this one about what counted as critical.
+
+`--local` and the opt-in auto-merge checks (`review-auto-merge-repo`, `review-auto-merge-ci`, `review-auto-merge-nopipeline`, run only when `docs/review.config.md` sets `auto-merge-on-approval: enabled`) moved out of `skills/preflight/references/local-checks.md` and `references/review-auto-merge-checks.md` for the same reason. `preflight` writes `.claude/preflight-passed.txt` itself on a clean or warning-only run, so a caller that only needs to know whether it can proceed never has to parse the JSON to do it.
+
+### What it adds over `config-audit`
+
+| Finding | Level | Meaning |
+| ------- | ----- | ------- |
+| `gh-auth` | critical | The GitHub CLI cannot act for this repository. Nothing else runs. |
+| `file-config` | critical | There is no `ClaudeProject.md`. Reported alone: with no file there is nothing to compare anything against, and the network is never touched. |
+| `config-retired` | warning | A `## Ready Gate` or `## Agent Gating` section survives. Nothing reads it, which is exactly why it has to go — left there, the next person to read the file believes it. |
+| `placeholders` | warning | Template placeholders nobody replaced, named by line. |
+| `quality-gate` | warning | No pre-commit command, or the placeholder is still there. |
+| `file-claude-md` / `claude-md-ref` | warning | No `CLAUDE.md`, or one that never mentions `ClaudeProject.md` — so a session that runs no workflow command never finds the configuration. |
+| `review-config` | warning | `ClaudeProject.md` names a review-state label file that is not there, so every review label falls back to its default name. |
+| `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, a lifecycle, priority or scope label, or a dependency written as prose, named by line. Never rewritten: the lines are somebody's own sentences. The plugin's own directory is not scanned, since its templates name what was retired on purpose. |
+| `container-finished` | warning | An open Epic or Feature whose sub-issues are all closed. `post-merge` closes the ones a merge finishes; this finds the ones that finished before it did, and `--fix` closes them as completed and sets their stage to `Done`. A container with no sub-issues is never flagged. |
+| `areas-table` | critical | `ClaudeProject.md` has no `## Areas` table, so no issue can be given its area label and release notes cannot be grouped. When the repository still has area epics (an `Epic` whose `Stage` is `Area`), the fix names them and the move: write the table with the `Epic` column, run `labels-ensure`, then `area-backfill`. When it has none, the fix names `/synergy:setup`. The plugin's `references/area-epics.md` covers both. Skipped offline and when the open issues cannot be read. Never repaired by `--fix`: which parts of the product are areas is the project's decision. |
+| `stage-drift` | warning | An open issue's `Stage` is blank or `Backlog` although an open pull request closes it or somebody is assigned. `--fix` sets it to `In Review` for a ready pull request and `In Progress` for a draft one or an assignee. Only a blank or `Backlog` stage is judged, so nothing a run or a person chose is overwritten. The usual cause is a run on a version before 12.0.0, which never wrote `Stage`; a `Stage` write that failed after its claim is the other. |
+
+### Every finding says whether `--fix` would touch it
+
+Each finding comes back with `auto` and `fixable`. `auto: true` means a run can repair it and `fixable` says how; `auto: false` means it must not, and `fixable` says why. The split is decided offline, in `wf_core.FIXABLE_CHECKS` and `wf_core.UNFIXABLE_REASONS`, which is what makes "would running `--fix` change anything?" answerable without a network call.
+
+`--fix` repairs six things, all idempotent:
+
+| It does | Because |
+| ------- | ------- |
+| deletes a retired section | Nothing reads it. |
+| deletes a deprecated label-map row | Nothing applies the label. The label itself stays in the repo — deleting one strips it from every issue that ever carried it. |
+| adds the `ClaudeProject.md` pointer to an existing `CLAUDE.md` | One sentence, and it is idempotent on the filename rather than the wording, so a project that worded its own pointer keeps it. |
+| takes retired labels off the open issues carrying them | They decide nothing, and the write path already strips them from any issue it touches; this reaches the ones no command has. |
+| closes a finished Epic or Feature, setting its stage to `Done` | Every sub-issue is closed, and nothing else closes a container. |
+| sets a drifted issue's stage to `In Review` or `In Progress` | An open pull request or an assignee already says the work started, and only a blank or `Backlog` stage is ever changed. |
+
+It will not create a `CLAUDE.md`, invent an `## Identity` section, create or delete an org-level issue field (`Stage` included), add or rename a field's options, pin a field to an issue type, choose between two disagreeing values, rewrite a sentence in somebody's instructions, or write a quality gate. Each is either a decision only the project can make or a change that happens in the org settings rather than through the API this runs on.
+
+### It reports the state it leaves, not the state it found
+
+`--fix` re-runs every check after repairing, and the `findings` it prints are the ones still true. Anything else would make the second run of an idempotent command look like it had done nothing — and it is the second run that tells you whether the first one worked.
+
+## Settling a merged PR — `post-merge`
+
+`post-merge --pr <n>` makes "the story is closed and at `Done`" a deterministic step instead of trusting GitHub. It reads the PR's own `closingIssuesReferences`, **force-closes** any of those issues still open (GitHub only auto-closes on a default-branch merge of a recognised keyword — a chained-story PR or an unparsed reference leaves it open), and sets every linked issue's stage to **Done**. Each settled issue is reported with `closed_now` and `stage_set`. It refuses (`status: not-merged`, exit 11) on a PR that has not actually merged, so it is safe to call on the queued `--auto` path. Add `--issue <N>` (repeatable) to settle a reference GitHub did not parse. `pr-review`'s auto-merge step calls this after a successful immediate merge. It costs the same five GitHub requests however many issues the PR closes: the PR, one aliased read of every issue, one mutation closing them and removing any retired label, one `Stage` write, and one read of their parents. A close GitHub refuses is still reported against its own issue.
+
+**An epic still marked `Area` is settled like any other issue.** Area epics were removed in 19.0.0, so `post-merge` no longer skips one and the result has no `skipped_areas`. The `preflight --fix` sweep does not close one directly, though it can when it closes the last open Feature under it.
+
+`--notes <file>` writes release notes in the same `Stage` write. The file is `{"<issue>": {"user": text, "internal": text}}`, as the `release-notes` skill produces it; each non-blank text goes to `User release notes` or `Internal release notes`, and a blank one leaves its field blank. Only an issue the PR closes is written, never a container the merge finished. An org without a field skips that text. When the API refuses a text, the `Stage` write is retried alone, so the issue still reaches Done and the entry's `release_notes.error` says what was not written. `Shipped in version` is never written: the project's release script stamps it, and `issue-apply` refuses a spec that sets it.
+
+Without `--notes`, the notes come from the newest PR comment carrying `<!-- synergy:release-notes -->` and a fenced JSON block of the same shape, which `execute`, `bulk-execute` and `pr-review` post on every approved PR. In an org that defines either notes field, a linked issue with no notes, or a text the field refused, is reported in its `release_notes.error`.
+
+**Release labels.** In a repository whose `## Release Targets` table has a row, each issue the PR closes also gets a `release: {target}` label for each of its release targets. The targets ride in the notes file or comment as `"targets": ["web", "backend"]` beside the texts, and an empty list means `release: internal`. A name is matched to the table without case, and one the table does not have is reported in `release_target_errors`. Only a missing label is added and none is ever removed. An issue with no targets supplied and no `release:` label is a gap, reported in its `release_labels.error` with `missing: true`; one that already carries a `release:` label is left as it is. A repository with no row sets no release label and settles as before. `synergy/references/release-labels.md` is the contract a release script reads the labels by.
+
+**Anything that did not land exits `partial` (24), never `ok`.** A stage left out of Done, missing notes, a missing or refused release label, a refused close or a container not closed each make the result partial, so a caller cannot report the PR as settled.
+
+## Deciding where an issue ships — `release-targets`
+
+`post-merge` is a script and cannot judge where work ships, so the targets are decided before the merge. `release-targets --pr <n>` gathers what that decision reads, for an open or a merged pull request, and writes nothing. It is what `execute` and `bulk-execute` run where they write the release notes.
+
+- **Paths per story.** A pull request that closes 1 issue gives that issue every path it changed. One that closes several gives each issue the paths of its own commits, matched by the `(#N)` that ends a commit's first line. A commit that names no story counts for no story and is never read. The commits are read from GitHub, where they stay readable after a squash merge deletes the branch.
+- **Jev.** The `target` check is asked with each issue's title, body and paths. A `high` yes goes in the issue's `targets`, and a `high` no is dropped. Every other target is under `decide`, for the caller. With no `TYPESAFE_API_KEY`, or with Jev off for the repository, every target is under `decide` and `jev` is `unavailable`.
+- **Result.** Each issue has `number`, `title`, `folders` (the distinct folders its paths are in, 20 at most), `targets`, `decide` and `labels`, the `release:` labels it already carries. With no Release Targets table, or a pull request that closes no issue, `issues` is empty and nothing is read.
+
+Add `--issue <N>` (repeatable) for a reference GitHub did not parse.
+
+## Settling merges that landed later — `settle-merged`
+
+`post-merge` runs only inside a synergy run, so a queued auto-merge that lands after the run, or a person merging an approved PR, used to leave its issues at `In Review` with no release notes. `settle-merged [--limit 30]` lists the most recent merged PRs, finds those with a closing issue not at `Done`, or at `Done` with neither release-notes field set in an org that defines them, and runs `post-merge` on each without `--notes`, so it reads the notes comment. Done alone is not the test because the board sync sets a closed issue to Done without notes. It prints one line when every PR settled, and exits `partial` naming each that did not, with `needs_notes` listing each PR and issue still without notes for the caller to write. In a repository with a Release Targets table, a closing issue with no `release:` label is unsettled too, so a merge from the queue gets its labels here from the comment; `needs_targets` lists each PR and issue with no targets decided, for the caller to decide with `release-targets`. `execute`, `bulk-execute` and `pr-review` run it at the start of every run.
+
+## Releasing what a merge freed — `unblock`
+
+Nothing did this. `post-merge` settles only the issues a pull request *closes*, so one that closes none returns `settled: []` — which reads as a finished run and is not: whatever was waiting stays `Blocked`, and a `Blocked` issue is invisible to the picker.
+
+`unblock` reads every open issue in the repository whose `Stage` is `Blocked` and sorts it five ways. Only the first two write anything.
+
+| Bucket | What it means | What it does |
+| --- | --- | --- |
+| `released` | every native blocked-by edge points at a closed issue | sets `Stage` to `Backlog`, comments |
+| `rescoped` | browser or human work at `Blocked` | sets `Stage` to `Non-code`, comments; the entry carries `stage` |
+| `held` | at least one blocker is still open | nothing |
+| `partials` | held, but a blocker merged something in the last 14 days | reports it, never acts |
+| `no_edges` | `Blocked` with no dependency edge at all, so a person set it | counts them, never changes them |
+
+**The scope check runs before the edge check, and that order is the safety property.** Both issues the first real run would have released were `[Manual]` device passes whose blockers happened to close; releasing them would have put a job needing a phone in someone's hand into the code agent's pool.
+
+**Nothing is released without at least one edge.** Two thirds of one real backlog's blocked issues have none, and they are waiting on a bank account, a device pass, a store upload. Reading "no open blockers" as "release" would put every one of them in front of an agent that cannot do any of them.
+
+**The comment is load-bearing.** A bare state change reads to the next agent as damage to repair, and one repaired exactly this: three issues released by hand were re-blocked two minutes later by a concurrent session that took the release for automation gone wrong.
+
+`--dry-run` reports without writing; `--issue N` (repeatable) narrows it. `post-merge` runs the sweep and returns it as `unblocked` whether or not it settled anything (`--no-unblock` opts out). `pick` and `plan-set` need no sweep first: a `Blocked` issue whose blockers have all closed is released and considered in the same round, in one batched stage write and one batched comment.
+
+## The three pickers
+
+| Subcommand     | Pool                                              | Claims          | Marker applied        | Used by      |
+| -------------- | ------------------------------------------------- | --------------- | --------------------- | ------------ |
+| `pick`         | Every open issue, judged by the rules below       | `issue-{n}` ref | `Stage` In Progress   | execute |
+| `update-next`  | My open PRs with actionable review feedback       | `pr-{n}` ref    | `updating` (keeps the feedback label) | pr-review |
+| `review-next`  | Open PRs labelled `needs-re-review`, `changes-requested` or `needs-review`, whose head moved since the last review footer, or never footered by a review | `pr-{n}` ref | `reviewing` (removes prior) | pr-review |
+
+All share the same atomic claim/checkout core and JSON contract. `--checkout` creates/checks out the branch (`pick`) or runs `gh pr checkout` (PR pickers).
+
+### Choosing from the issue tree
+
+`pick` and `candidates` read every open issue in the repository in one paged query: type, fields, assignees, blocked-by edges, sub-issues, parent and the pull requests that close it. No board is read. Each issue is judged by these rules, and the first that applies decides (`wf_core.evaluate_pool`):
+
+1. `Stage` is anything but blank or `Backlog`: not pickable.
+2. Assigned, held by a claim ref, or closed by an open pull request: not pickable.
+3. `Ownership` is not `Code agent`: not pickable. A `User Story` or `Bug` with no `Ownership` counts as `Code agent`; any other type with none does not.
+4. An open blocked-by edge: not pickable, and `pick` sets `Stage` to `Blocked`. A blocker holds back only the issues it blocks, and it inherits the priority of the most urgent story waiting on it, directly or down a chain, so the pool puts first whatever finishes urgent work soonest. The entry carries `unblocks`, and `inherited_priority` when it rose.
+5. Under an Epic or Feature whose `Stage` is `Parked`: not pickable. This is the one rule that passes down the tree.
+6. Any other story, bug or chore: pickable as itself.
+7. A `Feature` with pickable stories: pickable. `pick` claims its highest-priority story and returns the rest in `offered`; `candidates` lists them in `stories`.
+8. An `Epic` with a pickable `Feature`: pickable, taking its highest-priority `Feature`.
+9. An Epic or Feature with no sub-issues, or a story whose body is nearly empty or has no acceptance criteria: needs refinement. `pick` stops with `needs-refinement` (exit 12) and claims nothing, so a person can clarify it; with `--unattended` it sets `Stage` to `Needs refinement`, comments why, and walks on. `candidates` lists these under `needs_refinement`.
+
+The pool is ordered by `Priority`, then `Effort`, then issue number. `--mode` and `--max-effort` apply to stories, bugs and chores; in `maintenance` mode a story under a `Feature` classified as maintenance work counts too. Nothing here sets an Epic or Feature to `In Progress`, `In Review` or `Parked`.
+
+### Dependencies decide order, not membership
+
+`pick --issue N` on an issue with open blockers does not refuse it when this run can build them. It plans the chain (`wf_core.plan_set`), sets N to `Blocked`, claims the first prerequisite that is ready, and returns it with `prerequisite_for` (`number`, `title`, `build_order`). Only a blocker nobody here may build ends the pick, with `all-blocked` and a reason naming it. A pick with `--sibling` is never redirected, because a bulk claim must take exactly the story it names.
+
+`plan-set` does the same for a bulk run. Its universe is every pool story plus every waiting story (blank, `Backlog` or `Blocked`, code work, unassigned, unclaimed, its edges fully read); a `Blocked` story whose blockers have all closed counts as ready and is listed in `released`. A blocker in another repository is kept as `owner/name#N`: open, it excludes the story; closed, it is satisfied. `--mode` and `--max-effort` never hold back a prerequisite a code agent may build. Every story comes with its whole prerequisite chain or not at all, and only while the set keeps three rules (`wf_core.plan_set`): its `Effort` adds up to no more than `BULK_BUDGET` (7, with Low 1, Medium 2, High 6 and an unset value costing Medium); no two stories are more than one `Priority` level apart, each read as the priority it inherits; and `split_groups` can cut it on the feature/maintenance boundary into at most `--max-groups` groups (1 or 2), a group holding a prerequisite first. Named (`--issue`, repeatable): each named story plus the prerequisites it needs, and one that breaks a rule is in `excluded` with the rule. `--parent N`: the stories under N, and a prerequisite outside N still joins; `candidates --parent N` returns the same set without claiming. Neither: the pool in rank order, linked or not, a story joining a started group before one that would start a second. `groups` lists each group's `mode`, `lead`, `stories` and `waves`, so no story shares a wave with anything it waits on. With `--claim` it takes every claim ref at once, drops a story claimed away, blocked or resolved together with everything waiting on it, then assigns in one mutation and writes `Stage` in another, and records the set in `.claude/bulk-set.json` with a `branch` per group. `drop-story` returns a story and its unbuilt dependents to the pool, `drop-group` a whole unbuilt group, and `bulk-mark --group G` records the group's branch and each story built. A `bulk-set.json` written before groups existed is read as one group.
+
+## Scope / deferrals
+
+- **`pick`** — `--mode story` / `feature` / `maintenance`, reading the open, unassigned issues whose `Stage` is blank or `Backlog` as the pool, from the repository's issues rather than a board. One GraphQL query (`fetch_issue_facets`) reads the native type, the `Priority` field and the `Classification` field for the open backlog, and the pool is ordered by `Priority` — `Urgent` → `High` → `Medium` → `Low`, then lowest issue number. An issue with no `Priority` value sorts last and is named on stderr; there is no label fallback, on purpose. No mode offers an `Epic`: it is the outcome its features and stories deliver, not a piece of work. **Type has none**: `feature` and `maintenance` filter on the native `issueType` alone, so an issue the org has not typed — or a `Feature` it left unclassified — is out of the pool and named on stderr rather than guessed at from a `type-*` label or a `[PREFIX]` title. An org whose backlog carries no native type at all cannot answer those modes and `pick` exits `no-capabilities` (21) saying so; `--mode story` is unaffected. Membership of the pool is the `Stage` field's answer: an issue is in it because its `Stage` is blank or `Backlog` and nobody is assigned, whether or not it has a card on any board. Every other stage takes an issue out of the pool. No label is read at any point in the selection.
+- **`review-next`** — three tiers, lowest number first within each: `needs-re-review`; `changes-requested`; then `needs-review`, a head that moved since the SHA the last `Reviewed at` footer names, or a PR no review has footered and nobody approved (one GraphQL read of every open PR's comments and reviews, `wf_core.select_review_next`). Drafts and PRs carrying `reviewing` or `updating` are skipped. `no-candidates` is conclusive and prints one line; more than 100 open PRs is an `error`, because the read covers one page. The result carries `prior_state` (the label it was selected by; a moved `changes-requested` PR reports none, because it is picked for review, not rework) and `head_changed`. Pass `--no-claim` for a read-only review (no push access): it selects the next PR without writing a claim ref or applying the `reviewing` marker, and the JSON reports `claimed: false`.
+
+## Locks, stage and handoff
+
+These five commands replaced the markdown procedures the skills used to follow step by step. Each is one call with a defined exit code, so a call site states the command and what to do about each outcome rather than describing the mechanism.
+
+### `claim` / `claim-release` / `claim-reap`
+
+`claim --issue N` or `claim --pr N` takes `refs/claims/{issue,pr}-N` — a server-side compare-and-swap, which is what makes it safe between two agents running under the same GitHub identity, where a shared label cannot exclude a rival.
+
+The ref is the lock but it is ephemeral, so on success the command also advertises ownership where a later picker will look: an issue is assigned to `@me` and its `Stage` set to `In Progress`; a PR swaps `needs-review` for `reviewing`. Pass `--no-marker` to take the lock silently. The marker is best-effort — the lock is already held, and failing to advertise it is worth a warning, not giving the item back.
+
+| Exit | Meaning |
+| ---- | ------- |
+| 0 | You hold it. |
+| 27 | Another agent holds it. Make **no** changes: move to the next item, or report and stop on a named one. |
+| 20 | A broken environment, not a rival — usually no write access to `refs/claims/*`. Never fall back to a bare label as a "soft" claim; that reintroduces the race the ref removes. |
+
+`claim-release` takes repeatable `--issue` / `--pr` and is idempotent — releasing a ref that is already gone is not a failure, so it always exits 0. A ref it could not delete, and which the remote still holds or could not be asked about, is listed under `failed` rather than `released`, and named in `reason`: it keeps the item out of every pool until it is released again or `claim-reap` frees it. `pick` reports the same thing as `claim_released` on each side effect that released a claim, and `handoff` on each issue it hands off.
+
+`claim-reap` frees the refs a crash left behind. It always exits 0 and returns three lists: `reaped` (freed — the issue is closed, no longer in progress, or already has a PR; the PR is closed, merged, or open with no review under way), `suspect` (deliberately left, because the evidence does not say the work stopped) and `skipped` (younger than `--threshold`, default 4 hours). `--dry-run` reports the verdicts without freeing anything. The judgement is `wf_core.reap_verdict`, which is offline-tested; everything in `wf.py` around it is I/O.
+
+### `stage-set`
+
+`stage-set N --stage stage-in-review` writes an issue's `Stage` field, which is the only place its state is recorded. `--stage` takes a purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, `stage-blocked`, `stage-non-code`, `stage-refinement`, `stage-parked`, `stage-done`) or the stage name itself. No board is read or written.
+
+A write that landed prints one line and exits 0, so a caller reads nothing on success. A write that did not happen exits 20 with `set: false`, `stage` (the name) and `reason`, because the stage is the issue's state: an issue whose `In Progress` write failed still reads as available.
+
+### `sibling-pr`
+
+`sibling-pr N [M ...]` returns the open PRs that close issue N, oldest first (with several numbers, `by_issue` holds one answer per issue from the same single read), using GitHub's own parse of closing references rather than a free-text body search. `--exclude-branch` drops your own PR, so anything returned is someone else's. Exit 0 with `found: 0` is the expected answer before starting work; exit 20 means the lookup failed, which is not the same as "no duplicate" and must be reported as such.
+
+### `labels-ensure`
+
+`labels-ensure` creates each of the nine review-state labels the repo lacks, named through `docs/review.config.md` with the `review-` defaults, with the colours and descriptions in `wf_core.REVIEW_LABEL_META`. These are the only labels the workflow puts on a pull request. It never passes `--force`, so an existing label keeps its colour, and a create that loses a race ("already exists") counts as created. Read `created`, `failed` and `labels`; it exits non-zero when the labels cannot be read or a write fails.
+
+It then makes the repository carry the area and release labels that `ClaudeProject.md` defines. A repository with neither table gets the review labels only, and the result has the three keys above and no others.
+
+- **An `## Areas` row** becomes `area: {name}`, with the row's description and colour. A row with no colour is created with the colour GitHub picks.
+- **A `## Release Targets` row** becomes `release: {name}`, for an issue waiting to ship in that target, and `released: {name}`, for one that has shipped in it. The descriptions say so and then quote the row. A `release:` label takes the row's colour and every `released:` label is the same green.
+- **`release: internal` and `released: internal`** are added when the release-targets table has a row, for work that ships to nobody outside the team. A row named `internal` replaces them.
+
+The same rules apply as for the review labels: no `--force`, and "already exists" counts as created. Names are matched without case, as GitHub matches them. The labels are read once, in pages of 100, so a second run finds everything the first one made and writes nothing.
+
+**A rename.** When an area row carries `Was` and the repository has `area: {was}` but not `area: {name}`, the label is renamed in place with `gh label edit --name`. GitHub keeps the label and changes its name, so every issue that carried the old name carries the new one. Nothing is deleted and created again. `Was` may also hold the old label name in full, for a label that had another prefix.
+
+Everything else is reported and never written, because a person has to decide it:
+
+| Key | What it holds |
+|-----|---------------|
+| `table_labels` | Every label name the tables define, in table order. |
+| `renamed` | `{from, to}` for each label renamed in this run. |
+| `conflicts` | `{was, name}` when both the old name and the new one exist. Nothing is written for that row. Move the issues to one label and delete the other. |
+| `unknown` | Each `area:`, `release:` or `released:` label the repository has and no row names. It is never deleted. The old name of a rename or a conflict is not listed here. |
+| `differs` | `{name, field, wanted, live}` when a colour or description is not the row's. It is never changed. Colours are compared without case and without `#`, and a row that states no colour, or an area with no description, accepts any. |
+
+`created` and `failed` cover these labels too: `failed` names a create or a rename that GitHub refused, and the exit is then non-zero. `labels` stays the nine review label names.
+
+### `handoff`
+
+`handoff --pr P --issue N [--issue M …]` ends a build: it takes the PR's review claim (`refs/claims/pr-P`) first, so the work is never unlocked between the build and its review, and reports that as `pr_claimed` (`won`, `lost` or `error`). A later `claim --pr P --keep-held` from the same checkout keeps the claim it holds; without `--keep-held` it reports `lost`, so a second session sharing the checkout cannot take the PR. Then it labels the PR with the review-state entry label, then sets each issue's `Stage` to `In Review` and releases every issue claim ref in one push, as `claim-release` does, with one `ls-remote` to tell which refs are still held when that push fails. Finally it deletes `.claude/plan.md` and `label-cache.json`; the preflight marker stays, so an issue filed during review does not re-run preflight. `--gate-failed` enters review as changes-requested rather than needs-review.
+
+It **always exits 0**: once the pull request exists, none of this is a reason to stop. When every step landed it prints one line. Otherwise it prints the full payload: `pr_claimed`, `pr_labelled` and the per-issue `stage_set`, `stage_message` and `claim_released`. A failure on one issue does not affect the others.
+
+### `start`
+
+`start --issue N` is everything between a claim and the first edit when `pick --checkout` did not do it: it re-takes the claim (one this checkout holds is kept), sets `In Progress`, resets a tree provisioned dirty (restore and `git clean -fd`, never `-x`, never `stash`) and creates or checks out the story branch. `start --group G --branch B` does the same for a bulk group: every story's claim in `.claude/bulk-set.json`, the reset, a fresh branch from `origin/{default-branch}`, the push and `bulk-mark`. Success is one line (exit 0); `lost` is exit 27, and a step that did not land is `partial`, exit 24, with `reason` naming it; in a group, `lost` lists stories another run holds and `claim_errors` those whose claim push failed, which a re-run of the same `start` can still take: it checks out the branch the first run made.
+
+### `exit-cleanup`
+
+`exit-cleanup [--issue N ...] [--bulk] [--pr P]` is the last step of every run. It releases the issue claims (`--bulk` adds every story in the bulk set) in one push. When `.claude/claim-pr-P.sha` shows this checkout won the review claim, it reads the PR once and, per `wf_core.exit_pr_action`, records an unfinished review as changes-requested before releasing that claim too; a claim another agent holds is never touched. Then it runs `scratch-clean`, runs the `worktree-reap` sweep (a sweep that fails never changes the result) and reads the tree. Everything done and the tree clean is one line (exit 0), which says how many finished worktrees the sweep removed. `dirty` (exit 24) lists `remaining` paths for the caller to commit or discard; `partial` (exit 24) names a release or delete that failed.
+
+### `tree-clean`
+
+`tree-clean --discard PATH [...]` or `--all` discards what the caller chose (tracked paths restored, untracked ones cleaned) and re-checks the tree: one line when clean, `dirty` with `remaining` (and `refused`, the paths git would not restore or clean) when not. It reads `git status --porcelain -z`, so a non-ASCII name is matched as it is on disk, and discarding a rename's new path also restores its old one.
+
+### `worktree-reap`
+
+`worktree-reap [--dry-run] [--min-age-hours N] [--pattern GLOB ...]` removes the finished worktrees under `.claude/worktrees/` of this clone, from outside them. The harness makes one per subagent and removes it only on its own schedule, and a project that installs dependencies per worktree carries a full `node_modules` in each, so they pile up between sweeps. A run cannot delete the worktree it is standing in, which is why the next run does it.
+
+A worktree is removed when its folder name matches a pattern (default `agent-*`, the harness's own; a person's named session worktrees are left alone unless `--pattern` names them), it is not the worktree the command runs in, it is not locked, nothing in it has changed for `--min-age-hours` (default 6, read from its git HEAD and index and any run scratch files), and nothing would be lost: no uncommitted or untracked-and-unignored file, and, for a detached HEAD, a branch or tag that holds the commit. The branch of a removed worktree stays. The rules are `wf_core.reap_verdict`.
+
+Symlinks and junctions near the top of a worktree (the harness links `node_modules` into each) are unlinked before the folder is deleted, because a recursive delete that follows one deletes the target. When `git worktree remove` cannot finish, for a path too long for Windows or a read-only pack file, the folder is deleted directly, only if it sits directly under `.claude/worktrees/`, and the record is pruned. Success is one line with `removed`, naming what was kept and why; `--dry-run` prints the full lists and removes nothing; a worktree that could not be removed is `partial` (exit 24) with `failed`.
+
+### `pr-create`
+
+`pr-create --title T --body-file F --issue N [...] [--base B]` pushes `HEAD`, runs the `sibling-pr` check for every issue immediately before creating, puts a duplicate warning line at the top of the body for each open PR found, adds any missing `Closes #N` line, opens the PR, reads the body back and applies `wf_core.body_problems`, rewriting it once when it is corrupt. A re-run on a branch whose PR exists checks that PR instead. Success is one line with `pr`, `url` and any `duplicates`; a body still failing is `partial` (exit 24) with `problems`; a failed push or create is `error` (exit 20).
+
+### `block`
+
+`block --issue N --body-file F [--blocked-by M ...] [--non-code human|browser]` comments the blocker, writes the complete set of blocked-by edges through `issue-apply` (or, for non-code work, the `Ownership` value and the `[Manual] ` / `[Browser] ` prefix), then checks for an open PR. With one it stops as `has-pr` (exit 11) and leaves the assignee and stage, so no second PR is opened for the same work. Otherwise it releases the claim, unassigns `@me` and sets `Blocked` or `Non-code`. Success is one line; a step that did not land is `partial` (exit 24).
+
+### `board-sync`
+
+`board-sync` is what `.github/workflows/board-sync.yml` runs every hour. It is the backup for everything a run or a person did not keep in step, across every unarchived repository in the org that has issues turned on:
+
+- **Cards.** Each open issue gets a card on every open board linked to its repository (`Repository.projectsV2`) that does not already hold one. GitHub's own "Auto-add to project" workflow stays the primary way issues reach a board; this adds what it missed. A repository with no linked board gets no cards.
+- **Stage.** Each open issue, and each issue closed in the last `--closed-days` days (default 7), has its `Stage` set by `wf_core.reconcile_stage`: `Done` when closed, as completed or as not planned; `Non-code` when its `Ownership` is `Human` or `Browser agent` and it is blank, `Backlog` or `Blocked` (such work a person has moved to `In Progress` or `In Review` is left there); for a blank or `Backlog` issue somebody has started, `In Review` for a ready pull request and `In Progress` for a draft one or an assignee, which is `wf_core.stage_drift_target`, the same rule `preflight --fix` repairs `stage-drift` with; `In Review` for `In Progress` work once a ready pull request closes it; `Backlog` (or `Blocked`, if an edge is still open) when it sits in `In Progress` or `In Review` with no assignee, no `refs/claims/issue-N` and no open pull request; `Blocked` when it is blank or `Backlog` with an open blocked-by edge and nobody has started it; and, when it is `Blocked` and every blocker has closed, `Backlog`, or straight to where the started rule puts it; and `Backlog` for any open issue whose `Stage` is still blank after those rules, so no card sits under "No Stage". The plugin itself still treats a blank `Stage` as available; only the sync writes it.
+
+It never changes an open `Parked`, `Needs refinement` or `Non-code`, or a value it does not know, and it never clears a `Blocked` that has no blocked-by edge, because a person set that. A claim ref it cannot read counts as held, so an unreadable lock never releases somebody's work. For the same reason a blocked-by edge it cannot read counts as open, and an issue with more edges than one page reads is left as it is unless an open one was seen. Every result is a fixed point, so a second run over unchanged issues writes nothing.
+
+The output is **totals only** (`repos`, `repos_with_boards`, `repos_failed`, `claims_unread`, `issues_read`, `cards_added`, `cards_failed`, `stages_set`, `stages_failed`, `stages_by_value`). A workflow's logs are public on a public repository, so no repository name, issue number, title or error text is printed. `--dry-run` counts what would change and writes nothing. It exits 0 when everything landed, 24 (`partial`) when any repository could not be read or any write failed, 21 when the org has no `Stage` field, and 20 when the org cannot be read at all.
+
+**Setting up the workflow.** It authenticates as a GitHub App, so its writes do not depend on anybody's personal token:
+
+1. Create a GitHub App owned by the organisation, with repository permissions *Issues: read and write*, *Contents: read* and *Pull requests: read*, and organisation permissions *Projects: read and write* and *Issue fields: read*. *Metadata: read* is added automatically. This set was confirmed by a passing run on this organisation: field values are written through the Issues permission, and *Contents: read* is what lets it read claim refs on a private repository.
+2. Install it on every repository the sync should cover.
+3. Add the App's id as the `BOARD_SYNC_APP_ID` Actions secret and its private key as `BOARD_SYNC_PRIVATE_KEY`, on this repository.
+4. Run the workflow once by hand (*Actions* → *Board sync* → *Run workflow*) and check the totals.
+
+The workflow is triggered only by `schedule` and `workflow_dispatch`. It never runs on `pull_request` or `pull_request_target`, so a fork cannot reach the secrets.
+
+## Claim outcomes vs. environment errors
+
+A claim push that fails is only a **lost claim** (a rival got there first) when the `refs/claims/<target>` ref actually exists on the remote afterward. `acquire_claim` probes with `git ls-remote`; if the ref is absent the push failed for another reason — no write access, auth, or network — and the picker emits `status: error` rather than walking the pool and reporting a phantom `all-blocked`. So "nothing to pick" always means the backlog is genuinely empty, never that claims could not be written.
+
+There is no inline fallback. The markdown procedures these commands replaced have been deleted, so a call site that cannot run `wf` fails with a message naming the missing prerequisite rather than quietly running a second implementation that nothing tests.
+
+`quota [--five-hour-used N --five-hour-resets TIME] [--weekly-used N --weekly-resets TIME] [--before-five-hour N --before-weekly N] [--no-record]` tells a long run whether it may start another round without going past the Claude plan limits. The caller reads the limits and passes them in; the command reads no usage. It prints `decision` (`go`, `wait` or `stop`), a `reason`, `resume_at` and `wait_seconds` when a limit will clear, and 3 `checks`. `five_hour` and `weekly` pass when the percent used plus the cost of one round stays at or below the ceiling (85 and 90 by default). `daily` passes when what the day has used of the weekly limit, plus the cost of one round, stays at or below the budget for the day. The week is 7 days of 24 hours counted from the weekly reset, and the budget for a day is what was left of the weekly limit when the day started, divided by the days left with that day counted, times `daily_share` percent (100 by default): 30% used after 3 days leaves 70% for 4 days, so 17.5% a day. The first check of a day stores the weekly percent in `~/.claude/synergy/quota-state.json` (or the path in `SYNERGY_QUOTA_STATE`) as the start of that day, and `--no-record` stores nothing. The cost of one round is the rise since the `--before-*` reading, or the reserve (15 and 3) when there is none or the window reset. With `on_limit` set to `wait` the decision is `wait` when every failed check clears within `max_wait_hours` (5), and `stop` otherwise. With no reading the result has `unknown: true` and follows `on_unknown` (`continue` by default). Each setting is a flag of the same name, and a person's own defaults go in `~/.claude/synergy/quota.json` (or the path in `SYNERGY_QUOTA_CONFIG`); a flag overrides the file, and a wrong name or value is a usage error (exit 2). `quota --save [setting flags]` writes those flags into the file and decides nothing; with no setting flag it writes a file with no settings, which records that the person chose the defaults. `configured` is false until the file exists, which is how `orchestrate`, the caller, knows to ask once.
+
+`jev --check NAME [--input FILE] [--issue N ...] [--open-issues [LIMIT]]` asks Jev, the TypeSafe decision model, one of the checks in `jev-checks.json`: `priority`, `effort`, `readiness`, `audience` and `area` for each item, `target` for each item and each release target, `duplicate` for each item against a `subject`, `depends` for each ordered pair of items, and `draft` for each writing rule against a `draft`. The answers of `area` are the rows of the `## Areas` table in `ClaudeProject.md` plus `unsure`, and `target` asks about each row of `## Release Targets`. `--issue` and `--open-issues` read the items from GitHub, so issue bodies do not pass through the caller, and a yes or no check lists only the rows worth reading and counts the rest in `sure_no`, except `target`, which lists every row. The file holds every question and both thresholds, so it is the one place to change either. The command prints one row per question with the answer and a `level`: `high` means use the answer, `medium` means look again, `low` means decide without it. Jev is optional: with no `TYPESAFE_API_KEY`, when the `## Jev` row of `ClaudeProject.md` says `off`, when the table that `area` or `target` needs is empty, or when the service does not answer, the result is `unavailable` (exit 30) and the caller makes the judgment itself. The key is read from the environment and never printed. `skills/jev/SKILL.md` says when a workflow may use it.

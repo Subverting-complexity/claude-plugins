@@ -1,0 +1,558 @@
+"""
+Preflight file-level checks, what `--fix` may repair, and editing
+ClaudeProject.md in place.
+
+Moved verbatim out of wf_core.py; `scripts/README.md` has the module map.
+"""
+
+import re
+
+from wf_core_findings import WARNING, _normalise_heading, finding
+
+
+# ── preflight: the file-level checks, and what `--fix` may repair ────────────
+# `config-audit` compares `ClaudeProject.md` against the live repo and org. It never looked at the file's own contents beyond its headings, so the
+# checks below lived in shell blocks inside `skills/preflight/SKILL.md` -- a
+# second implementation, in a second language, of the same idea. They are here
+# now because a check that decides whether a workflow runs has to be as
+# testable as the picker it gates.
+
+# The template's own placeholder vocabulary. A file that still carries one was
+# copied and not filled in, and every value it holds is a guess.
+_PLACEHOLDER_RE = re.compile(
+    r'\{(org|repo|name|id|package_manager|quality_gate_command|branch_pattern'
+    r'|default_branch|n|criteria|path/to/doc)\}')
+
+# Sections a previous version of the workflow read and this one does not. A
+# file that still carries one is not misconfigured, it is out of date -- but
+# leaving it in place means the next person to read the file believes it.
+RETIRED_CONFIG_SECTIONS = {
+    'Ready Gate': ('the pool is every issue whose `Stage` is blank or '
+                   '`Backlog`, which no setting turns off'),
+    'Agent Gating': ('approval is an issue\'s `Stage` being blank or `Backlog`, '
+                     'so there is no gate to enable'),
+}
+
+
+def placeholder_findings(text, path='ClaudeProject.md'):
+    """Template placeholders nobody replaced.
+
+    A warning rather than a failure: a placeholder in a section no command
+    reaches costs nothing, and the ones that do matter fail their own check.
+    """
+    hits = []
+    for number, line in enumerate((text or '').splitlines(), 1):
+        if _PLACEHOLDER_RE.search(line):
+            hits.append(number)
+    if not hits:
+        return []
+    shown = ', '.join(str(n) for n in hits[:5])
+    if len(hits) > 5:
+        shown += ' and %d more' % (len(hits) - 5)
+    return [finding(
+        WARNING, 'placeholders',
+        '%d line%s in %s still carr%s a template placeholder (line%s %s), so '
+        "the value there is the template's, not this project's"
+        % (len(hits), '' if len(hits) == 1 else 's', path,
+           'ies' if len(hits) == 1 else 'y', '' if len(hits) == 1 else 's', shown),
+        'fill them in, or run `/synergy:setup` to write them from the '
+        'live repo', path)]
+
+
+def retired_section_findings(headings, path='ClaudeProject.md'):
+    """Sections this version of the workflow reads and ignores."""
+    present = {_normalise_heading(h) for h in headings or ()}
+    out = []
+    for section, why in sorted(RETIRED_CONFIG_SECTIONS.items()):
+        if _normalise_heading(section) not in present:
+            continue
+        out.append(finding(
+            WARNING, 'config-retired',
+            '%s still has a `## %s` section, which nothing reads -- %s'
+            % (path, section, why),
+            'delete the section', path))
+    return out
+
+
+def quality_gate_findings(command, path='ClaudeProject.md'):
+    """The pre-commit command, or the absence of one.
+
+    Unset means every run decides for itself what "the tests pass" means, which
+    is the difference between a gate and a habit. It still warns: a project
+    with no gate is a project, not a broken configuration.
+    """
+    value = (command or '').strip()
+    if value and value != '{quality_gate_command}':
+        return []
+    return [finding(
+        WARNING, 'quality-gate',
+        '%s records no quality gate%s, so nothing checks a change before it is '
+        'committed' % (path,
+                       ' (the template placeholder is still there)'
+                       if value else ''),
+        "put the project's pre-commit command in the `## Quality Gate` fenced "
+        'block', path)]
+
+
+def claude_md_findings(exists, references_config, path='CLAUDE.md',
+                       config='ClaudeProject.md'):
+    """Whether a session that never runs a workflow command finds the config.
+
+    `CLAUDE.md` is what a plain session reads. If it does not point at
+    `ClaudeProject.md`, everything in there -- the branch convention, the
+    quality gate, the fields -- is invisible outside the slash commands.
+    """
+    if not exists:
+        return [finding(
+            WARNING, 'file-claude-md',
+            'this project has no %s, so a session that runs no workflow command '
+            'never sees %s' % (path, config),
+            'add a %s that points at %s' % (path, config), path)]
+    if references_config:
+        return []
+    return [finding(
+        WARNING, 'claude-md-ref',
+        '%s does not mention %s, so a session reading it alone does not know '
+        'the project has one' % (path, config),
+        'add a line to %s pointing at %s' % (path, config), path)]
+
+
+def review_config_findings(referenced, exists, path='ClaudeProject.md'):
+    """A review-state label file the config names and the repo does not have.
+
+    Named but missing is the failure: every review-state label falls back to
+    its `review-` default, so the labels a run applies are not the ones the
+    project chose, and nothing says so.
+    """
+    if not referenced or exists:
+        return []
+    return [finding(
+        WARNING, 'review-config',
+        '%s points at `%s`, which is not there, so every review-state label '
+        'falls back to its default name' % (path, referenced),
+        'create `%s`, or drop the reference from %s' % (referenced, path),
+        path)]
+
+
+# What `--fix` will do, per check. A check absent from this map is one a run
+# must not repair on its own -- either because the repair is a guess (which of
+# two disagreeing values is right) or because it is not a repair at all (a
+# missing `## Identity` section is a project nobody has configured).
+#
+# The reasons live here rather than at each call site so that `preflight`
+# without `--fix` can tell a person, per finding, whether running it again with
+# `--fix` would change anything.
+FIXABLE_CHECKS = {
+    'label-deprecated': 'delete the row from the label map',
+    'label-retired': 'take the retired labels off the open issues carrying them',
+    'config-retired': 'delete the section',
+    'claude-md-ref': 'add the pointer to CLAUDE.md',
+    'container-finished': 'close each finished container as completed and '
+                          'set its `Stage` to `Done`',
+    'stage-drift': 'set each issue\'s `Stage` to the one its open pull request '
+                   'or assignee says it is in',
+    'review-label': 'create each missing review label with its colour and '
+                    'description, never overwriting one that exists',
+}
+
+UNFIXABLE_REASONS = {
+    'gh-auth': 'only the person at the keyboard can authenticate',
+    'config-section': 'the section holds decisions no run can make for a project',
+    'file-config': 'there is nothing to repair until the file exists',
+    'file-claude-md': "writing a project's CLAUDE.md is the project's call",
+    'stage-absent': 'an org-level issue field is created in the org settings, '
+                    'not through the API this runs on',
+    'stage-options': "adding an option to an org field is done in the org "
+                     'settings',
+    'field-absent': 'an org-level issue field is created in the org settings, '
+                    'not through the API this runs on',
+    'field-absent-optional': 'an org-level issue field is created in the org '
+                             'settings, not through the API this runs on',
+    'field-unpinned': 'pinning a field to an issue type is done in the org '
+                      'settings',
+    'field-unmapped': "which purpose key a project's field serves is the "
+                      "project's decision",
+    'field-options': "renaming an org field's options moves every issue "
+                     'carrying one, so it is the org\'s decision',
+    'instructions-retired': 'the lines are somebody\'s own sentences, and an '
+                            'automatic edit would either mangle the paragraph '
+                            'or delete a line explaining the history on purpose',
+    'label-reference': 'the fix is an edit to a plugin instruction file, not to '
+                       'this project',
+    'config-label': 'creating a label the config names would guess at its '
+                    'colour and description',
+    'label-drift': "which of two equivalent labels to keep is the project's "
+                   'decision',
+    'placeholders': "the replacement values are the project's to supply",
+    'quality-gate': 'nobody but the project knows what its gate should run',
+    'review-config': "the file's contents are the project's to choose",
+    'pin-unknown': 'nothing is known to be wrong yet',
+    'areas-table': 'which parts of the product are areas, and what each '
+                   "covers, is the project's decision",
+}
+
+
+def fix_plan(findings):
+    """Split findings into what `--fix` repairs and what it must not touch.
+
+    Pure, so that "would this run change anything?" is answerable without a
+    network call -- which is what makes `preflight` safe to run before every
+    command and `preflight --fix` safe to run twice.
+    """
+    fixable, blocked = [], []
+    for entry in findings or ():
+        if entry.get('check') in FIXABLE_CHECKS:
+            fixable.append(entry)
+        else:
+            blocked.append(entry)
+    return fixable, blocked
+
+
+def unfixable_reason(check):
+    """Why `--fix` leaves this check alone. Falls back to a truthful blank."""
+    return UNFIXABLE_REASONS.get(check, 'no automatic repair is defined for it')
+
+
+# ── editing ClaudeProject.md in place ────────────────────────────────────────
+# Three repairs rewrite the file. Each is a whole-section operation on the
+# markdown rather than a line match, because a project is free to word the
+# prose inside a section however it likes -- the heading is the only part the
+# parser depends on, so the heading is the only part these may key on.
+
+_HEADING_RE = re.compile(r'^(#{1,6})\s+(.+?)\s*$')
+
+
+def _section_bounds(lines, heading, level=2):
+    """`(start, end)` line indices of a section, or `None`. End is exclusive."""
+    want = _normalise_heading(heading)
+    start = None
+    for index, line in enumerate(lines):
+        match = _HEADING_RE.match(line)
+        if not match:
+            continue
+        if start is None:
+            if (len(match.group(1)) == level
+                    and _normalise_heading(match.group(2)) == want):
+                start = index
+            continue
+        if len(match.group(1)) <= level:
+            return (start, index)
+    if start is None:
+        return None
+    return (start, len(lines))
+
+
+def strip_sections(text, headings, level=2):
+    """Remove whole level-2 sections. Returns `(text, removed_names)`."""
+    lines = (text or '').split('\n')
+    removed = []
+    for heading in headings or ():
+        bounds = _section_bounds(lines, heading, level)
+        if not bounds:
+            continue
+        start, end = bounds
+        # Take the blank lines the section left behind with it, so removing a
+        # section twice in a row cannot leave a growing gap.
+        while end < len(lines) and not lines[end].strip():
+            end += 1
+        del lines[start:end]
+        removed.append(heading)
+    return '\n'.join(lines), removed
+
+
+def strip_label_map_rows(text, labels):
+    """Drop `## Label Map` table rows whose purpose key is in `labels`.
+
+    Only rows inside that section, and only rows whose *first* cell matches --
+    a project is free to mention a retired label in the prose, and prose is not
+    a claim that the workflow applies it.
+    """
+    wanted = {l.strip().strip('`') for l in labels or () if l}
+    if not wanted:
+        return text, []
+    lines = (text or '').split('\n')
+    bounds = _section_bounds(lines, 'Label Map')
+    if not bounds:
+        return text, []
+    start, end = bounds
+    kept, removed = [], []
+    for line in lines[start:end]:
+        stripped = line.strip()
+        if stripped.startswith('|') and stripped.endswith('|'):
+            cells = [c.strip().strip('`') for c in stripped.strip('|').split('|')]
+            if cells and cells[0] in wanted:
+                removed.append(cells[0])
+                continue
+        kept.append(line)
+    if not removed:
+        return text, []
+    return '\n'.join(lines[:start] + kept + lines[end:]), removed
+
+
+CLAUDE_MD_POINTER = (
+    'Project configuration -- org and repo, branch convention, quality gate, '
+    'label map and issue fields -- lives in [`ClaudeProject.md`]'
+    '(ClaudeProject.md). Read it before running a workflow command.')
+
+
+def preflight_marker_fresh(marker_mtime, source_mtime, now, window_seconds=14400):
+    """Whether a cached `preflight-passed.txt` still stands: it must be newer
+    than `ClaudeProject.md` and inside the four-hour window
+    `find -mmin -240 -newer` used to check. `marker_mtime` of `None` means the
+    marker does not exist; `source_mtime` of `None` means `ClaudeProject.md`
+    does not (nothing to be stale against)."""
+    if marker_mtime is None:
+        return False
+    if source_mtime is not None and marker_mtime < source_mtime:
+        return False
+    return (now - marker_mtime) < window_seconds
+
+
+def quota_low(remaining, threshold=100):
+    """Whether the GitHub API quota is low enough to pause a run. `None`
+    (the quota could not be read) is never treated as low -- an unknown
+    answer must not stop a run that a real answer would have let through."""
+    return remaining is not None and remaining < threshold
+
+
+def local_findings(git_repo, branch, git_op, conflicts, dirty, claude_md,
+                   ecosystem, quality_gate):
+    """Read-only checks for a project with no `ClaudeProject.md` -- local work
+    rather than GitHub story work. Moved out of
+    `skills/preflight/references/local-checks.md`'s shell block for the same
+    reason as the checks above: untestable duplicated logic.
+
+    Every finding here is a `WARNING` and none is ever repaired automatically
+    -- these describe the project's own state, not something the tooling
+    owns. `branch` is `''` for a detached HEAD; `ecosystem` is `'configured'`,
+    `'declined'` or `None`; `quality_gate` is the detected command or `''`.
+    """
+    if not git_repo:
+        return [finding(WARNING, 'local-git-repo', 'this is not a git repository',
+                        'run `git init`, or open the intended project folder')]
+    out = []
+    if not branch:
+        out.append(finding(WARNING, 'local-git-branch', 'HEAD is detached',
+                           'check out a branch: `git switch <branch>` or '
+                           '`git switch -c <new>`'))
+    if git_op:
+        out.append(finding(WARNING, 'local-git-op',
+                           'a merge or rebase is in progress',
+                           'finish or abort it before starting new work'))
+    if conflicts:
+        out.append(finding(WARNING, 'local-git-conflicts',
+                           'there are unresolved merge conflicts',
+                           'finish or abort the merge/rebase before new work'))
+    if dirty:
+        out.append(finding(WARNING, 'local-git-tree',
+                           '%d uncommitted change%s in the working tree'
+                           % (dirty, '' if dirty == 1 else 's'),
+                           'commit or stash the changes so new work starts '
+                           'from a clean tree'))
+    if not claude_md:
+        out.append(finding(WARNING, 'local-claude-md', 'no CLAUDE.md was found',
+                           'add one with project rules and the quality-gate '
+                           'command'))
+    if ecosystem is None:
+        out.append(finding(WARNING, 'local-ecosystem',
+                           'the companion tools are not set up',
+                           'run `/synergy:ecosystem-setup`, or skip it'))
+    if not quality_gate:
+        out.append(finding(WARNING, 'local-quality-gate',
+                           'no test/build command was found',
+                           'tell Claude the test command, or record it in '
+                           'CLAUDE.md'))
+    return out
+
+
+# ── preflight: auto-merge safety checks (opt-in) ──────────────────────────────
+# Deep checks for the opt-in `auto-merge-on-approval` feature, moved out of
+# `skills/preflight/references/review-auto-merge-checks.md`'s shell block.
+# `preflight` runs these only when `docs/review.config.md` enables auto-merge
+# -- gathered in `wf_preflight.py`, judged here.
+
+def automerge_repo_findings(slug, allow_auto_merge, path='docs/review.config.md'):
+    """The repo's own "Allow auto-merge" setting, without which a queued
+    merge never fires."""
+    if allow_auto_merge:
+        return []
+    return [finding(WARNING, 'review-auto-merge-repo',
+                    "auto-merge-on-approval is enabled but the repo's "
+                    "'Allow auto-merge' setting is off -- queued merges will "
+                    "not fire",
+                    "enable it with `gh api -X PATCH repos/%s -F "
+                    "allow_auto_merge=true` or re-run /synergy:setup harden"
+                    % slug, path)]
+
+
+def automerge_ci_findings(require_ci, required_checks,
+                          path='docs/review.config.md'):
+    """Whether something enforces "CI green before merge" -- GitHub required
+    status checks, or the plugin's own `require-ci-before-merge`.
+
+    `require_ci` is the `require-ci-before-merge` setting (`'true'`,
+    `'if-present'` or `None`); `required_checks` is the branch's required
+    status check count, or `None` when it could not be read.
+    """
+    if require_ci in ('true', 'if-present'):
+        return []
+    if required_checks:
+        return []
+    return [finding(WARNING, 'review-auto-merge-ci',
+                    'auto-merge-on-approval is enabled but neither GitHub '
+                    'required status checks nor require-ci-before-merge is '
+                    'configured -- an approved PR can merge with no CI '
+                    'guarantee',
+                    'run /synergy:setup harden to wire up the gate', path)]
+
+
+# Events that start a run for a pull request, or for the push that opens one.
+# `schedule`, `workflow_dispatch`, `repository_dispatch`, `release` and the
+# rest never put a check on a PR, so a workflow that lists only those is not
+# a pipeline for `bypass-ci-when-no-pipeline` or `bypass-ci-on-billing-failure`.
+PR_WORKFLOW_EVENTS = frozenset((
+    'pull_request', 'pull_request_target', 'push', 'merge_group',
+    'workflow_run'))
+
+_ON_KEY_RE = re.compile(r'''^(?:on|"on"|'on')\s*:\s*(.*)$''')
+_EVENT_NAME_RE = re.compile(r'[a-z_]+')
+
+
+def _strip_yaml_comment(line):
+    """Drop a trailing `# comment`, leaving a `#` inside quotes alone."""
+    quote = None
+    for i, ch in enumerate(line):
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in '"\'':
+            quote = ch
+        elif ch == '#' and (i == 0 or line[i - 1].isspace()):
+            return line[:i]
+    return line
+
+
+def _flow_event_names(value):
+    """The top-level names in a YAML flow value: `[a, b]`, `{a: {...}}` or `a`.
+
+    Returns `None` when the value is not understood, so the caller can fall
+    back to counting the workflow.
+    """
+    value = value.strip()
+    if not value:
+        return None
+    if value[0] not in '[{':
+        name = value.strip('"\'')
+        return [name] if _EVENT_NAME_RE.fullmatch(name) else None
+    closer = ']' if value[0] == '[' else '}'
+    if not value.endswith(closer):
+        return None
+    names, depth, token = [], 0, ''
+    for ch in value[1:-1] + ',':
+        if ch in '[{':
+            depth += 1
+        elif ch in ']}':
+            depth -= 1
+        if ch == ',' and depth == 0:
+            name = token.split(':', 1)[0].strip().strip('"\'')
+            if name:
+                if not _EVENT_NAME_RE.fullmatch(name):
+                    return None
+                names.append(name)
+            token = ''
+        else:
+            token += ch
+    return names if depth == 0 else None
+
+
+def workflow_triggers(text):
+    """The event names in a workflow file's `on:`, or `None` if unreadable.
+
+    Reads the three YAML shapes GitHub accepts (`on: push`, `on: [push, x]`
+    and the block map or list) without a YAML library, which the plugin does
+    not depend on.
+    """
+    lines = (text or '').splitlines()
+    for index, raw in enumerate(lines):
+        match = _ON_KEY_RE.match(_strip_yaml_comment(raw).rstrip())
+        if not match:
+            continue
+        inline = match.group(1).strip()
+        if inline:
+            return _flow_event_names(inline)
+        names, block_indent = [], None
+        for line in lines[index + 1:]:
+            body = _strip_yaml_comment(line).rstrip()
+            if not body.strip():
+                continue
+            indent = len(body) - len(body.lstrip())
+            if indent == 0:
+                break
+            if block_indent is None:
+                block_indent = indent
+            if indent != block_indent:
+                continue
+            item = body.strip()
+            if item.startswith('- '):
+                item = item[2:].strip()
+            name = item.split(':', 1)[0].strip().strip('"\'')
+            if not _EVENT_NAME_RE.fullmatch(name):
+                return None
+            names.append(name)
+        return names or None
+    return None
+
+
+def workflow_runs_for_pull_request(text):
+    """True when the workflow can run for a pull request.
+
+    A file that cannot be read, or an `on:` that cannot be understood, counts
+    as a pipeline, which keeps the stricter behaviour.
+    """
+    names = workflow_triggers(text)
+    if names is None:
+        return True
+    return any(name in PR_WORKFLOW_EVENTS for name in names)
+
+
+def automerge_nopipeline_findings(workflow_count, bypass_setting,
+                                  path='docs/review.config.md'):
+    """A repo with no active pipeline workflow never reports a check on a PR,
+    so `bypass-ci-when-no-pipeline` has to be set for auto-merge to fire --
+    and a project that sets it while pipeline workflows exist is a setting
+    that can never apply. A pipeline workflow is one that can run for a pull
+    request, so a scheduled or manually started workflow is not counted."""
+    if workflow_count == 0:
+        if bypass_setting == 'true':
+            return []
+        return [finding(WARNING, 'review-auto-merge-nopipeline',
+                        'this repo has no active GitHub Actions workflow that '
+                        'runs for a pull request, so its PRs never report a '
+                        'check, and '
+                        'bypass-ci-when-no-pipeline is not true -- every '
+                        'approved PR will pause at the no-checks guard and '
+                        'need a human or --bypass-ci',
+                        "set it true in %s if this project's CI is not "
+                        'visible to GitHub' % path, path)]
+    if bypass_setting == 'true':
+        return [finding(WARNING, 'review-auto-merge-nopipeline',
+                        'bypass-ci-when-no-pipeline=true but this repo has '
+                        '%d active pipeline workflow(s), and the setting '
+                        'requires zero -- it can never apply and is ignored'
+                        % workflow_count,
+                        'did you mean bypass-ci-on-billing-failure?', path)]
+    return []
+
+
+def add_config_pointer(text, pointer=CLAUDE_MD_POINTER):
+    """Append the `ClaudeProject.md` pointer to a CLAUDE.md that lacks one.
+
+    Idempotent on the filename rather than on the sentence, so a project that
+    worded its own pointer differently is left exactly as it is.
+    """
+    body = text or ''
+    if 'ClaudeProject.md' in body:
+        return body, False
+    if body and not body.endswith('\n'):
+        body += '\n'
+    return body + ('\n' if body else '') + pointer + '\n', True

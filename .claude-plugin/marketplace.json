@@ -1,0 +1,39 @@
+{
+  "name": "subverting-complexity",
+  "owner": {
+    "name": "Subverting Complexity",
+    "url": "https://github.com/Subverting-complexity"
+  },
+  "metadata": {
+    "description": "Development workflow plugin by Subverting Complexity, for GitHub-backed work and for work that stays on your machine."
+  },
+  "plugins": [
+    {
+      "name": "synergy",
+      "source": "./synergy",
+      "description": "Development workflow plugin for GitHub story work and for work that stays on your machine. Say 'start the next story' and it picks an issue from your backlog, plans it, builds it, runs tests, opens a PR, has the PR reviewed independently by agents in a fresh context, and merges it on projects that turn on auto-merge. If Claude Code's auto mode blocks a run from approving or merging its own PR, the run stops cleanly and names the user setting that lets it finish. Selection reads org issue fields (Stage, Priority, Effort, Ownership) and the feature and story tree, never board cards; every issue carries one area label, a row of the Areas table in ClaudeProject.md, set when it is filed or picked, and needs no parent, and a scheduled board-sync keeps every issue's Stage in step. Dependencies decide order, not eligibility: a blocker inherits the priority of what waits on it, execute builds a named story's prerequisites first, and bulk-execute fills an effort budget with stories one Priority step apart, linked or not, as at most two pull requests built one after the other, in waves, and wf schedules and integrates the independent ones it builds in parallel, and orchestrate runs bulk-execute in rounds over an Epic, a Feature, a list of stories or the open pool, one round at a time, checking each against GitHub and stopping at the first sign of trouble, and it starts a round only when the Claude plan's 5-hour limit, weekly limit and budget for the day have room for it, with settings it asks each person for once. Filing an issue sets its Classification areas, and the wf CLI reads and writes issues in as few GitHub requests as it can: starting a build, opening the PR, blocking a story and cleaning up at exit are each one command that prints a one-line result when everything lands, and a run that already passed preflight skips the preflight skill. For local work, 'build this' plans, builds, verifies and commits with no issue or PR, pr-review reviews a local change as well as a PR, verify-feature writes the report a person reads before merging, in the chat only, and checks modularity, extensibility and the repository's conventions as well as correctness, spec-hardening tests a spec against the codebase before it is built, in the chat only, and release-notes writes user and internal release notes, grouped by each issue's area label, which execute and bulk-execute post on the pull request as soon as it opens, so the review checks them, and record on each story when it reaches Done, and end each run with a summary of those notes per issue; the next run writes any a merge left out, including for a pull request opened or merged outside synergy. A merged pull request also leaves each issue it closes with a release-target label, decided where the notes are written, for the project's own release script to read. It posts only to GitHub: anything that would post to Azure DevOps, GitLab or Bitbucket asks first, each session is told which platform hosts the repository, and a personal allowlist on each machine blocks GitHub writes outside the orgs and account it names. One grill skill runs every interview, and it keeps asking, in batches as large as the open questions allow, until no weak point of the plan is left. An optional jev skill says how to use Jev, the TypeSafe decision model, for quick sort, score and yes/no judgments; no workflow needs it, and when a key is set wf jev asks it nine checks: Priority, Effort, area and release targets for an issue, whether an issue is already filed, which stories are ready to build, dependencies that are probably missing, faults in a finished issue or pull request body, and which changes a user notices. Keeps what loads into each session small.",
+      "author": {
+        "name": "Subverting Complexity"
+      },
+      "homepage": "https://github.com/Subverting-complexity/claude-plugins/blob/main/synergy/README.md",
+      "repository": "https://github.com/Subverting-complexity/claude-plugins",
+      "license": "MIT",
+      "category": "workflow",
+      "keywords": [
+        "github",
+        "workflow",
+        "automation",
+        "pr-review",
+        "backlog",
+        "issue-fields",
+        "story",
+        "pr",
+        "local-development",
+        "build",
+        "bulk-execute",
+        "dependencies",
+        "parallel-agents"
+      ]
+    }
+  ]
+}
