@@ -95,6 +95,34 @@ The purpose→value maps — which native type each kind of work becomes, and th
 
 Skill the execute flow offers when a story is too thin to implement: `feature-discovery` (default). It runs the `grill` interview and turns the answers into a fuller spec with acceptance criteria. A story a person has not approved yet belongs at `Stage` `Needs refinement`, which keeps it out of the pool without needing a label.
 
+## Areas
+
+One row for each permanent part of the product. Each row becomes the label `area: {name}`.
+
+| Name          | Description                  | Colour   | Epic | Was |
+| ------------- | ---------------------------- | -------- | ---- | --- |
+| `{area-name}` | {one sentence on what it covers} | `{rrggbb}` |      |     |
+
+`Description` is the label description, so GitHub allows 100 characters at most. Write a `|` in it as `\|`. `Colour` is 6 hex digits. `Epic` is optional: the number of the area epic this row replaces. `Was` is optional: the name this area had before a rename. A name must not appear 2 times.
+
+## Release Targets
+
+One row for each thing the project releases separately, such as `mobile` or `web`. Each row becomes the labels `release: {name}` and `released: {name}`.
+
+| Name            | Description                    | Colour     |
+| --------------- | ------------------------------ | ---------- |
+| `{target-name}` | {one sentence on what ships in it} | `{rrggbb}` |
+
+The same limits apply as for an area. Remove the row if the project has one release only.
+
+## Jev (optional)
+
+| Setting | Value |
+| ------- | ----- |
+| jev     | `on`  |
+
+Jev is the TypeSafe decision model, an outside service that `wf jev` sends issue text to. Set `off` when the content of this repository must stay on the machine: `wf jev` then answers `unavailable` and each workflow decides without it. With no row, the value is `on`.
+
 ## Pre-release test pass (optional)
 
 | Setting                | Value                  |

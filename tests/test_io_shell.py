@@ -3387,7 +3387,8 @@ class TestConfigCacheFreshness(unittest.TestCase):
             fh.write('# Project Configuration\n')
         with open(paths['cache'], 'w', encoding='utf-8') as fh:
             json.dump({'org': 'cached', 'repo': 'r',
-                       'review_labels': {'approved': 'old-approved'}}, fh)
+                       'review_labels': {'approved': 'old-approved'},
+                       'areas': [], 'release_targets': [], 'jev': 'on'}, fh)
         with open(paths['review'], 'w', encoding='utf-8') as fh:
             fh.write('| Purpose | Label |\n|---|---|\n| approved | `new-approved` |\n')
         now = time.time()

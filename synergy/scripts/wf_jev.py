@@ -17,6 +17,7 @@ import urllib.error
 import urllib.request
 
 import wf_core
+from wf_config import load_config
 from wf_io import EXIT_OK, EXIT_UNSUPPORTED, EXIT_USAGE, emit, gh_json
 
 JEV_URL = 'https://api.typesafe.ai/v1/systemone'
@@ -71,6 +72,16 @@ def jev_fetch_items(numbers, open_limit):
             for i in items], None
 
 
+def jev_switched_off():
+    """True when `ClaudeProject.md` turns Jev off for this repository.
+
+    A project with no `ClaudeProject.md`, or one that cannot be read, has not
+    said no: Jev stays on, as it is for a repository with no `## Jev` row.
+    """
+    ok, cfg, _ = load_config()
+    return bool(ok and cfg and cfg.get('jev') == 'off')
+
+
 def cmd_jev(args):
     config = load_jev_config()
     payload = {}
@@ -85,6 +96,12 @@ def cmd_jev(args):
     if not key:
         emit('unavailable', EXIT_UNSUPPORTED,
              reason='%s is not set; make this judgment without Jev' % JEV_KEY_ENV)
+    # A repository can say its content must stay on the machine. That holds
+    # whatever key is set, so it is read before anything is sent.
+    if jev_switched_off():
+        emit('unavailable', EXIT_UNSUPPORTED,
+             reason='Jev is off for this repository in ClaudeProject.md; '
+                    'make this judgment without Jev')
     if args.issue or args.open_issues:
         fetched, reason = jev_fetch_items(args.issue, args.open_issues)
         if fetched is None:

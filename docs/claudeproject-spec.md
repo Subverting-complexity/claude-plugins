@@ -36,6 +36,14 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 
 **Optional** — remove if unused: `## Project Board`, `## Reference Docs`, `## Bundled Skills`, `## Pre-release test pass`, `## Pre-release privacy pass`. `## Pre-release test pass` holds one setting, `pre-release-test-title`: the title text of the open issue that device and real-browser checks are added to as checkboxes instead of becoming `[Manual]` issues of their own. `## Pre-release privacy pass` holds one setting, `pre-release-privacy-title`, which does the same for a person's half of a privacy policy change: publishing the wording and entering the store privacy answers. A `## Label Map` from an older file is still read, but the workflow applies no label it names and nothing requires it.
 
+**Label tables and the Jev switch** — read by `wf` into the configuration. A file with none of them still loads, with empty lists and Jev on. Nothing acts on the two tables yet:
+
+| Heading | Content |
+| ------- | ------- |
+| `## Areas` | One row for each permanent part of the product. Columns: `Name`, `Description`, `Colour`, and the optional `Epic` (the number of the area epic the row replaces) and `Was` (the name the area had before a rename). Read as `areas`. |
+| `## Release Targets` | One row for each thing the project releases separately. Columns: `Name`, `Description`, `Colour`. Read as `release_targets`. |
+| `## Jev` | One setting, `jev`, with the value `on` or `off`. `off` makes `wf jev` answer `unavailable` (exit 30) even when `TYPESAFE_API_KEY` is set, for a repository whose content must stay on the machine. No row means `on`. Read as `jev`. |
+
 ## Heading rules
 
 - Preflight matches the **exact literal text** (`grep -q "## Identity"`, case-sensitive substring). Do not rename or re-level the required headings.
@@ -44,6 +52,9 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 ## Value formats
 
 - **Tables** are 2+ column markdown tables: first cell is a lowercase kebab-case key, second is the value. Backticks around cells are stripped. `n/a` or an empty cell means "unset" for board/field ids.
+- **A `|` inside a cell**: write it `\|`, or put it inside a backtick code span. Either way it stays in the cell and does not start a new one.
+- **Areas and release targets**: the columns are found by their header text, so an optional column may be left out. `Description` becomes a GitHub label description, so a row with more than 100 characters there is refused, and so is a name that appears 2 times in one table (compared without case). `wf` then stops with the row named, because the alternative is a label that is silently not created. `Colour` is 6 hex digits, with or without a leading `#`. A row whose name is blank or still a `{placeholder}` is not a row.
+- **Configuration cache**: `.claude/wf-config.json` is rebuilt when `ClaudeProject.md` or `docs/review.config.md` is newer than it, and also when it has no `areas`, `release_targets` or `jev` key, which means a version before 18.14.0 wrote it.
 - **Quality gate**: the command inside the section's fenced code block. Empty or still `{quality_gate_command}` → preflight WARNING.
 - **Branch convention**: the first whitespace-delimited token containing `{number}` anywhere in the section (the fenced block, or the backtick-wrapped `Example:` line if the block was left unfilled).
 - **Label map rows**: kept only when the purpose key matches `^[a-z]+-[a-z-]+$`. The workflow applies no issue label, so a map is read only in a file that still has one, and a row naming a retired label is reported as `label-deprecated` and should be deleted.

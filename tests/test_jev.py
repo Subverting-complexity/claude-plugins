@@ -183,6 +183,21 @@ class CommandTests(unittest.TestCase):
         self.assertEqual((code, out['status']), (wf.EXIT_UNSUPPORTED, 'unavailable'))
         self.assertIn('401', out['reason'])
 
+    def test_a_repository_that_turns_jev_off_is_unavailable_with_a_key_set(self):
+        post = mock.Mock()
+        with mock.patch.object(wf, 'load_config', lambda: (True, {'jev': 'off'}, '')):
+            code, out = run_jev('priority', ITEMS, key='test-key', post=post)
+        self.assertEqual((code, out['status']), (wf.EXIT_UNSUPPORTED, 'unavailable'))
+        self.assertEqual(code, 30)
+        self.assertIn('off', out['reason'])
+        post.assert_not_called()
+
+    def test_a_project_with_no_configuration_leaves_jev_on(self):
+        post = mock.Mock(return_value=(False, 'Jev answered HTTP 401'))
+        with mock.patch.object(wf, 'load_config', lambda: (False, None, 'no ClaudeProject.md')):
+            _, out = run_jev('priority', ITEMS, post=post)
+        self.assertIn('401', out['reason'])
+
     def test_bad_input_is_a_usage_error_before_any_call(self):
         post = mock.Mock()
         code, out = run_jev('duplicate', ITEMS, post=post)
