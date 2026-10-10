@@ -7,6 +7,10 @@ answer, the command prints `status: unavailable` and exits 30, which every
 caller reads as "make this judgment yourself". It never asks for a key and
 never prints one.
 
+The `area` and `target` checks take their answers from the areas and
+release-targets tables in `ClaudeProject.md`. A repository with no such table
+has nothing to choose from, so those checks are `unavailable` there too.
+
 `scripts/README.md` has the module map.
 """
 
@@ -82,6 +86,19 @@ def jev_switched_off():
     return bool(ok and cfg and cfg.get('jev') == 'off')
 
 
+JEV_TABLE_NAMES = {'areas': 'Areas', 'release_targets': 'Release Targets'}
+
+
+def jev_table(name):
+    """The rows of the `areas` or `release_targets` table in `ClaudeProject.md`.
+
+    A project with no `ClaudeProject.md`, or one that cannot be read, has no
+    table: its rows are an empty list, the same as a file with no such section.
+    """
+    ok, cfg, _ = load_config()
+    return list((cfg.get(name) or []) if ok and cfg else [])
+
+
 def cmd_jev(args):
     config = load_jev_config()
     payload = {}
@@ -102,6 +119,17 @@ def cmd_jev(args):
         emit('unavailable', EXIT_UNSUPPORTED,
              reason='Jev is off for this repository in ClaudeProject.md; '
                     'make this judgment without Jev')
+    # A check that picks from a table has nothing to pick from without one.
+    # Also before any read from GitHub, and before any request.
+    table = wf_core.jev_table_needed(config, args.check)
+    if table:
+        table_rows = jev_table(table)
+        if not wf_core.jev_table_rows(table_rows):
+            emit('unavailable', EXIT_UNSUPPORTED,
+                 reason='ClaudeProject.md has no %s table, so the %s check has nothing '
+                        'to choose from; make this judgment without Jev'
+                        % (JEV_TABLE_NAMES.get(table, table), args.check))
+        config = wf_core.jev_resolve(config, args.check, table_rows)
     if args.issue or args.open_issues:
         fetched, reason = jev_fetch_items(args.issue, args.open_issues)
         if fetched is None:
