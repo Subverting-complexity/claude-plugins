@@ -4,9 +4,9 @@ Finished containers and stage drift: what to close or move after a merge.
 Moved verbatim out of wf_core.py; `scripts/README.md` has the module map.
 """
 
-from wf_core_findings import WARNING, finding
+from wf_core_findings import CRITICAL, WARNING, finding
 from wf_core_select import HIERARCHY_CONTAINER_TYPES
-from wf_core_stage import STAGE_NAMES, is_area_stage
+from wf_core_stage import STAGE_NAMES
 
 
 # ── closing a finished container (#240) ──────────────────────────────────────
@@ -17,21 +17,14 @@ from wf_core_stage import STAGE_NAMES, is_area_stage
 def container_finished(node, closed=()):
     """Whether an Epic or Feature is finished: open, and every sub-issue closed.
 
-    `node` is `{'number', 'type', 'state', 'stage', 'children': [{'number',
-    'state'}]}`. `closed` names issues this run has just closed, whose read may
-    predate it.
-
-    An area epic (`Stage` is `Area`) is never finished: it is a permanent part
-    of the product, and its last story closing means only that nothing is
-    under way there now.
+    `node` is `{'number', 'type', 'state', 'children': [{'number', 'state'}]}`.
+    `closed` names issues this run has just closed, whose read may predate it.
 
     Any close counts, including "not planned": a container held open by one
     dropped story would stay open for ever. A container with no sub-issues is
     never finished, because an empty Epic may be a placeholder.
     """
     if node.get('type') not in HIERARCHY_CONTAINER_TYPES:
-        return False
-    if is_area_stage(node.get('stage')):
         return False
     if (node.get('state') or '').upper() != 'OPEN':
         return False
@@ -49,9 +42,8 @@ def ancestors_to_close(origin, chain, closed=(), repo=None):
     `chain` is `origin`'s parents, nearest first, each shaped as
     `container_finished` reads it plus `repo`. The walk stops at the first
     parent that is not finished, because every ancestor above it has it as an
-    open child, at the first one in another repository, which this
-    repository has no business closing, and at an area epic, which is never
-    finished.
+    open child, and at the first one in another repository, which this
+    repository has no business closing.
 
     Returns [{'number', 'finished_by'}], where `finished_by` is the child whose
     close finished it -- `origin` for the nearest, the one below for the rest.
@@ -104,21 +96,40 @@ def stage_drift_findings(drifted, path='ClaudeProject.md'):
         'set each to the stage named, or run `wf preflight --fix`', path)]
 
 
-def area_epic_findings(open_issues, path='ClaudeProject.md'):
-    """One warning when the repository has no open area epic.
+def areas_table_findings(has_table, legacy_epics=(), path='ClaudeProject.md'):
+    """One critical finding when `ClaudeProject.md` has no `## Areas` table.
 
-    `open_issues` is every open issue as `{'number', 'type', 'stage'}`. An
-    area epic is an open `Epic` whose `Stage` is `Area`; with none, no issue
-    resolves to an area and release notes have nothing to group by.
+    An issue's area is its `area: {name}` label, and the table is the list of
+    names that label may carry. With no table nothing can file an issue with
+    an area, so release notes have nothing to group by, and the workflow stops
+    here rather than file issues that would all have to be labelled later.
+
+    `legacy_epics` is the numbers of the open area epics a version before
+    19.0.0 left behind, which the caller finds. With any, the repository has to
+    move: the fix names `wf area-backfill`. With none, it is new to areas and
+    the fix names the setup step that writes the table.
     """
-    if any(i.get('type') == 'Epic' and is_area_stage(i.get('stage'))
-           for i in open_issues or ()):
+    if has_table:
         return []
+    epics = sorted(legacy_epics or ())
+    if epics:
+        return [finding(
+            CRITICAL, 'areas-table',
+            'ClaudeProject.md has no `## Areas` table, and the repository still '
+            'has %d open area epic%s (%s). An issue\'s area is its `area: '
+            '{name}` label since 19.0.0, and nothing reads an area epic'
+            % (len(epics), '' if len(epics) == 1 else 's',
+               ', '.join('#%d' % n for n in epics)),
+            'add an `## Areas` table with one row per area epic and its number '
+            'in the `Epic` column, run `wf labels-ensure`, then run `wf '
+            'area-backfill` to copy each issue\'s area to its label; '
+            '`references/area-epics.md` has the steps',
+            path)]
     return [finding(
-        WARNING, 'area-epics',
-        'No open area epics, so no issue resolves to an area and release notes '
-        'cannot be grouped',
-        'create one `Epic` per permanent part of the product, set its `Stage` '
-        'to `Area`, and describe what it covers in its body; '
-        '`references/area-epics.md` walks through migrating an existing project',
+        CRITICAL, 'areas-table',
+        'ClaudeProject.md has no `## Areas` table, so no issue can be given an '
+        'area label and release notes cannot be grouped',
+        'run `/synergy:setup`, which asks for the areas and writes the table, '
+        'or add an `## Areas` table by hand and run `wf labels-ensure`; '
+        '`references/area-epics.md` describes the table',
         path)]

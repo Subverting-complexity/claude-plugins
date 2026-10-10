@@ -139,11 +139,18 @@ class TestSpecArea(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertIsNone(plans[0]['area'])
 
-    def test_an_area_epic_is_exempt(self):
+    def test_an_epic_needs_an_area_like_every_other_create(self):
+        """Area epics were removed in 19.0.0, so no type is exempt (#391)."""
+        fields = _entry()['fields']
+        errors, _, _ = self._validate([
+            {'key': 'lib', 'title': 'Library', 'type': 'Epic', 'fields': fields}])
+        self.assertEqual(len(errors), 1)
+        self.assertIn('lib: missing `area`', errors[0])
         errors, _, plans = self._validate([
-            {'key': 'lib', 'title': 'Library', 'type': 'Epic', 'state': 'area'}])
+            {'key': 'lib', 'title': 'Library', 'type': 'Epic', 'fields': fields,
+             'area': 'Library'}])
         self.assertEqual(errors, [])
-        self.assertIsNone(plans[0]['area'])
+        self.assertEqual(plans[0]['area'], 'Library')
 
     def test_an_area_label_in_labels_is_refused(self):
         errors, _, _ = self._validate([_entry(area='Library',

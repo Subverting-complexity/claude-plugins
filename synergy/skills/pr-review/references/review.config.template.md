@@ -26,7 +26,7 @@ State labels are mutually exclusive — exactly one is applied per review.
 | `updating` | `{PREFIX}-updating` | State | A builder agent is addressing review feedback — prevents concurrent updates |
 | `fixes-applied` | `{PREFIX}-fixes-applied` | Action | Claude pushed fix commits to the PR branch (sticky across runs) |
 
-These labels are managed by the `/synergy:pr-review` skill and form the single source of truth for PR review state. They are the only labels the workflow applies; an issue gets none.
+These labels are managed by the `/synergy:pr-review` skill and form the single source of truth for PR review state. They are the only labels the workflow applies to a pull request; an issue gets only its `area:` and `release:` labels.
 
 ## Custom Labels
 

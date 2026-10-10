@@ -39,9 +39,7 @@ CONTAINER_SWEEP_COMMENT = (
     '--fix`; reopen this if more work is planned under it.')
 SETTLE_COMMENT = 'Closing — resolved by merged PR #%d.'
 
-# The single-select field values, which is where `Stage` lives. A container's
-# stage is read because an area epic (`Stage` is `Area`) is never closed,
-# however many of the issues under it have closed.
+# The single-select field values, which is where `Stage` lives.
 STAGE_VALUES_SELECTION = (
     ' issueFieldValues(first:20){ nodes {'
     '  ... on IssueFieldSingleSelectValue {'
@@ -204,15 +202,11 @@ def _fix_finished_containers(cfg, containers):
 
     The preflight half of #240: the merge closes what it finishes from now
     on, and `fetch_open_issue_state` finds the ones that finished before it did.
-    An area epic is never among them (`container_finished` says so), and one
-    that arrives anyway is left open rather than trusted.
     """
     if not containers:
         return [], []
     closed, failed = [], []
     for container in containers:
-        if wf_core.is_area_stage(container.get('stage')):
-            continue
         result = close_container(cfg, container['number'], CONTAINER_SWEEP_COMMENT)
         if result['closed']:
             closed.append(container['number'])
@@ -271,8 +265,8 @@ def read_linked_issues(cfg, numbers):
 
     `issue` is {'id', 'state', 'stage', 'has_notes', 'labels': [{'id',
     'name'}]}. The label ids come back with the names because removing a
-    retired label by mutation takes its id, the `Stage` because an area epic a
-    pull request names is never closed, and `has_notes` (either release-notes
+    retired label by mutation takes its id, the `Stage` because an issue
+    already at Done needs no write, and `has_notes` (either release-notes
     field is set) because an issue at Done with no notes is not settled. One
     aliased read for every issue (#300).
     """
@@ -382,13 +376,6 @@ def cmd_post_merge(args):
             linked.append(extra)
 
     issues = read_linked_issues(cfg, linked) if linked else {}
-    # An area epic is permanent, so a `Closes #N` naming one is a mistake in
-    # the pull request rather than a request to close it. It is left open, its
-    # `Stage` untouched, and reported so the reference can be corrected.
-    skipped_areas = [n for n in linked
-                     if wf_core.is_area_stage(((issues.get(n) or (False, None, ''))[1]
-                                               or {}).get('stage'))]
-    linked = [n for n in linked if n not in skipped_areas]
     facts, plan = {}, []
     for number in linked:
         ok, issue, _ = issues.get(number, (False, None, ''))
@@ -504,10 +491,6 @@ def cmd_post_merge(args):
              and all(r.get('stage_set', True) and not r.get('still_assigned')
                      for r in ((unblocked or {}).get('released') or [])
                      + ((unblocked or {}).get('rescoped') or [])))
-    areas = [{'issue': n, 'reason': 'issue #%d is an area epic, which is '
-                                    'permanent, so it was left open and its '
-                                    '`Stage` unchanged' % n}
-             for n in skipped_areas]
     if clean:
         # Everything landed: one line, with only what the report names.
         released = [{'issue': r['issue'], 'title': r.get('title')}
@@ -515,8 +498,6 @@ def cmd_post_merge(args):
         cleared = {str(s['issue']): s['lifecycle_label_cleared'] for s in settled
                    if s['lifecycle_label_cleared']}
         extra = {'cleared': cleared} if cleared else {}
-        if areas:
-            extra['skipped_areas'] = [a['issue'] for a in areas]
         no_edges = ((unblocked or {}).get('no_edges') or {}).get('count')
         if no_edges:
             extra['no_edges'] = no_edges
@@ -535,7 +516,6 @@ def cmd_post_merge(args):
     # container not closed. Exit non-zero so the caller cannot read it as done.
     emit('partial', EXIT_PARTIAL, pr=args.pr, base=data.get('baseRefName'),
          settled=settled,
-         skipped_areas=areas,
          containers_closed=containers, container_errors=container_errors,
          release_note_errors=note_errors,
          release_target_errors=target_errors, unblocked=unblocked)
@@ -719,8 +699,6 @@ def cmd_settle_merged(args):
         if not ok_ or not issue:
             return False
         stage = issue.get('stage')
-        if wf_core.is_area_stage(stage):
-            return False
         return (stage != done or (wants_notes and not issue.get('has_notes'))
                 or (wants_labels and unlabelled(issue)))
 

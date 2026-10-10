@@ -43,7 +43,8 @@ def _priority_rank(field_value):
 
 
 # ── Label resolution ─────────────────────────────────────────────────────────
-# The workflow puts no label on an issue, and none on a pull request except the
+# The workflow puts no label on an issue except its `area:` and `release:`
+# labels (`wf_core_labels.py`), and none on a pull request except the
 # review-state labels, which resolve through `REVIEW_DEFAULT_LABELS` below. The
 # `claude-authored` marker went in 13.2.0 (#275): it recorded who built a
 # change, which the PR's author and commits already say, and it decided
@@ -359,7 +360,7 @@ _NOTE_LABEL_MAX_WORDS = 6
 def _note_lines(text):
     """A release-notes text as its plain lines, without the `* ` marker.
 
-    The changelog adds each issue's area heading itself, from its area epic,
+    The changelog adds each issue's area heading itself, from its area label,
     so a heading, or a short line that is not a sentence ("Library and
     reading"), is a label the writer copied in and is dropped. Bold and code
     marks are removed, and a repeated line is kept once.

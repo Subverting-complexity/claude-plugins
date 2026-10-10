@@ -2,11 +2,11 @@
 
 > **Not read at runtime.** The data lives in `synergy/scripts/wf_core.py`, where the tests cover it. This page says what each field and stage is for. Design rationale: [`rationale/default-labels-rationale.md`](rationale/default-labels-rationale.md).
 
-## What labels decide: nothing
+## What labels decide: nothing about what is picked
 
 An issue's state, priority, size and owner are **structured fields**, and a label is none of those things. Two records of one fact drift the moment anyone edits either, and the drift is silent: the picker preferring one issue over another on a `priority-high` somebody set months ago, while the `Priority` field said Low.
 
-So the workflow puts no label on an issue. The only labels it applies are the review-state labels on a pull request, described in `synergy/skills/pr-review/references/review-workflow.md` and created by `wf labels-ensure`. The four questions labels used to answer are answered once each:
+So the workflow puts no label on an issue for any of those. It puts 2 kinds of label on an issue and no other, and each is the only record of its fact: the area label (`area: {name}`, exactly 1, the part of the product the issue belongs to, described in `synergy/references/area-epics.md`) and the release-target labels (`release: {target}`, set at merge, described in `synergy/references/release-labels.md`). On a pull request it applies the review-state labels, described in `synergy/skills/pr-review/references/review-workflow.md`. `wf labels-ensure` creates all of them. The four questions labels used to answer are answered once each:
 
 | Question | Where the answer lives | Who reads it |
 |----------|------------------------|--------------|
@@ -65,7 +65,6 @@ Stages are resolved by **purpose key**: the field name through `field-stage` in 
 | `stage-non-code`    | `Non-code`         | a browser agent or a person owns it: a decision, research, a run that gave up, or work no code agent can do; no sweep ever releases it |
 | `stage-parked`      | `Parked`           | deliberately set aside; will resume |
 | `stage-done`        | `Done`             | the issue is closed |
-| `stage-area`        | `Area`             | a permanent area epic; never picked, closed or moved |
 
 **Which command writes which stage:**
 
@@ -79,12 +78,11 @@ Stages are resolved by **purpose key**: the field name through `field-stage` in 
 | Parked (`stage-parked`)        | a person, or `wf issue-apply` (`"state": "parked"` on an update; a create that asks for it is refused, because a new issue is never filed as `Parked`) |
 | Backlog (`stage-backlog`)      | `wf issue-apply` (`"state": "backlog"`), `wf unblock` (every blocked-by edge closed), a reverted claim |
 | Done (`stage-done`)            | `wf post-merge` (at merge), `wf pick` (closing an issue already resolved) |
-| Area (`stage-area`)            | a person, or `wf issue-apply` (`"state": "area"` on an `epic` entry) |
 
 `issue-apply` writes only an issue whose `Stage` is blank, `Backlog`, `Blocked` or `Non-code`, unless the entry names a `"state"`. Any other stage is kept (`stage_kept`), so an update never drags in-flight work back into the pool.
 
-**An `Area` issue is an area epic**, one permanent part of the product that every other issue sits under, and no command moves it: it is never picked, `wf post-merge` and `preflight --fix` never close it, `wf board-sync` never changes its stage, and `wf issue-audit` does not ask it for `Priority`, `Effort` or `Ownership`. `synergy/references/area-epics.md` covers the hierarchy and how to move an existing project onto it.
+**`Area` is not a stage any more.** Until 19.0.0 it marked an area epic, a permanent `Epic` that every other issue sat under. An issue's area is now its `area: {name}` label, and an epic still at `Area` is an ordinary `Epic`. Only `wf area-backfill` and preflight read that value, to move a repository off area epics. `synergy/references/area-epics.md` covers the move.
 
 **`Blocked` with no blocked-by edge was set by a person**, and the plugin never changes it. `wf unblock` only releases a `Blocked` issue that has edges, and only once every one of them is closed.
 
-**The `Stage` field is required, with all nine options.** Preflight reports an org with no `Stage` field as `CRITICAL stage-absent`, and a `Stage` missing an option as `CRITICAL stage-options`, naming it. A project board is not required: boards are views for people, grouped by `Stage`, and GitHub's "Auto-add to project" workflow keeps cards on them, and the scheduled `wf board-sync` adds any it missed. Agents never move cards.
+**The `Stage` field is required, with all eight options.** Preflight reports an org with no `Stage` field as `CRITICAL stage-absent`, and a `Stage` missing an option as `CRITICAL stage-options`, naming it. A project board is not required: boards are views for people, grouped by `Stage`, and GitHub's "Auto-add to project" workflow keeps cards on them, and the scheduled `wf board-sync` adds any it missed. Agents never move cards.

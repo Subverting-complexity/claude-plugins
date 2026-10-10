@@ -1,6 +1,6 @@
 ---
 name: release-notes
-description: 'Write user and internal release notes for a branch, PR or story, shown under the area epic each issue sits in. Trigger on release notes or "what shipped".'
+description: 'Write user and internal release notes for a branch, PR or story, shown under the area each issue is labelled with. Trigger on release notes or "what shipped".'
 ---
 # Release Notes
 
@@ -38,9 +38,9 @@ Read `_shared/wording-standard.md` and `_shared/banned-patterns.md` before writi
 
 ## Areas
 
-The notes never name an area, a section or a part of the product as a heading or a label line, even when the change touches several. An issue's area is the nearest area epic above it in its parent chain (`references/area-epics.md`), and the tooling adds that heading. A person fixes a wrong area by moving the issue, not by editing the text.
+The notes never name an area, a section or a part of the product as a heading or a label line, even when the change touches several. An issue's area is its `area: {name}` label (`references/area-epics.md`), and the tooling adds that heading. A person fixes a wrong area by changing the label, not by editing the text.
 
-**Run by hand** on a branch or pull request, say which area the lines will sit under, in a sentence outside the code blocks, so it is never copied into a field. Take the issue from the pull request's closing issue or the number in the branch name, then run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas --issue {number}` and name `area.title`. With no issue, or `area` null, say the issue sits under no area epic.
+**Run by hand** on a branch or pull request, say which area the lines will sit under, in a sentence outside the code blocks, so it is never copied into a field. Take the issue from the pull request's closing issue or the number in the branch name, then run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas --issue {number}` and name `area.name`. With no issue, or `area` null, say the issue has no area, and give the `reason`.
 
 ## Output format
 

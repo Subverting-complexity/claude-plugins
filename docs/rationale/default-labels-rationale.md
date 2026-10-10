@@ -6,7 +6,7 @@
 
 A label is identified by its **purpose key**, never by a hardcoded concrete name. Purpose keys are stable; concrete names are project-configurable. The bare names that appear in workflow prose (`reviewing`, `updating`, `approved`, `changes-requested`, `needs-discussion`, …) **are purpose keys** — they are resolved to a concrete name through the resolution path, and are never applied literally. This means every workflow works correctly when a project renames a label (e.g. `reviewing` → `wip`), as long as the project config maps the purpose key to the new name.
 
-The keys that survive are the review-state labels on a pull request. The `claude-authored` provenance marker went in 13.2.0: it recorded who built a change, which the pull request's author and commits already say, and it decided nothing. No issue label decides anything any more, and the section below is why.
+The keys that survive are the review-state labels on a pull request. The `claude-authored` provenance marker went in 13.2.0: it recorded who built a change, which the pull request's author and commits already say, and it decided nothing. No issue label decides what is picked any more, and the section below is why. The 2 kinds of label the workflow does put on an issue, `area:` and `release:`, are each the only record of their fact.
 
 ## Why the single resolution path (apply == filter invariant)
 
@@ -36,7 +36,7 @@ From 10.0.0 until 12.0.0 the state was the `Status` column of the issue's card o
 
 ### The stages
 
-An issue moves between eight working stages and is at exactly one of them, or at none, which means the same as `Backlog`. A ninth, `Area`, is not part of that flow: it marks a permanent area epic, one part of the product that other issues sit under, and nothing ever moves an issue into or out of it.
+An issue moves between eight stages and is at exactly one of them, or at none, which means the same as `Backlog`. Until 19.0.0 a ninth, `Area`, marked a permanent area epic that other issues sat under. GitHub allows a parent at most 100 sub-issues, so an area held in the parent chain filled up, and an issue's area is now its `area: {name}` label.
 
 ```
                                     ┌──► Needs refinement ──┐  (too thin to build)
@@ -49,8 +49,6 @@ An issue moves between eight working stages and is at exactly one of them, or at
 
 Non-code  ◄────── Ownership is Human or Browser agent: a decision, research, a run that
                   gave up, or work no code agent can do  (never enters the pool)
-
-Area      (a permanent area epic: set once, never picked, closed or moved)
 ```
 
 A blank or `Backlog` stage is the pool, and it is the only opt-in: `pick` and `candidates` read the repository's open, unassigned issues at those stages and nothing else, so every other stage holds an issue out of the pool. An issue with no board card is still in it.
@@ -63,7 +61,7 @@ The durable owner of in-flight work is the **assignment plus the stage**, *not* 
 
 ### The required field
 
-The org must define `Stage` with all nine options. Preflight emits `CRITICAL stage-absent` when the field is missing, because no state can be written or read, and `CRITICAL stage-options` naming any missing option, because a transition to it fails. Setup cannot create an org issue field, so it asks a person to add it in the org settings. A project board is not required.
+The org must define `Stage` with all eight options. Preflight emits `CRITICAL stage-absent` when the field is missing, because no state can be written or read, and `CRITICAL stage-options` naming any missing option, because a transition to it fails. Setup cannot create an org issue field, so it asks a person to add it in the org settings. A project board is not required.
 
 ## Native issue types beyond GitHub's five defaults
 

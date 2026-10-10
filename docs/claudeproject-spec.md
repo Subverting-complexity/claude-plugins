@@ -40,7 +40,7 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 
 | Heading | Content |
 | ------- | ------- |
-| `## Areas` | One row for each permanent part of the product. Columns: `Name`, `Description`, `Colour`, and the optional `Epic` (the number of the area epic the row replaces) and `Was` (the name the area had before a rename). Read as `areas`. |
+| `## Areas` | Required. One row for each part of the product, and each row is the label `area: {name}` that an issue carries as its area. Columns: `Name`, `Description`, `Colour`, and the optional `Epic` (the number of the area epic the row replaces, read only by `wf area-backfill`) and `Was` (the name the area had before a rename). Read as `areas`. |
 | `## Release Targets` | One row for each thing the project releases separately. Columns: `Name`, `Description`, `Colour`. Read as `release_targets`. |
 | `## Jev` | One setting, `jev`, with the value `on` or `off`. `off` makes `wf jev` answer `unavailable` (exit 30) even when `TYPESAFE_API_KEY` is set, for a repository whose content must stay on the machine. No row means `on`. Read as `jev`. |
 
@@ -57,7 +57,7 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 - **Configuration cache**: `.claude/wf-config.json` is rebuilt when `ClaudeProject.md` or `docs/review.config.md` is newer than it, and also when it has no `areas`, `release_targets` or `jev` key, which means a version before 18.15.0 wrote it.
 - **Quality gate**: the command inside the section's fenced code block. Empty or still `{quality_gate_command}` → preflight WARNING.
 - **Branch convention**: the first whitespace-delimited token containing `{number}` anywhere in the section (the fenced block, or the backtick-wrapped `Example:` line if the block was left unfilled).
-- **Label map rows**: kept only when the purpose key matches `^[a-z]+-[a-z-]+$`. The workflow applies no issue label, so a map is read only in a file that still has one, and a row naming a retired label is reported as `label-deprecated` and should be deleted.
+- **Label map rows**: kept only when the purpose key matches `^[a-z]+-[a-z-]+$`. The workflow applies no issue label through the map, so a map is read only in a file that still has one, and a row naming a retired label is reported as `label-deprecated` and should be deleted.
 - **Ready gate and agent gating**: both gone — the gate as of 9.0.0, the gating as of 10.0.0. A `## Ready Gate` or `## Agent Gating` section left in a file is read and ignored. The pool is the open, unassigned issues whose `Stage` is blank or `Backlog`, which no setting turns off, and human approval is the issue's `Stage` rather than a label anyone applies.
 - **Type capability**: the literal phrase `is type-capable` (bold tolerated) anywhere in the file switches on native issue-type handling.
 - **Project board**: `project-number`, `project-title`, `project-node-id`. Informational, for people and for GitHub's own "Auto-add to project" workflow. Nothing in the workflow reads a column from the board.
@@ -67,5 +67,5 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 
 - **Missing file, missing required section, or `gh` unauthenticated** — preflight CRITICAL: the calling command stops and offers `wf preflight --fix`, the setup wizard, "continue anyway" or "don't remind me". A missing file is reported on its own and stops before the network: with no file there is nothing to compare anything against.
 - **Missing recommended/optional content** — WARNING at most; commands proceed on defaults (the `review-` prefix for review labels, `main` for the default branch, `feature/{number}/{short-desc}` for branches).
-- **Org `Stage` field absent** — CRITICAL `stage-absent`: no state can be written or read. **`Stage` missing one of its nine options** (`Area` included) — CRITICAL `stage-options`, naming the option, because a transition to it fails. **No open area epic** in the repository — WARNING `area-epics`, because issues filed now resolve to no area (`synergy/references/area-epics.md`). A missing `## Project Board` section is not a finding.
+- **Org `Stage` field absent** — CRITICAL `stage-absent`: no state can be written or read. **`Stage` missing one of its eight options** — CRITICAL `stage-options`, naming the option, because a transition to it fails. **No `## Areas` table** — CRITICAL `areas-table`, because no issue can be given its area label; the fix names `wf area-backfill` when the repository still has area epics (`synergy/references/area-epics.md`). A missing `## Project Board` section is not a finding.
 - **`wf.py` parse failures stop the run.** The picker returns a non-`ok` status and the calling command reports it and stops. There is no inline procedure to fall back to: selection, claiming, stage writes, handoff and issue creation are `wf` commands and nothing else implements them, so a `wf` that cannot read this file is a stop, not a slow path.

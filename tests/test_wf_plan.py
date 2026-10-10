@@ -469,20 +469,22 @@ class TestPickBuildsThePrerequisite(Harness):
         self.assertIn('assigned', payload['reason'])
 
 
-class TestAnAreaIsNeverNamed(Harness):
-    """An area epic is a permanent part of the product and is never built,
-    whichever way it is named (#348)."""
+class TestAnEpicStillMarkedAreaIsNoSpecialCase(Harness):
+    """Area epics were removed in 19.0.0, so naming an Epic an org left at
+    `Area` is refused by the rules every Epic and every unowned issue meets,
+    with no rule of its own (#391)."""
 
-    def test_plan_set_leaves_a_named_area_out_and_says_why(self):
-        area = issue(5, stage='Area')
-        area['type'] = 'Epic'
-        with self.pool([area], {}):
+    def test_plan_set_leaves_it_out_as_an_epic(self):
+        legacy = issue(5, stage='Area')
+        legacy['type'] = 'Epic'
+        with self.pool([legacy], {}):
             code, payload = capture(['plan-set', '--issue', '5'])
         self.assertNotEqual(code, wf.EXIT_OK)
         reasons = {e['number']: e['reason'] for e in payload['excluded']}
-        self.assertIn('area epic', reasons[5])
+        self.assertIn('it is an Epic', reasons[5])
+        self.assertNotIn('area epic', reasons[5])
 
-    def test_pick_issue_refuses_an_area_before_asking_who_owns_it(self):
+    def test_pick_issue_refuses_it_for_its_owner(self):
         view = {'number': 5, 'title': 'Reading', 'labels': [], 'body': '',
                 'milestone': None, 'url': '', 'state': 'OPEN', 'assignees': []}
         the_facets = {'stage': {5: 'Area'}, 'ownership': {}, 'types': {5: 'Epic'}}
@@ -492,8 +494,8 @@ class TestAnAreaIsNeverNamed(Harness):
                 mock.patch.object(wf, 'acquire_claim') as claim:
             code, payload = capture(['pick', '--issue', '5'])
         self.assertEqual(code, wf.EXIT_ALL_BLOCKED)
-        self.assertIn('area epic', payload['reason'])
-        self.assertEqual(payload['stage'], 'Area')
+        self.assertIn('owned by nobody', payload['reason'])
+        self.assertNotIn('area epic', payload['reason'])
         claim.assert_not_called()
 
 
