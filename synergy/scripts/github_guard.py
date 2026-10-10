@@ -62,7 +62,7 @@ VIEW_OUTPUTS = {'.nameWithOwner', '.owner.login', '.url'}
 
 # `wf` subcommands that only read, and those that only read with a flag.
 WF_READS = {'setup', 'candidates', 'config', 'org-capabilities', 'issue-audit',
-            'config-audit', 'sibling-pr', 'areas'}
+            'config-audit', 'sibling-pr', 'areas', 'release-targets'}
 WF_DRY_RUN = {'unblock', 'claim-reap', 'board-sync', 'issue-apply',
               'area-backfill'}
 

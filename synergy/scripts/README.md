@@ -28,12 +28,13 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_pick_candidates.py` | `candidates`, including `--parent` | 271 |
 | `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 539 |
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
-| `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, `post-merge` | 397 |
+| `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, the release notes and release labels of a settled issue, `post-merge`, `settle-merged` | 771 |
 | `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 572 |
 | `wf_issue_apply.py` | `issue-apply`, including the `area` key that writes an issue's 1 area label | 868 |
 | `wf_issue_audit.py` | `issue-audit` | 166 |
 | `wf_areas.py` | `areas`: the open area epics with the rows of the areas table, or the area epic an issue resolves to | 125 |
 | `wf_area_set.py` | `area-set`: the area label for an issue that has none, from a sure Jev answer or the caller's choice | 170 |
+| `wf_release_targets.py` | `release-targets`: the folders each story of a pull request touched, the release targets Jev is sure of, and the ones left to the caller | 166 |
 | `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 659 |
 | `wf_board_sync.py` | `board-sync` | 287 |
 | `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 274 |
@@ -52,7 +53,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_spec.py` | The issue hierarchy, spec validation with the `area` key, value shaping and batching | 797 |
 | `wf_core_audit.py` | What an existing issue is missing or contradicts | 344 |
 | `wf_core_review.py` | Review-state label names, pools and reconciliation | 192 |
-| `wf_core_labels.py` | The area and release labels the `ClaudeProject.md` tables name, and the plan for a repository to carry them: create, rename, conflict, unknown, differs; the area label on one issue, and what to add and remove so it carries exactly 1 | 227 |
+| `wf_core_labels.py` | The area and release labels the `ClaudeProject.md` tables name, and the plan for a repository to carry them: create, rename, conflict, unknown, differs; the area label on one issue, and what to add and remove so it carries exactly 1; the release targets of a closed issue, the labels it still lacks, and the paths of each story's own commits | 368 |
 | `wf_core_drift.py` | Finished containers and stage drift findings | 96 |
 | `wf_core_preflight.py` | Config sections, label and field drift, instruction files | 584 |
 | `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 307 |
@@ -191,6 +192,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-set --issue 42 --issue 43
 
 # …or set the area you chose on one issue, replacing any other area label
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-set --issue 42 --area "Library"
+
+# What decides where each issue a pull request closes will ship (writes nothing)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" release-targets --pr 87
 
 # Report configuration and label drift (what preflight runs)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit
@@ -647,11 +651,23 @@ It will not create a `CLAUDE.md`, invent an `## Identity` section, create or del
 
 Without `--notes`, the notes come from the newest PR comment carrying `<!-- synergy:release-notes -->` and a fenced JSON block of the same shape, which `execute`, `bulk-execute` and `pr-review` post on every approved PR. In an org that defines either notes field, a linked issue with no notes, or a text the field refused, is reported in its `release_notes.error`.
 
-**Anything that did not land exits `partial` (24), never `ok`.** A stage left out of Done, missing notes, a refused close or a container not closed each make the result partial, so a caller cannot report the PR as settled.
+**Release labels.** In a repository whose `## Release Targets` table has a row, each issue the PR closes also gets a `release: {target}` label for each of its release targets. The targets ride in the notes file or comment as `"targets": ["web", "backend"]` beside the texts, and an empty list means `release: internal`. A name is matched to the table without case, and one the table does not have is reported in `release_target_errors`. Only a missing label is added and none is ever removed. An issue with no targets supplied and no `release:` label is a gap, reported in its `release_labels.error` with `missing: true`; one that already carries a `release:` label is left as it is. A repository with no row sets no release label and settles as before. `synergy/references/release-labels.md` is the contract a release script reads the labels by.
+
+**Anything that did not land exits `partial` (24), never `ok`.** A stage left out of Done, missing notes, a missing or refused release label, a refused close or a container not closed each make the result partial, so a caller cannot report the PR as settled.
+
+## Deciding where an issue ships — `release-targets`
+
+`post-merge` is a script and cannot judge where work ships, so the targets are decided before the merge. `release-targets --pr <n>` gathers what that decision reads, for an open or a merged pull request, and writes nothing. It is what `execute` and `bulk-execute` run where they write the release notes.
+
+- **Paths per story.** A pull request that closes 1 issue gives that issue every path it changed. One that closes several gives each issue the paths of its own commits, matched by the `(#N)` that ends a commit's first line. A commit that names no story counts for no story and is never read. The commits are read from GitHub, where they stay readable after a squash merge deletes the branch.
+- **Jev.** The `target` check is asked with each issue's title, body and paths. A `high` yes goes in the issue's `targets`, and a `high` no is dropped. Every other target is under `decide`, for the caller. With no `TYPESAFE_API_KEY`, or with Jev off for the repository, every target is under `decide` and `jev` is `unavailable`.
+- **Result.** Each issue has `number`, `title`, `folders` (the distinct folders its paths are in, 20 at most), `targets`, `decide` and `labels`, the `release:` labels it already carries. With no Release Targets table, or a pull request that closes no issue, `issues` is empty and nothing is read.
+
+Add `--issue <N>` (repeatable) for a reference GitHub did not parse.
 
 ## Settling merges that landed later — `settle-merged`
 
-`post-merge` runs only inside a synergy run, so a queued auto-merge that lands after the run, or a person merging an approved PR, used to leave its issues at `In Review` with no release notes. `settle-merged [--limit 30]` lists the most recent merged PRs, finds those with a closing issue not at `Done`, or at `Done` with neither release-notes field set in an org that defines them (area epics aside), and runs `post-merge` on each without `--notes`, so it reads the notes comment. Done alone is not the test because the board sync sets a closed issue to Done without notes. It prints one line when every PR settled, and exits `partial` naming each that did not, with `needs_notes` listing each PR and issue still without notes for the caller to write. `execute`, `bulk-execute` and `pr-review` run it at the start of every run.
+`post-merge` runs only inside a synergy run, so a queued auto-merge that lands after the run, or a person merging an approved PR, used to leave its issues at `In Review` with no release notes. `settle-merged [--limit 30]` lists the most recent merged PRs, finds those with a closing issue not at `Done`, or at `Done` with neither release-notes field set in an org that defines them (area epics aside), and runs `post-merge` on each without `--notes`, so it reads the notes comment. Done alone is not the test because the board sync sets a closed issue to Done without notes. It prints one line when every PR settled, and exits `partial` naming each that did not, with `needs_notes` listing each PR and issue still without notes for the caller to write. In a repository with a Release Targets table, a closing issue with no `release:` label is unsettled too, so a merge from the queue gets its labels here from the comment; `needs_targets` lists each PR and issue with no targets decided, for the caller to decide with `release-targets`. `execute`, `bulk-execute` and `pr-review` run it at the start of every run.
 
 ## Releasing what a merge freed — `unblock`
 

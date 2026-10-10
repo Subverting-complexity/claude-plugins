@@ -1,6 +1,6 @@
 # Release notes on the PR
 
-`execute` and `bulk-execute` follow this the moment the pull request opens, before its review, so the reviewer checks the notes and any merge, by the run, a queued auto-merge or a person, has notes to write. `pr-review` and the settle step that starts each run follow its last section when a pull request has no notes.
+`execute` and `bulk-execute` follow this the moment the pull request opens, before its review, so the reviewer checks the notes and any merge, by the run, a queued auto-merge or a person, has notes to write. `pr-review` and the settle step that starts each run follow it when a pull request has no notes.
 
 ## Write the notes
 
@@ -12,6 +12,10 @@ Write the release notes each issue the PR closes will carry once it is Done. Rea
 
 A blank text leaves that field blank, and the Done write still lands. Never write `Shipped in version`: the project's release script stamps it. Writing the notes asks nothing of the user and needs no reply.
 
+## Decide the release targets
+
+Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" release-targets --pr <number>`. Only when its `issues` is not empty, read `skills/release-notes/references/release-targets.md` and add each issue's `targets` to the notes file before posting.
+
 ## Post them on the PR
 
 Post the notes JSON as one PR comment. `wf post-merge` and `wf settle-merged` read the newest such comment when no `--notes` file is given, so a merge finished outside the run that wrote them still writes them. Write the body to `.claude/release-notes-comment.md` with the Write tool, then run `gh pr comment <number> --repo <org>/<repo> --body-file .claude/release-notes-comment.md`. The body is exactly:
@@ -21,7 +25,7 @@ Post the notes JSON as one PR comment. `wf post-merge` and `wf settle-merged` re
 Release notes, written into each issue's fields when it is settled as Done.
 
 ```json
-{"41": {"user": "* ...", "internal": "* ..."}}
+{"41": {"user": "* ...", "internal": "* ...", "targets": ["web"]}}
 ```
 ````
 

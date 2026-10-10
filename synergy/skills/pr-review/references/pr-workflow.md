@@ -29,7 +29,7 @@ Run `gh auth status` first. If it fails, stop and tell the user to run `gh auth 
 
 **A pinned PR.** When the invocation names a PR (`$ARGUMENTS.pr`, or a number a user or calling skill passed), review that one and do not run the picker, which would choose a different PR by priority. Claim it (Step 2) and check out its branch, then continue at Step 1b if it carries `changes-requested`, otherwise at Step 2b. If the claim is lost, report that and exit rather than moving to a different PR.
 
-**Before picking, outside read-only mode,** run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" settle-merged` once. It sets Done and writes the release notes for any PR merged since the run that approved it (a queued auto-merge, or a person merging). For each PR under `needs_notes`, write the notes and settle it again, as step 5 of `skills/execute/references/shared-phases.md` says. Report anything still failing by number and title and carry on.
+**Before picking, outside read-only mode,** run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" settle-merged` once. It sets Done and writes the release notes for any PR merged since the run that approved it (a queued auto-merge, or a person merging). For each PR under `needs_notes` or `needs_targets`, write the notes or the release targets and settle it again, as step 5 of `skills/execute/references/shared-phases.md` says. Report anything still failing by number and title and carry on.
 
 **Otherwise, run the picker.** It selects, claims and checks out the next PR: `needs-re-review`, then `changes-requested`, then `needs-review`, a head moved since the last review footer, or a PR no review has footered.
 
@@ -103,7 +103,7 @@ Work through each area with the full codebase context:
 - **Tests** — the config's test expectations. Every new path exercised, boundaries and error paths tested, a regression test for a bug fix. Non-trivial changed code with no tests is a hard failure where the config says so.
 - **Regressions** — are callers and consumers from Step 5 broken or subtly changed?
 - **Minimality** — is every changed line needed? Flag unrelated refactors, formatting or comment edits.
-- **Release notes** — when the PR closes an issue, its newest `<!-- synergy:release-notes -->` comment holds one entry per closing issue that matches the change and follows `skills/release-notes/SKILL.md`. A missing or wrong note is non-blocking: Step 7 writes it and posts a new comment (`skills/release-notes/references/on-the-pr.md`); read-only mode reports it as a finding.
+- **Release notes** — when the PR closes an issue, its newest `<!-- synergy:release-notes -->` comment holds one entry per closing issue that matches the change and follows `skills/release-notes/SKILL.md`, with a `targets` list in a repository that has a Release Targets table. A missing or wrong note or target is non-blocking: Step 7 writes it and posts a new comment (`skills/release-notes/references/on-the-pr.md`); read-only mode reports it as a finding.
 
 ### Step 7 — Fix issues (blocking first, then non-blocking)
 

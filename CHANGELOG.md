@@ -6,6 +6,15 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.17.0
+
+- A merged pull request now leaves each issue it closes with a `release: {target}` label for each release target its work ships in, so a release script can tell what waits for a mobile, web or backend release. `wf post-merge` adds the labels. It adds `release: internal` when no target applies, and it never removes a release label.
+- The targets are decided before the merge, where `execute` and `bulk-execute` write the release notes. New `wf release-targets --pr N` command returns, for each issue the pull request closes, the folders its work touched, the targets the Jev `target` check is sure of, and the targets the agent decides. In a bulk pull request each story gets the paths of its own commits, matched by the `(#N)` that ends the commit's first line. With `TYPESAFE_API_KEY` unset, or Jev off, the agent decides every target and nothing stops.
+- The targets go in the release-notes file and the release-notes comment on the pull request, as a `targets` list for each issue. An issue can have more than 1 target.
+- `wf settle-merged` treats a closed issue with no `release:` label as unsettled, so a merge from the queue or by a person gets its labels at the next run. A merged pull request with no targets on it is listed under `needs_targets`, and the run decides them. After a repository adds a Release Targets table, the next run lists its recent merged pull requests there once.
+- New `synergy/references/release-labels.md` is the contract for a project's release script: an issue waits for a target while it is closed, has `release: {target}` and lacks `released: {target}`. The script adds `released: {target}` and writes `Shipped in version`.
+- A repository with no row in its Release Targets table sets no release label and merges as before.
+
 ## synergy 18.16.0
 
 - Every issue now gets exactly 1 area label, so release notes can place it without a parent. A spec entry for `wf issue-apply` takes an `area` key that holds a name from the Areas table in `ClaudeProject.md`, and the command writes the `area: {name}` label with the issue. A name the table does not have is refused, and so is an `area:` name in `labels`.

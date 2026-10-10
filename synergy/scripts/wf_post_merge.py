@@ -435,6 +435,12 @@ def cmd_post_merge(args):
     for fact in note_facts.values() if has_fields else ():
         if fact.get('skipped') and not fact.get('error'):
             fact['error'] = '; '.join(fact['skipped'])
+    # The release labels, in a repository with a release-targets table. The
+    # targets were decided before the merge and ride beside the notes, because
+    # this step is a script and cannot judge where an issue ships.
+    targets, target_errors = release_targets_supplied(
+        cfg, getattr(args, 'notes', None), data.get('comments'))
+    label_facts = release_label_writes(cfg, repo, linked, issues, targets)
     done = wf_core.STAGE_NAMES['stage-done']
     ids = {n: facts[n]['id'] for n in linked if facts[n]['id']}
     stages = set_stages(cfg, {n: done for n in linked}, ids=ids,
@@ -467,6 +473,8 @@ def cmd_post_merge(args):
                  'stage_set': done_set, 'stage_message': stage_msg}
         if number in note_facts:
             entry['release_notes'] = note_facts[number]
+        if number in label_facts:
+            entry['release_labels'] = label_facts[number]
         settled.append(entry)
 
     # Settling the issues the PR closed is only half of a merge. The other half
@@ -485,6 +493,9 @@ def cmd_post_merge(args):
     clean = (all(s['closed'] and s['stage_set'] for s in settled)
              and not note_errors
              and not any((s.get('release_notes') or {}).get('error')
+                         for s in settled)
+             and not target_errors
+             and not any((s.get('release_labels') or {}).get('error')
                          for s in settled)
              and not container_errors
              and not (unblocked or {}).get('error')
@@ -512,6 +523,9 @@ def cmd_post_merge(args):
         noted = {str(n): f['written'] for n, f in note_facts.items() if f['written']}
         if noted:
             extra['release_notes'] = noted
+        labelled = {str(n): f['added'] for n, f in label_facts.items() if f['added']}
+        if labelled:
+            extra['release_labels'] = labelled
         emit_line('ok', EXIT_OK, pr=args.pr, settled=[s['issue'] for s in settled],
                   containers_closed=containers, released=released, **extra,
                   reason='PR #%d settled: %d issue(s) closed and Done, %d '
@@ -523,7 +537,8 @@ def cmd_post_merge(args):
          settled=settled,
          skipped_areas=areas,
          containers_closed=containers, container_errors=container_errors,
-         release_note_errors=note_errors, unblocked=unblocked)
+         release_note_errors=note_errors,
+         release_target_errors=target_errors, unblocked=unblocked)
 
 
 def read_release_notes(path):
@@ -532,14 +547,22 @@ def read_release_notes(path):
     No path is no notes, and not an error: a run that wrote none (a project
     without the fields, a PR merged by hand) settles exactly as before.
     """
+    data, errors = _notes_file_data(path)
+    if data is None:
+        return {}, errors
+    return wf_core.parse_release_notes(data)
+
+
+def _notes_file_data(path):
+    """The JSON a `--notes` file holds. (data, errors), None for no file or
+    one that cannot be read."""
     if not path:
-        return {}, []
+        return None, []
     try:
         with open(path, encoding='utf-8') as fh:
-            data = json.load(fh)
+            return json.load(fh), []
     except (OSError, ValueError) as exc:
-        return {}, ['could not read %s (%s)' % (path, exc)]
-    return wf_core.parse_release_notes(data)
+        return None, ['could not read %s (%s)' % (path, exc)]
 
 
 NOTES_MARKER = '<!-- synergy:release-notes -->'
@@ -553,19 +576,94 @@ def notes_from_comments(comments):
     No such comment is no notes, and not an error here: the caller decides
     whether a missing note is a gap.
     """
+    data, errors = _notes_comment_data(comments)
+    if data is None:
+        return {}, errors
+    return wf_core.parse_release_notes(data)
+
+
+def _notes_comment_data(comments):
+    """The JSON in the newest PR comment carrying NOTES_MARKER. (data,
+    errors), None for no such comment or one that cannot be read."""
     for comment in reversed(comments or []):
         body = (comment or {}).get('body') or ''
         if NOTES_MARKER not in body:
             continue
         match = _NOTES_FENCE.search(body)
         if not match:
-            return {}, ['the release-notes comment has no JSON block']
+            return None, ['the release-notes comment has no JSON block']
         try:
-            data = json.loads(match.group(1))
+            return json.loads(match.group(1)), []
         except ValueError as exc:
-            return {}, ['the release-notes comment is not valid JSON (%s)' % exc]
-        return wf_core.parse_release_notes(data)
-    return {}, []
+            return None, ['the release-notes comment is not valid JSON (%s)' % exc]
+    return None, []
+
+
+# ── the release labels (#390) ────────────────────────────────────────────────
+
+def release_targets_supplied(cfg, path, comments):
+    """Each issue's release targets, from where the notes come from: the
+    `--notes` file when one is given, else the newest notes comment.
+    Returns ({number: [target names]}, errors).
+
+    A file or comment that cannot be read gives no targets and no error here,
+    because the notes read already reports it.
+    """
+    data, _ = _notes_file_data(path) if path else _notes_comment_data(comments)
+    return wf_core.parse_release_targets(data, cfg.get('release_targets'))
+
+
+def add_release_labels(repo, number, labels):
+    """Add `labels` to one issue. (ok, err). Nothing is ever removed."""
+    cmd = ['gh', 'issue', 'edit', str(number), '--repo', repo]
+    for name in labels:
+        cmd += ['--add-label', name]
+    code, _, err = run(cmd)
+    if code == 0:
+        return True, ''
+    err = (err or '').strip() or 'gh issue edit failed'
+    if 'not found' in err.lower():
+        err += ('; run `wf labels-ensure` to create the labels the Release '
+                'Targets table names')
+    return False, err
+
+
+def release_label_writes(cfg, repo, linked, issues, targets):
+    """Put a `release:` label on each linked issue for each of its targets.
+
+    Returns {number: fact}. A fact holds `added`, the labels written now, and
+    on a failure `error`. An issue with no targets supplied that already
+    carries a `release:` label is settled and gets no fact. One with neither
+    is a gap: its fact has `missing` set, so `settle-merged` can name it for
+    the caller to decide. Nothing is written in a repository whose
+    release-targets table has no row, and the result is empty.
+    """
+    facts = {}
+    if not wf_core.release_target_names(cfg.get('release_targets')):
+        return facts
+    for number in linked:
+        read, issue, _ = issues.get(number, (False, None, ''))
+        if not read or not issue:
+            continue
+        present = [l.get('name') or '' for l in issue.get('labels') or []]
+        chosen = targets.get(number)
+        if chosen is None:
+            if not wf_core.release_labels_on(present):
+                facts[number] = {
+                    'added': [], 'missing': True,
+                    'error': 'no release targets were supplied for #%d; '
+                             'decide them and re-run with --notes' % number}
+            continue
+        add = wf_core.release_label_add(present, chosen)
+        fact = {'added': []}
+        if add:
+            written, err = add_release_labels(repo, number, add)
+            if written:
+                fact['added'] = add
+            else:
+                fact['error'] = err
+        facts[number] = fact
+    return facts
 
 
 def notes_fields_defined(cfg):
@@ -607,6 +705,14 @@ def cmd_settle_merged(args):
     issues = read_linked_issues(cfg, numbers) if numbers else {}
     done = wf_core.STAGE_NAMES['stage-done']
     wants_notes = notes_fields_defined(cfg) if numbers else False
+    # A repository with a release-targets table wants a `release:` label on
+    # every issue a merge closed, so a merge GitHub made from the queue, or a
+    # person made by hand, gets its labels here.
+    wants_labels = bool(wf_core.release_target_names(cfg.get('release_targets')))
+
+    def unlabelled(issue):
+        names = [l.get('name') or '' for l in issue.get('labels') or []]
+        return not wf_core.release_labels_on(names)
 
     def unsettled(n):
         ok_, issue, _ = issues.get(n, (False, None, ''))
@@ -615,10 +721,11 @@ def cmd_settle_merged(args):
         stage = issue.get('stage')
         if wf_core.is_area_stage(stage):
             return False
-        return stage != done or (wants_notes and not issue.get('has_notes'))
+        return (stage != done or (wants_notes and not issue.get('has_notes'))
+                or (wants_labels and unlabelled(issue)))
 
     pending = sorted(pr for pr, ns in linked.items() if any(unsettled(n) for n in ns))
-    results, failed, needs_notes = [], [], []
+    results, failed, needs_notes, needs_targets = [], [], [], []
     for pr in pending:
         code, payload = call_command(cmd_post_merge, SimpleNamespace(
             pr=pr, issue=None, notes=None, no_unblock=True))
@@ -630,9 +737,12 @@ def cmd_settle_merged(args):
             missing = missing_note_issues(payload)
             if missing:
                 needs_notes.append({'pr': pr, 'issues': missing})
+            missing = missing_target_issues(payload)
+            if missing:
+                needs_targets.append({'pr': pr, 'issues': missing})
     if failed:
         emit('partial', EXIT_PARTIAL, settled=results, failed=failed,
-             needs_notes=needs_notes,
+             needs_notes=needs_notes, needs_targets=needs_targets,
              reason='%d of %d merged PR(s) did not settle cleanly'
                     % (len(failed), len(pending)))
     emit_line('ok', EXIT_OK, settled=[r['pr'] for r in results],
@@ -644,6 +754,14 @@ def missing_note_issues(payload):
     return [entry['issue'] for entry in (payload or {}).get('settled') or []
             if isinstance(entry, dict)
             and (entry.get('release_notes') or {}).get('error')]
+
+
+def missing_target_issues(payload):
+    """The issues a `post-merge` payload settled with no release target
+    decided and no `release:` label."""
+    return [entry['issue'] for entry in (payload or {}).get('settled') or []
+            if isinstance(entry, dict)
+            and (entry.get('release_labels') or {}).get('missing')]
 
 
 def release_note_writes(cfg, linked, notes):
