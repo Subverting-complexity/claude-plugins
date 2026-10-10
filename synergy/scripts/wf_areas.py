@@ -67,21 +67,31 @@ def nearest_area(node, stage_field, depth=AREA_CHAIN_DEPTH):
 
 
 def area_table_rows(cfg, epics):
-    """The rows of the `## Areas` table, each with the open area epic of the
-    same name. `[{'name', 'description', 'epic'}]`, in table order.
+    """The rows of the `## Areas` table, each with its open area epic.
+    `[{'name', 'description', 'epic'}]`, in table order.
 
     A row's `name` is what an issue spec passes as `area`. `epic` is the
-    number of the open area epic whose title is that name, compared without
-    case, or None when there is none: the parent an issue under that area
-    still needs. A repository with no table has no rows.
+    parent an issue under that area still needs: the number in the row's
+    `Epic` column when that epic is an open area epic, which is the mapping
+    `area-backfill` reads, and otherwise the open area epic whose title is
+    that name, compared without case. None when there is neither. A
+    repository with no table has no rows.
     """
-    by_title = {}
+    by_title, open_numbers = {}, set()
     for epic in epics or ():
+        open_numbers.add(epic.get('number'))
         by_title.setdefault((epic.get('title') or '').strip().lower(),
                             epic.get('number'))
+
+    def epic_of(row):
+        column = row.get('epic')
+        if column is not None and column in open_numbers:
+            return column
+        return by_title.get(row['name'].strip().lower())
+
     return [{'name': row['name'],
              'description': (row.get('description') or '').strip(),
-             'epic': by_title.get(row['name'].strip().lower())}
+             'epic': epic_of(row)}
             for row in cfg.get('areas') or []
             if (row.get('name') or '').strip()]
 

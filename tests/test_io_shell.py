@@ -2651,6 +2651,18 @@ class TestAreasCommand(unittest.TestCase):
             {'name': 'Listening', 'description': 'Playback and voices',
              'epic': None}])
 
+    def test_a_row_epic_column_wins_over_the_title_match(self):
+        """The `Epic` column is the mapping `area-backfill` reads, so `rows`
+        gives the same epic even when that epic has another title. A column
+        that names no open area epic falls back to the title."""
+        table = [{'name': 'Library', 'description': '', 'epic': 3},
+                 {'name': 'Syncing', 'description': '', 'epic': 99}]
+        code, payload = self._run(
+            [], self._scan([self._open(1, 'library'), self._open(3, 'Syncing')]),
+            cfg=_cfg(areas=table))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual([row['epic'] for row in payload['rows']], [3, 3])
+
     def test_a_failed_read_is_an_error(self):
         code, payload = self._run(['--repo', 'acme/other'],
                                   lambda query, **fields: (False, None, 'HTTP 502'))

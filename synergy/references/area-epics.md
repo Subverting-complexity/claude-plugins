@@ -32,7 +32,7 @@ It prints `{"status":"ok","areas":[{"number","title","url","body"}],"count":N,"r
                         "field-ownership": "Code agent"}}]}
 ```
 
-`wf issue-apply` writes the label with the issue. In a project with an Areas table it refuses a new entry that has no `area`, with exit 22, and a name the table does not have. An area epic (`"state": "area"`) needs none. An update entry that names another area replaces the old label, so the issue never carries 2. A row's `epic` is the number of the open area epic whose title is the row's name, or `null`. An issue filed before this, or by hand, gets its label when `execute` or `bulk-execute` picks it, through `wf area-set`.
+`wf issue-apply` writes the label with the issue. In a project with an Areas table it refuses a new entry that has no `area`, with exit 22, and a name the table does not have. An area epic (`"state": "area"`) needs none. An update entry that names another area replaces the old label, so the issue never carries 2. A row's `epic` is the number in its `Epic` column when that epic is an open area epic, otherwise the number of the open area epic whose title is the row's name, or `null`. An issue filed before this, or by hand, gets its label when `execute` or `bulk-execute` picks it, through `wf area-set`.
 
 ## Moving an existing project onto areas
 
