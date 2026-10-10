@@ -29,7 +29,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 539 |
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
 | `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, `post-merge` | 397 |
-| `wf_review.py` | PR pools and review labels, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 411 |
+| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 572 |
 | `wf_issue_apply.py` | `issue-apply` | 777 |
 | `wf_issue_audit.py` | `issue-audit` | 166 |
 | `wf_areas.py` | `areas`: the open area epics, or the one an issue resolves to | 101 |
@@ -39,7 +39,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_worktrees.py` | Reading a worktree's age and state, removing one (links first), the sweep, `worktree-reap` | 281 |
 | `wf_block.py` | `block` | 129 |
 | `wf_pr_create.py` | `pr-create` | 128 |
-| `wf_core.py` | Facade: re-exports the rules below | 50 |
+| `wf_core.py` | Facade: re-exports the rules below | 58 |
 | `wf_core_findings.py` | The finding record and the helpers findings are worded with | 46 |
 | `wf_core_fields.py` | Label resolution, native issue types, field vocabularies and ranks | 419 |
 | `wf_core_stage.py` | `Stage` names, work scope, which stage an issue belongs in, stage drift targets | 452 |
@@ -51,6 +51,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_spec.py` | The issue hierarchy, spec validation, value shaping and batching | 562 |
 | `wf_core_audit.py` | What an existing issue is missing or contradicts | 344 |
 | `wf_core_review.py` | Review-state label names, pools and reconciliation | 192 |
+| `wf_core_labels.py` | The area and release labels the `ClaudeProject.md` tables name, and the plan for a repository to carry them: create, rename, conflict, unknown, differs | 175 |
 | `wf_core_drift.py` | Finished containers and stage drift findings | 96 |
 | `wf_core_preflight.py` | Config sections, label and field drift, instruction files | 584 |
 | `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 307 |
@@ -670,7 +671,29 @@ A write that landed prints one line and exits 0, so a caller reads nothing on su
 
 ### `labels-ensure`
 
-`labels-ensure` creates each of the nine review-state labels the repo lacks, named through `docs/review.config.md` with the `review-` defaults, with the colours and descriptions in `wf_core.REVIEW_LABEL_META`. These are the only labels the workflow applies. It never passes `--force`, so an existing label keeps its colour, and a create that loses a race ("already exists") counts as created. Read `created`, `failed` and `labels`; it exits non-zero when the labels cannot be read or a create fails.
+`labels-ensure` creates each of the nine review-state labels the repo lacks, named through `docs/review.config.md` with the `review-` defaults, with the colours and descriptions in `wf_core.REVIEW_LABEL_META`. These are the only labels the workflow puts on a pull request. It never passes `--force`, so an existing label keeps its colour, and a create that loses a race ("already exists") counts as created. Read `created`, `failed` and `labels`; it exits non-zero when the labels cannot be read or a write fails.
+
+It then makes the repository carry the area and release labels that `ClaudeProject.md` defines. A repository with neither table gets the review labels only, and the result has the three keys above and no others.
+
+- **An `## Areas` row** becomes `area: {name}`, with the row's description and colour. A row with no colour is created with the colour GitHub picks.
+- **A `## Release Targets` row** becomes `release: {name}`, for an issue waiting to ship in that target, and `released: {name}`, for one that has shipped in it. The descriptions say so and then quote the row. A `release:` label takes the row's colour and every `released:` label is the same green.
+- **`release: internal` and `released: internal`** are added when the release-targets table has a row, for work that ships to nobody outside the team. A row named `internal` replaces them.
+
+The same rules apply as for the review labels: no `--force`, and "already exists" counts as created. Names are matched without case, as GitHub matches them. The labels are read once, in pages of 100, so a second run finds everything the first one made and writes nothing.
+
+**A rename.** When an area row carries `Was` and the repository has `area: {was}` but not `area: {name}`, the label is renamed in place with `gh label edit --name`. GitHub keeps the label and changes its name, so every issue that carried the old name carries the new one. Nothing is deleted and created again. `Was` may also hold the old label name in full, for a label that had another prefix.
+
+Everything else is reported and never written, because a person has to decide it:
+
+| Key | What it holds |
+|-----|---------------|
+| `table_labels` | Every label name the tables define, in table order. |
+| `renamed` | `{from, to}` for each label renamed in this run. |
+| `conflicts` | `{was, name}` when both the old name and the new one exist. Nothing is written for that row. Move the issues to one label and delete the other. |
+| `unknown` | Each `area:`, `release:` or `released:` label the repository has and no row names. It is never deleted. The old name of a rename or a conflict is not listed here. |
+| `differs` | `{name, field, wanted, live}` when a colour or description is not the row's. It is never changed. Colours are compared without case and without `#`, and a row that states no colour, or an area with no description, accepts any. |
+
+`created` and `failed` cover these labels too: `failed` names a create or a rename that GitHub refused, and the exit is then non-zero. `labels` stays the nine review label names.
 
 ### `handoff`
 

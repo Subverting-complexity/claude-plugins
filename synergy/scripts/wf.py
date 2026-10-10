@@ -381,8 +381,10 @@ def build_parser():
     fin.set_defaults(func=cmd_review_finish)
 
     le = sub.add_parser('labels-ensure',
-                        help='create each review-state label the repo lacks '
-                             '(guarded: never overwrites an existing label)')
+                        help='create each review-state, area and release label '
+                             'the repo lacks, and rename an area label whose '
+                             'row carries `was` (guarded: never overwrites or '
+                             'deletes an existing label)')
     le.set_defaults(func=cmd_labels_ensure)
 
     cfg = sub.add_parser('config', help='emit .claude/wf-config.json from ClaudeProject.md')
