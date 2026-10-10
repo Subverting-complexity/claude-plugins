@@ -63,3 +63,39 @@ Preflight warns `area-epics` while the repository has no open area epic, and `wf
 3. **Attach what has no parent.** Give each parentless bug, chore and feature a `parent`: an area, or an open feature in that area when one clearly fits. A story needs a parent too: a feature, or the area directly when no feature fits.
 
 4. **Check.** Run `wf issue-audit` (`references/setup-issues.md`) and fix each `no-area` it still reports. Repeat until none is left.
+
+## Moving the areas to labels
+
+An area epic holds an issue's area only in the parent chain. An `area: {name}` label holds it on the issue, so it stays when the chain changes or the epic closes. `wf area-backfill` copies the one to the other for every issue of the repository, open and closed. Do this once, in this order.
+
+1. **Fill the `epic` column.** In the `## Areas` table of `ClaudeProject.md`, give each row the number of its area epic. Each area epic needs exactly one row.
+
+2. **Create the labels.**
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" labels-ensure
+   ```
+
+3. **Do a dry run.** It prints the counts per area and writes nothing.
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-backfill --dry-run
+   ```
+
+   If the status is `refused`, `stops` names the cause: an area epic with no row, a row whose epic is not an area epic, or a label that does not exist. Correct the table or run `labels-ensure`, then do the dry run again. Read `no_area`: each issue there reaches no area epic and gets no label. Read `differs`: each issue there carries another area label than the one it resolves to, and the command leaves it as it is.
+
+4. **Run it.**
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-backfill
+   ```
+
+   If the status is `partial`, run it again. An issue that has its label is skipped, so the second run finishes the rest. A run that finds nothing to label writes nothing.
+
+5. **Close the area epics.** Do this only after a person agrees that the labels replace the epics.
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-backfill --close-epics
+   ```
+
+   The command closes the epics only when its own read finds no issue left to label and nothing in `differs`. Otherwise it closes nothing and `close_refused` says why. The parent links stay, so an issue still resolves to its area through the closed epic.

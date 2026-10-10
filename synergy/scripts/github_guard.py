@@ -63,7 +63,8 @@ VIEW_OUTPUTS = {'.nameWithOwner', '.owner.login', '.url'}
 # `wf` subcommands that only read, and those that only read with a flag.
 WF_READS = {'setup', 'candidates', 'config', 'org-capabilities', 'issue-audit',
             'config-audit', 'sibling-pr', 'areas'}
-WF_DRY_RUN = {'unblock', 'claim-reap', 'board-sync', 'issue-apply'}
+WF_DRY_RUN = {'unblock', 'claim-reap', 'board-sync', 'issue-apply',
+              'area-backfill'}
 
 GH_API_VALUE_FLAGS = {'-X', '--method', '-H', '--header', '-f', '-F',
                       '--field', '--raw-field', '--input', '-q', '--jq', '-t',

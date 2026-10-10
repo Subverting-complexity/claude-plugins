@@ -64,6 +64,8 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_quota.py` | Whether a round may start against the Claude plan limits: the 5-hour ceiling, the weekly ceiling, the budget for the day from what is left of the week, what a round costs, and when a stopped run can continue | 222 |
 | `wf_jev.py` | `jev`: one request per batch to Jev, the TypeSafe decision model, and the `unavailable` result when there is no key, the repository turns Jev off, a table a check needs is empty or there is no answer, and issues read from GitHub as items; `jev_ask` gives another command the same answer without printing it | 203 |
 | `wf_core_jev.py` | Building the requests for a check in `jev-checks.json`, filling `area` and `target` from the `ClaudeProject.md` tables, and turning each answer into a row with a `high`, `medium` or `low` level | 351 |
+| `wf_area_backfill.py` | `area-backfill`: the paged read of every issue, open and closed, the label ids, the batched label writes, and closing the area epics | 261 |
+| `wf_core_backfill.py` | Which area epic an issue's parent chain reaches, and the backfill plan: what to label, what already carries a label, what differs, what has no area, and why a run must stop | 224 |
 
 ## Commands
 
@@ -195,6 +197,15 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit
 
 # …file-level checks only, no network
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit --offline
+
+# Count what the area backfill would label, per area, and write nothing
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-backfill --dry-run
+
+# Add its area label to every issue under an area epic, open and closed
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-backfill
+
+# …and close the area epics, once a run finds nothing left to label
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-backfill --close-epics
 
 # Lock one issue or PR (and advertise it: assignment / reviewing label)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim --issue 42
@@ -420,6 +431,31 @@ An accepted mutation is not a changed value — an unpinned field or a permissio
 ### Partial failure is reported, not swallowed
 
 A batch answers a partial failure with the aliases that worked and an error carrying the path of each one that did not, so one bad entry does not take its neighbours down with it. The command exits 24 `partial`, names the entries that failed, and writes the numbers of the ones that landed back into the spec — which turns them into no-op updates, so re-running the same spec completes the remainder rather than creating anything twice.
+
+## Copying areas to labels — `area-backfill`
+
+A repository that uses area epics has its areas only in the parent chain, so an issue loses its area when the chain changes. `area-backfill` copies each issue's area to an `area: {name}` label, for every issue of the repository, open and closed. Run it once, when a repository moves from area epics to area labels (`references/area-epics.md`). Release notes for an old release then keep their headings after the area epics are closed.
+
+**The read.** One paged query reads every issue, 100 a page, oldest first: its type, state, parent, labels and `Stage`, and nothing else. When GitHub answers `RESOURCE_LIMITS_EXCEEDED`, the read halves the page and asks the same cursor again, down to 5 a page, and keeps the smaller size (`page_size` in the result). There is no page cap, because a partial read would leave old issues without a label. Against CadenceReader, with 2,126 issues and an area epic that has 100 direct children, the read took 22 requests at 100 a page with no resource-limit error.
+
+**The plan** (`wf_core.backfill_plan`). An issue's area is the nearest area epic above it in its parent chain, at any depth, and a closed area epic still counts. The `epic` column of the `## Areas` table maps the epic to a row, and the row's label is `area: {name}`. The area epics themselves get no label.
+
+| List | Meaning |
+| ---- | ------- |
+| `counts` | Per area name: `to_label`, `already`, `differs` and `total`, as the read found them. |
+| `no_area` | `{number, title, reason}` for each issue that reaches no area epic and carries no area label. Never written. The reason is no parent, a parent in another repository, a parent the read did not return, or a chain that loops. |
+| `differs` | `{number, title, has, resolves_to}` for each issue that carries an area label other than the one it resolves to. Never written, because a person may have chosen that label. |
+| `failed` | `{number, reason}` for each label write GitHub refused. |
+
+**It stops before any write** (`status: refused`, exit 22) when the table and the repository disagree, and `stops` names each cause: `epics_without_row` (an area epic that no row names), `rows_without_area_epic` (a row whose `epic` is not an area epic of the repository), `duplicate_epic_rows` (two rows name one epic) and `missing_labels` (a label the repository lacks, which `labels-ensure` creates). No `## Areas` table at all is `status: error`, exit 20.
+
+**The write.** Each issue in `to_label` gets its label through aliased `addLabelsToLabelable` mutations, 20 issues a request. An issue that carries an area label is skipped, so a second run writes nothing, and a run that failed part way can be started again and finishes the rest. A refused write is `status: partial`, exit 24.
+
+**`--dry-run`** prints the same result with `dry_run: true`, `would_label` and `would_close`, and writes nothing. The GitHub guard treats it as a read.
+
+**`--close-epics`** closes each open area epic a row names, with `gh issue close --reason completed` and a comment that names the label. It closes only when the read of that same run found no issue to label and no entry in `differs`. A run that wrote labels closes nothing and says so in `close_refused`, so closing always takes a second run. The parent links and the `Stage` of the epics are left as they are, so `areas --issue` and a later `area-backfill` still resolve an issue through a closed epic. An epic that could not be closed is listed in `close_failed`, and the run is `partial`, exit 24.
+
+The result is `{"status", "repo", "scanned", "page_size", "labelled", "already", "counts", "no_area", "differs", "failed", "epics_closed"}`. `labelled` and `already` are counts. `--repo owner/name` reads and writes another repository with the table of the current one.
 
 ## Finding the gaps — `issue-audit`
 

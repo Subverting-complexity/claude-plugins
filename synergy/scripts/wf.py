@@ -82,6 +82,7 @@ import wf_deps  # noqa: E402
 import wf_issue_apply  # noqa: E402
 import wf_issue_audit  # noqa: E402
 import wf_unblock  # noqa: E402
+import wf_area_backfill  # noqa: E402
 import wf_pick_tree  # noqa: E402
 import wf_pick_select  # noqa: E402
 import wf_pick_candidates  # noqa: E402
@@ -113,6 +114,7 @@ _SHELL_MODULES = (
     wf_issue_apply,
     wf_issue_audit,
     wf_unblock,
+    wf_area_backfill,
     wf_pick_tree,
     wf_pick_select,
     wf_pick_candidates,
@@ -186,6 +188,7 @@ from wf_review import (
 from wf_stage import cmd_stage_set
 from wf_steps import cmd_exit_cleanup, cmd_start, cmd_tree_clean
 from wf_unblock import cmd_unblock
+from wf_area_backfill import cmd_area_backfill
 from wf_worktrees import cmd_worktree_reap
 
 
@@ -392,6 +395,19 @@ def build_parser():
                              'row carries `was` (guarded: never overwrites or '
                              'deletes an existing label)')
     le.set_defaults(func=cmd_labels_ensure)
+
+    ab = sub.add_parser('area-backfill',
+                        help='add its area label to every issue under an area '
+                             'epic, open and closed, from the `epic` column of '
+                             'the `## Areas` table; a second run writes nothing')
+    ab.add_argument('--dry-run', action='store_true',
+                    help='print the counts per area and write nothing')
+    ab.add_argument('--close-epics', action='store_true',
+                    help='also close the area epics, only when this run found '
+                         'no issue left to label; the parent links are kept')
+    ab.add_argument('--repo', default=None,
+                    help='owner/name; defaults to the repo in ClaudeProject.md')
+    ab.set_defaults(func=cmd_area_backfill)
 
     cfg = sub.add_parser('config', help='emit .claude/wf-config.json from ClaudeProject.md')
     cfg.set_defaults(func=cmd_config)
