@@ -341,22 +341,112 @@ def add_review_label(cfg, number, add, remove=None):
     return code == 0, err or ''
 
 
-def cmd_labels_ensure(args):
-    """Create the review-state labels a repo lacks, and nothing else.
+LABEL_DETAIL_QUERY = (
+    'query($owner:String!,$repo:String!,$after:String){'
+    ' repository(owner:$owner,name:$repo){'
+    '  labels(first:100,after:$after){'
+    '   pageInfo { hasNextPage endCursor } nodes { name color description }'
+    '  } } }'
+)
 
-    These are the only labels the workflow applies (#275), so this is the whole
-    of label setup: `setup` runs it, `preflight --fix` runs it for a
-    `review-label` finding, and a person can run it any time.
+
+def fetch_label_details(cfg, repo=None):
+    """Every label in the repo with its colour and description. (ok, labels, err).
+
+    `fetch_repo_state` reads the names only, which is all the review labels
+    need. Paged, so a repository with more than 100 labels is read whole: a
+    label on a page not read would be created a second time.
+    """
+    owner, name = (repo or '%s/%s' % (cfg['org'], cfg['repo'])).split('/', 1)
+    labels, cursor = [], None
+    while True:
+        fields = {'owner': owner, 'repo': name}
+        if cursor:
+            fields['after'] = cursor
+        ok, data, err = gh_graphql(LABEL_DETAIL_QUERY, **fields)
+        if not ok:
+            return False, [], err
+        page = (((data or {}).get('repository') or {}).get('labels')) or {}
+        labels.extend({'name': n['name'], 'colour': n.get('color') or '',
+                       'description': n.get('description') or ''}
+                      for n in page.get('nodes') or [] if n and n.get('name'))
+        info = page.get('pageInfo') or {}
+        if not info.get('hasNextPage') or not info.get('endCursor'):
+            return True, labels, ''
+        cursor = info['endCursor']
+
+
+def apply_label_plan(plan, repo):
+    """Make the writes a `wf_core.label_plan` asks for. Returns (created, renamed, failed).
+
+    A create follows `ensure_review_labels`: never `--force`, and losing a
+    race to another agent counts as created. A rename is `gh label edit
+    --name`, which changes the label in place so every issue that carried the
+    old name carries the new one; it is never a delete and a create. Nothing
+    else in the plan is written: a conflict, an unknown label and a differing
+    colour or description are for a person to read.
+    """
+    created, renamed, failed = [], [], []
+    for label in plan['create']:
+        cmd = ['gh', 'label', 'create', label['name'], '--repo', repo,
+               '--description', label['description']]
+        if label['colour']:
+            cmd += ['--color', label['colour']]
+        code, _, cerr = run(cmd)
+        if code == 0 or 'already exists' in (cerr or ''):
+            created.append(label['name'])
+        else:
+            failed.append('%s (%s)' % (label['name'], (cerr or '').strip() or 'gh failed'))
+    for move in plan['rename']:
+        code, _, rerr = run(['gh', 'label', 'edit', move['from'], '--repo', repo,
+                             '--name', move['to']])
+        if code == 0:
+            renamed.append(move)
+        else:
+            failed.append('%s -> %s (%s)' % (move['from'], move['to'],
+                                             (rerr or '').strip() or 'gh failed'))
+    return created, renamed, failed
+
+
+def cmd_labels_ensure(args):
+    """Create the labels a repo lacks: the review-state labels, then the area
+    and release labels `ClaudeProject.md` names.
+
+    This is the whole of label setup: `setup` runs it, `preflight --fix` runs
+    the review half for a `review-label` finding, and a person can run it any
+    time. The review labels are the ones a pull request carries (#275). The
+    area and release labels go on issues, and the `## Areas` and `## Release
+    Targets` tables are where they are defined (#386), so a row's label is
+    created, or renamed when the row carries `was`. A repository with neither
+    table gets the review labels, and nothing else is read or reported.
     """
     cfg = prepare_cfg()
-    created, failed, err = ensure_review_labels(cfg)
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    names = wf_core.review_names(cfg.get('review_labels'))
+    wanted = wf_core.table_labels(cfg)
+    live, plan = None, None
+    if wanted:
+        # One read serves both halves: it carries the names the review labels
+        # are checked against and the colours and descriptions the plan needs.
+        ok, details, err = fetch_label_details(cfg, repo)
+        if not ok:
+            emit('error', EXIT_ENV, reason="could not read the repo's labels: %s" % err)
+        live = [label['name'] for label in details]
+        plan = wf_core.label_plan(wanted, details)
+    created, failed, err = ensure_review_labels(cfg, live, repo)
     if err:
         emit('error', EXIT_ENV, reason="could not read the repo's labels: %s" % err)
-    names = wf_core.review_names(cfg.get('review_labels'))
     fields = dict(created=created, failed=failed,
                   labels=[names[k] for k in wf_core.REVIEW_DEFAULT_LABELS])
+    if plan is not None:
+        table_created, renamed, table_failed = apply_label_plan(plan, repo)
+        fields.update(created=created + table_created, failed=failed + table_failed,
+                      table_labels=[label['name'] for label in wanted],
+                      renamed=renamed, conflicts=plan['conflicts'],
+                      unknown=plan['unknown'], differs=plan['differs'])
+    failed = fields['failed']
     if failed:
-        emit('error', EXIT_ENV, reason='could not create %d review label%s'
+        emit('error', EXIT_ENV, reason='could not write %d label%s'
              % (len(failed), '' if len(failed) == 1 else 's'), **fields)
     emit('ok', EXIT_OK, **fields)
 

@@ -14,7 +14,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 |--------|----------------|-------|
 | `wf.py` | Entry point: argument parser, dispatch, re-exports | 534 |
 | `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 142 |
-| `wf_config.py` | Repo root (asked of git once per working directory), `ClaudeProject.md` parsing, the config cache, `config` | 260 |
+| `wf_config.py` | Repo root (asked of git once per working directory), `ClaudeProject.md` parsing with its areas table, release-targets table and Jev row, the config cache, `config` | 549 |
 | `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 498 |
 | `wf_issue_io.py` | Reading, writing and verifying single issues; batched mutations | 422 |
 | `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 183 |
@@ -29,7 +29,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 539 |
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
 | `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, `post-merge` | 397 |
-| `wf_review.py` | PR pools and review labels, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 411 |
+| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 572 |
 | `wf_issue_apply.py` | `issue-apply` | 777 |
 | `wf_issue_audit.py` | `issue-audit` | 166 |
 | `wf_areas.py` | `areas`: the open area epics, or the one an issue resolves to | 101 |
@@ -39,7 +39,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_worktrees.py` | Reading a worktree's age and state, removing one (links first), the sweep, `worktree-reap` | 281 |
 | `wf_block.py` | `block` | 129 |
 | `wf_pr_create.py` | `pr-create` | 128 |
-| `wf_core.py` | Facade: re-exports the rules below | 50 |
+| `wf_core.py` | Facade: re-exports the rules below | 58 |
 | `wf_core_findings.py` | The finding record and the helpers findings are worded with | 46 |
 | `wf_core_fields.py` | Label resolution, native issue types, field vocabularies and ranks | 419 |
 | `wf_core_stage.py` | `Stage` names, work scope, which stage an issue belongs in, stage drift targets | 452 |
@@ -51,6 +51,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_spec.py` | The issue hierarchy, spec validation, value shaping and batching | 562 |
 | `wf_core_audit.py` | What an existing issue is missing or contradicts | 344 |
 | `wf_core_review.py` | Review-state label names, pools and reconciliation | 192 |
+| `wf_core_labels.py` | The area and release labels the `ClaudeProject.md` tables name, and the plan for a repository to carry them: create, rename, conflict, unknown, differs | 175 |
 | `wf_core_drift.py` | Finished containers and stage drift findings | 96 |
 | `wf_core_preflight.py` | Config sections, label and field drift, instruction files | 584 |
 | `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 307 |
@@ -60,8 +61,8 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_worktrees.py` | Reading `git worktree list`, which worktrees a sweep covers, and the verdict on each | 134 |
 | `wf_quota.py` | `quota`: the personal settings file at `~/.claude/synergy/quota.json`, `--save` to write it, the flags that override it, the stored reading from the start of each day, and the printed decision | 140 |
 | `wf_core_quota.py` | Whether a round may start against the Claude plan limits: the 5-hour ceiling, the weekly ceiling, the budget for the day from what is left of the week, what a round costs, and when a stopped run can continue | 222 |
-| `wf_jev.py` | `jev`: one request per batch to Jev, the TypeSafe decision model, and the `unavailable` result when there is no key or no answer, and issues read from GitHub as items | 116 |
-| `wf_core_jev.py` | Building the requests for a check in `jev-checks.json`, and turning each answer into a row with a `high`, `medium` or `low` level | 189 |
+| `wf_jev.py` | `jev`: one request per batch to Jev, the TypeSafe decision model, and the `unavailable` result when there is no key, the repository turns Jev off, a table a check needs is empty or there is no answer, and issues read from GitHub as items | 176 |
+| `wf_core_jev.py` | Building the requests for a check in `jev-checks.json`, filling `area` and `target` from the `ClaudeProject.md` tables, and turning each answer into a row with a `high`, `medium` or `low` level | 351 |
 
 ## Commands
 
@@ -672,7 +673,29 @@ A write that landed prints one line and exits 0, so a caller reads nothing on su
 
 ### `labels-ensure`
 
-`labels-ensure` creates each of the nine review-state labels the repo lacks, named through `docs/review.config.md` with the `review-` defaults, with the colours and descriptions in `wf_core.REVIEW_LABEL_META`. These are the only labels the workflow applies. It never passes `--force`, so an existing label keeps its colour, and a create that loses a race ("already exists") counts as created. Read `created`, `failed` and `labels`; it exits non-zero when the labels cannot be read or a create fails.
+`labels-ensure` creates each of the nine review-state labels the repo lacks, named through `docs/review.config.md` with the `review-` defaults, with the colours and descriptions in `wf_core.REVIEW_LABEL_META`. These are the only labels the workflow puts on a pull request. It never passes `--force`, so an existing label keeps its colour, and a create that loses a race ("already exists") counts as created. Read `created`, `failed` and `labels`; it exits non-zero when the labels cannot be read or a write fails.
+
+It then makes the repository carry the area and release labels that `ClaudeProject.md` defines. A repository with neither table gets the review labels only, and the result has the three keys above and no others.
+
+- **An `## Areas` row** becomes `area: {name}`, with the row's description and colour. A row with no colour is created with the colour GitHub picks.
+- **A `## Release Targets` row** becomes `release: {name}`, for an issue waiting to ship in that target, and `released: {name}`, for one that has shipped in it. The descriptions say so and then quote the row. A `release:` label takes the row's colour and every `released:` label is the same green.
+- **`release: internal` and `released: internal`** are added when the release-targets table has a row, for work that ships to nobody outside the team. A row named `internal` replaces them.
+
+The same rules apply as for the review labels: no `--force`, and "already exists" counts as created. Names are matched without case, as GitHub matches them. The labels are read once, in pages of 100, so a second run finds everything the first one made and writes nothing.
+
+**A rename.** When an area row carries `Was` and the repository has `area: {was}` but not `area: {name}`, the label is renamed in place with `gh label edit --name`. GitHub keeps the label and changes its name, so every issue that carried the old name carries the new one. Nothing is deleted and created again. `Was` may also hold the old label name in full, for a label that had another prefix.
+
+Everything else is reported and never written, because a person has to decide it:
+
+| Key | What it holds |
+|-----|---------------|
+| `table_labels` | Every label name the tables define, in table order. |
+| `renamed` | `{from, to}` for each label renamed in this run. |
+| `conflicts` | `{was, name}` when both the old name and the new one exist. Nothing is written for that row. Move the issues to one label and delete the other. |
+| `unknown` | Each `area:`, `release:` or `released:` label the repository has and no row names. It is never deleted. The old name of a rename or a conflict is not listed here. |
+| `differs` | `{name, field, wanted, live}` when a colour or description is not the row's. It is never changed. Colours are compared without case and without `#`, and a row that states no colour, or an area with no description, accepts any. |
+
+`created` and `failed` cover these labels too: `failed` names a create or a rename that GitHub refused, and the exit is then non-zero. `labels` stays the nine review label names.
 
 ### `handoff`
 
@@ -736,4 +759,4 @@ There is no inline fallback. The markdown procedures these commands replaced hav
 
 `quota [--five-hour-used N --five-hour-resets TIME] [--weekly-used N --weekly-resets TIME] [--before-five-hour N --before-weekly N] [--no-record]` tells a long run whether it may start another round without going past the Claude plan limits. The caller reads the limits and passes them in; the command reads no usage. It prints `decision` (`go`, `wait` or `stop`), a `reason`, `resume_at` and `wait_seconds` when a limit will clear, and 3 `checks`. `five_hour` and `weekly` pass when the percent used plus the cost of one round stays at or below the ceiling (85 and 90 by default). `daily` passes when what the day has used of the weekly limit, plus the cost of one round, stays at or below the budget for the day. The week is 7 days of 24 hours counted from the weekly reset, and the budget for a day is what was left of the weekly limit when the day started, divided by the days left with that day counted, times `daily_share` percent (100 by default): 30% used after 3 days leaves 70% for 4 days, so 17.5% a day. The first check of a day stores the weekly percent in `~/.claude/synergy/quota-state.json` (or the path in `SYNERGY_QUOTA_STATE`) as the start of that day, and `--no-record` stores nothing. The cost of one round is the rise since the `--before-*` reading, or the reserve (15 and 3) when there is none or the window reset. With `on_limit` set to `wait` the decision is `wait` when every failed check clears within `max_wait_hours` (5), and `stop` otherwise. With no reading the result has `unknown: true` and follows `on_unknown` (`continue` by default). Each setting is a flag of the same name, and a person's own defaults go in `~/.claude/synergy/quota.json` (or the path in `SYNERGY_QUOTA_CONFIG`); a flag overrides the file, and a wrong name or value is a usage error (exit 2). `quota --save [setting flags]` writes those flags into the file and decides nothing; with no setting flag it writes a file with no settings, which records that the person chose the defaults. `configured` is false until the file exists, which is how `orchestrate`, the caller, knows to ask once.
 
-`jev --check NAME [--input FILE] [--issue N ...] [--open-issues [LIMIT]]` asks Jev, the TypeSafe decision model, one of the checks in `jev-checks.json`: `priority`, `effort`, `readiness` and `audience` for each item, `duplicate` for each item against a `subject`, `depends` for each ordered pair of items, and `draft` for each writing rule against a `draft`. `--issue` and `--open-issues` read the items from GitHub, so issue bodies do not pass through the caller, and a yes or no check lists only the rows worth reading and counts the rest in `sure_no`. The file holds every question and both thresholds, so it is the one place to change either. The command prints one row per question with the answer and a `level`: `high` means use the answer, `medium` means look again, `low` means decide without it. Jev is optional: with no `TYPESAFE_API_KEY`, or when the service does not answer, the result is `unavailable` (exit 30) and the caller makes the judgment itself. The key is read from the environment and never printed. `skills/jev/SKILL.md` says when a workflow may use it.
+`jev --check NAME [--input FILE] [--issue N ...] [--open-issues [LIMIT]]` asks Jev, the TypeSafe decision model, one of the checks in `jev-checks.json`: `priority`, `effort`, `readiness`, `audience` and `area` for each item, `target` for each item and each release target, `duplicate` for each item against a `subject`, `depends` for each ordered pair of items, and `draft` for each writing rule against a `draft`. The answers of `area` are the rows of the `## Areas` table in `ClaudeProject.md` plus `unsure`, and `target` asks about each row of `## Release Targets`. `--issue` and `--open-issues` read the items from GitHub, so issue bodies do not pass through the caller, and a yes or no check lists only the rows worth reading and counts the rest in `sure_no`, except `target`, which lists every row. The file holds every question and both thresholds, so it is the one place to change either. The command prints one row per question with the answer and a `level`: `high` means use the answer, `medium` means look again, `low` means decide without it. Jev is optional: with no `TYPESAFE_API_KEY`, when the `## Jev` row of `ClaudeProject.md` says `off`, when the table that `area` or `target` needs is empty, or when the service does not answer, the result is `unavailable` (exit 30) and the caller makes the judgment itself. The key is read from the environment and never printed. `skills/jev/SKILL.md` says when a workflow may use it.

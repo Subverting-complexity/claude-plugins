@@ -7,6 +7,10 @@ answer, the command prints `status: unavailable` and exits 30, which every
 caller reads as "make this judgment yourself". It never asks for a key and
 never prints one.
 
+The `area` and `target` checks take their answers from the areas and
+release-targets tables in `ClaudeProject.md`. A repository with no such table
+has nothing to choose from, so those checks are `unavailable` there too.
+
 `scripts/README.md` has the module map.
 """
 
@@ -17,6 +21,7 @@ import urllib.error
 import urllib.request
 
 import wf_core
+from wf_config import config_paths, jev_setting, load_config, repo_root
 from wf_io import EXIT_OK, EXIT_UNSUPPORTED, EXIT_USAGE, emit, gh_json
 
 JEV_URL = 'https://api.typesafe.ai/v1/systemone'
@@ -71,6 +76,44 @@ def jev_fetch_items(numbers, open_limit):
             for i in items], None
 
 
+def jev_switched_off():
+    """True when `ClaudeProject.md` turns Jev off for this repository.
+
+    A project with no `ClaudeProject.md` has not said no: Jev stays on, as it
+    is for a repository with no `## Jev` row. A file that exists and does not
+    load, because a table row was refused, may still say `off`, so its row is
+    read on its own: a fault elsewhere in the file must not send content out.
+    A file that cannot be read at all is taken as `off` for the same reason.
+    """
+    try:
+        ok, cfg, _ = load_config()
+    except (OSError, ValueError):
+        return True
+    if ok and cfg:
+        return cfg.get('jev') == 'off'
+    _, source = config_paths(repo_root())
+    if not os.path.isfile(source):
+        return False
+    try:
+        with open(source, encoding='utf-8') as fh:
+            return jev_setting(fh.read()) == 'off'
+    except (OSError, ValueError):
+        return True
+
+
+JEV_TABLE_NAMES = {'areas': 'Areas', 'release_targets': 'Release Targets'}
+
+
+def jev_table(name):
+    """The rows of the `areas` or `release_targets` table in `ClaudeProject.md`.
+
+    A project with no `ClaudeProject.md`, or one that cannot be read, has no
+    table: its rows are an empty list, the same as a file with no such section.
+    """
+    ok, cfg, _ = load_config()
+    return list((cfg.get(name) or []) if ok and cfg else [])
+
+
 def cmd_jev(args):
     config = load_jev_config()
     payload = {}
@@ -85,6 +128,23 @@ def cmd_jev(args):
     if not key:
         emit('unavailable', EXIT_UNSUPPORTED,
              reason='%s is not set; make this judgment without Jev' % JEV_KEY_ENV)
+    # A repository can say its content must stay on the machine. That holds
+    # whatever key is set, so it is read before anything is sent.
+    if jev_switched_off():
+        emit('unavailable', EXIT_UNSUPPORTED,
+             reason='Jev is off for this repository in ClaudeProject.md; '
+                    'make this judgment without Jev')
+    # A check that picks from a table has nothing to pick from without one.
+    # Also before any read from GitHub, and before any request.
+    table = wf_core.jev_table_needed(config, args.check)
+    if table:
+        table_rows = jev_table(table)
+        if not wf_core.jev_table_rows(table_rows):
+            emit('unavailable', EXIT_UNSUPPORTED,
+                 reason='ClaudeProject.md has no %s table, so the %s check has nothing '
+                        'to choose from; make this judgment without Jev'
+                        % (JEV_TABLE_NAMES.get(table, table), args.check))
+        config = wf_core.jev_resolve(config, args.check, table_rows)
     if args.issue or args.open_issues:
         fetched, reason = jev_fetch_items(args.issue, args.open_issues)
         if fetched is None:

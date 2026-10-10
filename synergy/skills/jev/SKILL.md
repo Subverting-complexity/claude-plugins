@@ -24,11 +24,15 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" jev --check {check} --input .claude/j
 | `effort` | the same | `Low`, `Medium` or `High` |
 | `readiness` | the same | `unclear`, `partial` or `ready` to build from |
 | `audience` | the same, one item per change | `user`, `internal` or `unsure` |
+| `area` | the same | one area name from the areas table in `ClaudeProject.md`, or `unsure` |
+| `target` | the same; an item may add `"paths": [file paths]` | for each item and each `target` in the release-targets table, whether the work ships in it |
 | `duplicate` | `items` plus `"subject": {"title", "body"}` | whether the item is the same work as the subject |
 | `depends` | 2 to 12 `items` | for each ordered `pair` `[a, b]`, whether `a` must be built before `b` |
 | `draft` | `{"draft": "the text"}` | for each writing `rule`, whether the draft breaks it |
 
-For items that are GitHub issues, let the command read them: `--issue 41 --issue 43` adds those issues as items, and `--open-issues` adds every open issue (100 at most), so their bodies never pass through this conversation. `--input` is then needed only for a `subject` or a `draft`. A yes or no check lists only the rows worth reading and counts the sure noes in `sure_no`.
+For items that are GitHub issues, let the command read them: `--issue 41 --issue 43` adds those issues as items, and `--open-issues` adds every open issue (100 at most), so their bodies never pass through this conversation. `--input` is then needed only for a `subject` or a `draft`. A yes or no check lists only the rows worth reading and counts the sure noes in `sure_no`; `target` is the exception and lists every row.
+
+`area` and `target` take their answers from the repository's own tables, so each is `unavailable` when its table is empty. For `target`, `paths` is sent as the distinct folders the files are in, cut to fit the text limit; the file names are not sent.
 
 The questions and thresholds live in `scripts/jev-checks.json`.
 
@@ -37,6 +41,8 @@ The questions and thresholds live in `scripts/jev-checks.json`.
 Each row has an `answer` and a `level`. **`high`**: use the answer. **`medium`**: treat it as a hint and judge the item yourself. **`low`**: ignore it and judge the item yourself.
 
 - **`priority`, `effort`, `audience`, `readiness`** — a `high` row is the value. For `readiness`, only `ready` at `high` skips your own read.
+- **`area`** — a `high` row that names an area is the area. `unsure`, or any row below `high`, is your decision.
+- **`target`** — one row for each item and target, so an item can get yes for more than 1 target. A `high` row is the value for that target, yes or no. A row below `high` is your decision for that target.
 - **`duplicate`** — a `high` yes means the work is already filed: do not file it again, and name the existing issue. On a `medium` yes, read that issue and decide.
 - **`depends`** — a yes at `high` or `medium` is a link that is probably missing. Check it yourself before adding an edge, or report it to the person. Never reorder work on Jev's answer alone.
 - **`draft`** — for each rule answered yes at `high` or `medium`, look at the draft for that fault and correct it if it is there. Run the check a second time at most.

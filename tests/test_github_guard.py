@@ -453,6 +453,26 @@ class TestThePluginsOwnFlows(unittest.TestCase):
         self.assertIsNone(pwsh(
             '& "$env:CLAUDE_PLUGIN_ROOT\\scripts\\wf.ps1" stage-set 1 --stage stage-backlog'))
 
+    def test_a_label_rename_is_judged_by_its_repository(self):
+        # `wf labels-ensure` renames an area label in place (#386). The new
+        # name is a `--name` value and holds a colon and a space, and neither
+        # may be read as the repository the write goes to.
+        rename = 'gh label edit "area: backend" --name "area: api" --repo %s/claude-plugins'
+        self.assertIsNone(check(rename % 'Subverting-complexity', here='SomeoneElse'))
+        self.assertIsNotNone(check(rename % 'SomeoneElse'))
+        bare = 'gh label edit "area: backend" --name "area: api"'
+        self.assertIsNone(check(bare))
+        self.assertIsNotNone(check(bare, here='SomeoneElse'))
+        self.assertEqual(
+            writes(rename % 'Subverting-complexity'),
+            [('Subverting-complexity', '`gh label edit`')])
+        self.assertIsNone(check(
+            'gh api -X PATCH "repos/Subverting-complexity/claude-plugins/labels/area:%20backend"'
+            ' -f new_name="area: api"'))
+        self.assertIsNone(check('bash "$CLAUDE_PLUGIN_ROOT/scripts/wf.sh" labels-ensure'))
+        self.assertIsNotNone(check('bash "$CLAUDE_PLUGIN_ROOT/scripts/wf.sh" labels-ensure',
+                                   project='SomeoneElse'))
+
 
 class TestUnreadableCalls(unittest.TestCase):
     def test_a_call_the_guard_cannot_read_is_denied_when_it_looks_like_a_write(self):

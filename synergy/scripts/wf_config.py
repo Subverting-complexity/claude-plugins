@@ -59,17 +59,126 @@ def check_environment():
     return None
 
 
-def _rows(block):
-    """Yield cleaned cells for each markdown table row in a text block."""
+def _split_row(line, code_spans=True):
+    """Cut one table row into its cells, without the outer pipes.
+
+    A `|` belongs to its cell, not to the table, when it is written `\\|` or
+    sits inside a backtick code span, so a description may name a shell pipe.
+    A row with an odd number of backticks has no closed span to protect, and is
+    cut again on every unescaped pipe.
+    """
+    cells, cell, in_code, i = [], [], False, 0
+    while i < len(line):
+        ch = line[i]
+        if ch == '\\' and line[i + 1:i + 2] == '|':
+            cell.append('|')
+            i += 2
+            continue
+        if ch == '`' and code_spans:
+            in_code = not in_code
+        if ch == '|' and not in_code:
+            cells.append(''.join(cell))
+            cell = []
+        else:
+            cell.append(ch)
+        i += 1
+    if in_code:
+        return _split_row(line, code_spans=False)
+    cells.append(''.join(cell))
+    # The text before the leading pipe and after the trailing one is no cell.
+    cells = cells[1:]
+    if cells and not cells[-1].strip():
+        cells = cells[:-1]
+    return cells
+
+
+def _rows(block, raw=False):
+    """Yield the cells of each markdown table row in a text block.
+
+    A cell loses the backticks around it, unless `raw` asks for the text as
+    written: a description is prose and may start or end with a code span.
+    """
     for line in block.splitlines():
         line = line.strip()
         if not line.startswith('|'):
             continue
-        cells = [c.strip().strip('`').strip() for c in line.strip('|').split('|')]
+        cells = [c.strip() for c in _split_row(line)]
+        if not raw:
+            cells = [c.strip('`').strip() for c in cells]
         # skip header separators like |---|---|
         if all(set(c) <= set('-: ') for c in cells):
             continue
         yield cells
+
+
+class ConfigError(ValueError):
+    """A `ClaudeProject.md` value the workflow must refuse rather than guess at."""
+
+
+# The keys a cache has to carry. One written before they existed is stale,
+# whatever its age: read as it is, it would say the repository has no areas.
+TABLE_KEYS = ('areas', 'release_targets', 'jev')
+_UNSET = ('', '-', '—', 'n/a', 'none', '_(none)_')
+
+
+def _bare(cell):
+    return cell.strip().strip('`').strip()
+
+
+def jev_setting(text):
+    """`on` or `off`, from the `## Jev` row of a `ClaudeProject.md`.
+
+    Jev, the TypeSafe decision model, sends issue text to an outside service.
+    `off` is how a repository whose content must stay on the machine says no.
+    Read apart from the tables, so `wf jev` can still obey it in a file whose
+    tables are refused.
+    """
+    for cells in _rows(_section(text, 'Jev')):
+        if len(cells) >= 2 and cells[0].lower() == 'jev':
+            return 'off' if cells[1].lower() == 'off' else 'on'
+    return 'on'
+
+
+def _label_table(text, heading, what, extra=()):
+    """The rows of an areas or release-targets table, as dicts in table order.
+
+    Columns are found by their header, so a table may leave an optional column
+    out or order them differently. A row whose name is blank or still a
+    `{placeholder}` is no row. Raises `ConfigError` for a description GitHub
+    would refuse and for a name that appears twice, because both would
+    otherwise surface later as a label that silently is not there.
+    """
+    rows = list(_rows(_section(text, heading), raw=True))
+    if not rows:
+        return []
+    header = [_bare(c).lower() for c in rows[0]]
+    header = ['colour' if h == 'color' else h for h in header]
+    out, seen = [], set()
+    for cells in rows[1:]:
+        row = dict(zip(header, cells))
+        name = _bare(row.get('name', ''))
+        if name.lower() in _UNSET or name.startswith('{'):
+            continue
+        description = row.get('description', '').strip()
+        if len(description) > wf_core.LABEL_DESCRIPTION_LIMIT:
+            raise ConfigError(
+                '%s "%s" has a description of %d characters; GitHub allows a label '
+                'description %d at most' % (what, name, len(description),
+                                            wf_core.LABEL_DESCRIPTION_LIMIT))
+        if name.lower() in seen:
+            raise ConfigError('%s "%s" appears more than once in `## %s`'
+                              % (what, name, heading))
+        seen.add(name.lower())
+        entry = {'name': name, 'description': description,
+                 'colour': _bare(row.get('colour', '')).lstrip('#').lower()}
+        if 'epic' in extra:
+            epic = _bare(row.get('epic', '')).lstrip('#')
+            entry['epic'] = int(epic) if epic.isdigit() else None
+        if 'was' in extra:
+            was = _bare(row.get('was', ''))
+            entry['was'] = None if was.lower() in _UNSET else was
+        out.append(entry)
+    return out
 
 
 def _section(text, heading):
@@ -98,6 +207,9 @@ def parse_claude_project(text):
     Tolerant by design — this is the *fallback* path. The fast path is the
     JSON cache emitted by `wf config`. Returns a dict; missing pieces default
     to sensible values so a partial config still drives the common case.
+
+    The one thing it refuses is an areas or release-targets row that cannot
+    become a label (`ConfigError`); a file with neither table gets empty lists.
     """
     cfg = {
         'org': None, 'repo': None, 'default_branch': 'main',
@@ -105,6 +217,9 @@ def parse_claude_project(text):
         'labels': {}, 'review_labels': {}, 'fields': {},
         'type_capable': False,
         'board': {'project_node_id': None, 'project_title': None},
+        'areas': _label_table(text, 'Areas', 'area', extra=('epic', 'was')),
+        'release_targets': _label_table(text, 'Release Targets', 'release target'),
+        'jev': jev_setting(text),
     }
 
     for cells in _rows(_section(text, 'Identity')):
@@ -209,13 +324,21 @@ def load_config():
         if fresh:
             try:
                 with open(cache, encoding='utf-8') as fh:
-                    return True, json.load(fh), ''
+                    cached = json.load(fh)
+                # A cache from a version before the tables has none of their
+                # keys, and its timestamp cannot say so.
+                if isinstance(cached, dict) and all(k in cached for k in TABLE_KEYS):
+                    return True, cached, ''
             except (OSError, json.JSONDecodeError) as exc:
                 eprint('wf: ignoring unreadable cache (%s); parsing ClaudeProject.md' % exc)
     if not os.path.isfile(source):
         return False, None, 'no ClaudeProject.md found at %s' % root
     with open(source, encoding='utf-8') as fh:
-        cfg = parse_claude_project(fh.read())
+        text = fh.read()
+    try:
+        cfg = parse_claude_project(text)
+    except ConfigError as exc:
+        return False, None, 'ClaudeProject.md: %s' % exc
     cfg['review_labels'] = load_review_labels(root)
     return True, cfg, ''
 
@@ -413,7 +536,11 @@ def cmd_config(args):
     if not os.path.isfile(source):
         emit('error', EXIT_ENV, reason='no ClaudeProject.md at %s' % root)
     with open(source, encoding='utf-8') as fh:
-        cfg = parse_claude_project(fh.read())
+        text = fh.read()
+    try:
+        cfg = parse_claude_project(text)
+    except ConfigError as exc:
+        emit('error', EXIT_ENV, reason='ClaudeProject.md: %s' % exc)
     cfg['review_labels'] = load_review_labels(root)
     os.makedirs(os.path.dirname(cache), exist_ok=True)
     with open(cache, 'w', encoding='utf-8') as fh:

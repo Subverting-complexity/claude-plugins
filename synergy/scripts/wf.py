@@ -384,8 +384,10 @@ def build_parser():
     fin.set_defaults(func=cmd_review_finish)
 
     le = sub.add_parser('labels-ensure',
-                        help='create each review-state label the repo lacks '
-                             '(guarded: never overwrites an existing label)')
+                        help='create each review-state, area and release label '
+                             'the repo lacks, and rename an area label whose '
+                             'row carries `was` (guarded: never overwrites or '
+                             'deletes an existing label)')
     le.set_defaults(func=cmd_labels_ensure)
 
     cfg = sub.add_parser('config', help='emit .claude/wf-config.json from ClaudeProject.md')
@@ -395,10 +397,12 @@ def build_parser():
                          help='ask Jev, the TypeSafe decision model, one check from '
                               'jev-checks.json; exits 30 when Jev is not available')
     jev.add_argument('--check', required=True,
-                     help='priority, effort, readiness, audience, duplicate, depends or draft')
+                     help='priority, effort, readiness, audience, area, target, duplicate, '
+                          'depends or draft')
     jev.add_argument('--input', default=None,
                      help='a JSON file: {"items": [{"id": ..., ...}]}, plus "subject" '
-                          'for duplicate, or {"draft": "..."} for draft')
+                          'for duplicate, or {"draft": "..."} for draft; an item for '
+                          'target may carry "paths"')
     jev.add_argument('--issue', type=int, action='append', default=None,
                      help='add this issue as an item, read from GitHub; repeatable')
     jev.add_argument('--open-issues', type=int, nargs='?', const=100, default=None,

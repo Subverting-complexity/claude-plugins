@@ -49,6 +49,22 @@
         "unsure": "The text does not say, or neither fits"
       }
     },
+    "area": {
+      "per": "item",
+      "type": "choice",
+      "options_from": "areas",
+      "instructions": "Which area of the product does the work that `{path}` describes belong to?",
+      "options": {
+        "unsure": "The text does not say, or no area fits"
+      }
+    },
+    "target": {
+      "per": "item-target",
+      "type": "noul",
+      "targets_from": "release_targets",
+      "instructions": "Does the work that `{path}` describes ship in the release target `{target}`?",
+      "describe": " `{target}` is: {description}"
+    },
     "duplicate": {
       "per": "item",
       "type": "noul",
