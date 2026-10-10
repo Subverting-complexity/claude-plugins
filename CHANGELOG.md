@@ -6,6 +6,14 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.14.0
+
+- `orchestrate` now reads the Claude plan limits before the first round and after every round, and starts a round only when it is expected to fit. Three checks must pass: the 5-hour limit stays at or below 85%, the weekly limit stays at or below 90%, and the day stays inside its budget. The budget for a day is what was left of the weekly limit when the day started, divided by the days left in the week, times `--daily-share` (100 by default). With 30% used after 3 days, 70% is left for 4 days, so the budget is 17.5% a day, and a share of 40 lets a run use 7%. A day is 24 hours counted from the weekly reset. The cost of a round is a reserve (15% of the 5-hour limit, 3% of the weekly limit) until one round has run, then the measured rise of the last round.
+- At a limit the run stops and names the time it can continue. With `--on-limit wait` it pauses until then, unless the pause is longer than `--max-wait-hours` (5).
+- Every setting has a default. On first use `orchestrate` asks whether the person wants the defaults or their own settings, and writes the answer to `~/.claude/synergy/quota.json`, so it asks once. A flag overrides the file.
+- `orchestrate --dry-run` shows the ledger, the plan limit decision with its figures and the task the first round would get. It starts no agent, asks nothing and changes nothing.
+- New `wf quota` command makes the decision from a reading the caller passes in, and `wf quota --save` writes the settings file. The reading comes from the Claude desktop app's usage tool. A session without it, such as the terminal CLI, cannot read the limits: the run then continues and says so, or stops with `--on-unknown stop`.
+
 ## synergy 18.13.1
 
 - `wf plan-set`, `wf pick`, `wf candidates` and `wf unblock` now recover when GitHub still answers "Resource limits for this query exceeded" at 50 issues a page. They halve the page and ask for the same page again, down to 5 issues, and keep the smaller size for the pages that follow. No issue is skipped or read twice. Before, a repository with enough sub-issues and blockers could still stop the whole read. The read still covers at most 2000 open issues.

@@ -1,7 +1,7 @@
 ---
 name: orchestrate
 description: 'Run bulk-execute in rounds over an Epic, Feature, story list or the open pool, checking each round against GitHub. Trigger on "orchestrate" or "work through this Epic".'
-argument-hint: '[--parent N | issue# issue# ...] [--mode story|feature|maintenance] [--rounds N]'
+argument-hint: '[--parent N | issue# issue# ...] [--mode story|feature|maintenance] [--rounds N] [--daily-share N] [--on-limit stop|wait] [--dry-run]'
 arguments:
   - name: parent
     description: 'An Epic or Feature number. Every round works the stories under it. Cannot be combined with story numbers.'
@@ -11,6 +11,10 @@ arguments:
     description: 'Selection mode passed to every round: story (default), feature or maintenance.'
   - name: rounds
     description: 'The most rounds to run. Default 5.'
+  - name: quota
+    description: 'Optional Claude plan limit settings, passed to wf quota unchanged: --five-hour-ceiling, --weekly-ceiling, --daily-share, --on-limit stop|wait, --max-wait-hours, --on-unknown continue|stop.'
+  - name: dry_run
+    description: '--dry-run shows the ledger, the plan limit decision and the first round, and starts nothing.'
 ---
 
 # Orchestrate
@@ -38,14 +42,53 @@ Stop without starting a round if any of this holds:
 - **Scope**: `--parent N` for an Epic or Feature, a list of story numbers, or the open pool when neither is given.
 - **Mode**: `story` by default. Pass it to every round unchanged.
 - **Round limit**: 5 by default.
+- **Claude plan limits**: see the next section. Every setting has a default, so no flag is needed.
+
+## Claude plan limits
+
+A Claude plan has a 5-hour limit and a weekly limit. A round starts only when it is expected to end inside both, and inside the budget for the day. `wf quota` makes that decision, so do not work it out yourself.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `--five-hour-ceiling` | 85 | A round must end at or below this percent of the 5-hour limit. |
+| `--weekly-ceiling` | 90 | A round must end at or below this percent of the weekly limit. |
+| `--daily-share` | 100 | The percent of the day's budget the run may use. The day's budget is what was left of the weekly limit when the day started, divided by the days left in the week. With 30% used after 3 days, 70% is left for 4 days, so the budget is 17.5% a day, and a share of 40 lets the run use 7%. A day is 24 hours counted from the weekly reset. |
+| `--round-reserve-five-hour` | 15 | The percent of the 5-hour limit one round is taken to cost, until a round is measured. |
+| `--round-reserve-weekly` | 3 | The same for the weekly limit. |
+| `--on-limit` | `stop` | At a limit, `stop` ends the run and names the time it can continue. `wait` pauses until then. |
+| `--max-wait-hours` | 5 | With `wait`, a longer pause than this ends the run instead. |
+| `--on-unknown` | `continue` | What to do when the limits cannot be read: `continue` or `stop`. |
+
+A person sets their own defaults in `~/.claude/synergy/quota.json`, with the same names written with underscores, such as `{"daily_share": 40, "on_limit": "wait"}`. A flag on the command overrides the file. The file is personal because the limits belong to an account, not to a repository.
+
+**The plan limit check**, used before the first round and after every round:
+
+1. Read the limits. If the session has the `mcp__ccd_session_mgmt__get_usage` tool, which the Claude desktop app provides, call it. Take `percentUsed` and `resetsAt` from the window labelled `5-hour limit` and from the one labelled `Weekly · all models`. If the session has no such tool, or `plan.status` is not `ok`, there is no reading.
+2. Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" quota --five-hour-used {n} --five-hour-resets {time} --weekly-used {n} --weekly-resets {time}`, with every plan limit flag the person gave. With no reading, leave those 4 flags out. After a round, add `--before-five-hour {n} --before-weekly {n}` with the reading taken before that round, so the command measures what a round costs.
+3. If the result has `configured: false`, do the first use step below, then run the command again.
+4. Act on `decision`. `go`: continue. `stop`: do not start a round, and report `reason` and `resume_at`. `wait`: tell the person the time in `resume_at`, start `sleep {wait_seconds}` as a background command, do nothing until it ends, then do this check again from step 1.
+
+When the result has `unknown: true`, the limits were not checked. Say so in the final report.
+
+The day's budget counts all use of the plan from the first check of the day, not only this run. The command stores that first reading in `~/.claude/synergy/quota-state.json`.
+
+**First use.** `configured: false` means this person has no settings file, so nobody has chosen yet. Ask once, with `AskUserQuestion` where the session has it: use the defaults, or set their own. Show the table above with the question.
+
+- **The defaults**: run `wf quota --save` with no other flag. This records the choice, and later changes to the defaults apply to this person.
+- **Their own**: ask for the daily share (100, 75, 50 or 25, or another number), what to do at a limit (`stop` or `wait`), and whether the two ceilings stay at 85 and 90. Then run `wf quota --save` with one flag for each answer that differs from the default.
+
+Do not ask again after the file exists. A person changes a setting later with `wf quota --save --{setting} {value}`. If nobody can answer, such as in a run with no person present, continue on the defaults and say in the final report that the choice is still open.
 
 ## Before the first round
 
 1. Run `/synergy:preflight`. If it reports a problem that blocks work, stop and report it.
 2. Read the GitHub API quota with `gh api rate_limit --jq '.rate.remaining'`. If it is below **300**, stop and say so.
-3. List the open stories in scope with number, title, `Effort`, `Priority` and `Stage`, and keep the list as the **ledger**. Use `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --parent {N} --limit 0` for a parent, `wf candidates --mode {mode} --limit 0` for the open pool, and `gh issue view` for each named story.
+3. Do the plan limit check. On `stop`, stop and say so.
+4. List the open stories in scope with number, title, `Effort`, `Priority` and `Stage`, and keep the list as the **ledger**. Use `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" candidates --parent {N} --limit 0` for a parent, `wf candidates --mode {mode} --limit 0` for the open pool, and `gh issue view` for each named story.
 
 Each story in the ledger has one state: `waiting`, `built`, `merged`, `dropped` (with a reason) or `excluded` (with a reason).
+
+**With `--dry-run`, stop here.** Do the plan limit check and build the ledger even if the check says `stop`. Add `--no-record` to the `wf quota` call, and do not do the first use step: say instead whether the settings are the person's own or the defaults nobody has confirmed. Then report the ledger, each of the 3 plan limit checks with its used, after-round and limit figures, the day of the week and the budget for the day, the decision, the settings in use, and the exact task the first round would get. Start no agent and change nothing.
 
 ## Each round
 
@@ -56,7 +99,7 @@ Each story in the ledger has one state: `waiting`, `built`, `merged`, `dropped` 
    - For the open pool, pass no numbers.
 3. When the agent returns, **check its report against GitHub**. Do not trust the report alone. Run `git fetch`. For each pull request it says it merged, run `gh pr view {pr} --json state,mergedAt`. For each story it says it closed, run `gh issue view {story} --json state`. Where GitHub disagrees with the report, GitHub is right: record that.
 4. Update the ledger. Add each story released by the `unblocked` sweep if it is in scope.
-5. Read the API quota again.
+5. Read the API quota again, and do the plan limit check again.
 
 ## Stop conditions
 
@@ -67,6 +110,7 @@ Check after each round. Stop, and do not start another round, if any of these is
 - A pull request from the round did not merge. Report the condition that stopped it. If the project has `Auto-Merge on Approval` off in `docs/review.config.md`, every round ends at an approved pull request by design: say that, and say the setting is the cause.
 - The quality gate failed, or the round ended with an error or a timeout.
 - The API quota is below **300**.
+- The plan limit check says `stop`.
 - The round limit is reached.
 - The same story was dropped in 2 rounds. Do not try it a third time.
 
@@ -79,4 +123,5 @@ Write it for a person who did not watch the run.
 1. **The outcome first**: how many rounds ran, which stories merged, and whether work in scope is still open.
 2. **A table** with these columns: story (number and title), final state, pull request (number and title) and reason (for dropped or excluded).
 3. **What is outstanding or needs a person**: pull requests left open, stories dropped twice, inline reviews, `Stage` updates that failed, and issues filed during the run.
-4. **Why the run stopped.**
+4. **The Claude plan limits**: the 5-hour and weekly percent at the start and at the end, each pause, and whether the limits could not be read.
+5. **Why the run stopped.** For a plan limit, give the time the run can continue.
