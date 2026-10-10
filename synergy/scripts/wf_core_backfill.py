@@ -29,17 +29,6 @@ def _backfill_stage(node, stage_field):
     return None
 
 
-def _area_labels_among(names):
-    """The names in `names` that are area labels, in the order given.
-
-    Mirrors `wf_core_labels.area_labels_on`, which #388 adds beside this
-    story: a label is an area label when its name starts with `area:`,
-    compared the way GitHub compares label names, without case.
-    """
-    return [n for n in names or ()
-            if wf_core_labels._key(n).startswith('area:')]
-
-
 def backfill_index(nodes, stage_field, repo=None):
     """Every issue the read returned, by number.
 
@@ -170,7 +159,7 @@ def backfill_plan(index, rows, live_label_names):
         issue = index[number]
         if issue['is_area']:
             continue
-        carried = _area_labels_among(issue['labels'])
+        carried = wf_core_labels.area_labels_on(issue['labels'])
         epic, reason = resolve_area_epic(number, index)
         area = epics.get(epic)
         if area is None:

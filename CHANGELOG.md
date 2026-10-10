@@ -14,6 +14,10 @@ update appears to do nothing.
 - New `wf area-set` command gives a picked issue its area label when it has none. `execute` and `bulk-execute` run it on each story they claim, before the build starts, and name the area in the final report. With `TYPESAFE_API_KEY` set it asks the Jev `area` check and writes a `high` answer. In every other case it returns the table rows and the agent chooses one.
 - `wf areas` now also returns `rows`, the Areas table. `report-issue`, `feature-discovery` and `writing-github-issues` choose the area from those rows and pass it as `area`.
 - `wf issue-apply` now matches label names without case and reads every label in a repository that has more than 100.
+- New `wf area-backfill` command reads every issue of the repository, open and closed, resolves each to the area epic above it in its parent chain, and adds the `area: {name}` label that the `epic` column of the Areas table gives that epic. An issue that already carries an area label is skipped, so a second run writes nothing and a run that failed part way can be started again.
+- `area-backfill` stops before any write, with `status: refused` and exit 22, when an area epic has no row, a row names an epic that is not an area epic, two rows name one epic, or a label does not exist. It reports each issue that resolves to no area by number and title and writes nothing to it.
+- `area-backfill --dry-run` prints the counts per area and writes nothing, and the GitHub guard treats it as a read. `area-backfill --close-epics` closes the area epics only in a run whose read found no issue left to label, and leaves the parent links and the `Stage`.
+- The `area-backfill` read starts at 100 issues a page and halves the page on a GraphQL resource-limit error, down to 5.
 
 ## synergy 18.14.0
 
