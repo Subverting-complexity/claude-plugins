@@ -300,8 +300,9 @@ def collect_config_findings(cfg, args, root):
     else:
         # The only read of the retired `Area` stage outside `area-backfill`.
         # It chooses which fix `areas-table` names, and it keeps an area epic
-        # out of the finished containers, so `--fix` does not close one, and
-        # write `Done` over `Area`, before the move has copied from it.
+        # out of the finished containers, so the `--fix` sweep does not close
+        # one directly. Closing the last Feature under one can still close it,
+        # as a merge can; `backfill_plan` covers that through the row.
         legacy = set(wf_core.legacy_area_epics(typed))
         finished = [c for c in finished if c['number'] not in legacy]
         findings.extend(wf_core.retired_label_findings(

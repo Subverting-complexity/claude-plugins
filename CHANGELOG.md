@@ -23,7 +23,7 @@ What changed:
 - `wf issue-audit` reports `no-area-label` and `many-area-labels` in place of `no-area`, and proposes `area: TODO`.
 - Preflight's `areas-table` (critical) replaces `area-epics` (warning). It is skipped offline.
 - The `Stage` field needs 8 options, not 9. `Area` is no longer a stage, `stage-area` is not a purpose key, and `"state": "area"` in a spec is refused.
-- An epic still at `Stage` `Area` is an ordinary `Epic`. It is not in the pool, `wf board-sync` leaves its stage, and `wf post-merge` and `preflight --fix` close it when its last sub-issue closes. `post-merge` no longer reports `skipped_areas`.
+- An epic still at `Stage` `Area` is an ordinary `Epic`. It is not in the pool, `wf board-sync` leaves its stage, and `wf post-merge` closes it when its last sub-issue closes. The `preflight --fix` sweep leaves an epic at `Stage` `Area` out of the finished containers, so it does not close one directly before the move. `post-merge` no longer reports `skipped_areas`.
 - `/synergy:setup` asks for the areas and writes the table. `report-issue`, `feature-discovery` and `writing-github-issues` choose an area and no area parent.
 - The workflow puts 2 kinds of label on an issue, `area:` and `release:`, and the documents that said it puts none now say so.
 
@@ -45,7 +45,7 @@ What changed:
 - `wf areas` now also returns `rows`, the Areas table. `report-issue`, `feature-discovery` and `writing-github-issues` choose the area from those rows and pass it as `area`.
 - `wf issue-apply` now matches label names without case and reads every label in a repository that has more than 100.
 - New `wf area-backfill` command reads every issue of the repository, open and closed, resolves each to the area epic above it in its parent chain, and adds the `area: {name}` label that the `epic` column of the Areas table gives that epic. An issue that already carries an area label is skipped, so a second run writes nothing and a run that failed part way can be started again.
-- `area-backfill` stops before any write, with `status: refused` and exit 22, when an area epic has no row, a row names an epic that is not an area epic, two rows name one epic, or a label does not exist. It reports each issue that resolves to no area by number and title and writes nothing to it.
+- `area-backfill` stops before any write, with `status: refused` and exit 22, when an area epic has no row, a row names an epic that is not an area epic (a closed `Epic` a row names counts as one, whatever its `Stage`), two rows name one epic, or a label does not exist. It reports each issue that resolves to no area by number and title and writes nothing to it.
 - `area-backfill --dry-run` prints the counts per area and writes nothing, and the GitHub guard treats it as a read. `area-backfill --close-epics` closes the area epics only in a run whose read found no issue left to label, and leaves the parent links and the `Stage`.
 - The `area-backfill` read starts at 100 issues a page and halves the page on a GraphQL resource-limit error, down to 5.
 

@@ -4903,9 +4903,9 @@ class TestPreflight(unittest.TestCase):
         _, payload, _ = self._run(['--offline'], areas=False)
         self.assertIn('areas-table', payload['skipped'])
 
-    def test_fix_never_closes_an_epic_still_marked_area(self):
+    def test_the_fix_sweep_does_not_close_an_epic_still_marked_area(self):
         """Closing it writes `Done` over `Area`, and the move finds an area
-        epic by that stage, so preflight leaves it for `area-backfill`."""
+        epic by that stage, so the sweep leaves it for `area-backfill`."""
         legacy = dict(_AREA_EPIC_NODE,
                       subIssues={'nodes': [{'number': 901, 'state': 'CLOSED'}]})
         with mock.patch.dict(globals(), {'_AREA_EPIC_NODE': legacy}):

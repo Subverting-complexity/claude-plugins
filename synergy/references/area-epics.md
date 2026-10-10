@@ -41,7 +41,7 @@ Preflight fails with `areas-table`, and its `fix` says which of 2 cases applies.
 
 **The repository has area epics**, each an `Epic` whose `Stage` is `Area`. Move it, once, in this order.
 
-1. **Write the table with the `epic` column.** Give each row the number of its area epic. Each area epic needs exactly one row.
+1. **Write the table with the `epic` column.** Give each row the number of its area epic. Each area epic needs exactly one row. Include an area epic that is already closed: a merge closes one whose sub-issues are all closed and sets its `Stage` to `Done`, so preflight no longer lists it and only its row tells the move what it was.
 
 2. **Create the labels.**
 
@@ -71,6 +71,6 @@ Preflight fails with `areas-table`, and its `fix` says which of 2 cases applies.
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-backfill --close-epics
    ```
 
-   The command closes the epics only when its own read finds no issue left to label and nothing in `differs`. Otherwise it closes nothing and `close_refused` says why. The parent links stay. An epic left open is an ordinary `Epic` from here on: `wf post-merge` and `preflight --fix` close it when its last sub-issue closes.
+   The command closes the epics only when its own read finds no issue left to label and nothing in `differs`. Otherwise it closes nothing and `close_refused` says why. The parent links stay. An epic left open is an ordinary `Epic` to a merge: `wf post-merge` closes it when its last sub-issue closes. The `preflight --fix` sweep leaves an epic at `Stage` `Area` alone.
 
 `wf area-backfill` and preflight are the only code that reads the `Area` stage, and only for this move. The org's `Stage` field no longer needs the option. A project's own release script that reads the area from the parent chain must read the label instead.

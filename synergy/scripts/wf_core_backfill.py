@@ -8,7 +8,8 @@ label. This module is the move off them, and it holds the only read of the
 retired `Area` stage (`is_legacy_area_epic`). Two callers use that read and no
 other may: `wf area-backfill`, which has to find the epics it copies from, and
 preflight, which has to tell a repository that still has them from one that
-never did, to name the right fix. No pick, plan, audit, spec or merge decision
+never did, to name the right fix, and which leaves them out of the finished
+containers its `--fix` sweep closes. No pick, plan, audit, spec or merge decision
 reads it.
 
 Pure, like every `wf_core_*` module: the issues GitHub returned, the table
