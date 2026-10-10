@@ -187,7 +187,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | --------------------- | ------------------------------------------------- |
 | `execute`             | Orchestrator: pick → build → PR → review → merge   |
 | `bulk-execute`        | The same loop for the stories that fill an effort budget, as at most two PRs |
-| `orchestrate`         | Runs `bulk-execute` as a series of rounds over a scope, one round at a time, with a ledger checked against GitHub after each |
+| `orchestrate`         | Runs `bulk-execute` as a series of rounds over a scope, one round at a time, with a ledger checked against GitHub after each. It starts a round only when the Claude plan limits have room (5-hour, weekly, and a budget for the day taken from what is left of the week), with settings it asks each person for on first use, and `--dry-run` shows the decision without starting anything |
 | `code-architect`      | Architecture design and audit (SOLID + Clean)     |
 | `build`               | Orchestrator for local work: plan → build → verify → commit, no issue or PR |
 | `pr-review`           | Deep PR review, labels, optional auto-merge; also reviews a local change, with a React Native checklist |
