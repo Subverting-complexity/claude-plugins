@@ -6,6 +6,13 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.14.0
+
+- `orchestrate` now reads the Claude plan limits before the first round and after every round, and starts a round only when it is expected to fit. Three checks must pass: the 5-hour limit stays at or below 85%, the weekly limit stays at or below 90%, and the weekly limit stays inside the share of the week used up to now. That share grows by `--daily-percent` each day, 14.3 by default (one seventh), counted in 24-hour days from the weekly reset, and an unused part carries to the later days of that week. The cost of a round is a reserve (15% of the 5-hour limit, 3% of the weekly limit) until one round has run, then the measured rise of the last round.
+- At a limit the run stops and names the time it can continue. With `--on-limit wait` it pauses until then, unless the pause is longer than `--max-wait-hours` (5). Every setting has a default, a person's own defaults go in `~/.claude/synergy/quota.json`, and a flag overrides the file.
+- `orchestrate --dry-run` shows the ledger, the plan limit decision with its figures and the task the first round would get. It starts no agent and changes nothing.
+- New `wf quota` command makes the decision from a reading the caller passes in. The reading comes from the Claude desktop app's usage tool. A session without it, such as the terminal CLI, cannot read the limits: the run then continues and says so, or stops with `--on-unknown stop`.
+
 ## synergy 18.13.1
 
 - `wf plan-set`, `wf pick`, `wf candidates` and `wf unblock` now recover when GitHub still answers "Resource limits for this query exceeded" at 50 issues a page. They halve the page and ask for the same page again, down to 5 issues, and keep the smaller size for the pages that follow. No issue is skipped or read twice. Before, a repository with enough sub-issues and blockers could still stop the whole read. The read still covers at most 2000 open issues.

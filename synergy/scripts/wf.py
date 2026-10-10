@@ -97,6 +97,7 @@ import wf_pr_create  # noqa: E402
 import wf_areas  # noqa: E402
 import wf_worktrees  # noqa: E402
 import wf_jev  # noqa: E402
+import wf_quota  # noqa: E402
 
 _SHELL_MODULES = (
     wf_io,
@@ -126,6 +127,7 @@ _SHELL_MODULES = (
     wf_areas,
     wf_worktrees,
     wf_jev,
+    wf_quota,
 )
 
 for _module in _SHELL_MODULES:
@@ -173,6 +175,7 @@ from wf_plan import cmd_bulk_mark, cmd_drop_group, cmd_drop_story, cmd_plan_set
 from wf_post_merge import cmd_post_merge, cmd_settle_merged
 from wf_pr_create import cmd_pr_create
 from wf_preflight import cmd_config_audit, cmd_preflight
+from wf_quota import cmd_quota
 from wf_review import (
     cmd_handoff, cmd_labels_ensure, cmd_review_finish, cmd_review_next,
     cmd_sibling_pr, cmd_update_next,
@@ -402,6 +405,49 @@ def build_parser():
                      metavar='LIMIT',
                      help='add the open issues as items, read from GitHub (default 100)')
     jev.set_defaults(func=cmd_jev)
+
+    qt = sub.add_parser('quota',
+                        help='may a long run start another round, judged against the '
+                             'Claude plan limits the caller read: go, wait or stop')
+    qt.add_argument('--five-hour-used', type=float, default=None,
+                    help='percent of the 5-hour limit used')
+    qt.add_argument('--five-hour-resets', default=None,
+                    help='when the 5-hour limit resets, ISO 8601')
+    qt.add_argument('--weekly-used', type=float, default=None,
+                    help='percent of the weekly limit used')
+    qt.add_argument('--weekly-resets', default=None,
+                    help='when the weekly limit resets, ISO 8601')
+    qt.add_argument('--before-five-hour', type=float, default=None,
+                    help='the 5-hour percent read before the last round, to measure a round')
+    qt.add_argument('--before-weekly', type=float, default=None,
+                    help='the weekly percent read before the last round, to measure a round')
+    qt.add_argument('--now', default=None, help='the time to judge at (default: now)')
+    defaults = wf_core.QUOTA_DEFAULTS
+    qt.add_argument('--five-hour-ceiling', type=float, default=None,
+                    help='a round must end at or below this percent of the 5-hour limit '
+                         '(default %g)' % defaults['five_hour_ceiling'])
+    qt.add_argument('--weekly-ceiling', type=float, default=None,
+                    help='a round must end at or below this percent of the weekly limit '
+                         '(default %g)' % defaults['weekly_ceiling'])
+    qt.add_argument('--daily-percent', type=float, default=None,
+                    help='percent of the weekly limit each day of the week adds to the '
+                         'allowance (default %.1f, one seventh)' % defaults['daily_percent'])
+    qt.add_argument('--round-reserve-five-hour', type=float, default=None,
+                    help='percent of the 5-hour limit one round is taken to cost until a '
+                         'round is measured (default %g)' % defaults['round_reserve_five_hour'])
+    qt.add_argument('--round-reserve-weekly', type=float, default=None,
+                    help='the same for the weekly limit '
+                         '(default %g)' % defaults['round_reserve_weekly'])
+    qt.add_argument('--on-limit', choices=wf_core.QUOTA_ON_LIMIT, default=None,
+                    help='at a limit, stop or wait for it to clear '
+                         '(default %s)' % defaults['on_limit'])
+    qt.add_argument('--max-wait-hours', type=float, default=None,
+                    help='the longest wait before --on-limit wait stops instead '
+                         '(default %g)' % defaults['max_wait_hours'])
+    qt.add_argument('--on-unknown', choices=wf_core.QUOTA_ON_UNKNOWN, default=None,
+                    help='when the limits cannot be read, continue or stop '
+                         '(default %s)' % defaults['on_unknown'])
+    qt.set_defaults(func=cmd_quota)
 
     sc = sub.add_parser('scratch-clean',
                         help="delete this run's scratch files under .claude/ and "
