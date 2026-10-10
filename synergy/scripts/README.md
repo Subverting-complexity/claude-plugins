@@ -59,7 +59,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_schedule.py` | Reading `.claude/plan.md`, a bulk set record by group, which stories in a wave share files, parallel batches | 210 |
 | `wf_core_steps.py` | Exit cleanup's review reconcile, the tree's porcelain, PR body checks, the current milestone, the compact pick result, abandoned PRs, the review picker's moved-head tier | 274 |
 | `wf_core_worktrees.py` | Reading `git worktree list`, which worktrees a sweep covers, and the verdict on each | 134 |
-| `wf_jev.py` | `jev`: one request per batch to Jev, the TypeSafe decision model, and the `unavailable` result when there is no key, the repository turns Jev off, a table a check needs is empty or there is no answer, and issues read from GitHub as items | 173 |
+| `wf_jev.py` | `jev`: one request per batch to Jev, the TypeSafe decision model, and the `unavailable` result when there is no key, the repository turns Jev off, a table a check needs is empty or there is no answer, and issues read from GitHub as items | 176 |
 | `wf_core_jev.py` | Building the requests for a check in `jev-checks.json`, filling `area` and `target` from the `ClaudeProject.md` tables, and turning each answer into a row with a `high`, `medium` or `low` level | 351 |
 
 ## Commands

@@ -536,6 +536,16 @@ class CommandTests(unittest.TestCase):
         self.assertEqual((code, out['status']), (30, 'unavailable'))
         post.assert_not_called()
 
+    def test_a_configuration_file_that_cannot_be_read_counts_as_off(self):
+        post = mock.Mock()
+        with tempfile.TemporaryDirectory() as root:
+            with open(os.path.join(root, 'ClaudeProject.md'), 'wb') as fh:
+                fh.write(b'## Jev\n\n| jev | on |\n\xff\xfe\n')
+            with mock.patch.object(wf, 'repo_root', lambda: root):
+                code, out = run_jev('priority', ITEMS, key='test-key', post=post)
+        self.assertEqual((code, out['status']), (30, 'unavailable'))
+        post.assert_not_called()
+
     def test_a_project_with_no_configuration_file_leaves_jev_on(self):
         with tempfile.TemporaryDirectory() as root, \
                 mock.patch.object(wf, 'repo_root', lambda: root):

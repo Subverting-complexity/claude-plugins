@@ -85,7 +85,10 @@ def jev_switched_off():
     read on its own: a fault elsewhere in the file must not send content out.
     A file that cannot be read at all is taken as `off` for the same reason.
     """
-    ok, cfg, _ = load_config()
+    try:
+        ok, cfg, _ = load_config()
+    except (OSError, ValueError):
+        return True
     if ok and cfg:
         return cfg.get('jev') == 'off'
     _, source = config_paths(repo_root())
