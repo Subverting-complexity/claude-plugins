@@ -19,6 +19,10 @@ Three checks, and a round starts only when all of them pass:
     the weekly limit when the day started, divided by the days left in the
     week with today counted, times `daily_share` percent. So a heavy day makes
     every later day's budget smaller, and a light day makes it larger.
+    `week.budget_basis` writes the sum out in words. The start of the day is
+    exact only when an earlier check of the same day stored it
+    (`day_start_source: stored`). Otherwise it is the present reading, and
+    `week.day_start_note` says how many hours of the day came before it.
 
 What one round costs is the last round's measured rise where there is one, and
 the configured reserve before that.
@@ -115,6 +119,29 @@ def quota_day_budget(used_at_start, day, share):
     return max(0.0, 100.0 - used_at_start) / days_left * share / 100.0
 
 
+def quota_budget_basis(day_start, days_left, share, budget):
+    """The sum behind a day's budget, in words, so a person can check it. Today
+    counts as a whole day even when part of it has passed."""
+    return ('%g%% of the weekly limit was left when the day started, divided by %d %s left '
+            '(today counts as a whole day), times a %g%% share, is %g%%.'
+            % (_round1(max(0.0, 100.0 - day_start)), days_left,
+               'day' if days_left == 1 else 'days', share, _round1(budget)))
+
+
+def quota_day_start_note(source, day, hours_into_day):
+    """Why `day_start_used` may be higher than the real start of the day. Only
+    a start stored by an earlier check of the same day is exact. The others are
+    the reading itself, so use before it is not counted in `used_today`."""
+    if source == 'first_check':
+        what = 'This is the first check of day %d, so its reading is taken as the start of the day.'
+    else:
+        what = ('No start of day %d is stored, so the present reading is taken as the start, '
+                'and nothing is stored.')
+    return (what % day + ' Day %d began %.1f hours ago. Use of the plan before this reading is '
+            'not counted in used_today, so the room left today may be overstated.'
+            % (day, hours_into_day))
+
+
 def quota_round_cost(used, before, reserve):
     """What one round costs: the measured rise from `before` to `used`, or the
     reserve when there is no earlier reading or the figure fell, which means
@@ -181,14 +208,23 @@ def quota_decide(reading, settings, now):
             day, started = quota_week(weekly_resets, now)
             share = settings['daily_share']
             day_start = reading.get('day_start_used')
+            source = reading.get('day_start_source') or 'stored'
             if day_start is None or day_start > weekly_used:
-                day_start = weekly_used
+                day_start, source = weekly_used, 'estimate'
             budget = quota_day_budget(day_start, day, share)
+            days_left = QUOTA_WEEK_DAYS - day + 1
+            day_began = started + datetime.timedelta(days=day - 1)
             result['week'] = {'day': day, 'of': QUOTA_WEEK_DAYS, 'started_at': quota_iso(started),
-                              'days_left': QUOTA_WEEK_DAYS - day + 1,
+                              'days_left': days_left,
+                              'day_started_at': quota_iso(day_began),
                               'day_start_used': _round1(day_start),
+                              'day_start_source': source,
                               'day_budget': _round1(budget),
+                              'budget_basis': quota_budget_basis(day_start, days_left, share, budget),
                               'used_today': _round1(weekly_used - day_start)}
+            if source != 'stored':
+                hours = max(0.0, (now - day_began).total_seconds() / 3600.0)
+                result['week']['day_start_note'] = quota_day_start_note(source, day, hours)
             # The first later day whose budget covers one round, taking that
             # day to start at the present reading, or the weekly reset when no
             # day of this week does.
