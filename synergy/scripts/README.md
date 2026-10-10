@@ -59,7 +59,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_steps.py` | Exit cleanup's review reconcile, the tree's porcelain, PR body checks, the current milestone, the compact pick result, abandoned PRs, the review picker's moved-head tier | 274 |
 | `wf_core_worktrees.py` | Reading `git worktree list`, which worktrees a sweep covers, and the verdict on each | 134 |
 | `wf_quota.py` | `quota`: the personal settings file at `~/.claude/synergy/quota.json`, `--save` to write it, the flags that override it, the stored reading from the start of each day, and the printed decision | 140 |
-| `wf_core_quota.py` | Whether a round may start against the Claude plan limits: the 5-hour ceiling, the weekly ceiling, the budget for the day from what is left of the week, what a round costs, and when a stopped run can continue | 221 |
+| `wf_core_quota.py` | Whether a round may start against the Claude plan limits: the 5-hour ceiling, the weekly ceiling, the budget for the day from what is left of the week, what a round costs, and when a stopped run can continue | 222 |
 | `wf_jev.py` | `jev`: one request per batch to Jev, the TypeSafe decision model, and the `unavailable` result when there is no key or no answer, and issues read from GitHub as items | 116 |
 | `wf_core_jev.py` | Building the requests for a check in `jev-checks.json`, and turning each answer into a row with a `high`, `medium` or `low` level | 189 |
 

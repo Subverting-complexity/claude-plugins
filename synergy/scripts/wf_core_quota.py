@@ -135,8 +135,9 @@ def quota_decide(reading, settings, now):
     `weekly_resets` (percent and aware datetimes), and optionally
     `before_five_hour` and `before_weekly`, the reading taken before the last
     round, and `day_start_used`, the weekly percent when today started. Any of
-    them may be None; with no `day_start_used` the day is taken to start now. Returns a dict with `decision`, `reason`,
-    `resume_at`, `wait_seconds`, the three `checks`, and the figures behind them.
+    them may be None; with no `day_start_used` the day is taken to start now.
+    Returns a dict with `decision`, `reason`, `resume_at`, `wait_seconds`, the
+    three `checks`, and the figures behind them.
     """
     five_used, weekly_used = reading.get('five_hour_used'), reading.get('weekly_used')
     five_resets, weekly_resets = reading.get('five_hour_resets'), reading.get('weekly_resets')
