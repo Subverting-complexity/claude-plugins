@@ -8,7 +8,7 @@ Moved verbatim out of wf_core.py; `scripts/README.md` has the module map.
 
 # ── PR review-state labels + selection ───────────────────────────────────────
 # Mirrors the pr-review skill (Step 1). These are the only labels the
-# workflow applies. Names default to the `review-` prefix and are overridden
+# workflow applies to a pull request. Names default to the `review-` prefix and are overridden
 # by the Labels table in review.config.md; the colours and descriptions are
 # what `wf labels-ensure` and the review-finish readback create them with.
 

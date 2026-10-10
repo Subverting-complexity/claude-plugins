@@ -274,6 +274,19 @@ class TestBackfillPlan(unittest.TestCase):
         self.assertEqual(plan['stops']['rows_without_area_epic'],
                          [{'area': 'listening', 'epic': 2}])
 
+    def test_an_area_epic_a_merge_closed_and_set_to_done_is_still_copied(self):
+        """`wf post-merge` closes an area epic whose sub-issues are all closed
+        and writes `Done` over `Area`. The row still names it, so the move
+        labels what sits under it."""
+        plan = wf_core.backfill_plan(
+            _index([issue(1, kind='Epic', stage='Done', state='CLOSED'),
+                    issue(3, parent=1, state='CLOSED')]),
+            AREAS[:1], LABELS)
+        self.assertFalse(any(plan['stops'].values()))
+        self.assertEqual([(i['number'], i['label']) for i in plan['to_label']],
+                         [(3, 'area: library')])
+        self.assertEqual(plan['no_area'], [])
+
 
 # ── the command ──────────────────────────────────────────────────────────────
 

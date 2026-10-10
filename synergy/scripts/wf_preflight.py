@@ -298,15 +298,18 @@ def collect_config_findings(cfg, args, root):
         skipped.extend(['label-retired', 'container-finished', 'stage-drift',
                         'areas-table'])
     else:
+        # The only read of the retired `Area` stage outside `area-backfill`.
+        # It chooses which fix `areas-table` names, and it keeps an area epic
+        # out of the finished containers, so `--fix` does not close one, and
+        # write `Done` over `Area`, before the move has copied from it.
+        legacy = set(wf_core.legacy_area_epics(typed))
+        finished = [c for c in finished if c['number'] not in legacy]
         findings.extend(wf_core.retired_label_findings(
             labelled, cfg.get('labels'), source_rel))
         findings.extend(wf_core.finished_container_findings(finished, source_rel))
         findings.extend(wf_core.stage_drift_findings(drifted, source_rel))
-        # The only read of the retired `Area` stage outside `area-backfill`:
-        # it chooses which fix the finding names, and decides nothing else.
         findings.extend(wf_core.areas_table_findings(
-            bool(cfg.get('areas')), wf_core.legacy_area_epics(typed),
-            source_rel))
+            bool(cfg.get('areas')), sorted(legacy), source_rel))
         checked.extend(['label-retired', 'container-finished', 'stage-drift',
                         'areas-table'])
         context['retired_labels'] = labelled

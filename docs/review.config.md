@@ -28,7 +28,7 @@ State labels are mutually exclusive — exactly one is applied per review.
 | `updating` | `review-updating` | State | A builder agent is addressing review feedback — prevents concurrent updates |
 | `fixes-applied` | `review-fixes-applied` | Action | Claude pushed fix commits to the PR branch (sticky across runs) |
 
-These are the only labels the workflow applies; an issue gets none.
+These are the only labels the workflow applies to a pull request; an issue gets only its `area:` and `release:` labels.
 
 ## Auto-Merge on Approval
 

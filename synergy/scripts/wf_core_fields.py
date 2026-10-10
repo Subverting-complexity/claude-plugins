@@ -43,7 +43,8 @@ def _priority_rank(field_value):
 
 
 # ── Label resolution ─────────────────────────────────────────────────────────
-# The workflow puts no label on an issue, and none on a pull request except the
+# The workflow puts no label on an issue except its `area:` and `release:`
+# labels (`wf_core_labels.py`), and none on a pull request except the
 # review-state labels, which resolve through `REVIEW_DEFAULT_LABELS` below. The
 # `claude-authored` marker went in 13.2.0 (#275): it recorded who built a
 # change, which the PR's author and commits already say, and it decided

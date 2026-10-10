@@ -4903,16 +4903,17 @@ class TestPreflight(unittest.TestCase):
         _, payload, _ = self._run(['--offline'], areas=False)
         self.assertIn('areas-table', payload['skipped'])
 
-    def test_an_epic_still_marked_area_is_finished_like_any_other(self):
-        """No container decision reads the retired `Area` stage."""
+    def test_fix_never_closes_an_epic_still_marked_area(self):
+        """Closing it writes `Done` over `Area`, and the move finds an area
+        epic by that stage, so preflight leaves it for `area-backfill`."""
         legacy = dict(_AREA_EPIC_NODE,
                       subIssues={'nodes': [{'number': 901, 'state': 'CLOSED'}]})
         with mock.patch.dict(globals(), {'_AREA_EPIC_NODE': legacy}):
-            _, payload, _ = self._run(legacy_epics=True)
-        found = [f for f in payload['findings']
-                 if f['check'] == 'container-finished']
-        self.assertEqual(len(found), 1)
-        self.assertIn('#900', found[0]['detail'])
+            _, payload, calls = self._run(['--fix'], legacy_epics=True)
+        self.assertEqual([f for f in payload['findings']
+                          if f['check'] == 'container-finished'], [])
+        self.assertEqual([c for c in calls
+                          if c[:3] == ['gh', 'issue', 'close']], [])
 
     def test_the_container_reads_carry_the_stage(self):
         self.assertIn('issueFieldValues', wf._chain_selection(1))

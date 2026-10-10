@@ -64,7 +64,8 @@ def backfill_index(nodes, stage_field, repo=None):
     issue has none or its parent is in another repository, where the number
     means a different issue; `foreign_parent` says which of the two it was.
     `is_area` is `is_legacy_area_epic`: a native `Epic` whose `Stage` is
-    `Area`.
+    `Area`. `is_epic` is the type alone, which `backfill_plan` reads for an
+    epic a row names.
     """
     index = {}
     for node in nodes or ():
@@ -74,15 +75,16 @@ def backfill_index(nodes, stage_field, repo=None):
         home = (parent.get('repository') or {}).get('nameWithOwner')
         foreign = bool(parent) and bool(home) and bool(repo) \
             and home.lower() != repo.lower()
+        type_name = (node.get('issueType') or {}).get('name')
         index[node['number']] = {
             'id': node.get('id'),
+            'is_epic': type_name == 'Epic',
             'title': node.get('title') or '',
             'state': (node.get('state') or '').upper(),
             'parent': None if foreign else parent.get('number'),
             'foreign_parent': foreign,
             'is_area': is_legacy_area_epic(
-                (node.get('issueType') or {}).get('name'),
-                _backfill_stage(node, stage_field)),
+                type_name, _backfill_stage(node, stage_field)),
             'labels': [l['name'] for l
                        in ((node.get('labels') or {}).get('nodes')) or []
                        if l and l.get('name')],
@@ -143,6 +145,13 @@ def backfill_plan(index, rows, live_label_names):
     The area epics themselves are in none of the lists: an epic is the area,
     not an issue in it. A plan built from what a finished run leaves behind
     has an empty `to_label`, which is what makes a second run write nothing.
+
+    A closed `Epic` a row names is an area epic whatever its `Stage`. Since
+    19.0.0 nothing protects an area epic, so `wf post-merge` closes one whose
+    sub-issues are all closed and writes `Done` over `Area`; the row is then
+    the only record of what it was, and the move must still copy from it. An
+    open `Epic` at another stage is still a stop, because a row that names it
+    is more likely a wrong number.
     """
     key = wf_core_labels._key
     live = {}
@@ -153,6 +162,10 @@ def backfill_plan(index, rows, live_label_names):
     for row in rows or ():
         if row.get('epic') is not None:
             by_epic.setdefault(row['epic'], []).append(row['name'])
+    index = {n: (dict(entry, is_area=True)
+                 if n in by_epic and entry.get('is_epic')
+                 and entry.get('state') == 'CLOSED' else entry)
+             for n, entry in (index or {}).items()}
     stops = {
         'epics_without_row': [
             {'number': n, 'title': index[n]['title']}
