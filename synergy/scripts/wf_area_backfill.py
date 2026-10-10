@@ -1,11 +1,12 @@
 """
 The `area-backfill` subcommand: copy each issue's area epic to an area label.
 
-A repository that uses area epics has its areas only in the parent chain.
-This reads every issue, open and closed, resolves each to the area epic above
-it, and adds the label the `## Areas` table gives that epic. It is the one
-step that moves a repository from area epics to area labels, so notes for an
-old release keep their headings after the epics are closed.
+A repository that used area epics, which 19.0.0 removed, has its areas only
+in the parent chain. This reads every issue, open and closed, resolves each to
+the area epic above it, and adds the label the `## Areas` table gives that
+epic. It is the one step that moves a repository from area epics to area
+labels, so notes for an old release keep their headings after the epics are
+closed. It is also the only command that reads an area epic.
 
 The rules are in `wf_core_backfill.py`; this is the reading and the writing.
 """
@@ -160,8 +161,8 @@ def close_area_epics(epics, repo):
     """Close each open area epic in `epics`. Returns (closed, failed).
 
     `gh issue close` and nothing else: the sub-issue links and the `Stage`
-    are left as they are, so `wf areas --issue` and a later backfill run
-    still resolve an issue through a closed epic.
+    are left as they are, so a later backfill run still resolves an issue
+    through a closed epic.
     """
     closed, failed = [], []
     for number in sorted(epics):

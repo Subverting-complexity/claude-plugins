@@ -68,7 +68,7 @@ def fetch_open_issue_state(cfg, repo=None):
     is available while an assignee or an open pull request says the work has
     started (`{'number', 'title', 'stage'}`, `stage` being the purpose key it
     belongs in), and every open issue's type and `Stage` (`{'number', 'type',
-    'stage'}`), which is what the area-epic check reads.
+    'stage'}`), which is what the areas-table check reads to choose its fix.
 
     Nothing here asks whether an issue is on a board. It used to, because the
     pool was a board column and an issue with no card could not be picked;
@@ -258,7 +258,7 @@ def collect_config_findings(cfg, args, root):
                    'field-unpinned', 'field-unmapped', 'field-absent',
                    'field-options', 'stage-absent', 'stage-options',
                    'label-retired', 'container-finished', 'stage-drift',
-                   'area-epics']
+                   'areas-table']
         return findings, ['config-section', 'instructions-retired'], skipped, context
 
     # ── the repo: labels ─────────────────────────────────────────────────────
@@ -284,8 +284,8 @@ def collect_config_findings(cfg, args, root):
     # One walk of the open issues answers four questions: which still carry a
     # label that decides nothing, which Epic or Feature is finished with
     # nothing having closed it (#240), which issue's `Stage` still says it
-    # is available after the work on it started, and whether the repository
-    # has any area epic for an issue to resolve to.
+    # is available after the work on it started, and, for a repository with
+    # no Areas table, whether it still has area epics to move off.
     ok, labelled, finished, drifted, typed, err = fetch_open_issue_state(
         cfg, args.repo)
     if not ok:
@@ -296,15 +296,19 @@ def collect_config_findings(cfg, args, root):
             'behind their work is unverified' % err,
             'check the token and re-run', source_rel))
         skipped.extend(['label-retired', 'container-finished', 'stage-drift',
-                        'area-epics'])
+                        'areas-table'])
     else:
         findings.extend(wf_core.retired_label_findings(
             labelled, cfg.get('labels'), source_rel))
         findings.extend(wf_core.finished_container_findings(finished, source_rel))
         findings.extend(wf_core.stage_drift_findings(drifted, source_rel))
-        findings.extend(wf_core.area_epic_findings(typed, source_rel))
+        # The only read of the retired `Area` stage outside `area-backfill`:
+        # it chooses which fix the finding names, and decides nothing else.
+        findings.extend(wf_core.areas_table_findings(
+            bool(cfg.get('areas')), wf_core.legacy_area_epics(typed),
+            source_rel))
         checked.extend(['label-retired', 'container-finished', 'stage-drift',
-                        'area-epics'])
+                        'areas-table'])
         context['retired_labels'] = labelled
         context['finished_containers'] = finished
         context['stage_drift'] = drifted

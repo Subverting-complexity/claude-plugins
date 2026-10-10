@@ -54,7 +54,7 @@ synergy/
 Run `/synergy:setup` to onboard your project. The wizard:
 
 1. Auto-detects your org, repo, default branch, and package manager.
-2. Checks that the org defines the `Stage` issue field with its nine options, and records your project board if you have one. It also checks the repository has its area epics, the permanent parts of the product every issue sits under ([`references/area-epics.md`](references/area-epics.md)).
+2. Checks that the org defines the `Stage` issue field with its eight options, and records your project board if you have one. It also asks for the areas, the parts of the product every issue belongs to, and writes them as the Areas table ([`references/area-epics.md`](references/area-epics.md)).
 3. Checks for milestones to determine sprint vs flat backlog mode.
 4. Asks for your branch convention and quality gate.
 5. Generates `ClaudeProject.md` (project settings) and `CLAUDE.md` (project rules) at your repo root.
@@ -111,13 +111,13 @@ Both modes use the same commands and skill — the pick logic adapts.
 
 ## Labels
 
-**Labels decide nothing, and the workflow puts none on an issue.** State is the `Stage` field, and priority, effort and ownership are org-level issue fields. The only labels it applies are the review-state labels a pull request carries, named in `docs/review.config.md` and created by `wf labels-ensure`.
+**Labels decide nothing about what is picked, and the workflow puts 2 kinds on an issue and no other.** State is the `Stage` field, and priority, effort and ownership are org-level issue fields. The 2 exceptions are the area label (`area: {name}`, exactly 1 on every issue, written by `wf issue-apply`) and the release-target labels (`release: {target}`, set by `wf post-merge` when the work merges). Both come from tables in `ClaudeProject.md`. On a pull request it applies the review-state labels, named in `docs/review.config.md`. `wf labels-ensure` creates all of them.
 
 A `## Label Map` left in an older `ClaudeProject.md` is still read. A row naming a label the workflow retired (`status-*`, `priority-*`, `needs-refinement`, `claude-ready`) is reported by `wf config-audit` as `label-deprecated`. Delete the row; the labels themselves can stay on old issues.
 
 ## Stage and boards
 
-An issue's state is its org `Stage` field, and nowhere else. There is no label to keep in step and no board column is read. The nine stages (Backlog, In Progress, In Review, Blocked, Non-code, Needs refinement, Parked, Done, Area) and what each one means are in one place, [`docs/issue-fields.md`](../docs/issue-fields.md). They resolve by purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, …).
+An issue's state is its org `Stage` field, and nowhere else. There is no label to keep in step and no board column is read. The eight stages (Backlog, In Progress, In Review, Blocked, Non-code, Needs refinement, Parked, Done) and what each one means are in one place, [`docs/issue-fields.md`](../docs/issue-fields.md). They resolve by purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, …).
 
 | The issue is | Stage |
 | ------------ | ----- |
@@ -129,11 +129,10 @@ An issue's state is its org `Stage` field, and nowhere else. There is no label t
 | specced too thinly to start | Needs refinement |
 | deliberately set aside | Parked |
 | closed | Done |
-| a permanent area epic, never picked, closed or moved | Area |
 
-**The `Stage` field is required, with all nine options.** The pick pool is the open, unassigned issues whose `Stage` is blank or `Backlog`, read from the repository's issues, so an issue with no board card is still pickable. Preflight fails the run when the org has no `Stage` field or when it lacks an option. Creating the field is a manual step in the GitHub UI: org settings → *Planning* → *Issue fields*.
+**The `Stage` field is required, with all eight options.** The pick pool is the open, unassigned issues whose `Stage` is blank or `Backlog`, read from the repository's issues, so an issue with no board card is still pickable. Preflight fails the run when the org has no `Stage` field or when it lacks an option. Creating the field is a manual step in the GitHub UI: org settings → *Planning* → *Issue fields*.
 
-**Every issue sits under an area.** An area epic is an `Epic` at `Stage` `Area`: one permanent part of the product, such as Library or Listening, that is never closed. A `Feature` sits under an area, a `User Story` under a feature or, when no feature fits, directly under an area, and a `Bug` or `Chore` under a feature or directly under an area. Release notes are grouped by area, so each repository keeps its own area epics and every finished issue must resolve to one. [`references/area-epics.md`](references/area-epics.md) covers the hierarchy and how to move an existing project onto it.
+**Every issue belongs to one area.** An area is one part of the product, such as Library or Listening: a row of the Areas table in `ClaudeProject.md`. An issue's area is its 1 `area: {name}` label, so no issue needs a parent, and release notes are grouped by that label. A repository with no Areas table fails preflight. Area epics, an `Epic` at `Stage` `Area`, were removed in 19.0.0, because GitHub allows a parent at most 100 sub-issues. [`references/area-epics.md`](references/area-epics.md) covers the table and how to move a repository off area epics.
 
 **Boards are for people to look at.** Set each board view's "Column by" to `Stage` and the board shows every issue's state. GitHub's built-in "Auto-add to project" workflow and the scheduled `board-sync` job keep cards on boards; agents never move cards. A `## Project Board` section in `ClaudeProject.md` is optional and informational.
 

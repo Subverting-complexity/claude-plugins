@@ -6,6 +6,27 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 19.0.0
+
+**Breaking. Do this before you take this version.** A repository that has no `## Areas` table in `ClaudeProject.md` fails preflight with `areas-table`, so `execute`, `bulk-execute` and `pr-review` do not start.
+
+- A repository with area epics (an open `Epic` whose `Stage` is `Area`): on 18.16.0 or 18.17.0, write the `## Areas` table with the number of each area epic in the `Epic` column, run `wf labels-ensure`, then `wf area-backfill --dry-run` and `wf area-backfill`. `synergy/references/area-epics.md` gives the steps. The command is still in 19.0.0, so the move can also be done after the update, and the preflight finding names it.
+- A repository that never had area epics: agree the areas with a person, write the table (`/synergy:setup` asks for the rows), and run `wf labels-ensure`.
+- A release script that reads an issue's area from its parent chain must read the `area: {name}` label instead.
+- A script that reads `wf areas` must read the new output, below.
+
+What changed:
+
+- An issue's area is its 1 `area: {name}` label and nothing else. Area epics are removed, because GitHub allows a parent at most 100 sub-issues and an area epic that reached 100 refused new issues.
+- No issue needs a parent. `wf issue-apply` and `wf issue-audit` accept a `User Story`, `Bug` or `Feature` with no parent. A parent that is given must still have the correct type.
+- `wf areas` prints the rows of the Areas table as `areas`, each with `name`, `description` and `label`, and makes no GitHub request. The `rows` key and the list of epics are gone. `wf areas --issue N` reads only the labels of issue N, and gives `area: null` with a `reason` for no area label, more than 1, or a label that names no row.
+- `wf issue-audit` reports `no-area-label` and `many-area-labels` in place of `no-area`, and proposes `area: TODO`.
+- Preflight's `areas-table` (critical) replaces `area-epics` (warning). It is skipped offline.
+- The `Stage` field needs 8 options, not 9. `Area` is no longer a stage, `stage-area` is not a purpose key, and `"state": "area"` in a spec is refused.
+- An epic still at `Stage` `Area` is an ordinary `Epic`. It is not in the pool, `wf board-sync` leaves its stage, and `wf post-merge` and `preflight --fix` close it when its last sub-issue closes. `post-merge` no longer reports `skipped_areas`.
+- `/synergy:setup` asks for the areas and writes the table. `report-issue`, `feature-discovery` and `writing-github-issues` choose an area and no area parent.
+- The workflow puts 2 kinds of label on an issue, `area:` and `release:`, and the documents that said it puts none now say so.
+
 ## synergy 18.17.0
 
 - A merged pull request now leaves each issue it closes with a `release: {target}` label for each release target its work ships in, so a release script can tell what waits for a mobile, web or backend release. `wf post-merge` adds the labels. It adds `release: internal` when no target applies, and it never removes a release label.

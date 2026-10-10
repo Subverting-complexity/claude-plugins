@@ -359,7 +359,7 @@ _NOTE_LABEL_MAX_WORDS = 6
 def _note_lines(text):
     """A release-notes text as its plain lines, without the `* ` marker.
 
-    The changelog adds each issue's area heading itself, from its area epic,
+    The changelog adds each issue's area heading itself, from its area label,
     so a heading, or a short line that is not a sentence ("Library and
     reading"), is a label the writer copied in and is dropped. Bold and code
     marks are removed, and a repeated line is kept once.

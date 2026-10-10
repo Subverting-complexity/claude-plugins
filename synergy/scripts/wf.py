@@ -401,9 +401,10 @@ def build_parser():
     le.set_defaults(func=cmd_labels_ensure)
 
     ab = sub.add_parser('area-backfill',
-                        help='add its area label to every issue under an area '
-                             'epic, open and closed, from the `epic` column of '
-                             'the `## Areas` table; a second run writes nothing')
+                        help='move a repository off area epics: add its area '
+                             'label to every issue under one, open and closed, '
+                             'from the `epic` column of the `## Areas` table; '
+                             'a second run writes nothing')
     ab.add_argument('--dry-run', action='store_true',
                     help='print the counts per area and write nothing')
     ab.add_argument('--close-epics', action='store_true',
@@ -563,15 +564,14 @@ def build_parser():
     au.set_defaults(func=cmd_issue_audit)
 
     ar = sub.add_parser('areas',
-                        help="list the repository's open area epics (an Epic "
-                             'whose Stage is Area) and, as `rows`, the Areas '
-                             'table an issue spec takes its `area` from, or '
-                             'with --issue the area one issue resolves to')
+                        help='list the rows of the Areas table an issue spec '
+                             'takes its `area` from, or with --issue the area '
+                             'one issue carries as its `area:` label')
     ar.add_argument('--repo', default=None,
                     help='read this owner/name instead of the configured repo')
     ar.add_argument('--issue', type=int, default=None,
-                    help="resolve this issue's area: the nearest area epic at "
-                         'or above it in its parent chain')
+                    help="read this issue's area from its `area:` label; "
+                         'its parents are never read')
     ar.set_defaults(func=cmd_areas)
 
     ase = sub.add_parser('area-set',

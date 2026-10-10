@@ -43,20 +43,7 @@ STAGE_NAMES = {
     'stage-refinement':  'Needs refinement',
     'stage-parked':      'Parked',
     'stage-done':        'Done',
-    'stage-area':        'Area',
 }
-
-# The stage that marks an area epic: a native `Epic` that stands for one
-# permanent part of the product. An issue's area is the nearest area epic above
-# it in its parent chain. An area is never picked, never closed, never moved by
-# a sweep and never audited for the fields work carries, because it is not
-# work: it is where work is filed.
-AREA_STAGE = 'stage-area'
-
-
-def is_area_stage(value):
-    """Whether a `Stage` value (name or purpose key) is `Area`."""
-    return stage_name(value) == STAGE_NAMES[AREA_STAGE]
 
 # The stage the picker selects from, beside a blank `Stage`, which means the
 # same thing: nobody has decided anything about this issue yet. Every other
@@ -259,20 +246,26 @@ def scope_findings(issues, ownership_map=None):
     return findings
 
 
-# What a spec entry may ask for in `state`, and the stage each asks for. Four
-# and not ten: these are the states a *writer* can know. In Progress, In
+# What a spec entry may ask for in `state`, and the stage each asks for. Three
+# and not eight: these are the states a *writer* can know. In Progress, In
 # Review and Done are written by the run that does the work, and Needs
 # attention by the run that gives up on it, so a spec naming one of those would
-# be describing something that has not happened. `area` files an area epic, and
-# `validate_spec` refuses it on anything but an `Epic`. `parked` is for an
+# be describing something that has not happened. `parked` is for an
 # issue that already exists: `validate_spec` refuses it on a create, because
 # nothing is set aside before it has been filed.
 SPEC_STATE_STAGES = {
     'backlog':    'stage-backlog',
     'refinement': 'stage-refinement',
     'parked':     'stage-parked',
-    'area':       AREA_STAGE,
 }
+
+# `area` was a state until 19.0.0: it filed an area epic. An issue's area is
+# its `area: {name}` label now, so a spec that still asks for it is told what
+# to write instead of only that the word is unknown.
+RETIRED_SPEC_STATE_AREA = (
+    "'area' is no longer a state: area epics were removed in 19.0.0, and an "
+    "issue's area is its `area: {name}` label. Remove `state`, and name a row "
+    'of the Areas table in `area`')
 
 # The stages `issue-apply` may change on its own. Everything else is a state
 # some other run, or a person, set, and an update that is about a field value
@@ -294,6 +287,8 @@ def spec_state_stage(value):
     key = str(value).strip().lower()
     if key in SPEC_STATE_STAGES:
         return SPEC_STATE_STAGES[key], None
+    if key == 'area':
+        return None, RETIRED_SPEC_STATE_AREA
     return None, ("'%s' is not a state a spec may ask for (it reads: %s)"
                   % (value, ', '.join(sorted(SPEC_STATE_STAGES))))
 
@@ -301,10 +296,8 @@ def spec_state_stage(value):
 def stage_for(scope, open_blockers, requested=None):
     """The stage purpose key an issue in this state belongs in.
 
-    Six inputs in one order, and the order is the whole rule:
+    Five inputs in one order, and the order is the whole rule:
 
-      area        the spec asked for `area`. An area epic is owned by nobody,
-                  because it is not work, so this wins even over the owner.
       non-code    `scope` is a browser agent or a person, so the stage is
                   Non-code. This wins over everything below it: the owner is a
                   property of the work, it survives every blocker closing, and
@@ -324,8 +317,6 @@ def stage_for(scope, open_blockers, requested=None):
     the written value is the one a board groups under a column a person
     recognises instead of `No Stage`.
     """
-    if requested == AREA_STAGE:
-        return AREA_STAGE
     if scope in (SCOPE_BROWSER, SCOPE_HUMAN):
         return 'stage-non-code'
     if requested:
@@ -353,12 +344,8 @@ def may_set_stage(current_stage, requested=None):
 
 # Stages `board-sync` never moves an open issue out of. Each one is a person's
 # decision, and nothing readable on the issue can show it was undone. Closing
-# the issue does end it, so a closed issue in any of them but `Area` is Done.
-# `Area` is protected closed as well: an area epic is permanent, and a closed
-# one is not marked Done, because closing it was a mistake to repair rather
-# than a state to record.
-SYNC_PROTECTED_STAGES = frozenset({'Parked', 'Needs refinement', 'Non-code',
-                                   'Area'})
+# the issue does end it, so a closed issue in any of them is Done.
+SYNC_PROTECTED_STAGES = frozenset({'Parked', 'Needs refinement', 'Non-code'})
 
 
 def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
@@ -375,10 +362,10 @@ def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
     The rules, in the order they are tried:
 
       closed      a closed issue is Done, whatever stage it sat in and whether
-                  it was closed as completed or as not planned. Only Area is
-                  exempt, and so is a value that is not a stage at all.
-      protected   an open issue in Parked, Needs refinement, Non-code or Area
-                  is left alone.
+                  it was closed as completed or as not planned. Only a value
+                  that is not a stage at all is exempt.
+      protected   an open issue in Parked, Needs refinement or Non-code is
+                  left alone.
       non-code    work owned by a browser agent or a person that is blank,
                   Backlog or Blocked goes to Non-code, as `stage_for` puts it
                   when the issue is written. Once a person has moved such work
@@ -411,7 +398,7 @@ def reconcile_stage(is_open, stage, blockers, open_blockers, assigned, claimed,
     if (stage or '').strip() and not current:
         return None
     done = STAGE_NAMES['stage-done']
-    if not is_open and current != STAGE_NAMES[AREA_STAGE]:
+    if not is_open:
         # Closing an issue, as completed or as not planned, ends whatever a
         # person parked it for, so a closed issue is Done from any stage.
         return None if current == done else done

@@ -285,7 +285,7 @@ class TestSettleMerged(unittest.TestCase):
 
     def test_only_prs_with_an_issue_out_of_done_are_settled(self):
         code, payload, settled = self._sweep(
-            {5: 'Done', 6: 'In Review', 7: 'Area'})
+            {5: 'Done', 6: 'In Review', 7: 'Done'})
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual(settled, [51])
         self.assertEqual(payload['settled'], [51])

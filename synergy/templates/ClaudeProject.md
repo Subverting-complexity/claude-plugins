@@ -73,7 +73,7 @@ Every purpose key the workflow writes, mapped to the field name **this** owner u
 
 `field-user-release-notes` and `field-internal-release-notes` are text fields written once, when a story reaches Done: `execute` and `bulk-execute` write the text the `release-notes` skill produced for that story, and a blank text leaves its field blank. Nothing ever reports them missing, and an org without them skips the write. `field-shipped-version` is mapped only so the workflow knows it: each project's own release script stamps it, and no `wf` command writes it.
 
-`field-stage` answers a different question: **state**. The org must define it, but an issue may leave it blank. It is a single-select with nine options, `Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Done` and `Area`, and a blank `Stage` means available, the same as `Backlog`. `Area` marks a permanent area epic, one part of the product that every other issue sits under (the plugin's `references/area-epics.md`): it is never picked, closed or moved. Preflight fails the run when the org has no `Stage` field (`stage-absent`) or when it lacks one of the nine options (`stage-options`), because a transition to a missing option fails.
+`field-stage` answers a different question: **state**. The org must define it, but an issue may leave it blank. It is a single-select with eight options, `Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked` and `Done`, and a blank `Stage` means available, the same as `Backlog`. Preflight fails the run when the org has no `Stage` field (`stage-absent`) or when it lacks one of the eight options (`stage-options`), because a transition to a missing option fails.
 
 ### Missing
 
@@ -83,7 +83,7 @@ Fields the owner does not define, and what the workflow does instead:
 | ----- | ----------- |
 | _(none)_ | — |
 
-A missing optional field is skipped at runtime, not an error. A missing **required** field is refused: `wf issue-apply` will not create an issue the picker cannot rank, size or route, and `wf config-audit` reports it as `CRITICAL field-absent`. Create it in the owner's *Issue fields* settings and pin it to every enabled issue type. `Stage` (single-select, the nine options above), `Ownership` (single-select: Code agent, Browser agent, Human) and `Origin` (single-select: Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request) are the three GitHub does not create by default. Create them in the org settings under *Planning* → *Issue fields*.
+A missing optional field is skipped at runtime, not an error. A missing **required** field is refused: `wf issue-apply` will not create an issue the picker cannot rank, size or route, and `wf config-audit` reports it as `CRITICAL field-absent`. Create it in the owner's *Issue fields* settings and pin it to every enabled issue type. `Stage` (single-select, the eight options above), `Ownership` (single-select: Code agent, Browser agent, Human) and `Origin` (single-select: Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request) are the three GitHub does not create by default. Create them in the org settings under *Planning* → *Issue fields*.
 
 The purpose→value maps — which native type each kind of work becomes, and the Priority, Effort and Origin option names — are Python data in `synergy/scripts/wf_core.py`, not prose here. Run `wf org-capabilities` for the live option ids rather than copying them into this file, where they would go stale.
 
@@ -97,13 +97,13 @@ Skill the execute flow offers when a story is too thin to implement: `feature-di
 
 ## Areas
 
-One row for each permanent part of the product. Each row becomes the label `area: {name}`.
+One row for each part of the product. Each row becomes the label `area: {name}`, and every issue carries exactly 1 of them: that label is the issue's area, which release notes are grouped by. The table is required. Preflight fails with `areas-table` without it (the plugin's `references/area-epics.md`).
 
 | Name          | Description                  | Colour   | Epic | Was |
 | ------------- | ---------------------------- | -------- | ---- | --- |
 | `{area-name}` | {one sentence on what it covers} | `{rrggbb}` |      |     |
 
-`Description` is the label description, so GitHub allows 100 characters at most. Write a `|` in it as `\|`. `Colour` is 6 hex digits. `Epic` is optional: the number of the area epic this row replaces. `Was` is optional: the name this area had before a rename. A name must not appear 2 times.
+`Description` is the label description, so GitHub allows 100 characters at most. Write a `|` in it as `\|`. `Colour` is 6 hex digits. `Epic` is optional and only for a repository that still has area epics from a version before 19.0.0: the number of the area epic this row replaces, which `wf area-backfill` reads. `Was` is optional: the name this area had before a rename. A name must not appear 2 times.
 
 ## Release Targets
 

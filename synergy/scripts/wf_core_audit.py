@@ -17,9 +17,8 @@ from wf_core_refs import (
 from wf_core_spec import (
     SPEC_PLACEHOLDER, _is_supplied, default_classification, hierarchy_error,
 )
-from wf_core_stage import (
-    OWNERSHIP_FIELD_OPTIONS, is_area_stage, scope_findings, scope_from_title,
-)
+from wf_core_labels import area_labels_on
+from wf_core_stage import OWNERSHIP_FIELD_OPTIONS, scope_findings, scope_from_title
 
 
 # ── issue audit ──────────────────────────────────────────────────────────────
@@ -148,53 +147,9 @@ def _field_values(issue):
     return have
 
 
-def area_chain_map(issues, project_fields=None):
-    """{number: (parent number, stage, type)} for every scanned issue.
-
-    What `audit_issue` walks to find an issue's area: the nearest area epic
-    above it. Built once from the open issues a scan read, so the walk costs
-    no round trip; a parent the scan did not read is simply absent.
-    """
-    stage_field = resolve_field_name('field-stage', project_fields or {})
-    out = {}
-    for issue in issues or ():
-        number = issue.get('number')
-        if number is None:
-            continue
-        out[number] = ((issue.get('parent') or {}).get('number'),
-                       _field_values(issue).get(stage_field),
-                       (issue.get('issueType') or {}).get('name'))
-    return out
-
-
-def resolves_to_no_area(number, chain):
-    """Whether an issue's parent chain, read in full, reaches no area epic.
-
-    `chain` is `area_chain_map`'s output. True only when every step is known
-    and the chain ends at an issue with no parent. A parent outside the map
-    (closed, in another repository, or past a `--limit`) is unknown, and an
-    unknown is not reported as a gap: the audit does not guess.
-    """
-    if number not in chain:
-        return False
-    seen, current = set(), number
-    while current not in seen:
-        seen.add(current)
-        entry = chain.get(current)
-        if entry is None:
-            return False
-        parent, stage, _ = entry
-        if is_area_stage(stage):
-            return False
-        if parent is None:
-            return True
-        current = parent
-    return False
-
-
 def audit_issue(issue, field_map, type_capable=True, project_map=None,
                 project_fields=None, open_numbers=None, type_map=None,
-                parents=False, chain=None, blockers=False):
+                parents=False, areas=None, blockers=False):
     """Every gap on one issue, plus the spec entry that would close them.
 
     `issue` is a read-back node. Returns a dict carrying `gaps` (each with a
@@ -211,14 +166,15 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
     in its place is
     **ownership** — whether the `Ownership` field and the title prefix agree
     about which of the three parties owns the issue — and **hierarchy**, whether
-    a Feature sits under an Epic and a User Story under a Feature or an Epic.
+    an issue that has a parent has one its type may sit under. No parent at
+    all is never a gap.
 
-    An area epic (`Stage` is `Area`) is exempt from every field and ownership
-    gap: it is a permanent part of the product rather than work, so nothing
-    ranks, sizes or routes it. `chain` is `area_chain_map` over the scanned
-    issues; with it, an open issue whose parent chain reaches no area epic is a
-    `no-area` gap, and nothing is proposed for it, because which area an issue
-    belongs to is a judgement about the product.
+    `areas` is the rows of the `## Areas` table in `ClaudeProject.md`. With
+    them, an issue that carries no `area:` label is a `no-area-label` gap and
+    one that carries more than 1 is a `many-area-labels` gap. Both propose
+    `area` as a placeholder, because which area an issue belongs to is a
+    judgement about the product. A repository with no table passes none and
+    nothing is asked: preflight reports the missing table once instead.
 
     `parents` is off by default, and that is a statement about where parents
     come from rather than about how well the parsing works. A story created
@@ -252,7 +208,6 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
 
     # The field values the issue already carries, by field name.
     have = _field_values(issue)
-    area = is_area_stage(have.get(resolve_field_name('field-stage', project_fields)))
 
     # A `[DEBT]` issue typed `Feature` is not a native-type contradiction —
     # GitHub's five types cannot express tech debt, which is exactly why
@@ -280,7 +235,7 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
     # that cannot come back clean cannot be used as a check, which is what it is
     # for.
     proposed_fields = {}
-    for purpose in () if area else MANDATORY_FIELD_KEYS + OPTIONAL_FIELD_KEYS:
+    for purpose in MANDATORY_FIELD_KEYS + OPTIONAL_FIELD_KEYS:
         concrete = resolve_field_name(purpose, project_fields)
         if concrete not in field_map:
             continue
@@ -327,7 +282,7 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
     # field is missing, not the value, and `config-audit`'s `field-absent` is
     # the check that says so, once for the org rather than once per issue.
     owner_field = resolve_field_name('field-ownership', project_fields)
-    if owner_field in field_map and not area:
+    if owner_field in field_map:
         owner = have.get(owner_field)
         if not _is_supplied(owner):
             owner = proposed_fields.get('field-ownership')
@@ -386,13 +341,25 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
         if problem:
             gaps.append({'kind': 'hierarchy', 'detail': problem})
 
-    # Which permanent part of the product this issue belongs to: the nearest
-    # area epic above it. Reported and never proposed, like the tree above.
-    if chain is not None and not area and resolves_to_no_area(number, chain):
-        gaps.append({'kind': 'no-area',
-                     'detail': 'no area epic above it, so it belongs to no part '
-                               'of the product and its release notes cannot be '
-                               'grouped; file it under a Feature or an area epic'})
+    # Which part of the product this issue belongs to: its 1 area label. The
+    # value is a placeholder, so `issue-apply` refuses the spec until a person
+    # names a row; with a row it writes that label and removes any other.
+    proposed_area = None
+    if areas:
+        carried = area_labels_on(labels)
+        if not carried:
+            gaps.append({'kind': 'no-area-label',
+                         'detail': 'carries no `area:` label, so it belongs to '
+                                   'no part of the product and its release '
+                                   'notes cannot be grouped; name a row of the '
+                                   'Areas table in `area`, or run `wf area-set`'})
+            proposed_area = SPEC_PLACEHOLDER
+        elif len(carried) > 1:
+            gaps.append({'kind': 'many-area-labels',
+                         'detail': 'carries %d area labels (%s) and an issue has '
+                                   'exactly 1; name the one to keep in `area`'
+                                   % (len(carried), ', '.join(carried))})
+            proposed_area = SPEC_PLACEHOLDER
 
     # A blocker the body names and the edges do not have. Opt-in like parents,
     # and for the same reason: an issue created from a spec already carries its
@@ -420,10 +387,8 @@ def audit_issue(issue, field_map, type_capable=True, project_map=None,
     # No title: an update now writes the title it is given, and the one read
     # here would strip a prefix or undo an edit made after the audit.
     proposed = {'number': number}
-    if area:
-        # So the entry validates without the fields work carries: an area
-        # epic is exempt, and `issue-apply` knows one by this state.
-        proposed['state'] = 'area'
+    if proposed_area:
+        proposed['area'] = proposed_area
     if kind:
         proposed['kind'] = kind
     if proposed_fields:

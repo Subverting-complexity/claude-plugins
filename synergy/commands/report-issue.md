@@ -38,21 +38,19 @@ Determine the type:
 - **Architecture** — Layer violation, coupling, design problem
 - **Tech Debt** — Working but needs improvement
 
-### 2b. Choose the parent
+### 2b. Choose the area
 
-Every new issue gets a parent that resolves to an **area**: an `Epic` at `Stage` `Area`, one permanent part of the product. Release notes are grouped by area, so an issue with none cannot be placed in them. List the open area epics and read their bodies, which say what each covers:
+Every new issue belongs to one **area**, a part of the product. Release notes are grouped by area, so an issue with none cannot be placed in them. The areas are the rows of the Areas table in `ClaudeProject.md`. List them:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas
 ```
 
-Pick the area whose body best covers the problem. A bug, a security problem or tech debt goes directly under that area, or under an open `Feature` in it when one clearly fits. An architecture report is filed as a `Feature` directly under the area. Do not file an epic or an area to hold one report.
+Choose the row in `areas` whose `description` best covers the problem and pass its `name` as `"area"` in Step 5. `wf issue-apply` writes it as the issue's 1 `area: {name}` label, and refuses a new issue without it. When nothing fits well, choose the closest row and add one line to the issue body saying the fit is loose, so a person can move it. Do not add a row to hold one report.
 
-When nothing fits well, file under the closest area and add one line to the issue body saying the fit is loose, so a person can move it.
+The issue needs no parent. Give it one only when an open `Feature` clearly holds this work. An architecture report is filed as a `Feature`.
 
-When `wf areas` returns a `count` of 0, the project has no area epics yet. File the issue without a parent, and tell the user the project has no area epics and that `../references/area-epics.md` covers setting them up.
-
-**Choose the area label too.** When `wf areas` returns `rows`, the project has an Areas table. Choose the row whose `description` best covers the problem and pass its `name` as `"area"` in Step 5. `wf issue-apply` writes it as the issue's 1 `area: {name}` label, and refuses a new issue without it. A row's `epic` is the number of the area epic with that name, when there is one. When `rows` is empty, leave `"area"` out.
+When `wf areas` returns a `count` of 0, the project has no Areas table. Leave `"area"` out, file the issue, and tell the user that preflight fails until the table exists and that `../references/area-epics.md` covers it.
 
 ### 3. Assess severity, size and owner
 
@@ -98,8 +96,7 @@ cat > .claude/report-spec.json <<'JSON'
 {"issues": [{"title": "{title}",
              "body_file": ".claude/report-body.md",
              "kind": "{bug|security|architecture|tech debt}",
-             "parent": {area or feature number},
-             "area": "{area name from rows}",
+             "area": "{name of the row Step 2b chose}",
              "milestone": "current",
              "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                         "field-effort": "{Low|Medium|High}",
@@ -118,17 +115,17 @@ Drop the `milestone` key entirely in flat-backlog mode. Any value other than `cu
 
 The exceptions are `[Manual] `, for an issue a person has to do, and `[Browser] `, for one a browser agent has to do (Step 3). They are kept because nothing native says who has to do the work. The prefix and `field-ownership` must agree — `[Manual] ` with `Human`, `[Browser] ` with `Browser agent` — and `issue-apply` refuses a spec where they contradict each other rather than filing an issue two things claim to own.
 
-**Pass no labels** beyond a template's own, with one exception: the area label, which you pass as `"area"` and never in `labels`. `kind` supplies the native issue type and the default `Classification` value, `field-type` adds the areas, and the three required fields carry the rest. `wf issue-apply` drops any retired label a spec does name.
+**Pass no labels** beyond a template's own. The workflow puts 2 kinds of label on an issue and no other: the area label, which you pass as `"area"` and never in `labels`, and the `release:` labels, which `wf post-merge` sets when the work merges. `kind` supplies the native issue type and the default `Classification` value, `field-type` adds the areas, and the three required fields carry the rest. `wf issue-apply` drops any retired label a spec does name.
 
-**You do not choose the stage.** `issue-apply` decides it from the issue's own fields and writes it itself, in this order: `Ownership` of `Human` or `Browser agent` goes to Non-code; an explicit `"state"` on the spec entry (`backlog` or `refinement`; `area` is for creating an area epic and never used here) goes to that stage; an `Ownership` that is missing or unrecognised goes to Needs refinement, because nothing can route it; an open blocked-by edge goes to Blocked; everything else goes to Backlog. A new issue is never filed as `Parked`, and `issue-apply` refuses a create that asks for it: an issue that cannot be built now still goes to Backlog, with a `blocked_by` edge where it waits on another issue.
+**You do not choose the stage.** `issue-apply` decides it from the issue's own fields and writes it itself, in this order: `Ownership` of `Human` or `Browser agent` goes to Non-code; an explicit `"state"` on the spec entry (`backlog` or `refinement`) goes to that stage; an `Ownership` that is missing or unrecognised goes to Needs refinement, because nothing can route it; an open blocked-by edge goes to Blocked; everything else goes to Backlog. A new issue is never filed as `Parked`, and `issue-apply` refuses a create that asks for it: an issue that cannot be built now still goes to Backlog, with a `blocked_by` edge where it waits on another issue.
 
 **Leave the assignee blank.** The spec has no assignee key, and you must not follow up with `gh issue edit --add-assignee`. Creating an issue is never an act of claiming it: new issues must enter the unassigned pool so `execute` (which queries `--assignee ""`) can select them. Assignment happens only at claim time (`execute` Acquire).
 
 **Field values.**
 
 - `kind` is the Step 2 classification in lower case.
-- `parent` is the area or feature number Step 2b chose. Leave the key out only when the project has no area epics.
-- `area` is the name of the Areas table row Step 2b chose. Leave the key out only when `wf areas` returned no `rows`.
+- `area` is the name of the Areas table row Step 2b chose. Leave the key out only when `wf areas` returned a `count` of 0.
+- `parent` is optional: the number of the `Feature` Step 2b found, when one clearly holds this work.
 - `field-priority`, `field-effort` and `field-ownership` are the three values Step 3 settled. All three are **required**: `issue-apply` refuses a spec that leaves one blank rather than filing work nothing can rank, size or route.
 - `field-type` is the kind of change (**Bug Fix**, **Security**, **Architecture** or **Tech Debt**, or a better one) plus each area the work touches, such as **Front end** — only when adding an area, follow `../skills/writing-github-issues/SKILL.md` → **Adding areas**. Never areas alone. Where the org defines no area options, leave the key out and `kind` supplies the value.
 - `field-origin` is **Development**, or **Security Audit** if this report came out of a security audit session. It is optional — leave it out and the created issue gets a comment saying it was filed without one.
@@ -164,4 +161,4 @@ Read `stage` and `stage_set` from the command's output and report them. A `stage
 
 ### 7. Report
 
-Display the created issue by number **and** title together (e.g. `#42 Fix login crash`, never the number alone) plus its URL, whether it blocks the current story or is deferred, its stage, and the area it was filed under (or that the project has no area epics).
+Display the created issue by number **and** title together (e.g. `#42 Fix login crash`, never the number alone) plus its URL, whether it blocks the current story or is deferred, its stage, and its area (or that the project has no Areas table).

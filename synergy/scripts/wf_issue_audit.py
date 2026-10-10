@@ -101,21 +101,18 @@ def cmd_issue_audit(args):
                                        % (repo, err), repo=repo)
 
     open_numbers = {i['number'] for i in issues}
-    # Every scanned issue's parent, stage and type, so each issue's area (the
-    # nearest area epic above it) is found without a read per issue. Only once
-    # the project has an area epic at all: before that, every issue would be a
-    # `no-area` gap with one cause, and `preflight` names it once as
-    # `area-epics` instead.
-    chain = wf_core.area_chain_map(issues, cfg.get('fields') or {})
-    if not any(wf_core.is_area_stage(stage) for _, stage, _ in chain.values()):
-        chain = None
+    # The area is the label each issue already carries, so it costs no read.
+    # Only once the project has an Areas table: before that, every issue would
+    # be a `no-area-label` gap with one cause, and `preflight` names it once
+    # as `areas-table` instead.
     audited = [wf_core.audit_issue(issue, caps['field_map'],
                                    type_capable=caps['type_capable'],
                                    project_map=cfg.get('labels') or {},
                                    project_fields=cfg.get('fields') or {},
                                    open_numbers=open_numbers,
                                    type_map=caps.get('type_map') or {},
-                                   parents=args.parents, chain=chain,
+                                   parents=args.parents,
+                                   areas=cfg.get('areas') or None,
                                    blockers=args.blockers or args.blockers_only)
                for issue in issues]
     scanned = len(audited)
@@ -157,8 +154,8 @@ def cmd_issue_audit(args):
                                    'it has no blocked-by edge to' % repo, **payload)
     if not with_gaps:
         emit('ok', EXIT_OK, reason='every open issue in %s carries its type, its '
-                                   'field values, an owner and a place in the '
-                                   'epic tree' % repo, **payload)
+                                   'field values, an owner and its area label'
+                                   % repo, **payload)
 
     # Non-zero so the audit can run as a check. The spec it just wrote is the
     # input to the backfill, but it is deliberately not applied here: every gap

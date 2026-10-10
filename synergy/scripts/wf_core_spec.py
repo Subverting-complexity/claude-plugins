@@ -11,41 +11,30 @@ from wf_core_fields import (
 )
 from wf_core_labels import area_labels_on, area_names, area_row
 from wf_core_stage import (
-    AREA_STAGE, OWNERSHIP_FIELD_OPTIONS, SCOPE_CODE, SCOPE_HUMAN, SCOPE_PREFIXES,
+    OWNERSHIP_FIELD_OPTIONS, SCOPE_CODE, SCOPE_HUMAN, SCOPE_PREFIXES,
     ownership_scope, scope_from_title, spec_state_stage,
 )
-
-# The only native type an area epic may be. An area groups Features and the
-# Bugs and Chores filed straight under it, which is what an `Epic` already is.
-AREA_TYPE = 'Epic'
 
 
 # ── issue hierarchy: epic → feature → user story ─────────────────────────────
 # The native types are a hierarchy and not a flat vocabulary, so a Feature
-# belongs to an Epic and a User Story to a Feature or, failing one, an Epic. Recorded here, and
-# enforced when an issue is written, because the alternative is where every
-# backlog ends up: a scattering of stories that each made sense on the day and
-# no epic that shows what they add up to. GitHub renders the tree and reports
-# progress against it, and neither can show anything if nothing is attached.
+# belongs to an Epic and a User Story to a Feature or, failing one, an Epic.
+# The rule is about which parent a type may have, never about having one: GitHub
+# renders the tree and reports progress against it, and a Feature under a
+# Feature shows neither.
 #
-# `Bug` and `Chore` are absent on purpose. Both arrive unplanned, both are
-# frequently self-contained, and requiring an epic for a typo fix would mean
-# inventing one. A parent on either is allowed and never required.
+# No type needs a parent. An issue's area is its `area: {name}` label, so
+# nothing has to reach an epic to belong to a part of the product, and GitHub
+# allows a parent at most 100 sub-issues, which a rule that forced every story
+# under one would fill. A User Story that fits no Feature stands on its own.
 #
-# Each type maps to the parent types it may sit under, the preferred one
-# first. A User Story that fits no Feature goes straight under its area epic:
-# a Feature invented to hold one story would only restate it, and what matters
-# is that the chain still reaches an area, which `no-area` reports.
+# `Bug` and `Chore` are absent on purpose: either may sit under anything.
+#
+# Each type maps to the parent types it may sit under, the preferred one first.
 HIERARCHY_PARENT_TYPE = {
     'Feature':    ('Epic',),
     'User Story': ('Feature', 'Epic'),
 }
-
-# A feature is expected under an epic, not required to be. An epic groups
-# several features toward one outcome; work that is a single feature stands on
-# its own, because an epic invented to hold it would only restate it. A feature
-# that has a parent still needs an `Epic` one.
-HIERARCHY_OPTIONAL_PARENT = frozenset({'Feature'})
 
 
 def hierarchy_error(type_name, parent_type, type_map=None, parent_label=None):
@@ -68,11 +57,8 @@ def hierarchy_error(type_name, parent_type, type_map=None, parent_label=None):
         allowed = tuple(t for t in allowed if t in type_map)
     wanted = ' or '.join("'%s'" % t for t in allowed)
     if not parent_type:
-        if type_name in HIERARCHY_OPTIONAL_PARENT:
-            return None
-        return ("a '%s' needs a %s parent, and this one has none -- give it "
-                '`parent` (an existing issue number, or the spec key of one '
-                'this spec creates)' % (type_name, wanted))
+        # No parent is always allowed: the area comes from the label.
+        return None
     if parent_type not in allowed:
         return ("a '%s' belongs under a %s, but %s is a '%s'"
                 % (type_name, wanted,
@@ -88,8 +74,9 @@ def spec_hierarchy_errors(plans, issue_types=None, issue_parents=None,
     entry this spec creates, the number of an issue that already exists, and --
     for an update that says nothing about its parent -- the parent the issue
     already has. The third is why an update is checked at all: an entry that
-    changes a Chore into a User Story has to acquire a Feature parent, and the
-    only place that is knowable is against the live issue.
+    changes a Chore under a Bug into a User Story now sits under a parent a
+    User Story may not have, and the only place that is knowable is against
+    the live issue.
 
     An entry whose type this spec does not settle is judged by the type the
     issue already carries, but only when the entry moves it: an update that
@@ -121,18 +108,6 @@ def spec_hierarchy_errors(plans, issue_types=None, issue_parents=None,
     errors = []
     for plan in plans:
         entry = plan['entry']
-        if plan.get('state') == AREA_STAGE and plan.get('type') is None:
-            # An update asking for `area` without restating its type is judged
-            # by the type the issue already carries. `validate_spec` has
-            # already refused a create with no type, and an explicit one.
-            own = as_number(entry.get('number'))
-            live_type = issue_types.get(own) if own is not None else None
-            if live_type != AREA_TYPE:
-                errors.append("%s: asks for `\"state\": \"area\"` but is %s, and "
-                              'only an `%s` can be an area epic'
-                              % (entry_label(entry),
-                                 "a '%s'" % live_type if live_type else 'untyped',
-                                 AREA_TYPE))
         ref = entry.get('parent')
         type_name = plan.get('type')
         if type_name is None and ref is not None:
@@ -353,7 +328,7 @@ def field_value_input(field_meta, value):
     return None, "unsupported field data type '%s'" % data_type
 
 
-def spec_area_errors(entry, plan, areas, is_area):
+def spec_area_errors(entry, plan, areas):
     """Settle one entry's `area` against the areas table. Returns its errors.
 
     `area` names a row of the `## Areas` table in `ClaudeProject.md`, and the
@@ -363,8 +338,7 @@ def spec_area_errors(entry, plan, areas, is_area):
     - A name the table does not have is refused, and so is `area` in a
       repository with no table, where there is no label to write.
     - A create must name one where the table exists, so no new issue is filed
-      without an area. An update names only what it changes. An area epic
-      (`"state": "area"`) is exempt: it is the area, not work inside one.
+      without an area. An update names only what it changes.
     - An `area:` name in `labels` is refused where the table exists, because
       a second way to write the label is how an issue ends up carrying 2.
     """
@@ -384,7 +358,7 @@ def spec_area_errors(entry, plan, areas, is_area):
                           % (supplied.strip(), ', '.join(area_names(rows))))
         else:
             plan['area'] = row['name']
-    elif rows and not entry.get('number') and not is_area:
+    elif rows and not entry.get('number'):
         errors.append('missing `area`, which every new issue must carry; name '
                       'one row of the Areas table (valid: %s)'
                       % ', '.join(area_names(rows)))
@@ -460,9 +434,6 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
                           "`state` out, so its fields decide, or use "
                           "'backlog' or 'refinement'" % name)
         plan['state'] = state_stage
-        # An area epic is a permanent part of the product, not work: nothing
-        # ranks, sizes or routes it, so it carries none of the fields work must.
-        is_area = state_stage == AREA_STAGE
 
         # Native type.
         type_name, err = resolve_entry_type(entry, type_map)
@@ -475,19 +446,10 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
                                                  ', '.join(sorted(type_map)) or 'none'))
             else:
                 plan['type'] = type_name
-        if is_area and not err:
-            if type_name and type_name != AREA_TYPE:
-                errors.append("%s: asks for `\"state\": \"area\"` but is a '%s', "
-                              'and only an `%s` can be an area epic'
-                              % (name, type_name, AREA_TYPE))
-            elif not type_name and not entry.get('number'):
-                errors.append("%s: asks for `\"state\": \"area\"` with no type; "
-                              'an area epic is an `%s`, so add `"type": "%s"`'
-                              % (name, AREA_TYPE, AREA_TYPE))
 
         # The area label, from the `## Areas` table in `ClaudeProject.md`.
         errors.extend('%s: %s' % (name, e)
-                      for e in spec_area_errors(entry, plan, areas, is_area))
+                      for e in spec_area_errors(entry, plan, areas))
 
         # Field values, including the ones the entry did not name but must.
         wanted = dict(entry.get('fields') or {})
@@ -520,7 +482,7 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
                                  purpose))
                 wanted.pop(purpose)
 
-        for purpose in () if is_area else mandatory_keys:
+        for purpose in mandatory_keys:
             concrete = resolve_field_name(purpose, project_fields)
             if concrete not in field_map:
                 # Refused, not skipped. Priority, Effort and Ownership are what
@@ -546,7 +508,7 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
 
         # The optional two. A gap here is recorded on the plan rather than
         # raised, and the writer turns it into a comment on the issue.
-        plan['unset_optional'] = [] if is_area else sorted(
+        plan['unset_optional'] = sorted(
             resolve_field_name(purpose, project_fields)
             for purpose in OPTIONAL_FIELD_KEYS
             if resolve_field_name(purpose, project_fields) in field_map
@@ -756,42 +718,3 @@ def spec_cycles(entries):
         if state.get(node) is None:
             walk(node, [])
     return cycles
-
-
-def unparented_creates(entries):
-    """The entries this spec creates whose parent chain ends with no parent.
-
-    Each such issue resolves to no area, because an issue's area is the nearest
-    area epic above it. Walked within the spec only: a chain that reaches an
-    existing issue (a number, or an entry that updates one) is trusted rather
-    than read, and one that reaches an entry asking for `"state": "area"` has
-    found its area. A reference that names nothing is left to the checks that
-    refuse it. Call before anything is created, while a create still has no
-    number. Returns the entries, in spec order.
-    """
-    by_ref = {}
-    for entry in entries or ():
-        for ref in _entry_refs(entry):
-            by_ref[ref] = entry
-
-    def ends_unparented(entry):
-        seen, current = set(), entry
-        while id(current) not in seen:
-            seen.add(id(current))
-            if spec_state_stage(current.get('state'))[0] == AREA_STAGE:
-                return False
-            if current is not entry and current.get('number') is not None:
-                return False
-            ref = current.get('parent')
-            if ref is None:
-                return True
-            nxt = by_ref.get(ref)
-            if nxt is None and isinstance(ref, str) and ref.strip().isdigit():
-                nxt = by_ref.get(int(ref.strip()))
-            if nxt is None:
-                return False
-            current = nxt
-        return False
-
-    return [e for e in entries or ()
-            if e.get('number') is None and ends_unparented(e)]

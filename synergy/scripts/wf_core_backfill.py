@@ -3,6 +3,14 @@ The area backfill: which area label each issue of a repository gets, from the
 area epic its parent chain reaches and the `epic` column of the `## Areas`
 table in `ClaudeProject.md`.
 
+Area epics were removed in 19.0.0: an issue's area is its `area: {name}`
+label. This module is the move off them, and it holds the only read of the
+retired `Area` stage (`is_legacy_area_epic`). Two callers use that read and no
+other may: `wf area-backfill`, which has to find the epics it copies from, and
+preflight, which has to tell a repository that still has them from one that
+never did, to name the right fix. No pick, plan, audit, spec or merge decision
+reads it.
+
 Pure, like every `wf_core_*` module: the issues GitHub returned, the table
 rows and the labels the repository has go in, and a plan comes out.
 `wf area-backfill` (`wf_area_backfill.py`) does the reading and the writing.
@@ -10,7 +18,26 @@ rows and the labels the repository has go in, and a plan comes out.
 """
 
 import wf_core_labels
-import wf_core_stage
+
+
+# The `Stage` option that marked an area epic until 19.0.0. It is no longer
+# one of the stages the workflow knows (`STAGE_NAMES`), so nothing writes it
+# and an org does not need the option.
+LEGACY_AREA_STAGE = 'Area'
+
+
+def is_legacy_area_epic(type_name, stage):
+    """Whether an issue is an area epic as a version before 19.0.0 marked one:
+    a native `Epic` whose `Stage` is `Area`. For the move only; see above."""
+    return (type_name == 'Epic' and (stage or '').strip().lower()
+            == LEGACY_AREA_STAGE.lower())
+
+
+def legacy_area_epics(issues):
+    """The numbers of the area epics among `issues`, each `{'number', 'type',
+    'stage'}`, in order. What preflight reads to choose its fix."""
+    return sorted(i['number'] for i in issues or ()
+                  if is_legacy_area_epic(i.get('type'), i.get('stage')))
 
 
 # Why an issue resolves to no area. The text is what a person reads.
@@ -36,8 +63,8 @@ def backfill_index(nodes, stage_field, repo=None):
     'is_area', 'labels'}`. `parent` is the parent's number, and None when the
     issue has none or its parent is in another repository, where the number
     means a different issue; `foreign_parent` says which of the two it was.
-    `is_area` is the same test `wf areas` uses: a native `Epic` whose `Stage`
-    is `Area`.
+    `is_area` is `is_legacy_area_epic`: a native `Epic` whose `Stage` is
+    `Area`.
     """
     index = {}
     for node in nodes or ():
@@ -53,9 +80,9 @@ def backfill_index(nodes, stage_field, repo=None):
             'state': (node.get('state') or '').upper(),
             'parent': None if foreign else parent.get('number'),
             'foreign_parent': foreign,
-            'is_area': ((node.get('issueType') or {}).get('name') == 'Epic'
-                        and wf_core_stage.is_area_stage(
-                            _backfill_stage(node, stage_field))),
+            'is_area': is_legacy_area_epic(
+                (node.get('issueType') or {}).get('name'),
+                _backfill_stage(node, stage_field)),
             'labels': [l['name'] for l
                        in ((node.get('labels') or {}).get('nodes')) or []
                        if l and l.get('name')],

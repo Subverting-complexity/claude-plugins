@@ -2663,7 +2663,6 @@ class TestStageNames(unittest.TestCase):
             'stage-refinement':  'Needs refinement',
             'stage-parked':      'Parked',
             'stage-done':        'Done',
-            'stage-area':        'Area',
         })
 
     def test_a_purpose_key_a_name_or_any_casing_all_resolve(self):
@@ -2878,23 +2877,20 @@ class TestWorkScope(unittest.TestCase):
         self.assertIsNone(key)
         self.assertIn('ready', err)
 
-    def test_the_four_a_writer_can_know_are_the_only_four(self):
+    def test_the_three_a_writer_can_know_are_the_only_three(self):
         """In Progress, In Review and Done are written by the run doing the
         work, so a spec naming one would describe something that has not
-        happened. `area` files an area epic."""
+        happened."""
         self.assertEqual(sorted(wf_core.SPEC_STATE_STAGES),
-                         ['area', 'backlog', 'parked', 'refinement'])
+                         ['backlog', 'parked', 'refinement'])
 
-    def test_a_requested_area_wins_even_over_a_non_code_owner(self):
-        """An area epic is owned by nobody, because it is not work."""
-        for scope in (wf_core.SCOPE_BROWSER, wf_core.SCOPE_HUMAN,
-                      wf_core.SCOPE_CODE, None):
-            self.assertEqual(wf_core.stage_for(scope, [7], 'stage-area'),
-                             'stage-area', scope)
-
-    def test_area_is_asked_for_by_name(self):
-        self.assertEqual(wf_core.spec_state_stage('area'), ('stage-area', None))
-        self.assertEqual(wf_core.spec_state_stage('Area'), ('stage-area', None))
+    def test_the_retired_area_state_is_refused_with_what_to_write(self):
+        """`area` filed an area epic until 19.0.0 (#391)."""
+        for value in ('area', 'Area'):
+            key, err = wf_core.spec_state_stage(value)
+            self.assertIsNone(key)
+            self.assertIn('no longer a state', err)
+            self.assertIn('`area`', err)
 
 
 class TestMaySetStage(unittest.TestCase):
@@ -2984,7 +2980,7 @@ class TestSpecHierarchy(unittest.TestCase):
         self.assertEqual(self._errors(plans, types={50: 'Feature'}), [])
 
     def test_a_story_straight_under_an_epic_is_clean(self):
-        """A story that fits no Feature goes directly under its area epic."""
+        """A story that fits no Feature may go directly under an Epic."""
         plans = [_hplan('User Story', key='s', title='S', parent=50)]
         self.assertEqual(self._errors(plans, types={50: 'Epic'}), [])
 
@@ -2994,10 +2990,14 @@ class TestSpecHierarchy(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("belongs under a 'Feature' or 'Epic'", errors[0])
 
-    def test_a_story_still_needs_a_parent(self):
-        errors = self._errors([_hplan('User Story', key='s', title='S')])
-        self.assertEqual(len(errors), 1)
-        self.assertIn("needs a 'Feature' or 'Epic' parent", errors[0])
+    def test_a_story_needs_no_parent(self):
+        """Its area is its label, and a parent holds at most 100 sub-issues,
+        so no type has to sit under anything (#391)."""
+        self.assertEqual(
+            self._errors([_hplan('User Story', key='s', title='S')]), [])
+        for type_name in ('User Story', 'Feature', 'Bug', 'Chore', 'Epic'):
+            self.assertIsNone(
+                wf_core.hierarchy_error(type_name, None, self.TYPES), type_name)
 
     def test_an_org_without_features_is_still_not_held_to_the_tree(self):
         """Allowing an Epic parent must not start refusing parentless stories
@@ -3024,7 +3024,9 @@ class TestSpecHierarchy(unittest.TestCase):
     def test_an_update_is_judged_against_the_parent_it_already_has(self):
         plans = [_hplan('User Story', number=7)]
         self.assertEqual(self._errors(plans, parents={7: (50, 'Feature')}), [])
-        self.assertEqual(len(self._errors(plans, parents={7: (None, None)})), 1)
+        self.assertEqual(self._errors(plans, parents={7: (None, None)}), [])
+        self.assertEqual(
+            len(self._errors(plans, parents={7: (50, 'User Story')})), 1)
 
     def test_an_update_that_settles_no_type_is_not_checked(self):
         """Setting a field on an issue must not refuse over structure."""
@@ -3908,9 +3910,8 @@ class TestReconcileStage(unittest.TestCase):
 
     def test_a_closed_issue_is_done_even_from_a_protected_stage(self):
         """Closed as not planned lands here too: nothing else is left to do."""
-        for stage in wf_core.SYNC_PROTECTED_STAGES - {'Area'}:
+        for stage in wf_core.SYNC_PROTECTED_STAGES:
             self.assertEqual(self.r(stage=stage, is_open=False), 'Done', stage)
-        self.assertIsNone(self.r(stage='Area', is_open=False))
 
     def test_a_value_that_is_not_a_stage_is_left_alone(self):
         self.assertIsNone(self.r(stage='Ready', open_blockers=1, blockers=1))
@@ -4033,202 +4034,210 @@ class TestReconcileStage(unittest.TestCase):
                     'from %r with %r' % (stage, facts))
 
 
-# ── area epics (#348) ────────────────────────────────────────────────────────
+# ── areas are labels, and area epics are gone (#391) ─────────────────────────
 
-def _area_node(number, parent=None, stage=None, type_name='User Story'):
+_AREA_ROWS = [{'name': 'Library', 'description': 'Books and shelves'},
+              {'name': 'Listening', 'description': 'Playback and voices'}]
+
+
+def _area_node(number, labels=(), parent=None, stage=None,
+               type_name='User Story'):
     values = [_field_value('Stage', stage)] if stage else []
     return _node(number=number, issueType={'name': type_name},
                  parent={'number': parent} if parent else None,
+                 labels={'nodes': [{'name': n} for n in labels]},
                  issueFieldValues={'nodes': values})
 
 
-class TestAreaStage(unittest.TestCase):
-    """An area epic is a permanent part of the product, never work."""
+class TestNoScriptReadsTheAreaStage(unittest.TestCase):
+    """`Area` was the `Stage` of an area epic until 19.0.0. It is no longer a
+    stage the workflow knows, so no decision treats it as one."""
 
-    def test_area_is_a_stage_by_name_or_key(self):
+    def test_area_is_not_a_stage_the_workflow_knows(self):
+        self.assertNotIn('Area', wf_core.STAGE_NAMES.values())
+        self.assertNotIn('stage-area', wf_core.STAGE_NAMES)
         for value in ('Area', 'area', 'stage-area'):
-            self.assertTrue(wf_core.is_area_stage(value), value)
-        for value in (None, '', 'Backlog', 'Done'):
-            self.assertFalse(wf_core.is_area_stage(value), value)
+            self.assertIsNone(wf_core.stage_name(value), value)
+        self.assertFalse(hasattr(wf_core, 'is_area_stage'))
+        self.assertFalse(hasattr(wf_core, 'AREA_STAGE'))
 
-    def test_board_sync_never_moves_an_area_open_or_closed(self):
-        self.assertIn('Area', wf_core.SYNC_PROTECTED_STAGES)
-        for facts in (dict(is_open=True), dict(is_open=False),
-                      dict(is_open=True, assigned=True),
-                      dict(is_open=True, blockers=1, open_blockers=1)):
-            base = dict(stage='Area', blockers=0, open_blockers=0,
-                        assigned=False, claimed=False)
-            base.update(facts)
-            self.assertIsNone(wf_core.reconcile_stage(**base), facts)
+    def test_the_stage_field_needs_eight_options_and_not_area(self):
+        self.assertEqual(len(wf_core.STAGE_NAMES), 8)
+        options = {name: 'o' for name in wf_core.STAGE_NAMES.values()}
+        self.assertEqual(wf_core.stage_findings(
+            {'Stage': {'data_type': 'single-select', 'options': options}}), [])
 
-    def test_an_area_is_never_available_to_pick(self):
-        self.assertFalse(wf_core.is_available_stage('Area'))
-        self.assertNotIn('Area', wf_core.PICKABLE_BY_NAME)
+    def test_an_org_that_still_has_the_option_is_not_at_fault(self):
+        options = {name: 'o' for name in wf_core.STAGE_NAMES.values()}
+        options['Area'] = 'o_area'
+        self.assertEqual(wf_core.stage_findings(
+            {'Stage': {'data_type': 'single-select', 'options': options}}), [])
 
+    def test_board_sync_leaves_a_value_it_does_not_know(self):
+        """An issue an org left at `Area` is not a stage, so it is not moved."""
+        self.assertNotIn('Area', wf_core.SYNC_PROTECTED_STAGES)
+        for is_open in (True, False):
+            self.assertIsNone(wf_core.reconcile_stage(
+                is_open=is_open, stage='Area', blockers=0, open_blockers=0,
+                assigned=False, claimed=False))
 
-class TestAreaContainers(unittest.TestCase):
-    """Closing the last story under an area never closes the area."""
-
-    def test_an_area_with_every_child_closed_is_not_finished(self):
+    def test_an_epic_marked_area_is_finished_like_any_other(self):
         node = dict(_container(1, 'Epic', (2, 'CLOSED')), stage='Area')
-        self.assertFalse(wf_core.container_finished(node))
-
-    def test_the_walk_up_stops_at_an_area(self):
+        self.assertTrue(wf_core.container_finished(node))
         chain = [_container(10, 'Feature', (11, 'OPEN')),
                  dict(_container(1, 'Epic', (10, 'OPEN')), stage='Area')]
         self.assertEqual(wf_core.ancestors_to_close(11, chain),
-                         [{'number': 10, 'finished_by': 11}])
+                         [{'number': 10, 'finished_by': 11},
+                          {'number': 1, 'finished_by': 10}])
+
+    def test_the_one_read_left_is_the_move_helper(self):
+        """`is_legacy_area_epic` is what `area-backfill` and preflight use to
+        find the epics a repository still has to move off."""
+        self.assertTrue(wf_core.is_legacy_area_epic('Epic', 'Area'))
+        self.assertTrue(wf_core.is_legacy_area_epic('Epic', ' area '))
+        self.assertFalse(wf_core.is_legacy_area_epic('Feature', 'Area'))
+        self.assertFalse(wf_core.is_legacy_area_epic('Epic', 'Backlog'))
+        self.assertFalse(wf_core.is_legacy_area_epic('Epic', None))
+        self.assertEqual(wf_core.legacy_area_epics(
+            [{'number': 9, 'type': 'Epic', 'stage': 'Area'},
+             {'number': 2, 'type': 'Feature', 'stage': 'Area'},
+             {'number': 1, 'type': 'Epic', 'stage': 'Area'},
+             {'number': 3, 'type': 'Epic', 'stage': 'Backlog'}]), [1, 9])
+
+    def test_only_the_move_modules_name_the_area_stage(self):
+        """The acceptance criterion, held as a test: outside the move, no
+        script reads the retired stage or an area epic's helper."""
+        import re
+        scripts = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), 'synergy', 'scripts')
+        allowed = {'wf_core_backfill.py', 'wf_area_backfill.py',
+                   'wf_preflight.py'}
+        offenders = []
+        for name in sorted(os.listdir(scripts)):
+            if not name.endswith('.py') or name in allowed:
+                continue
+            with open(os.path.join(scripts, name), encoding='utf-8') as fh:
+                text = fh.read()
+            if re.search(r"is_area_stage|AREA_STAGE\b|stage-area|"
+                         r"is_legacy_area_epic|legacy_area_epics|"
+                         r"""['"]Area['"]""", text):
+                offenders.append(name)
+        self.assertEqual(offenders, [])
 
 
-class TestAreaEpicFindings(unittest.TestCase):
-    """Preflight's `area-epics` check."""
+class TestAreasTableFindings(unittest.TestCase):
+    """Preflight's `areas-table` check."""
 
-    def test_no_open_area_epic_is_a_warning_no_run_repairs(self):
-        found = wf_core.area_epic_findings(
-            [{'number': 1, 'type': 'Epic', 'stage': 'Backlog'},
-             {'number': 2, 'type': 'Feature', 'stage': 'Area'}])
-        self.assertEqual([f['check'] for f in found], ['area-epics'])
-        self.assertEqual(found[0]['level'], wf_core.WARNING)
+    def test_a_table_is_enough(self):
+        self.assertEqual(wf_core.areas_table_findings(True, [1, 2]), [])
+        self.assertEqual(wf_core.areas_table_findings(True), [])
+
+    def test_no_table_with_area_epics_names_the_move_command(self):
+        found = wf_core.areas_table_findings(False, [7, 3])
+        self.assertEqual([f['check'] for f in found], ['areas-table'])
+        self.assertEqual(found[0]['level'], wf_core.CRITICAL)
+        self.assertIn('#3, #7', found[0]['detail'])
+        self.assertIn('wf area-backfill', found[0]['fix'])
         self.assertIn('references/area-epics.md', found[0]['fix'])
-        self.assertNotIn('area-epics', wf_core.FIXABLE_CHECKS)
-        self.assertTrue(wf_core.unfixable_reason('area-epics'))
 
-    def test_one_open_area_epic_is_enough(self):
-        self.assertEqual(wf_core.area_epic_findings(
-            [{'number': 1, 'type': 'Epic', 'stage': 'Area'}]), [])
+    def test_no_table_and_no_area_epics_names_the_setup_step(self):
+        found = wf_core.areas_table_findings(False, [])
+        self.assertEqual(found[0]['level'], wf_core.CRITICAL)
+        self.assertIn('/synergy:setup', found[0]['fix'])
+        self.assertNotIn('area-backfill', found[0]['fix'])
+
+    def test_no_run_repairs_it(self):
+        self.assertNotIn('areas-table', wf_core.FIXABLE_CHECKS)
+        self.assertTrue(wf_core.unfixable_reason('areas-table'))
+        self.assertNotIn('area-epics', wf_core.UNFIXABLE_REASONS)
 
 
 class TestAreaAudit(unittest.TestCase):
-    """`issue-audit` on area epics and on issues that resolve to none."""
+    """`issue-audit` reads an issue's area from its label."""
 
-    def _audit(self, issues, number):
-        chain = wf_core.area_chain_map(issues)
-        issue = next(i for i in issues if i['number'] == number)
-        return wf_core.audit_issue(issue, _AUDIT_FIELDS, chain=chain)
+    def _audit(self, issue, areas=_AREA_ROWS, **kwargs):
+        return wf_core.audit_issue(issue, _AUDIT_FIELDS, areas=areas, **kwargs)
 
-    def test_an_area_carries_none_of_the_fields_work_must(self):
-        area = _area_node(1, stage='Area', type_name='Epic')
-        self.assertEqual(_kinds(self._audit([area], 1)), [])
+    def test_one_area_label_is_no_gap(self):
+        kinds = _kinds(self._audit(_area_node(3, ['bug', 'area: Library'])))
+        self.assertNotIn('no-area-label', kinds)
+        self.assertNotIn('many-area-labels', kinds)
 
-    def test_a_proposal_for_an_area_asks_for_the_area_state(self):
-        """So `issue-apply` exempts it from the fields when a type or
-        hierarchy gap puts it in the spec."""
-        area = _area_node(1, stage='Area', type_name='Epic')
-        area['issueType'] = None
-        result = wf_core.audit_issue(area, _AUDIT_FIELDS)
-        self.assertEqual(_kinds(result), ['missing-type'])
-        self.assertEqual(result['proposed']['state'], 'area')
-        self.assertNotIn('fields', result['proposed'])
-
-    def test_a_story_under_a_feature_under_an_area_resolves(self):
-        issues = [_area_node(1, stage='Area', type_name='Epic'),
-                  _area_node(2, parent=1, type_name='Feature'),
-                  _area_node(3, parent=2)]
-        self.assertNotIn('no-area', _kinds(self._audit(issues, 3)))
-
-    def test_a_chain_that_ends_with_no_area_is_a_gap_with_no_proposal(self):
-        issues = [_area_node(1, stage='Area', type_name='Epic'),
-                  _area_node(2, type_name='Feature'),
-                  _area_node(3, parent=2)]
-        result = self._audit(issues, 3)
-        self.assertIn('no-area', _kinds(result))
+    def test_no_area_label_is_a_gap_with_a_placeholder(self):
+        result = self._audit(_area_node(3, ['bug']))
+        self.assertIn('no-area-label', _kinds(result))
+        self.assertEqual(result['proposed']['area'], wf_core.SPEC_PLACEHOLDER)
         self.assertNotIn('parent', result['proposed'])
-        self.assertIn('no-area', _kinds(self._audit(issues, 2)))
 
-    def test_a_parent_outside_the_scan_is_not_guessed_at(self):
-        issues = [_area_node(1, stage='Area', type_name='Epic'),
-                  _area_node(3, parent=77)]
-        self.assertNotIn('no-area', _kinds(self._audit(issues, 3)))
+    def test_more_than_one_area_label_is_a_gap(self):
+        result = self._audit(_area_node(3, ['area: Library', 'Area: listening']))
+        self.assertIn('many-area-labels', _kinds(result))
+        self.assertNotIn('no-area-label', _kinds(result))
+        self.assertEqual(result['proposed']['area'], wf_core.SPEC_PLACEHOLDER)
 
-    def test_without_a_chain_nothing_is_judged(self):
-        result = wf_core.audit_issue(_area_node(3), _AUDIT_FIELDS)
+    def test_the_old_gap_and_the_old_state_are_gone(self):
+        legacy = _area_node(1, stage='Area', type_name='Epic')
+        result = self._audit(legacy)
         self.assertNotIn('no-area', _kinds(result))
+        self.assertNotIn('state', result['proposed'])
+        # An epic still marked `Area` is audited for its fields like any issue.
+        self.assertIn('missing-field', _kinds(result))
 
-    def test_a_parent_cycle_is_not_reported_as_no_area(self):
-        issues = [_area_node(2, parent=3), _area_node(3, parent=2)]
-        self.assertFalse(wf_core.resolves_to_no_area(
-            3, wf_core.area_chain_map(issues)))
+    def test_no_parent_is_never_a_gap(self):
+        types = {'Epic': 'e', 'Feature': 'f', 'User Story': 's', 'Bug': 'b'}
+        for type_name in ('User Story', 'Bug', 'Feature', 'Chore'):
+            node = _area_node(3, ['area: Library'], type_name=type_name)
+            kinds = _kinds(self._audit(node, type_map=types))
+            self.assertNotIn('hierarchy', kinds, type_name)
+
+    def test_without_a_table_nothing_is_judged(self):
+        for areas in (None, []):
+            kinds = _kinds(self._audit(_area_node(3), areas=areas))
+            self.assertNotIn('no-area-label', kinds)
+
+    def test_the_parent_chain_plays_no_part(self):
+        """An issue under an epic with no label of its own has no area."""
+        self.assertIn('no-area-label',
+                      _kinds(self._audit(_area_node(3, parent=1))))
+        self.assertFalse(hasattr(wf_core, 'area_chain_map'))
+        self.assertFalse(hasattr(wf_core, 'resolves_to_no_area'))
 
 
 _AREA_TYPE_MAP = dict(_TYPE_MAP, Feature='IT_feat')
 
 
 class TestAreaSpec(unittest.TestCase):
-    """`"state": "area"` in an `issue-apply` spec."""
+    """What is left of `"state": "area"` in an `issue-apply` spec: a refusal."""
 
-    def test_an_area_epic_needs_none_of_the_fields_work_must(self):
-        entry = {'key': 'r', 'title': 'Reading', 'type': 'Epic', 'state': 'area'}
-        errors, _, plans = wf_core.validate_spec([entry], _FIELD_MAP,
-                                                 _AREA_TYPE_MAP)
-        self.assertEqual(errors, [])
-        self.assertEqual(plans[0]['state'], 'stage-area')
-        self.assertEqual(plans[0]['unset_optional'], [])
+    def test_the_state_is_refused_on_an_epic_and_on_anything_else(self):
+        for entry in ({'key': 'r', 'title': 'Reading', 'type': 'Epic',
+                       'state': 'area'},
+                      _entry(state='area'),
+                      {'number': 40, 'state': 'area'}):
+            errors, _, plans = wf_core.validate_spec([entry], _FIELD_MAP,
+                                                     _AREA_TYPE_MAP)
+            self.assertTrue(any('no longer a state' in e for e in errors),
+                            errors)
+            self.assertIsNone(plans[0]['state'])
 
-    def test_an_area_that_is_not_an_epic_is_refused(self):
-        errors, _, _ = wf_core.validate_spec([_entry(state='area')], _FIELD_MAP,
-                                             _AREA_TYPE_MAP)
-        self.assertTrue(any("'User Story'" in e and 'Epic' in e for e in errors),
-                        errors)
-
-    def test_a_created_area_with_no_type_is_refused(self):
-        entry = {'key': 'r', 'title': 'Reading', 'state': 'area'}
-        errors, _, _ = wf_core.validate_spec([entry], _FIELD_MAP, _AREA_TYPE_MAP)
-        self.assertEqual(len(errors), 1)
-        self.assertIn('"type": "Epic"', errors[0])
-
-    def test_an_update_to_area_is_judged_by_the_type_the_issue_has(self):
-        entry = {'number': 40, 'state': 'area'}
-        errors, _, plans = wf_core.validate_spec([entry], _FIELD_MAP,
-                                                 _AREA_TYPE_MAP)
-        self.assertEqual(errors, [])
-        self.assertEqual(wf_core.spec_hierarchy_errors(
-            plans, {40: 'Epic'}, {}, _AREA_TYPE_MAP), [])
-        refused = wf_core.spec_hierarchy_errors(plans, {40: 'Feature'}, {},
-                                                _AREA_TYPE_MAP)
-        self.assertEqual(len(refused), 1)
-        self.assertIn("'Feature'", refused[0])
-
-    def test_every_other_entry_still_needs_its_fields(self):
+    def test_an_epic_needs_its_fields_like_every_other_issue(self):
         entry = {'key': 'f', 'title': 'F', 'type': 'Epic'}
         errors, _, _ = wf_core.validate_spec([entry], _FIELD_MAP, _AREA_TYPE_MAP)
         self.assertTrue(errors)
 
-    def test_an_epic_retyped_to_a_feature_under_an_area_is_legal(self):
-        """The migration `references/area-epics.md` walks through: an old
-        Epic becomes a Feature under an area, and its Features move up."""
-        plans = [_hplan('Feature', number=10, kind='feature', parent=1),
-                 _hplan(None, number=11, parent=1)]
-        self.assertEqual(wf_core.spec_hierarchy_errors(
-            plans, {1: 'Epic', 10: 'Epic', 11: 'Feature'}, {}, _AREA_TYPE_MAP), [])
+    def test_a_bug_and_a_story_with_no_parent_and_an_area_validate(self):
+        for kind in ('bug', 'story'):
+            entry = _entry(kind=kind, area='Library')
+            errors, _, plans = wf_core.validate_spec(
+                [entry], _FIELD_MAP, dict(_AREA_TYPE_MAP, Bug='IT_bug'),
+                areas=_AREA_ROWS)
+            self.assertEqual(errors, [], kind)
+            self.assertEqual(plans[0]['area'], 'Library')
+            self.assertEqual(wf_core.spec_hierarchy_errors(
+                plans, {}, {}, dict(_AREA_TYPE_MAP, Bug='IT_bug')), [], kind)
 
-
-class TestUnparentedCreates(unittest.TestCase):
-    """Which created issues resolve to no area, judged within the spec."""
-
-    def test_a_create_with_no_parent_is_named(self):
-        entries = [{'key': 'a', 'title': 'A'}]
-        self.assertEqual(wf_core.unparented_creates(entries), entries)
-
-    def test_a_chain_ending_at_an_existing_issue_is_trusted(self):
-        entries = [{'key': 'f', 'title': 'F', 'parent': 5},
-                   {'key': 's', 'title': 'S', 'parent': 'f'},
-                   {'key': 't', 'title': 'T', 'parent': '7'}]
-        self.assertEqual(wf_core.unparented_creates(entries), [])
-
-    def test_a_chain_ending_at_an_update_is_trusted(self):
-        entries = [{'number': 9, 'title': 'F'},
-                   {'key': 's', 'title': 'S', 'parent': 9}]
-        self.assertEqual(wf_core.unparented_creates(entries), [])
-
-    def test_a_chain_ending_at_a_new_area_has_its_area(self):
-        entries = [{'key': 'r', 'title': 'R', 'type': 'Epic', 'state': 'area'},
-                   {'key': 'f', 'title': 'F', 'parent': 'r'}]
-        self.assertEqual(wf_core.unparented_creates(entries), [])
-
-    def test_a_chain_ending_at_an_unparented_create_names_every_link(self):
-        entries = [{'key': 'f', 'title': 'F'},
-                   {'key': 's', 'title': 'S', 'parent': 'f'}]
-        self.assertEqual(wf_core.unparented_creates(entries), entries)
+    def test_nothing_walks_a_spec_for_unparented_creates(self):
+        self.assertFalse(hasattr(wf_core, 'unparented_creates'))
 
 
 if __name__ == '__main__':

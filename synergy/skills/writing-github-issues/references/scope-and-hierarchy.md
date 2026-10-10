@@ -1,17 +1,16 @@
 # Writing GitHub issues — hierarchy and party scoping
 
-Read this only when an issue needs a parent (an area or feature relationship) or needs to be scoped to a single party (`[Manual] `, `[Browser] ` or an unprefixed code-agent issue).
+Read this only when an issue needs a parent (a feature relationship) or needs to be scoped to a single party (`[Manual] `, `[Browser] ` or an unprefixed code-agent issue).
 
-## Hierarchy: area, feature, story
+## Hierarchy: feature, story and area
 
-The native types are a tree, not a flat list, and every issue sits somewhere under an **area**.
+A parent only groups work, and no issue needs one.
 
-- **Area.** An `Epic` whose `Stage` is `Area`: one permanent part of the product, such as Library or Listening, never closed. Its body says what it covers. Planned work never gets an `Epic` of its own.
-- **Feature.** A piece of planned work, under an area. A `Feature` that has a parent must have an `Epic` one.
-- **User Story.** Under a `Feature`, or directly under an area when no feature fits. `wf issue-apply` refuses one with no parent, or under any other type.
-- **Bug** and **Chore.** Under a feature, or directly under an area.
+- **Feature.** A piece of planned work. A `Feature` that has a parent must have an `Epic` one.
+- **User Story.** Under a `Feature`, or under an `Epic`, or with no parent when no feature fits. `wf issue-apply` refuses one under any other type.
+- **Bug** and **Chore.** Under anything, or with no parent.
 
-Whatever the shape, every issue maps back to an area. An issue's area is the nearest area epic above it in its parent chain, and release notes are grouped by it, so every issue needs a parent chain that reaches one. `wf areas` lists the open area epics with their bodies; pick the one whose body best covers the work, and when nothing fits well, file under the closest and say so in one line of the body. `wf issue-audit` reports an open issue whose chain reaches no area as `no-area`. Beside the parent, every issue carries exactly 1 `area: {name}` label. It is written from the `"area"` key on the spec entry, which holds the `name` of a row in the `rows` that `wf areas` returns. `wf issue-apply` refuses a new entry without it in a project that has an Areas table, and an update that names another area replaces the old label. Only when the project has no area epics yet, read `references/area-epics.md` at the plugin root, which covers creating them and moving an existing backlog onto them.
+Every issue belongs to one **area**, a part of the product such as Library or Listening, and release notes are grouped by it. An issue's area is its 1 `area: {name}` label, never its parent. It is written from the `"area"` key on the spec entry, which holds the `name` of a row in the `areas` that `wf areas` returns, the rows of the Areas table in `ClaudeProject.md`. Pick the row whose `description` best covers the work, and when nothing fits well, pick the closest and say so in one line of the body. `wf issue-apply` refuses a new entry without it, and an update that names another area replaces the old label. `wf issue-audit` reports an open issue with no area label as `no-area-label` and one with several as `many-area-labels`. Only when `wf areas` returns a `count` of 0, read `references/area-epics.md` at the plugin root, which covers writing the table and moving a repository off area epics.
 
 Attach before creating. Where the work belongs to a feature that already exists, name it as the `parent` by issue number rather than filing a second one.
 

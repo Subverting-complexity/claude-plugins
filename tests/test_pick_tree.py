@@ -63,15 +63,16 @@ class TestEvaluatePool(unittest.TestCase):
                 expected = [1] if stage == 'Backlog' else []
                 self.assertEqual(numbers(verdict['pool']), expected)
 
-    def test_an_area_epic_is_never_a_candidate_and_the_work_under_it_is(self):
-        """An area is where work is filed, not work: it is left out with a
-        reason that says so, and the Feature and Bug under it are picked."""
+    def test_an_epic_still_marked_area_is_left_out_by_the_stage_rule(self):
+        """Area epics were removed in 19.0.0, so the pool has no rule about
+        them: `Area` is a `Stage` value that is not available, like any other
+        the workflow does not know, and the work under the epic is picked."""
         issues = [issue(1, 'Epic', stage='Area', children=[2, 4]),
                   issue(2, 'Feature', parent=1, children=[3]),
                   issue(3, parent=2), issue(4, 'Bug', parent=1)]
         verdict = judge(issues)
         self.assertNotIn(1, numbers(verdict['pool']))
-        self.assertIn('area epic', verdict['excluded'][1])
+        self.assertEqual(verdict['excluded'][1], '`Stage` is `Area`')
         self.assertIn(2, numbers(verdict['pool']))
         self.assertIn(4, numbers(verdict['pool']))
 

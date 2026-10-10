@@ -32,7 +32,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 572 |
 | `wf_issue_apply.py` | `issue-apply`, including the `area` key that writes an issue's 1 area label | 868 |
 | `wf_issue_audit.py` | `issue-audit` | 166 |
-| `wf_areas.py` | `areas`: the open area epics with the rows of the areas table, or the area epic an issue resolves to | 125 |
+| `wf_areas.py` | `areas`: the rows of the areas table, or the area an issue's label names | 89 |
 | `wf_area_set.py` | `area-set`: the area label for an issue that has none, from a sure Jev answer or the caller's choice | 170 |
 | `wf_release_targets.py` | `release-targets`: the folders each story of a pull request touched, the release targets Jev is sure of, and the ones left to the caller | 166 |
 | `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 659 |
@@ -50,11 +50,11 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_refs.py` | Parent parsing, closing references, branch names, dependency edges, unblock verdicts | 268 |
 | `wf_core_bulk.py` | Filling a bulk set's effort budget, splitting it into groups, ordering each into waves | 477 |
 | `wf_core_claims.py` | Sibling PRs that would duplicate a claim, claim reaping | 110 |
-| `wf_core_spec.py` | The issue hierarchy, spec validation with the `area` key, value shaping and batching | 797 |
+| `wf_core_spec.py` | The parent types an issue may have, spec validation with the `area` key, value shaping and batching | 797 |
 | `wf_core_audit.py` | What an existing issue is missing or contradicts | 344 |
 | `wf_core_review.py` | Review-state label names, pools and reconciliation | 192 |
 | `wf_core_labels.py` | The area and release labels the `ClaudeProject.md` tables name, and the plan for a repository to carry them: create, rename, conflict, unknown, differs; the area label on one issue, and what to add and remove so it carries exactly 1; the release targets of a closed issue, the labels it still lacks, and the paths of each story's own commits | 368 |
-| `wf_core_drift.py` | Finished containers and stage drift findings | 96 |
+| `wf_core_drift.py` | Finished containers, stage drift and the missing areas table | 96 |
 | `wf_core_preflight.py` | Config sections, label and field drift, instruction files | 584 |
 | `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 307 |
 | `wf_core_scratch.py` | Which `.claude/` files are run scratch, the managed `info/exclude` block | 70 |
@@ -65,8 +65,8 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_quota.py` | Whether a round may start against the Claude plan limits: the 5-hour ceiling, the weekly ceiling, the budget for the day from what is left of the week, what a round costs, and when a stopped run can continue | 222 |
 | `wf_jev.py` | `jev`: one request per batch to Jev, the TypeSafe decision model, and the `unavailable` result when there is no key, the repository turns Jev off, a table a check needs is empty or there is no answer, and issues read from GitHub as items; `jev_ask` gives another command the same answer without printing it | 203 |
 | `wf_core_jev.py` | Building the requests for a check in `jev-checks.json`, filling `area` and `target` from the `ClaudeProject.md` tables, and turning each answer into a row with a `high`, `medium` or `low` level | 351 |
-| `wf_area_backfill.py` | `area-backfill`: the paged read of every issue, open and closed, the label ids, the batched label writes, and closing the area epics | 261 |
-| `wf_core_backfill.py` | Which area epic an issue's parent chain reaches, and the backfill plan: what to label, what already carries a label, what differs, what has no area, and why a run must stop | 224 |
+| `wf_area_backfill.py` | `area-backfill`: the paged read of every issue, open and closed, the label ids, the batched label writes, and closing the area epics a repository had before 19.0.0 | 261 |
+| `wf_core_backfill.py` | Which issues are area epics from before 19.0.0 (the one read of the `Area` stage), which one an issue's parent chain reaches, and the backfill plan: what to label, what already carries a label, what differs, what has no area, and why a run must stop | 224 |
 
 ## Commands
 
@@ -181,10 +181,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --blockers
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-audit --blockers-only
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" issue-apply .claude/issue-audit-spec.json
 
-# List the open area epics (an Epic whose Stage is Area), sorted by title
+# List the areas: the rows of the Areas table in ClaudeProject.md
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas
 
-# …or the area one issue resolves to: the nearest area epic at or above it
+# …or the area one issue carries, read from its label
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas --issue 42
 
 # Give each issue that has no area label one (0 = all set, 25 = choose a row)
@@ -205,7 +205,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit --offline
 # Count what the area backfill would label, per area, and write nothing
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-backfill --dry-run
 
-# Add its area label to every issue under an area epic, open and closed
+# Moving off area epics: add its area label to every issue under one, open and closed
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-backfill
 
 # …and close the area epics, once a run finds nothing left to label
@@ -351,11 +351,11 @@ A JSON object with an `issues` list (a bare list is accepted too). An entry with
 | `body_file` | A path to read the body from, used when `body` is absent. A body is prose — fenced code, backticks, `$`, quotes — and building that into a JSON string by hand in a shell is where bodies get mangled. The spec file keeps saying `body_file` after a write-back; the body is never inlined into it. |
 | `kind` | One of `wf_core.NATIVE_TYPE_MAP`'s keys (`story`, `feature`, `epic`, `bug`, `spike`, …). Supplies both the native type and a default `Classification`. |
 | `type` | An explicit native type name, overriding what `kind` implies. |
-| `labels` | Literal names, or purpose keys a surviving label map resolves. Labels decide nothing and the workflow passes none: a `type-*` label or a retired one (`status-*`, `priority-*`, a scope label) is dropped. An `area:` name here is refused in a repository with an areas table: use `area`. |
-| `area` | The name of one row of the `## Areas` table in `ClaudeProject.md`, matched trimmed and without case. It is written as the `area: {name}` label, in the row's own spelling. Required on a create in a repository that has the table, except on an entry with `"state": "area"`. On an update it replaces any other area label, in the same `gh issue edit` call, so the issue never carries 2; an update that leaves it out leaves the labels as they are. |
-| `parent` | An issue number, or another entry's `key`. A `User Story` needs a `Feature` parent; a `Feature` that has a parent needs an `Epic` one (see below). |
+| `labels` | Literal names, or purpose keys a surviving label map resolves. Labels decide nothing about what is picked and the workflow passes none here: a `type-*` label or a retired one (`status-*`, `priority-*`, a scope label) is dropped. An `area:` name here is refused in a repository with an areas table: use `area`. |
+| `area` | The name of one row of the `## Areas` table in `ClaudeProject.md`, matched trimmed and without case. It is written as the `area: {name}` label, in the row's own spelling. Required on a create in a repository that has the table. On an update it replaces any other area label, in the same `gh issue edit` call, so the issue never carries 2; an update that leaves it out leaves the labels as they are. |
+| `parent` | Optional. An issue number, or another entry's `key`. A `User Story` that has a parent needs a `Feature` or an `Epic`; a `Feature` that has one needs an `Epic` (see below). |
 | `blocked_by` | A list of issue numbers and/or `key`s. **The complete set**: an issue already carrying an edge the list omits has it removed, and `[]` removes them all. Leave the key out to leave the edges alone. |
-| `state` | `backlog`, `refinement`, `parked` or `area`: the stage to write, overriding the one the issue's fields name. Absent means the fields decide. `parked` is for an update only: a new issue is never filed as `Parked`. `backlog` puts an issue in the pool whatever stage it had, which is how a `Parked` or `Needs refinement` issue is released. It never moves `Browser agent` or `Human` work out of Non-code, except `area`, which files an area epic (see below). |
+| `state` | `backlog`, `refinement` or `parked`: the stage to write, overriding the one the issue's fields name. Absent means the fields decide. `parked` is for an update only: a new issue is never filed as `Parked`. `backlog` puts an issue in the pool whatever stage it had, which is how a `Parked` or `Needs refinement` issue is released. It never moves `Browser agent` or `Human` work out of Non-code. `area` is refused: it filed an area epic, and those were removed in 19.0.0. |
 | `fields` | Purpose key → value. Names resolve through `ClaudeProject.md`'s `## Issue Types & Fields`, then `wf_core.FIELD_NAME_DEFAULTS`. |
 | `milestone` | An open milestone's title, so a sprint placement rides in the same write. A title that names no open milestone fails the spec before anything is written. `current` means the open milestone with the earliest due date that still has open issues; when none qualifies the issue is filed without one and `milestone_note` says why. |
 
@@ -383,19 +383,18 @@ Updates are not batched. An update has to read the issue first to decide what di
 
 Everything decidable offline is decided before the first mutation, because a half-applied epic tree is far harder to reason about than a refused spec:
 
-- **A missing required field** — Priority, Effort or Ownership — exits 22 naming the issue and the field. A create must name all three. An update names only what it changes, and is refused when a value it leaves out is not on the issue either; a `TODO` it writes is refused whatever the issue carries. That is the blank-metadata failure this command exists to stop, and the three are exactly what a decision reads: the pool's order, its size ceiling, and whether a code agent may take the issue at all. `wf_core.MANDATORY_FIELD_KEYS` is the list. An entry with `"state": "area"` is exempt, because an area epic is not work.
+- **A missing required field** — Priority, Effort or Ownership — exits 22 naming the issue and the field. A create must name all three. An update names only what it changes, and is refused when a value it leaves out is not on the issue either; a `TODO` it writes is refused whatever the issue carries. That is the blank-metadata failure this command exists to stop, and the three are exactly what a decision reads: the pool's order, its size ceiling, and whether a code agent may take the issue at all. `wf_core.MANDATORY_FIELD_KEYS` is the list.
 - **An org that defines no such field** exits 22 as well, naming the field and saying to create it. Skipping is what let a repository run for weeks with no `Ownership` field while `config-audit` reported a clean configuration.
 - **A missing optional field** — Classification or Origin — is not refused. `wf_core.OPTIONAL_FIELD_KEYS` is that list, nothing selects on either, and a create that leaves one unset gets a comment on the issue naming it.
 - **A placeholder** (`TODO`) counts as missing, so an audit's proposal cannot quietly pass as a value.
 - **A dependency cycle** within the spec exits 22 before anything is written, and so does a **parent cycle** — a different fault, and equally unresolvable.
 - **A label or referenced issue that does not exist** in the repo exits 22, named, before the first mutation. That includes the area label an `area` names: the reason then says to run `wf labels-ensure`, which creates the labels the areas table names. Label names are matched without case, and a repository with more than 100 labels is read to the last page.
 - **An area that is missing or unknown.** In a repository with an areas table, a create with no `area` exits 22, and so does an `area` no row has; the error lists the valid names. An `area` in a repository with no table exits 22 too, because there is no label to write.
-- **An issue outside the epic tree.** A `User Story` with no parent, or a story or feature under the wrong type, exits 22. A story sits under a `Feature`, or directly under an `Epic` when no feature fits. A `Feature` with no parent is allowed: it sits under an `Epic` when the work has one, and an epic invented to hold a single feature would only restate it. A parent that already exists is judged by its live type, and an update that does not restate its parent is judged by the parent it already has. Enforced only where the org has the parent type enabled; `Bug`, `Chore` and `Epic` need no parent. `wf_core.HIERARCHY_PARENT_TYPE` is the rule.
+- **An issue under the wrong type.** A story or feature under the wrong type exits 22. A story that has a parent sits under a `Feature` or an `Epic`, and a `Feature` that has one sits under an `Epic`. No issue needs a parent: an issue's area is its label, so a parent only groups work. A parent that already exists is judged by its live type, and an update that does not restate its parent is judged by the parent it already has. Enforced only where the org has the parent type enabled; a `Bug` or `Chore` may sit under anything. `wf_core.HIERARCHY_PARENT_TYPE` is the rule.
 - **One issue, two parties.** A title prefix and an `Ownership` value that disagree, such as `[Manual]` owned by `Code agent` or `Human` with no prefix, exits 22. One of the two is wrong, and the issue would mislead whoever reads it.
 - **Research owned by an agent.** A `spike` entry whose `Ownership` is not `Human` exits 22. Research produces a finding a person has to weigh, so it belongs at `Non-code`, not in the pool.
-- **A `state` that is not one of the four** exits 22. There is no `ready`.
+- **A `state` that is not one of the three** exits 22. There is no `ready`, and `area` is refused with a reason that says to name a row of the Areas table in `area`.
 - **A create that asks for `parked`** exits 22. `Parked` is work a person set aside and will resume, so it applies only to an issue that already exists. A new issue that cannot be built yet is still filed at `Backlog`, or at `Blocked` when a `blocked_by` edge says what it waits on.
-- **An area that is not an `Epic`.** `"state": "area"` on any other type exits 22, and so does a create that names no type. An update that does not restate its type is judged by the type the issue already has.
 - **A field this org does not define** is skipped, not an error — an org is allowed fewer fields than the default inventory. It is reported once for the run on stderr, not once per issue.
 - **A refused capability read** exits 21 rather than falling back to labels, for the reason `org-capabilities` gives above.
 
@@ -438,11 +437,11 @@ A batch answers a partial failure with the aliases that worked and an error carr
 
 ## Copying areas to labels — `area-backfill`
 
-A repository that uses area epics has its areas only in the parent chain, so an issue loses its area when the chain changes. `area-backfill` copies each issue's area to an `area: {name}` label, for every issue of the repository, open and closed. Run it once, when a repository moves from area epics to area labels (`references/area-epics.md`). Release notes for an old release then keep their headings after the area epics are closed.
+Until 19.0.0 an issue's area was the area epic above it in its parent chain. A repository that still has area epics must move each issue's area to its label before the epics mean nothing. `area-backfill` copies each issue's area to an `area: {name}` label, for every issue of the repository, open and closed. Run it once, when a repository moves off area epics (`references/area-epics.md`). Release notes for an old release then keep their headings after the area epics are closed.
 
 **The read.** One paged query reads every issue, 100 a page, oldest first: its type, state, parent, labels and `Stage`, and nothing else. When GitHub answers `RESOURCE_LIMITS_EXCEEDED`, the read halves the page and asks the same cursor again, down to 5 a page, and keeps the smaller size (`page_size` in the result). There is no page cap, because a partial read would leave old issues without a label. Against CadenceReader, with 2,126 issues and an area epic that has 100 direct children, the read took 22 requests at 100 a page with no resource-limit error.
 
-**The plan** (`wf_core.backfill_plan`). An issue's area is the nearest area epic above it in its parent chain, at any depth, and a closed area epic still counts. The `epic` column of the `## Areas` table maps the epic to a row, and the row's label is `area: {name}`. The area epics themselves get no label.
+**The plan** (`wf_core.backfill_plan`). For this command only, an issue's area is the nearest area epic above it in its parent chain, at any depth, and a closed area epic still counts. The `epic` column of the `## Areas` table maps the epic to a row, and the row's label is `area: {name}`. The area epics themselves get no label. `wf_core.is_legacy_area_epic` is the one place the `Area` stage is read, and only this command and preflight's `areas-table` check call it.
 
 | List | Meaning |
 | ---- | ------- |
@@ -457,7 +456,7 @@ A repository that uses area epics has its areas only in the parent chain, so an 
 
 **`--dry-run`** prints the same result with `dry_run: true`, `would_label` and `would_close`, and writes nothing. The GitHub guard treats it as a read.
 
-**`--close-epics`** closes each open area epic a row names, with `gh issue close --reason completed` and a comment that names the label. It closes only when the read of that same run found no issue to label and no entry in `differs`. A run that wrote labels closes nothing and says so in `close_refused`, so closing always takes a second run. The parent links and the `Stage` of the epics are left as they are, so `areas --issue` and a later `area-backfill` still resolve an issue through a closed epic. An epic that could not be closed is listed in `close_failed`, and the run is `partial`, exit 24.
+**`--close-epics`** closes each open area epic a row names, with `gh issue close --reason completed` and a comment that names the label. It closes only when the read of that same run found no issue to label and no entry in `differs`. A run that wrote labels closes nothing and says so in `close_refused`, so closing always takes a second run. The parent links and the `Stage` of the epics are left as they are, so a later `area-backfill` still resolves an issue through a closed epic. An epic that could not be closed is listed in `close_failed`, and the run is `partial`, exit 24.
 
 The result is `{"status", "repo", "scanned", "page_size", "labelled", "already", "counts", "no_area", "differs", "failed", "epics_closed"}`. `labelled` and `already` are counts. `--repo owner/name` reads and writes another repository with the table of the current one.
 
@@ -478,14 +477,13 @@ It **never writes**. Both write transports are stubbed out in its tests to prove
 | `classification-contradiction` | The `Classification` value cannot be true of the declared kind — a story classified `Bug Fix`, a bug classified `New Feature`. |
 | `scope-option` | An `Ownership` value the workflow does not recognise, usually a renamed option. |
 | `scope-prefix` | The `[Manual] `/`[Browser] ` title prefix and the `Ownership` value disagree. |
-| `hierarchy` | A `User Story` with no `Feature` parent, or a story or feature under the wrong type. Reported and never proposed: which feature a story belongs to is a judgement about the work. |
+| `hierarchy` | A story or feature under the wrong type. An issue with no parent is not a gap. Reported and never proposed: which feature a story belongs to is a judgement about the work. |
 | `missing-parent` | `--parents` only. The body says it is part of an issue and GitHub shows it as free-standing. |
 | `parent-closed` | `--parents` only. The parent the body names is not open. |
 | `parent-differs` | `--parents` only. The body names one parent and the hierarchy has another. Reported, never changed. |
 | `missing-blocker-edge` | `--blockers` only. The body says `Blocked by: #N`, #N is open, and the issue has no blocked-by edge to it. The proposal is a `blocked_by` list holding the edges the issue already has plus the missing ones. A closed blocker is not a gap: it holds nothing back. |
-| `no-area` | No area epic sits above the issue in its parent chain, so it belongs to no part of the product and its release notes cannot be grouped. Reported and never proposed: which area an issue belongs to is a judgement about the product. Judged only on a chain read in full within the scan, ending at an issue with no parent; a parent the scan did not read (closed, in another repository, or past `--limit`) is not guessed at. Not reported at all unless the scan read an area epic, so with `--limit` or `--since` it is reported only when an area epic falls inside that slice. Before a repository has an area epic it is not reported because before then every issue would carry it for one cause, and `preflight`'s `area-epics` names that once. |
-
-An area epic (`Stage` is `Area`) is exempt from `missing-field`, `missing-optional-field` and the ownership gaps: it is a permanent part of the product rather than work, so nothing ranks, sizes or routes it. When another gap puts one in the backfill spec, its entry carries `"state": "area"` so `issue-apply` applies the same exemption.
+| `no-area-label` | The issue carries no `area:` label, so it belongs to no part of the product and its release notes cannot be grouped. The proposal is `area: TODO`: which area an issue belongs to is a judgement about the product, so a person or `wf area-set` fills it. No parent is read. Not reported in a repository with no Areas table, where `preflight`'s `areas-table` names the cause once. |
+| `many-area-labels` | The issue carries more than 1 `area:` label. The proposal is the same `area: TODO`, and `issue-apply` removes every other area label when it writes the one named. |
 
 `Classification` is checked for **incompatibility**, not for agreement (`wf_core.INCOMPATIBLE_CLASSIFICATIONS`). It is a multi-select describing what the work touches, so a story classified `Documentation`, `Performance` or `Integration` is telling the truth and only a defect classification — `Bug Fix`, `Regression` — contradicts it, and vice versa for a bug. Requiring agreement instead produced false positives on every issue that had been classified carefully.
 
@@ -505,13 +503,13 @@ This one is **opt-in**, and the reason is worth stating rather than treating as 
 
 What the audit checks in the dependency slot otherwise is **scope**, where the three signals genuinely can be compared against each other.
 
-## Area epics — `areas`
+## Areas — `areas`
 
-An area epic is a native `Epic` whose `Stage` is `Area`. It stands for one permanent part of the product, and an issue's area is the nearest area epic above it in its parent chain: a Feature sits under an area, a User Story under a Feature or straight under an area, and a Bug or Chore under a Feature or straight under an area. An area is not work. It is never picked (`pick --issue` and `plan-set --issue` refuse one by name), never closed by `post-merge` or `preflight --fix`, never moved by `board-sync`, and never audited for `Priority`, `Effort`, `Ownership` or a closing pull request.
+An area is one part of the product: a row of the `## Areas` table in `ClaudeProject.md`. An issue's area is its 1 `area: {name}` label, and nothing reads the parent chain for it, because GitHub allows a parent at most 100 sub-issues. Area epics, an `Epic` whose `Stage` is `Area`, were removed in 19.0.0. An epic still at that stage is an ordinary `Epic`: its stage is a value no rule knows, so it is not in the pool and `board-sync` leaves it, and `post-merge` and `preflight --fix` close it when its last sub-issue closes.
 
-`areas` lists the repository's open area epics, sorted by title: `{"status": "ok", "areas": [{"number", "title", "url", "body"}], "count": N, "rows": [{"name", "description", "epic"}]}`, exit 0. A repository with none is still `ok`, with an empty list. `rows` is the `## Areas` table in `ClaudeProject.md`, in table order: a row's `name` is what a spec passes as `area`, and `epic` is the number in the row's `Epic` column when that epic is an open area epic, otherwise the number of the open area epic whose title is that name, compared without case, or `null`. A repository with no table has no rows. It reuses `issue-audit`'s open-issue scan, so it costs one read per hundred open issues.
+`areas` lists the table, in table order: `{"status": "ok", "areas": [{"name", "description", "label"}], "count": N}`, exit 0. A row's `name` is what a spec passes as `area`, and `label` is the label it becomes. A repository with no table is still `ok`, with an empty list and a `count` of 0. It reads `ClaudeProject.md` only and makes no GitHub request.
 
-`areas --issue N` resolves one issue instead. It reads the issue and up to six levels of parents in one request, each with its `Stage`, and returns the nearest area epic: `{"status": "ok", "issue": N, "area": {"number", "title", "url"}}`. An area epic resolves to itself. When the chain reaches no area, `area` is `null` and `reason` says why, including when the chain runs past the depth read.
+`areas --issue N` reads one issue instead, in one request that asks for its number, title and labels and no parent. It returns `{"status": "ok", "issue": N, "area": {"name", "description", "label"}}`. `area` is `null` and `reason` says why when the issue carries no area label, carries more than 1, or carries one that names no row. None of those is guessed at: `area-set` is where the choice is made.
 
 Both take `--repo owner/name`. A read that fails, or an issue that does not exist, is `status: error`, exit 20. Neither writes anything.
 
@@ -557,7 +555,7 @@ Three things describe how a project works, and they drift apart quietly: `Claude
 | `field-unpinned` | critical | An enabled issue type is not pinned to a field the tooling writes, `Stage` included. |
 | `field-absent` | critical | The org defines no `Priority`, `Effort` or `Ownership` field, and the picker reads all three. |
 | `stage-absent` | critical | The org defines no `Stage` field, so no issue's state can be written or read. |
-| `stage-options` | critical | `Stage` lacks one of its nine options, `Area` included, named, so a transition to it fails. |
+| `stage-options` | critical | `Stage` lacks one of its eight options, named, so a transition to it fails. |
 | `field-options` | critical / warning | An option on a mandatory field that no decision knows. Critical on `Ownership`, where nothing can route the issue; a warning on `Priority` (sorts last) and `Effort` (sized as `Medium`). |
 | `label-deprecated` | warning | The label map still names a label nothing reads. |
 | `review-label` | warning | A review-state label the repo lacks, so a pull request cannot carry that state. `--fix` creates it, as `labels-ensure` does. |
@@ -616,8 +614,8 @@ The file-level checks used to be shell blocks inside `skills/preflight/SKILL.md`
 | `file-claude-md` / `claude-md-ref` | warning | No `CLAUDE.md`, or one that never mentions `ClaudeProject.md` — so a session that runs no workflow command never finds the configuration. |
 | `review-config` | warning | `ClaudeProject.md` names a review-state label file that is not there, so every review label falls back to its default name. |
 | `instructions-retired` | warning | A `CLAUDE.md` or `ClaudeProject.md` in the project still describes the `Ready` opt-in, a lifecycle, priority or scope label, or a dependency written as prose, named by line. Never rewritten: the lines are somebody's own sentences. The plugin's own directory is not scanned, since its templates name what was retired on purpose. |
-| `container-finished` | warning | An open Epic or Feature whose sub-issues are all closed. `post-merge` closes the ones a merge finishes; this finds the ones that finished before it did, and `--fix` closes them as completed and sets their stage to `Done`. A container with no sub-issues is never flagged, and nor is an area epic, which is never finished. |
-| `area-epics` | warning | The repository has no open `Epic` whose `Stage` is `Area`, so no issue resolves to an area and release notes cannot be grouped. The fix is to create one `Epic` per permanent part of the product, set its `Stage` to `Area` and describe what it covers in its body; the plugin's `references/area-epics.md` walks through migrating an existing project. Never repaired by `--fix`: which parts of the product are areas is the project's decision. |
+| `container-finished` | warning | An open Epic or Feature whose sub-issues are all closed. `post-merge` closes the ones a merge finishes; this finds the ones that finished before it did, and `--fix` closes them as completed and sets their stage to `Done`. A container with no sub-issues is never flagged. |
+| `areas-table` | critical | `ClaudeProject.md` has no `## Areas` table, so no issue can be given its area label and release notes cannot be grouped. When the repository still has area epics (an `Epic` whose `Stage` is `Area`), the fix names them and the move: write the table with the `Epic` column, run `labels-ensure`, then `area-backfill`. When it has none, the fix names `/synergy:setup`. The plugin's `references/area-epics.md` covers both. Skipped offline and when the open issues cannot be read. Never repaired by `--fix`: which parts of the product are areas is the project's decision. |
 | `stage-drift` | warning | An open issue's `Stage` is blank or `Backlog` although an open pull request closes it or somebody is assigned. `--fix` sets it to `In Review` for a ready pull request and `In Progress` for a draft one or an assignee. Only a blank or `Backlog` stage is judged, so nothing a run or a person chose is overwritten. The usual cause is a run on a version before 12.0.0, which never wrote `Stage`; a `Stage` write that failed after its claim is the other. |
 
 ### Every finding says whether `--fix` would touch it
@@ -645,7 +643,7 @@ It will not create a `CLAUDE.md`, invent an `## Identity` section, create or del
 
 `post-merge --pr <n>` makes "the story is closed and at `Done`" a deterministic step instead of trusting GitHub. It reads the PR's own `closingIssuesReferences`, **force-closes** any of those issues still open (GitHub only auto-closes on a default-branch merge of a recognised keyword — a chained-story PR or an unparsed reference leaves it open), and sets every linked issue's stage to **Done**. Each settled issue is reported with `closed_now` and `stage_set`. It refuses (`status: not-merged`, exit 11) on a PR that has not actually merged, so it is safe to call on the queued `--auto` path. Add `--issue <N>` (repeatable) to settle a reference GitHub did not parse. `pr-review`'s auto-merge step calls this after a successful immediate merge. It costs the same five GitHub requests however many issues the PR closes: the PR, one aliased read of every issue, one mutation closing them and removing any retired label, one `Stage` write, and one read of their parents. A close GitHub refuses is still reported against its own issue.
 
-**An area epic is never closed.** One the pull request names as closed (`Closes #N`) is left open with its `Stage` unchanged and reported in `skipped_areas` (`[{"issue", "reason"}]`, or a list of numbers on the one-line result), because naming a permanent part of the product as finished is a mistake in the pull request. The walk up from a closed story stops at an area too: closing the last story under one means only that nothing is under way there now. `preflight --fix` follows the same rule.
+**An epic still marked `Area` is settled like any other issue.** Area epics were removed in 19.0.0, so `post-merge` no longer skips one and the result has no `skipped_areas`. `preflight --fix` follows the same rule.
 
 `--notes <file>` writes release notes in the same `Stage` write. The file is `{"<issue>": {"user": text, "internal": text}}`, as the `release-notes` skill produces it; each non-blank text goes to `User release notes` or `Internal release notes`, and a blank one leaves its field blank. Only an issue the PR closes is written, never a container the merge finished. An org without a field skips that text. When the API refuses a text, the `Stage` write is retried alone, so the issue still reaches Done and the entry's `release_notes.error` says what was not written. `Shipped in version` is never written: the project's release script stamps it, and `issue-apply` refuses a spec that sets it.
 
@@ -667,7 +665,7 @@ Add `--issue <N>` (repeatable) for a reference GitHub did not parse.
 
 ## Settling merges that landed later — `settle-merged`
 
-`post-merge` runs only inside a synergy run, so a queued auto-merge that lands after the run, or a person merging an approved PR, used to leave its issues at `In Review` with no release notes. `settle-merged [--limit 30]` lists the most recent merged PRs, finds those with a closing issue not at `Done`, or at `Done` with neither release-notes field set in an org that defines them (area epics aside), and runs `post-merge` on each without `--notes`, so it reads the notes comment. Done alone is not the test because the board sync sets a closed issue to Done without notes. It prints one line when every PR settled, and exits `partial` naming each that did not, with `needs_notes` listing each PR and issue still without notes for the caller to write. In a repository with a Release Targets table, a closing issue with no `release:` label is unsettled too, so a merge from the queue gets its labels here from the comment; `needs_targets` lists each PR and issue with no targets decided, for the caller to decide with `release-targets`. `execute`, `bulk-execute` and `pr-review` run it at the start of every run.
+`post-merge` runs only inside a synergy run, so a queued auto-merge that lands after the run, or a person merging an approved PR, used to leave its issues at `In Review` with no release notes. `settle-merged [--limit 30]` lists the most recent merged PRs, finds those with a closing issue not at `Done`, or at `Done` with neither release-notes field set in an org that defines them, and runs `post-merge` on each without `--notes`, so it reads the notes comment. Done alone is not the test because the board sync sets a closed issue to Done without notes. It prints one line when every PR settled, and exits `partial` naming each that did not, with `needs_notes` listing each PR and issue still without notes for the caller to write. In a repository with a Release Targets table, a closing issue with no `release:` label is unsettled too, so a merge from the queue gets its labels here from the comment; `needs_targets` lists each PR and issue with no targets decided, for the caller to decide with `release-targets`. `execute`, `bulk-execute` and `pr-review` run it at the start of every run.
 
 ## Releasing what a merge freed — `unblock`
 
@@ -750,7 +748,7 @@ The ref is the lock but it is ephemeral, so on success the command also advertis
 
 ### `stage-set`
 
-`stage-set N --stage stage-in-review` writes an issue's `Stage` field, which is the only place its state is recorded. `--stage` takes a purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, `stage-blocked`, `stage-non-code`, `stage-refinement`, `stage-parked`, `stage-done`, `stage-area`) or the stage name itself. No board is read or written.
+`stage-set N --stage stage-in-review` writes an issue's `Stage` field, which is the only place its state is recorded. `--stage` takes a purpose key (`stage-backlog`, `stage-in-progress`, `stage-in-review`, `stage-blocked`, `stage-non-code`, `stage-refinement`, `stage-parked`, `stage-done`) or the stage name itself. No board is read or written.
 
 A write that landed prints one line and exits 0, so a caller reads nothing on success. A write that did not happen exits 20 with `set: false`, `stage` (the name) and `reason`, because the stage is the issue's state: an issue whose `In Progress` write failed still reads as available.
 
@@ -823,9 +821,9 @@ Symlinks and junctions near the top of a worktree (the harness links `node_modul
 `board-sync` is what `.github/workflows/board-sync.yml` runs every hour. It is the backup for everything a run or a person did not keep in step, across every unarchived repository in the org that has issues turned on:
 
 - **Cards.** Each open issue gets a card on every open board linked to its repository (`Repository.projectsV2`) that does not already hold one. GitHub's own "Auto-add to project" workflow stays the primary way issues reach a board; this adds what it missed. A repository with no linked board gets no cards.
-- **Stage.** Each open issue, and each issue closed in the last `--closed-days` days (default 7), has its `Stage` set by `wf_core.reconcile_stage`: `Done` when closed, as completed or as not planned, from any stage but `Area`; `Non-code` when its `Ownership` is `Human` or `Browser agent` and it is blank, `Backlog` or `Blocked` (such work a person has moved to `In Progress` or `In Review` is left there); for a blank or `Backlog` issue somebody has started, `In Review` for a ready pull request and `In Progress` for a draft one or an assignee, which is `wf_core.stage_drift_target`, the same rule `preflight --fix` repairs `stage-drift` with; `In Review` for `In Progress` work once a ready pull request closes it; `Backlog` (or `Blocked`, if an edge is still open) when it sits in `In Progress` or `In Review` with no assignee, no `refs/claims/issue-N` and no open pull request; `Blocked` when it is blank or `Backlog` with an open blocked-by edge and nobody has started it; and, when it is `Blocked` and every blocker has closed, `Backlog`, or straight to where the started rule puts it; and `Backlog` for any open issue whose `Stage` is still blank after those rules, so no card sits under "No Stage". The plugin itself still treats a blank `Stage` as available; only the sync writes it.
+- **Stage.** Each open issue, and each issue closed in the last `--closed-days` days (default 7), has its `Stage` set by `wf_core.reconcile_stage`: `Done` when closed, as completed or as not planned; `Non-code` when its `Ownership` is `Human` or `Browser agent` and it is blank, `Backlog` or `Blocked` (such work a person has moved to `In Progress` or `In Review` is left there); for a blank or `Backlog` issue somebody has started, `In Review` for a ready pull request and `In Progress` for a draft one or an assignee, which is `wf_core.stage_drift_target`, the same rule `preflight --fix` repairs `stage-drift` with; `In Review` for `In Progress` work once a ready pull request closes it; `Backlog` (or `Blocked`, if an edge is still open) when it sits in `In Progress` or `In Review` with no assignee, no `refs/claims/issue-N` and no open pull request; `Blocked` when it is blank or `Backlog` with an open blocked-by edge and nobody has started it; and, when it is `Blocked` and every blocker has closed, `Backlog`, or straight to where the started rule puts it; and `Backlog` for any open issue whose `Stage` is still blank after those rules, so no card sits under "No Stage". The plugin itself still treats a blank `Stage` as available; only the sync writes it.
 
-It never changes `Parked`, `Needs refinement`, `Non-code` or `Area`, open or closed, and it never clears a `Blocked` that has no blocked-by edge, because a person set that. A claim ref it cannot read counts as held, so an unreadable lock never releases somebody's work. For the same reason a blocked-by edge it cannot read counts as open, and an issue with more edges than one page reads is left as it is unless an open one was seen. Every result is a fixed point, so a second run over unchanged issues writes nothing.
+It never changes an open `Parked`, `Needs refinement` or `Non-code`, or a value it does not know, and it never clears a `Blocked` that has no blocked-by edge, because a person set that. A claim ref it cannot read counts as held, so an unreadable lock never releases somebody's work. For the same reason a blocked-by edge it cannot read counts as open, and an issue with more edges than one page reads is left as it is unless an open one was seen. Every result is a fixed point, so a second run over unchanged issues writes nothing.
 
 The output is **totals only** (`repos`, `repos_with_boards`, `repos_failed`, `claims_unread`, `issues_read`, `cards_added`, `cards_failed`, `stages_set`, `stages_failed`, `stages_by_value`). A workflow's logs are public on a public repository, so no repository name, issue number, title or error text is printed. `--dry-run` counts what would change and writes nothing. It exits 0 when everything landed, 24 (`partial`) when any repository could not be read or any write failed, 21 when the org has no `Stage` field, and 20 when the org cannot be read at all.
 

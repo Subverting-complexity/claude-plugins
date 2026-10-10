@@ -31,9 +31,9 @@ gh repo view --json owner,name,defaultBranchRef --jq '{org: .owner.login, repo: 
 
 **Quality gate**: look for `scripts/*quality*` or `scripts/*test*`, `package.json` scripts (test, lint, typecheck), `Makefile` targets (test, check, lint), or `dotnet test`.
 
-**The `Stage` field:** an issue's state is the org issue field `Stage`, a single-select with nine options: `Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked`, `Done` and `Area`. A blank `Stage` means available, the same as `Backlog`. `Area` marks a permanent area epic (Step 8b). Setup does not create the field and does not create or rename board columns. Step 5e reads whether the org has it.
+**The `Stage` field:** an issue's state is the org issue field `Stage`, a single-select with eight options: `Backlog`, `In Progress`, `In Review`, `Blocked`, `Non-code`, `Needs refinement`, `Parked` and `Done`. A blank `Stage` means available, the same as `Backlog`. Setup does not create the field and does not create or rename board columns. Step 5e reads whether the org has it.
 
-When the field or an option is missing, stop and ask the user to add it by hand, because the API this runs on cannot create an org issue field: org settings → *Planning* → *Issue fields* → create `Stage` as a single-select with the nine options, then pin it to every enabled issue type. Without it no transition can be written and preflight fails with `stage-absent` or `stage-options`.
+When the field or an option is missing, stop and ask the user to add it by hand, because the API this runs on cannot create an org issue field: org settings → *Planning* → *Issue fields* → create `Stage` as a single-select with the eight options, then pin it to every enabled issue type. Without it no transition can be written and preflight fails with `stage-absent` or `stage-options`.
 
 **Project board (optional):** a board is a view for people. Nothing in the workflow reads a column from it or moves a card on it, so a project without one works the same. A board can be owned by an **organization** or by a **user**, so query both (the org query errors or returns empty when `{org}` is a personal account):
 
@@ -59,8 +59,10 @@ For anything not auto-detected, ask the user, showing the detected or suggested 
 - **Branch convention**: suggest `feature/{number}/{short-desc}` as default
 - **Quality gate command**: if not auto-detected
 - **Refinement skill**: which skill to use when a story is too thin to implement. Default: `feature-discovery` (runs the `grill` interview, then writes the fuller spec and acceptance criteria). Store as `refinement-skill` in ClaudeProject.md.
+- **Areas**: the parts of the product, such as Library or Listening. Every issue belongs to exactly one, and release notes are grouped by them, so the list is required. Suggest 3-8 from the top-level folders and the README, each with one sentence on what it covers (100 characters at most), and let the user change them. Which areas exist is their decision: do not write a row they have not agreed. If the repository has open area epics (Step 8b), take the list from them.
+- **Release targets** (optional): what the project ships separately, such as `web` or `mobile`. With none, leave that table out.
 
-**Do not ask about labels, and create none except the review-state labels in Step 5b.** No label decides anything: an issue's state is its `Stage` field, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. A repository that already has priority, type, status or scope labels keeps them (deleting a label strips it from every issue that ever carried it), and `wf issue-apply` takes one off any issue it writes.
+**Do not ask about any other label, and create none except those in Step 5b.** The workflow puts 2 kinds of label on an issue and no other: the area label (`area: {name}`, exactly 1) and the release-target labels (`release: {target}`, set when the work merges). No other label decides anything: an issue's state is its `Stage` field, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. A repository that already has priority, type, status or scope labels keeps them (deleting a label strips it from every issue that ever carried it), and `wf issue-apply` takes one off any issue it writes.
 
 **Do not ask about agent gating.** There is no approval label. A person approves an issue for autonomous pickup by setting its `Stage` to `Backlog` or leaving it blank, and withholds approval by setting `Needs refinement` or `Parked`.
 
@@ -68,9 +70,11 @@ For anything not auto-detected, ask the user, showing the detected or suggested 
 
 Read `templates/ClaudeProject.md` once and fill in all detected and user-provided values. Write to `ClaudeProject.md` at the project root. When enhancing an existing file, merge new sections into it without removing sections already there.
 
-## 5b. Create the review-state labels
+**Write the `## Areas` table** with one row for each area the user agreed in Step 4: its name, its one sentence and a colour of 6 hex digits, a different one for each row. Leave `Epic` and `Was` empty, except in a repository that has area epics (Step 8b). Never leave the template's placeholder row, and never write the section with no row: preflight fails with `areas-table` until the table has one.
 
-The nine review-state labels on a pull request are the only labels the workflow applies, so creating them is the whole of label setup. Create them even if the user defers the review config in Step 7, so the pr-review skill never has to create one mid-run:
+## 5b. Create the labels
+
+Label setup is the nine review-state labels on a pull request, and the area and release labels the tables in `ClaudeProject.md` name. Create them even if the user defers the review config in Step 7, so the pr-review skill never has to create one mid-run:
 
 ```
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" labels-ensure
@@ -120,7 +124,7 @@ Then write `## Issue Types & Fields` into `ClaudeProject.md` following the templ
 
 "This org has none" and "nobody wrote this section" must not look the same. `wf config-audit` reports a missing section as CRITICAL, so leaving it out breaks preflight in the consumer's repo.
 
-Flag `field-stage` if it is missing or lacks one of its nine options (the manual step in Step 3). Flag the three mandatory fields, `field-priority`, `field-effort` and `field-ownership`, if any is missing, because `wf issue-apply` refuses to create an issue without them: they are the pool's order, its size ceiling, and whether a code agent may take the issue at all. `field-type` (`Classification`) and `field-origin` are optional; an issue created without one gets a comment saying so. For `Origin`, point the user at the owner's *Issue fields* settings to add it as a single-select (Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request).
+Flag `field-stage` if it is missing or lacks one of its eight options (the manual step in Step 3). Flag the three mandatory fields, `field-priority`, `field-effort` and `field-ownership`, if any is missing, because `wf issue-apply` refuses to create an issue without them: they are the pool's order, its size ceiling, and whether a code agent may take the issue at all. `field-type` (`Classification`) and `field-origin` are optional; an issue created without one gets a comment saying so. For `Origin`, point the user at the owner's *Issue fields* settings to add it as a single-select (Security Audit, Feature Discovery, Code Review, Development, Stakeholder Request).
 
 On exit **20** the capability read failed (auth, network, no `wf`). Say so and leave any existing section alone.
 
@@ -142,7 +146,7 @@ Ask whether the user plans to use the pr-review skill for automated PR reviews. 
 
 If they accept and `docs/review.config.md` does not exist yet, follow `skills/pr-review/references/review-config-guide.md` to generate it. It asks for the label prefix, gates, tech-stack rules and test expectations, asks the auto-merge questions, writes the file and runs `labels-ensure` again.
 
-Review-state labels are a mutex managed by the pr-review skill, and the only labels the workflow applies.
+Review-state labels are a mutex managed by the pr-review skill, and the only labels the workflow applies to a pull request.
 
 ## 7b. Harden auto-merge enforcement
 
@@ -154,15 +158,17 @@ Present this as a recommended step the user can wave off in a sentence. The reas
 
 Read `skills/ecosystem-setup/SKILL.md` and follow it now, rather than invoking the skill: it sets `disable-model-invocation`, so only a person can run it as a slash command. It asks once which tools the user wants, installs and configures each, and writes `.claude/ecosystem.md` (adding a row to the CLAUDE.md Supplementary Files table from Step 6). If the user wants nothing, it leaves only an opt-out marker and nothing is blocked.
 
-## 8b. Area epics
+## 8b. Areas
 
-Every project organises its issues under area epics: an `Epic` at `Stage` `Area` for each permanent part of the product, with a body saying what it covers. Release notes are grouped by area, so they are required. Check what the repository has:
+Check the table Step 5 wrote:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas
 ```
 
-When the `count` is 0, tell the user the project has no area epics and offer to set them up by following `references/area-epics.md`: agree the list of areas with them first, because choosing the parts of the product is their decision, then create the epics and move the existing backlog onto them. If they defer it, say preflight will keep warning `area-epics` until it is done.
+When the `count` is 0, the project has no Areas table and preflight fails with `areas-table`. Go back to Step 4 and agree the areas with the user. If they defer it, say no workflow command runs until the table exists.
+
+A repository that used a version before 19.0.0 can still have **area epics**: an open `Epic` whose `Stage` is `Area`. Preflight's `areas-table` finding names them. When it does, follow `references/area-epics.md` → **A repository with no areas table**: write each epic's number in the `Epic` column of its row, then run `wf area-backfill`, which copies each issue's area to its label. Close the epics only after the user agrees.
 
 ## 9. Verify and report
 
@@ -172,8 +178,8 @@ Confirm all required sections are present in `ClaudeProject.md`. Report what was
 - Package manager
 - Quality gate
 - Backlog mode (sprint or flat)
-- `Stage` field (present with all nine options, or what is missing)
-- Area epics (how many are open, or none)
+- `Stage` field (present with all eight options, or what is missing)
+- Areas (the rows written, or that the table is missing)
 - Board (recorded or none)
 - Labels configured
 - Ecosystem tools enabled (if any)

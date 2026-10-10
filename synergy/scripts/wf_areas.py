@@ -1,135 +1,89 @@
 """
-The `areas` subcommand: the repository's area epics, or the one an issue
-resolves to.
+The `areas` subcommand: the repository's areas, or the one an issue carries.
 
-An area epic is a native `Epic` whose `Stage` is `Area`, standing for one
-permanent part of the product. An issue's area is the nearest area epic above
-it in its parent chain. This reads; it never writes.
-
-The list also carries `rows`, the `## Areas` table in `ClaudeProject.md`: the
-names an issue spec passes as `area`, which become the `area: {name}` label.
+An area is one row of the `## Areas` table in `ClaudeProject.md`, standing for
+one part of the product. An issue's area is its `area: {name}` label, and
+every issue carries exactly 1. Nothing here reads an issue's parents: GitHub
+allows a parent at most 100 sub-issues, so an area kept in the parent chain
+fills up and refuses new issues. This reads; it never writes.
 """
 
 import wf_core
-from wf_config import field_name, load_config
+from wf_config import load_config
 from wf_io import EXIT_ENV, EXIT_OK, emit, gh_graphql
-from wf_issue_audit import scan_open_issues
-from wf_issue_io import issue_field_values
-from wf_post_merge import STAGE_VALUES_SELECTION
 
 
-# How far up an issue's parents `--issue` reads: a story, its Feature, the
-# area above that, and room for a tree nested deeper than the model asks for.
-AREA_CHAIN_DEPTH = 6
+# The issue's own labels and nothing above it. Fifty is the page the other
+# label reads use, far more than an issue carries.
+AREA_LABEL_QUERY = (
+    'query($owner:String!,$repo:String!,$number:Int!){'
+    ' repository(owner:$owner,name:$repo){ issue(number:$number){'
+    ' number title labels(first:50){ nodes { name } } } } }')
 
-_AREA_NODE = 'number title url issueType { name }' + STAGE_VALUES_SELECTION
 
+def area_rows(cfg):
+    """The rows of the `## Areas` table. `[{'name', 'description', 'label'}]`,
+    in table order.
 
-def _area_chain_selection(depth):
-    """The issue and its parents, `depth` levels deep, each with its `Stage`.
-
-    The deepest level asks only whether it has a parent, so a chain that runs
-    past the depth is told apart from one that ends there.
+    `name` is what an issue spec passes as `area`, and `label` is the label
+    that name becomes. A repository with no table has no rows.
     """
-    if depth <= 0:
-        return 'number'
-    return _AREA_NODE + ' parent { %s }' % _area_chain_selection(depth - 1)
-
-
-def area_chain_query(depth=AREA_CHAIN_DEPTH):
-    return ('query($owner:String!,$repo:String!,$number:Int!){'
-            ' repository(owner:$owner,name:$repo){ issue(number:$number){ %s } } }'
-            % _area_chain_selection(depth))
-
-
-def _area_entry(node):
-    return {'number': node.get('number'), 'title': node.get('title') or '',
-            'url': node.get('url') or ''}
-
-
-def nearest_area(node, stage_field, depth=AREA_CHAIN_DEPTH):
-    """The nearest area epic at or above `node`. (area or None, reason or None).
-
-    `node` is the issue as `area_chain_query` returns it. The issue itself
-    counts: an area epic resolves to itself.
-    """
-    number = node.get('number')
-    current, level = node, 0
-    while current:
-        if level >= depth:
-            return None, ('#%d has no area epic within %d levels above it, and '
-                          'the chain goes on beyond that' % (number, depth))
-        if wf_core.is_area_stage(issue_field_values(current).get(stage_field)):
-            return _area_entry(current), None
-        current, level = current.get('parent'), level + 1
-    return None, ('#%d resolves to no area: no area epic sits above it in its '
-                  'parent chain' % number)
-
-
-def area_table_rows(cfg, epics):
-    """The rows of the `## Areas` table, each with its open area epic.
-    `[{'name', 'description', 'epic'}]`, in table order.
-
-    A row's `name` is what an issue spec passes as `area`. `epic` is the
-    parent an issue under that area still needs: the number in the row's
-    `Epic` column when that epic is an open area epic, which is the mapping
-    `area-backfill` reads, and otherwise the open area epic whose title is
-    that name, compared without case. None when there is neither. A
-    repository with no table has no rows.
-    """
-    by_title, open_numbers = {}, set()
-    for epic in epics or ():
-        open_numbers.add(epic.get('number'))
-        by_title.setdefault((epic.get('title') or '').strip().lower(),
-                            epic.get('number'))
-
-    def epic_of(row):
-        column = row.get('epic')
-        if column is not None and column in open_numbers:
-            return column
-        return by_title.get(row['name'].strip().lower())
-
     return [{'name': row['name'],
              'description': (row.get('description') or '').strip(),
-             'epic': epic_of(row)}
+             'label': wf_core.area_label(row['name'])}
             for row in cfg.get('areas') or []
             if (row.get('name') or '').strip()]
 
 
+def issue_area(number, label_names, rows):
+    """The area the labels on issue `number` name. (area or None, reason or None).
+
+    `area` is the table row, as `area_rows` shapes it. There is no area, and a
+    reason says why, when the issue carries no area label, when it carries
+    more than 1, and when its 1 label names no row of the table. None of them
+    is guessed at: which part of the product an issue belongs to is a
+    decision, and `wf area-set` is where it is made.
+    """
+    carried = wf_core.area_labels_on(label_names)
+    if not carried:
+        return None, ('#%d carries no area label; run `wf area-set --issue %d` '
+                      'to give it one' % (number, number))
+    if len(carried) > 1:
+        return None, ('#%d carries %d area labels (%s) and an issue has exactly '
+                      '1; run `wf area-set --issue %d --area NAME` to keep one'
+                      % (number, len(carried), ', '.join(carried), number))
+    row = wf_core.area_row(rows, carried[0].split(':', 1)[1])
+    if row is None:
+        return None, ('#%d carries `%s`, which names no row of the Areas table '
+                      'in ClaudeProject.md' % (number, carried[0]))
+    return row, None
+
+
 def cmd_areas(args):
-    """`wf areas`: list the open area epics, or resolve one issue's area."""
+    """`wf areas`: list the rows of the areas table, or read one issue's area."""
     ok, cfg, err = load_config()
     if not ok:
         emit('error', EXIT_ENV, reason=err)
+    rows = area_rows(cfg)
+
+    if args.issue is None:
+        emit('ok', EXIT_OK, areas=rows, count=len(rows))
+
     repo = args.repo or '%s/%s' % (cfg['org'], cfg['repo'])
-    stage_field = field_name(cfg, 'field-stage')
-
-    if args.issue is not None:
-        owner, name = repo.split('/', 1)
-        ok, data, err = gh_graphql(area_chain_query(), owner=owner, repo=name,
-                                   number=int(args.issue))
-        if not ok:
-            emit('error', EXIT_ENV, repo=repo, issue=args.issue,
-                 reason='could not read the parents of #%d in %s: %s'
-                        % (args.issue, repo, err))
-        node = ((data or {}).get('repository') or {}).get('issue')
-        if not node:
-            emit('error', EXIT_ENV, repo=repo, issue=args.issue,
-                 reason='issue #%d not found in %s' % (args.issue, repo))
-        area, why = nearest_area(node, stage_field)
-        if area:
-            emit('ok', EXIT_OK, issue=args.issue, area=area)
-        emit('ok', EXIT_OK, issue=args.issue, area=None, reason=why)
-
-    ok, issues, err = scan_open_issues(cfg, args.repo)
+    owner, name = repo.split('/', 1)
+    ok, data, err = gh_graphql(AREA_LABEL_QUERY, owner=owner, repo=name,
+                               number=int(args.issue))
     if not ok:
-        emit('error', EXIT_ENV, repo=repo,
-             reason='could not read the open issues in %s: %s' % (repo, err))
-    areas = [{'number': i['number'], 'title': i.get('title') or '',
-              'url': i.get('url') or '', 'body': i.get('body') or ''}
-             for i in issues
-             if (i.get('issueType') or {}).get('name') == 'Epic'
-             and wf_core.is_area_stage(issue_field_values(i).get(stage_field))]
-    areas.sort(key=lambda a: (a['title'].lower(), a['number']))
-    emit('ok', EXIT_OK, areas=areas, count=len(areas),
-         rows=area_table_rows(cfg, areas))
+        emit('error', EXIT_ENV, repo=repo, issue=args.issue,
+             reason='could not read the labels of #%d in %s: %s'
+                    % (args.issue, repo, err))
+    node = ((data or {}).get('repository') or {}).get('issue')
+    if not node:
+        emit('error', EXIT_ENV, repo=repo, issue=args.issue,
+             reason='issue #%d not found in %s' % (args.issue, repo))
+    labels = [n.get('name') or ''
+              for n in (node.get('labels') or {}).get('nodes') or [] if n]
+    area, why = issue_area(int(args.issue), labels, rows)
+    if area:
+        emit('ok', EXIT_OK, issue=args.issue, area=area)
+    emit('ok', EXIT_OK, issue=args.issue, area=None, reason=why)
