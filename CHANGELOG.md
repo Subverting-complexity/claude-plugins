@@ -6,6 +6,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 19.2.0
+
+- `wf quota` now shows how it reaches the budget for the day. `week.budget_basis` writes the sum in words: the percent of the weekly limit left when the day started, the days left (today counts as a whole day), the share, and the budget.
+- `wf quota` now says where the start of the day came from. `week.day_start_source` is `stored` (an earlier check of the same day stored it, so it is exact), `first_check` (this check stored it) or `estimate` (a `--no-record` check with nothing stored). For the last two, `week.day_start_note` says how many hours of the day came before the reading, because use of the plan in those hours is not counted in `used_today` and the room left may be overstated. `week.day_started_at` gives the time the day began.
+- The `orchestrate` skill says that today counts as a whole day, tells the run to say so when the start of the day is not stored, and tells a dry run to report the sum and the note.
+
 ## synergy 19.1.0
 
 - `grill` now continues until no weak point of the plan is left. After each round of questions it reads the decisions as a whole, lists every point that is still weak, and asks about those. It closes when that sweep finds nothing. A point leaves the list only when the user answers it, a source settles it, or the user chooses to leave it and says why.

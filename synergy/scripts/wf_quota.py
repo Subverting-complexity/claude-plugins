@@ -17,7 +17,10 @@ on and nobody is asked again.
 The daily budget needs the weekly percent at the start of the day, which no
 reading gives. The first check of each day stores it beside the settings, in
 quota-state.json (or the path in SYNERGY_QUOTA_STATE), and the later checks of
-that day read it back. `--no-record` reads it and stores nothing.
+that day read it back. `--no-record` reads it and stores nothing. Only a stored
+start is exact. The output names where the start came from, in `day_start_source`,
+and says so in `day_start_note` when it is the reading itself, because use of the
+plan earlier in the day is then not counted.
 
 `scripts/README.md` has the module map.
 """
@@ -71,9 +74,10 @@ def write_json(path, data):
 
 
 def quota_day_start(weekly_used, weekly_resets, day, record):
-    """The weekly percent when day `day` of this week started: the stored
-    figure when it is for this week and this day, and the present reading
-    otherwise, which is then stored unless `record` is false."""
+    """The weekly percent when day `day` of this week started, and where it
+    came from: `stored` is the figure an earlier check of this day stored, the
+    only exact one. Otherwise the figure is the present reading, which is
+    `first_check` when it is stored now and `estimate` when `record` is false."""
     path = quota_state_path()
     try:
         with open(path, encoding='utf-8-sig') as fh:
@@ -84,7 +88,7 @@ def quota_day_start(weekly_used, weekly_resets, day, record):
         start = state.get('day_start_used')
         if (same_week and state.get('day') == day and isinstance(start, (int, float))
                 and not isinstance(start, bool) and start <= weekly_used):
-            return float(start)
+            return float(start), 'stored'
     except (OSError, ValueError, AttributeError):
         pass
     if record:
@@ -93,7 +97,8 @@ def quota_day_start(weekly_used, weekly_resets, day, record):
                               'day_start_used': weekly_used})
         except OSError:
             pass
-    return weekly_used
+        return weekly_used, 'first_check'
+    return weekly_used, 'estimate'
 
 
 def cmd_quota(args):
@@ -132,7 +137,7 @@ def cmd_quota(args):
     }
     if args.weekly_used is not None and times['weekly_resets'] is not None:
         day = wf_core.quota_week(times['weekly_resets'], now)[0]
-        reading['day_start_used'] = quota_day_start(
+        reading['day_start_used'], reading['day_start_source'] = quota_day_start(
             args.weekly_used, times['weekly_resets'], day,
             record=not getattr(args, 'no_record', False))
     result = wf_core.quota_decide(reading, settings, now)

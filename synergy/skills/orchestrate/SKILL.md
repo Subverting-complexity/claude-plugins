@@ -52,7 +52,7 @@ A Claude plan has a 5-hour limit and a weekly limit. A round starts only when it
 |---|---|---|
 | `--five-hour-ceiling` | 85 | A round must end at or below this percent of the 5-hour limit. |
 | `--weekly-ceiling` | 90 | A round must end at or below this percent of the weekly limit. |
-| `--daily-share` | 100 | The percent of the day's budget the run may use. The day's budget is what was left of the weekly limit when the day started, divided by the days left in the week. With 30% used after 3 days, 70% is left for 4 days, so the budget is 17.5% a day, and a share of 40 lets the run use 7%. A day is 24 hours counted from the weekly reset. |
+| `--daily-share` | 100 | The percent of the day's budget the run may use. The day's budget is what was left of the weekly limit when the day started, divided by the days left in the week, with today counted as a whole day even when part of it has passed. With 30% used after 3 days, 70% is left for 4 days (day 4 is today), so the budget is 17.5% a day, and a share of 40 lets the run use 7%. A day is 24 hours counted from the weekly reset. `wf quota` writes the sum out in `week.budget_basis`. |
 | `--round-reserve-five-hour` | 15 | The percent of the 5-hour limit one round is taken to cost, until a round is measured. |
 | `--round-reserve-weekly` | 3 | The same for the weekly limit. |
 | `--on-limit` | `stop` | At a limit, `stop` ends the run and names the time it can continue. `wait` pauses until then. |
@@ -70,7 +70,7 @@ A person sets their own defaults in `~/.claude/synergy/quota.json`, with the sam
 
 When the result has `unknown: true`, the limits were not checked. Say so in the final report.
 
-The day's budget counts all use of the plan from the first check of the day, not only this run. The command stores that first reading in `~/.claude/synergy/quota-state.json`.
+The day's budget counts all use of the plan from the first check of the day, not only this run. The command stores that first reading in `~/.claude/synergy/quota-state.json`. Use of the plan before that first check is not counted. When `week.day_start_note` is present, the start of the day is the reading itself, not an earlier stored one, so the room left today may be overstated. Say so when you report the budget.
 
 **First use.** `configured: false` means this person has no settings file, so nobody has chosen yet. Ask once, with `AskUserQuestion` where the session has it: use the defaults, or set their own. Show the table above with the question.
 
@@ -88,7 +88,7 @@ Do not ask again after the file exists. A person changes a setting later with `w
 
 Each story in the ledger has one state: `waiting`, `built`, `merged`, `dropped` (with a reason) or `excluded` (with a reason).
 
-**With `--dry-run`, stop here.** Do the plan limit check and build the ledger even if the check says `stop`. Add `--no-record` to the `wf quota` call, and do not do the first use step: say instead whether the settings are the person's own or the defaults nobody has confirmed. Then report the ledger, each of the 3 plan limit checks with its used, after-round and limit figures, the day of the week and the budget for the day, the decision, the settings in use, and the exact task the first round would get. Start no agent and change nothing.
+**With `--dry-run`, stop here.** Do the plan limit check and build the ledger even if the check says `stop`. Add `--no-record` to the `wf quota` call, and do not do the first use step: say instead whether the settings are the person's own or the defaults nobody has confirmed. Then report the ledger, each of the 3 plan limit checks with its used, after-round and limit figures, the day of the week and the budget for the day with its `week.budget_basis` sum and any `week.day_start_note` (a dry run stores nothing, so the note is present unless an earlier check of the day stored a start), the decision, the settings in use, and the exact task the first round would get. Start no agent and change nothing.
 
 ## Each round
 

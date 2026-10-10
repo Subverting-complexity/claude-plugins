@@ -152,6 +152,38 @@ class TestDecision(unittest.TestCase):
     def test_a_stored_start_above_the_reading_is_ignored(self):
         self.assertEqual(decide(at(3), weekly=10, day_start_used=40)['week']['day_start_used'], 10.0)
 
+    def test_the_budget_basis_writes_the_sum_out(self):
+        week = decide(at(3, 4), weekly=30, day_start_used=30)['week']
+        self.assertEqual(
+            week['budget_basis'],
+            '70% of the weekly limit was left when the day started, divided by 4 days left '
+            '(today counts as a whole day), times a 100% share, is 17.5%.')
+        share = decide(at(3, 4), weekly=30, day_start_used=30, settings={'daily_share': 40})
+        self.assertIn('times a 40% share, is 7%.', share['week']['budget_basis'])
+
+    def test_a_stored_start_is_exact_and_carries_no_note(self):
+        week = decide(at(3, 4), weekly=46, day_start_used=30, day_start_source='stored')['week']
+        self.assertEqual(week['day_start_source'], 'stored')
+        self.assertNotIn('day_start_note', week)
+
+    def test_a_start_that_is_only_the_reading_says_how_far_into_the_day_it_is(self):
+        week = decide(at(3, 4), weekly=46, day_start_used=46, day_start_source='first_check')['week']
+        self.assertEqual(week['day_start_source'], 'first_check')
+        self.assertEqual(week['day_started_at'], '2026-10-04T00:00:00Z')
+        self.assertIn('first check of day 4', week['day_start_note'])
+        self.assertIn('began 4.0 hours ago', week['day_start_note'])
+        self.assertIn('may be overstated', week['day_start_note'])
+
+    def test_a_missing_start_is_an_estimate_with_a_note(self):
+        week = decide(at(3, 4), weekly=46)['week']
+        self.assertEqual(week['day_start_source'], 'estimate')
+        self.assertIn('No start of day 4 is stored', week['day_start_note'])
+
+    def test_a_stored_start_above_the_reading_becomes_an_estimate(self):
+        week = decide(at(3), weekly=10, day_start_used=40, day_start_source='stored')['week']
+        self.assertEqual(week['day_start_source'], 'estimate')
+        self.assertIn('day_start_note', week)
+
     def test_the_resume_day_is_the_first_whose_budget_covers_a_round(self):
         # With a 3% share and 10% left, day 6 gets 0.15% and day 7 gets 0.3%:
         # no day of this week covers a 3% round, so the run resumes at the reset.
@@ -310,6 +342,24 @@ class TestCommand(unittest.TestCase):
     def test_no_record_stores_nothing(self):
         self.run_quota(self.reading(30) + ['--no-record'])
         self.assertFalse(os.path.exists(self.state))
+
+    def test_the_source_of_the_day_start_follows_the_checks_of_the_day(self):
+        code, first = self.run_quota(self.reading(30))
+        self.assertEqual(first['week']['day_start_source'], 'first_check')
+        self.assertIn('day_start_note', first['week'])
+        code, later = self.run_quota(self.reading(46, now='2026-10-04T09:00:00Z'))
+        self.assertEqual(later['week']['day_start_source'], 'stored')
+        self.assertNotIn('day_start_note', later['week'])
+
+    def test_a_dry_run_with_nothing_stored_is_an_estimate(self):
+        code, out = self.run_quota(self.reading(30) + ['--no-record'])
+        self.assertEqual(out['week']['day_start_source'], 'estimate')
+        self.assertIn('nothing is stored', out['week']['day_start_note'])
+
+    def test_a_dry_run_reads_a_start_that_an_earlier_check_stored(self):
+        self.run_quota(self.reading(30))
+        code, out = self.run_quota(self.reading(46, now='2026-10-04T09:00:00Z') + ['--no-record'])
+        self.assertEqual(out['week']['day_start_source'], 'stored')
 
     def test_save_with_no_flag_records_that_the_defaults_were_chosen(self):
         code, out = self.run_quota(['--save'])
