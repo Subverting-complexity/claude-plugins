@@ -9,6 +9,7 @@ from wf_core_fields import (
     AREA_CLASSIFICATION_OPTIONS, MANDATORY_FIELD_KEYS, NATIVE_TYPE_MAP,
     NEVER_WRITTEN_FIELD_KEYS, OPTIONAL_FIELD_KEYS, native_type_for, resolve_field_name,
 )
+from wf_core_labels import area_labels_on, area_names, area_row
 from wf_core_stage import (
     AREA_STAGE, OWNERSHIP_FIELD_OPTIONS, SCOPE_CODE, SCOPE_HUMAN, SCOPE_PREFIXES,
     ownership_scope, scope_from_title, spec_state_stage,
@@ -352,8 +353,53 @@ def field_value_input(field_meta, value):
     return None, "unsupported field data type '%s'" % data_type
 
 
+def spec_area_errors(entry, plan, areas, is_area):
+    """Settle one entry's `area` against the areas table. Returns its errors.
+
+    `area` names a row of the `## Areas` table in `ClaudeProject.md`, and the
+    writer turns it into the `area: {name}` label. On success `plan['area']`
+    holds the row's own spelling, or None when the entry names no area.
+
+    - A name the table does not have is refused, and so is `area` in a
+      repository with no table, where there is no label to write.
+    - A create must name one where the table exists, so no new issue is filed
+      without an area. An update names only what it changes. An area epic
+      (`"state": "area"`) is exempt: it is the area, not work inside one.
+    - An `area:` name in `labels` is refused where the table exists, because
+      a second way to write the label is how an issue ends up carrying 2.
+    """
+    errors = []
+    plan['area'] = None
+    rows = list(areas or ())
+    supplied = entry.get('area')
+    if supplied is not None and not (isinstance(supplied, str) and supplied.strip()):
+        errors.append('`area` must be the name of one row of the Areas table')
+    elif supplied is not None and not rows:
+        errors.append("names `area` '%s', but ClaudeProject.md has no Areas "
+                      'table; remove the key' % supplied.strip())
+    elif supplied is not None:
+        row = area_row(rows, supplied)
+        if row is None:
+            errors.append("area '%s' is not in the Areas table (valid: %s)"
+                          % (supplied.strip(), ', '.join(area_names(rows))))
+        else:
+            plan['area'] = row['name']
+    elif rows and not entry.get('number') and not is_area:
+        errors.append('missing `area`, which every new issue must carry; name '
+                      'one row of the Areas table (valid: %s)'
+                      % ', '.join(area_names(rows)))
+    if rows:
+        named = area_labels_on(l for l in entry.get('labels') or ()
+                               if isinstance(l, str))
+        if named:
+            errors.append('names %s in `labels`; use the `area` key, which '
+                          'writes the area label and removes any other'
+                          % ', '.join("'%s'" % n for n in named))
+    return errors
+
+
 def validate_spec(entries, field_map, type_map, project_fields=None,
-                  mandatory_keys=None):
+                  mandatory_keys=None, areas=None):
     """Check a spec against the org's real capabilities before anything is written.
 
     Returns (errors, skipped_fields, plans). `errors` is a list of plain
@@ -370,6 +416,10 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
     not worth refusing an issue over, so a gap in one lands on the plan as
     `unset_optional` and the writer comments on the issue instead. Every other
     field the org defines is skipped when the spec says nothing about it.
+
+    `areas` is the rows of the `## Areas` table in `ClaudeProject.md`, and
+    `spec_area_errors` says what an entry's `area` key has to be against them.
+    A repository with no table passes none, and nothing about areas is asked.
     """
     project_fields = project_fields or {}
     mandatory_keys = mandatory_keys or MANDATORY_FIELD_KEYS
@@ -434,6 +484,10 @@ def validate_spec(entries, field_map, type_map, project_fields=None,
                 errors.append("%s: asks for `\"state\": \"area\"` with no type; "
                               'an area epic is an `%s`, so add `"type": "%s"`'
                               % (name, AREA_TYPE, AREA_TYPE))
+
+        # The area label, from the `## Areas` table in `ClaudeProject.md`.
+        errors.extend('%s: %s' % (name, e)
+                      for e in spec_area_errors(entry, plan, areas, is_area))
 
         # Field values, including the ones the entry did not name but must.
         wanted = dict(entry.get('fields') or {})

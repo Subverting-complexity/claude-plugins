@@ -16,7 +16,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 142 |
 | `wf_config.py` | Repo root (asked of git once per working directory), `ClaudeProject.md` parsing with its areas table, release-targets table and Jev row, the config cache, `config` | 549 |
 | `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 498 |
-| `wf_issue_io.py` | Reading, writing and verifying single issues; batched mutations | 422 |
+| `wf_issue_io.py` | Reading, writing and verifying single issues, the area label included; batched mutations; every label id a spec names, read to the last page | 516 |
 | `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 183 |
 | `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 540 |
 | `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 463 |
@@ -30,9 +30,10 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
 | `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, `post-merge` | 397 |
 | `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 572 |
-| `wf_issue_apply.py` | `issue-apply` | 777 |
+| `wf_issue_apply.py` | `issue-apply`, including the `area` key that writes an issue's 1 area label | 868 |
 | `wf_issue_audit.py` | `issue-audit` | 166 |
-| `wf_areas.py` | `areas`: the open area epics, or the one an issue resolves to | 101 |
+| `wf_areas.py` | `areas`: the open area epics with the rows of the areas table, or the area epic an issue resolves to | 125 |
+| `wf_area_set.py` | `area-set`: the area label for an issue that has none, from a sure Jev answer or the caller's choice | 170 |
 | `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 659 |
 | `wf_board_sync.py` | `board-sync` | 287 |
 | `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 274 |
@@ -48,10 +49,10 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_refs.py` | Parent parsing, closing references, branch names, dependency edges, unblock verdicts | 268 |
 | `wf_core_bulk.py` | Filling a bulk set's effort budget, splitting it into groups, ordering each into waves | 477 |
 | `wf_core_claims.py` | Sibling PRs that would duplicate a claim, claim reaping | 110 |
-| `wf_core_spec.py` | The issue hierarchy, spec validation, value shaping and batching | 562 |
+| `wf_core_spec.py` | The issue hierarchy, spec validation with the `area` key, value shaping and batching | 797 |
 | `wf_core_audit.py` | What an existing issue is missing or contradicts | 344 |
 | `wf_core_review.py` | Review-state label names, pools and reconciliation | 192 |
-| `wf_core_labels.py` | The area and release labels the `ClaudeProject.md` tables name, and the plan for a repository to carry them: create, rename, conflict, unknown, differs | 175 |
+| `wf_core_labels.py` | The area and release labels the `ClaudeProject.md` tables name, and the plan for a repository to carry them: create, rename, conflict, unknown, differs; the area label on one issue, and what to add and remove so it carries exactly 1 | 227 |
 | `wf_core_drift.py` | Finished containers and stage drift findings | 96 |
 | `wf_core_preflight.py` | Config sections, label and field drift, instruction files | 584 |
 | `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 307 |
@@ -61,7 +62,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_worktrees.py` | Reading `git worktree list`, which worktrees a sweep covers, and the verdict on each | 134 |
 | `wf_quota.py` | `quota`: the personal settings file at `~/.claude/synergy/quota.json`, `--save` to write it, the flags that override it, the stored reading from the start of each day, and the printed decision | 140 |
 | `wf_core_quota.py` | Whether a round may start against the Claude plan limits: the 5-hour ceiling, the weekly ceiling, the budget for the day from what is left of the week, what a round costs, and when a stopped run can continue | 222 |
-| `wf_jev.py` | `jev`: one request per batch to Jev, the TypeSafe decision model, and the `unavailable` result when there is no key, the repository turns Jev off, a table a check needs is empty or there is no answer, and issues read from GitHub as items | 176 |
+| `wf_jev.py` | `jev`: one request per batch to Jev, the TypeSafe decision model, and the `unavailable` result when there is no key, the repository turns Jev off, a table a check needs is empty or there is no answer, and issues read from GitHub as items; `jev_ask` gives another command the same answer without printing it | 203 |
 | `wf_core_jev.py` | Building the requests for a check in `jev-checks.json`, filling `area` and `target` from the `ClaudeProject.md` tables, and turning each answer into a row with a `high`, `medium` or `low` level | 351 |
 
 ## Commands
@@ -183,6 +184,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas
 # …or the area one issue resolves to: the nearest area epic at or above it
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas --issue 42
 
+# Give each issue that has no area label one (0 = all set, 25 = choose a row)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-set --issue 42 --issue 43
+
+# …or set the area you chose on one issue, replacing any other area label
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-set --issue 42 --area "Library"
+
 # Report configuration and label drift (what preflight runs)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" config-audit
 
@@ -241,7 +248,7 @@ A single JSON object goes to **stdout**; diagnostics go to **stderr**. Every run
 | 22   | `spec-invalid`  | An `issue-apply` spec is wrong. Nothing was written.           |
 | 23   | `verify-failed` | A write was accepted but does not read back. Issues exist.     |
 | 24   | `partial`       | Some entries applied, some failed. Re-run to finish.           |
-| 25   | `gaps`          | `issue-audit` found issues missing metadata. Nothing written.  |
+| 25   | `gaps`          | `issue-audit` found issues missing metadata. Nothing written. `area-set` uses the same code with `status: choose`: an issue still has no area label, and the caller chooses one. |
 | 26   | `drift`         | `config-audit` found a configuration problem that breaks work. |
 | 27   | `lost`          | `claim` — another agent holds this issue or PR. Change nothing.  |
 | 30   | `unsupported`   | Path not in the CLI yet — caller falls back to the skill.      |
@@ -329,7 +336,8 @@ A JSON object with an `issues` list (a bare list is accepted too). An entry with
 | `body_file` | A path to read the body from, used when `body` is absent. A body is prose — fenced code, backticks, `$`, quotes — and building that into a JSON string by hand in a shell is where bodies get mangled. The spec file keeps saying `body_file` after a write-back; the body is never inlined into it. |
 | `kind` | One of `wf_core.NATIVE_TYPE_MAP`'s keys (`story`, `feature`, `epic`, `bug`, `spike`, …). Supplies both the native type and a default `Classification`. |
 | `type` | An explicit native type name, overriding what `kind` implies. |
-| `labels` | Literal names, or purpose keys a surviving label map resolves. Labels decide nothing and the workflow passes none: a `type-*` label or a retired one (`status-*`, `priority-*`, a scope label) is dropped. |
+| `labels` | Literal names, or purpose keys a surviving label map resolves. Labels decide nothing and the workflow passes none: a `type-*` label or a retired one (`status-*`, `priority-*`, a scope label) is dropped. An `area:` name here is refused in a repository with an areas table: use `area`. |
+| `area` | The name of one row of the `## Areas` table in `ClaudeProject.md`, matched trimmed and without case. It is written as the `area: {name}` label, in the row's own spelling. Required on a create in a repository that has the table, except on an entry with `"state": "area"`. On an update it replaces any other area label, in the same `gh issue edit` call, so the issue never carries 2; an update that leaves it out leaves the labels as they are. |
 | `parent` | An issue number, or another entry's `key`. A `User Story` needs a `Feature` parent; a `Feature` that has a parent needs an `Epic` one (see below). |
 | `blocked_by` | A list of issue numbers and/or `key`s. **The complete set**: an issue already carrying an edge the list omits has it removed, and `[]` removes them all. Leave the key out to leave the edges alone. |
 | `state` | `backlog`, `refinement`, `parked` or `area`: the stage to write, overriding the one the issue's fields name. Absent means the fields decide. `parked` is for an update only: a new issue is never filed as `Parked`. `backlog` puts an issue in the pool whatever stage it had, which is how a `Parked` or `Needs refinement` issue is released. It never moves `Browser agent` or `Human` work out of Non-code, except `area`, which files an area epic (see below). |
@@ -365,7 +373,8 @@ Everything decidable offline is decided before the first mutation, because a hal
 - **A missing optional field** — Classification or Origin — is not refused. `wf_core.OPTIONAL_FIELD_KEYS` is that list, nothing selects on either, and a create that leaves one unset gets a comment on the issue naming it.
 - **A placeholder** (`TODO`) counts as missing, so an audit's proposal cannot quietly pass as a value.
 - **A dependency cycle** within the spec exits 22 before anything is written, and so does a **parent cycle** — a different fault, and equally unresolvable.
-- **A label or referenced issue that does not exist** in the repo exits 22, named, before the first mutation.
+- **A label or referenced issue that does not exist** in the repo exits 22, named, before the first mutation. That includes the area label an `area` names: the reason then says to run `wf labels-ensure`, which creates the labels the areas table names. Label names are matched without case, and a repository with more than 100 labels is read to the last page.
+- **An area that is missing or unknown.** In a repository with an areas table, a create with no `area` exits 22, and so does an `area` no row has; the error lists the valid names. An `area` in a repository with no table exits 22 too, because there is no label to write.
 - **An issue outside the epic tree.** A `User Story` with no parent, or a story or feature under the wrong type, exits 22. A story sits under a `Feature`, or directly under an `Epic` when no feature fits. A `Feature` with no parent is allowed: it sits under an `Epic` when the work has one, and an epic invented to hold a single feature would only restate it. A parent that already exists is judged by its live type, and an update that does not restate its parent is judged by the parent it already has. Enforced only where the org has the parent type enabled; `Bug`, `Chore` and `Epic` need no parent. `wf_core.HIERARCHY_PARENT_TYPE` is the rule.
 - **One issue, two parties.** A title prefix and an `Ownership` value that disagree, such as `[Manual]` owned by `Code agent` or `Human` with no prefix, exits 22. One of the two is wrong, and the issue would mislead whoever reads it.
 - **Research owned by an agent.** A `spike` entry whose `Ownership` is not `Human` exits 22. Research produces a finding a person has to weigh, so it belongs at `Non-code`, not in the pool.
@@ -406,7 +415,7 @@ Ownership wins over a dependency. It is a property of the work and survives ever
 
 ### Every write is read back
 
-An accepted mutation is not a changed value — an unpinned field or a permission that stops short of writing both return success. So the command compares every issue against the spec and exits 23 `verify-failed` naming each mismatch. The issues still exist; the command is telling you the metadata did not land.
+An accepted mutation is not a changed value — an unpinned field or a permission that stops short of writing both return success. So the command compares every issue against the spec and exits 23 `verify-failed` naming each mismatch. An entry that names an `area` is a mismatch unless the issue reads back with exactly that 1 area label. The issues still exist; the command is telling you the metadata did not land.
 
 ### Partial failure is reported, not swallowed
 
@@ -460,11 +469,37 @@ What the audit checks in the dependency slot otherwise is **scope**, where the t
 
 An area epic is a native `Epic` whose `Stage` is `Area`. It stands for one permanent part of the product, and an issue's area is the nearest area epic above it in its parent chain: a Feature sits under an area, a User Story under a Feature or straight under an area, and a Bug or Chore under a Feature or straight under an area. An area is not work. It is never picked (`pick --issue` and `plan-set --issue` refuse one by name), never closed by `post-merge` or `preflight --fix`, never moved by `board-sync`, and never audited for `Priority`, `Effort`, `Ownership` or a closing pull request.
 
-`areas` lists the repository's open area epics, sorted by title: `{"status": "ok", "areas": [{"number", "title", "url", "body"}], "count": N}`, exit 0. A repository with none is still `ok`, with an empty list. It reuses `issue-audit`'s open-issue scan, so it costs one read per hundred open issues.
+`areas` lists the repository's open area epics, sorted by title: `{"status": "ok", "areas": [{"number", "title", "url", "body"}], "count": N, "rows": [{"name", "description", "epic"}]}`, exit 0. A repository with none is still `ok`, with an empty list. `rows` is the `## Areas` table in `ClaudeProject.md`, in table order: a row's `name` is what a spec passes as `area`, and `epic` is the number of the open area epic whose title is that name, compared without case, or `null`. A repository with no table has no rows. It reuses `issue-audit`'s open-issue scan, so it costs one read per hundred open issues.
 
 `areas --issue N` resolves one issue instead. It reads the issue and up to six levels of parents in one request, each with its `Stage`, and returns the nearest area epic: `{"status": "ok", "issue": N, "area": {"number", "title", "url"}}`. An area epic resolves to itself. When the chain reaches no area, `area` is `null` and `reason` says why, including when the chain runs past the depth read.
 
 Both take `--repo owner/name`. A read that fails, or an issue that does not exist, is `status: error`, exit 20. Neither writes anything.
+
+## The area label on a picked issue — `area-set`
+
+Every issue carries exactly 1 `area: {name}` label, named after a row of the `## Areas` table, so release notes can place it without a parent. `issue-apply` writes the label on an issue it files. `area-set --issue N [--issue M ...]` covers an issue that was filed before that, or by hand: `execute` and `bulk-execute` run it on each story they claim, before the build starts.
+
+It reads `number`, `title` and the labels of every issue named in one aliased request, then decides each issue:
+
+- **An issue with 1 area label** is `kept`. Nothing is written.
+- **An issue with none, or with more than 1,** is asked of Jev's `area` check, all such issues in one call. A `high` answer that names a row of the table is written, with `source: jev`.
+- **Every other issue** is returned under `choose`: no `TYPESAFE_API_KEY`, Jev off for the repository, no answer, a `medium` or `low` answer, or `unsure`. The caller takes the row in `rows` that best covers the issue and runs `area-set --issue N --area NAME`.
+
+`--area NAME` sets the area the caller chose. It takes exactly 1 `--issue`, never asks Jev, and replaces any other area label in the same `gh issue edit` call. An issue that already carries only that label is `kept`, so a second run writes nothing.
+
+| Situation | Exit | `status` |
+| --------- | ---- | -------- |
+| Every issue named carries its 1 area label | 0 | `ok`, on one line |
+| The repository has no areas table | 0 | `ok`, with a `reason` that says so. Nothing is read or written. |
+| At least one issue still needs an area | 25 | `choose` |
+| `--area` names no row of the table | 22 | `spec-invalid`, with `rows`. Nothing is written. |
+| A label write failed | 24 | `partial`, with `failed` |
+| An issue could not be read | 20 | `error` |
+| `--area` with more than 1 `--issue` | 2 | `usage` |
+
+The result is `{"status", "issues": [{"number", "title", "area", "action", "source"}], "choose": [{"number", "title"}], "rows": [{"name", "description"}], "jev"}`. `action` is `kept`, `set` (the issue had no area label) or `replaced` (it had another). `source` is `label`, `jev` or `caller`. `jev` is present when Jev was asked: `used` when at least one answer was written, `not-sure` when none was sure enough, and `unavailable` when Jev could not be asked. `choose` and `rows` are present on `choose` and `partial`; an `ok` result holds only `issues`, and `jev` when it was asked.
+
+A write that fails is listed in `failed` with the error. When `gh` says the label was not found, the error says to run `wf labels-ensure`, which creates the labels the table names. The issue text Jev reads is fetched inside the command, so it never passes through the caller, and nothing is sent when the repository's `## Jev` row says `off`.
 
 ## Configuration drift — `config-audit`
 

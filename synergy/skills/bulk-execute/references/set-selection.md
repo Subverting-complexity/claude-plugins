@@ -45,6 +45,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --mode {mode} --max-groups {
 
 One story claimed is a correct outcome: say so and run the rest of the workflow for it.
 
+**Set each claimed story's area** before the build starts. Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-set` with `--issue` once per claimed story. `ok` means every story carries its 1 `area:` label, or the project has no Areas table. On `choose` (exit 25), for each issue in `choose` take the row in `rows` that best covers it and run `area-set --issue {n} --area "{name}"`. Name each story's area in the final report.
+
 ## Recording progress
 
 Never edit `.claude/bulk-set.json` by hand. `wf bulk-mark --group {G} --branch {branch}` records a group's branch in Phase 2, and `wf bulk-mark --group {G} --built {number}` records each story once its commit is on the branch. Phase 7 closes only the stories of the group that `built` marks.

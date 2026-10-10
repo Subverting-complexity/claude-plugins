@@ -2241,6 +2241,20 @@ class _FakeHub(object):
 
         raise AssertionError('unexpected mutation: %s' % query)
 
+    def edit_labels(self, cmd):
+        """Apply the label flags of a `gh issue edit` to the store, so the
+        read-back after an update holds the labels the command asked for."""
+        if list(cmd[:3]) != ['gh', 'issue', 'edit']:
+            return
+        issue = self.issues.get(int(cmd[3]))
+        if not issue:
+            return
+        for flag, value in zip(cmd[4:], cmd[5:]):
+            if flag == '--add-label' and value not in issue['labels']:
+                issue['labels'].append(value)
+            elif flag == '--remove-label' and value in issue['labels']:
+                issue['labels'].remove(value)
+
     def names_sent(self):
         return [name for name, _ in self.sent]
 
@@ -2318,17 +2332,19 @@ class _ApplyCase(unittest.TestCase):
             json.dump({'issues': entries}, fh)
         return path
 
-    def _run(self, entries, hub, extra_argv=(), calls=None, caps=None):
+    def _run(self, entries, hub, extra_argv=(), calls=None, caps=None, cfg=None):
         path = self._spec_file(entries)
         args = wf.build_parser().parse_args(['issue-apply', path, *extra_argv])
         stderr = io.StringIO()
+        cfg = cfg or _cfg()
 
         def fake_run(cmd, input_text=None):
             if calls is not None:
                 calls.append(list(cmd))
+            hub.edit_labels(cmd)
             return 0, '', ''
 
-        with mock.patch.object(wf, 'load_config', lambda: (True, _cfg(), '')), \
+        with mock.patch.object(wf, 'load_config', lambda: (True, cfg, '')), \
                 mock.patch.object(wf, 'resolve_org_capabilities',
                                   lambda cfg, refresh=False, root=None:
                                   (True, caps or _APPLY_CAPS, '')), \
@@ -2426,6 +2442,153 @@ class TestIssueApplyAreas(_ApplyCase):
         self.assertEqual(hub.mutations, [])
 
 
+_AREA_TABLE = [{'name': 'Library', 'description': 'Books and shelves'},
+               {'name': 'Listening', 'description': 'Playback and voices'}]
+_AREA_LABELS = {'priority-high': 'L_hi', 'area: Library': 'L_lib',
+                'area: Listening': 'L_lis'}
+
+
+class TestIssueApplyAreaLabel(_ApplyCase):
+    """The `area` key: exactly 1 `area: {name}` label on the issue (#388)."""
+
+    def _apply(self, entries, hub, **kwargs):
+        return self._run(entries, hub, cfg=_cfg(areas=_AREA_TABLE), **kwargs)
+
+    def test_a_create_carries_the_area_label_and_no_other(self):
+        hub = _FakeHub(labels=_AREA_LABELS)
+        code, payload, _, _ = self._apply([self._full(area='Library')], hub)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        result = payload['applied'][0]
+        self.assertEqual(result['area'], 'Library')
+        self.assertEqual(hub.sent[0][1]['labelIds'], ['L_lib'])
+        self.assertEqual(hub.issues[result['number']]['labels'], ['area: Library'])
+
+    def test_a_name_in_another_case_writes_the_rows_label(self):
+        hub = _FakeHub(labels=_AREA_LABELS)
+        code, payload, _, _ = self._apply([self._full(area='library ')], hub)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(hub.sent[0][1]['labelIds'], ['L_lib'])
+
+    def test_a_label_that_differs_only_in_case_is_found(self):
+        hub = _FakeHub(labels={'Area: library': 'L_lib'})
+        code, payload, _, _ = self._apply([self._full(area='Library')], hub)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(hub.sent[0][1]['labelIds'], ['L_lib'])
+
+    def test_an_update_to_another_area_leaves_exactly_one(self):
+        hub = _FakeHub([_existing(42, type='User Story', fields=dict(_FULL_FIELDS),
+                                  labels=['bug', 'area: Listening'])],
+                       labels=_AREA_LABELS)
+        calls = []
+        code, payload, _, _ = self._apply([{'number': 42, 'area': 'Library'}],
+                                          hub, calls=calls)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        edits = [c for c in calls if '--add-label' in c or '--remove-label' in c]
+        self.assertEqual(edits, [['gh', 'issue', 'edit', '42', '--repo',
+                                  'acme/widgets', '--add-label', 'area: Library',
+                                  '--remove-label', 'area: Listening']])
+        self.assertEqual(payload['applied'][0]['changed'], ['area'])
+        self.assertEqual(wf_core.area_labels_on(hub.issues[42]['labels']),
+                         ['area: Library'])
+
+    def test_an_update_naming_the_area_it_has_writes_nothing(self):
+        hub = _FakeHub([_existing(42, type='User Story', fields=dict(_FULL_FIELDS),
+                                  labels=['area: Library'])],
+                       labels=_AREA_LABELS, stages={42: 'Backlog'})
+        calls = []
+        code, payload, _, _ = self._apply([{'number': 42, 'area': 'Library'}],
+                                          hub, calls=calls)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(payload['applied'][0]['changed'], [])
+        self.assertEqual(calls, [])
+        self.assertEqual(hub.issues[42]['labels'], ['area: Library'])
+
+    def test_an_update_that_does_not_land_is_a_mismatch(self):
+        """`gh` answers 0 and the old label is still there: exit 23, named."""
+        hub = _FakeHub([_existing(42, type='User Story', fields=dict(_FULL_FIELDS),
+                                  labels=['area: Listening'])],
+                       labels=_AREA_LABELS)
+        hub.edit_labels = lambda cmd: None
+        code, payload, _, _ = self._apply([{'number': 42, 'area': 'Library'}], hub)
+        self.assertEqual(code, wf.EXIT_VERIFY)
+        self.assertEqual(payload['mismatches'],
+                         ["#42: area label is 'area: Listening', expected only "
+                          "'area: Library'"])
+
+    def test_a_create_with_no_area_is_refused_before_any_write(self):
+        hub = _FakeHub(labels=_AREA_LABELS)
+        code, payload, _, _ = self._apply([self._full()], hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertIn('missing `area`', payload['errors'][0])
+        self.assertEqual((hub.queries, hub.mutations), ([], []))
+
+    def test_an_area_label_the_repository_lacks_is_refused(self):
+        hub = _FakeHub()
+        code, payload, _, _ = self._apply([self._full(area='Library')], hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertEqual(payload['labels'], ['area: Library'])
+        self.assertIn('wf labels-ensure', payload['reason'])
+        self.assertEqual(hub.mutations, [])
+
+    def test_a_dry_run_names_the_area(self):
+        hub = _FakeHub(labels=_AREA_LABELS)
+        code, payload, _, _ = self._apply([self._full(area='Library')], hub,
+                                          extra_argv=['--dry-run'])
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(payload['would_apply'][0]['area'], 'Library')
+        self.assertEqual(hub.mutations, [])
+
+    def test_no_table_behaves_as_before(self):
+        hub = _FakeHub()
+        code, payload, _, _ = self._run([self._full()], hub)
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertIsNone(payload['applied'][0]['area'])
+        self.assertNotIn('labelIds', hub.sent[0][1])
+
+    def test_an_area_with_no_table_is_refused(self):
+        hub = _FakeHub(labels=_AREA_LABELS)
+        code, payload, _, _ = self._run([self._full(area='Library')], hub)
+        self.assertEqual(code, wf.EXIT_SPEC)
+        self.assertIn('no Areas table', payload['errors'][0])
+        self.assertEqual(hub.mutations, [])
+
+
+class TestSpecContextLabels(unittest.TestCase):
+    """`resolve_spec_context` reads every label, however many pages."""
+
+    def test_a_label_on_the_second_page_is_found(self):
+        pages = [
+            {'repository': {'id': 'R_1', 'labels': {
+                'pageInfo': {'hasNextPage': True, 'endCursor': 'c1'},
+                'nodes': [{'id': 'L_1', 'name': 'bug'}]}}},
+            {'repository': {'labels': {
+                'pageInfo': {'hasNextPage': False, 'endCursor': None},
+                'nodes': [{'id': 'L_lib', 'name': 'area: Library'}]}}},
+        ]
+        seen = []
+
+        def fake(query, **fields):
+            seen.append(fields.get('cursor'))
+            return True, pages[len(seen) - 1], ''
+
+        with mock.patch.object(wf, 'gh_graphql', fake):
+            ok, ctx, err = wf.resolve_spec_context(
+                _cfg(), ['area: library', 'gone'], [])
+        self.assertTrue(ok, err)
+        self.assertEqual(seen, [None, 'c1'])
+        self.assertEqual(ctx['labels'], {'area: library': 'L_lib'})
+        self.assertEqual(ctx['missing_labels'], ['gone'])
+
+    def test_a_failed_later_page_is_an_error_not_a_missing_label(self):
+        first = {'repository': {'id': 'R_1', 'labels': {
+            'pageInfo': {'hasNextPage': True, 'endCursor': 'c1'}, 'nodes': []}}}
+        answers = iter([(True, first, ''), (False, None, 'HTTP 502')])
+        with mock.patch.object(wf, 'gh_graphql', lambda q, **f: next(answers)):
+            ok, _, err = wf.resolve_spec_context(_cfg(), ['area: Library'], [])
+        self.assertFalse(ok)
+        self.assertIn('HTTP 502', err)
+
+
 def _stage_values(stage):
     return {'nodes': [{'field': {'name': 'Stage'}, 'name': stage}] if stage else []}
 
@@ -2433,9 +2596,10 @@ def _stage_values(stage):
 class TestAreasCommand(unittest.TestCase):
     """`wf areas`: the open area epics, or the one an issue resolves to."""
 
-    def _run(self, argv, gh_graphql):
+    def _run(self, argv, gh_graphql, cfg=None):
         args = wf.build_parser().parse_args(['areas', *argv])
-        with mock.patch.object(wf, 'load_config', lambda: (True, _cfg(), '')), \
+        cfg = cfg or _cfg()
+        with mock.patch.object(wf, 'load_config', lambda: (True, cfg, '')), \
                 mock.patch.object(wf, 'gh_graphql', gh_graphql), \
                 mock.patch.object(wf, '_graphql_json',
                                   side_effect=AssertionError('areas must not write')), \
@@ -2473,6 +2637,19 @@ class TestAreasCommand(unittest.TestCase):
         code, payload = self._run([], self._scan([]))
         self.assertEqual(code, wf.EXIT_OK)
         self.assertEqual((payload['areas'], payload['count']), ([], 0))
+        self.assertEqual(payload['rows'], [])
+
+    def test_the_list_carries_the_areas_table_rows(self):
+        """`rows` is what a spec's `area` is chosen from: each table row, and
+        the open area epic of the same name when there is one."""
+        code, payload = self._run(
+            [], self._scan([self._open(1, 'library'), self._open(3, 'Syncing')]),
+            cfg=_cfg(areas=_AREA_TABLE))
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(payload['rows'], [
+            {'name': 'Library', 'description': 'Books and shelves', 'epic': 1},
+            {'name': 'Listening', 'description': 'Playback and voices',
+             'epic': None}])
 
     def test_a_failed_read_is_an_error(self):
         code, payload = self._run(['--repo', 'acme/other'],

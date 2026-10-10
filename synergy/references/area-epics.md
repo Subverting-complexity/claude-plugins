@@ -21,7 +21,18 @@ List the open area epics and read their bodies:
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas
 ```
 
-It prints `{"status":"ok","areas":[{"number","title","url","body"}],"count":N}`. Pick the area whose body best covers the work. When nothing fits well, file under the closest area and say so in one line of the issue body, so a person can move it or add an area. Do not create an area to hold one issue: an area is a permanent part of the product, and adding one is a decision for a person.
+It prints `{"status":"ok","areas":[{"number","title","url","body"}],"count":N,"rows":[{"name","description","epic"}]}`. Pick the area whose body best covers the work. When nothing fits well, file under the closest area and say so in one line of the issue body, so a person can move it or add an area. Do not create an area to hold one issue: an area is a permanent part of the product, and adding one is a decision for a person.
+
+`rows` is the `## Areas` table in `ClaudeProject.md`, and it is empty in a project that has no table. Every issue also carries exactly 1 `area: {name}` label, so release notes can place it without a parent. Choose the row whose `description` best covers the work and put its `name` in the `area` key of the spec entry, beside `parent`:
+
+```json
+{"issues": [{"title": "Import a book from a folder", "kind": "story",
+             "parent": 310, "area": "Library",
+             "fields": {"field-priority": "Medium", "field-effort": "Low",
+                        "field-ownership": "Code agent"}}]}
+```
+
+`wf issue-apply` writes the label with the issue. In a project with an Areas table it refuses a new entry that has no `area`, with exit 22, and a name the table does not have. An area epic (`"state": "area"`) needs none. An update entry that names another area replaces the old label, so the issue never carries 2. A row's `epic` is the number of the open area epic whose title is the row's name, or `null`. An issue filed before this, or by hand, gets its label when `execute` or `bulk-execute` picks it, through `wf area-set`.
 
 ## Moving an existing project onto areas
 

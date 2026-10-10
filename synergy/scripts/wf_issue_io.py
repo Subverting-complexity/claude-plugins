@@ -104,6 +104,20 @@ def _values_match(wanted, actual):
     return str(wanted) == str(actual)
 
 
+# The labels past the first 100, a page at a time.
+LABEL_PAGE_QUERY = (
+    'query($owner:String!,$repo:String!,$cursor:String!){'
+    ' repository(owner:$owner,name:$repo){'
+    ' labels(first:100,after:$cursor){ pageInfo { hasNextPage endCursor }'
+    ' nodes { id name } } } }'
+)
+
+
+def _label_key(name):
+    """A label name as GitHub compares it: trimmed, and without case."""
+    return (name or '').strip().lower()
+
+
 def resolve_spec_context(cfg, label_names, numbers, repo=None,
                          milestone_titles=None):
     """One lookup for everything the batches need before they can be built.
@@ -134,7 +148,7 @@ def resolve_spec_context(cfg, label_names, numbers, repo=None,
     ok, data, err = gh_graphql(
         'query($owner:String!,$repo:String!){'
         ' repository(owner:$owner,name:$repo){ id'
-        ' labels(first:100){ nodes { id name } }'
+        ' labels(first:100){ pageInfo { hasNextPage endCursor } nodes { id name } }'
         ' milestones(first:100,states:OPEN){ nodes { id title } } %s } }'
         % issue_parts,
         owner=owner, repo=name)
@@ -145,8 +159,23 @@ def resolve_spec_context(cfg, label_names, numbers, repo=None,
     if not repository:
         return False, None, 'repository %s/%s not found' % (owner, name)
 
-    have_labels = {n['name']: n['id'] for n
-                   in (repository.get('labels') or {}).get('nodes') or []}
+    # Keyed the way GitHub compares label names, without case, so a spec that
+    # writes `area: library` finds the `area: Library` label. A repository
+    # with more than 100 labels is read to the end: an area label on a later
+    # page is not a missing one.
+    have_labels = {}
+    connection = repository.get('labels') or {}
+    while True:
+        for node in connection.get('nodes') or []:
+            have_labels.setdefault(_label_key(node['name']), node['id'])
+        page = connection.get('pageInfo') or {}
+        if not page.get('hasNextPage') or not page.get('endCursor'):
+            break
+        ok, more, err = gh_graphql(LABEL_PAGE_QUERY, owner=owner, repo=name,
+                                   cursor=page['endCursor'])
+        if not ok:
+            return False, None, 'could not read every label: %s' % err
+        connection = ((more or {}).get('repository') or {}).get('labels') or {}
     wanted_milestones = sorted(set(milestone_titles or ()))
     have_milestones = {n['title']: n['id'] for n
                        in (repository.get('milestones') or {}).get('nodes') or []}
@@ -172,8 +201,10 @@ def resolve_spec_context(cfg, label_names, numbers, repo=None,
     return True, {
         'repo_id': repository['id'],
         'repo': '%s/%s' % (owner, name),
-        'labels': {n: have_labels[n] for n in label_names if n in have_labels},
-        'missing_labels': [n for n in label_names if n not in have_labels],
+        'labels': {n: have_labels[_label_key(n)] for n in label_names
+                   if _label_key(n) in have_labels},
+        'missing_labels': [n for n in label_names
+                           if _label_key(n) not in have_labels],
         'milestones': {t: have_milestones[t] for t in wanted_milestones
                        if t in have_milestones},
         'missing_milestones': [t for t in wanted_milestones
@@ -393,8 +424,22 @@ def add_blocked_by(issue_id, blocking_id):
     return _mutation_result(code, out, err, ['addBlockedBy', 'issue'])
 
 
+def area_mismatch(number, issue, expect_area):
+    """Why the issue does not carry exactly the 1 area label `expect_area`
+    names, or None when it does. `expect_area` is the label name in full."""
+    names = [n.get('name') or '' for n
+             in (issue.get('labels') or {}).get('nodes') or []]
+    have = wf_core.area_labels_on(names)
+    if len(have) == 1 and _label_key(have[0]) == _label_key(expect_area):
+        return None
+    return ("#%s: area label is %s, expected only '%s'"
+            % (number, ', '.join("'%s'" % n for n in have) or 'unset',
+               expect_area))
+
+
 def issue_mismatches(number, issue, plan, expect_type=None, expect_parent=None,
-                     expect_blocked_by=(), expect_title=None, expect_body=None):
+                     expect_blocked_by=(), expect_title=None, expect_body=None,
+                     expect_area=None):
     """Compare an issue as GitHub holds it against what the spec asked for.
 
     A mutation GitHub accepts is not a value GitHub stored — an unpinned field,
@@ -438,19 +483,26 @@ def issue_mismatches(number, issue, plan, expect_type=None, expect_parent=None,
                                                          issue.get('body')):
         mismatches.append('#%s: body is not the one the spec wrote' % number)
 
+    # Exactly 1 area label, the one the entry named: a second one left behind
+    # is as wrong as none, because release notes place an issue by it.
+    if expect_area:
+        problem = area_mismatch(number, issue, expect_area)
+        if problem:
+            mismatches.append(problem)
+
     return mismatches
 
 
 def verify_issue(cfg, number, plan, expect_type=None, expect_parent=None,
                  expect_blocked_by=(), repo=None, expect_title=None,
-                 expect_body=None):
+                 expect_body=None, expect_area=None):
     """Read the issue back and compare it. Returns (passed, mismatches)."""
     ok, issue, err = read_issue(cfg, number, repo)
     if not ok:
         return False, ['#%s: could not read back: %s' % (number, err)]
     mismatches = issue_mismatches(number, issue, plan, expect_type,
                                   expect_parent, expect_blocked_by,
-                                  expect_title, expect_body)
+                                  expect_title, expect_body, expect_area)
     return not mismatches, mismatches
 
 

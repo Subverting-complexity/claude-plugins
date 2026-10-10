@@ -21,6 +21,7 @@ Read this only when the user has approved the plan and accepted the offer to cre
                 "body_file": ".claude/feature-1-body.md",
                 "kind": "feature",
                 "parent": {area number},
+                "area": "{area name}",
                 "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                            "field-effort": "{Low|Medium|High}",
                            "field-ownership": "Code agent",
@@ -30,6 +31,7 @@ Read this only when the user has approved the plan and accepted the offer to cre
                 "body_file": ".claude/story-1-body.md",
                 "kind": "story",
                 "parent": "feature-1",
+                "area": "{area name}",
                 "blocked_by": ["{other key or issue number}"],
                 "fields": {"field-priority": "{Urgent|High|Medium|Low}",
                            "field-effort": "{Low|Medium|High}",
@@ -44,8 +46,9 @@ Read this only when the user has approved the plan and accepted the offer to cre
    - `kind` supplies the native type **and** the `Classification` value together (a story → User Story / New Feature, a feature → Feature), so neither is chosen by hand. Use `spike` for a research story; it is owned by `Human` and titled `[Manual] `, because research is a person's work.
    - `field-type` adds each area the entry's work touches, beside the kind's value (`writing-github-issues` → **Adding areas**). It replaces the `kind` default, so it always names that value too, never areas alone. Leave it out where the work touches no area or the org defines no area options.
    - `parent` is required on every story, naming its feature by spec `key` or by the issue number of one that already exists. Every feature's `parent` is the number of the area epic `SKILL.md` → **Choose each feature's area** picked. Leave it out only when the project has no area epics; `issue-apply` then adds a note that the issue reaches no parent, which is expected in that case and worth passing on.
+   - `area` is the `name` of the Areas table row `SKILL.md` → **Choose each feature's area** picked, on every entry. `issue-apply` writes it as the `area: {name}` label. Leave it out only when `wf areas` returned no `rows`.
    - **No `epic` entries.** Planned work is never filed as an `Epic`, and an area epic is created by a person, never here.
-   - **No labels at all**, and no `[STORY]` title prefix. The native type classifies the issue and the fields carry everything a decision reads; `issue-apply` strips a retired label or a type prefix if a spec still names one, and says that it did.
+   - **No labels at all** beyond that one, and no `[STORY]` title prefix. The native type classifies the issue and the fields carry everything a decision reads; `issue-apply` strips a retired label or a type prefix if a spec still names one, and says that it did.
    - `field-effort` comes from the story's size estimate: large → **High**, medium → **Medium**, small → **Low**.
    - `field-priority`, `field-effort` and `field-ownership` are **required on every entry** — they are the pool's order, its size ceiling and whether a code agent may take the story at all, and `issue-apply` refuses a spec that leaves one blank. `field-ownership` is `Code agent` for a story a code agent will build, and `Browser agent` or `Human` for one it cannot. A story that is a decision or research is `Human`.
    - `blocked_by` writes a native edge, and `issue-apply` then sets the stage to `Blocked` for any entry whose edges point at something still open.

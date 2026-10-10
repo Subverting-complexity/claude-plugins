@@ -6,6 +6,15 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 18.16.0
+
+- Every issue now gets exactly 1 area label, so release notes can place it without a parent. A spec entry for `wf issue-apply` takes an `area` key that holds a name from the Areas table in `ClaudeProject.md`, and the command writes the `area: {name}` label with the issue. A name the table does not have is refused, and so is an `area:` name in `labels`.
+- In a repository with an Areas table, `wf issue-apply` refuses a new entry that has no `area`, with exit 22, before it writes anything. An area epic needs none. A repository with no table works as before.
+- An update that names another area adds the new label and removes the old one in one call, so a correction never leaves 2. The read-back fails with exit 23 unless the issue holds exactly that 1 area label.
+- New `wf area-set` command gives a picked issue its area label when it has none. `execute` and `bulk-execute` run it on each story they claim, before the build starts, and name the area in the final report. With `TYPESAFE_API_KEY` set it asks the Jev `area` check and writes a `high` answer. In every other case it returns the table rows and the agent chooses one.
+- `wf areas` now also returns `rows`, the Areas table. `report-issue`, `feature-discovery` and `writing-github-issues` choose the area from those rows and pass it as `area`.
+- `wf issue-apply` now matches label names without case and reads every label in a repository that has more than 100.
+
 ## synergy 18.14.0
 
 - `orchestrate` now reads the Claude plan limits before the first round and after every round, and starts a round only when it is expected to fit. Three checks must pass: the 5-hour limit stays at or below 85%, the weekly limit stays at or below 90%, and the day stays inside its budget. The budget for a day is what was left of the weekly limit when the day started, divided by the days left in the week, times `--daily-share` (100 by default). With 30% used after 3 days, 70% is left for 4 days, so the budget is 17.5% a day, and a share of 40 lets a run use 7%. A day is 24 hours counted from the weekly reset. The cost of a round is a reserve (15% of the 5-hour limit, 3% of the weekly limit) until one round has run, then the measured rise of the last round.
