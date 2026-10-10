@@ -36,7 +36,7 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 
 **Optional** — remove if unused: `## Project Board`, `## Reference Docs`, `## Bundled Skills`, `## Pre-release test pass`, `## Pre-release privacy pass`. `## Pre-release test pass` holds one setting, `pre-release-test-title`: the title text of the open issue that device and real-browser checks are added to as checkboxes instead of becoming `[Manual]` issues of their own. `## Pre-release privacy pass` holds one setting, `pre-release-privacy-title`, which does the same for a person's half of a privacy policy change: publishing the wording and entering the store privacy answers. A `## Label Map` from an older file is still read, but the workflow applies no label it names and nothing requires it.
 
-**Label tables and the Jev switch** — read by `wf` into the configuration. A file with none of them still loads, with empty lists and Jev on. Nothing acts on the two tables yet:
+**Label tables and the Jev switch** — read by `wf` into the configuration. A file with none of them still loads, with empty lists and Jev on. `wf labels-ensure` creates and renames the labels the two tables name, and `wf jev --check area` and `--check target` take their answers from them:
 
 | Heading | Content |
 | ------- | ------- |

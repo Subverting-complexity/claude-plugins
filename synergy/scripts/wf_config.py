@@ -115,8 +115,6 @@ class ConfigError(ValueError):
     """A `ClaudeProject.md` value the workflow must refuse rather than guess at."""
 
 
-# GitHub refuses a label description longer than this.
-LABEL_DESCRIPTION_MAX = 100
 # The keys a cache has to carry. One written before they existed is stale,
 # whatever its age: read as it is, it would say the repository has no areas.
 TABLE_KEYS = ('areas', 'release_targets', 'jev')
@@ -125,6 +123,20 @@ _UNSET = ('', '-', '—', 'n/a', 'none', '_(none)_')
 
 def _bare(cell):
     return cell.strip().strip('`').strip()
+
+
+def jev_setting(text):
+    """`on` or `off`, from the `## Jev` row of a `ClaudeProject.md`.
+
+    Jev, the TypeSafe decision model, sends issue text to an outside service.
+    `off` is how a repository whose content must stay on the machine says no.
+    Read apart from the tables, so `wf jev` can still obey it in a file whose
+    tables are refused.
+    """
+    for cells in _rows(_section(text, 'Jev')):
+        if len(cells) >= 2 and cells[0].lower() == 'jev':
+            return 'off' if cells[1].lower() == 'off' else 'on'
+    return 'on'
 
 
 def _label_table(text, heading, what, extra=()):
@@ -148,11 +160,11 @@ def _label_table(text, heading, what, extra=()):
         if name.lower() in _UNSET or name.startswith('{'):
             continue
         description = row.get('description', '').strip()
-        if len(description) > LABEL_DESCRIPTION_MAX:
+        if len(description) > wf_core.LABEL_DESCRIPTION_LIMIT:
             raise ConfigError(
                 '%s "%s" has a description of %d characters; GitHub allows a label '
                 'description %d at most' % (what, name, len(description),
-                                            LABEL_DESCRIPTION_MAX))
+                                            wf_core.LABEL_DESCRIPTION_LIMIT))
         if name.lower() in seen:
             raise ConfigError('%s "%s" appears more than once in `## %s`'
                               % (what, name, heading))
@@ -207,14 +219,8 @@ def parse_claude_project(text):
         'board': {'project_node_id': None, 'project_title': None},
         'areas': _label_table(text, 'Areas', 'area', extra=('epic', 'was')),
         'release_targets': _label_table(text, 'Release Targets', 'release target'),
-        'jev': 'on',
+        'jev': jev_setting(text),
     }
-
-    # Jev, the TypeSafe decision model, sends issue text to an outside service.
-    # `off` is how a repository whose content must stay on the machine says no.
-    for cells in _rows(_section(text, 'Jev')):
-        if len(cells) >= 2 and cells[0].lower() == 'jev':
-            cfg['jev'] = 'off' if cells[1].lower() == 'off' else 'on'
 
     for cells in _rows(_section(text, 'Identity')):
         if len(cells) >= 2:

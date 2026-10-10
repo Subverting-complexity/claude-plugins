@@ -113,7 +113,7 @@ One row for each thing the project releases separately, such as `mobile` or `web
 | --------------- | ------------------------------ | ---------- |
 | `{target-name}` | {one sentence on what ships in it} | `{rrggbb}` |
 
-The same limits apply as for an area. Remove the row if the project has one release only.
+The same limits apply as for an area. Remove the row if the project has one release only. With at least 1 row, the labels `release: internal` and `released: internal` are added too, for work that ships to nobody outside the team.
 
 ## Jev (optional)
 

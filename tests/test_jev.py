@@ -520,6 +520,27 @@ class CommandTests(unittest.TestCase):
         self.assertIn('off', out['reason'])
         post.assert_not_called()
 
+    def test_jev_off_holds_when_a_table_row_is_refused(self):
+        # A repeated area name makes the file fail to load. The privacy switch
+        # in the same file must still be obeyed, so nothing is sent.
+        text = ('## Areas\n\n| Name | Description | Colour |\n| --- | --- | --- |\n'
+                '| docs | One | ffffff |\n| docs | Two | 000000 |\n\n'
+                '## Jev\n\n| Setting | Value |\n| --- | --- |\n| jev | off |\n')
+        post = mock.Mock()
+        with tempfile.TemporaryDirectory() as root:
+            with open(os.path.join(root, 'ClaudeProject.md'), 'w', encoding='utf-8') as fh:
+                fh.write(text)
+            with mock.patch.object(wf, 'repo_root', lambda: root):
+                self.assertFalse(wf.load_config()[0])
+                code, out = run_jev('priority', ITEMS, key='test-key', post=post)
+        self.assertEqual((code, out['status']), (30, 'unavailable'))
+        post.assert_not_called()
+
+    def test_a_project_with_no_configuration_file_leaves_jev_on(self):
+        with tempfile.TemporaryDirectory() as root, \
+                mock.patch.object(wf, 'repo_root', lambda: root):
+            self.assertFalse(wf.jev_switched_off())
+
     def test_a_project_with_no_configuration_leaves_jev_on(self):
         post = mock.Mock(return_value=(False, 'Jev answered HTTP 401'))
         with mock.patch.object(wf, 'load_config', lambda: (False, None, 'no ClaudeProject.md')):

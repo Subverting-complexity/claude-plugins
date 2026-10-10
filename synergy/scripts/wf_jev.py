@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 
 import wf_core
-from wf_config import load_config
+from wf_config import config_paths, jev_setting, load_config, repo_root
 from wf_io import EXIT_OK, EXIT_UNSUPPORTED, EXIT_USAGE, emit, gh_json
 
 JEV_URL = 'https://api.typesafe.ai/v1/systemone'
@@ -79,11 +79,23 @@ def jev_fetch_items(numbers, open_limit):
 def jev_switched_off():
     """True when `ClaudeProject.md` turns Jev off for this repository.
 
-    A project with no `ClaudeProject.md`, or one that cannot be read, has not
-    said no: Jev stays on, as it is for a repository with no `## Jev` row.
+    A project with no `ClaudeProject.md` has not said no: Jev stays on, as it
+    is for a repository with no `## Jev` row. A file that exists and does not
+    load, because a table row was refused, may still say `off`, so its row is
+    read on its own: a fault elsewhere in the file must not send content out.
+    A file that cannot be read at all is taken as `off` for the same reason.
     """
     ok, cfg, _ = load_config()
-    return bool(ok and cfg and cfg.get('jev') == 'off')
+    if ok and cfg:
+        return cfg.get('jev') == 'off'
+    _, source = config_paths(repo_root())
+    if not os.path.isfile(source):
+        return False
+    try:
+        with open(source, encoding='utf-8') as fh:
+            return jev_setting(fh.read()) == 'off'
+    except (OSError, ValueError):
+        return True
 
 
 JEV_TABLE_NAMES = {'areas': 'Areas', 'release_targets': 'Release Targets'}
