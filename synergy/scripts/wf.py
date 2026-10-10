@@ -82,6 +82,7 @@ import wf_deps  # noqa: E402
 import wf_issue_apply  # noqa: E402
 import wf_issue_audit  # noqa: E402
 import wf_unblock  # noqa: E402
+import wf_area_backfill  # noqa: E402
 import wf_pick_tree  # noqa: E402
 import wf_pick_select  # noqa: E402
 import wf_pick_candidates  # noqa: E402
@@ -95,6 +96,7 @@ import wf_steps  # noqa: E402
 import wf_block  # noqa: E402
 import wf_pr_create  # noqa: E402
 import wf_areas  # noqa: E402
+import wf_area_set  # noqa: E402
 import wf_worktrees  # noqa: E402
 import wf_jev  # noqa: E402
 import wf_quota  # noqa: E402
@@ -112,6 +114,7 @@ _SHELL_MODULES = (
     wf_issue_apply,
     wf_issue_audit,
     wf_unblock,
+    wf_area_backfill,
     wf_pick_tree,
     wf_pick_select,
     wf_pick_candidates,
@@ -125,6 +128,7 @@ _SHELL_MODULES = (
     wf_block,
     wf_pr_create,
     wf_areas,
+    wf_area_set,
     wf_worktrees,
     wf_jev,
     wf_quota,
@@ -158,6 +162,7 @@ class _Shell(types.ModuleType):
 sys.modules[__name__].__class__ = _Shell
 
 from wf_areas import cmd_areas
+from wf_area_set import cmd_area_set
 from wf_block import cmd_block
 from wf_board_sync import SYNC_CLOSED_DAYS, cmd_board_sync
 from wf_bulk_build import cmd_bulk_integrate, cmd_bulk_schedule
@@ -183,6 +188,7 @@ from wf_review import (
 from wf_stage import cmd_stage_set
 from wf_steps import cmd_exit_cleanup, cmd_start, cmd_tree_clean
 from wf_unblock import cmd_unblock
+from wf_area_backfill import cmd_area_backfill
 from wf_worktrees import cmd_worktree_reap
 
 
@@ -390,6 +396,19 @@ def build_parser():
                              'deletes an existing label)')
     le.set_defaults(func=cmd_labels_ensure)
 
+    ab = sub.add_parser('area-backfill',
+                        help='add its area label to every issue under an area '
+                             'epic, open and closed, from the `epic` column of '
+                             'the `## Areas` table; a second run writes nothing')
+    ab.add_argument('--dry-run', action='store_true',
+                    help='print the counts per area and write nothing')
+    ab.add_argument('--close-epics', action='store_true',
+                    help='also close the area epics, only when this run found '
+                         'no issue left to label; the parent links are kept')
+    ab.add_argument('--repo', default=None,
+                    help='owner/name; defaults to the repo in ClaudeProject.md')
+    ab.set_defaults(func=cmd_area_backfill)
+
     cfg = sub.add_parser('config', help='emit .claude/wf-config.json from ClaudeProject.md')
     cfg.set_defaults(func=cmd_config)
 
@@ -541,14 +560,27 @@ def build_parser():
 
     ar = sub.add_parser('areas',
                         help="list the repository's open area epics (an Epic "
-                             'whose Stage is Area), or with --issue the area '
-                             'one issue resolves to')
+                             'whose Stage is Area) and, as `rows`, the Areas '
+                             'table an issue spec takes its `area` from, or '
+                             'with --issue the area one issue resolves to')
     ar.add_argument('--repo', default=None,
                     help='read this owner/name instead of the configured repo')
     ar.add_argument('--issue', type=int, default=None,
                     help="resolve this issue's area: the nearest area epic at "
                          'or above it in its parent chain')
     ar.set_defaults(func=cmd_areas)
+
+    ase = sub.add_parser('area-set',
+                         help='give each issue that has no area label one: a '
+                              'sure Jev answer is written, and the rest come '
+                              'back under `choose` (exit 25) with the Areas '
+                              'table rows to choose from')
+    ase.add_argument('--issue', type=int, action='append', required=True,
+                     help='an issue to give an area label (repeatable)')
+    ase.add_argument('--area', default=None,
+                     help='the Areas table row to set on the 1 issue named, '
+                          'replacing any other area label it carries')
+    ase.set_defaults(func=cmd_area_set)
 
     ca = sub.add_parser('config-audit',
                         help='report configuration and label drift between '

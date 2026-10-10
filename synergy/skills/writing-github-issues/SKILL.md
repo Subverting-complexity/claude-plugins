@@ -57,7 +57,7 @@ Not this:
 
 An issue says what kind of work it is **once**, through GitHub's native issue type (`Bug`, `User Story`, `Chore`, `Feature`, `Epic`, …) and the org's `Classification` field. Not through a title prefix, and not through a `type-*` label — neither is written any more, and `wf pick` reads neither. A spec that still names one has it stripped on the way in.
 
-**Nor through any other label.** An issue's state is its `Stage` field; how urgent, how big and whose it is are the org's `Priority`, `Effort` and `Ownership` fields. You do not write any of those four when filing: `wf issue-apply` sets the three fields from the spec and writes the stage from the issue's own state. The workflow puts no label on an issue.
+**Nor through any other label.** An issue's state is its `Stage` field; how urgent, how big and whose it is are the org's `Priority`, `Effort` and `Ownership` fields. You do not write any of those four when filing: `wf issue-apply` sets the three fields from the spec and writes the stage from the issue's own state. The workflow puts one label on an issue, its area: choose a row from the `rows` that `wf areas` returns and pass its `name` as `"area"` on the spec entry, which `wf issue-apply` writes as the `area: {name}` label.
 
 **Choosing a `Classification`.** `kind` sets a default; name a better one in `fields` when it fits. For a bug, prefer **Regression** when something previously worked and broke, or **Performance** when the defect is speed or memory. For a feature, prefer **Enhancement** when it improves something that already exists, **Integration** when it connects an external system, **Documentation** when it tracks docs only, or **Performance** when speed is the point.
 

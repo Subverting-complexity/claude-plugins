@@ -159,13 +159,23 @@ def _create_input(cfg, ctx, caps, entry, plan, parent_id, body, dropped=None):
     milestone = entry.get('milestone')
     if milestone:
         args['milestoneId'] = ctx['milestones'][milestone]
-    label_ids = sorted(ctx['labels'][label(cfg, l)] for l in labels)
+    label_ids = {ctx['labels'][label(cfg, l)] for l in labels}
+    # The area label rides in the create, so no issue exists without one.
+    if plan.get('area'):
+        label_ids.add(ctx['labels'][wf_core.area_label(plan['area'])])
+    label_ids = sorted(label_ids)
     if label_ids:
         args['labelIds'] = label_ids
     fields = [f['input'] for f in plan['fields'].values()]
     if fields:
         args['issueFields'] = fields
     return args
+
+
+def _expect_area(plan):
+    """The area label a read-back must hold, or None when the entry named no
+    area and the issue's labels are not this entry's business."""
+    return wf_core.area_label(plan['area']) if plan.get('area') else None
 
 
 def create_level(cfg, ctx, caps, plans, resolved, node_ids):
@@ -180,6 +190,7 @@ def create_level(cfg, ctx, caps, plans, resolved, node_ids):
     for plan in plans:
         entry = plan['entry']
         result = _result(entry, 'create')
+        result['area'] = plan.get('area')
         results[id(entry)] = result
 
         parent_number, parent_id, err = _parent_id(entry, resolved, node_ids)
@@ -221,7 +232,8 @@ def create_level(cfg, ctx, caps, plans, resolved, node_ids):
             # verified here without a second round trip.
             result['mismatches'] = issue_mismatches(
                 issue['number'], issue, plan, expect_type=plan['type'],
-                expect_parent=result.get('parent_number'))
+                expect_parent=result.get('parent_number'),
+                expect_area=_expect_area(plan))
 
     return [results[id(p['entry'])] for p in plans]
 
@@ -234,6 +246,7 @@ def update_entry(cfg, ctx, caps, plan, resolved, node_ids):
     """
     entry = plan['entry']
     result = _result(entry, 'update')
+    result['area'] = plan.get('area')
     repo = ctx['repo']
 
     parent_number, parent_id, err = _parent_id(entry, resolved, node_ids)
@@ -286,14 +299,25 @@ def update_entry(cfg, ctx, caps, plan, resolved, node_ids):
     wanted = {label(cfg, l) for l in entry.get('labels') or []}
     present = {n['name'] for n in (current.get('labels') or {}).get('nodes') or []}
     add = sorted(wanted - present)
-    if add:
+    # An entry that names an area moves the issue to it in the same call: the
+    # new label goes on and every other area label comes off, so a correction
+    # never leaves 2. An issue that already carries only that one is left.
+    area_add, area_remove = ([], [])
+    if plan.get('area'):
+        area_add, area_remove = wf_core.area_label_edit(
+            sorted(present), wf_core.area_label(plan['area']))
+    if add or area_add or area_remove:
         code, _, lerr = run(['gh', 'issue', 'edit', str(entry['number']),
                              '--repo', repo]
-                            + sum((['--add-label', n] for n in add), []))
+                            + sum((['--add-label', n] for n in add + area_add), [])
+                            + sum((['--remove-label', n] for n in area_remove), []))
         if code != 0:
             result['errors'].append('label update failed: %s' % lerr.strip())
             return result
-        result['changed'].append('labels')
+        if add:
+            result['changed'].append('labels')
+        if area_add or area_remove:
+            result['changed'].append('area')
 
     # The title and body, which an update used to leave as they were without
     # a word (#242). Compared first, so re-running a spec that already
@@ -335,7 +359,8 @@ def update_entry(cfg, ctx, caps, plan, resolved, node_ids):
             cfg, entry['number'], plan, expect_type=plan['type'],
             expect_parent=parent_number, repo=repo,
             expect_title=title if 'title' in edited else None,
-            expect_body=body if 'body' in edited else None)
+            expect_body=body if 'body' in edited else None,
+            expect_area=_expect_area(plan))
     return result
 
 
@@ -690,7 +715,8 @@ def cmd_issue_apply(args):
              entries=[wf_core.entry_label(e) for e in unplaceable])
 
     errors, skipped, plans = wf_core.validate_spec(
-        entries, caps['field_map'], caps['type_map'], cfg.get('fields', {}))
+        entries, caps['field_map'], caps['type_map'], cfg.get('fields', {}),
+        areas=cfg.get('areas'))
     if errors:
         emit('spec-invalid', EXIT_SPEC, spec=args.spec, errors=errors,
              reason='%d spec %s; nothing was written'
@@ -703,8 +729,10 @@ def cmd_issue_apply(args):
         eprint('wf: skipped %d field(s) this org does not define: %s'
                % (len(skipped), ', '.join(sorted(skipped))))
 
+    area_label_names = {wf_core.area_label(p['area']) for p in plans
+                        if p.get('area')}
     label_names = sorted({label(cfg, l) for e in entries
-                          for l in (e.get('labels') or [])})
+                          for l in (e.get('labels') or [])} | area_label_names)
     referenced = set()
     for entry in entries:
         candidates = [entry.get('number'), entry.get('parent')]
@@ -721,8 +749,12 @@ def cmd_issue_apply(args):
     if not ok:
         emit('error', EXIT_ENV, reason='could not resolve the repository: %s' % err)
     if ctx['missing_labels']:
-        emit('spec-invalid', EXIT_SPEC, spec=args.spec,
-             reason='labels the spec names do not exist in this repo',
+        reason = 'labels the spec names do not exist in this repo'
+        # An area label is the repository's to create, from the Areas table.
+        if area_label_names & set(ctx['missing_labels']):
+            reason += ('; run `wf labels-ensure` to create the area labels the '
+                       'Areas table names')
+        emit('spec-invalid', EXIT_SPEC, spec=args.spec, reason=reason,
              labels=ctx['missing_labels'])
     if ctx['missing_milestones']:
         emit('spec-invalid', EXIT_SPEC, spec=args.spec,
@@ -759,7 +791,7 @@ def cmd_issue_apply(args):
              levels=[[wf_core.entry_label(e) for e in level] for level in levels],
              would_apply=[{'entry': wf_core.entry_label(p['entry']),
                            'action': 'update' if p['entry'].get('number') else 'create',
-                           'type': p['type'],
+                           'type': p['type'], 'area': p.get('area'),
                            'fields': sorted(p['fields'])} for p in plans],
              skipped_fields=sorted(skipped))
 

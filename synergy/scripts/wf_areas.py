@@ -5,6 +5,9 @@ resolves to.
 An area epic is a native `Epic` whose `Stage` is `Area`, standing for one
 permanent part of the product. An issue's area is the nearest area epic above
 it in its parent chain. This reads; it never writes.
+
+The list also carries `rows`, the `## Areas` table in `ClaudeProject.md`: the
+names an issue spec passes as `area`, which become the `area: {name}` label.
 """
 
 import wf_core
@@ -63,6 +66,36 @@ def nearest_area(node, stage_field, depth=AREA_CHAIN_DEPTH):
                   'parent chain' % number)
 
 
+def area_table_rows(cfg, epics):
+    """The rows of the `## Areas` table, each with its open area epic.
+    `[{'name', 'description', 'epic'}]`, in table order.
+
+    A row's `name` is what an issue spec passes as `area`. `epic` is the
+    parent an issue under that area still needs: the number in the row's
+    `Epic` column when that epic is an open area epic, which is the mapping
+    `area-backfill` reads, and otherwise the open area epic whose title is
+    that name, compared without case. None when there is neither. A
+    repository with no table has no rows.
+    """
+    by_title, open_numbers = {}, set()
+    for epic in epics or ():
+        open_numbers.add(epic.get('number'))
+        by_title.setdefault((epic.get('title') or '').strip().lower(),
+                            epic.get('number'))
+
+    def epic_of(row):
+        column = row.get('epic')
+        if column is not None and column in open_numbers:
+            return column
+        return by_title.get(row['name'].strip().lower())
+
+    return [{'name': row['name'],
+             'description': (row.get('description') or '').strip(),
+             'epic': epic_of(row)}
+            for row in cfg.get('areas') or []
+            if (row.get('name') or '').strip()]
+
+
 def cmd_areas(args):
     """`wf areas`: list the open area epics, or resolve one issue's area."""
     ok, cfg, err = load_config()
@@ -98,4 +131,5 @@ def cmd_areas(args):
              if (i.get('issueType') or {}).get('name') == 'Epic'
              and wf_core.is_area_stage(issue_field_values(i).get(stage_field))]
     areas.sort(key=lambda a: (a['title'].lower(), a['number']))
-    emit('ok', EXIT_OK, areas=areas, count=len(areas))
+    emit('ok', EXIT_OK, areas=areas, count=len(areas),
+         rows=area_table_rows(cfg, areas))

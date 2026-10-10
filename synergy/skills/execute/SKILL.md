@@ -101,6 +101,8 @@ When the pick came through an Epic or Feature, `container` names it and `offered
 
 **Then, on the claimed story**, confirm its `body` (already in the pick result, untruncated) has **Context** and **Requirements**; read the comments only when it does not. Enough guidance → Phase 2. If it is thin or empty, follow **A thin or empty story** in `references/pick-paths.md`.
 
+**Set its area before Phase 2**, on either path: run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" area-set --issue {number}`. `ok` means the issue carries its 1 `area:` label, or the project has no Areas table. On `choose` (exit 25), take the row in `rows` that best covers the issue and run it again with `--area "{name}"`. Name the area in the final report.
+
 ## Phase 2 — Start
 
 `wf pick --checkout` already took the claim, set the stage, and created the branch. Only when its `ok` result says a step did not happen (`stage_set` or `checked_out` false), or the claim state was lost to compaction, follow **Phase 2 recovery** in `references/pick-paths.md`.

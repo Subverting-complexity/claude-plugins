@@ -474,6 +474,19 @@ class TestThePluginsOwnFlows(unittest.TestCase):
                                    project='SomeoneElse'))
 
 
+    def test_the_area_backfill_is_judged_like_any_wf_write(self):
+        # `wf area-backfill` labels every issue of a repository (#389), so it
+        # is a write to the project's org, or to the `--repo` it names. Its
+        # dry run writes nothing and is not judged.
+        backfill = 'bash "$CLAUDE_PLUGIN_ROOT/scripts/wf.sh" area-backfill'
+        self.assertIsNone(check(backfill))
+        self.assertIsNone(check(backfill + ' --close-epics'))
+        self.assertIsNotNone(check(backfill, project='SomeoneElse'))
+        self.assertIsNotNone(check(backfill + ' --repo SomeoneElse/widgets'))
+        self.assertIsNone(check(backfill + ' --dry-run --repo SomeoneElse/widgets'))
+        self.assertEqual(writes(backfill + ' --dry-run'), [])
+
+
 class TestUnreadableCalls(unittest.TestCase):
     def test_a_call_the_guard_cannot_read_is_denied_when_it_looks_like_a_write(self):
         def broken(*args):

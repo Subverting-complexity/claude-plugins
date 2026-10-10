@@ -114,55 +114,63 @@ def jev_table(name):
     return list((cfg.get(name) or []) if ok and cfg else [])
 
 
-def cmd_jev(args):
+def jev_ask(check, payload=None, issues=None, open_issues=None):
+    """Ask Jev one check and return the outcome instead of printing it.
+
+    Returns one of:
+
+      ('ok', result)          `result` holds `check`, `results` (the rows a
+                              caller has to read), `rows` (every row), and
+                              `summary`, `sure_no` and `usage`.
+      ('unavailable', reason) no key, Jev off for the repository, an empty
+                              table the check needs, an issue that could not
+                              be read, or no answer. Decide without Jev.
+      ('usage', reason)       the input cannot be asked as it stands.
+
+    `payload` is the input object and is extended in place with the issues
+    read from GitHub: `issues` is a list of issue numbers and `open_issues` a
+    count of open issues to add. Nothing is read or sent before the key, the
+    repository's `## Jev` row and the table the check needs are all checked.
+    """
     config = load_jev_config()
-    payload = {}
-    if args.input:
-        try:
-            with open(args.input, encoding='utf-8') as fh:
-                payload = json.load(fh)
-        except (OSError, ValueError) as exc:
-            emit('usage', EXIT_USAGE, reason='could not read %s: %s' % (args.input, exc))
+    payload = {} if payload is None else payload
     # Before any read from GitHub: with no key there is nothing to ask.
     key = os.environ.get(JEV_KEY_ENV, '').strip()
     if not key:
-        emit('unavailable', EXIT_UNSUPPORTED,
-             reason='%s is not set; make this judgment without Jev' % JEV_KEY_ENV)
+        return 'unavailable', ('%s is not set; make this judgment without Jev'
+                               % JEV_KEY_ENV)
     # A repository can say its content must stay on the machine. That holds
     # whatever key is set, so it is read before anything is sent.
     if jev_switched_off():
-        emit('unavailable', EXIT_UNSUPPORTED,
-             reason='Jev is off for this repository in ClaudeProject.md; '
-                    'make this judgment without Jev')
+        return 'unavailable', ('Jev is off for this repository in ClaudeProject.md; '
+                               'make this judgment without Jev')
     # A check that picks from a table has nothing to pick from without one.
     # Also before any read from GitHub, and before any request.
-    table = wf_core.jev_table_needed(config, args.check)
+    table = wf_core.jev_table_needed(config, check)
     if table:
         table_rows = jev_table(table)
         if not wf_core.jev_table_rows(table_rows):
-            emit('unavailable', EXIT_UNSUPPORTED,
-                 reason='ClaudeProject.md has no %s table, so the %s check has nothing '
-                        'to choose from; make this judgment without Jev'
-                        % (JEV_TABLE_NAMES.get(table, table), args.check))
-        config = wf_core.jev_resolve(config, args.check, table_rows)
-    if args.issue or args.open_issues:
-        fetched, reason = jev_fetch_items(args.issue, args.open_issues)
+            return 'unavailable', (
+                'ClaudeProject.md has no %s table, so the %s check has nothing '
+                'to choose from; make this judgment without Jev'
+                % (JEV_TABLE_NAMES.get(table, table), check))
+        config = wf_core.jev_resolve(config, check, table_rows)
+    if issues or open_issues:
+        fetched, reason = jev_fetch_items(issues, open_issues)
         if fetched is None:
-            emit('unavailable', EXIT_UNSUPPORTED,
-                 reason='%s; make this judgment without Jev' % reason)
+            return 'unavailable', '%s; make this judgment without Jev' % reason
         if isinstance(payload, dict):
             payload['items'] = list(payload.get('items') or []) + fetched
-    problem = wf_core.jev_input_problem(config, args.check, payload)
+    problem = wf_core.jev_input_problem(config, check, payload)
     if problem:
-        emit('usage', EXIT_USAGE, reason=problem)
+        return 'usage', problem
 
     rows, tokens = [], {'input_tokens': 0, 'output_tokens': 0}
-    for body, refs in wf_core.jev_requests(config, args.check, payload):
+    for body, refs in wf_core.jev_requests(config, check, payload):
         ok, result = jev_post(body, key)
         if not ok:
-            emit('unavailable', EXIT_UNSUPPORTED,
-                 reason='%s; make this judgment without Jev' % result)
-        rows.extend(wf_core.jev_rows(config, args.check, refs, result.get('answers')))
+            return 'unavailable', '%s; make this judgment without Jev' % result
+        rows.extend(wf_core.jev_rows(config, check, refs, result.get('answers')))
         for name in tokens:
             tokens[name] += int((result.get('usage') or {}).get(name) or 0)
 
@@ -171,6 +179,25 @@ def cmd_jev(args):
     for row in rows:
         if row.get('id') in titles:
             row['title'] = titles[row['id']]
-    shown = wf_core.jev_rows_worth_reading(config, args.check, rows)
-    emit('ok', EXIT_OK, check=args.check, results=shown,
-         summary=wf_core.jev_summary(rows), sure_no=len(rows) - len(shown), usage=tokens)
+    shown = wf_core.jev_rows_worth_reading(config, check, rows)
+    return 'ok', {'check': check, 'results': shown, 'rows': rows,
+                  'summary': wf_core.jev_summary(rows),
+                  'sure_no': len(rows) - len(shown), 'usage': tokens}
+
+
+def cmd_jev(args):
+    payload = {}
+    if args.input:
+        try:
+            with open(args.input, encoding='utf-8') as fh:
+                payload = json.load(fh)
+        except (OSError, ValueError) as exc:
+            emit('usage', EXIT_USAGE, reason='could not read %s: %s' % (args.input, exc))
+    outcome, result = jev_ask(args.check, payload, args.issue, args.open_issues)
+    if outcome == 'unavailable':
+        emit('unavailable', EXIT_UNSUPPORTED, reason=result)
+    if outcome == 'usage':
+        emit('usage', EXIT_USAGE, reason=result)
+    emit('ok', EXIT_OK, check=result['check'], results=result['results'],
+         summary=result['summary'], sure_no=result['sure_no'],
+         usage=result['usage'])

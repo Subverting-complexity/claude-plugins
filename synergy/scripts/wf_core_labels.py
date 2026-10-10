@@ -173,3 +173,55 @@ def label_plan(wanted, live):
         if key.startswith(TABLE_LABEL_PREFIXES) and key not in accounted:
             plan['unknown'].append(by_key[key]['name'])
     return plan
+
+
+# ── the area label on one issue ──────────────────────────────────────────────
+# Every issue carries exactly 1 `area: {name}` label, named after a row of the
+# areas table. These rules say which label a name means and what has to change
+# on an issue for it to carry that one and no other.
+
+def area_label(name):
+    """The label an area row's name stands for: `area: {name}`."""
+    return AREA_PREFIX + (name or '').strip()
+
+
+def area_row(rows, name):
+    """The areas-table row `name` means, or None when no row has that name.
+
+    Matched trimmed and without case, the way GitHub compares label names, so
+    `library ` finds the `Library` row and the label is written in the row's
+    own spelling.
+    """
+    wanted = _key(name) if isinstance(name, str) else ''
+    if not wanted:
+        return None
+    for row in rows or ():
+        if isinstance(row, dict) and _key(row.get('name')) == wanted:
+            return row
+    return None
+
+
+def area_names(rows):
+    """The names of the areas-table rows, in table order."""
+    return [row['name'] for row in rows or ()
+            if isinstance(row, dict) and (row.get('name') or '').strip()]
+
+
+def area_labels_on(names):
+    """The area labels among an issue's label names, in the order given."""
+    return [name for name in names or () if _key(name).startswith('area:')]
+
+
+def area_label_edit(present, wanted):
+    """What to add and remove so an issue carries `wanted` and no other area
+    label. Returns `(add, remove)`, two lists of label names.
+
+    `present` is every label name on the issue. `add` is empty when the issue
+    already carries `wanted`, and `remove` is every other area label, so a
+    correction never leaves 2. Both are empty when nothing has to change.
+    """
+    have = area_labels_on(present)
+    carried = any(_key(name) == _key(wanted) for name in have)
+    add = [] if carried else [wanted]
+    remove = [name for name in have if _key(name) != _key(wanted)]
+    return add, remove
