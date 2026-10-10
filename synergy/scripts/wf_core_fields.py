@@ -386,7 +386,8 @@ def parse_release_notes(data):
     """A release-notes file, read into {issue number: {'user', 'internal'}}.
 
     Returns (notes, errors). The file is {"<number>": {"user": text,
-    "internal": text}}; either text may be absent or blank, and a blank one is
+    "internal": text}}, with an optional `targets` list that is left to
+    `parse_release_targets`; either text may be absent or blank, and a blank one is
     left out rather than written, so the field stays empty. Each text is
     written as `* ` lines only (`_note_lines`), and an internal line that
     repeats a user line is dropped. A key that is not an issue number, or an
@@ -416,10 +417,12 @@ def parse_release_notes(data):
                 lines = [ln for ln in lines if ln.casefold() not in user_lines]
             if lines:
                 texts[short] = '\n'.join('* ' + line for line in lines)
-        unknown = sorted(set(entry) - set(RELEASE_NOTE_FIELD_KEYS))
+        # `targets` is the issue's release targets, which ride in this file
+        # and are read by `parse_release_targets`.
+        unknown = sorted(set(entry) - set(RELEASE_NOTE_FIELD_KEYS) - {'targets'})
         if unknown:
-            errors.append('#%d: ignored %s (a notes file carries only user and '
-                          'internal)' % (number, ', '.join(unknown)))
+            errors.append('#%d: ignored %s (a notes file carries only user, '
+                          'internal and targets)' % (number, ', '.join(unknown)))
         notes[number] = texts
     return notes, errors
 

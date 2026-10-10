@@ -99,6 +99,7 @@ import wf_areas  # noqa: E402
 import wf_area_set  # noqa: E402
 import wf_worktrees  # noqa: E402
 import wf_jev  # noqa: E402
+import wf_release_targets  # noqa: E402
 import wf_quota  # noqa: E402
 
 _SHELL_MODULES = (
@@ -131,6 +132,7 @@ _SHELL_MODULES = (
     wf_area_set,
     wf_worktrees,
     wf_jev,
+    wf_release_targets,
     wf_quota,
 )
 
@@ -339,7 +341,9 @@ def build_parser():
                          '"internal": text}}, written to the User release notes and '
                          'Internal release notes fields in the same write as Done; '
                          'blank texts are left blank, and Shipped in version is never '
-                         'written')
+                         'written. An entry may add "targets": [names], and the '
+                         'issue then gets a `release: {name}` label for each, or '
+                         '`release: internal` for an empty list')
     pm.add_argument('--no-unblock', action='store_true',
                     help='settle the linked issues without running the unblock sweep '
                          'afterwards (the sweep is the half that releases whatever was '
@@ -581,6 +585,18 @@ def build_parser():
                      help='the Areas table row to set on the 1 issue named, '
                           'replacing any other area label it carries')
     ase.set_defaults(func=cmd_area_set)
+
+    rt = sub.add_parser('release-targets',
+                        help='what decides where each issue a pull request '
+                             'closes will ship: the folders its own commits '
+                             'touch, the release targets Jev is sure of, and '
+                             'under `decide` the ones the caller judges')
+    rt.add_argument('--pr', type=int, required=True,
+                    help='the pull request, open or merged')
+    rt.add_argument('--issue', type=int, action='append', default=None,
+                    help='also read this issue (repeatable), for a reference '
+                         'GitHub did not parse into closingIssuesReferences')
+    rt.set_defaults(func=cmd_release_targets)
 
     ca = sub.add_parser('config-audit',
                         help='report configuration and label drift between '

@@ -7,6 +7,8 @@ Pure, like every `wf_core_*` module: the tables and the labels GitHub has go
 in, and a plan comes out. `scripts/README.md` has the module map.
 """
 
+import re
+
 
 # GitHub refuses a label description longer than this.
 LABEL_DESCRIPTION_LIMIT = 100
@@ -225,3 +227,147 @@ def area_label_edit(present, wanted):
     add = [] if carried else [wanted]
     remove = [name for name in have if _key(name) != _key(wanted)]
     return add, remove
+
+
+# ── the release labels on a closed issue ─────────────────────────────────────
+# A merged pull request leaves each issue it closes with at least 1
+# `release: {target}` label, so a release script can tell what waits to ship
+# in each target. The targets are decided before the merge and travel in the
+# release-notes file as a `targets` list per issue. These rules say which
+# names that list may hold and which labels an issue still lacks.
+# `references/release-labels.md` has the contract a release script follows.
+
+_STORY_SUFFIX = re.compile(r'\(#(\d+)\)\s*$')
+
+
+def release_label(name):
+    """The label a release target's name stands for: `release: {name}`."""
+    return RELEASE_PREFIX + (name or '').strip()
+
+
+def release_labels_on(names):
+    """The `release:` labels among an issue's label names, in the order given.
+    A `released:` label is not one: it says the issue has shipped."""
+    return [name for name in names or () if _key(name).startswith('release:')]
+
+
+def release_target_names(rows):
+    """The target names an issue may carry: each row of the release-targets
+    table in table order, then `internal` unless a row has that name.
+
+    Empty when the table has no row. Such a repository has no release labels
+    at all, so a merge there sets none.
+    """
+    out, seen = [], set()
+    for row in rows or ():
+        name = (row.get('name') or '').strip() if isinstance(row, dict) else ''
+        if name and _key(name) not in seen:
+            seen.add(_key(name))
+            out.append(name)
+    if out and INTERNAL_TARGET not in seen:
+        out.append(INTERNAL_TARGET)
+    return out
+
+
+def parse_release_targets(data, rows):
+    """The `targets` lists of a release-notes file, read into {issue number:
+    [target names]}. Returns (targets, errors).
+
+    The file is {"<number>": {"targets": ["web", "backend"]}} beside the
+    notes texts. A name is matched without case and written in the table's
+    own spelling, and the label form `release: web` is taken as `web`. An
+    empty list means no target applies and becomes `internal`. An entry with
+    no `targets` key is left out: nothing was decided for that issue, which
+    the caller reports as a gap. A name the table does not have is an error
+    and is dropped; when every name of an entry is dropped the entry is left
+    out too, because a wrong name is not a decision that nothing applies.
+
+    A key that is not an issue number, or an entry that is not an object, is
+    skipped without an error: `parse_release_notes` reports those.
+    """
+    valid = {_key(name): name for name in release_target_names(rows)}
+    targets, errors = {}, []
+    if not valid or not isinstance(data, dict):
+        return targets, errors
+    for key, entry in data.items():
+        try:
+            number = int(str(key).lstrip('#'))
+        except ValueError:
+            continue
+        if not isinstance(entry, dict) or 'targets' not in entry:
+            continue
+        raw = entry['targets']
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, list) or not all(isinstance(t, str) for t in raw):
+            errors.append('#%d: targets is a list of release-target names' % number)
+            continue
+        chosen, unknown = [], []
+        for name in raw:
+            name = name.strip()
+            if _key(name).startswith('release:'):
+                name = name.split(':', 1)[1].strip()
+            if not name:
+                continue
+            match = valid.get(_key(name))
+            if match is None:
+                unknown.append(name)
+            elif match not in chosen:
+                chosen.append(match)
+        if unknown:
+            errors.append('#%d: %s not in the Release Targets table (valid: %s)'
+                          % (number, ', '.join("'%s'" % n for n in unknown),
+                             ', '.join(valid.values())))
+            if not chosen:
+                continue
+        targets[number] = chosen or [valid[INTERNAL_TARGET]]
+    return targets, errors
+
+
+def release_label_add(present, targets):
+    """The `release:` labels to add so an issue carries one for each target.
+
+    `present` is every label name on the issue. Only what is missing is
+    returned, and nothing is ever removed: a release script reads these
+    labels, and the plugin takes none of them off.
+    """
+    have = {_key(name) for name in release_labels_on(present)}
+    out = []
+    for target in targets or ():
+        label = release_label(target)
+        if _key(label) not in have:
+            have.add(_key(label))
+            out.append(label)
+    return out
+
+
+def commit_story(message):
+    """The story a commit belongs to: the number in the `(#N)` that ends the
+    first line of its message, or None when that line ends with no number.
+
+    The first line, because a message goes on to a body and trailers, and
+    `execute` and `bulk-execute` end the subject with the story it answers.
+    """
+    lines = (message or '').strip().splitlines()
+    match = _STORY_SUFFIX.search(lines[0]) if lines else None
+    return int(match.group(1)) if match else None
+
+
+def story_paths(commits, stories):
+    """The file paths each story's own commits changed. {story: [paths]}.
+
+    `commits` is a list of `{'message', 'paths'}` and `stories` the issue
+    numbers a pull request closes. A path counts once per story, in the order
+    first seen. A commit that names no story, or a story the pull request
+    does not close, counts for no story, so shared work in such a commit
+    never decides where a story ships.
+    """
+    out = {int(number): [] for number in stories or ()}
+    for commit in commits or ():
+        story = commit_story((commit or {}).get('message'))
+        if story not in out:
+            continue
+        for path in commit.get('paths') or ():
+            if path and path not in out[story]:
+                out[story].append(path)
+    return out

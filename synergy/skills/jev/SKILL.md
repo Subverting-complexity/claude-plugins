@@ -32,7 +32,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" jev --check {check} --input .claude/j
 
 For items that are GitHub issues, let the command read them: `--issue 41 --issue 43` adds those issues as items, and `--open-issues` adds every open issue (100 at most), so their bodies never pass through this conversation. `--input` is then needed only for a `subject` or a `draft`. A yes or no check lists only the rows worth reading and counts the sure noes in `sure_no`; `target` is the exception and lists every row.
 
-`area` and `target` take their answers from the repository's own tables, so each is `unavailable` when its table is empty. For `target`, `paths` is sent as the distinct folders the files are in, cut to fit the text limit; the file names are not sent.
+`area` and `target` take their answers from the repository's own tables, so each is `unavailable` when its table is empty. `wf area-set` and `wf release-targets --pr N` run them for a workflow and return only what is left to judge. For `target`, `paths` is sent as the distinct folders the files are in, cut to fit the text limit; the file names are not sent.
 
 The questions and thresholds live in `scripts/jev-checks.json`.
 
