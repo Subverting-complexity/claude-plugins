@@ -1,6 +1,6 @@
 ---
 name: verify-feature
-description: 'Report on a branch or PR before merging: what it touches, concerns, design, conventions, acceptance criteria. Changes nothing; any host. Trigger on "verify this feature" or "is this branch ready".'
+description: 'Report on a branch or PR before merging: a summary, a verdict, and each concern as a suggested fix. Changes nothing; any host. Trigger on "verify this feature" or "is this branch ready".'
 arguments:
   - name: target
     description: 'Optional pull request number or branch name. Defaults to the current branch against its base.'
@@ -77,7 +77,7 @@ If `.claude/ecosystem.md` exists, use the tools it lists first (Graphify to trac
 - **Extensibility.** Would the next case of the same kind (another type, provider, field or rule) mean editing existing code in several places? Look for type or string switches repeated across files, hard-coded lists and constants, and behaviour fixed in code where the codebase already uses config, a registry or an interface. Report it only where a second case already exists or the codebase already has the pattern. Never ask for an abstraction against a need that has not appeared.
 - **Duplication.** For each meaningful block of new logic, search for an existing equivalent by what it does (the endpoint, field, rule or error), not by name, in shared utilities, base types, sibling features and the diff itself. Name the existing symbol, or say it is only a resemblance.
 - **Complexity.** Judged against this codebase: deep nesting, a function doing several things or switched by a boolean, indirection with one implementation, generalisation for needs that do not exist.
-- **Conventions.** Compare with the formatter and linter config, `CLAUDE.md` and the neighbouring code: naming, file placement, import order, error handling, logging, test layout, comment density. You cannot run the formatter, so report only deviations you can see. A deviation from a rule the repository states or enforces is Worth resolving. A lone departure from the neighbours, or a whitespace-only one, is a Nitpick.
+- **Conventions.** Compare with the formatter and linter config, `CLAUDE.md` and the neighbouring code: naming, file placement, import order, error handling, logging, test layout, comment density. You cannot run the formatter, so report only deviations you can see. A deviation from a rule the repository states or enforces is a concern. A lone departure from the neighbours, or a whitespace-only one, is a nitpick.
 - **Downstream and regressions.** Read removed lines as a diff. Changed signatures, behaviour or data shapes against every consumer; tests deleted, skipped or loosened; guards, retries or catches dropped from shared paths; changed defaults, flags, timeouts or limits; work added inside loops or hot paths.
 - **Tests.** Every new path exercised, errors and boundaries included, with exact assertions. A bug fix has a regression test.
 
@@ -85,36 +85,43 @@ Report only what would change the outcome if the author acted on it. Leave out m
 
 ## Step 4 — Write each concern as a comment
 
-Each concern is a short comment to the author:
+Each concern and each nitpick is a short comment to the author, written so that a junior developer on the team understands it without asking. It has two parts and nothing else:
 
-1. What the code does, naming the exact method, field or file in backticks, in one plain sentence.
-2. What follows from that. If the code cannot confirm it, say so conditionally ("if anything downstream reacts to ...").
-3. A real question where the answer depends on intent, or a concrete list of what is missing.
+1. **The suggested fix, as one instruction.** "Use the shared `teamGroupObjectId` for storage." Name the exact parameter, method, field or setting in backticks.
+2. **The problem, in one to three sentences.** What the code does now, then what goes wrong for a person or a system if it stays. State the consequence in plain terms ("storage then gives access to the wrong group", "every photo is lost"), because that is the part the reader cannot work out from the diff. If the code cannot confirm the consequence, say so conditionally ("if anything downstream reacts to ...").
 
-Keep the uncertainty that is there. Ask rather than instruct when intent is unclear. Do not paste code back. Stop once the point and the question are clear. Severity and category go in the heading, never in the prose.
+A nitpick often needs only the instruction and one short reason.
+
+Leave out everything the author can find without help:
+
+- How the code came to be this way, and which earlier change introduced what.
+- The list of files and lines the fix edits. The heading gives the one location that matters.
+- How large the fix is: no line counts, no effort, no time.
+- Pasted code, and a severity or category label.
+
+Suggest the fix when the story, the code or the docs settle what is right. A story that does not mention something has not excluded it, so suggest the fix and do not ask whether the gap was deliberate. Ask a question only when the right fix depends on an intent you cannot find, and then the question takes the place of the instruction.
+
+Keep the uncertainty that is there. Stop once the fix and the problem are clear.
 
 If there are concerns to present, read `skills/tone/SKILL.md` and apply it to them, so they read in the user's own voice.
 
 ## Step 5 — Report
 
-In this order, skipping any section with nothing in it rather than writing "none found":
+Four sections in this order, each under its name in bold. Skip Concerns or Nitpicks when it has nothing in it rather than writing "none found".
 
-**Feature summary.** One paragraph: what the feature does, and a yes, no or conditionally to "is this ready to merge?" first, naming the concerns it is conditional on.
+**Summary.** One short paragraph on what the feature does, in terms a person outside the work understands. If the purpose was inferred, say so here.
 
-**What it touches.** A short list of the modules, commands, screens, endpoints or tables the change reaches, and which consumers outside the feature depend on each.
+**Verdict.** One line: ready to merge, or not ready yet, with the number of changes and of questions for the author. Then one sentence on the acceptance criteria: either all the others are met, or which are not. A criterion that is not met or only partly met is a concern, so do not list the criteria.
 
-**Concerns.** Blocking first, then Worth resolving, each under a heading carrying the location, severity and category (correctness, modularity, extensibility, conventions and so on):
+**Concerns.** What should change before the merge. Those that are wrong or break a consumer come first. Each one is the location on its own line, then the comment from Step 4 directly under it:
 
 ```
-#### `src/sync/SupportRequestSync.cs:42` (Blocking, correctness)
+`infra/storage.bicep:91`
+Turn on soft delete for containers. Deleted photos can be restored for 7 days, but a deleted `photos` container cannot. If someone deletes it, every photo is lost.
 ```
 
-`Blocking` is wrong or breaks a consumer. `Worth resolving` should probably change before merge.
+**Nitpicks.** Small, objective blemishes, in the same format as a concern.
 
-**Nitpicks.** One line each, kept apart from the concerns: `path:line` and what to change.
+Write nothing after the nitpicks. Say each thing once: no list of what the change touches, no checklist of criteria, no closing list of next steps.
 
-**Acceptance criteria.** Each criterion, from the story or the inferred scope, as met, partly met or not met, and what is missing in the last two cases.
-
-**What to do next.** For each Blocking and Worth-resolving concern, in the order that unblocks the others: what to change, what breaks if it stays, and rough effort (trivial, small or medium). Where a concern ended in a question, the next step is the author's answer; repeat the question.
-
-If nothing needs resolving, say so in one sentence and stop.
+If nothing needs resolving, give the summary, say it is ready in one sentence and stop.

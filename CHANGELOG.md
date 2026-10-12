@@ -6,6 +6,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 19.4.0
+
+- `verify-feature` writes a shorter report that a junior developer can follow. It has four parts: a summary, a verdict, the concerns and the nitpicks. Each concern and nitpick is the file and line, then the suggested fix and what goes wrong if the code stays as it is.
+- The report says each thing once. The list of what the change touches, the checklist of acceptance criteria and the closing list of next steps are gone; a criterion that is not met appears as a concern.
+- A comment no longer gives the history of the code, the list of files to edit, a severity or category label, or the size of the fix. Where the story does not mention something, the report suggests the fix and does not ask whether the gap was deliberate.
+
 ## synergy 19.3.0
 
 - Pull request descriptions and stories now say what the work does, not what is in the diff. `_shared/body-standard.md` has a new **Level of detail** section: describe by capability, count instead of listing identifiers, keep rules and decisions, drop mechanics, and keep a pull request or story to a handful of bullets.
