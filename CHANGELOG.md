@@ -6,6 +6,13 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 19.3.0
+
+- Pull request descriptions and stories now say what the work does, not what is in the diff. `_shared/body-standard.md` has a new **Level of detail** section: describe by capability, count instead of listing identifiers, keep rules and decisions, drop mechanics, and keep a pull request or story to a handful of bullets.
+- A story states the outcome and the rules, and leaves the design to the builder. It no longer names the classes, endpoints, entities or components the builder will create, and `user-story` offers to split a story whose Technical section runs past about 8 bullets.
+- The new section adds about 330 tokens to every run of a workflow that writes a body, so the CI load budgets for `execute`, `bulk-execute`, `build`, `setup` and the pull request review path rise to match.
+- The `pr-body` examples and the component format drop long lists of class and method names, and `pr-body` has a new worked example of a large change written by capability.
+
 ## synergy 19.2.0
 
 - `wf quota` now shows how it reaches the budget for the day. `week.budget_basis` writes the sum in words: the percent of the weekly limit left when the day started, the days left (today counts as a whole day), the share, and the budget.

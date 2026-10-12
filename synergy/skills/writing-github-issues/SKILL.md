@@ -122,6 +122,8 @@ The body standard says what each section is for. These are the issue-specific ca
 
 Stories follow the same rules.
 
+A story says what to deliver and the rules it follows, not how to build it. It does not name the classes, endpoints, entities or components the builder will create (`skills/_shared/body-standard.md` → **Level of detail**).
+
 Add specialised sections only when the implementer would otherwise have to guess:
 
 - `## Business rules`

@@ -90,7 +90,18 @@ Nothing below the Summary repeats it.
 
 ---
 
-## 5. Titles
+## 5. Level of detail
+
+A body gives the reader what the diff cannot: the behaviour, the rules and the decisions. The diff already lists every class, command, column and file.
+
+- **Describe capabilities, not an inventory.** Write "Added a page where users keep the prompts and policies", not one bullet per class, command or component. Count instead of listing: "Added 9 entities". Name an identifier only when the reader must act on it: a contract, a setting, a migration to run, or the one place to look.
+- **Keep rules, drop mechanics.** Keep a rule the reader could not guess ("an archived item is read-only"). Drop how the code enforces it, unless a reviewer must judge that choice.
+- **Keep it short.** A pull request or story usually has 3 to 8 bullets under `## Changes`. If it needs more, split the work or stop describing the diff.
+- **A story gives the outcome and the rules, not the design.** It does not name the classes, endpoints, entities or components the builder will create.
+
+---
+
+## 6. Titles
 
 - Start with a verb where the work is a change: `Fix`, `Add`, `Remove`, `Split`, `Document`. A bug report may instead name the broken behaviour.
 - Sentence case. No trailing full stop.
@@ -103,17 +114,17 @@ The title lives in the title field. Never repeat it as a heading in the body.
 
 ---
 
-## 6. What never appears in a body
+## 7. What never appears in a body
 
 - Investigation history, debugging steps, grep results, failed theories, or any other proof that the work was done thoroughly.
 - The same information in two sections.
-- Implementation detail that does not change what the reader has to do.
+- Implementation detail that does not change what the reader has to do, including lists of identifiers (section 5).
 - Certainty the source did not have. Keep "likely", "may" and open questions as they were written.
 - Anything in `_shared/banned-patterns.md`. It applies to bodies in full, and no entry point relaxes it.
 
 ---
 
-## 7. Style
+## 8. Style
 
 Say the thing. Do not describe yourself saying it.
 
@@ -144,7 +155,7 @@ Use plain English and British spelling. Avoid filler openers such as:
 
 ---
 
-## 8. Before you post it
+## 9. Before you post it
 
 - Is the point clear in the first sentence?
 - Does the Summary stand on its own?
@@ -153,6 +164,7 @@ Use plain English and British spelling. Avoid filler openers such as:
 - Has uncertainty survived?
 - Is every paragraph on a single line, with no hard wrapping?
 - Are machine-read markers intact and exact (`Closes #N`)?
+- Does it describe capabilities and rules, with no list of identifiers the diff already shows?
 - Can anything else go without making the work harder to do or to verify?
 
 If yes, remove it.

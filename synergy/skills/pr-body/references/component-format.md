@@ -37,7 +37,7 @@ A second markdown code block containing the full PR description in markdown. Thi
 The description body has two parts:
 
 1. **Summary** — A `## Summary` section at the top with 2-4 complete, plain-English sentences explaining the goal, the approach, and the impact of the change. Include this **by default**. A reviewer should be able to read the Summary alone and understand what the PR does and why before looking at a single line of the diff. Only omit it for a genuinely trivial, self-explanatory change, for example a one-line typo fix.
-2. **Component sections** — One `##` section per logical module or component, with bullets describing what changed. These support the Summary with scannable specifics; they do not replace the plain-English explanation.
+2. **Component sections** — One `##` section per logical module or component, with bullets describing what changed. These support the Summary with scannable specifics; they do not replace the plain-English explanation. Follow the level-of-detail rules in `_shared/body-standard.md`: each bullet is a behaviour or a rule, not a class, method or file. Combine a run of related changes into one bullet.
 
 ---
 
@@ -48,23 +48,19 @@ The description is made up of one or more **component/module sections**, each fo
 ```markdown
 ## [Component/Module Name]
 
-- Added `ClassName` to handle [specific responsibility]
-- Updated `MethodName` signature to include `newParameter`
-- Removed deprecated `OldService` and associated logic
-- Refactored `Processor` to centralize validation logic
-- Updated dependency from `PackageA` to `PackageB` (version X → Y)
-- Modified behavior of `Handler` to support [new condition/scenario]
-- Introduced new file `filename.ext`
+- Added [a capability], handled by `ClassName` where a reviewer needs to know where to look
+- Changed the public signature of `MethodName` to take `newParameter`, because callers must now pass [value]
+- Removed the deprecated `OldService` and the logic that only it used
+- Centralised validation in `Processor` so every entry point applies the same rules
+- Updated `PackageA` to `PackageB` (version X → Y)
+- Changed `Handler` to support [new condition or scenario]
 - Renamed `OldModel` to `NewModel`
-- Updated interface `IService` with additional method `ExecuteAsync`
-- Adjusted data mapping logic in `Mapper` for [specific field/structure]
-- Removed redundant null checks in `Utility`
 ```
 
 **Rules:**
 
 - Each `## Heading` is a logical component, module, service, or file group
-- Bullets describe *what* changed and *why*, in clear phrases, with backticks for all code identifiers
+- Bullets describe *what* changed and *why*, in clear phrases, with backticks for the code identifiers they name. Name an identifier only where the reader needs it (see `_shared/body-standard.md`, level of detail); never list every class, method or file the diff touches
 - Do **not** include a Notes section
 - Include the `## Summary` section by default (see above); only omit it for a genuinely trivial, self-explanatory change
 - Keep bullets factual and specific; avoid vague filler like "various improvements"
@@ -75,8 +71,8 @@ The description is made up of one or more **component/module sections**, each fo
 ## Writing Guidelines
 
 - **Title**: Start with a verb. Be specific. Example: `Add Configurable Discounts for Invoice Line Items`, not `Invoice changes`.
-- **Bullets**: Lead with a past-tense or gerund action verb: `Added`, `Removed`, `Refactored`, `Updated`, `Introduced`, `Renamed`, `Adjusted`, `Modified`, `Extracted`, `Simplified`.
-- **Code identifiers**: Always wrap class names, method names, file names, properties, and config keys in backticks.
+- **Bullets**: Lead with a past-tense or gerund action verb: `Added`, `Removed`, `Refactored`, `Updated`, `Introduced`, `Renamed`, `Adjusted`, `Modified`, `Extracted`, `Simplified`. Usually 2 to 6 bullets under a component heading.
+- **Code identifiers**: Wrap the class names, method names, file names, properties and config keys that you do name in backticks.
 - **Component headings**: Use the specific name of the module, service, page, or file group. If the user hasn't provided a specific name, use the most descriptive name inferable from the context.
 - **Summary in prose**: The `## Summary` is written as complete plain-English sentences (see `_shared/wording-standard.md`). The component sections below it stay as bullets. Do not write prose paragraphs *inside* the component sections — the prose lives in the Summary, the specifics live in the bullets.
 - **Combining related bullets**: When multiple bullets share the same action or parent concept, combine them, either as an inline list (`Added tests: A, B, and C`) or with sub-bullets. Use sub-bullets when each item benefits from its own line for scannability.
@@ -103,14 +99,13 @@ Report generation had drifted into a mix of return types and a set of one-off st
 ## Report Generation Service
 
 - All service generation functions now return `void` or `Task`
-- Removed `ExtravagantHoursReportStrategy`, `NoCommentReportStrategy`, `NonBillableReportStrategy`, and `ContractorPaymentReportStrategy`
-- Removed `importantInformation` from method signatures and associated internal logic
-- Cleaned unused namespaces: `TimeSync.Strategies.AuditStrategies.Exceptions`, `TimeSync.Strategies.ReportStrategies.Contractor`
+- Removed the 4 unused report strategies, such as `NonBillableReportStrategy`
+- Removed `importantInformation` from method signatures and the internal logic behind it
 
 ## Client Validation
 
 - Removed `CreateInformationMessage` and its RTF rendering logic
-- Refactored `ValidateClients`: removed `importantInformation`, converted to direct logging, adjusted return type to `void`
+- `ValidateClients` now logs directly and returns `void`
 ```
 
 ---
@@ -130,7 +125,7 @@ Clients need to be able to give per-service-provider discounts on invoice line i
 
 ## Configuration
 
-- Added new client discount config fields: `DiscountFactor`, `DiscountLineItemDescription`, `ServiceProvider`
+- Added 3 client discount config fields, led by `DiscountFactor`
 - Validation rules: only one null entry allowed; `ServiceProvider` must match `Client.ServiceProviders.Name` or be null; no duplicate discounts per SP
 
 ## Invoice Generation
@@ -160,21 +155,19 @@ Warnings and logging were scattered and hard to filter, with no single place to 
 
 ## Warning Management
 
-- Created `WarningManager`, `WarningCollectorSink`, and `WarningSeverity` enum
-- Added color coding, severity grouping, and timestamp formatting to `ShowWarnings`
+- Created `WarningManager` to collect warnings by severity
+- Added color coding, severity grouping and timestamps to the warning display
 - Added configurable severity filtering via `appSettings`
 
 ## Logging Refactor
 
 - Adopted `Serilog.ForContext` to improve filtering
-- Updated log severities to align with new `WarningSeverity`
-- Added conditional log output via `DevopsSyncService` for runtime tuning
+- Aligned log severities with the new warning severities
+- Added conditional log output for runtime tuning
 
 ## Form Handling
 
-- Updated `FormEmbedder` to return `RichTextMessageBox` with graceful handling of uncreated form handles
-- Introduced `_embeddedRichTextMessageBox` field to support proper disposal and resource lifecycle
-- Refactored `CleanDirectory` to instance method
+- Made the embedded message box cope with form handles that are not created yet, and dispose it properly
 
 ## Code Quality
 

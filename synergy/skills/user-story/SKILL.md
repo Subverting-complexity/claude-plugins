@@ -74,7 +74,7 @@ Write as prose. Keep it to one or two short paragraphs. If the feature is visual
 
 The Technical section is the implementation plan. It tells a developer what to build and what to keep in mind.
 
-**Match the depth of the input.** If the user gives a high-level idea ("add a category field to metrics"), write a concise technical plan with the key decisions called out. If the user gives detailed notes with field names, JSON structures, and edge cases, reflect that detail in the output. The goal is to capture what the user knows without padding or trimming.
+**State decisions and constraints, not a design.** Say what the developer must build, the rules it must follow and the decisions already made. Leave out what the developer will decide while building: the classes, endpoints, entities, commands and components they will create, and the field-by-field or column-by-column layout. Keep a specific name or structure only where the story depends on it: something already fixed by an existing system, a contract another team reads, or a field that is itself a requirement. If the user gives detailed notes, keep their decisions and rules and fold their inventories into a sentence or a count. A story with more than about 8 bullets in Technical is probably two stories, so say so and offer to split it. See `_shared/body-standard.md` → **Level of detail**.
 
 Common elements in a Technical section (include what's relevant):
 
@@ -185,4 +185,4 @@ If given rough notes or an existing write-up to clean up:
 3. Cut filler and redundancy
 4. Bold key identifiers
 5. Organize technical details under appropriate subheadings
-6. Preserve all technical specifics from the original (field names, JSON structures, query examples)
+6. Preserve every decision, rule and constraint from the original. Fold lists of names (classes, fields, components) into a sentence or a count unless the story depends on the exact names. Keep a JSON structure or query only where it is a contract the story must meet

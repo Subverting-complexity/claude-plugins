@@ -16,8 +16,9 @@ What this story delivers and why, in 1-3 short paragraphs. The reader
 should understand the story from this section alone.
 
 ## Changes
-What has to change, as outcomes rather than a development diary. Exact
-paths, identifiers and configuration values where they are needed.
+What has to change, as outcomes and rules rather than a development
+diary or a design. Name an existing file, setting or identifier only
+where the builder must hook into it or the value is already fixed.
 
 ## Acceptance criteria
 - [ ] Specific, verifiable criterion
@@ -46,6 +47,8 @@ Each of these is optional. An empty or obvious one is worse than none, and none 
 
 Do not reach for these out of habit, and do not add a "Definition of done" section: the acceptance criteria and the project's quality gate already cover it.
 
+A story states the outcome and the rules. It leaves the design to the builder: it does not name the classes, endpoints, entities, commands or components that will be created, and it does not list tables, columns or fields unless a field is itself a requirement. A story that needs a long list of changes to describe is too large, so split it. `skills/_shared/body-standard.md` → **Level of detail** is the rule.
+
 ## The one convention the workflow reads
 
 A dependency is a **native blocked-by edge**, written from a spec's `blocked_by` by `wf issue-apply`. Selection skips a story with an open edge, and `wf unblock` releases it when every edge closes. Prose is not parsed, so a `Blocked by #N` sentence with no edge behind it holds nothing back. `wf issue-audit --blockers-only` finds those where the blocker is still open and writes the edges to add.
@@ -54,7 +57,7 @@ A dependency is a **native blocked-by edge**, written from a spec's `blocked_by`
 
 - How the story was discovered, or which part of the interview produced it.
 - Justification for something the Summary already makes obvious.
-- File-by-file narration of the intended implementation.
+- File-by-file narration of the intended implementation, or a list of the classes, endpoints and components the builder will create.
 - Alternatives, when the approach is already settled. Where it is not settled, keep the uncertainty in the words the discovery used ("this will likely need either...").
 
 A story too vague to implement gets refined, or its stage set to `Needs refinement` so nothing picks it up. Never pad a thin story with invented detail to make it look complete.
