@@ -20,14 +20,13 @@ Report generation had drifted into a mix of return types and a set of one-off st
 ### Report generation service
 
 - All service generation functions now return `void` or `Task`
-- Removed `ExtravagantHoursReportStrategy`, `NoCommentReportStrategy`, `NonBillableReportStrategy`, and `ContractorPaymentReportStrategy`
+- Removed the 4 unused report strategies, such as `NonBillableReportStrategy`
 - Removed `importantInformation` from method signatures and the internal logic behind it
-- Cleaned unused namespaces: `TimeSync.Strategies.AuditStrategies.Exceptions`, `TimeSync.Strategies.ReportStrategies.Contractor`
 
 ### Client validation
 
 - Removed `CreateInformationMessage` and its RTF rendering logic
-- Refactored `ValidateClients`: removed `importantInformation`, converted to direct logging, adjusted the return type to `void`
+- `ValidateClients` now logs directly and returns `void`
 
 ## Test plan
 
@@ -56,8 +55,8 @@ Clients need to be able to give per-service-provider discounts on invoice line i
 
 ### Configuration
 
-- Added client discount config fields: `DiscountFactor`, `DiscountLineItemDescription`, `ServiceProvider`
-- Added validation: only one null entry allowed, `ServiceProvider` must match `Client.ServiceProviders.Name` or be null, no duplicate discounts per service provider
+- Added 3 client discount config fields, led by `DiscountFactor`
+- Added validation: only one default discount, a named service provider must exist, and no duplicate discounts per service provider
 
 ### Invoice generation
 
@@ -103,4 +102,59 @@ Read-only Settings rows with a value were read as two separate accessibility ele
 - Checked the Settings screen with VoiceOver on an iPhone and TalkBack on a Pixel: each read-only row now reads as one element
 
 Closes #96
+```
+
+---
+
+## Example 4: A large change
+
+A change that adds a whole feature across the database, the API and the front end. The body describes what users and reviewers get, in capabilities and rules. It does not list the 9 entities, 6 commands and 5 components that the diff adds.
+
+**Title block:**
+```
+Add the report templates setup page
+```
+
+**Description block:**
+```markdown
+## Summary
+
+Adds a setup page where users keep the templates, rules and profiles that the report generator uses. Templates and rules are versioned, and a profile links a set of accounts to one template and an ordered list of rules. This pull request merges into `feature/report-overview`.
+
+## Changes
+
+### Access
+
+- Added a `Reports` role and a policy that lets `Reports` and `Admin` users manage templates. The policy guards the API, the page route and the menu entry
+- The profile page reads accounts through the setup API, because the general accounts API needs a stronger permission
+
+### Data and versions
+
+- Added storage for templates, rules and profiles. Every save of a template or rule adds a numbered version, and old versions are never edited
+- A profile follows the current version of its template and rules, not a fixed one
+- Two people saving at the same time cannot overwrite each other: the second save gets a "reload and try again" message
+- Only one profile can be the default
+- Added migration `AddReportTemplates`
+
+### Archive
+
+- Nothing is deleted. Users archive and restore templates, rules and profiles, and archived items are read-only
+- A template or rule that an active profile uses cannot be archived, and the message names those profiles. The default profile cannot be archived
+
+### Rule documents
+
+- A user uploads a PDF, and the service converts it to Markdown with OpenAI so tables keep their layout. The user checks the result beside the PDF, edits it, and saves
+- The PDF goes to external storage and the checked Markdown goes to the database. If the save fails, the uploaded PDF is deleted
+- A document that is in use cannot be removed. It is withdrawn from the rule instead
+- A new admin-only setting chooses the storage container for these documents. A container that holds documents cannot be deleted or moved
+
+### Setup page
+
+- Added Profiles, Policies, Prompts and an admin-only Storage tab, with a checklist of the 4 setup steps
+- One Save stores the details and, when the content changed, the next version. The page warns before the user leaves with unsaved changes
+
+## Test plan
+
+- `dotnet test` and `npm test` pass, including new tests for versioning, concurrent saves, archive rules and document storage
+- Created a template, a rule with an uploaded PDF and a profile in a local environment, archived and restored each, and confirmed the profile page enforces the requirements checklist
 ```

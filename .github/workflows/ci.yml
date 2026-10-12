@@ -95,13 +95,15 @@ jobs:
         shell: bash
         # Re-measured in 17.0.0 (#301): the count now includes the shared standards and other skills' SKILL.md files a workflow cites, which it always loaded. The rise is the measurement, not new instructions.
         # Raised in 18.9.0: user-facing-communication now states the ASD-STE100 sentence style, which every workflow loads.
-        run: bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 24850
+        # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
+        run: bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 25200
 
       - name: Check bulk-execute every-run load
         shell: bash
         # Re-measured in 17.0.0 (#301), as execute above; set selection became one short reference driven by wf plan-set. Raised in 17.3.0 for the check that stops a run in a repository not on GitHub or started by the wrong request.
         # Raised in 18.9.0: user-facing-communication now states the ASD-STE100 sentence style, which every workflow loads.
-        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 27970
+        # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
+        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 28300
 
       - name: Check pr-review every-run load
         shell: bash
@@ -112,19 +114,22 @@ jobs:
         shell: bash
         # Added in 16.2.0, when the pull request steps moved out of SKILL.md: a pull request review loads this file as well as the budget above, so it keeps its own gate. Re-measured in 17.0.0 (#301) with the shared standards counted.
         # Raised in 18.9.0: user-facing-communication now states the ASD-STE100 sentence style, which every workflow loads.
-        run: bash count-tokens.sh synergy/skills/pr-review/references/pr-workflow.md --budget 13720
+        # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
+        run: bash count-tokens.sh synergy/skills/pr-review/references/pr-workflow.md --budget 13950
 
       - name: Check build every-run load
         shell: bash
         # Re-measured in 17.0.0 (#301) with the shared standards counted.
         # Raised in 18.9.0: user-facing-communication now states the ASD-STE100 sentence style, which every workflow loads.
-        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 13440
+        # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
+        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 13620
 
       - name: Check setup every-run load
         shell: bash
         # Re-measured in 17.0.0 (#301) with the shared standards counted; the onboarding steps now count as conditional.
         # Raised in 18.9.0: user-facing-communication now states the ASD-STE100 sentence style, which every workflow loads.
-        run: bash count-tokens.sh synergy/commands/setup.md --budget 9230
+        # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
+        run: bash count-tokens.sh synergy/commands/setup.md --budget 9480
 
       - name: Check tone every-run load
         shell: bash

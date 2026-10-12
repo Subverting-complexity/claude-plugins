@@ -48,11 +48,11 @@ Two to four plain-English sentences on the goal, the approach and the impact, wr
 
 ### Changes
 
-Bullets, following the bullet rules in `_shared/body-standard.md`. Group them under `###` sub-headings named after the component, module, service or file group only when the change touches more than three separate areas.
+Bullets, following the bullet and level-of-detail rules in `_shared/body-standard.md`: capabilities and rules, not the classes or files the diff adds. Group them under `###` sub-headings named after a theme, such as `### Archive`, only when the change touches more than three separate areas.
 
 ### Test plan
 
-How the change was verified, as bullets: the commands run, the tests added or updated, and anything checked by hand. Say plainly if part of it is unverified.
+How the change was verified, as bullets: the commands run, the kinds of test added, and anything checked by hand. Say plainly if part of it is unverified.
 
 Only leave this section out when there is genuinely nothing to run and nothing to check.
 
