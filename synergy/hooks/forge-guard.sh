@@ -47,7 +47,7 @@ w='[^[:alnum:]_]'
 # git push and an MCP tool's push_files still do. The flag is PowerShell's
 # -EncodedCommand as command_parse.py reads it: `ec`, or any prefix of
 # `encodedcommand` from two letters, so -Encoding, --env and --enable pass.
-pattern="(^|$w)az($w|$)|azdo|glab|dev\\.azure|visualstudio|gitlab|bitbucket|devops|(^|[^[:alnum:]])push([^[:alnum:]-]|$)|[_-]ado[_-]|invoke-(restmethod|webrequest)|(^|$w)(irm|iwr)($w|$)|(pwsh|powershell)(\\.exe)?([^\"[:alnum:]_]|$)|(^|$w)(--?|/)(ec|en|enc(o(d(e(d(c(o(m(m(a(n(d)?)?)?)?)?)?)?)?)?)?)?)($w|$)"
+pattern="co-authored-by|generated with|noreply@anthropic|reviewed with claude|(^|$w)az($w|$)|azdo|glab|dev\\.azure|visualstudio|gitlab|bitbucket|devops|(^|[^[:alnum:]])push([^[:alnum:]-]|$)|[_-]ado[_-]|invoke-(restmethod|webrequest)|(^|$w)(irm|iwr)($w|$)|(pwsh|powershell)(\\.exe)?([^\"[:alnum:]_]|$)|(^|$w)(--?|/)(ec|en|enc(o(d(e(d(c(o(m(m(a(n(d)?)?)?)?)?)?)?)?)?)?)?)($w|$)"
 # With an allowlist, a GitHub call is checked only when it could write. Most
 # GitHub calls are reads such as `gh pr view`, and starting Python for each
 # cost about 300 ms. The words are forge_guard.py's WRITE_HINT, every write

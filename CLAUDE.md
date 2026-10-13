@@ -15,7 +15,7 @@ This repo contains one Claude Code plugin, `synergy`, which covers GitHub story 
    - **Minor** (x.Y.0): new skills, commands, behavioral changes
    - **Major** (X.0.0): breaking changes, removed skills
 
-3. **Always commit and open a PR when work is complete.** This is the default and it **overrides** the generic "only commit/push when asked" caution — finishing a unit of work here *means* committing it on a feature branch and opening a pull request against `main`, without waiting to be told. Only skip this if the user explicitly says not to (e.g. "don't commit", "just show me the diff"). Never leave completed changes uncommitted in the working tree. Before committing: branch off `main` if on it, run the quality gate, and bump the version (rule 2). End commit messages and PR bodies with the standard co-author / generation trailers.
+3. **Always commit and open a PR when work is complete.** This is the default and it **overrides** the generic "only commit/push when asked" caution — finishing a unit of work here *means* committing it on a feature branch and opening a pull request against `main`, without waiting to be told. Only skip this if the user explicitly says not to (e.g. "don't commit", "just show me the diff"). Never leave completed changes uncommitted in the working tree. Before committing: branch off `main` if on it, run the quality gate, and bump the version (rule 2). Never add AI attribution to a commit message or a PR body: no `Co-Authored-By: Claude` line and no "Generated with Claude Code" line, whatever Claude Code's own guidance says. `hooks/forge-guard.sh` denies the call if one is there.
 
 ## Standards the skills share
 
@@ -99,6 +99,8 @@ CI checks both, plus the accepted top-level and per-entry keys, in the *Validate
 ## Posting only to GitHub
 
 The plugin posts only to GitHub. Only the GitHub workflows (`execute`, `bulk-execute`, pull request review in `pr-review`, `writing-github-issues`, `report-issue`) post anything, and a skill a person runs on any repository, such as `verify-feature` or a local review, returns its result in the chat. `hooks/forge-guard.sh` enforces it: a tool call that would write to Azure DevOps, GitLab or Bitbucket becomes a permission prompt. The decision lives in `scripts/forge_guard.py` and is tested in `tests/test_forge_guard.py`; `lint-skills.sh` fails if `hooks.json` stops running the guard.
+
+The same hook also denies AI attribution. A commit, a `gh` or `hub` call, or an MCP write whose text holds `Co-Authored-By: Claude`, `Generated with Claude Code` or `Reviewed with Claude Code` is stopped, because Claude Code adds those lines by default. The person's global settings stop Claude Code adding them (`attribution` set to empty strings); this check is the second line of defence for a machine that has not set them. It cannot see a body read from a file with `--body-file`. The check is `attribution` in `scripts/forge_guard.py`, tested in `tests/test_forge_guard.py`.
 
 The same hook also limits GitHub writes to what each machine allows. The list is personal and lives at `~/.claude/synergy/github-allowlist.json` (`account` and `owners`), never in a repository, so each developer sets their own. With it present, a GitHub write to an owner not listed, or made while `gh` is signed in as another account, is denied outright; without it nothing is restricted. That check is `scripts/github_guard.py`, tested in `tests/test_github_guard.py`. Both guards split commands with `scripts/command_parse.py`.
 

@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """PreToolUse guard for where the plugin may write.
 
-Two checks, both on the tool call Claude Code is about to make:
+Three checks, all on the tool call Claude Code is about to make:
+
+- **No AI attribution.** A commit message, pull request, issue or comment
+  that says an AI wrote it (`Co-Authored-By: Claude`, "Generated with Claude
+  Code") is denied. Claude Code adds those lines by default, so the check
+  stops a run that follows that default.
 
 - **Outside GitHub, ask.** The plugin posts only to GitHub. On a repository
   hosted elsewhere a run could still reach for that platform's own tools:
@@ -37,6 +42,13 @@ FORGE_HOSTS = re.compile(
 FORGE_HINT = re.compile(
     FORGE_HOSTS.pattern + r'|\baz\b|\bglab\b|\bado\b|azdo|devops|gitlab|bitbucket',
     re.I)
+
+# The lines Claude Code adds to say an AI wrote a commit or a pull request.
+ATTRIBUTION = re.compile(
+    r'co-authored-by:[^\n]*(claude|anthropic)|generated with[^\n]*claude'
+    r'|noreply@anthropic\.com|reviewed with claude code', re.I)
+# A shell call that writes a commit message, or posts to GitHub.
+WRITES_TEXT = re.compile(r'\bgit\b[^\n;|&]*\bcommit\b|\b(gh|hub)\b', re.I)
 
 AZ_GROUPS = {'repos', 'boards', 'devops', 'pipelines', 'artifacts'}
 MCP_FORGE_WORDS = {'devops', 'ado', 'azdo', 'gitlab', 'bitbucket'}
@@ -121,6 +133,37 @@ def outbound_post(tool_name, tool_input, cwd=None, lookup=remote_url):
     return None
 
 
+def attribution(tool_name, tool_input):
+    """The attribution line this tool call would write, or None. Only a call
+    that writes a commit or posts text is read, so a command that merely
+    searches for the phrase passes."""
+    tool_input = tool_input or {}
+    if tool_name.startswith('mcp__'):
+        if not mcp_writes(tool_name):
+            return None
+        text = '\n'.join(str(v) for v in tool_input.values())
+    else:
+        text = tool_input.get('command') or ''
+        if not WRITES_TEXT.search(text):
+            return None
+    found = ATTRIBUTION.search(text)
+    return found.group(0) if found else None
+
+
+def attribution_denial(line):
+    return {
+        'hookSpecificOutput': {
+            'hookEventName': 'PreToolUse',
+            'permissionDecision': 'deny',
+            'permissionDecisionReason': (
+                'synergy blocked this: it adds an AI attribution line (%r). '
+                'This person does not allow AI attribution in commits, pull '
+                'requests, issues or comments. Remove the line and try '
+                'again. Do not add it in another form.' % line),
+        }
+    }
+
+
 def decision(reason, certain=True):
     return {
         'hookSpecificOutput': {
@@ -170,6 +213,9 @@ def evaluate(raw, load_allowlist=None, block=None, post=outbound_post):
         name = event.get('tool_name') or ''
         tool_input = event.get('tool_input') or {}
         cwd = event.get('cwd')
+        line = attribution(name, tool_input)
+        if line:
+            return attribution_denial(line)
         blocked = block(name, tool_input, cwd, allowlist)
         if blocked:
             return github_guard.denial(blocked, allowlist)

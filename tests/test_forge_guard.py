@@ -15,7 +15,8 @@ sys.path.insert(
     0,
     os.path.join(os.path.dirname(__file__), '..', 'synergy', 'scripts'),
 )
-from forge_guard import decision, evaluate, outbound_post  # noqa: E402
+from forge_guard import (attribution, decision, evaluate,  # noqa: E402
+                         outbound_post)
 
 AZURE = 'https://org@dev.azure.com/org/project/_git/repo'
 GITHUB = 'git@github.com:Subverting-complexity/claude-plugins.git'
@@ -334,6 +335,59 @@ class TestGapsFoundInRobustnessReview(unittest.TestCase):
                              capture_output=True, text=True, timeout=60)
         self.assertNotEqual(out.returncode, 0)
         self.assertEqual(out.stdout, '')
+
+
+class TestAttribution(unittest.TestCase):
+    """A commit, pull request or comment must not say an AI wrote it."""
+
+    COMMIT = ('git commit -m "$(cat <<\'EOF\'\nFix the thing\n\n'
+              'Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nEOF\n)"')
+
+    def denied(self, tool, tool_input):
+        out = evaluate(hook_event(tool, tool_input, '.'), lambda: None)
+        return out and out['hookSpecificOutput']['permissionDecision']
+
+    def test_a_commit_with_a_trailer_is_denied(self):
+        self.assertEqual(self.denied('Bash', {'command': self.COMMIT}), 'deny')
+        self.assertEqual(self.denied('PowerShell', {'command': self.COMMIT}), 'deny')
+
+    def test_a_pull_request_with_a_generation_line_is_denied(self):
+        for command in (
+            'gh pr create --title x --body "Done\n\n'
+            '\U0001F916 Generated with [Claude Code](https://claude.com/claude-code)"',
+            'gh pr edit 4 --body "Reviewed with Claude Code"',
+            'gh issue comment 4 --body "Co-authored-by: Claude <a@b.c>"',
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.denied('Bash', {'command': command}), 'deny')
+
+    def test_an_mcp_write_with_a_trailer_is_denied(self):
+        self.assertEqual(self.denied(
+            'mcp__github__create_pull_request',
+            {'title': 'x', 'body': 'Co-Authored-By: Claude <noreply@anthropic.com>'}),
+            'deny')
+
+    def test_a_human_co_author_passes(self):
+        self.assertIsNone(attribution('Bash', {
+            'command': 'git commit -m "x\n\nCo-Authored-By: Sam <sam@example.com>"'}))
+
+    def test_a_command_that_only_searches_for_the_phrase_passes(self):
+        for command in (
+            'grep -rn "Co-Authored-By: Claude" docs',
+            'echo "Generated with Claude Code"',
+            'cat CHANGELOG.md',
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(attribution('Bash', {'command': command}))
+
+    def test_an_mcp_read_passes(self):
+        self.assertIsNone(attribution(
+            'mcp__github__get_pull_request', {'body': 'Co-Authored-By: Claude'}))
+
+    def test_the_reason_tells_the_run_what_to_do(self):
+        out = evaluate(hook_event('Bash', {'command': self.COMMIT}, '.'),
+                       lambda: None)['hookSpecificOutput']
+        self.assertIn('Remove the line', out['permissionDecisionReason'])
 
 
 BASH = shutil.which('bash')
