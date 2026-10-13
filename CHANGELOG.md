@@ -6,6 +6,13 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 19.5.0
+
+- AI attribution is not allowed. `forge-guard.sh` denies a commit, a `gh` or `hub` call, or an MCP write whose text holds `Co-Authored-By: Claude`, `Generated with Claude Code` or `noreply@anthropic.com`, and the denial tells the run to remove the line. Claude Code adds those lines by default, so a session that followed its default was writing them.
+- The session start message tells Claude not to add attribution, so a run does not have to hit the denial first.
+- The pull request review comment footer no longer ends with `🤖 Reviewed with Claude Code`. The `Reviewed at <SHA>` line, which later runs read, is unchanged.
+- Nothing here can change Claude Code's own setting. To stop it adding the lines at all, set `attribution` to `{"commit": "", "pr": ""}` in `~/.claude/settings.json`.
+
 ## synergy 19.4.0
 
 - `verify-feature` writes a shorter report that a junior developer can follow. It has four parts: a summary, a verdict, the concerns and the nitpicks. Each concern and nitpick is the file and line, then the suggested fix and what goes wrong if the code stays as it is.

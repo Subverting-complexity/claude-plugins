@@ -116,7 +116,6 @@ These are project-specific checks to run in addition to the generic review.
 ```
 ---
 Reviewed at <SHA>
-🤖 Reviewed with Claude Code
 ```
 
 The `Reviewed at <SHA>` line is machine-parsed by future runs to detect whether the PR has changed since the last review.
