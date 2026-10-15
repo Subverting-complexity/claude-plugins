@@ -2,7 +2,7 @@
 
 This repo contains one Claude Code plugin, `synergy`, which covers GitHub story work and work that stays on your machine. It used to be two plugins (`github-workflow` and `local-workflow`) sharing fifteen skills through a sync step; 13.0.0 merged them, so every skill now has exactly one copy and there is nothing to sync. 14.0.0 renamed it from `github-workflow`, because it no longer covers only GitHub work.
 
-> **Dogfooding note:** This repo is itself configured as a `synergy` target. Project settings (org/repo, quality gate, issue fields) live in [`ClaudeProject.md`](ClaudeProject.md); workflow commands (`/synergy:execute`, `:pr-review`, etc.) read it. The open backlog of plugin-hardening work can be viewed on the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/8), grouped by each issue's `Stage`.
+> **Dogfooding note:** This repo is itself configured as a `synergy` target. Project settings (org/repo, quality gate, issue fields) live in [`ClaudeProject.md`](ClaudeProject.md); workflow commands (`/synergy:execute`, `:pr-review`, etc.) read it. The open backlog of plugin-hardening work can be viewed on the [claude-plugins board](https://github.com/orgs/Subverting-complexity/projects/18), grouped by each issue's `Stage`.
 
 ## CRITICAL RULES
 
