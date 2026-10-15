@@ -98,14 +98,14 @@ Issues should include these sections at minimum:
 
 ## Project Board
 
-Board: **claude-plugins** (org project #8) —
-<https://github.com/orgs/Subverting-complexity/projects/8>
+Board: **claude-plugins** (org project #18) —
+<https://github.com/orgs/Subverting-complexity/projects/18>
 
 | Setting             | Value                            |
 | ------------------- | -------------------------------- |
-| project-number      | `8`                              |
+| project-number      | `18`                             |
 | project-title       | `claude-plugins`                 |
-| project-node-id     | `PVT_kwDODj6aos4BZkaL`           |
+| project-node-id     | `PVT_kwDODj6aos4Bjb1z`           |
 
 This section is informational. The board is a view for people, with its columns grouped by `Stage`, and it is recorded here for them and for GitHub's own "Auto-add to project" workflow. Nothing in the workflow reads a column from it or moves a card on it.
 
