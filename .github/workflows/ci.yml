@@ -122,7 +122,8 @@ jobs:
         # Re-measured in 17.0.0 (#301) with the shared standards counted.
         # Raised in 18.9.0: user-facing-communication now states the ASD-STE100 sentence style, which every workflow loads.
         # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
-        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 13620
+        # Raised in 19.6.0: build has an independent review phase, whose reference file every run reads.
+        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 14780
 
       - name: Check setup every-run load
         shell: bash

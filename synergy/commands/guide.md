@@ -58,7 +58,7 @@ gh auth status 2>&1 | head -3
 >
 > **Local work (no issue, no pull request):**
 >
-> - "Build this" or `/synergy:build` → Plan, build, run the quality gate and commit on your machine. Nothing is posted anywhere.
+> - "Build this" or `/synergy:build` → Plan, build, run the quality gate and commit on your machine. Then a review agent in a fresh context reviews the commits and commits its fixes on the same branch. Nothing is pushed or posted anywhere, and no status is set.
 > - "Is this ready?" or `/synergy:pr-review` on uncommitted work, a branch or a commit → Review a local change in the chat.
 > - `/synergy:spec-hardening` → Test a spec against the codebase before it is built and report its gaps, conflicts and missing cases, in the chat only.
 > - `/synergy:verify-feature` → Write the report a person reads before merging, in the chat only.

@@ -6,6 +6,13 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 19.6.0
+
+- `/synergy:build` now reviews its own work. After the commit, a review agent in a fresh context reads the commits from the run, fixes the Blocking findings and Quick fixes, and commits the fixes on the same branch. A second agent reviews those fixes only when they were substantial. Nothing is pushed, no pull request is opened, and no status is set anywhere.
+- `build` accepts a story as well as a task: pasted text, a file, or a story from another tracker.
+- The `Reviewer` agent has a local mode for this. It calls no `gh` command, never pushes, and leaves files that were dirty before the run alone.
+- Say "no review" to skip the review step.
+
 ## synergy 19.5.0
 
 - AI attribution is not allowed. `forge-guard.sh` denies a commit, a `gh` or `hub` call, or an MCP write whose text holds `Co-Authored-By: Claude`, `Generated with Claude Code` or `noreply@anthropic.com`, and the denial tells the run to remove the line. Claude Code adds those lines by default, so a session that followed its default was writing them.
