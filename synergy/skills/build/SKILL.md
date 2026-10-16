@@ -1,6 +1,6 @@
 ---
 name: build
-description: 'Build a task locally with no issue or pull request: plan, write the code, run the quality gate, commit. Trigger on "build this" or "implement this" outside GitHub story work.'
+description: 'Build a task or story locally, no issue or PR: plan, code, quality gate, commit, then a fresh agent reviews and commits fixes. Trigger on "build this" or "implement this" outside GitHub story work.'
 depends-on:
   - code-architect
   - feature-discovery
@@ -11,9 +11,9 @@ arguments:
 
 # Build Task
 
-End-to-end local task execution workflow. Takes a task description, plans the implementation, builds it, runs tests, and commits.
+End-to-end local task execution workflow. Takes a task description or a story, plans the implementation, builds it, runs tests, and commits. Then a review agent in a fresh context reviews the commits, fixes what is wrong, and commits the fixes on the same branch.
 
-Everything here happens on your machine. There is no issue to claim, no pull request to open, and nothing to merge — the run finishes at a commit on your branch. Story work that should end in a reviewed and merged pull request is `/synergy:execute` instead, which is a different command doing a different job.
+Everything here happens on your machine. There is no issue to claim, no status to set, no pull request to open, and nothing to merge — the run finishes at commits on your branch. Story work that should end in a reviewed and merged pull request is `/synergy:execute` instead, which is a different command doing a different job.
 
 ## Output standard
 
@@ -71,7 +71,7 @@ If mode is `audit`, follow `references/audit-mode.md` instead of the phases belo
 
 ## Phase 1 -- Understand
 
-Read the task description provided by the user. If the user hasn't provided one, ask for it.
+Read the task description or story provided by the user: pasted text, a file, or a story from another tracker. If the user hasn't provided one, ask for it. Do not set a status or post anything to the tracker it came from.
 
 Check if the task has enough guidance to proceed:
 
@@ -102,7 +102,7 @@ If `.claude/ecosystem.md` does **not** exist, the project opted out — skip thi
 
 ## Phase 3 -- Build
 
-**Start clean.** Before making any edits, run the **Start clean** check in `templates/worktree-hygiene-local.md`: `git status --porcelain`. If the tree is already dirty, record the baseline and tell the user — a local session may run in their own checkout, so pre-existing changes may be *their* work. Leave those untouched and treat only the files you change from here on as yours. This baseline is what lets the Exit cleanup tell your work apart from what was already there.
+**Start clean.** Before making any edits, run the **Start clean** check in `templates/worktree-hygiene-local.md`: `git status --porcelain`. If the tree is already dirty, record the baseline and tell the user — a local session may run in their own checkout, so pre-existing changes may be *their* work. Leave those untouched and treat only the files you change from here on as yours. This baseline is what lets the Exit cleanup tell your work apart from what was already there. Also record the commit you start from, `start_sha=$(git rev-parse HEAD)`: Phase 6 reviews `{start_sha}..HEAD`.
 
 Implement the Phase 2 plan by `templates/coding-method.md`:
 
@@ -132,15 +132,20 @@ If no quality gate command is configured, run whatever test commands the project
 
 Do not push or create PRs. This is a local workflow. The user decides what happens next.
 
-After committing, run the **Exit cleanup** below so the tree ends clean.
+## Phase 6 -- Independent review
 
-## Phase 6 -- Report
+Read `references/independent-review.md` and follow it. One review agent reads the commits from this run in a fresh context, fixes the Blocking findings and Quick fixes, and commits the fixes on this branch. A second agent reviews those fixes only when they were substantial. Nothing is pushed or posted.
 
-Write this to `skills/user-facing-communication/SKILL.md`. Open with what was built and the current state, and be exact about that state: this run ends at a **commit on your branch**. Nothing is pushed, no pull request exists, and nothing is merged unless you say otherwise. Say so plainly, because a report that only says "done" reads as shipped.
+After the review, run the **Exit cleanup** below so the tree ends clean.
+
+## Phase 7 -- Report
+
+Write this to `skills/user-facing-communication/SKILL.md`. Open with what was built and the current state, and be exact about that state: this run ends at **commits on your branch**, reviewed and fixed. Nothing is pushed, no pull request exists, and nothing is merged unless you say otherwise. Say so plainly, because a report that only says "done" reads as shipped.
 
 Then include only the parts that carry information:
 
 - What was built, in plain language.
+- The review verdict, what the reviewer fixed, and each finding still open.
 - Anything outstanding: work left undone, a known limitation, or something the user has to do next.
 - Any meaningful assumption you had to make, or anything you could not verify.
 

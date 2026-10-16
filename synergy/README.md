@@ -24,7 +24,7 @@ Run both from a normal shell, not inside a Claude Code session, then restart the
 | `/synergy:bulk-execute 41 43 47` | Build exactly these stories together     |
 | `/synergy:orchestrate --parent 12` | Run `bulk-execute` in rounds, one at a time, over an Epic, a Feature, a list of stories or the open pool, checking each round against GitHub, until the scope is done or a stop condition holds |
 | `/synergy:pr-review`          | Review (or rework + re-review) the next PR |
-| `/synergy:build`                | Plan, build, verify and commit a local task, with no issue or PR |
+| `/synergy:build`                | Plan, build, verify and commit a local task or story, then have a fresh agent review it and commit its fixes on the same branch, with no issue, status or PR |
 | `/synergy:block-story`          | Mark current story as blocked            |
 | `/synergy:report-issue`         | Create a bug/arch/debt issue             |
 | `/synergy:setup`                | Interactive project onboarding wizard    |
@@ -172,11 +172,11 @@ With it in place, a push, pull request, issue, comment, label, merge or other Gi
 | Agent         | Role                          | Constraint             |
 | ------------- | ----------------------------- | ---------------------- |
 | **Builder**   | Implements stories end-to-end | Scoped allowlist (see `agents/builder.md`) |
-| **Reviewer**  | Validates PRs against issues  | Fixes and merges in full mode; read-only when `execute` or `bulk-execute` spawns it for an independent review |
+| **Reviewer**  | Validates PRs against issues, and local commits for `build` | Fixes and merges in full mode; read-only when `execute` or `bulk-execute` spawns it for an independent review; in local mode, fixes and commits on the caller's branch and never pushes or posts |
 
 Each agent follows least privilege — only the tools it needs. The builder is the default agent when the plugin is active.
 
-Each agent's tool allowlist is scoped to the GitHub workflow (specific `gh` and `git` operations, issue field writes). A local `build` run uses no agent of its own.
+Each agent's tool allowlist is scoped to the GitHub workflow (specific `gh` and `git` operations, issue field writes). A local `build` run uses the reviewer in local mode, which calls no `gh` command and pushes nothing.
 
 ## Skills
 
@@ -188,7 +188,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | `bulk-execute`        | The same loop for the stories that fill an effort budget, as at most two PRs |
 | `orchestrate`         | Runs `bulk-execute` as a series of rounds over a scope, one round at a time, with a ledger checked against GitHub after each. It starts a round only when the Claude plan limits have room (5-hour, weekly, and a budget for the day taken from what is left of the week), with settings it asks each person for on first use, and `--dry-run` shows the decision without starting anything |
 | `code-architect`      | Architecture design and audit (SOLID + Clean)     |
-| `build`               | Orchestrator for local work: plan → build → verify → commit, no issue or PR |
+| `build`               | Orchestrator for local work: plan → build → verify → commit → independent review and fixes, no issue or PR |
 | `pr-review`           | Deep PR review, labels, optional auto-merge; also reviews a local change, with a React Native checklist |
 | `verify-feature`      | A short report to read before merging: a summary, a verdict, then each concern and nitpick as a suggested fix and the problem behind it. Changes nothing |
 | `spec-hardening`      | A report on a spec before it is built: what it misses, gets wrong or leaves open, checked against the codebase. Changes nothing |
