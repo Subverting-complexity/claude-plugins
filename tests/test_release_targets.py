@@ -410,10 +410,6 @@ class TestReleaseTargetsCommand(unittest.TestCase):
         _, payload = self._run(labels=('release: web', 'released: web', 'bug'))
         self.assertEqual(payload['issues'][0]['labels'], ['release: web'])
 
-    def test_the_guard_treats_the_command_as_a_read(self):
-        import github_guard
-        self.assertIn('release-targets', github_guard.WF_READS)
-
 
 if __name__ == '__main__':
     unittest.main()

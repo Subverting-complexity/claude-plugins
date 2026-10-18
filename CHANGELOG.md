@@ -6,6 +6,11 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.0.0
+
+- The plugin no longer checks where a tool call writes. A write to Azure DevOps, GitLab or Bitbucket no longer asks, and `~/.claude/synergy/github-allowlist.json` is no longer read. Keep those rules in a guard on your machine. You can delete the allowlist file.
+- The PreToolUse hook is now `hooks/attribution-guard.sh`. It denies AI attribution as before, and starts Python only for a call whose text holds an attribution line.
+
 ## synergy 19.8.0
 
 - `wf start` no longer discards uncommitted work. On the story branch it changes nothing. In a checkout that is not a new worktree, a dirty tree makes it stop with `dirty` and list the paths. `build` now cleans only the paths its own run created.

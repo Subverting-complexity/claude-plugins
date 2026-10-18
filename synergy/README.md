@@ -157,15 +157,7 @@ Two ways to suppress a merge on a project that has it on: pass `--no-merge` for 
 
 ## Where it writes
 
-The plugin posts only to GitHub. A hook checks every shell and MCP tool call before it runs, and anything that would write to Azure DevOps, GitLab or Bitbucket asks you first. `verify-feature` and a local review return their report in the chat. At the start of each session and each subagent, another hook reads the repository's remote and tells Claude whether it is on GitHub, Azure DevOps, GitLab or Bitbucket, so it does not use `gh` in a repository that is not on GitHub.
-
-To limit GitHub writes to your own organisations, create `~/.claude/synergy/github-allowlist.json` on your machine:
-
-```json
-{ "account": "your-github-login", "owners": ["your-org"] }
-```
-
-With it in place, a push, pull request, issue, comment, label, merge or other GitHub write is blocked outright when it targets an owner not listed, including your personal account unless you list it, or when `gh` is signed in as a different account. A write the hook cannot judge, such as a push whose destination it cannot work out, is blocked too. Reading and cloning anywhere still work. The list is personal: never commit it to a repository, and each developer keeps their own. Without the file nothing is restricted.
+The plugin posts only to GitHub. It does not check where a tool call writes: since 20.0.0 that is the job of a guard on your machine, if you have one. A hook checks every shell and MCP tool call that would write a commit, pull request, issue or comment, and denies one that adds an AI attribution line. `verify-feature` and a local review return their report in the chat. At the start of each session and each subagent, another hook reads the repository's remote and tells Claude whether it is on GitHub, Azure DevOps, GitLab or Bitbucket, so it does not use `gh` in a repository that is not on GitHub.
 
 ## Agents
 
