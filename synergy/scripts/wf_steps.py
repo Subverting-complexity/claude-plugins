@@ -55,14 +55,58 @@ def discard(entries):
     return refused
 
 
-def start_clean():
+def start_clean(entries=None):
     """Reset an inherited dirty tree. Returns (discarded paths, still dirty)."""
-    entries = tree_entries() or []
+    if entries is None:
+        entries = tree_entries() or []
     if not entries:
         return [], []
     discard(entries)
-    discarded = list(dict.fromkeys(e['path'] for e in entries))
-    return discarded, [e['path'] for e in tree_entries() or []]
+    return _paths(entries), [e['path'] for e in tree_entries() or []]
+
+
+def _head_branch():
+    code, out, _ = run(['git', 'symbolic-ref', '--short', '-q', 'HEAD'])
+    return out.strip() if code == 0 else None
+
+
+def _worktree_is_new():
+    """A linked worktree whose HEAD has moved once: the harness made it and
+    nothing has been checked out in it since, so its dirt is inherited."""
+    dirs = [run(['git', 'rev-parse', flag]) for flag in ('--git-dir', '--git-common-dir')]
+    if any(code != 0 for code, _, _ in dirs):
+        return False
+    git_dir, common = (os.path.normcase(os.path.abspath(out.strip())) for _, out, _ in dirs)
+    if git_dir == common:
+        return False
+    code, out, _ = run(['git', 'reflog', 'show', '--format=%H', 'HEAD'])
+    return code == 0 and len([l for l in out.splitlines() if l.strip()]) == 1
+
+
+def start_tree(branch):
+    """Decide what `start` does to the tree before it checks out `branch`.
+
+    Returns (action, entries, on_branch). The extra git calls run only on a
+    dirty tree, because a clean one has nothing to keep or lose.
+    """
+    entries = tree_entries() or []
+    if not entries:
+        return 'keep', [], False
+    on_branch = _head_branch() == branch
+    new = not on_branch and _worktree_is_new()
+    return wf_core.start_tree_action(True, on_branch, new), entries, on_branch
+
+
+def _paths(entries):
+    return list(dict.fromkeys(e['path'] for e in entries))
+
+
+def _refuse_dirty(entries, **fields):
+    paths = _paths(entries)
+    emit('dirty', EXIT_DIRTY, dirty=paths, **fields,
+         reason='%d uncommitted path(s) and this is not a new worktree, so start '
+                'changed nothing: commit each that is work, or confirm it is junk '
+                'and `wf tree-clean` it, then re-run `wf start`' % len(paths))
 
 
 def cmd_tree_clean(args):
@@ -216,12 +260,22 @@ def _start_issue(args, cfg):
                               '--json', 'number,title'])
     if not ok or not issue:
         emit('error', EXIT_ENV, reason='could not read #%d (%s)' % (number, err))
+    wanted = wf_core.branch_name(cfg['branch_convention'], number, issue.get('title') or '')
+    action, entries, on_branch = start_tree(wanted)
+    if action == 'refuse':
+        _refuse_dirty(entries, number=number, branch=wanted)
     staged, stage_msg = set_stage(cfg, number, wf_core.STAGE_NAMES['stage-in-progress'])
-    discarded, dirty = start_clean()
-    branch, checked_out, branch_msg = checkout_branch(cfg, issue)
+    discarded, dirty, kept = [], [], []
+    if on_branch:
+        branch, checked_out, kept = wanted, True, _paths(entries)
+        branch_msg = 'already on the branch; left the tree as it was'
+    else:
+        if action == 'reset':
+            discarded, dirty = start_clean(entries)
+        branch, checked_out, branch_msg = checkout_branch(cfg, issue)
     return dict(number=number, title=issue.get('title'), branch=branch,
                 stage_set=staged, stage_message=stage_msg, checked_out=checked_out,
-                branch_message=branch_msg, discarded=discarded, dirty=dirty)
+                branch_message=branch_msg, discarded=discarded, dirty=dirty, kept=kept)
 
 
 def _start_group(args, cfg):
@@ -240,22 +294,31 @@ def _start_group(args, cfg):
     outcomes = {n: _claim('issue-%d' % n) for n in record_issues}
     lost = [n for n, o in outcomes.items() if o == 'lost']
     claim_errors = [n for n, o in outcomes.items() if o == 'error']
-    discarded, dirty = start_clean()
+    action, entries, on_branch = start_tree(args.branch)
+    if action == 'refuse':
+        _refuse_dirty(entries, group=args.group, branch=args.branch)
+    discarded, dirty, kept = [], [], []
+    if action == 'reset':
+        discarded, dirty = start_clean(entries)
     default = cfg['default_branch']
-    run(['git', 'fetch', 'origin', default])
-    # A re-run after a failed claim push finds the branch already made, so an
-    # existing branch is checked out rather than created a second time.
-    exists = run(['git', 'rev-parse', '--verify', '--quiet',
-                  'refs/heads/%s' % args.branch])[0] == 0
-    if exists:
-        code, _, err = run(['git', 'checkout', args.branch])
+    if on_branch:
+        checked_out, kept = True, _paths(entries)
+        branch_msg = 'already on the branch; left the tree as it was'
     else:
-        code, _, err = run(['git', 'checkout', '-b', args.branch, 'origin/%s' % default])
-    checked_out = code == 0
-    branch_msg = (('checked out the existing branch' if exists
-                   else 'created from origin/%s' % default) if checked_out
-                  else 'could not %s branch (%s)'
-                  % ('check out' if exists else 'create', err.strip()))
+        run(['git', 'fetch', 'origin', default])
+        # A re-run after a failed claim push finds the branch already made, so
+        # an existing branch is checked out rather than created a second time.
+        exists = run(['git', 'rev-parse', '--verify', '--quiet',
+                      'refs/heads/%s' % args.branch])[0] == 0
+        if exists:
+            code, _, err = run(['git', 'checkout', args.branch])
+        else:
+            code, _, err = run(['git', 'checkout', '-b', args.branch, 'origin/%s' % default])
+        checked_out = code == 0
+        branch_msg = (('checked out the existing branch' if exists
+                       else 'created from origin/%s' % default) if checked_out
+                      else 'could not %s branch (%s)'
+                      % ('check out' if exists else 'create', err.strip()))
     pushed = False
     if checked_out:
         pcode, _, perr = run(['git', 'push', '-u', 'origin', args.branch])
@@ -268,7 +331,7 @@ def _start_group(args, cfg):
                 claim_errors=claim_errors,
                 branch=args.branch, checked_out=checked_out, pushed=pushed,
                 recorded=mcode == EXIT_OK, branch_message=branch_msg,
-                discarded=discarded, dirty=dirty)
+                discarded=discarded, dirty=dirty, kept=kept)
 
 
 def cmd_start(args):
@@ -278,6 +341,10 @@ def cmd_start(args):
     dirty tree and creates or checks out the story branch. `--group G
     --branch B` does the same for a bulk group: confirms every story's claim,
     resets the tree, creates and pushes the shared branch and records it.
+
+    A dirty tree is reset only in a new worktree. On the story branch it is
+    the build in progress and is kept, with no checkout; anywhere else start
+    stops with `dirty` before it writes anything (`start_tree_action`).
     """
     if (args.issue is None) == (args.group is None):
         emit('usage', EXIT_USAGE, reason='name exactly one of --issue N or --group G')
@@ -307,5 +374,8 @@ def cmd_start(args):
         emit('partial', EXIT_PARTIAL, reason='; '.join(failures), **result)
     note = ('; reset an inherited dirty tree (%s)' % ', '.join(result['discarded'])
             if result['discarded'] else '')
+    if result['kept']:
+        note = ('; already on the branch, kept %d uncommitted path(s) as they were'
+                % len(result['kept']))
     emit_line('ok', EXIT_OK, branch=result['branch'],
               reason='on %s, ready to build%s' % (result['branch'], note))
