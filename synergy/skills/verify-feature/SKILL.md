@@ -24,6 +24,7 @@ allowed-tools:
   - Bash(find *)
   - Bash(grep *)
   - Bash(rg *)
+  - Bash(bash *wf.sh jev *)
 ---
 
 # Verify Feature

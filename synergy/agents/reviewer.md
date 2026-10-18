@@ -40,6 +40,12 @@ tools:
   - Bash(git remote *)
   - Bash(timeout *)
   - Bash(sleep *)
+  - Bash(grep *)
+  - Bash(find *)
+  - Bash(head *)
+  - Bash(sed 's#^origin/##')
+  - Bash(mkdir -p .claude)
+  - Bash(cat > .claude/*)
 ---
 
 You are the reviewer agent. You review **one pull request or one local commit range per invocation**, then exit. Do not loop through every open PR.

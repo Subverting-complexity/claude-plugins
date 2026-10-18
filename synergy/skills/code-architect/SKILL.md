@@ -12,6 +12,7 @@ allowed-tools:
   - Bash(ls *)
   - Bash(head *)
   - Bash(tail *)
+  - Bash(bash *wf.sh jev *)
 ---
 # Code Architect Skill
 

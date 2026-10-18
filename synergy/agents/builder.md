@@ -52,6 +52,8 @@ tools:
   - Bash(tail *)
   - Bash(wc *)
   - Bash(date *)
+  - Bash(timeout *)
+  - Bash(sleep *)
   - Bash(mkdir *)
   - Bash(cp *)
   - Bash(mv *)
