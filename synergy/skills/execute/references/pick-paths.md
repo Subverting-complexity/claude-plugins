@@ -33,7 +33,7 @@ Sending a story to refinement is one call. Write the comment to a file first, to
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" refine --issue {number} --body-file {tempfile}
 ```
 
-It sets the stage to `Needs refinement` first, then comments, unassigns and releases the claim, and reports each as `stage_set`, `commented`, `unassigned` and `claim_released`. Report any that is false.
+It sets the stage to `Needs refinement` first, then comments, unassigns and releases the claim, and reports each as `stage_set`, `commented`, `unassigned` and `claim_released`. If any is false, it exits `24` (`partial`) and the `reason` names it. Report it.
 
 ## Phase 2 recovery
 

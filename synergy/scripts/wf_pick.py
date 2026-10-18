@@ -12,7 +12,7 @@ from wf_candidates import report_unprioritised
 from wf_config import check_environment, load_config, prepare_cfg
 from wf_deps import known_edges
 from wf_io import (
-    EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, EXIT_USAGE, emit,
+    EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE, emit,
     emit_line, eprint, run,
 )
 from wf_pick_select import _pick_round, claim_validate_walk, prerequisite_pick
@@ -132,12 +132,19 @@ def cmd_refine(args):
                          '--remove-assignee', '@me'])
     unassigned = code == 0
     released = release_claims(['issue-%d' % number]).get('issue-%d' % number, False)
-    emit('ok', EXIT_OK, number=number, stage_set=stage_set,
+    failed = [name for name, done in (('stage_set', stage_set), ('commented', commented),
+                                      ('unassigned', unassigned),
+                                      ('claim_released', released)) if not done]
+    if failed:
+        status, code, reason = 'partial', EXIT_PARTIAL, (
+            '#%d not fully sent to %s: %s failed' % (number, stage, ', '.join(failed)))
+    else:
+        status, code, reason = 'ok', EXIT_OK, '#%d sent to %s' % (number, stage)
+    emit(status, code, number=number, stage_set=stage_set,
          stage_message=None if stage_set else stage_message, commented=commented,
          comment_error=None if commented else (err or '').strip(),
          unassigned=unassigned, unassign_error=None if unassigned else (uerr or '').strip(),
-         claim_released=released,
-         reason='#%d sent to %s' % (number, stage))
+         claim_released=released, reason=reason)
 
 
 def finish_pick(args, cfg, selected, side_effects, backlog_mode, container=None,

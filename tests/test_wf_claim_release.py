@@ -197,9 +197,10 @@ class TestHandoffReportsTheRelease(unittest.TestCase):
                 mock.patch.object(wf, 'repo_root', lambda: root):
             return _capture(args.func, args)
 
-    def test_a_failed_issue_release_is_reported_and_the_exit_is_unchanged(self):
+    def test_a_failed_issue_release_is_reported_as_partial(self):
         code, payload = self._handoff(_fake_git(refused=['issue-3']))
-        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+        self.assertIn('claim on #3 not released', payload['reason'])
         self.assertTrue(payload['issues'][0]['stage_set'])
         self.assertIs(payload['issues'][0]['claim_released'], False)
 

@@ -12,7 +12,7 @@ from wf_candidates import (
     read_pool,
 )
 from wf_claim import acquire_claim, apply_in_progress, release_claim
-from wf_deps import close_resolved, mark_blocked, validate_issue
+from wf_deps import close_failed, close_resolved, mark_blocked, validate_issue
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_CAPABILITY, EXIT_ENV, EXIT_NEEDS_REFINEMENT, emit,
     eprint, run,
@@ -86,11 +86,15 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
                                  'claim_released': released})
             continue
         if verdict == 'resolved':
-            done_set, _ = close_resolved(cfg, cand, detail)
+            result = close_resolved(cfg, cand, detail)
             released = release_claim(target)
-            side_effects.append({'issue': cand['number'], 'action': 'closed-already-resolved',
-                                 'pr': detail, 'stage_set': done_set,
-                                 'claim_released': released})
+            closed = not close_failed(result)
+            effect = {'issue': cand['number'], 'action': 'closed-already-resolved',
+                      'pr': detail, 'closed': closed, 'stage_set': result[0],
+                      'claim_released': released}
+            if not closed:
+                effect['close_message'] = result[1]
+            side_effects.append(effect)
             continue
         apply_in_progress(cfg, cand)
         return cand, side_effects

@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 import wf_core
 from wf_claim import acquire_claim, release_claims
 from wf_config import prepare_cfg, repo_root
-from wf_deps import close_resolved, validate_issue_edges
+from wf_deps import close_failed, close_resolved, validate_issue_edges
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, EXIT_USAGE, emit,
     gh_graphql,
@@ -194,8 +194,11 @@ def claim_plan(cfg, args, pool, plan, stories, common):
         if open_refs is not None:
             fresh[n] = [b for b in open_refs if b in outcomes]
         if verdict == 'resolved':
-            close_resolved(cfg, by_num[n], detail)
-            resolved[n] = detail
+            result = close_resolved(cfg, by_num[n], detail)
+            if close_failed(result):
+                dropped[n] = 'already resolved by #%s, %s' % (detail, result[1])
+            else:
+                resolved[n] = detail
         elif verdict == 'blocked':
             dropped[n] = 'blocked by %s, outside the set' % detail
         elif verdict != 'valid':

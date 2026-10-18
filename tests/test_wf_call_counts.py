@@ -199,13 +199,13 @@ class TestPostMergeCallCount(_Counted):
 
 class TestHandoffCallCount(_Counted):
 
-    def _handoff(self, numbers, **hub_args):
+    def _handoff(self, numbers, expected=wf.EXIT_OK, **hub_args):
         hub = _GitHub(**hub_args)
         argv = ['handoff', '--pr', '9']
         for number in numbers:
             argv += ['--issue', str(number)]
         code, payload = self._drive(hub, argv)
-        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(code, expected)
         return payload, hub.calls
 
     def test_one_issue_and_four_cost_the_same(self):
@@ -221,7 +221,8 @@ class TestHandoffCallCount(_Counted):
 
     def test_a_release_the_remote_still_holds_is_reported_per_issue(self):
         payload, calls = self._handoff(
-            [3, 4, 5, 6], push_fails=True, held={'refs/claims/issue-5'})
+            [3, 4, 5, 6], expected=wf.EXIT_PARTIAL, push_fails=True,
+            held={'refs/claims/issue-5'})
         released = {i['number']: i['claim_released'] for i in payload['issues']}
         self.assertEqual(released, {3: True, 4: True, 5: False, 6: True})
         self.assertEqual(len([c for c in calls if c[:2] == ['git', 'ls-remote']]), 1)

@@ -12,61 +12,61 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 
 | Module | Responsibility | Lines |
 |--------|----------------|-------|
-| `wf.py` | Entry point: argument parser, dispatch, re-exports | 534 |
-| `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 142 |
+| `wf.py` | Entry point: argument parser, dispatch, re-exports | 805 |
+| `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 179 |
 | `wf_config.py` | Repo root (asked of git once per working directory), `ClaudeProject.md` parsing with its areas table, release-targets table and Jev row, the config cache, `config` | 549 |
 | `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 498 |
 | `wf_issue_io.py` | Reading, writing and verifying single issues, the area label included; batched mutations; every label id a spec names, read to the last page | 516 |
-| `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 183 |
-| `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 540 |
-| `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 463 |
-| `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 268 |
-| `wf_unblock.py` | The unblock sweep, `unblock` | 288 |
-| `wf_pick.py` | The `pick` and `refine` entry point and the result a pick returns | 207 |
-| `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 360 |
-| `wf_pick_tree.py` | The sub-issue tree under an Epic or Feature, one named issue checked as a pick candidate | 153 |
+| `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 219 |
+| `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 570 |
+| `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 457 |
+| `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 297 |
+| `wf_unblock.py` | The unblock sweep, `unblock` | 316 |
+| `wf_pick.py` | The `pick` and `refine` entry point and the result a pick returns | 212 |
+| `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 361 |
+| `wf_pick_tree.py` | The sub-issue tree under an Epic or Feature, one named issue checked as a pick candidate | 192 |
 | `wf_pick_candidates.py` | `candidates`, including `--parent` | 271 |
-| `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 539 |
+| `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 536 |
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
-| `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, the release notes and release labels of a settled issue, `post-merge`, `settle-merged` | 771 |
-| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 572 |
-| `wf_issue_apply.py` | `issue-apply`, including the `area` key that writes an issue's 1 area label | 868 |
-| `wf_issue_audit.py` | `issue-audit` | 166 |
+| `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, the release notes and release labels of a settled issue, `post-merge`, `settle-merged` | 801 |
+| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 585 |
+| `wf_issue_apply.py` | `issue-apply`, including the `area` key that writes an issue's 1 area label | 867 |
+| `wf_issue_audit.py` | `issue-audit` | 189 |
 | `wf_areas.py` | `areas`: the rows of the areas table, or the area an issue's label names | 89 |
 | `wf_area_set.py` | `area-set`: the area label for an issue that has none, from a sure Jev answer or the caller's choice | 170 |
-| `wf_release_targets.py` | `release-targets`: the folders each story of a pull request touched, the release targets Jev is sure of, and the ones left to the caller | 166 |
-| `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 659 |
-| `wf_board_sync.py` | `board-sync` | 287 |
-| `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 274 |
+| `wf_release_targets.py` | `release-targets`: the folders each story of a pull request touched, the release targets Jev is sure of, and the ones left to the caller | 160 |
+| `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 913 |
+| `wf_board_sync.py` | `board-sync` | 291 |
+| `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 381 |
 | `wf_worktrees.py` | Reading a worktree's age and state, removing one (links first), the sweep, `worktree-reap` | 281 |
-| `wf_block.py` | `block` | 129 |
+| `wf_block.py` | `block` | 132 |
 | `wf_pr_create.py` | `pr-create` | 128 |
-| `wf_core.py` | Facade: re-exports the rules below | 58 |
+| `wf_core.py` | Facade: re-exports the rules below | 61 |
 | `wf_core_findings.py` | The finding record and the helpers findings are worded with | 46 |
-| `wf_core_fields.py` | Label resolution, native issue types, field vocabularies and ranks | 419 |
-| `wf_core_stage.py` | `Stage` names, work scope, which stage an issue belongs in, stage drift targets | 452 |
+| `wf_core_fields.py` | Label resolution, native issue types, field vocabularies and ranks | 525 |
+| `wf_core_stage.py` | `Stage` names, work scope, which stage an issue belongs in, stage drift targets | 467 |
 | `wf_core_select.py` | Candidate filter and sort, native type filtering, backlog mode | 308 |
-| `wf_core_pool.py` | The verdict on every open issue in the pool, waiting work, inherited priority and work mode | 584 |
-| `wf_core_refs.py` | Parent parsing, closing references, branch names, dependency edges, unblock verdicts | 268 |
-| `wf_core_bulk.py` | Filling a bulk set's effort budget, splitting it into groups, ordering each into waves | 477 |
+| `wf_core_pool.py` | The verdict on every open issue in the pool, waiting work, inherited priority and work mode | 585 |
+| `wf_core_refs.py` | Parent parsing, closing references, branch names, dependency edges, unblock verdicts | 366 |
+| `wf_core_bulk.py` | Filling a bulk set's effort budget, splitting it into groups, ordering each into waves | 484 |
 | `wf_core_claims.py` | Sibling PRs that would duplicate a claim, claim reaping | 110 |
-| `wf_core_spec.py` | The parent types an issue may have, spec validation with the `area` key, value shaping and batching | 797 |
-| `wf_core_audit.py` | What an existing issue is missing or contradicts | 344 |
-| `wf_core_review.py` | Review-state label names, pools and reconciliation | 192 |
-| `wf_core_labels.py` | The area and release labels the `ClaudeProject.md` tables name, and the plan for a repository to carry them: create, rename, conflict, unknown, differs; the area label on one issue, and what to add and remove so it carries exactly 1; the release targets of a closed issue, the labels it still lacks, and the paths of each story's own commits | 368 |
-| `wf_core_drift.py` | Finished containers, stage drift and the missing areas table | 96 |
+| `wf_core_spec.py` | The parent types an issue may have, spec validation with the `area` key, value shaping and batching | 720 |
+| `wf_core_audit.py` | What an existing issue is missing or contradicts | 432 |
+| `wf_core_review.py` | Review-state label names, pools and reconciliation | 195 |
+| `wf_core_labels.py` | The area and release labels the `ClaudeProject.md` tables name, and the plan for a repository to carry them: create, rename, conflict, unknown, differs; the area label on one issue, and what to add and remove so it carries exactly 1; the release targets of a closed issue, the labels it still lacks, and the paths of each story's own commits | 373 |
+| `wf_core_drift.py` | Finished containers, stage drift and the missing areas table | 127 |
 | `wf_core_preflight.py` | Config sections, label and field drift, instruction files | 584 |
-| `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 307 |
-| `wf_core_scratch.py` | Which `.claude/` files are run scratch, the managed `info/exclude` block | 70 |
+| `wf_core_repair.py` | File-level checks, what `--fix` may repair, editing `ClaudeProject.md` | 559 |
+| `wf_core_scratch.py` | Which `.claude/` files are run scratch, the managed `info/exclude` block | 80 |
 | `wf_core_schedule.py` | Reading `.claude/plan.md`, a bulk set record by group, which stories in a wave share files, parallel batches | 210 |
-| `wf_core_steps.py` | Exit cleanup's review reconcile, the tree's porcelain, PR body checks, the current milestone, the compact pick result, abandoned PRs, the review picker's moved-head tier | 274 |
+| `wf_core_steps.py` | Exit cleanup's review reconcile, the tree's porcelain, PR body checks, the current milestone, the compact pick result, abandoned PRs, the review picker's moved-head tier | 316 |
 | `wf_core_worktrees.py` | Reading `git worktree list`, which worktrees a sweep covers, and the verdict on each | 134 |
 | `wf_quota.py` | `quota`: the personal settings file at `~/.claude/synergy/quota.json`, `--save` to write it, the flags that override it, the stored reading from the start of each day, and the printed decision | 145 |
 | `wf_core_quota.py` | Whether a round may start against the Claude plan limits: the 5-hour ceiling, the weekly ceiling, the budget for the day from what is left of the week, what a round costs, and when a stopped run can continue | 258 |
 | `wf_jev.py` | `jev`: one request per batch to Jev, the TypeSafe decision model, and the `unavailable` result when there is no key, the repository turns Jev off, a table a check needs is empty or there is no answer, and issues read from GitHub as items; `jev_ask` gives another command the same answer without printing it | 203 |
 | `wf_core_jev.py` | Building the requests for a check in `jev-checks.json`, filling `area` and `target` from the `ClaudeProject.md` tables, and turning each answer into a row with a `high`, `medium` or `low` level | 351 |
-| `wf_area_backfill.py` | `area-backfill`: the paged read of every issue, open and closed, the label ids, the batched label writes, and closing the area epics a repository had before 19.0.0 | 261 |
-| `wf_core_backfill.py` | Which issues are area epics from before 19.0.0 (the one read of the `Area` stage), which one an issue's parent chain reaches, and the backfill plan: what to label, what already carries a label, what differs, what has no area, and why a run must stop | 224 |
+| `wf_area_backfill.py` | `area-backfill`: the paged read of every issue, open and closed, the label ids, the batched label writes, and closing the area epics a repository had before 19.0.0 | 262 |
+| `wf_core_backfill.py` | Which issues are area epics from before 19.0.0 (the one read of the `Area` stage), which one an issue's parent chain reaches, and the backfill plan: what to label, what already carries a label, what differs, what has no area, and why a run must stop | 254 |
 
 ## Commands
 
@@ -112,6 +112,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" bulk-integrate --group 1 --wave 1
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" drop-group --group 2 --reason "review ran inline"
 
 # Send a claimed issue back: Stage to Needs refinement, comment, unassign, release
+# (exit 24 names any of the four that failed)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" refine --issue 42 --body-file .claude/42-body.md
 
 # Delete this run's scratch files under .claude/ (caches and the preflight marker stay)
@@ -138,7 +139,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" block --issue 42 --body-file .claude/
 
 # After merging a PR: close any still-open linked issue and set its Stage to Done,
 # close any Epic or Feature above it whose sub-issues are now all closed,
-# then release whatever that merge freed
+# then release whatever that merge freed (exit 24 names each close or stage that failed)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" post-merge --pr 123
 
 # Settle every recently merged PR whose issues are not yet Done (a queued or hand merge)
@@ -218,7 +219,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim --pr 123 --no-marker
 # Let one or more locks go (idempotent)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-release --issue 42 --pr 123
 
-# Free every claim ref whose work has demonstrably moved on
+# Free every claim ref whose work has demonstrably moved on (a failed release is
+# listed in release_failed, not reaped, and exits 24)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-reap --threshold 4 --dry-run
 
 # Set an issue's Stage (best-effort, always exit 0)
@@ -231,6 +233,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" sibling-pr 42 43 --exclude-branch fea
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" review-finish --pr 123 --verdict needs-re-review
 
 # Hand finished stories to review: label the PR, set each issue to In Review, free claims
+# (exit 24 names a failed label, stage or release; still not a stop for the caller)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" handoff --pr 123 --issue 42 --issue 43
 ```
 
@@ -258,7 +261,7 @@ A single JSON object goes to **stdout**; diagnostics go to **stderr**. Every run
 | 10   | `no-candidates` | The ready pool was empty.                                      |
 | 11   | `all-blocked`   | Every candidate was claimed away, blocked, or already resolved.|
 | 12   | `needs-refinement` | The next pick is too unclear to build. Nothing was claimed. |
-| 20   | `error`         | Environment/auth problem (not a repo, no `gh`, no config).     |
+| 20   | `error`         | Environment/auth problem (not a repo, no `gh`, no config), or an unexpected exception: `wf` catches it at the top level, prints the traceback to stderr and gives `reason: unexpected <Type>: <message>`. |
 | 21   | `no-capabilities` | The org reports no issue types and no fields, or refused to say. |
 | 22   | `spec-invalid`  | An `issue-apply` spec is wrong. Nothing was written.           |
 | 23   | `verify-failed` | A write was accepted but does not read back. Issues exist.     |
@@ -268,7 +271,9 @@ A single JSON object goes to **stdout**; diagnostics go to **stderr**. Every run
 | 27   | `lost`          | `claim` — another agent holds this issue or PR. Change nothing.  |
 | 30   | `unsupported`   | Path not in the CLI yet — caller falls back to the skill.      |
 
-Mutations to the **winning** issue (claim, assign, the `In Progress` stage) are silent; mutations to **other** issues (setting a dependency-blocked one to `Blocked`, closing one already resolved by a merged PR, which also sets its stage to `Done`) are always reported in the `side_effects` array, each with `stage_set`.
+Mutations to the **winning** issue (claim, assign, the `In Progress` stage) are silent; mutations to **other** issues (setting a dependency-blocked one to `Blocked`, closing one already resolved by a merged PR, which also sets its stage to `Done`) are always reported in the `side_effects` array, each with `stage_set`. A resolved issue also carries `closed`: when `gh issue close` fails, nothing else is written, the issue keeps its stage and stays in the pool, and `close_message` says why.
+
+A command whose write failed never reports `ok`. `refine`, `handoff`, `claim-reap` and `post-merge` exit 24 (`partial`) with a `reason` that names each write that did not land, built from the real outcome.
 
 ## Org capabilities — `org-capabilities`
 
@@ -608,6 +613,7 @@ The file-level checks used to be shell blocks inside `skills/preflight/SKILL.md`
 | ------- | ----- | ------- |
 | `gh-auth` | critical | The GitHub CLI cannot act for this repository. Nothing else runs. |
 | `file-config` | critical | There is no `ClaudeProject.md`. Reported alone: with no file there is nothing to compare anything against, and the network is never touched. |
+| `config-parse` | critical | `ClaudeProject.md` exists but does not parse, so no command can read its settings. It was an `error` (exit 20), which a caller read as "the checks did not run" and went on past. Never repaired by `--fix`. |
 | `config-retired` | warning | A `## Ready Gate` or `## Agent Gating` section survives. Nothing reads it, which is exactly why it has to go — left there, the next person to read the file believes it. |
 | `placeholders` | warning | Template placeholders nobody replaced, named by line. |
 | `quality-gate` | warning | No pre-commit command, or the placeholder is still there. |
