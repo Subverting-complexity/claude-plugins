@@ -776,7 +776,7 @@ def cmd_preflight(args):
 
     ok, cfg, cerr = load_config()
     if not ok:
-        emit('error', EXIT_ENV, reason=cerr)
+        return _config_parse_failed(findings, checked, skipped, args, source_rel, cerr)
 
     audit, audit_checked, audit_skipped, context = collect_config_findings(
         cfg, args, root)
@@ -827,7 +827,8 @@ def cmd_preflight(args):
     # idempotent command look like it had done nothing.
     ok, cfg, cerr = load_config()
     if not ok:
-        emit('error', EXIT_ENV, reason=cerr)
+        return _config_parse_failed(findings, checked, skipped, args, source_rel,
+                                    cerr, done, blocked)
     with open(source, encoding='utf-8') as fh:
         text = fh.read()
     findings = [f for f in findings if f['check'] in ('gh-auth', 'file-config')]
@@ -840,6 +841,24 @@ def cmd_preflight(args):
                                                              args.repo)
         findings.extend(automerge)
     return _emit_preflight(findings, checked, skipped, cfg, args, done, blocked)
+
+
+def _config_parse_failed(findings, checked, skipped, args, source_rel, err,
+                         fixed=(), blocked=()):
+    """A `ClaudeProject.md` that does not parse is a critical finding.
+
+    It used to be an `error` (exit 20), which a caller reads as "the checks
+    did not run" and carries on past. Every workflow command reads this file,
+    so nothing can run correctly until a person corrects it.
+    """
+    findings = list(findings) + [wf_core.finding(
+        wf_core.CRITICAL, 'config-parse',
+        'could not parse %s (%s), so no workflow command can read its '
+        'settings' % (source_rel, err),
+        'correct the file by hand, or run `/synergy:setup`', source_rel)]
+    return _emit_preflight(findings, list(checked) + ['config-parse'],
+                           list(skipped) + ['config-section'], None, args,
+                           list(fixed), list(blocked))
 
 
 def _emit_preflight(findings, checked, skipped, cfg, args, fixed, blocked):

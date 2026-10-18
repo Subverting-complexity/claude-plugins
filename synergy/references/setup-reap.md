@@ -10,7 +10,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" claim-reap
 
 Add `--threshold N` to change the age below which a ref is left alone (default **4** hours), or `--dry-run` to see the verdicts without freeing anything.
 
-It always exits 0 and reports three lists. `reaped` are the refs it freed: the issue is closed, no longer marked in progress, or already has a PR open; the PR is closed, merged, or open with no review under way. `suspect` are the refs it deliberately left, because the evidence does not say the work has stopped: an issue still in progress with no PR, a PR under active review, or a target it could not read. `skipped` are refs younger than the threshold. Report the counts, and name every `suspect` ref with its reason so a person can decide.
+It exits 0 and reports three lists. If a release failed, it exits `24` (`partial`) and lists that ref in `release_failed`, not in `reaped`; report it. `reaped` are the refs it freed: the issue is closed, no longer marked in progress, or already has a PR open; the PR is closed, merged, or open with no review under way. `suspect` are the refs it deliberately left, because the evidence does not say the work has stopped: an issue still in progress with no PR, a PR under active review, or a target it could not read. `skipped` are refs younger than the threshold. Report the counts, and name every `suspect` ref with its reason so a person can decide.
 
 It is safe to run at any time, because it never reaps a ref that still backs a running session, and is schedulable via `/schedule` calling `/synergy:setup reap`.
 

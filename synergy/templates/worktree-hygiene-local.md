@@ -33,7 +33,7 @@ git status --porcelain
   ```
   Then **tell the user** the tree was already dirty, list the pre-existing paths, and proceed **without touching them** — do not stage, revert, or `git clean` them. They may be the user's own work. Only files **you** create or modify from here on are yours to commit.
 
-  (If you can confirm this is a freshly provisioned, leaked worktree — not the user's live checkout — you may reset it to a clean baseline with `git restore --staged --worktree -- .` and `git clean -fd` (never `-x`, so gitignored `.env`/`node_modules` survive) and report what was discarded. When in doubt, leave it alone.)
+  (If you can confirm this is a freshly provisioned, leaked worktree — not the user's live checkout — you may discard each recorded path with `git restore --staged --worktree -- <path>` or `git clean -fd -- <path>` (never `-x`) and report what was discarded. When in doubt, leave it alone.)
 
 ## End clean
 
@@ -52,7 +52,7 @@ git status --porcelain
     git add <formatting-only-files>
     git commit -m "chore: formatting"
     ```
-  - **Disposable generated noise** — regenerated build output or lockfile churn you do not intend to track and that is not gitignored. Discard it (`git restore` / `git clean -fd`). If it keeps reappearing, it should be gitignored — note that to the user.
+  - **Disposable generated noise** — regenerated build output or lockfile churn you do not intend to track and that is not gitignored. Discard only paths this run made, not in the baseline: `git restore -- <path>` or `git clean -fd -- <path>`, never a bare `git clean -fd`. If it keeps reappearing, it should be gitignored — note that to the user.
 
   Then confirm:
   ```

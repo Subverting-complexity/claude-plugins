@@ -31,6 +31,12 @@ allowed-tools:
   - Bash(cargo *)
   - Bash(go *)
   - Bash(make *)
+  - Bash(bash *wf.sh*)
+  - Bash(bash *.sh *)
+  - Bash(timeout *)
+  - Bash(sleep *)
+  - Bash(head *)
+  - Bash(sed 's#^origin/##')
 ---
 
 # PR Review

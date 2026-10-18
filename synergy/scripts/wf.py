@@ -66,6 +66,7 @@ shell modules define is re-exported here, so `wf.X` keeps working.
 import argparse
 import os
 import sys
+import traceback
 import types
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -789,7 +790,15 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     if getattr(args, 'mode', None) == 'bug':
         args.mode = 'maintenance'
-    args.func(args)
+    try:
+        args.func(args)
+    except (SystemExit, KeyboardInterrupt):
+        raise
+    except Exception as exc:  # noqa: BLE001 - every caller reads a JSON result
+        # A bug or an odd reply must still give the caller a result to read.
+        traceback.print_exc(file=sys.stderr)
+        wf_io.emit('error', wf_io.EXIT_ENV,
+                   reason='unexpected %s: %s' % (type(exc).__name__, exc))
 
 
 if __name__ == '__main__':

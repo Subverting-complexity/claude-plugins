@@ -485,6 +485,7 @@ def cmd_post_merge(args):
              and not any((s.get('release_labels') or {}).get('error')
                          for s in settled)
              and not container_errors
+             and all(c['closed'] and c.get('stage_set') for c in containers)
              and not (unblocked or {}).get('error')
              and not (unblocked or {}).get('rescoped')
              and not (unblocked or {}).get('partials')
@@ -511,14 +512,51 @@ def cmd_post_merge(args):
                   containers_closed=containers, released=released, **extra,
                   reason='PR #%d settled: %d issue(s) closed and Done, %d '
                          'container(s) closed, %d issue(s) released'
-                         % (args.pr, len(settled), len(containers), len(released)))
+                         % (args.pr, len(settled),
+                            len([c for c in containers if c['closed']]), len(released)))
     # Something did not land: a stage left out of Done, notes not written, a
     # container not closed. Exit non-zero so the caller cannot read it as done.
     emit('partial', EXIT_PARTIAL, pr=args.pr, base=data.get('baseRefName'),
          settled=settled,
          containers_closed=containers, container_errors=container_errors,
          release_note_errors=note_errors,
-         release_target_errors=target_errors, unblocked=unblocked)
+         release_target_errors=target_errors, unblocked=unblocked,
+         reason='PR #%d did not settle fully: %s' % (args.pr, '; '.join(
+             _settle_failures(settled, containers, container_errors, note_errors,
+                              target_errors, unblocked))))
+
+
+def _settle_failures(settled, containers, container_errors, note_errors,
+                     target_errors, unblocked):
+    """One short phrase for each write `post-merge` could not make."""
+    failures = []
+    for s in settled:
+        if not s['closed']:
+            failures.append('#%d not closed' % s['issue'])
+        if not s['stage_set']:
+            failures.append('#%d Stage not Done' % s['issue'])
+        if (s.get('release_notes') or {}).get('error'):
+            failures.append('#%d release notes not written' % s['issue'])
+        if (s.get('release_labels') or {}).get('error'):
+            failures.append('#%d release labels not written' % s['issue'])
+    for c in containers:
+        if not c['closed']:
+            failures.append('container #%d not closed: %s' % (c['issue'], c.get('error')))
+        elif not c.get('stage_set'):
+            failures.append('container #%d Stage not Done' % c['issue'])
+    failures += ['parents of %s not read' % e for e in container_errors]
+    if note_errors:
+        failures.append('release notes file: %s' % '; '.join(map(str, note_errors)))
+    if target_errors:
+        failures.append('release targets: %s' % '; '.join(map(str, target_errors)))
+    sweep = unblocked or {}
+    if sweep.get('error'):
+        failures.append('unblock sweep: %s' % sweep['error'])
+    if sweep.get('rescoped') or sweep.get('partials') or any(
+            not r.get('stage_set', True) or r.get('still_assigned')
+            for r in (sweep.get('released') or []) + (sweep.get('rescoped') or [])):
+        failures.append('the unblock sweep left issues to check')
+    return failures or ['see the fields of this result']
 
 
 def read_release_notes(path):

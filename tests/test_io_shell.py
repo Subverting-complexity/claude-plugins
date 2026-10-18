@@ -3701,11 +3701,12 @@ class TestHandoffAndClaims(unittest.TestCase):
 
     def test_handoff_reports_an_unwritten_stage_without_failing(self):
         """A failed write leaves the issue in the stage it was in; the PR still
-        exists and the claim is still freed, so the run reports it rather than
-        dying."""
+        exists and the claim is still freed, so the run reports it as
+        `partial` rather than dying or reading as done."""
         code, payload = self._run(['handoff', '--pr', '7', '--issue', '3'], [],
                                   written=(False, wf.NO_STAGE_FIELD))
-        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(code, wf.EXIT_PARTIAL)
+        self.assertIn('#3 not set to In Review', payload['reason'])
         self.assertEqual(payload['issues'][0]['stage_set'], False)
         self.assertEqual(payload['issues'][0]['stage_message'],
                          wf.NO_STAGE_FIELD)
@@ -3820,7 +3821,8 @@ class TestClaimReap(unittest.TestCase):
                 mock.patch.object(wf, 'list_claim_refs', lambda: (refs, '')), \
                 mock.patch.object(wf, 'claim_age_hours', lambda sha: 9), \
                 mock.patch.object(wf, 'claim_target_state', target_state), \
-                mock.patch.object(wf, 'release_claim', released.append), \
+                mock.patch.object(wf, 'release_claim',
+                                  lambda t: released.append(t) or True), \
                 contextlib.redirect_stderr(io.StringIO()):
             code, payload = _capture(wf.cmd_claim_reap, args)
         return code, payload, released

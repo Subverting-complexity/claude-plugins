@@ -13,7 +13,8 @@ from wf_capabilities import fetch_repo_state
 from wf_claim import acquire_claim, holds_claim, release_claims
 from wf_config import prepare_cfg, repo_root
 from wf_io import (
-    EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, emit, emit_line,
+    EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, EXIT_PARTIAL, emit,
+    emit_line,
     eprint, gh_graphql, gh_json, run,
 )
 from wf_stage import set_stages
@@ -566,7 +567,19 @@ def cmd_handoff(args):
                   reason='PR #%d claimed and labelled %s; %s In Review and released'
                          % (args.pr, state_label,
                             ', '.join('#%d' % i['number'] for i in issues) or 'no issue'))
+    # A write that failed makes the result `partial`, so a caller reading only
+    # the status sees it. It is still not a stop: the PR exists either way.
+    failed = (([] if pr_labelled else ['PR #%d not labelled %s' % (args.pr, state_label)])
+              + ['#%d not set to In Review' % i['number'] for i in issues
+                 if not i['stage_set']]
+              + ['claim on #%d not released' % i['number'] for i in issues
+                 if not i['claim_released']])
+    if failed:
+        emit('partial', EXIT_PARTIAL, pr=args.pr, pr_claimed=pr_claimed,
+             pr_labelled=pr_labelled, review_label=state_label, issues=issues,
+             reason='PR #%d handed to review with failed writes: %s'
+                    % (args.pr, '; '.join(failed)))
     emit('ok', EXIT_OK, pr=args.pr, pr_claimed=pr_claimed, pr_labelled=pr_labelled,
          review_label=state_label, issues=issues,
-         reason='PR #%d labelled %s; %d issue(s) handed to review'
-                % (args.pr, state_label, len(issues)))
+         reason='PR #%d labelled %s; %d issue(s) handed to review; review claim %s'
+                % (args.pr, state_label, len(issues), pr_claimed))

@@ -333,6 +333,22 @@ for plugin in synergy; do
     fi
 done
 
+# Allowlist coverage: an unattended run stops at a permission prompt nobody
+# answers when a file its flow cites runs a command its agent's `tools:` or its
+# skill's `allowed-tools:` does not allow. lint_allowlists.py follows the
+# citations and checks every command in a fenced shell block. Fix a gap by
+# adding a narrow entry to the right allowlist, not by skipping the command.
+# shellcheck source=synergy/scripts/find-python.sh
+source synergy/scripts/find-python.sh
+if find_python; then
+    if ! "${BASE_PY[@]}" lint_allowlists.py synergy; then
+        status=1
+    fi
+else
+    echo "FAIL: no Python 3 found — cannot run lint_allowlists.py"
+    status=1
+fi
+
 echo ""
 if [ $status -eq 0 ]; then
     echo "All checks passed."

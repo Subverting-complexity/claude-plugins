@@ -159,6 +159,7 @@ UNFIXABLE_REASONS = {
     'gh-auth': 'only the person at the keyboard can authenticate',
     'config-section': 'the section holds decisions no run can make for a project',
     'file-config': 'there is nothing to repair until the file exists',
+    'config-parse': 'a file that does not parse cannot be edited safely in place',
     'file-claude-md': "writing a project's CLAUDE.md is the project's call",
     'stage-absent': 'an org-level issue field is created in the org settings, '
                     'not through the API this runs on',

@@ -33,7 +33,7 @@ Sending a story to refinement is one call. Write the comment to a file first, to
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" refine --issue {number} --body-file {tempfile}
 ```
 
-It sets the stage to `Needs refinement` first, then comments, unassigns and releases the claim, and reports each as `stage_set`, `commented`, `unassigned` and `claim_released`. Report any that is false.
+It sets the stage to `Needs refinement` first, then comments, unassigns and releases the claim, and reports each as `stage_set`, `commented`, `unassigned` and `claim_released`. If any is false, it exits `24` (`partial`) and the `reason` names it. Report it.
 
 ## Phase 2 recovery
 
@@ -43,9 +43,10 @@ It sets the stage to `Needs refinement` first, then comments, unassigns and rele
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" start --issue {number}
 ```
 
-It re-takes the claim (a claim this checkout holds is kept), sets `In Progress`, resets a tree provisioned dirty, and creates or checks out the story branch from `origin/{default-branch}`. Never issue a bare `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
+It re-takes the claim (one this checkout holds is kept), sets `In Progress`, and creates or checks out the story branch from `origin/{default-branch}`. Never issue a bare `--add-assignee @me` as a claim; the `refs/claims/` ref is the lock.
 
-- **`ok`** (exit 0), one line — on the branch, ready to build. If `reason` names discarded paths, the worktree was provisioned dirty: report them.
+- **`ok`** (exit 0), one line — on the branch, ready to build; work already on it is kept. If `reason` names discarded paths, the worktree was provisioned dirty: report them.
+- **`dirty`** (exit 24) — nothing was written. Commit each path in `dirty` that is work, `wf tree-clean` the junk, and re-run.
 - **`lost`** (exit 27) — another agent holds the story. Stop and pick a different one.
 - **`partial`** (exit 24) — `reason` names what did not happen. A failed stage write is retried once with `wf stage-set {number} --stage stage-in-progress`, because the issue still reads as available; if it still fails, list it as outstanding in the final report. A branch that could not be created is a stop: run `/synergy:block-story`.
 - **`error`** (exit 20) — a broken environment, not a rival. Report it.

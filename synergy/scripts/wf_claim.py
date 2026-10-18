@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 import wf_core
 from wf_config import check_environment, prepare_cfg, repo_root
 from wf_io import (
-    EXIT_ENV, EXIT_LOST, EXIT_OK, EXIT_USAGE, emit, eprint, gh_json, run,
+    EXIT_ENV, EXIT_LOST, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE, emit, eprint, gh_json,
+    run,
 )
 from wf_stage import set_stage, set_stages
 
@@ -419,6 +420,7 @@ def cmd_claim_reap(args):
     active_review = [names['reviewing'], names['updating']]
 
     results, detail = [], {wf_core.REAP: [], wf_core.SUSPECT: [], wf_core.SKIP: []}
+    release_failed = []
     for sha, target in refs:
         kind, number, state, labels, has_open_pr, assigned = \
             claim_target_state(cfg, target)
@@ -434,13 +436,22 @@ def cmd_claim_reap(args):
         entry = {'ref': 'refs/claims/%s' % target, 'reason': reason}
         if age is not None:
             entry['age_hours'] = age
-        if verdict == wf_core.REAP and not args.dry_run:
-            release_claim(target)
+        if verdict == wf_core.REAP and not args.dry_run and not release_claim(target):
+            # The ref is still there, so it is not reaped.
+            release_failed.append(entry)
+            continue
         detail[verdict].append(entry)
 
     summary = wf_core.reap_summary(results)
-    emit('ok', EXIT_OK, reaped=detail[wf_core.REAP],
-         suspect=detail[wf_core.SUSPECT], skipped=detail[wf_core.SKIP],
-         summary=summary, dry_run=bool(args.dry_run),
-         reason='%d reaped, %d suspect (check by hand), %d too recent'
-                % (summary['reaped'], summary['suspect'], summary['skipped']))
+    summary['reaped'] -= len(release_failed)
+    reason = ('%d reaped, %d suspect (check by hand), %d too recent'
+              % (summary['reaped'], summary['suspect'], summary['skipped']))
+    fields = dict(reaped=detail[wf_core.REAP], suspect=detail[wf_core.SUSPECT],
+                  skipped=detail[wf_core.SKIP], summary=summary,
+                  dry_run=bool(args.dry_run))
+    if release_failed:
+        emit('partial', EXIT_PARTIAL, release_failed=release_failed, **fields,
+             reason='%s; %d release(s) failed: %s' % (
+                 reason, len(release_failed),
+                 ', '.join(e['ref'] for e in release_failed)))
+    emit('ok', EXIT_OK, **fields, reason=reason)

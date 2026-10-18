@@ -6,7 +6,7 @@ Both ends of a session are one `wf` call. **Never `git stash`**: the stash is sh
 
 ## Start clean
 
-`wf pick --checkout` branches from `origin/{default-branch}`, and `wf start` (`--issue N`, or `--group G --branch B` for a bulk group) resets a tree provisioned dirty before it branches. A dirty tree at the start is inherited junk, not this session's work, so it is discarded and the result names each path. Report those paths to the user. `git clean` runs without `-x`, so gitignored files such as `.env` and `node_modules` are kept.
+`wf pick --checkout` branches from `origin/{default-branch}`. `wf start` keeps work already on the story branch. It discards a new worktree's dirt and names each path: report them. Any other dirty tree stops it with `dirty`. `git clean` never uses `-x`, so gitignored files such as `.env` are kept.
 
 ## End clean
 

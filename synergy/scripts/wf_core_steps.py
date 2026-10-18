@@ -86,6 +86,24 @@ def tracked(entries):
     return [e['path'] for e in entries if e['code'] != '??']
 
 
+def start_tree_action(dirty, on_story_branch, worktree_is_new):
+    """What `wf start` does to the working tree before it checks out.
+
+    Returns 'keep', 'reset' or 'refuse'. Uncommitted work on the story
+    branch is the build in progress, so a re-run after a lost claim keeps it.
+    Only a new worktree can have inherited a stranger's dirt to reset; in any
+    other checkout the paths may be somebody's work, so start refuses.
+
+      - clean tree                          → keep
+      - dirty, HEAD is the story branch     → keep (and no checkout)
+      - dirty, a new linked worktree        → reset
+      - dirty, any other checkout           → refuse
+    """
+    if not dirty or on_story_branch:
+        return 'keep'
+    return 'reset' if worktree_is_new else 'refuse'
+
+
 # ── pr-create: the body checks ───────────────────────────────────────────────
 
 _WORD = re.compile(r'[A-Za-z0-9]')

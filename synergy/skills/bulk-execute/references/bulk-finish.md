@@ -58,7 +58,7 @@ Add `--gate-failed` when `.claude/gate-failed.flag` exists, which enters review 
 
 It takes the pull request's review claim first, so the set is never held by no lock between the build and the review, then labels the pull request with the review-state entry label once, then for **each** issue sets its `Stage` to `In Review` and releases its claim ref — so the per-story release that used to be its own step is done here. Finally it deletes `.claude/plan.md` and `label-cache.json`.
 
-It **always exits 0**: once the pull request exists, none of this is a reason to stop. When everything landed it prints one line. Otherwise the full payload names what did not — `pr_labelled`, and per issue `stage_set`, a `stage_message` and `claim_released`. A failure on one issue does not affect the others; report what failed by issue number **and** title and carry on. The review matters more than a label.
+If a write failed, it exits `24` and the `reason` names it. That is not a stop. When everything landed it prints one line. Otherwise the full payload names what did not — `pr_labelled`, and per issue `stage_set`, a `stage_message` and `claim_released`. A failure on one issue does not affect the others; report what failed by issue number **and** title and carry on. The review matters more than a label.
 
 Keep `.claude/bulk-set.json`: Phases 8 to 10 still read it for the story list, and **Exit cleanup** deletes it at the end of the run. Every issue stays assigned to @me through review.
 

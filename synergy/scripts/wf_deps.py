@@ -271,15 +271,27 @@ def clear_lifecycle_label(cfg, number, labels):
     return ', '.join(stale)
 
 
+NOT_CLOSED = 'not closed: '
+
+
+def close_failed(result):
+    """True when `close_resolved` returned a failed `gh issue close`."""
+    return not result[0] and str(result[1] or '').startswith(NOT_CLOSED)
+
+
 def close_resolved(cfg, issue, pr_number):
     """Close an already-resolved issue, clear its lifecycle label, set it to Done.
 
     Returns (stage_set, stage_message) so the caller can report whether
-    `Stage` was written — the close itself is the authoritative state.
+    `Stage` was written. When `gh issue close` fails, nothing else is written:
+    the issue stays open and keeps its `Stage`, so it stays in the pool, and
+    the message starts with `NOT_CLOSED`, which `close_failed` tests for.
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    run(['gh', 'issue', 'close', str(issue['number']), '--repo', repo,
-         '--comment', 'Closing — already resolved by #%s.' % pr_number])
+    code, _, err = run(['gh', 'issue', 'close', str(issue['number']), '--repo', repo,
+                        '--comment', 'Closing — already resolved by #%s.' % pr_number])
+    if code != 0:
+        return False, NOT_CLOSED + ((err or '').strip() or 'gh exited %d' % code)
     clear_lifecycle_label(cfg, issue['number'], issue.get('labels', []))
     return set_stage(cfg, issue['number'], wf_core.STAGE_NAMES['stage-done'],
                      issue.get('id'))

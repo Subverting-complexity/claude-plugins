@@ -38,6 +38,8 @@ The plugin used to ship `synergy/settings.json` with `"agent": "builder"`. A plu
 
 **Bash(date \*)**: the shared rules record the start time for the timeout.
 
+**Bash(timeout \*), Bash(sleep \*)**: the merge step in `skills/pr-review/references/auto-merge.md` watches the checks for a bounded time with `timeout`, and `skills/pr-review/references/ci-bypass.md` waits with `sleep` before it reads them again. `lint-skills.sh` runs `lint_allowlists.py`, which fails when a file the Builder's flow cites runs a command this list does not allow.
+
 **Agent**: the subagent-spawning tool. It exists so `execute` can spawn its one read-only Reviewer in a fresh context for the independent review. Without it the review cannot happen in a separate context, and the workflow falls back to the session that wrote the code reviewing it, which is the thing that review exists to avoid. The spawned agent carries its own allowlist, so this does not widen what the Builder itself can do.
 
 **Bash(cat \*), Bash(ls \*), Bash(find \*), Bash(grep \*), Bash(rg \*), Bash(head \*), Bash(tail \*), Bash(wc \*)**: read-only filesystem utilities for when the dedicated Read, Glob and Grep tools are not enough (for example piping output for comparison).
