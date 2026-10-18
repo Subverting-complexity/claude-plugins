@@ -108,7 +108,8 @@ jobs:
       - name: Check pr-review every-run load
         shell: bash
         # Lowered in 13.3.0 (#274, #276), when auto-merge.md and the picker fallback began loading only when needed. Lowered again in 16.2.0, when the pull request workflow began loading only when the target is a pull request.
-        run: bash count-tokens.sh synergy/skills/pr-review/SKILL.md --budget 625
+        # Raised in 19.8.0 (#407): allowed-tools lists every command the review flow runs, so a scheduled run never stops at a permission prompt.
+        run: bash count-tokens.sh synergy/skills/pr-review/SKILL.md --budget 660
 
       - name: Check pr-review pull request path load
         shell: bash

@@ -6,6 +6,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 19.8.0
+
+- `wf start` no longer discards uncommitted work. On the story branch it changes nothing. In a checkout that is not a new worktree, a dirty tree makes it stop with `dirty` and list the paths. `build` now cleans only the paths its own run created.
+- The `Builder` and `Reviewer` agents and the `pr-review` skill allow every command their flows run, so an unattended run does not stop at a permission prompt. A new check in `lint-skills.sh` fails when a flow runs a command its agent or skill does not allow.
+- `wf` commands report `partial` (exit 24) when one of their writes fails: `close_resolved`, `post-merge`, `refine`, `handoff` and `claim-reap`. `close_resolved` sets `Done` only after the issue closes. An unexpected exception gives an `error` result with exit 20, and a `ClaudeProject.md` that does not parse is a critical preflight finding.
+
 ## synergy 19.7.0
 
 - Areas are opt-in. A project turns them on with an `## Areas` table in `ClaudeProject.md`. A project with no table passes preflight, files issues with no area label, and gets release notes in one list.
