@@ -1,0 +1,8 @@
+# Python dependencies for the `wf` workflow picker.
+#
+# The first cut is intentionally stdlib-only — `wf` shells out to `gh`/`git`
+# and needs nothing from PyPI, so this file is empty of real requirements.
+# It exists so `wf.sh setup` has a stable install target: the dedicated
+# virtualenv is created and reused regardless, and any dependency a future
+# increment adds (e.g. for the PR-side pickers) is pinned here and picked up
+# by re-running `wf.sh setup`.

@@ -1,0 +1,5 @@
+# Normalize line endings: store LF in the repo, check out LF everywhere.
+# Scripts and hooks write LF only, so checked-out files must also be LF to
+# prevent phantom diffs.
+
+* text=auto eol=lf
