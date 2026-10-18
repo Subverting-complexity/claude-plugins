@@ -161,7 +161,7 @@ Because Start clean recorded what was already dirty, anything dirty here that is
 
 - **Commit** a forgotten task file into the work.
 - **Commit incidental formatting** on files outside the task as a **separate `chore:` commit** — do not fold it into the task's diff.
-- **Discard** noise this run made, one path at a time (`git clean -fd -- <path>`).
+- **Discard** this run's noise by path: `git restore -- <path>` if tracked, else `git clean -fd -- <path>`.
 
 **Never `git stash`** — the stash is shared across every worktree on the clone, and stashing would also bury the user's pre-existing changes. Leaving the tree dirty (beyond the recorded baseline) is never an option.
 
