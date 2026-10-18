@@ -832,7 +832,7 @@ def cmd_issue_apply(args):
     if milestone_note:
         payload['milestone_note'] = milestone_note
     # Not a refusal: only a repository with no Areas table gets here with a
-    # create that names no area, and preflight reports that table as missing.
+    # create that names no area, because areas are off there (#421).
     # It is said out loud because an issue with no area label has nowhere to
     # be grouped in the release notes.
     notes = ['#%d was filed with no area label: ClaudeProject.md has no Areas table'

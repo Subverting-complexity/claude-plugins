@@ -3537,7 +3537,7 @@ class TestIssueAudit(_ApplyCase):
         self.assertNotIn('state', spec['issues'][0])
 
     def test_a_project_with_no_areas_table_is_not_told_so_per_issue(self):
-        """Preflight's `areas-table` names that once, for the whole project."""
+        """Areas are off with no table (#421), so no issue is flagged."""
         code, _, _, _ = self._run([self._classified(1)])
         self.assertEqual(code, wf.EXIT_OK)
 
