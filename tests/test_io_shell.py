@@ -3537,7 +3537,7 @@ class TestIssueAudit(_ApplyCase):
         self.assertNotIn('state', spec['issues'][0])
 
     def test_a_project_with_no_areas_table_is_not_told_so_per_issue(self):
-        """Preflight's `areas-table` names that once, for the whole project."""
+        """Areas are off with no table (#421), so no issue is flagged."""
         code, _, _, _ = self._run([self._classified(1)])
         self.assertEqual(code, wf.EXIT_OK)
 
@@ -4864,32 +4864,31 @@ class TestPreflight(unittest.TestCase):
     def _areas_finding(self, payload):
         found = [f for f in payload['findings'] if f['check'] == 'areas-table']
         self.assertEqual(len(found), 1)
-        self.assertEqual(found[0]['level'], wf_core.CRITICAL)
+        self.assertEqual(found[0]['level'], wf_core.WARNING)
         self.assertFalse(found[0]['auto'])
         return found[0]
 
-    def test_no_table_and_area_epics_fails_and_names_the_move_command(self):
+    def test_no_table_and_area_epics_warns_and_names_the_move_command(self):
         code, payload, _ = self._run(areas=False, legacy_epics=True)
-        self.assertEqual(code, wf.EXIT_DRIFT)
-        self.assertEqual(payload['status'], 'blocked')
+        self.assertEqual(code, wf.EXIT_OK)
         found = self._areas_finding(payload)
         self.assertIn('#900', found['detail'])
         self.assertIn('wf area-backfill', found['fix'])
         self.assertIn('references/area-epics.md', found['fix'])
         self.assertIn('areas-table', payload['checked'])
 
-    def test_no_table_and_no_area_epics_fails_and_names_the_setup_step(self):
+    def test_no_table_and_no_area_epics_passes_with_areas_off(self):
+        """#421: areas are opt-in, so no table on its own blocks nothing."""
         code, payload, _ = self._run(areas=False)
-        self.assertEqual(code, wf.EXIT_DRIFT)
-        found = self._areas_finding(payload)
-        self.assertIn('/synergy:setup', found['fix'])
-        self.assertNotIn('area-backfill', found['fix'])
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertNotIn('areas-table', [f['check'] for f in payload['findings']])
+        self.assertIn('areas-table', payload['checked'])
 
     def test_fix_does_not_write_the_table(self):
         """Which areas exist is the project's decision, so `--fix` leaves it."""
         before = self._read('ClaudeProject.md')
         code, payload, _ = self._run(['--fix'], areas=False, legacy_epics=True)
-        self.assertEqual(code, wf.EXIT_DRIFT)
+        self.assertEqual(code, wf.EXIT_OK)
         self._areas_finding(payload)
         self.assertEqual(self._read('ClaudeProject.md'), before)
 

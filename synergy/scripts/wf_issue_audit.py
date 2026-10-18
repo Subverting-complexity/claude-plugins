@@ -102,9 +102,8 @@ def cmd_issue_audit(args):
 
     open_numbers = {i['number'] for i in issues}
     # The area is the label each issue already carries, so it costs no read.
-    # Only once the project has an Areas table: before that, every issue would
-    # be a `no-area-label` gap with one cause, and `preflight` names it once
-    # as `areas-table` instead.
+    # Only once the project has an Areas table: without one, areas are off
+    # (#421), and every issue would be a `no-area-label` gap that is not one.
     audited = [wf_core.audit_issue(issue, caps['field_map'],
                                    type_capable=caps['type_capable'],
                                    project_map=cfg.get('labels') or {},

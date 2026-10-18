@@ -6,6 +6,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 19.7.0
+
+- Areas are opt-in. A project turns them on with an `## Areas` table in `ClaudeProject.md`. A project with no table passes preflight, files issues with no area label, and gets release notes in one list.
+- Preflight reports `areas-table` only for a repository with no table that still has area epics from a version before 19.0.0, and then as a warning, not a critical finding.
+- `/synergy:setup` asks whether the project uses areas, with no as the default, and writes the table only on a yes.
+
 ## synergy 19.6.0
 
 - `/synergy:build` now reviews its own work. After the commit, a review agent in a fresh context reads the commits from the run, fixes the Blocking findings and Quick fixes, and commits the fixes on the same branch. A second agent reviews those fixes only when they were substantial. Nothing is pushed, no pull request is opened, and no status is set anywhere.

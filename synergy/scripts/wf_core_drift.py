@@ -4,7 +4,7 @@ Finished containers and stage drift: what to close or move after a merge.
 Moved verbatim out of wf_core.py; `scripts/README.md` has the module map.
 """
 
-from wf_core_findings import CRITICAL, WARNING, finding
+from wf_core_findings import WARNING, finding
 from wf_core_select import HIERARCHY_CONTAINER_TYPES
 from wf_core_stage import STAGE_NAMES
 
@@ -97,39 +97,31 @@ def stage_drift_findings(drifted, path='ClaudeProject.md'):
 
 
 def areas_table_findings(has_table, legacy_epics=(), path='ClaudeProject.md'):
-    """One critical finding when `ClaudeProject.md` has no `## Areas` table.
+    """A warning when a repository that used area epics has no `## Areas` table.
 
-    An issue's area is its `area: {name}` label, and the table is the list of
-    names that label may carry. With no table nothing can file an issue with
-    an area, so release notes have nothing to group by, and the workflow stops
-    here rather than file issues that would all have to be labelled later.
+    Areas are opt-in (#421). A project turns them on by writing the table, and
+    a project with none runs every workflow with no area labels and release
+    notes in one list, so no table on its own is not a finding.
 
     `legacy_epics` is the numbers of the open area epics a version before
-    19.0.0 left behind, which the caller finds. With any, the repository has to
-    move: the fix names `wf area-backfill`. With none, it is new to areas and
-    the fix names the setup step that writes the table.
+    19.0.0 left behind, which the caller finds. With any, the repository used
+    areas and has not moved them to labels, so the warning names
+    `wf area-backfill`. Nothing stops: the workflow runs as if areas were off.
     """
-    if has_table:
-        return []
     epics = sorted(legacy_epics or ())
-    if epics:
-        return [finding(
-            CRITICAL, 'areas-table',
-            'ClaudeProject.md has no `## Areas` table, and the repository still '
-            'has %d open area epic%s (%s). An issue\'s area is its `area: '
-            '{name}` label since 19.0.0, and nothing reads an area epic'
-            % (len(epics), '' if len(epics) == 1 else 's',
-               ', '.join('#%d' % n for n in epics)),
-            'add an `## Areas` table with one row per area epic and its number '
-            'in the `Epic` column, run `wf labels-ensure`, then run `wf '
-            'area-backfill` to copy each issue\'s area to its label; '
-            '`references/area-epics.md` has the steps',
-            path)]
+    if has_table or not epics:
+        return []
     return [finding(
-        CRITICAL, 'areas-table',
-        'ClaudeProject.md has no `## Areas` table, so no issue can be given an '
-        'area label and release notes cannot be grouped',
-        'run `/synergy:setup`, which asks for the areas and writes the table, '
-        'or add an `## Areas` table by hand and run `wf labels-ensure`; '
-        '`references/area-epics.md` describes the table',
+        WARNING, 'areas-table',
+        'ClaudeProject.md has no `## Areas` table, and the repository still '
+        "has %d open area epic%s (%s). An issue's area is its `area: "
+        '{name}` label since 19.0.0, and nothing reads an area epic, so areas '
+        'are off until the table exists'
+        % (len(epics), '' if len(epics) == 1 else 's',
+           ', '.join('#%d' % n for n in epics)),
+        'to keep areas, add an `## Areas` table with one row per area epic and '
+        'its number in the `Epic` column, run `wf labels-ensure`, then run `wf '
+        "area-backfill` to copy each issue's area to its label; "
+        '`references/area-epics.md` has the steps. To stop using areas, close '
+        'the area epics',
         path)]
