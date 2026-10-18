@@ -111,7 +111,7 @@ Both modes use the same commands and skill — the pick logic adapts.
 
 ## Labels
 
-**Labels decide nothing about what is picked, and the workflow puts 2 kinds on an issue and no other.** State is the `Stage` field, and priority, effort and ownership are org-level issue fields. The 2 exceptions are the area label (`area: {name}`, exactly 1 on every issue, written by `wf issue-apply`) and the release-target labels (`release: {target}`, set by `wf post-merge` when the work merges). Both come from tables in `ClaudeProject.md`. On a pull request it applies the review-state labels, named in `docs/review.config.md`. `wf labels-ensure` creates all of them.
+**Labels decide nothing about what is picked, and the workflow puts 2 kinds on an issue and no other.** State is the `Stage` field, and priority, effort and ownership are org-level issue fields. The 2 exceptions are the area label (`area: {name}`, exactly 1 on every issue when the project uses areas, written by `wf issue-apply`) and the release-target labels (`release: {target}`, set by `wf post-merge` when the work merges). Both come from tables in `ClaudeProject.md`. On a pull request it applies the review-state labels, named in `docs/review.config.md`. `wf labels-ensure` creates all of them.
 
 A `## Label Map` left in an older `ClaudeProject.md` is still read. A row naming a label the workflow retired (`status-*`, `priority-*`, `needs-refinement`, `claude-ready`) is reported by `wf config-audit` as `label-deprecated`. Delete the row; the labels themselves can stay on old issues.
 
@@ -132,7 +132,7 @@ An issue's state is its org `Stage` field, and nowhere else. There is no label t
 
 **The `Stage` field is required, with all eight options.** The pick pool is the open, unassigned issues whose `Stage` is blank or `Backlog`, read from the repository's issues, so an issue with no board card is still pickable. Preflight fails the run when the org has no `Stage` field or when it lacks an option. Creating the field is a manual step in the GitHub UI: org settings → *Planning* → *Issue fields*.
 
-**Every issue belongs to one area.** An area is one part of the product, such as Library or Listening: a row of the Areas table in `ClaudeProject.md`. An issue's area is its 1 `area: {name}` label, so no issue needs a parent, and release notes are grouped by that label. A repository with no Areas table fails preflight. Area epics, an `Epic` at `Stage` `Area`, were removed in 19.0.0, because GitHub allows a parent at most 100 sub-issues. [`references/area-epics.md`](references/area-epics.md) covers the table and how to move a repository off area epics.
+**Areas are opt-in.** An area is one part of the product, such as Library or Listening: a row of the Areas table in `ClaudeProject.md`. An issue's area is its 1 `area: {name}` label, so no issue needs a parent, and release notes are grouped by that label. A repository with no Areas table uses no area labels, and its release notes are one list. Area epics, an `Epic` at `Stage` `Area`, were removed in 19.0.0, because GitHub allows a parent at most 100 sub-issues. [`references/area-epics.md`](references/area-epics.md) covers the table and how to move a repository off area epics.
 
 **Boards are for people to look at.** Set each board view's "Column by" to `Stage` and the board shows every issue's state. GitHub's built-in "Auto-add to project" workflow and the scheduled `board-sync` job keep cards on boards; agents never move cards. A `## Project Board` section in `ClaudeProject.md` is optional and informational.
 

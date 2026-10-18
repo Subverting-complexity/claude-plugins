@@ -59,10 +59,10 @@ For anything not auto-detected, ask the user, showing the detected or suggested 
 - **Branch convention**: suggest `feature/{number}/{short-desc}` as default
 - **Quality gate command**: if not auto-detected
 - **Refinement skill**: which skill to use when a story is too thin to implement. Default: `feature-discovery` (runs the `grill` interview, then writes the fuller spec and acceptance criteria). Store as `refinement-skill` in ClaudeProject.md.
-- **Areas**: the parts of the product, such as Library or Listening. Every issue belongs to exactly one, and release notes are grouped by them, so the list is required. Suggest 3-8 from the top-level folders and the README, each with one sentence on what it covers (100 characters at most), and let the user change them. Which areas exist is their decision: do not write a row they have not agreed. If the repository has open area epics (Step 8b), take the list from them.
+- **Areas** (opt-in): first ask whether the project uses areas, the parts of the product such as Library or Listening. With areas, every issue belongs to exactly one and release notes are grouped by them. Without them, issues get no area label and release notes are one list. The default is no. Only on a yes, suggest 3-8 from the top-level folders and the README, each with one sentence on what it covers (100 characters at most), and let the user change them. Which areas exist is their decision: do not write a row they have not agreed. If the repository has open area epics (Step 8b), take the list from them.
 - **Release targets** (optional): what the project ships separately, such as `web` or `mobile`. With none, leave that table out.
 
-**Do not ask about any other label, and create none except those in Step 5b.** The workflow puts 2 kinds of label on an issue and no other: the area label (`area: {name}`, exactly 1) and the release-target labels (`release: {target}`, set when the work merges). No other label decides anything: an issue's state is its `Stage` field, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. A repository that already has priority, type, status or scope labels keeps them (deleting a label strips it from every issue that ever carried it), and `wf issue-apply` takes one off any issue it writes.
+**Do not ask about any other label, and create none except those in Step 5b.** The workflow puts 2 kinds of label on an issue and no other: the area label (`area: {name}`, exactly 1, only when the project uses areas) and the release-target labels (`release: {target}`, set when the work merges). No other label decides anything: an issue's state is its `Stage` field, and its priority, size and owner are the `Priority`, `Effort` and `Ownership` fields. A repository that already has priority, type, status or scope labels keeps them (deleting a label strips it from every issue that ever carried it), and `wf issue-apply` takes one off any issue it writes.
 
 **Do not ask about agent gating.** There is no approval label. A person approves an issue for autonomous pickup by setting its `Stage` to `Backlog` or leaving it blank, and withholds approval by setting `Needs refinement` or `Parked`.
 
@@ -70,7 +70,7 @@ For anything not auto-detected, ask the user, showing the detected or suggested 
 
 Read `templates/ClaudeProject.md` once and fill in all detected and user-provided values. Write to `ClaudeProject.md` at the project root. When enhancing an existing file, merge new sections into it without removing sections already there.
 
-**Write the `## Areas` table** with one row for each area the user agreed in Step 4: its name, its one sentence and a colour of 6 hex digits, a different one for each row. Leave `Epic` and `Was` empty, except in a repository that has area epics (Step 8b). Never leave the template's placeholder row, and never write the section with no row: preflight fails with `areas-table` until the table has one.
+**Write the `## Areas` table** only when the user said yes to areas in Step 4, with one row for each area they agreed: its name, its one sentence and a colour of 6 hex digits, a different one for each row. Leave `Epic` and `Was` empty, except in a repository that has area epics (Step 8b). Never leave the template's placeholder row, and never write the section with no row. When the user said no, delete the template's `## Areas` section.
 
 ## 5b. Create the labels
 
@@ -166,9 +166,9 @@ Check the table Step 5 wrote:
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" areas
 ```
 
-When the `count` is 0, the project has no Areas table and preflight fails with `areas-table`. Go back to Step 4 and agree the areas with the user. If they defer it, say no workflow command runs until the table exists.
+When the `count` is 0, the project has no Areas table and areas are off. That is correct when the user said no in Step 4. Otherwise go back to Step 4.
 
-A repository that used a version before 19.0.0 can still have **area epics**: an open `Epic` whose `Stage` is `Area`. Preflight's `areas-table` finding names them. When it does, follow `references/area-epics.md` → **A repository with no areas table**: write each epic's number in the `Epic` column of its row, then run `wf area-backfill`, which copies each issue's area to its label. Close the epics only after the user agrees.
+A repository that used a version before 19.0.0 can still have **area epics**: an open `Epic` whose `Stage` is `Area`. Preflight's `areas-table` warning names them. When it does, ask the user whether to keep areas. To keep them, follow `references/area-epics.md` → **A repository with no areas table**: write each epic's number in the `Epic` column of its row, then run `wf area-backfill`, which copies each issue's area to its label. To stop using areas, close the epics. Close them only after the user agrees.
 
 ## 9. Verify and report
 
@@ -179,7 +179,7 @@ Confirm all required sections are present in `ClaudeProject.md`. Report what was
 - Quality gate
 - Backlog mode (sprint or flat)
 - `Stage` field (present with all eight options, or what is missing)
-- Areas (the rows written, or that the table is missing)
+- Areas (the rows written, or that areas are off)
 - Board (recorded or none)
 - Labels configured
 - Ecosystem tools enabled (if any)

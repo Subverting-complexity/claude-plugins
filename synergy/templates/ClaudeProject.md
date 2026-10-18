@@ -97,7 +97,7 @@ Skill the execute flow offers when a story is too thin to implement: `feature-di
 
 ## Areas
 
-One row for each part of the product. Each row becomes the label `area: {name}`, and every issue carries exactly 1 of them: that label is the issue's area, which release notes are grouped by. The table is required. Preflight fails with `areas-table` without it (the plugin's `references/area-epics.md`).
+One row for each part of the product. Each row becomes the label `area: {name}`, and every issue carries exactly 1 of them: that label is the issue's area, which release notes are grouped by. The table is optional, because areas are opt-in. Delete this section to turn areas off: issues then get no area label, and release notes are one list (the plugin's `references/area-epics.md`).
 
 | Name          | Description                  | Colour   | Epic | Was |
 | ------------- | ---------------------------- | -------- | ---- | --- |

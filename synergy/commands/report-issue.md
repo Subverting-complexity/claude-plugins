@@ -50,7 +50,7 @@ Choose the row in `areas` whose `description` best covers the problem and pass i
 
 The issue needs no parent. Give it one only when an open `Feature` clearly holds this work. An architecture report is filed as a `Feature`.
 
-When `wf areas` returns a `count` of 0, the project has no Areas table. Leave `"area"` out, file the issue, and tell the user that preflight fails until the table exists and that `../references/area-epics.md` covers it.
+When `wf areas` returns a `count` of 0, the project has no Areas table. Areas are off. Leave `"area"` out and file the issue.
 
 ### 3. Assess severity, size and owner
 
@@ -161,4 +161,4 @@ Read `stage` and `stage_set` from the command's output and report them. A `stage
 
 ### 7. Report
 
-Display the created issue by number **and** title together (e.g. `#42 Fix login crash`, never the number alone) plus its URL, whether it blocks the current story or is deferred, its stage, and its area (or that the project has no Areas table).
+Display the created issue by number **and** title together (e.g. `#42 Fix login crash`, never the number alone) plus its URL, whether it blocks the current story or is deferred, its stage, and its area (or that the project does not use areas).

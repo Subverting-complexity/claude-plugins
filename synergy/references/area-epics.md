@@ -1,6 +1,6 @@
 # Areas
 
-An **area** is one part of the product, such as Library or Listening. Release notes are grouped by area, so every issue belongs to exactly one. Areas are required, not opt-in, and each repository keeps its own list.
+An **area** is one part of the product, such as Library or Listening. Areas are opt-in. A repository turns them on with an `## Areas` table in `ClaudeProject.md`, and then every issue belongs to exactly one and release notes are grouped by area. A repository with no table uses no area labels: every workflow runs as normal, and release notes are one list.
 
 This file keeps the name `area-epics.md` because other files cite it. Area epics were removed in 19.0.0: GitHub allows a parent at most 100 sub-issues, so an area held in the parent chain filled up and refused new issues.
 
@@ -35,11 +35,11 @@ When nothing fits well, choose the closest row and say so in one line of the iss
 
 ## A repository with no areas table
 
-Preflight fails with `areas-table`, and its `fix` says which of 2 cases applies.
+Areas are off. Nothing is wrong, and preflight reports nothing, except in the second case below.
 
-**The repository never had area epics.** Agree the areas with a person, write the `## Areas` table (`/synergy:setup` asks for the rows and writes it), then run `wf labels-ensure`. Give each open issue its label with `wf area-set`.
+**The repository never had area epics.** To turn areas on, agree the areas with a person, write the `## Areas` table (`/synergy:setup` asks for the rows and writes it), then run `wf labels-ensure`. Give each open issue its label with `wf area-set`.
 
-**The repository has area epics**, each an `Epic` whose `Stage` is `Area`. Move it, once, in this order.
+**The repository has area epics**, each an `Epic` whose `Stage` is `Area`. Preflight warns with `areas-table`, because nothing reads an area epic. To stop using areas, close the epics. To keep them, move the repository once, in this order.
 
 1. **Write the table with the `epic` column.** Give each row the number of its area epic. Each area epic needs exactly one row. Include an area epic that is already closed: a merge closes one whose sub-issues are all closed and sets its `Stage` to `Done`, so preflight no longer lists it and only its row tells the move what it was.
 

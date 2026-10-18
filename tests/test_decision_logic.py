@@ -4132,19 +4132,18 @@ class TestAreasTableFindings(unittest.TestCase):
         self.assertEqual(wf_core.areas_table_findings(True, [1, 2]), [])
         self.assertEqual(wf_core.areas_table_findings(True), [])
 
-    def test_no_table_with_area_epics_names_the_move_command(self):
+    def test_no_table_with_area_epics_warns_and_names_the_move_command(self):
         found = wf_core.areas_table_findings(False, [7, 3])
         self.assertEqual([f['check'] for f in found], ['areas-table'])
-        self.assertEqual(found[0]['level'], wf_core.CRITICAL)
+        self.assertEqual(found[0]['level'], wf_core.WARNING)
         self.assertIn('#3, #7', found[0]['detail'])
         self.assertIn('wf area-backfill', found[0]['fix'])
         self.assertIn('references/area-epics.md', found[0]['fix'])
 
-    def test_no_table_and_no_area_epics_names_the_setup_step(self):
-        found = wf_core.areas_table_findings(False, [])
-        self.assertEqual(found[0]['level'], wf_core.CRITICAL)
-        self.assertIn('/synergy:setup', found[0]['fix'])
-        self.assertNotIn('area-backfill', found[0]['fix'])
+    def test_no_table_and_no_area_epics_means_areas_are_off(self):
+        """#421: areas are opt-in, so a project with no table has no finding."""
+        self.assertEqual(wf_core.areas_table_findings(False, []), [])
+        self.assertEqual(wf_core.areas_table_findings(False), [])
 
     def test_no_run_repairs_it(self):
         self.assertNotIn('areas-table', wf_core.FIXABLE_CHECKS)
