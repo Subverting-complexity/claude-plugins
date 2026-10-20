@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.1.1
+
+- The plugin description in `plugin.json` and the marketplace manifest no longer mentions the destination checks that 20.0.0 removed.
+
 ## synergy 20.1.0
 
 - `verify-feature` writes each concern and nitpick as a question or a request to the author, not an instruction: "Can we catch `TwilioException` here?", "How will the key get into Production?". It adds a reason only when the author cannot see it, and does not explain the author's own code. These comments are exempt from the plain-English style rules for replies. Review findings that an agent reads keep their detailed format.
