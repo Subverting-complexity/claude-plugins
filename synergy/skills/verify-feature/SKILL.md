@@ -1,6 +1,6 @@
 ---
 name: verify-feature
-description: 'Report on a branch or PR before merging: a summary, a verdict, and each concern as a suggested fix. Changes nothing; any host. Trigger on "verify this feature" or "is this branch ready".'
+description: 'Report on a branch or PR before merging: a summary, a verdict, and each concern as a question. Changes nothing; any host. Trigger on "verify this feature" or "is this branch ready".'
 arguments:
   - name: target
     description: 'Optional pull request number or branch name. Defaults to the current branch against its base.'
@@ -39,7 +39,7 @@ Read `CLAUDE.md` for project rules if it exists.
 
 ## Output standard
 
-Follow `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear.
+Follow `skills/_shared/wording-standard.md` for how it reads, `skills/user-facing-communication/SKILL.md` for what it contains and in what order (outcome and current state first, then anything outstanding, blocked or assumed, every work item named as well as numbered, no investigation history), and `skills/_shared/banned-patterns.md` for what must never appear. The comments under Concerns and Nitpicks are the exception: they are written to the author, and Step 4 decides how they read.
 
 ## Step 1 — Scope
 
@@ -86,12 +86,20 @@ Report only what would change the outcome if the author acted on it. Leave out m
 
 ## Step 4 — Write each concern as a comment
 
-Each concern and each nitpick is a short comment to the author, written so that a junior developer on the team understands it without asking. It has two parts and nothing else:
+Each concern and each nitpick is a comment the person may post, as it stands, on the author's change. Write it the way one teammate asks another, never as an order. The author wrote the code and knows the codebase, so do not explain their own files, classes or settings to them.
 
-1. **The suggested fix, as one instruction.** "Use the shared `teamGroupObjectId` for storage." Name the exact parameter, method, field or setting in backticks.
-2. **The problem, in one to three sentences.** What the code does now, then what goes wrong for a person or a system if it stays. State the consequence in plain terms ("storage then gives access to the wrong group", "every photo is lost"), because that is the part the reader cannot work out from the diff. If the code cannot confirm the consequence, say so conditionally ("if anything downstream reacts to ...").
+1. **Open with a question or a request.** Ask how something is meant to work when the intent is unclear ("How will the SMS key get into Production?"). Ask for the change when the fix is clear ("Can we catch `TwilioException` here?"). Start a nitpick with "Nit:" and say it in one line ("Nit: `SmsDispatch` should go in its own file."). Name the exact parameter, method, field or setting in backticks.
+2. **Add the reason only when the author cannot see it from the line.** One or two short sentences: what goes wrong for a person or a system if the code stays ("so the batch stops part way through, and a resend texts people twice"). If the code cannot confirm it, say so ("Looks like...", "if anything downstream reacts to ...").
 
-A nitpick often needs only the instruction and one short reason.
+Be as detailed as the point needs and no more. Most comments are one or two lines. Casual phrasing is fine: "Looks like this seeder only runs in dev." The plain-English style rules for replies (`skills/user-facing-communication/SKILL.md`) do not apply to these comments.
+
+Prefer:
+
+> How will the SMS Twilio key get into Production? Looks like this seeder only runs in dev.
+
+Over:
+
+> Remove the seeder, or tell me what it is for now. The app runs seeders only on a developer's machine. In Staging and Production, texting uses only the key that you add by hand.
 
 Leave out everything the author can find without help:
 
@@ -100,9 +108,7 @@ Leave out everything the author can find without help:
 - How large the fix is: no line counts, no effort, no time.
 - Pasted code, and a severity or category label.
 
-Suggest the fix when the story, the code or the docs settle what is right. A story that does not mention something has not excluded it, so suggest the fix and do not ask whether the gap was deliberate. Ask a question only when the right fix depends on an intent you cannot find, and then the question takes the place of the instruction.
-
-Keep the uncertainty that is there. Stop once the fix and the problem are clear.
+Keep the uncertainty that is there. Stop once the question or the request is clear.
 
 If there are concerns to present, read `skills/tone/SKILL.md` and apply it to them, so they read in the user's own voice.
 
@@ -118,7 +124,7 @@ Four sections in this order, each under its name in bold. Skip Concerns or Nitpi
 
 ```
 `infra/storage.bicep:91`
-Turn on soft delete for containers. Deleted photos can be restored for 7 days, but a deleted `photos` container cannot. If someone deletes it, every photo is lost.
+Can we turn on soft delete for containers? Right now a deleted `photos` container cannot be restored, so every photo would be lost.
 ```
 
 **Nitpicks.** Small, objective blemishes, in the same format as a concern.
