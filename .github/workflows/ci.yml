@@ -96,14 +96,16 @@ jobs:
         # Re-measured in 17.0.0 (#301): the count now includes the shared standards and other skills' SKILL.md files a workflow cites, which it always loaded. The rise is the measurement, not new instructions.
         # Raised in 18.9.0: user-facing-communication now states the ASD-STE100 sentence style, which every workflow loads.
         # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
-        run: bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 25200
+        # Raised in 20.2.0: templates/coding-method.md says to read the related parts of the system, keep each unit to one job, follow the closest existing example, and start a bug fix with a failing test.
+        run: bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 25420
 
       - name: Check bulk-execute every-run load
         shell: bash
         # Re-measured in 17.0.0 (#301), as execute above; set selection became one short reference driven by wf plan-set. Raised in 17.3.0 for the check that stops a run in a repository not on GitHub or started by the wrong request.
         # Raised in 18.9.0: user-facing-communication now states the ASD-STE100 sentence style, which every workflow loads.
         # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
-        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 28300
+        # Raised in 20.2.0: templates/coding-method.md says to read the related parts of the system, keep each unit to one job, follow the closest existing example, and start a bug fix with a failing test.
+        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 28530
 
       - name: Check pr-review every-run load
         shell: bash
@@ -124,7 +126,8 @@ jobs:
         # Raised in 18.9.0: user-facing-communication now states the ASD-STE100 sentence style, which every workflow loads.
         # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
         # Raised in 19.6.0: build has an independent review phase, whose reference file every run reads.
-        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 14780
+        # Raised in 20.2.0: build runs related tests while it works and the full gate once at the end, judges the acceptance criteria, names the existing example each new unit follows, and follows the longer coding method.
+        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 17040
 
       - name: Check setup every-run load
         shell: bash

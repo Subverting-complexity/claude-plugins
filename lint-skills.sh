@@ -188,6 +188,74 @@ for f in "${change_reading_files[@]}"; do
     fi
 done
 
+# Review wiring: _shared/review-checklist.md is the one checklist for finding
+# what is wrong with a change. verify-feature reports from it, and the local
+# review that build's reviewer runs fixes from it; both must cite it, or the
+# two checklists drift apart again, as they had before 20.2.0.
+declare -a review_checklist_files=(
+    "synergy/skills/verify-feature/SKILL.md"
+    "synergy/skills/pr-review/references/local-review.md"
+)
+if [ ! -f "synergy/skills/_shared/review-checklist.md" ]; then
+    echo "FAIL: synergy/skills/_shared/review-checklist.md is missing"
+    status=1
+fi
+for f in "${review_checklist_files[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is listed as a reviewing file but does not exist"
+        status=1
+    elif ! grep -qF 'review-checklist.md' "$f"; then
+        echo "FAIL: $f reviews a change but does not cite _shared/review-checklist.md"
+        status=1
+    fi
+done
+
+# Acceptance-criteria wiring: _shared/judging-acceptance-criteria.md decides
+# whether a story's criteria are enough to build or review against. build plans
+# from them and the two reviews judge against them; each must cite the file, or
+# one of them goes back to treating a thin list as complete.
+declare -a criteria_judging_files=(
+    "synergy/skills/build/SKILL.md"
+    "synergy/skills/verify-feature/SKILL.md"
+    "synergy/skills/pr-review/references/local-review.md"
+)
+if [ ! -f "synergy/skills/_shared/judging-acceptance-criteria.md" ]; then
+    echo "FAIL: synergy/skills/_shared/judging-acceptance-criteria.md is missing"
+    status=1
+fi
+for f in "${criteria_judging_files[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is listed as judging acceptance criteria but does not exist"
+        status=1
+    elif ! grep -qF 'judging-acceptance-criteria.md' "$f"; then
+        echo "FAIL: $f uses acceptance criteria but does not cite _shared/judging-acceptance-criteria.md"
+        status=1
+    fi
+done
+
+# Pattern wiring: _shared/codebase-patterns.md says where a codebase's
+# standards come from and how to follow its closest existing example. The
+# coding method writes code by it and the review checklist judges code by it;
+# both must cite it, or the writer and the reviewer follow different rules.
+declare -a codebase_pattern_files=(
+    "synergy/templates/coding-method.md"
+    "synergy/skills/_shared/review-checklist.md"
+    "synergy/skills/build/SKILL.md"
+)
+if [ ! -f "synergy/skills/_shared/codebase-patterns.md" ]; then
+    echo "FAIL: synergy/skills/_shared/codebase-patterns.md is missing"
+    status=1
+fi
+for f in "${codebase_pattern_files[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is listed as following codebase patterns but does not exist"
+        status=1
+    elif ! grep -qF 'codebase-patterns.md' "$f"; then
+        echo "FAIL: $f writes or reviews code but does not cite _shared/codebase-patterns.md"
+        status=1
+    fi
+done
+
 # A repository can publish an issue template that GitHub pre-fills in the web
 # UI but that --body-file silently bypasses. The paths that CREATE an issue
 # have to resolve it, or every issue the plugin files ignores the project's own

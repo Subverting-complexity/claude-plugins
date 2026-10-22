@@ -77,9 +77,11 @@ Check if the task has enough guidance to proceed:
 
 - What needs to be built or changed?
 - What does "done" look like?
-- Are there acceptance criteria?
+- Are the acceptance criteria sufficient?
 
-If the task is underspecified, ask focused questions to fill the gaps. Use `/synergy:feature-discovery` if the task is complex enough to warrant a full interview.
+Judge the acceptance criteria by `skills/_shared/judging-acceptance-criteria.md`. Do not take them as complete because the story has them. Use the full set, given and derived, in the plan, the tests and the review. Tell the user which criteria you derived.
+
+If the task is underspecified, or a criterion would be a guess, ask focused questions to fill the gaps. Use `/synergy:feature-discovery` if the task is complex enough to warrant a full interview.
 
 ## Phase 2 -- Plan
 
@@ -90,6 +92,8 @@ Use `/synergy:code-architect` to plan the implementation:
 - Consume the architecture plan output and proceed to Build.
 - Do not pause for confirmation.
 - If requirements have gaps, make reasonable assumptions and note them in the plan. Only stop if the task is so underspecified that any implementation would be a guess.
+- For each acceptance criterion, the plan names the test that will prove it. A criterion with no test is a gap in the plan.
+- For each new file or unit, the plan names the closest existing example it will follow, found as `skills/_shared/codebase-patterns.md` says. Where the codebase has two patterns for the same concern, the plan says which one it follows.
 
 If the plan reveals the task exceeds one session's budget, tell the user and propose splitting it. Implement the highest-priority slice.
 
@@ -110,19 +114,27 @@ Implement the Phase 2 plan by `templates/coding-method.md`:
 - Write code and tests together. Do not defer tests to a later phase.
 - Follow build principles from `CLAUDE.md` if it exists.
 
-## Phase 4 -- Verify
+## Phase 4 -- Verify with the related tests
 
-Run the project's test or quality gate command:
+Do not run the full test suite or the full quality gate here. It runs once, in Phase 7. Run only the tests related to the change, so each run is fast:
 
-1. Execute the test/build/lint command.
-2. If it fails:
-   a. Read the error output carefully.
-   b. Fix the specific failing check.
-   c. Re-run.
-   d. Repeat up to 3 times.
-3. If still failing after 3 attempts, work through **When something fails** in `templates/coding-method.md` before trying again.
+- the tests the plan named for each acceptance criterion;
+- the tests for the changed modules, and the tests that import them.
 
-If no quality gate command is configured, run whatever test commands the project supports (e.g. `npm test`, `pytest`, `dotnet test`, `cargo test`).
+Run them with the test runner's own filter, such as a file or folder path for `pytest` or `jest`, `dotnet test --filter`, or `cargo test <name>`. If the project cannot run a subset, run the smallest unit it can, such as one test project or one package.
+
+If a related test fails:
+
+1. Read the failure, and decide which of these 3 it is:
+   - **Caused by the change.** The failure is in, or reaches, code this run changed. Fix it.
+   - **Already failing.** The failure is in code this run did not touch, and has nothing to do with the change. Do not fix it inside this task. Record it for the report.
+   - **A local problem.** The test needs something this machine does not have: a service, a database, a credential, an environment variable, network access, a port or a tool version. Do not fix it and do not change the test. Record it for the report.
+2. After a fix, re-run only the tests that failed, then the related tests. Repeat up to 3 times.
+3. If a test caused by the change still fails after 3 attempts, work through **When something fails** in `templates/coding-method.md` before trying again.
+
+If you cannot tell which of the 3 it is, record it as unclear. Do not run the full suite to find out.
+
+The related tests count only if they still test the same thing. Before you commit, read `git diff {start_sha} --` on the test files. If a test was deleted, skipped or had its assertion loosened to make it pass, undo that and fix the code instead. A test may change only where the task changes the behaviour it checks; say so in the commit message. Then check that each acceptance criterion has the test the plan named.
 
 ## Phase 5 -- Commit
 
@@ -136,9 +148,15 @@ Do not push or create PRs. This is a local workflow. The user decides what happe
 
 Read `references/independent-review.md` and follow it. One review agent reads the commits from this run in a fresh context, fixes the Blocking findings and Quick fixes, and commits the fixes on this branch. A second agent reviews those fixes only when they were substantial. Nothing is pushed or posted.
 
-After the review, run the **Exit cleanup** below so the tree ends clean.
+## Phase 7 -- Run the full suite once, at the end
 
-## Phase 7 -- Report
+Run the project's full quality gate once, after the review and its fixes are committed. If no quality gate command is configured, run the project's full test suite (e.g. `npm test`, `pytest`, `dotnet test`, `cargo test`). Do not run it earlier, and do not run it a second time.
+
+Sort each failure as Phase 4 does. Fix a failure caused by the change, re-run only the tests that failed, and commit the fix. Do not fix the others: record each one for the report as already failing, a local problem, or unclear.
+
+Then run the **Exit cleanup** below so the tree ends clean.
+
+## Phase 8 -- Report
 
 Write this to `skills/user-facing-communication/SKILL.md`. Open with what was built and the current state, and be exact about that state: this run ends at **commits on your branch**, reviewed and fixed. Nothing is pushed, no pull request exists, and nothing is merged unless you say otherwise. Say so plainly, because a report that only says "done" reads as shipped.
 
@@ -146,6 +164,7 @@ Then include only the parts that carry information:
 
 - What was built, in plain language.
 - The review verdict, what the reviewer fixed, and each finding still open.
+- Each test that still fails, by name, with its class: already failing, a local problem with what the machine lacks, or unclear. If none fail, say the full suite passed.
 - Anything outstanding: work left undone, a known limitation, or something the user has to do next.
 - Any meaningful assumption you had to make, or anything you could not verify.
 

@@ -6,6 +6,18 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.2.0
+
+- `verify-feature` and the review that `build` runs now use one shared checklist, `_shared/review-checklist.md`. Before, the two checklists had drifted apart, and the `build` reviewer did not check modularity, extensibility or conventions.
+- The checklist reads past the diff: the whole function or class around each change, the code that feeds it and uses it, the other parts of the system that handle the same data, and the project documentation the change touches. It uses Graphify for this when the project has it.
+- The checklist gives more weight to robustness: what the code does when a dependency fails, rather than a list of every possible input.
+- Each finding is checked again against the code before it is reported or fixed, and dropped if the code shows it is wrong.
+- `verify-feature` reads the files of the pull request or named branch under review. Before, it read them from the working tree, which can hold a different branch. It also finds a linked issue from `Fixes` and `Resolves`, not only `Closes`.
+- `build` runs only the tests related to the change while it works, and the full quality gate once, at the very end, after the review. It sorts each failing test as caused by the change (fixed), already failing, a local problem such as a missing service or credential, or unclear, and names the ones it did not fix in the report. Before it commits, it checks that no test was deleted, skipped or loosened to make it pass, and that each acceptance criterion has a test. The `build` reviewer also runs only the related tests.
+- `build`, `verify-feature` and the local review judge a story's acceptance criteria before they use them, by the new `_shared/judging-acceptance-criteria.md`. When the criteria are missing, vague, cover only the success path or leave part of the story out, the run writes the missing ones from the story and the codebase, marks them as derived, and uses the full set. A criterion that would be a guess becomes a question.
+- New `_shared/codebase-patterns.md` says how to match a codebase's standards: enforced rules first, then stated rules, then the closest existing example of the same kind of code, then the code in the same folder. The coding method follows it, and the `build` plan names the example each new file or unit follows. Where the codebase has two patterns, new code follows the newer one. The review checklist compares each new unit with its example, and a pattern finding must name the rule or the example it departs from, or it is dropped as taste.
+- The coding method that `build`, `execute` and `bulk-execute` follow now says to run the formatter and linter on the changed files when they can run on single files, and to read the related parts of the system and their documentation, to keep each unit to one job, to reuse existing functions, to start a bug fix with a failing test, and to decide what happens when each call fails.
+
 ## synergy 20.1.1
 
 - The plugin description in `plugin.json` and the marketplace manifest no longer mentions the destination checks that 20.0.0 removed.
