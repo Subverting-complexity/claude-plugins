@@ -126,8 +126,8 @@ jobs:
         # Raised in 18.9.0: user-facing-communication now states the ASD-STE100 sentence style, which every workflow loads.
         # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
         # Raised in 19.6.0: build has an independent review phase, whose reference file every run reads.
-        # Raised in 20.2.0: build runs a baseline quality gate and a test-integrity check, and follows the longer coding method.
-        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 15220
+        # Raised in 20.2.0: build runs related tests while it works and the full gate once at the end, judges the acceptance criteria, and follows the longer coding method.
+        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 16200
 
       - name: Check setup every-run load
         shell: bash

@@ -21,7 +21,7 @@ When the change is large, skip lockfiles, generated files, vendored code and sna
 ## 2 — Look for problems
 
 - **Containment.** Changes unrelated to the purpose; edits to shared utilities, base types or global config that reach other features; new global side effects; unneeded exports; bundled formatting or refactors.
-- **Completeness.** Each acceptance criterion; TODOs, placeholders, commented-out code, unreachable paths.
+- **Completeness.** Each acceptance criterion, given and derived; TODOs, placeholders, commented-out code, unreachable paths.
 - **Correctness.** Trace each path through the code with concrete values, and substitute them into calculations. Could a null reach a dereference? Injection (SQL, command, path, XSS), validation at boundaries, and secrets or personal data in code, logs or errors.
 - **Robustness.** For each call that can fail (I/O, a network call, a parse, another service), what does the code do when it fails? Look for errors swallowed or logged and ignored, work left half done, a retry that repeats a side effect, and an assumption about order, timing or input that the caller does not guarantee. Judge the code's design for failure, not a list of every possible input.
 - **Modularity.** Does each unit have one job and one reason to change? Look for logic in the wrong layer (a controller or screen doing domain work, domain code doing I/O), dependencies pointing the wrong way, new cycles, one module reaching into another's internals, and units that cannot be tested without their neighbours.

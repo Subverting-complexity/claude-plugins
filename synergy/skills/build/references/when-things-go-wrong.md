@@ -6,7 +6,7 @@ Read this only if a phase is blocked or fails, or the run hits one of the cases 
 
 **Abandoning an approach**: If the current approach is wrong and pushing on would make the codebase worse, stop rather than force it. Restore the working tree to the Start clean baseline — discard only *your* session's changes (`git restore` / `git clean -fd` on files you touched), never the user's pre-existing edits. Then report what was attempted and why it was abandoned, so the next attempt starts from that knowledge instead of repeating it.
 
-**Partial progress**: If only part of the work passes the quality gate, commit the passing part as its own atomic commit and leave the failing part out — discard it or note it, but never commit code that fails the gate. In the final report, list exactly what was committed and what remains, with enough detail that a fresh session can finish the job.
+**Partial progress**: If only part of the work passes its related tests, commit the passing part as its own atomic commit and leave the failing part out — discard it or note it, but never commit code that fails a test because of the change. In the final report, list exactly what was committed and what remains, with enough detail that a fresh session can finish the job.
 
 **Bug found**: If you discover an unrelated bug during development, note it in the final report. Do not fix it inline unless it is trivial and within the same scope.
 

@@ -210,6 +210,29 @@ for f in "${review_checklist_files[@]}"; do
     fi
 done
 
+# Acceptance-criteria wiring: _shared/judging-acceptance-criteria.md decides
+# whether a story's criteria are enough to build or review against. build plans
+# from them and the two reviews judge against them; each must cite the file, or
+# one of them goes back to treating a thin list as complete.
+declare -a criteria_judging_files=(
+    "synergy/skills/build/SKILL.md"
+    "synergy/skills/verify-feature/SKILL.md"
+    "synergy/skills/pr-review/references/local-review.md"
+)
+if [ ! -f "synergy/skills/_shared/judging-acceptance-criteria.md" ]; then
+    echo "FAIL: synergy/skills/_shared/judging-acceptance-criteria.md is missing"
+    status=1
+fi
+for f in "${criteria_judging_files[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is listed as judging acceptance criteria but does not exist"
+        status=1
+    elif ! grep -qF 'judging-acceptance-criteria.md' "$f"; then
+        echo "FAIL: $f uses acceptance criteria but does not cite _shared/judging-acceptance-criteria.md"
+        status=1
+    fi
+done
+
 # A repository can publish an issue template that GitHub pre-fills in the web
 # UI but that --body-file silently bypasses. The paths that CREATE an issue
 # have to resolve it, or every issue the plugin files ignores the project's own

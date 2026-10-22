@@ -30,7 +30,7 @@ git log "$base"..HEAD --oneline
 git diff "$base"...HEAD --name-status
 ```
 
-**What the change is for.** When a story or issue is given, take its deliverable, acceptance criteria and stated boundaries as the baseline. Otherwise infer the purpose from the commits and files, and say it before going on: "This branch appears to add X. Reviewing against that; correct me if not."
+**What the change is for.** When a story or issue is given, take its deliverable, acceptance criteria and stated boundaries as the baseline. Judge the criteria first, by `_shared/judging-acceptance-criteria.md`, and review against the full set, given and derived. A criterion that would be a guess comes back as a `needs-discussion` question. Otherwise infer the purpose from the commits and files, and say it before going on: "This branch appears to add X. Reviewing against that; correct me if not."
 
 ## Step 2 — Read in context
 

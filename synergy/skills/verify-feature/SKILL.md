@@ -79,7 +79,7 @@ git diff "$base"..."$head" --name-status
 
 Use `$head` for every later read. When it is not the checked-out `HEAD`, read files with `git show "$head":<path>`, never from the working tree.
 
-**What it is for.** If a story or issue is linked (`Closes`, `Fixes` or `Resolves #N` in the pull request body, or named by the person), read it with `gh issue view` and take its deliverable, acceptance criteria and boundaries as the baseline. Otherwise infer the purpose from the commits and files and say it first: "This branch appears to add X. Verifying against that; correct me if not."
+**What it is for.** If a story or issue is linked (`Closes`, `Fixes` or `Resolves #N` in the pull request body, or named by the person), read it with `gh issue view` and take its deliverable, acceptance criteria and boundaries as the baseline. Judge the criteria first, by `skills/_shared/judging-acceptance-criteria.md`, and verify against the full set. A criterion that would be a guess becomes a question for the author, such as "What should happen when the upload fails? The story does not say." Otherwise infer the purpose from the commits and files and say it first: "This branch appears to add X. Verifying against that; correct me if not."
 
 ## Step 2 — Read the change in its system
 
