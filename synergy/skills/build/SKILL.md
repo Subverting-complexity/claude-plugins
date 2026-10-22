@@ -93,6 +93,7 @@ Use `/synergy:code-architect` to plan the implementation:
 - Do not pause for confirmation.
 - If requirements have gaps, make reasonable assumptions and note them in the plan. Only stop if the task is so underspecified that any implementation would be a guess.
 - For each acceptance criterion, the plan names the test that will prove it. A criterion with no test is a gap in the plan.
+- For each new file or unit, the plan names the closest existing example it will follow, found as `skills/_shared/codebase-patterns.md` says. Where the codebase has two patterns for the same concern, the plan says which one it follows.
 
 If the plan reveals the task exceeds one session's budget, tell the user and propose splitting it. Implement the highest-priority slice.
 

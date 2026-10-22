@@ -233,6 +233,29 @@ for f in "${criteria_judging_files[@]}"; do
     fi
 done
 
+# Pattern wiring: _shared/codebase-patterns.md says where a codebase's
+# standards come from and how to follow its closest existing example. The
+# coding method writes code by it and the review checklist judges code by it;
+# both must cite it, or the writer and the reviewer follow different rules.
+declare -a codebase_pattern_files=(
+    "synergy/templates/coding-method.md"
+    "synergy/skills/_shared/review-checklist.md"
+    "synergy/skills/build/SKILL.md"
+)
+if [ ! -f "synergy/skills/_shared/codebase-patterns.md" ]; then
+    echo "FAIL: synergy/skills/_shared/codebase-patterns.md is missing"
+    status=1
+fi
+for f in "${codebase_pattern_files[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is listed as following codebase patterns but does not exist"
+        status=1
+    elif ! grep -qF 'codebase-patterns.md' "$f"; then
+        echo "FAIL: $f writes or reviews code but does not cite _shared/codebase-patterns.md"
+        status=1
+    fi
+done
+
 # A repository can publish an issue template that GitHub pre-fills in the web
 # UI but that --body-file silently bypasses. The paths that CREATE an issue
 # have to resolve it, or every issue the plugin files ignores the project's own
