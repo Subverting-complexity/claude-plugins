@@ -16,6 +16,8 @@ allowed-tools:
   - Bash(git fetch *)
   - Bash(git symbolic-ref *)
   - Bash(git remote *)
+  - Bash(git rev-parse *)
+  - Bash(graphify *)
   - Bash(gh pr view *)
   - Bash(gh pr diff *)
   - Bash(gh issue view *)
@@ -43,46 +45,53 @@ Follow `skills/_shared/wording-standard.md` for how it reads, `skills/user-facin
 
 ## Step 1 — Scope
 
-**The change.** For a pull request number, run `gh pr view <n> --json title,body,baseRefName,headRefName,files` and `gh pr diff <n>`. On a repository not hosted on GitHub, review the branch the pull request comes from using `git` alone, never that platform's tools. Otherwise review the named or current branch against the remote default branch, so a stale local `main` does not widen the diff:
+**The change.** Set `head`, the ref under review, and `base_branch`, the branch it merges into:
+
+- **A pull request number.** Run `gh pr view <n> --json title,body,baseRefName,headRefName,files` and `gh pr diff <n>`. Set `base_branch` to its `baseRefName`, and fetch its head so its files can be read: `git fetch --quiet origin pull/<n>/head`, then `head=$(git rev-parse FETCH_HEAD)`. On a repository not hosted on GitHub, review the branch the pull request comes from as a named branch, using `git` alone, never that platform's tools.
+- **A named branch.** Set `target_branch` to its name.
+- **No target.** Review the current branch. If `git status --porcelain` shows uncommitted changes, say once that the review does not include them.
+
+Then compare against the remote base, so a stale local branch does not change the diff:
 
 ```sh
-default_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
-default_branch=${default_branch#origin/}
-default_branch=${default_branch:-main}
-if git remote get-url origin >/dev/null 2>&1; then
-  git fetch --quiet origin "$default_branch"; base="origin/$default_branch"
-else
-  base="$default_branch"
+if [ -z "$base_branch" ]; then
+  base_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+  base_branch=${base_branch#origin/}
+  base_branch=${base_branch:-main}
 fi
-git log "$base"..HEAD --oneline
-git diff "$base"...HEAD --name-status
+if git remote get-url origin >/dev/null 2>&1; then
+  git fetch --quiet origin "$base_branch"; base="origin/$base_branch"
+else
+  base="$base_branch"
+fi
+if [ -z "$head" ]; then
+  head=HEAD
+  if [ -n "$target_branch" ]; then
+    head="$target_branch"
+    if git remote get-url origin >/dev/null 2>&1 && git fetch --quiet origin "$target_branch" 2>/dev/null; then
+      head="origin/$target_branch"
+    fi
+  fi
+fi
+git log "$base".."$head" --oneline
+git diff "$base"..."$head" --name-status
 ```
 
-**What it is for.** If a story or issue is linked (`Closes #N` in the pull request body, or named by the person), read it with `gh issue view` and take its deliverable, acceptance criteria and boundaries as the baseline. Otherwise infer the purpose from the commits and files and say it first: "This branch appears to add X. Verifying against that; correct me if not."
+Use `$head` for every later read. When it is not the checked-out `HEAD`, read files with `git show "$head":<path>`, never from the working tree.
 
-## Step 2 — Map what it touches
+**What it is for.** If a story or issue is linked (`Closes`, `Fixes` or `Resolves #N` in the pull request body, or named by the person), read it with `gh issue view` and take its deliverable, acceptance criteria and boundaries as the baseline. Otherwise infer the purpose from the commits and files and say it first: "This branch appears to add X. Verifying against that; correct me if not."
 
-- Read each changed file whole, the files it imports and the files that import it.
-- For every changed or removed export, find and read each call site, including implicit ones: reflection, serialisation, config and stored data. Note which consumers sit inside the feature and which outside.
-- Read the tests for the changed modules.
-- Read the formatter and linter config, and one untouched neighbour of each new or heavily changed file, as the baseline for style and structure.
+## Step 2 — Read the change in its system
 
-If `.claude/ecosystem.md` exists, use the tools it lists first (Graphify to trace connections, Fallow for unused exports and duplication). If it does not, work by hand and say nothing about tools.
+Follow section 1 of `skills/_shared/review-checklist.md`. Read beyond the diff: the whole function or class around each change, the code that feeds it and uses it, the other parts of the system that handle the same data, and the project documentation the change touches. Most problems sit where the diff meets code it does not show.
 
 ## Step 3 — Look for concerns
 
-- **Containment.** Changes unrelated to the purpose; edits to shared utilities, base types or global config that reach other features; new global side effects; unneeded exports; bundled formatting or refactors.
-- **Completeness.** Each acceptance criterion; TODOs, placeholders, commented-out code, unreachable paths.
-- **Correctness.** Trace each path with concrete values: zero, one, max, null, empty, negative. Concurrency, and what happens when a dependency fails. Injection, validation at boundaries, secrets or personal data in code, logs or errors.
-- **Modularity.** Does each unit have one job and one reason to change? Look for logic in the wrong layer (a controller or screen doing domain work, domain code doing I/O), dependencies pointing the wrong way, new cycles, one module reaching into another's internals, and units that cannot be tested without their neighbours.
-- **Extensibility.** Would the next case of the same kind (another type, provider, field or rule) mean editing existing code in several places? Look for type or string switches repeated across files, hard-coded lists and constants, and behaviour fixed in code where the codebase already uses config, a registry or an interface. Report it only where a second case already exists or the codebase already has the pattern. Never ask for an abstraction against a need that has not appeared.
-- **Duplication.** For each meaningful block of new logic, search for an existing equivalent by what it does (the endpoint, field, rule or error), not by name, in shared utilities, base types, sibling features and the diff itself. Name the existing symbol, or say it is only a resemblance.
-- **Complexity.** Judged against this codebase: deep nesting, a function doing several things or switched by a boolean, indirection with one implementation, generalisation for needs that do not exist.
-- **Conventions.** Compare with the formatter and linter config, `CLAUDE.md` and the neighbouring code: naming, file placement, import order, error handling, logging, test layout, comment density. You cannot run the formatter, so report only deviations you can see. A deviation from a rule the repository states or enforces is a concern. A lone departure from the neighbours, or a whitespace-only one, is a nitpick.
-- **Downstream and regressions.** Read removed lines as a diff. Changed signatures, behaviour or data shapes against every consumer; tests deleted, skipped or loosened; guards, retries or catches dropped from shared paths; changed defaults, flags, timeouts or limits; work added inside loops or hot paths.
-- **Tests.** Every new path exercised, errors and boundaries included, with exact assertions. A bug fix has a regression test.
+Work through section 2 of `skills/_shared/review-checklist.md`. Give most weight to what decides whether the code holds up over time: is it robust when a dependency fails, modular, free of duplication, and does it follow the patterns of the surrounding code? You cannot run the formatter, so report only deviations you can see. A deviation from a rule the repository states or enforces is a concern. A lone departure from the neighbours, or a whitespace-only one, is a nitpick.
 
 Report only what would change the outcome if the author acted on it. Leave out matters of taste. A small, objective blemish not worth a comment goes under Nitpicks.
+
+Then check every concern and nitpick again by section 3 of the checklist, before you write any of them. The person may post these comments as they stand, so a wrong one costs the author's time and the person's credibility.
 
 ## Step 4 — Write each concern as a comment
 

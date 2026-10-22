@@ -10,7 +10,7 @@ Read this at Phase 6 of `SKILL.md`. A reviewer in a fresh context reads what thi
    - The range `{start_sha}..HEAD` with its `git log --oneline` output, and the task or story text from Phase 1 with its acceptance criteria.
    - That it fixes every Blocking finding and Quick fix in its default severity rubric, and files nothing. A defect outside the range, or a question only a person can answer, comes back to you as a finding.
    - The files that were already dirty at Start clean, if any, which it must leave alone.
-   - The quality gate from Phase 4, which must pass before it commits.
+   - The quality gate from Phase 4, which must pass before it commits, and the checks that already failed at the Phase 3 baseline, which do not count against it.
    - What to return: the verdict (`approved`, `changes-requested` or `needs-discussion`); each finding with its `file:line`, its bucket and whether it was fixed; the SHA of each commit it made; the gate result; and whether its fixes did any of the things in **When to re-review**.
 3. If the harness does not offer plugin agents, use a general-purpose subagent and tell it to read `agents/reviewer.md` and work in local mode. If no subagent can be spawned at all, review the range yourself by `skills/pr-review/references/local-review.md`, and say in the report that the review was not independent.
 4. If a reviewer, in either round, left changes uncommitted because the gate stayed red, work through Phase 4 on them once. If the gate still fails, discard only the reviewer's changes (`git restore` on its files) and report its findings as open.

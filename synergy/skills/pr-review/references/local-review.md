@@ -4,7 +4,7 @@ Review a change that has no pull request: uncommitted work, a branch, a commit, 
 
 When the person wants a report to read rather than fixes ("verify this feature", "is this ready?", a review before merging, "don't change anything"), read `skills/verify-feature/SKILL.md` and follow it instead of this file.
 
-Read `CLAUDE.md` for project rules if it exists. When the change is React Native or Expo code, also work through `references/react-native.md` in Step 4.
+Read `CLAUDE.md` for project rules if it exists. When the change is React Native or Expo code, also work through `references/react-native.md` in Steps 3 and 4.
 
 ## Step 1 — Scope
 
@@ -34,30 +34,17 @@ git diff "$base"...HEAD --name-status
 
 ## Step 2 — Read in context
 
-For every changed file, read the whole file, the files it imports and the files that import it. For every changed function or export, find each call site and read it. Read the tests for the changed modules. Note which consumers sit inside the change and which sit outside it; that split drives Steps 3 and 4.
+Follow section 1 of `_shared/review-checklist.md`: the whole function or class around each change, the code that feeds it and uses it, every call site, the other parts of the system that handle the same data, the tests, and the project documentation the change touches. Note which consumers sit inside the change and which sit outside it; that split drives Steps 3 and 4.
 
-If `.claude/ecosystem.md` exists, use the tools it lists first: **Graphify** (`graphify . --update`, then `graphify query` or `graphify path`) to trace connections, **Fallow** for unused exports and duplication, and `npx ecc-agentshield scan` when the change touches Claude Code config. If the file is absent, review by hand and say nothing about tools. A listed tool missing from `PATH` gets one line and the review carries on.
+## Steps 3 and 4 — Correctness, fit and blast radius
 
-## Step 3 — Correctness
+Work through section 2 of `_shared/review-checklist.md`. Give most weight to what decides whether the code holds up over time: is it robust when a dependency fails, modular, free of duplication, and does it follow the patterns of the surrounding code?
 
-- **Logic.** Trace each path through the code. Substitute concrete values into calculations. Check zero, one, max, null, empty and negative values, concurrency, and what happens when a dependency fails.
-- **Types and nulls.** Could a null reach a dereference?
-- **Security.** Injection (SQL, command, path, XSS), input validation at boundaries, secrets or personal data in code, logs or errors.
-- **Tests.** Is every new path exercised, including errors and boundaries? Does a bug fix have a regression test? Are assertions exact rather than "does not throw"?
-- **Acceptance criteria.** Walk each one. Look for TODOs, placeholders and unreachable code.
-
-## Step 4 — Fit and blast radius
-
-- **Containment.** Changes to files unrelated to the purpose, shared utilities or global config whose change reaches other features, new global side effects, exports nothing needs, and bundled formatting or refactors.
-- **Duplication.** For each meaningful block of new logic, search for an existing equivalent by what it does (the endpoint, field, rule or error), not by its name, in shared utilities, base types and sibling features, and inside the diff itself. Near-duplicates count. Name the existing symbol, or say it is only a resemblance. Two similar blocks likely to diverge can stay apart.
-- **Complexity.** Judged against this codebase: deep nesting, functions doing several things or switched by a boolean, indirection with one implementation, generalisation for needs that do not exist. Propose a shape only if it is genuinely simpler.
-- **Patterns.** A new pattern where the codebase already has one for the same concern.
-- **Downstream.** Changed signatures, behaviour or data shapes: check every consumer, including implicit ones (reflection, serialisation, config, stored data). Deleted code: check nothing still references it, dynamically included.
-- **Regressions.** Read removed lines as a diff. Look for tests deleted, skipped or loosened; guards, validation, retries or catches dropped from paths others still use; changed defaults, flags, timeouts or limits; conditions that send existing callers down a new branch; work added inside loops or hot paths.
+Then check every finding again by section 3 of the checklist. Fix or report only the findings that survive it.
 
 ## Step 5 — Fix or report
 
-Fix concrete, objective problems directly unless the user asked only for a report: logic and off-by-one errors, missing null checks that would crash, missing tests for new paths, dead code the change introduced, wrong types. Do not fix matters of taste. Flag anything that needs a design decision.
+Fix concrete, objective problems directly unless the user asked only for a report: logic and off-by-one errors, missing null checks that would crash, failures that are swallowed or leave work half done, missing tests for new paths, logic that duplicates an existing utility, dead code the change introduced, wrong types. Do not fix matters of taste. Flag anything that needs a design decision.
 
 ## Step 6 — Report
 

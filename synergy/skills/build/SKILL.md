@@ -90,6 +90,7 @@ Use `/synergy:code-architect` to plan the implementation:
 - Consume the architecture plan output and proceed to Build.
 - Do not pause for confirmation.
 - If requirements have gaps, make reasonable assumptions and note them in the plan. Only stop if the task is so underspecified that any implementation would be a guess.
+- For each acceptance criterion, the plan names the test that will prove it. A criterion with no test is a gap in the plan.
 
 If the plan reveals the task exceeds one session's budget, tell the user and propose splitting it. Implement the highest-priority slice.
 
@@ -103,6 +104,8 @@ If `.claude/ecosystem.md` does **not** exist, the project opted out — skip thi
 ## Phase 3 -- Build
 
 **Start clean.** Before making any edits, run the **Start clean** check in `templates/worktree-hygiene-local.md`: `git status --porcelain`. If the tree is already dirty, record the baseline and tell the user — a local session may run in their own checkout, so pre-existing changes may be *their* work. Leave those untouched and treat only the files you change from here on as yours. This baseline is what lets the Exit cleanup tell your work apart from what was already there. Also record the commit you start from, `start_sha=$(git rev-parse HEAD)`: Phase 6 reviews `{start_sha}..HEAD`.
+
+**Run the quality gate once before any edit**, the same command Phase 4 uses, and record which checks fail. A check that fails before this run is not caused by it: do not fix it inside this task, and name it in the report. From here on, the gate passes when no check fails that passed at this baseline. Without this baseline, Phase 4 cannot tell a failure the change caused from one that was already there.
 
 Implement the Phase 2 plan by `templates/coding-method.md`:
 
@@ -123,6 +126,8 @@ Run the project's test or quality gate command:
 3. If still failing after 3 attempts, work through **When something fails** in `templates/coding-method.md` before trying again.
 
 If no quality gate command is configured, run whatever test commands the project supports (e.g. `npm test`, `pytest`, `dotnet test`, `cargo test`).
+
+A green gate counts only if the tests still test the same thing. Before you commit, read `git diff {start_sha} --` on the test files. If a test was deleted, skipped or had its assertion loosened to make the gate pass, undo that and fix the code instead. A test may change only where the task changes the behaviour it checks; say so in the commit message. Then check that each acceptance criterion has the test the plan named.
 
 ## Phase 5 -- Commit
 

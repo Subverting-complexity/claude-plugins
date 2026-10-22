@@ -188,6 +188,28 @@ for f in "${change_reading_files[@]}"; do
     fi
 done
 
+# Review wiring: _shared/review-checklist.md is the one checklist for finding
+# what is wrong with a change. verify-feature reports from it, and the local
+# review that build's reviewer runs fixes from it; both must cite it, or the
+# two checklists drift apart again, as they had before 20.2.0.
+declare -a review_checklist_files=(
+    "synergy/skills/verify-feature/SKILL.md"
+    "synergy/skills/pr-review/references/local-review.md"
+)
+if [ ! -f "synergy/skills/_shared/review-checklist.md" ]; then
+    echo "FAIL: synergy/skills/_shared/review-checklist.md is missing"
+    status=1
+fi
+for f in "${review_checklist_files[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: $f is listed as a reviewing file but does not exist"
+        status=1
+    elif ! grep -qF 'review-checklist.md' "$f"; then
+        echo "FAIL: $f reviews a change but does not cite _shared/review-checklist.md"
+        status=1
+    fi
+done
+
 # A repository can publish an issue template that GitHub pre-fills in the web
 # UI but that --body-file silently bypasses. The paths that CREATE an issue
 # have to resolve it, or every issue the plugin files ignores the project's own
