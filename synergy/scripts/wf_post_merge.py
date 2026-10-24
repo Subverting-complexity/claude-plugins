@@ -9,11 +9,14 @@ import re
 from types import SimpleNamespace
 
 import wf_core
+import wf_rest
+import wf_rest_pr
+import wf_rest_settle
 from wf_capabilities import gh_graphql_partial, resolve_org_capabilities
 from wf_config import field_name, prepare_cfg
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_OK, EXIT_PARTIAL, call_command, emit,
-    emit_line, gh_json, run,
+    emit_line, gh_json, graphql_blocked, run_gh,
 )
 from wf_issue_io import _batch_result, _graphql_json, issue_field_values
 from wf_stage import _chunks, release_note_inputs, set_stage, set_stages
@@ -129,16 +132,24 @@ def fetch_parent_chains(cfg, numbers):
     wanted = list(dict.fromkeys(int(n) for n in numbers or ()))
     stage_field = field_name(cfg, 'field-stage')
     out = {}
-    for number, ok, node, err in _aliased_repository_read(
-            cfg, wanted, 'p', 'parent { %s }' % _chain_selection(CONTAINER_CHAIN_DEPTH)):
-        if not ok:
-            out[number] = (False, [], err)
-            continue
-        parent, chain = (node or {}).get('parent'), []
-        while parent:
-            chain.append(_container_node(parent, stage_field))
-            parent = parent.get('parent')
-        out[number] = (True, chain, '')
+    if not graphql_blocked():
+        for number, ok, node, err in _aliased_repository_read(
+                cfg, wanted, 'p', 'parent { %s }' % _chain_selection(CONTAINER_CHAIN_DEPTH)):
+            if not ok:
+                out[number] = (False, [], err)
+                continue
+            parent, chain = (node or {}).get('parent'), []
+            while parent:
+                chain.append(_container_node(parent, stage_field))
+                parent = parent.get('parent')
+            out[number] = (True, chain, '')
+        if not graphql_blocked():
+            return out
+    # GraphQL is blocked, or the read above was the first call it refused.
+    unread = [n for n in wanted if not out.get(n, (False,))[0]]
+    for number, (ok, nodes, err) in wf_rest_settle.rest_parent_chains(
+            cfg, unread, CONTAINER_CHAIN_DEPTH).items():
+        out[number] = (ok, [_container_node(n, stage_field) for n in nodes], err)
     return out
 
 
@@ -150,11 +161,17 @@ def fetch_parent_chain(cfg, number):
 def close_container(cfg, number, comment):
     """Close one finished container as completed and set its `Stage` to Done."""
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    code, _, err = run(['gh', 'issue', 'close', str(number), '--repo', repo,
-                        '--reason', 'completed', '--comment', comment])
+    code, err = 1, ''
+    if not graphql_blocked():
+        code, _, err = run_gh(['gh', 'issue', 'close', str(number), '--repo', repo,
+                               '--reason', 'completed', '--comment', comment])
+    if code != 0 and graphql_blocked():
+        # `gh issue close` reads through GraphQL inside `gh`.
+        closed, err = wf_rest.rest_close_issue(cfg, number, comment)
+        code = 0 if closed else 1
     if code != 0:
         return {'issue': number, 'closed': False,
-                'error': err.strip() or 'gh issue close failed'}
+                'error': (err or '').strip() or 'gh issue close failed'}
     written, message = set_stage(cfg, number, wf_core.STAGE_NAMES['stage-done'])
     return {'issue': number, 'closed': True, 'stage_set': written,
             'stage_message': message}
@@ -274,9 +291,7 @@ def read_linked_issues(cfg, numbers):
     note_fields = [field_name(cfg, purpose)
                    for purpose in wf_core.RELEASE_NOTE_FIELD_KEYS.values()]
     out = {}
-    for number, ok, node, err in _aliased_repository_read(
-            cfg, numbers, 'i', 'id state labels(first:50){ nodes { id name } }'
-            + LINKED_VALUES_SELECTION):
+    for number, ok, node, err in _linked_rows(cfg, numbers):
         if ok and not node:
             ok, err = False, 'issue #%d not found' % number
         values = issue_field_values(node) if ok else {}
@@ -287,6 +302,44 @@ def read_linked_issues(cfg, numbers):
             'labels': [l for l in (node.get('labels') or {}).get('nodes') or []
                        if l and l.get('name')]}, err)
     return out
+
+
+def _linked_rows(cfg, numbers):
+    """The aliased linked-issue read, or one REST read per issue where
+    GraphQL is blocked. [(number, ok, node, err)]."""
+    if not graphql_blocked():
+        rows = list(_aliased_repository_read(
+            cfg, numbers, 'i', 'id state labels(first:50){ nodes { id name } }'
+            + LINKED_VALUES_SELECTION))
+        if not graphql_blocked():
+            return rows
+    return wf_rest_settle.rest_linked_rows(cfg, numbers)
+
+
+def settle_linked(cfg, plan, pr):
+    """`settle_issues`, through REST where GraphQL is blocked. An entry the
+    first refused GraphQL call left unwritten goes again through REST."""
+    out = settle_issues(plan, pr) if not graphql_blocked() else {}
+    if not graphql_blocked():
+        return out
+    retry = [e for e in plan
+             if not any((out.get(e['number']) or {}).get(k) for k in ('closed', 'cleared'))]
+    out.update(wf_rest_settle.rest_settle_issues(cfg, retry, SETTLE_COMMENT % pr))
+    return out
+
+
+def merged_pr_view(cfg, pr):
+    """The pull request `post-merge` settles, with the issues it closes and
+    its comments. (ok, data, err)."""
+    repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    if not graphql_blocked():
+        ok, data, err = gh_json(['pr', 'view', str(pr), '--repo', repo,
+                                 '--json', 'number,state,mergedAt,baseRefName,'
+                                 'closingIssuesReferences,comments'])
+        if ok or not graphql_blocked():
+            return ok, data, err
+    data, err = wf_rest_settle.rest_merged_pr_view(cfg, pr)
+    return data is not None, data, err
 
 
 def settle_issues(plan, pr):
@@ -355,10 +408,7 @@ def cmd_post_merge(args):
     write, and one read of their parents. It was five per issue.
     """
     cfg = prepare_cfg()
-    repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    ok, data, err = gh_json(['pr', 'view', str(args.pr), '--repo', repo,
-                             '--json', 'number,state,mergedAt,baseRefName,'
-                             'closingIssuesReferences,comments'])
+    ok, data, err = merged_pr_view(cfg, args.pr)
     if not ok or not data:
         emit('error', EXIT_ENV, reason='could not read PR #%d (%s)' % (args.pr, err))
     if (data.get('state') or '').upper() != 'MERGED':
@@ -392,9 +442,11 @@ def cmd_post_merge(args):
                          'closed': state == 'CLOSED', 'stale': stale}
         if ok and issue.get('id') and (state == 'OPEN' or label_ids):
             plan.append({'number': number, 'id': issue['id'],
-                         'close': state == 'OPEN', 'label_ids': label_ids})
+                         'close': state == 'OPEN', 'label_ids': label_ids,
+                         'label_names': [l['name'] for l in issue.get('labels') or []
+                                         if l['name'] in stale]})
 
-    outcomes = settle_issues(plan, args.pr) if plan else {}
+    outcomes = settle_linked(cfg, plan, args.pr) if plan else {}
     if getattr(args, 'notes', None):
         notes, note_errors = read_release_notes(args.notes)
     else:
@@ -427,7 +479,7 @@ def cmd_post_merge(args):
     # this step is a script and cannot judge where an issue ships.
     targets, target_errors = release_targets_supplied(
         cfg, getattr(args, 'notes', None), data.get('comments'))
-    label_facts = release_label_writes(cfg, repo, linked, issues, targets)
+    label_facts = release_label_writes(cfg, linked, issues, targets)
     done = wf_core.STAGE_NAMES['stage-done']
     ids = {n: facts[n]['id'] for n in linked if facts[n]['id']}
     stages = set_stages(cfg, {n: done for n in linked}, ids=ids,
@@ -631,22 +683,41 @@ def release_targets_supplied(cfg, path, comments):
     return wf_core.parse_release_targets(data, cfg.get('release_targets'))
 
 
-def add_release_labels(repo, number, labels):
+LABELS_ENSURE_HINT = ('; run `wf labels-ensure` to create the labels the Release '
+                      'Targets table names')
+
+
+def add_release_labels(cfg, number, labels):
     """Add `labels` to one issue. (ok, err). Nothing is ever removed."""
-    cmd = ['gh', 'issue', 'edit', str(number), '--repo', repo]
+    if graphql_blocked():
+        return _rest_add_release_labels(cfg, number, labels)
+    cmd = ['gh', 'issue', 'edit', str(number), '--repo',
+           '%s/%s' % (cfg['org'], cfg['repo'])]
     for name in labels:
         cmd += ['--add-label', name]
-    code, _, err = run(cmd)
+    code, _, err = run_gh(cmd)
     if code == 0:
         return True, ''
+    if graphql_blocked():
+        # `gh issue edit` reads through GraphQL inside `gh`.
+        return _rest_add_release_labels(cfg, number, labels)
     err = (err or '').strip() or 'gh issue edit failed'
     if 'not found' in err.lower():
-        err += ('; run `wf labels-ensure` to create the labels the Release '
-                'Targets table names')
+        err += LABELS_ENSURE_HINT
     return False, err
 
 
-def release_label_writes(cfg, repo, linked, issues, targets):
+def _rest_add_release_labels(cfg, number, labels):
+    """`add_release_labels` through REST. The REST endpoint creates a label
+    the repository lacks, grey and with no description, where `gh issue edit`
+    refuses it, so a missing label is refused here first."""
+    missing = [name for name in labels if not wf_rest_pr.rest_label_exists(cfg, name)]
+    if missing:
+        return False, 'label %s not found%s' % (', '.join(missing), LABELS_ENSURE_HINT)
+    return wf_rest_pr.rest_edit_labels(cfg, number, add=labels)
+
+
+def release_label_writes(cfg, linked, issues, targets):
     """Put a `release:` label on each linked issue for each of its targets.
 
     Returns {number: fact}. A fact holds `added`, the labels written now, and
@@ -675,7 +746,7 @@ def release_label_writes(cfg, repo, linked, issues, targets):
         add = wf_core.release_label_add(present, chosen)
         fact = {'added': []}
         if add:
-            written, err = add_release_labels(repo, number, add)
+            written, err = add_release_labels(cfg, number, add)
             if written:
                 fact['added'] = add
             else:
@@ -687,6 +758,9 @@ def release_label_writes(cfg, repo, linked, issues, targets):
 def notes_fields_defined(cfg):
     """Whether the org defines either release-notes field."""
     ok, caps, _ = resolve_org_capabilities(cfg)
+    if not ok and graphql_blocked():
+        return any(wf_rest.rest_field_id(cfg, field_name(cfg, purpose)) is not None
+                   for purpose in wf_core.RELEASE_NOTE_FIELD_KEYS.values())
     if not ok:
         return False
     field_map = caps.get('field_map') or {}
@@ -711,10 +785,7 @@ def cmd_settle_merged(args):
     caller to write them and re-run `post-merge --notes`.
     """
     cfg = prepare_cfg()
-    repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    ok, prs, err = gh_json(['pr', 'list', '--repo', repo, '--state', 'merged',
-                            '--limit', str(args.limit),
-                            '--json', 'number,closingIssuesReferences'])
+    ok, prs, err = merged_prs(cfg, args.limit)
     if not ok:
         emit('error', EXIT_ENV, reason='could not list merged PRs (%s)' % err)
     linked = {p['number']: wf_core.closing_issue_numbers(
@@ -763,6 +834,18 @@ def cmd_settle_merged(args):
                     % (len(failed), len(pending)))
     emit_line('ok', EXIT_OK, settled=[r['pr'] for r in results],
               reason='%d merged PR(s) settled' % len(results))
+
+
+def merged_prs(cfg, limit):
+    """The newest merged pull requests with the issues each closes.
+    (ok, prs, err)."""
+    if not graphql_blocked():
+        ok, prs, err = gh_json(['pr', 'list', '--repo', '%s/%s' % (cfg['org'], cfg['repo']),
+                                '--state', 'merged', '--limit', str(limit),
+                                '--json', 'number,closingIssuesReferences'])
+        if ok or not graphql_blocked():
+            return ok, prs, err
+    return wf_rest_settle.rest_merged_prs(cfg, limit)
 
 
 def missing_note_issues(payload):

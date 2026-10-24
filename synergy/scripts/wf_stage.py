@@ -174,6 +174,8 @@ def release_note_inputs(cfg, texts):
     if not texts:
         return inputs, written, skipped
     ok, caps, err = resolve_org_capabilities(cfg)
+    if not ok and graphql_blocked():
+        return _rest_release_note_inputs(cfg, texts)
     if not ok:
         return [], [], ['org capabilities unavailable (%s)' % (err or 'no detail')]
     field_map = caps.get('field_map') or {}
@@ -191,6 +193,24 @@ def release_note_inputs(cfg, texts):
             skipped.append('%s: %s' % (name, verr))
             continue
         inputs.append(value)
+        written.append(name)
+    return inputs, written, skipped
+
+
+def _rest_release_note_inputs(cfg, texts):
+    """`release_note_inputs` where GraphQL is blocked and no capability record
+    is cached. The release-notes fields are text fields, so each input names
+    its field and needs only the REST id `wf_rest.rest_field_values` finds."""
+    inputs, written, skipped = [], [], []
+    for short, purpose in wf_core.RELEASE_NOTE_FIELD_KEYS.items():
+        text = texts.get(short)
+        if not text:
+            continue
+        name = field_name(cfg, purpose)
+        if wf_rest.rest_field_id(cfg, name) is None:
+            skipped.append('could not find a %s field through REST' % name)
+            continue
+        inputs.append({'fieldName': name, 'textValue': str(text)})
         written.append(name)
     return inputs, written, skipped
 
