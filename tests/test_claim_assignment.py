@@ -289,6 +289,17 @@ class TestReleaseAndHold(_Case):
         self.assertIsNone(self.marker('issue-5'))
         self.assertIsNone(self.marker('pr-7'))
 
+    def test_handoff_lets_the_issue_claim_go_and_keeps_it_assigned(self):
+        """From the open pull request on, the assignment is the issue's
+        ownership marker, as it is after a claim ref is released."""
+        remote = self.use(_Remote(push_err=REFUSED))
+        self.acquire('issue-5')
+        released = wf.release_claims(['issue-5'], keep_assignment=True)
+        self.assertEqual(released, {'issue-5': True})
+        self.assertEqual(remote.assignees[5], [ME])
+        self.assertIsNone(self.marker('issue-5'))
+        self.assertNotIn('DELETE', [m for m, _ in remote.writes()])
+
     def test_the_pick_result_names_the_assignment(self):
         self.use(_Remote(push_err=REFUSED))
         self.acquire('issue-5')

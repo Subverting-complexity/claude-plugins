@@ -159,7 +159,7 @@ class HandoffTests(unittest.TestCase):
                     mock.patch.object(wf_review, 'set_stages',
                                       lambda cfg, m, *a: {n: (True, 'set') for n in m}), \
                     mock.patch.object(wf_review, 'release_claims',
-                                      lambda t: {x: True for x in t}), \
+                                      lambda t, **kw: {x: True for x in t}), \
                     mock.patch.object(wf_review, 'repo_root', lambda: root):
                 result, code = invoke(args.func, args)
             self.assertEqual(code, 0)

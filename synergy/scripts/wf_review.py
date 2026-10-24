@@ -601,7 +601,8 @@ def cmd_handoff(args):
     # Reported rather than fatal, like the stage: the PR exists either way,
     # but a claim left behind keeps the issue locked until claim-reap. One
     # push for every issue claim (#300).
-    releases = release_claims(['issue-%d' % n for n in numbers])
+    # An issue claimed by assignment stays assigned, as after a ref release.
+    releases = release_claims(['issue-%d' % n for n in numbers], keep_assignment=True)
     issues = []
     for number in numbers:
         written, message = outcomes.get(int(number), (False, 'not attempted'))

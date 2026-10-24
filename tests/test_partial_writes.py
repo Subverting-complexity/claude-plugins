@@ -175,7 +175,7 @@ class TestHandoffLabel(unittest.TestCase):
                                   lambda cfg, wanted: {int(n): (True, 'In Review')
                                                        for n in wanted}), \
                 mock.patch.object(wf, 'release_claims',
-                                  lambda targets: {t: True for t in targets}), \
+                                  lambda targets, **kw: {t: True for t in targets}), \
                 mock.patch.object(wf, 'repo_root', lambda: root):
             code, payload = _capture(args.func, args)
         self.assertEqual(code, wf.EXIT_PARTIAL)

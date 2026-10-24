@@ -22,8 +22,8 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_rest_settle.py` | The REST fallback for settling a merge: the merged pull request with its closing keywords and comments, the merged pull requests `settle-merged` sweeps, the issues they close, the parents above them, and closing and stripping those issues | 178 |
 | `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 264 |
 | `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 628 |
-| `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 507 |
-| `wf_claim_assign.py` | Claims through an issue assignment where claim refs are refused: the switch, the claim read back, its release and the held check | 219 |
+| `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 509 |
+| `wf_claim_assign.py` | Claims through an issue assignment where claim refs are refused: the switch, the claim read back, its release and the held check | 224 |
 | `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 339 |
 | `wf_unblock.py` | The unblock sweep, `unblock` | 316 |
 | `wf_pick.py` | The `pick` and `refine` entry point and the result a pick returns | 218 |
@@ -33,7 +33,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 538 |
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
 | `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, the release notes and release labels of a settled issue, `post-merge`, `settle-merged` | 889 |
-| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 644 |
+| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 645 |
 | `wf_issue_apply.py` | `issue-apply`, including the `area` key that writes an issue's 1 area label | 867 |
 | `wf_issue_audit.py` | `issue-audit` | 189 |
 | `wf_areas.py` | `areas`: the rows of the areas table, or the area an issue's label names | 89 |
@@ -325,7 +325,7 @@ Settling a merge goes through REST too (`wf_rest_settle.py`). `post-merge` reads
 
 A Claude Code cloud session refuses every way of creating a claim ref: `git push` to `refs/claims/` answers HTTP 403, and so does every write to the REST git data API. When a claim push is refused with 403 and the ref is absent, `wf` claims through an issue assignment instead (`wf_claim_assign.py`) for the rest of the run, and prints one line on stderr to say so. A rate limit that answers 403 does not switch it. `WF_CLAIM_REFS=off` starts a run on assignment claims.
 
-An assignment claim reads the assignees of the issue or pull request, assigns the run's login through the REST issues API, and reads GitHub's answer back. It goes on only when that login is the only assignee. When another login is there, before or after the write, it removes its own and treats the item as taken. `pick`, `start`, `plan-set --claim`, `handoff` and `claim --pr` all claim this way, and `claim-release`, `exit-cleanup`, `drop-story`, `refine` and `block` release by removing the assignment. The marker file reads `assign:<login>:added` or `assign:<login>:kept`; `kept` is a pull request that was already assigned to the login alone, and its release leaves that assignment where it was. The `claim_ref` a pick or review result reports is then `assignee:<login>`.
+An assignment claim reads the assignees of the issue or pull request, assigns the run's login through the REST issues API, and reads GitHub's answer back. It goes on only when that login is the only assignee. When another login is there, before or after the write, it removes its own and treats the item as taken. `pick`, `start`, `plan-set --claim`, `handoff` and `claim --pr` all claim this way, and `claim-release`, `exit-cleanup`, `drop-story`, `refine` and `block` release by removing the assignment. `handoff` releases the issue claims and leaves the issues assigned, because from the open pull request on the assignment is the ownership marker, as it is after a claim ref is released. The marker file reads `assign:<login>:added` or `assign:<login>:kept`; `kept` is a pull request that was already assigned to the login alone, and its release leaves that assignment where it was. The `claim_ref` a pick or review result reports is then `assignee:<login>`.
 
 This lock is weaker than a ref. A ref's object was written by one run, so its sha tells that run apart from every other; an assignment names only the login, and every run by the same person signs in as the same login. Two sessions by the same person, started on the same pool at the same moment, can therefore take the same story. `execute`, `bulk-execute` and `orchestrate` still work, because one process takes the claims of a run one after another. `claim-reap` has nothing to reap for an assignment claim, because there is no ref.
 

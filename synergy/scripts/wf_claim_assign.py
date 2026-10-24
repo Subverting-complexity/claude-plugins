@@ -176,8 +176,13 @@ def acquire_by_assignment(target):
     return 'won'
 
 
-def release_assignment(target):
+def release_assignment(target, keep_assignment=False):
     """Release a claim taken by assignment. True when it is gone.
+
+    `keep_assignment` lets go of the claim and leaves the login assigned.
+    `handoff` asks for it, because from the open pull request on an issue's
+    assignment is its ownership marker, as it is after a claim ref is
+    released, and the issue stays assigned through review.
 
     Removing an assignee that is already gone succeeds, so this stays
     idempotent. A failed removal is a failed release only when the login is
@@ -189,7 +194,7 @@ def release_assignment(target):
         return True
     login, added = held
     path = _issue_path(target)
-    if added:
+    if added and not keep_assignment:
         if not path:
             eprint('wf: warning - could not release %s: no org/repo in the config'
                    % target)

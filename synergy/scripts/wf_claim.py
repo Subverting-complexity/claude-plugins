@@ -139,7 +139,7 @@ def release_claim(target):
     return True
 
 
-def release_claims(targets):
+def release_claims(targets, keep_assignment=False):
     """Delete many claim refs in one push. Returns {target: released}.
 
     `release_claim` for a list, at the cost of one push however many refs
@@ -154,12 +154,14 @@ def release_claims(targets):
     any other failure leaves every ref's fate unknown, and none is reported as
     released. Only a released target's marker is removed, for the reason
     `release_claim` gives. A claim taken by assignment costs one request of
-    its own, and the push names only the ref claims.
+    its own, and the push names only the ref claims. `keep_assignment` is
+    passed on to `release_assignment`.
     """
     targets = list(dict.fromkeys(targets or ()))
     if not targets:
         return {}
-    assigned = {target: release_assignment(target) for target in targets
+    assigned = {target: release_assignment(target, keep_assignment)
+                for target in targets
                 if read_assignment_marker(target) is not None}
     targets = [target for target in targets if target not in assigned]
     if not targets:

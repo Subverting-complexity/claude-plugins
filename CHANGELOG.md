@@ -9,7 +9,7 @@ update appears to do nothing.
 ## synergy 20.6.0
 
 - `wf` now claims stories in a session that refuses claim refs, such as a Claude Code cloud session. There, every push to `refs/claims/` and every write to the REST git data API answers HTTP 403, so `wf pick` could not claim anything and `execute` could not run. When a claim push is refused with 403, `wf` claims through an issue assignment instead: it assigns the run's login through the REST issues API, reads the assignees back, and goes on only when that login is the only one. A story already assigned to another login is not claimed.
-- The review claim that `handoff` and `claim --pr` take on a pull request falls back the same way. `exit-cleanup`, `claim-release`, `drop-story`, `refine` and `block` release an assignment claim by removing the assignment.
+- The review claim that `handoff` and `claim --pr` take on a pull request falls back the same way. `exit-cleanup`, `claim-release`, `drop-story`, `refine` and `block` release an assignment claim by removing the assignment. `handoff` releases the issue claim and leaves the issue assigned through review, as it does after releasing a claim ref.
 - An assignment names only the GitHub login, so two sessions run by the same person on the same pool at the same moment can take the same story. `wf` says so once, in the line it prints when it falls back.
 - `WF_CLAIM_REFS=off` starts a run on assignment claims without trying a push.
 - Where the claim ref push works, nothing changes.
