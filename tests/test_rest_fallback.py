@@ -518,7 +518,8 @@ class TestAbandonedResetThroughRest(_Base):
             return 0, '', ''
 
         stages = []
-        with mock.patch.object(wf, 'run', run),                 mock.patch.object(wf, 'set_stage',
+        with mock.patch.object(wf, 'run', run), \
+                mock.patch.object(wf, 'set_stage',
                                   lambda cfg, n, stage, node_id=None:
                                   stages.append((n, stage)) or (True, '')):
             found, notice = self._quiet(wf.reset_abandoned, _cfg(), 5, ['someone'])
