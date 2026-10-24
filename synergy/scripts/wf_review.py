@@ -14,6 +14,7 @@ import wf_core
 import wf_rest_pr
 from wf_capabilities import fetch_repo_state
 from wf_claim import acquire_claim, holds_claim, release_claims
+from wf_claim_assign import claim_ref_of
 from wf_config import prepare_cfg, repo_root
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, EXIT_PARTIAL, emit,
@@ -183,7 +184,7 @@ def cmd_update_next(args):
         'number': selected['number'], 'title': selected['title'],
         'url': selected['url'], 'branch': selected['branch'],
         'labels': selected['labels'],
-        'claim_ref': 'refs/claims/pr-%d' % selected['number'],
+        'claim_ref': claim_ref_of('pr-%d' % selected['number']),
         'prior_state': wf_core.actionable_update_label(selected['labels'], names),
         'side_effects': side_effects, 'checked_out': False,
     }
@@ -285,7 +286,7 @@ def cmd_review_next(args):
         # In read-only (no_claim) mode nothing was locked or relabelled, so
         # there is no claim ref to release and the `reviewing` marker is absent.
         'claimed': not no_claim,
-        'claim_ref': None if no_claim else 'refs/claims/pr-%d' % selected['number'],
+        'claim_ref': None if no_claim else claim_ref_of('pr-%d' % selected['number']),
         'prior_state': wf_core.review_prior_state(selected['labels'], names, moved),
         'head_changed': moved,
         'side_effects': side_effects, 'checked_out': False,

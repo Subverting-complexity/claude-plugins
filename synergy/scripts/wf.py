@@ -78,6 +78,7 @@ import wf_capabilities  # noqa: E402
 import wf_stage  # noqa: E402
 import wf_board_sync  # noqa: E402
 import wf_candidates  # noqa: E402
+import wf_claim_assign  # noqa: E402
 import wf_claim  # noqa: E402
 import wf_deps  # noqa: E402
 import wf_issue_apply  # noqa: E402
@@ -117,6 +118,7 @@ _SHELL_MODULES = (
     wf_stage,
     wf_board_sync,
     wf_candidates,
+    wf_claim_assign,
     wf_claim,
     wf_deps,
     wf_issue_apply,

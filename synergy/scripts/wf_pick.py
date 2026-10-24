@@ -10,6 +10,7 @@ The selection is `wf_pick_select.py`, the tree and single-issue reads are
 import wf_core
 import wf_rest
 from wf_candidates import report_unprioritised
+from wf_claim_assign import claim_ref_of
 from wf_config import check_environment, load_config, prepare_cfg
 from wf_deps import known_edges
 from wf_io import (
@@ -170,7 +171,7 @@ def finish_pick(args, cfg, selected, side_effects, backlog_mode, container=None,
         'labels': selected['labels'],
         'milestone': selected['milestone'],
         'body': selected['body'],
-        'claim_ref': 'refs/claims/issue-%d' % selected['number'],
+        'claim_ref': claim_ref_of('issue-%d' % selected['number']),
         'mode': getattr(args, 'mode', 'story'),
         'backlog_mode': backlog_mode,
         'side_effects': side_effects,

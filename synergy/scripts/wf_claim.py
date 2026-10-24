@@ -1,6 +1,7 @@
 """
 Claims: the atomic claim refs and markers, and the `claim`, `claim-release` and
-`claim-reap` subcommands.
+`claim-reap` subcommands. A session that refuses claim refs with 403 claims
+through an issue assignment instead (`wf_claim_assign.py`).
 
 Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
@@ -12,6 +13,11 @@ from datetime import datetime, timezone
 
 import wf_core
 import wf_rest
+from wf_claim_assign import (
+    acquire_by_assignment, claim_marker_path, claim_refs_refused,
+    holds_assignment, mark_claim_refs_refused, push_refused,
+    read_assignment_marker, release_assignment,
+)
 from wf_config import check_environment, prepare_cfg, repo_root
 from wf_io import (
     EXIT_ENV, EXIT_LOST, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE, emit, eprint, gh_json,
@@ -22,8 +28,8 @@ from wf_stage import set_stage, set_stages
 
 # ── claim + markers ──────────────────────────────────────────────────────────
 
-def _claim_marker_path(root, target):
-    return os.path.join(root, '.claude', 'claim-%s.sha' % target)
+# The one marker path, shared with the assignment claims.
+_claim_marker_path = claim_marker_path
 
 
 def acquire_claim(target):
@@ -41,7 +47,13 @@ def acquire_claim(target):
                 walking the pool, so a broken environment is never mistaken
                 for "every candidate was already claimed" (a phantom
                 all-blocked the user reads as an empty backlog).
+
+    A push the remote refuses with 403, while the ref is absent, is a session
+    that allows no claim refs at all (#438). The claim is then taken by
+    assignment, and so is every later claim in the run.
     """
+    if claim_refs_refused():
+        return acquire_by_assignment(target)
     # The claim commit carries the empty tree and no parent, so its push holds
     # two objects whatever the remote already has (#431). Built on HEAD's tree
     # with no parent, git could not tell the remote had that tree and sent the
@@ -76,6 +88,9 @@ def acquire_claim(target):
                             'refs/claims/%s' % target])
         if exists == 0:
             return 'lost'
+        if push_refused(push_err):
+            mark_claim_refs_refused()
+            return acquire_by_assignment(target)
         eprint('wf: claim push for %s failed and the ref is absent — treating '
                'as an environment error (%s)' % (target, push_err.strip() or 'no detail'))
         return 'error'
@@ -98,7 +113,11 @@ def release_claim(target):
     outcome the caller wanted, so releasing stays idempotent: a failed push is
     a failed release only when the ref is still there or the remote cannot be
     asked.
+
+    A claim taken by assignment is released by removing the assignment.
     """
+    if read_assignment_marker(target) is not None:
+        return release_assignment(target)
     ref = 'refs/claims/%s' % target
     code, _, err = run(['git', 'push', 'origin', ':%s' % ref])
     if code != 0:
@@ -134,13 +153,20 @@ def release_claims(targets):
     makes ls-remote exit 2 when it reached the remote and found none of them;
     any other failure leaves every ref's fate unknown, and none is reported as
     released. Only a released target's marker is removed, for the reason
-    `release_claim` gives.
+    `release_claim` gives. A claim taken by assignment costs one request of
+    its own, and the push names only the ref claims.
     """
     targets = list(dict.fromkeys(targets or ()))
     if not targets:
         return {}
+    assigned = {target: release_assignment(target) for target in targets
+                if read_assignment_marker(target) is not None}
+    targets = [target for target in targets if target not in assigned]
+    if not targets:
+        return assigned
     refs = {target: 'refs/claims/%s' % target for target in targets}
     released = dict.fromkeys(targets, True)
+    released.update(assigned)
     code, _, err = run(['git', 'push', 'origin']
                        + [':%s' % refs[target] for target in targets])
     if code != 0:
@@ -280,7 +306,10 @@ def holds_claim(target):
 
     It does when the marker Acquire wrote names the object the remote ref
     points at. A rival's claim is a different object, so it never matches.
+    A claim taken by assignment is held while its login is the only assignee.
     """
+    if read_assignment_marker(target) is not None:
+        return holds_assignment(target)
     try:
         with open(_claim_marker_path(repo_root(), target), encoding='utf-8') as fh:
             held = fh.read().strip()

@@ -6,6 +6,14 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.6.0
+
+- `wf` now claims stories in a session that refuses claim refs, such as a Claude Code cloud session. There, every push to `refs/claims/` and every write to the REST git data API answers HTTP 403, so `wf pick` could not claim anything and `execute` could not run. When a claim push is refused with 403, `wf` claims through an issue assignment instead: it assigns the run's login through the REST issues API, reads the assignees back, and goes on only when that login is the only one. A story already assigned to another login is not claimed.
+- The review claim that `handoff` and `claim --pr` take on a pull request falls back the same way. `exit-cleanup`, `claim-release`, `drop-story`, `refine` and `block` release an assignment claim by removing the assignment.
+- An assignment names only the GitHub login, so two sessions run by the same person on the same pool at the same moment can take the same story. `wf` says so once, in the line it prints when it falls back.
+- `WF_CLAIM_REFS=off` starts a run on assignment claims without trying a push.
+- Where the claim ref push works, nothing changes.
+
 ## synergy 20.5.1
 
 - `wf pick --issue N` now resets an issue whose pull request was closed without merging in a session that blocks GraphQL, such as a Claude Code cloud session. Before, the read of closed pull requests failed there, so the issue stayed assigned or `In Review` and the pick refused it. On REST, `wf` reads the newest thousand closed pull requests and finds the ones that close the issue from the closing keywords in their bodies, then removes the assignees and posts the reset comment through REST.
