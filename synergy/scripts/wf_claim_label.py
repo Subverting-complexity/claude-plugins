@@ -32,7 +32,10 @@ item. `claim-reap` frees a crashed claim by taking every `session:` label off
 the item, and judges a claim held by a label alone as it judges a ref.
 
 The marker file `.claude/claim-<target>.sha` holds the ref's sha for a ref
-claim, or `session:<guid>` for a claim held by the label alone.
+claim, or `session:<guid>` for a claim held by the label alone. A ref claim
+also writes `.claude/claim-<target>.session`, the GUID of the label it added,
+so its release removes that label even after a `/clear` gave the session a
+new id (#442).
 
 `scripts/README.md` has the module map.
 """
@@ -77,17 +80,33 @@ def keep_label_path(root, target):
     return os.path.join(root, '.claude', 'claim-%s.keep-label' % target)
 
 
-def write_claim_marker(root, target, held):
+def claim_session_path(root, target):
+    """The file beside a ref claim's marker that names the GUID of the session
+    label the claim added (#442). The marker itself holds only the ref's sha,
+    which `holds_claim` compares."""
+    return os.path.join(root, '.claude', 'claim-%s.session' % target)
+
+
+def write_claim_marker(root, target, held, guid=None):
     """Write the marker of a new claim. A `.keep-label` file an earlier
     claim's failed handoff left is dropped, or this claim's release would
-    leave its label on the item."""
+    leave its label on the item. `guid`, for a ref claim, is the session whose
+    label the claim adds; it is written beside the marker, and a file an
+    earlier claim left there is dropped when there is none."""
     os.makedirs(os.path.join(root, '.claude'), exist_ok=True)
     with open(claim_marker_path(root, target), 'w', encoding='utf-8') as fh:
         fh.write(held)
-    try:
-        os.remove(keep_label_path(root, target))
-    except OSError:
-        pass
+    if guid:
+        with open(claim_session_path(root, target), 'w', encoding='utf-8') as fh:
+            fh.write(guid)
+    stale = [keep_label_path(root, target)]
+    if not guid:
+        stale.append(claim_session_path(root, target))
+    for path in stale:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 def push_refused(err):
@@ -216,6 +235,27 @@ def read_label_marker(target):
     return held[len(LABEL_MARKER_PREFIX):] or None
 
 
+def claim_label(target):
+    """The session label the claim this checkout holds on `target` added.
+
+    A claim held by the label alone names its GUID in its marker, and a ref
+    claim in the file beside its marker. Either can differ from this
+    session's GUID: `/clear` gives the session a new id, and the
+    `SessionStart` hook exports it (#442). Removing this session's label then
+    would answer 404, count as done, and leave the claim's label on the item.
+    This session's label is the answer only when neither names one, as for a
+    marker an older version wrote.
+    """
+    guid = read_label_marker(target)
+    if guid is None:
+        try:
+            with open(claim_session_path(repo_root(), target), encoding='utf-8') as fh:
+                guid = _clean_guid(fh.read())
+        except OSError:
+            guid = None
+    return session_label(guid or None)
+
+
 def claim_error_reason(target, ref_reason):
     """The reason a caller gives for a claim that ended in 'error'.
 
@@ -277,8 +317,9 @@ def label_winner(path, names):
 
 
 def remove_session_label(target, label=None):
-    """Take this session's label off `target`. True when it is gone; a label
-    that is not there is gone. With no org/repo in the config no claim could
+    """Take `label`, this session's by default, off `target`. True when it
+    is gone; a label that is not there is gone, which is why a release must
+    name the label its claim added (`claim_label`). With no org/repo in the config no claim could
     have added it, so it is gone too."""
     path = _issue_path(target)
     if not path:
@@ -480,40 +521,51 @@ def is_record(target):
 
 
 def release_label(target, label=None):
-    """Take this session's label off `target` at release, unless the item is
-    finished work, which keeps it. True when the claim no longer holds it."""
+    """Take `label`, this session's by default, off `target` at release,
+    unless the item is finished work, which keeps it. True when the claim no
+    longer holds it."""
     if is_record(target):
         return True
     return remove_session_label(target, label)
 
 
-def remove_session_labels(targets):
-    """Take this session's label off many items at release, leaving it on
+def remove_session_labels(targets, labels=None):
+    """Take a session label off many items at release, leaving it on
     finished work as `release_label` does. Returns {target: removed}.
 
-    Through GraphQL this costs two requests however many items there are: one
-    read of their node ids, their state and the label's id, and one aliased
-    mutation. Where GraphQL is blocked, or the batch fails, each item costs a
-    read and a removal through REST.
+    `labels` maps a target to the label its claim added (`claim_label`); a
+    target it does not name loses this session's label.
+
+    Through GraphQL this costs two requests for each distinct label however
+    many items carry it: one read of their node ids, their state and the
+    label's id, and one aliased mutation. Where GraphQL is blocked, or a batch
+    fails, each item costs a read and a removal through REST.
     """
     targets = list(dict.fromkeys(targets or ()))
     done = {t: True for t in targets if not _issue_path(t)}
     targets = [t for t in targets if t not in done]
     if not targets:
         return done
-    if len(targets) > 1 and not graphql_blocked():
-        batch = _remove_labels_graphql(targets)
-        if batch is not None:
-            done.update(batch)
-            return done
-    done.update((target, release_label(target)) for target in targets)
+    label_of = {t: (labels or {}).get(t) or session_label() for t in targets}
+    if not graphql_blocked():
+        groups = {}
+        for target in targets:
+            groups.setdefault(label_of[target], []).append(target)
+        for label, group in groups.items():
+            if len(group) > 1:
+                batch = _remove_labels_graphql(group, label)
+                if batch is not None:
+                    done.update(batch)
+    done.update((target, release_label(target, label_of[target]))
+                for target in targets if target not in done)
     return done
 
 
-def _remove_labels_graphql(targets):
-    """The batched removal, or None when it could not be made."""
+def _remove_labels_graphql(targets, label=None):
+    """The batched removal of `label`, this session's by default, or None when
+    it could not be made."""
     owner, _, name = _repo().partition('/')
-    label = session_label()
+    label = label or session_label()
     items = ''.join(
         ' t%d: issueOrPullRequest(number: %d) { ... on Issue { id state stateReason } '
         '... on PullRequest { id merged } }' % (i, int(t.partition('-')[2]))

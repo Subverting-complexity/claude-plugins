@@ -536,6 +536,67 @@ class TestReworkEdges(_Case):
         self.assertEqual(wf.release_claims(['issue-6']), {'issue-6': True})
         self.assertEqual((remote.labels[5], remote.labels[6]), ([], []))
 
+    def test_a_ref_claim_is_released_with_the_label_it_added(self):
+        remote = self.use(_Remote())
+        self.acquire('issue-5')
+        self.acquire('issue-6')
+        self.acquire('issue-7')
+        self.assertEqual(self.marker('issue-5'), 'sha1')
+        # A `/clear` gave the session a new id (#442).
+        self.as_session('new-guid')
+        self.assertTrue(wf.release_claim('issue-5'))
+        self.assertEqual(wf.release_claims(['issue-6', 'issue-7']),
+                         {'issue-6': True, 'issue-7': True})
+        self.assertEqual((remote.labels[5], remote.labels[6], remote.labels[7]),
+                         ([], [], []))
+        self.assertFalse(os.listdir(os.path.join(self.root, '.claude')))
+
+    def test_a_ref_claim_whose_label_stays_after_a_session_change_is_not_released(self):
+        remote = self.use(_Remote())
+        self.acquire('issue-5')
+        self.as_session('new-guid')
+        real = remote.gh_rest
+
+        def failing(path, method='GET', body=None):
+            if method == 'DELETE' and '/issues/' in path:
+                return False, None, 'HTTP 502'
+            return real(path, method, body)
+        with mock.patch.object(wf, 'gh_rest', failing), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.assertFalse(wf.release_claim('issue-5'))
+        self.assertEqual(remote.labels[5], [MINE])
+        self.assertEqual(self.marker('issue-5'), 'sha1')
+        self.assertTrue(wf.release_claim('issue-5'))
+        self.assertEqual(remote.labels[5], [])
+
+    def test_the_batch_removes_each_label_its_claim_added(self):
+        wf_io.reset_graphql_state()
+        calls = []
+
+        def graphql(query, **fields):
+            calls.append((query, fields.get('label')))
+            if query.startswith('query'):
+                return True, {'repository': {
+                    'label': {'id': 'L_' + fields['label'][-3:]},
+                    't0': {'id': 'I_a'}, 't1': {'id': 'I_b'}}}, ''
+            return True, {}, ''
+        with mock.patch.object(wf, 'gh_graphql', graphql):
+            done = wf_claim_label.remove_session_labels(
+                ['issue-5', 'issue-6', 'issue-7', 'issue-8'],
+                {'issue-5': 'session: old', 'issue-6': 'session: old'})
+        self.assertEqual(done, dict.fromkeys(['issue-5', 'issue-6', 'issue-7', 'issue-8'], True))
+        self.assertEqual([label for q, label in calls if q.startswith('query')],
+                         ['session: old', MINE])
+
+    def test_a_ref_marker_from_an_older_version_releases_this_sessions_label(self):
+        remote = self.use(_Remote(labels={5: [MINE]}))
+        os.makedirs(os.path.join(self.root, '.claude'))
+        with open(os.path.join(self.root, '.claude', 'claim-issue-5.sha'), 'w') as fh:
+            fh.write('sha1')
+        remote.refs.add('refs/claims/issue-5')
+        self.assertTrue(wf.release_claim('issue-5'))
+        self.assertEqual(remote.labels[5], [])
+
     def test_a_new_claim_drops_a_keep_label_file_left_by_an_old_handoff(self):
         remote = self.use(_Remote())
         self.acquire('issue-5')

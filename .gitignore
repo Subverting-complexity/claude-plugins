@@ -13,6 +13,7 @@
 **/.claude/candidates.json
 **/.claude/claim-*.sha
 **/.claude/claim-*.keep-label
+**/.claude/claim-*.session
 **/.claude/wf-session-id
 **/.claude/wf-config.json
 **/.claude/issue-fields-cache.json

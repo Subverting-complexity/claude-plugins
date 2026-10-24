@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.7.1
+
+- Releasing a claim held by a claim ref now removes the session label that claim added, even when the session id changed in between, such as after `/clear`. Before, the release removed the label of the new id, which was not on the item. GitHub answered 404, the release reported success, and the old `session:` label stayed on the open issue or pull request, so every later claim on it lost until `wf claim-reap` judged the label stale. A ref claim now records its label's id in `.claude/claim-<target>.session`, beside its marker, and the release removes that label. A claim held by the label alone already worked this way.
+
 ## synergy 20.7.0
 
 - Cloud and local sessions now see each other's claims. Every claim adds the label `session: <guid>` to the issue or pull request, where the GUID names the Claude session, so a cloud run skips a story a local run holds and a local run skips one a cloud run holds. Before, each kind of session checked only its own kind of claim, and every session signs in as the same login, so a cloud run and a local run could take the same story.
