@@ -512,6 +512,65 @@ class TestFinishedWorkKeepsTheLabel(_Case):
         self.assertEqual(remote.labels[5], [RIVAL])
 
 
+class TestReworkEdges(_Case):
+
+    def test_a_failed_handoff_release_keeps_the_label_through_exit_cleanup(self):
+        remote = self.use(_Remote())
+        self.acquire('issue-5')
+        remote.push_err = 'remote: rejected'
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(wf.release_claims(['issue-5'], keep_label=True),
+                             {'issue-5': False})
+        remote.push_err = None
+        self.assertTrue(wf.release_claim('issue-5'))
+        self.assertEqual(remote.labels[5], [MINE])
+        self.assertFalse(os.listdir(os.path.join(self.root, '.claude')))
+
+    def test_a_label_claim_is_released_with_the_label_its_marker_names(self):
+        remote = self.use(_Remote(push_err=REFUSED))
+        self.acquire('issue-5')
+        self.acquire('issue-6')
+        # A `/clear` gave the session a new id.
+        self.as_session('new-guid')
+        self.assertTrue(wf.release_claim('issue-5'))
+        self.assertEqual(wf.release_claims(['issue-6']), {'issue-6': True})
+        self.assertEqual((remote.labels[5], remote.labels[6]), ([], []))
+
+    def test_the_reset_of_an_abandoned_issue_takes_its_session_labels_off(self):
+        remote = self.use(_Remote(labels={5: [RIVAL, 'bug']}))
+        self.assertTrue(wf_claim_label.strip_session_labels('repos/acme/widgets/issues/5'))
+        self.assertEqual(remote.labels[5], ['bug'])
+
+    def test_a_failed_label_read_at_reset_is_said(self):
+        self.use(_Remote())
+        err = io.StringIO()
+        with mock.patch.object(wf, 'gh_rest', lambda *a, **k: (False, None, 'HTTP 502')), \
+                contextlib.redirect_stderr(err):
+            self.assertFalse(wf_claim_label.strip_session_labels('repos/acme/widgets/issues/5'))
+        self.assertIn('could not read the labels', err.getvalue())
+
+    def test_the_batch_sends_no_removal_for_finished_work(self):
+        wf_io.reset_graphql_state()
+        calls = []
+
+        def graphql(query, **fields):
+            calls.append(query)
+            if query.startswith('query'):
+                return True, {'repository': {
+                    'label': {'id': 'L_me'},
+                    't0': {'id': 'PR_7', 'merged': True},
+                    't1': {'id': 'I_5', 'state': 'CLOSED', 'stateReason': 'COMPLETED'},
+                    't2': {'id': 'I_6', 'state': 'OPEN', 'stateReason': None}}}, ''
+            return True, {}, ''
+        with mock.patch.object(wf, 'gh_graphql', graphql):
+            done = wf_claim_label.remove_session_labels(['pr-7', 'issue-5', 'issue-6'])
+        self.assertEqual(done, dict.fromkeys(['pr-7', 'issue-5', 'issue-6'], True))
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn('PR_7', calls[1])
+        self.assertNotIn('I_5', calls[1])
+        self.assertIn('labelableId: "I_6"', calls[1])
+
+
 class TestUnreadableOrder(_Case):
 
     def test_a_rival_label_with_no_event_read_is_no_win(self):

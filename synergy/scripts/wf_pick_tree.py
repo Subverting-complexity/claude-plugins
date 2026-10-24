@@ -220,7 +220,10 @@ def reset_abandoned(cfg, number, assignees):
     # The label `handoff` left as the build's record would otherwise come
     # first on the issue, and every new claim would lose to it (#440).
     from wf_claim_label import strip_session_labels
-    strip_session_labels('repos/%s/issues/%d' % (repo, number))
+    from wf_io import eprint
+    if not strip_session_labels('repos/%s/issues/%d' % (repo, number)):
+        eprint('wf: warning - #%d was reset, but a session label may still be on '
+               'it; claims lose to it until claim-reap frees it' % number)
     body = 'Resetting — PR #%d closed without merge.' % pr['number']
     _issue_edit(['gh', 'issue', 'comment', str(number), '--repo', repo,
                  '--body', body],

@@ -18,6 +18,7 @@ from wf_claim_label import (
     acquire_by_label, add_and_settle, claim_error_reason, claim_marker_path,
     claim_refs_refused, holds_label, label_claims, release_label,
     mark_claim_refs_refused, push_refused, read_label_marker, reap_session_labels,
+    session_guid, session_label,
     remove_every_session_label, remove_session_label, remove_session_labels,
 )
 from wf_config import check_environment, prepare_cfg, repo_root
@@ -123,6 +124,34 @@ def _marked(target):
     return os.path.exists(_claim_marker_path(repo_root(), target))
 
 
+def _keep_label_path(target):
+    return _claim_marker_path(repo_root(), target)[:-len('.sha')] + '.keep-label'
+
+
+def _unlabels(target):
+    """Whether releasing `target` takes this session's label off it: this
+    checkout holds the claim, and no `handoff` asked to keep the label. A
+    handoff whose release failed leaves a `.keep-label` file beside the
+    marker, so the `exit-cleanup` that retries the release keeps it too."""
+    return _marked(target) and not os.path.exists(_keep_label_path(target))
+
+
+def _drop_marker(target):
+    for path in (_claim_marker_path(repo_root(), target), _keep_label_path(target)):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _keep_label_on_retry(target):
+    try:
+        with open(_keep_label_path(target), 'w', encoding='utf-8') as fh:
+            fh.write('handoff')
+    except OSError:
+        pass
+
+
 def release_claim(target, every_label=False, keep_label=False):
     """Delete refs/claims/<target> and this checkout's marker for it.
 
@@ -146,9 +175,9 @@ def release_claim(target, every_label=False, keep_label=False):
     open item, for `claim-reap` freeing a claim this session never held. A
     claim held by the label alone is released by removing the label.
     """
-    held = _marked(target)
+    held = _unlabels(target)
     if read_label_marker(target) is not None and not every_label:
-        return _release_label_claim(target, keep_label)
+        return _release_label_claim(target, keep_label or not held)
     if every_label:
         labels_off = remove_every_session_label(target)
     elif held and not keep_label:
@@ -173,22 +202,19 @@ def release_claim(target, every_label=False, keep_label=False):
         eprint('wf: warning - %s is released from its ref, but its session '
                'label is still on it' % target)
         return False
-    try:
-        os.remove(_claim_marker_path(repo_root(), target))
-    except OSError:
-        pass
+    _drop_marker(target)
     return True
 
 
 def _release_label_claim(target, keep_label=False):
     """Release a claim held by the label alone. A label still on an open item
-    keeps its marker, so a re-run can release it."""
-    if not keep_label and not release_label(target):
+    keeps its marker, so a re-run can release it. The label removed is the
+    one the marker names, which differs from this session's after a
+    `/clear` gave the session a new id."""
+    label = session_label(read_label_marker(target))
+    if not keep_label and not release_label(target, label):
         return False
-    try:
-        os.remove(_claim_marker_path(repo_root(), target))
-    except OSError:
-        pass
+    _drop_marker(target)
     return True
 
 
@@ -215,19 +241,22 @@ def release_claims(targets, keep_label=False):
     targets = list(dict.fromkeys(targets or ()))
     if not targets:
         return {}
+    mine = session_guid()
+    # A label-only claim whose marker names another id (the session had a
+    # `/clear`) is released on its own, with the label its marker names.
+    other = [t for t in targets if read_label_marker(t) not in (None, mine)]
+    released = {t: _release_label_claim(t, keep_label or not _unlabels(t))
+                for t in other}
+    targets = [t for t in targets if t not in other]
     label_only = [t for t in targets if read_label_marker(t) is not None]
     ref_targets = [t for t in targets if t not in label_only]
-    unlabel = [] if keep_label else [t for t in targets if _marked(t)]
+    unlabel = [] if keep_label else [t for t in targets if _unlabels(t)]
     labels_off = dict.fromkeys(targets, True)
     labels_off.update(remove_session_labels(unlabel))
-    released = {t: bool(labels_off.get(t)) for t in label_only}
-    root = repo_root()
+    released.update((t, bool(labels_off.get(t))) for t in label_only)
     for target in label_only:
         if released[target]:
-            try:
-                os.remove(_claim_marker_path(root, target))
-            except OSError:
-                pass
+            _drop_marker(target)
     targets = ref_targets
     if not targets:
         return released
@@ -267,12 +296,10 @@ def release_claims(targets, keep_label=False):
                'still on %s' % (', '.join(stuck), 'its' if len(stuck) == 1 else 'their',
                                 'it' if len(stuck) == 1 else 'them'))
     for target in targets:
-        if not released[target]:
-            continue
-        try:
-            os.remove(_claim_marker_path(root, target))
-        except OSError:
-            pass
+        if released[target]:
+            _drop_marker(target)
+        elif keep_label:
+            _keep_label_on_retry(target)
     return released
 
 

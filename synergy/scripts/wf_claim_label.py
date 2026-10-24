@@ -304,8 +304,10 @@ def strip_session_labels(path):
     """Take every `session:` label off the open item at `path`
     (`repos/{owner}/{repo}/issues/{n}`). True when none is left. `pick`
     calls it when it resets an issue whose pull request closed unmerged."""
-    ok, data, _err = gh_rest(path + '/labels')
+    ok, data, err = gh_rest(path + '/labels')
     if not ok:
+        eprint('wf: warning - could not read the labels of %s to take its session '
+               'labels off (%s)' % (path, err or 'no detail'))
         return False
     gone = True
     for name in _label_names(data):

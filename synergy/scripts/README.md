@@ -22,13 +22,13 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_rest_settle.py` | The REST fallback for settling a merge: the merged pull request with its closing keywords and comments, the merged pull requests `settle-merged` sweeps, the issues they close, the parents above them, and closing and stripping those issues | 178 |
 | `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 264 |
 | `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 628 |
-| `wf_claim.py` | Claim refs and markers, the session label beside each claim, batched release, `claim`, `claim-release`, `claim-reap` | 622 |
-| `wf_claim_label.py` | The session label every claim carries: the session GUID, the label written and settled, the label-only claim where claim refs are refused, its release, the held check, the claims held by a label alone and the reaping of unused labels | 564 |
+| `wf_claim.py` | Claim refs and markers, the session label beside each claim, batched release, `claim`, `claim-release`, `claim-reap` | 649 |
+| `wf_claim_label.py` | The session label every claim carries: the session GUID, the label written and settled, the label-only claim where claim refs are refused, its release, the held check, the claims held by a label alone and the reaping of unused labels | 567 |
 | `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 339 |
 | `wf_unblock.py` | The unblock sweep, `unblock` | 316 |
 | `wf_pick.py` | The `pick` and `refine` entry point and the result a pick returns | 218 |
 | `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 367 |
-| `wf_pick_tree.py` | The sub-issue tree under an Epic or Feature, one named issue checked as a pick candidate, and the reset of an issue whose pull request was closed without merging | 234 |
+| `wf_pick_tree.py` | The sub-issue tree under an Epic or Feature, one named issue checked as a pick candidate, and the reset of an issue whose pull request was closed without merging | 241 |
 | `wf_pick_candidates.py` | `candidates`, including `--parent` | 271 |
 | `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 538 |
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
