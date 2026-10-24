@@ -6,6 +6,14 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.4.0
+
+- `wf` now opens, finds and labels pull requests in a session that blocks GraphQL, such as a Claude Code cloud session. `gh pr create`, `gh pr view`, `gh pr list`, `gh pr edit` and `gh pr checkout` all read through GraphQL inside `gh`, so before this they failed there, and the agent opened, labelled and merged its pull requests by hand. Once a run has switched to REST, `pr-create` opens the pull request through REST with the same title, body and base, flags a possible duplicate, and reads the stored body back.
+- `review-next` and `update-next` read the same pool through REST and pick the same pull request as the GraphQL path, and `review-next --checkout` fetches and checks out the branch with `git`. The REST read costs two requests for each open pull request that is not a draft, because REST lists comments and reviews on their own.
+- `review-finish`, `handoff`, `claim --pr` and `exit-cleanup` add and move the review labels through REST. A missing review label is created with its colour and description before it goes on, as it is today.
+- `sibling-pr` reads the closing keywords in each open pull request body, because REST has no list of the issues a pull request closes. An issue linked to a pull request by hand, with no keyword, is not seen.
+- With GraphQL available, nothing changes. Settling issues after a merge (`post-merge`) does not have a REST path yet.
+
 ## synergy 20.3.0
 
 - `wf` now works in a session that blocks GraphQL, such as a Claude Code cloud session, which answers every GraphQL request with HTTP 403 while the REST API still works. Before, every `wf` step failed there, and the agent picked the story and set its `Stage` by hand through REST, outside the checks `wf` makes. The first 403 from GraphQL switches the rest of the run to REST, and `wf` prints one line to say so, because the REST path takes more requests. Set `WF_GRAPHQL=off` to start a run on REST.

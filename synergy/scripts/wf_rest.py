@@ -9,8 +9,8 @@ in the shape the GraphQL query returns them, so everything after the read --
 the pool rules, the claim walk, the facts a pick reports -- runs unchanged, and
 the same pool gives the same pick either way.
 
-Opening and listing pull requests and settling issues after a merge have no
-REST path yet. `scripts/README.md` has the module map.
+Pull requests have their own fallback in `wf_rest_pr.py`. Settling issues
+after a merge has no REST path yet. `scripts/README.md` has the module map.
 """
 
 from concurrent.futures import ThreadPoolExecutor

@@ -12,13 +12,14 @@ import json
 import os
 
 import wf_core
+import wf_rest_pr
 from wf_claim import (
     _claim_marker_path, acquire_claim, holds_claim, release_claims,
 )
 from wf_config import cmd_scratch_clean, prepare_cfg, repo_root
 from wf_io import (
     EXIT_ENV, EXIT_LOST, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE, call_command, emit,
-    emit_line, gh_json, run,
+    emit_line, gh_json, graphql_blocked, run,
 )
 from wf_stage import checkout_branch, set_stage
 from wf_worktrees import reap_finished
@@ -159,6 +160,9 @@ def reconcile_pr(cfg, number):
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     ok, data, err = gh_json(['pr', 'view', str(number), '--repo', repo,
                              '--json', 'state,labels'])
+    if not ok and graphql_blocked():
+        data, err = wf_rest_pr.rest_pr_view(cfg, number)
+        ok = data is not None
     if not ok or not data:
         return 'unread', 'could not read PR #%d (%s)' % (number, err)
     names = wf_core.review_names(cfg.get('review_labels'))
