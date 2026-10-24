@@ -536,7 +536,19 @@ class TestReworkEdges(_Case):
         self.assertEqual(wf.release_claims(['issue-6']), {'issue-6': True})
         self.assertEqual((remote.labels[5], remote.labels[6]), ([], []))
 
-    def test_the_reset_of_an_abandoned_issue_takes_its_session_labels_off(self):
+    def test_a_new_claim_drops_a_keep_label_file_left_by_an_old_handoff(self):
+        remote = self.use(_Remote())
+        self.acquire('issue-5')
+        remote.push_err = 'remote: rejected'
+        with contextlib.redirect_stderr(io.StringIO()):
+            wf.release_claims(['issue-5'], keep_label=True)
+        remote.push_err = None
+        remote.refs.discard('refs/claims/issue-5')
+        self.assertEqual(self.acquire('issue-5')[0], 'won')
+        self.assertTrue(wf.release_claim('issue-5'))
+        self.assertEqual(remote.labels[5], [])
+
+    def test_every_session_label_comes_off_without_a_close_time(self):
         remote = self.use(_Remote(labels={5: [RIVAL, 'bug']}))
         self.assertTrue(wf_claim_label.strip_session_labels('repos/acme/widgets/issues/5'))
         self.assertEqual(remote.labels[5], ['bug'])

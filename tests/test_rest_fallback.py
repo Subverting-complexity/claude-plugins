@@ -19,6 +19,7 @@ import os
 import sys
 import unittest
 from unittest import mock
+from urllib.parse import unquote
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'synergy', 'scripts'))
 import wf  # noqa: E402
@@ -132,8 +133,12 @@ class _GitHub(object):
     """Answers `gh` and `git` as GitHub would, with GraphQL on or blocked."""
 
     def __init__(self, graphql=True, org_fields=True, stage_reads=None,
-                 prs_fail=False, closed_prs=()):
+                 prs_fail=False, closed_prs=(), labels=None, events=None):
         self.graphql = graphql
+        # Issue #5's labels and events, for the reset of an abandoned issue;
+        # `events` set to 'fail' makes the event read fail.
+        self.labels = None if labels is None else list(labels)
+        self.events = events
         self.org_fields = org_fields
         self.stage_reads = stage_reads
         self.prs_fail = prs_fail
@@ -196,6 +201,19 @@ class _GitHub(object):
                                              or path.endswith('/comments')):
             self.writes.append((path, body))
             return 0, '{}', ''
+        if self.labels is not None and path.startswith(base + 'issues/5/'):
+            rest = path[len(base + 'issues/5/'):]
+            if method == 'GET' and rest == 'labels':
+                return 0, json.dumps([{'name': n} for n in self.labels]), ''
+            if method == 'GET' and rest.startswith('events?'):
+                if self.events == 'fail':
+                    return 1, '', 'gh: Server Error (HTTP 502)'
+                return 0, json.dumps(self.events or []), ''
+            if method == 'DELETE' and rest.startswith('labels/'):
+                name = unquote(rest[len('labels/'):])
+                self.writes.append((path, None))
+                self.labels.remove(name)
+                return 0, '{}', ''
         if method == 'GET' and path.startswith(base + 'issues?state=all'):
             return 0, json.dumps([_rest_issue(POOL[0])]), ''
         if method == 'POST' and path.endswith('/issue-field-values'):
@@ -528,13 +546,111 @@ class TestAbandonedResetThroughRest(_Base):
         self.assertEqual(stages, [(5, 'Backlog')])
         self.assertEqual(calls, [
             ['gh', 'pr', 'list', '--repo', REPO, '--state', 'closed', '--search', '#5',
-             '--json', 'number,title,mergedAt,closingIssuesReferences'],
+             '--json', 'number,title,mergedAt,closedAt,closingIssuesReferences'],
             ['gh', 'issue', 'edit', '5', '--repo', REPO, '--remove-assignee', 'someone'],
             # Any session label `handoff` left comes off (#440).
             ['gh', 'api', '-X', 'GET', 'repos/%s/issues/5/labels' % REPO],
             ['gh', 'issue', 'comment', '5', '--repo', REPO, '--body',
              'Resetting — PR #70 closed without merge.'],
         ])
+
+
+class TestAbandonedResetKeepsALiveLabel(_Base):
+    """The reset of an abandoned issue takes off only the session labels added
+    before its pull request closed. A label added after the close is a live
+    claim by a session rebuilding the issue, and stays, so a second session's
+    `pick --issue N` cannot strip it and build the story too (#440)."""
+
+    CLOSED = '2026-10-10T12:00:00Z'
+    OLD, LIVE = 'session: old-build', 'session: rebuilding'
+
+    def _events(self):
+        return [{'id': 1, 'event': 'labeled', 'label': {'name': self.OLD},
+                 'created_at': '2026-10-09T08:00:00Z'},
+                {'id': 2, 'event': 'labeled', 'label': {'name': self.LIVE},
+                 'created_at': '2026-10-11T09:00:00Z'}]
+
+    def _labels_deleted(self, hub):
+        return [unquote(p.rsplit('/', 1)[1]) for p, _b in hub.writes
+                if '/labels/' in p]
+
+    def _graphql_reset(self, hub):
+        """Reset #5 with GraphQL on: `gh pr list` answers, the rest is REST."""
+        def run(cmd, input_text=None):
+            if cmd[:3] == ['gh', 'pr', 'list']:
+                return 0, json.dumps([{'number': 70, 'title': 'Old attempt',
+                                       'mergedAt': None, 'closedAt': self.CLOSED,
+                                       'closingIssuesReferences': [{'number': 5}]}]), ''
+            if cmd[:3] == ['gh', 'issue', 'comment']:
+                return 0, '', ''
+            return hub.run(cmd, input_text)
+
+        with mock.patch.object(wf, 'run', run),                 mock.patch.object(wf, 'set_stage',
+                                  lambda cfg, n, stage, node_id=None: (True, '')):
+            return self._quiet(wf.reset_abandoned, _cfg(), 5, [])
+
+    def _rest_reset(self, hub):
+        with mock.patch.object(wf, 'run', hub.run):
+            return self._quiet(wf.reset_abandoned, _cfg(), 5, [])
+
+    def _hub(self, graphql, events):
+        closed = [{'number': 70, 'title': 'Old attempt', 'merged_at': None,
+                   'closed_at': self.CLOSED, 'body': 'Closes #5'}]
+        return _GitHub(graphql=graphql, closed_prs=closed,
+                       labels=[self.OLD, self.LIVE, 'bug'], events=events)
+
+    def _both_paths(self):
+        for graphql, reset in ((True, self._graphql_reset), (False, self._rest_reset)):
+            wf_io.reset_graphql_state()
+            yield graphql, reset
+
+    def test_a_label_added_before_the_close_comes_off(self):
+        for graphql, reset in self._both_paths():
+            with self.subTest(graphql=graphql):
+                hub = self._hub(graphql, self._events())
+                found, _ = reset(hub)
+                self.assertEqual(found, 70)
+                self.assertEqual(self._labels_deleted(hub), [self.OLD])
+
+    def test_a_label_added_after_the_close_stays(self):
+        for graphql, reset in self._both_paths():
+            with self.subTest(graphql=graphql):
+                hub = self._hub(graphql, self._events())
+                reset(hub)
+                self.assertEqual(hub.labels, [self.LIVE, 'bug'])
+
+    def test_a_label_added_again_after_the_close_stays(self):
+        events = self._events() + [
+            {'id': 3, 'event': 'unlabeled', 'label': {'name': self.OLD},
+             'created_at': '2026-10-10T13:00:00Z'},
+            {'id': 4, 'event': 'labeled', 'label': {'name': self.OLD},
+             'created_at': '2026-10-11T10:00:00Z'}]
+        hub = self._hub(False, events)
+        self._rest_reset(hub)
+        self.assertEqual(self._labels_deleted(hub), [])
+
+    def test_an_unreadable_event_list_removes_nothing_and_says_so(self):
+        for graphql, reset in self._both_paths():
+            with self.subTest(graphql=graphql):
+                hub = self._hub(graphql, 'fail')
+                found, notice = reset(hub)
+                self.assertEqual(found, 70)
+                self.assertEqual(self._labels_deleted(hub), [])
+                self.assertIn('none was taken off', notice)
+
+    def test_no_close_time_removes_nothing(self):
+        hub = self._hub(False, self._events())
+        hub.closed_prs[0]['closed_at'] = None
+        found, notice = self._rest_reset(hub)
+        self.assertEqual(found, 70)
+        self.assertEqual(self._labels_deleted(hub), [])
+        self.assertIn('no close time', notice)
+
+    def test_a_label_with_no_event_read_stays(self):
+        hub = self._hub(False, self._events()[:1])
+        _found, notice = self._rest_reset(hub)
+        self.assertEqual(self._labels_deleted(hub), [self.OLD])
+        self.assertIn('"%s"' % self.LIVE, notice)
 
 
 class TestClosingReferences(unittest.TestCase):

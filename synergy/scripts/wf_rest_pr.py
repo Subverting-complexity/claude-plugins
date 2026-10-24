@@ -122,7 +122,8 @@ def rest_pr_view(cfg, ref):
 def rest_closed_prs_closing(cfg, number):
     """The closed pull requests whose body closes issue `number`, merged or
     not, as `gh pr list --state closed --json
-    number,title,mergedAt,closingIssuesReferences` returns them. (ok, prs, err).
+    number,title,mergedAt,closedAt,closingIssuesReferences` returns them.
+    (ok, prs, err).
 
     A merged one keeps its `mergedAt`, so `wf_core.abandoned_pr` still reads
     the issue as done rather than abandoned.
@@ -134,7 +135,7 @@ def rest_closed_prs_closing(cfg, number):
     if not ok:
         return False, None, 'closed pull request REST read failed: %s' % err
     return True, [{'number': p.get('number'), 'title': p.get('title') or '',
-                   'mergedAt': p.get('merged_at'),
+                   'mergedAt': p.get('merged_at'), 'closedAt': p.get('closed_at'),
                    'closingIssuesReferences': closing_refs(p, repo)} for p in prs], ''
 
 

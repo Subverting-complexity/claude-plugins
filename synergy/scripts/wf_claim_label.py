@@ -71,6 +71,25 @@ def claim_marker_path(root, target):
     return os.path.join(root, '.claude', 'claim-%s.sha' % target)
 
 
+def keep_label_path(root, target):
+    """The file a `handoff` whose release failed leaves beside the marker, so
+    the retried release keeps the label too."""
+    return os.path.join(root, '.claude', 'claim-%s.keep-label' % target)
+
+
+def write_claim_marker(root, target, held):
+    """Write the marker of a new claim. A `.keep-label` file an earlier
+    claim's failed handoff left is dropped, or this claim's release would
+    leave its label on the item."""
+    os.makedirs(os.path.join(root, '.claude'), exist_ok=True)
+    with open(claim_marker_path(root, target), 'w', encoding='utf-8') as fh:
+        fh.write(held)
+    try:
+        os.remove(keep_label_path(root, target))
+    except OSError:
+        pass
+
+
 def push_refused(err):
     """Whether a claim push failed because the remote refused it with 403.
 
@@ -300,19 +319,46 @@ def remove_every_session_label(target):
     return strip_session_labels(path)
 
 
-def strip_session_labels(path):
-    """Take every `session:` label off the open item at `path`
-    (`repos/{owner}/{repo}/issues/{n}`). True when none is left. `pick`
-    calls it when it resets an issue whose pull request closed unmerged."""
+def strip_session_labels(path, closed_at=None):
+    """Take the `session:` labels off the open item at `path`
+    (`repos/{owner}/{repo}/issues/{n}`). True when none is left that should go.
+
+    With `closed_at`, the time an abandoned pull request closed, `pick` calls
+    it when it resets the issue that pull request was for. Only a label whose
+    latest `labeled` event came before that time is the old build's and comes
+    off. A label added after it is a live claim by a session rebuilding the
+    issue, and stays: removing it would let a second session win the claim,
+    so two sessions would build one story. When the close time or the events
+    cannot be read, nothing comes off and the warning says why, because a
+    guess could strip that live claim. A present label whose event was not
+    read stays too. Without `closed_at` every `session:` label comes off.
+    """
     ok, data, err = gh_rest(path + '/labels')
     if not ok:
         eprint('wf: warning - could not read the labels of %s to take its session '
                'labels off (%s)' % (path, err or 'no detail'))
         return False
+    present = [name for name in _label_names(data) if is_session_label(name)]
+    if not present:
+        return True
     gone = True
-    for name in _label_names(data):
-        if not is_session_label(name):
-            continue
+    if closed_at is not None:
+        closed = _parse_stamp(closed_at)
+        added = _latest_labeled(path, present) if closed else None
+        if added is None:
+            eprint('wf: warning - could not tell when the session labels on %s were '
+                   'added (%s), so none was taken off'
+                   % (path, 'no close time for the pull request' if not closed
+                      else 'its events could not be read'))
+            return False
+        unplaced = [name for name in present if name not in added]
+        if unplaced:
+            eprint('wf: warning - no event says when "%s" was added to %s, so it '
+                   'stays' % ('", "'.join(unplaced), path))
+            gone = False
+        present = [name for name in present
+                   if name in added and added[name] < closed]
+    for name in present:
         done, _data, err = gh_rest('%s/labels/%s' % (path, quote(name, safe='')),
                                    'DELETE')
         if not (done or '404' in (err or '')):
@@ -320,6 +366,31 @@ def strip_session_labels(path):
                    % (name, path, err or 'no detail'))
             gone = False
     return gone
+
+
+def _parse_stamp(stamp):
+    try:
+        return datetime.strptime((stamp or '')[:19], '%Y-%m-%dT%H:%M:%S')
+    except ValueError:
+        return None
+
+
+def _latest_labeled(path, names):
+    """{label: time of its latest `labeled` event} for the labels in `names`,
+    or None when the events cannot be read."""
+    added = {}
+    for page in range(1, _EVENT_PAGES + 1):
+        ok, events, _err = gh_rest('%s/events?per_page=100&page=%d' % (path, page))
+        if not ok or not isinstance(events, list):
+            return None
+        for event in events:
+            name = ((event or {}).get('label') or {}).get('name')
+            when = _parse_stamp((event or {}).get('created_at'))
+            if (event or {}).get('event') == 'labeled' and name in names and when:
+                added[name] = max(added.get(name, when), when)
+        if len(events) < 100:
+            break
+    return added
 
 
 def _hours_since(stamp):
@@ -528,10 +599,7 @@ def acquire_by_label(target):
         return 'error'
     outcome = add_and_settle(target)
     if outcome == 'won':
-        root = repo_root()
-        os.makedirs(os.path.join(root, '.claude'), exist_ok=True)
-        with open(claim_marker_path(root, target), 'w', encoding='utf-8') as fh:
-            fh.write(LABEL_MARKER_PREFIX + session_guid())
+        write_claim_marker(repo_root(), target, LABEL_MARKER_PREFIX + session_guid())
     return outcome
 
 

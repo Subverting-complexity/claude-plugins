@@ -16,9 +16,9 @@ import wf_core
 import wf_rest
 from wf_claim_label import (
     acquire_by_label, add_and_settle, claim_error_reason, claim_marker_path,
-    claim_refs_refused, holds_label, label_claims, release_label,
+    claim_refs_refused, holds_label, keep_label_path, label_claims, release_label,
     mark_claim_refs_refused, push_refused, read_label_marker, reap_session_labels,
-    session_guid, session_label,
+    session_guid, session_label, write_claim_marker,
     remove_every_session_label, remove_session_label, remove_session_labels,
 )
 from wf_config import check_environment, prepare_cfg, repo_root
@@ -101,10 +101,7 @@ def acquire_claim(target):
         eprint('wf: claim push for %s failed and the ref is absent — treating '
                'as an environment error (%s)' % (target, push_err.strip() or 'no detail'))
         return 'error'
-    root = repo_root()
-    os.makedirs(os.path.join(root, '.claude'), exist_ok=True)
-    with open(_claim_marker_path(root, target), 'w', encoding='utf-8') as fh:
-        fh.write(sha)
+    write_claim_marker(repo_root(), target, sha)
     labelled = add_and_settle(target)
     if labelled == 'lost':
         # Another session's label came first: it holds the item, by label alone
@@ -125,7 +122,7 @@ def _marked(target):
 
 
 def _keep_label_path(target):
-    return _claim_marker_path(repo_root(), target)[:-len('.sha')] + '.keep-label'
+    return keep_label_path(repo_root(), target)
 
 
 def _unlabels(target):
