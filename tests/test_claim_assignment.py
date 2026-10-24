@@ -159,6 +159,31 @@ class TestAcquire(_Case):
         self.assertEqual(remote.assignees[5], ['rival'])
         self.assertIsNone(self.marker('issue-5'))
 
+    def test_a_failed_undo_after_losing_is_warned_about(self):
+        remote = self.use(_Remote(push_err=REFUSED, post_adds=['rival']))
+        real = remote.gh_rest
+
+        def failing(path, method='GET', body=None):
+            if method == 'DELETE':
+                return False, None, 'HTTP 502'
+            return real(path, method, body)
+        with mock.patch.object(wf, 'gh_rest', failing):
+            outcome, err = self.acquire('issue-5')
+        self.assertEqual(outcome, 'lost')
+        self.assertIn('could not be unassigned', err)
+
+    def test_an_assignment_failure_is_reported_as_one(self):
+        remote = self.use(_Remote(push_err=REFUSED, drop_write=True))
+        args = argparse.Namespace(issue=5, pr=None, keep_held=False, marker=False)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                wf.cmd_claim(args)
+        reason = json.loads(buf.getvalue())['reason']
+        self.assertIn('by assignment', reason)
+        self.assertNotIn('refs/claims', reason)
+        self.assertTrue(remote.rest)
+
     def test_a_write_github_dropped_is_an_environment_error(self):
         self.use(_Remote(push_err=REFUSED, drop_write=True))
         outcome, err = self.acquire('issue-5')

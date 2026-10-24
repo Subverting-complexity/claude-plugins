@@ -123,6 +123,19 @@ def read_assignment_marker(target):
     return login, how != 'kept'
 
 
+def claim_error_reason(target, ref_reason):
+    """The reason a caller gives for a claim that ended in 'error'.
+
+    `ref_reason` is its wording for a failed claim ref push, kept exactly
+    where refs are used. After the switch the failure was the assignment, so
+    the reason says that and points at stderr, which names the cause.
+    """
+    if not claim_refs_refused():
+        return ref_reason
+    return ('could not claim %s by assignment through the REST issues API '
+            '(not a lost claim); the line before this one names the cause' % target)
+
+
 def claim_ref_of(target):
     """What holds `target`, for a pick or review result: its claim ref, or
     `assignee:<login>` for a claim taken by assignment."""
@@ -163,7 +176,12 @@ def acquire_by_assignment(target):
             return 'error'
         after = _logins(data)
         if any(name != login for name in after):
-            gh_rest(path + '/assignees', 'DELETE', {'assignees': [login]})
+            undone, _data, why = gh_rest(path + '/assignees', 'DELETE',
+                                         {'assignees': [login]})
+            if not undone:
+                eprint('wf: warning - %s lost to another login, and %s could not '
+                       'be unassigned from it (%s); remove that assignee by hand'
+                       % (target, login, why or 'no detail'))
             return 'lost'
         if login not in after:
             eprint('wf: GitHub did not assign %s to %s, so it cannot be claimed '

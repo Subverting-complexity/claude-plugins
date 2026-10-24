@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 import wf_core
 import wf_rest
 from wf_claim_assign import (
-    acquire_by_assignment, claim_marker_path, claim_refs_refused,
+    acquire_by_assignment, claim_error_reason, claim_marker_path, claim_refs_refused,
     holds_assignment, mark_claim_refs_refused, push_refused,
     read_assignment_marker, release_assignment,
 )
@@ -357,9 +357,9 @@ def cmd_claim(args):
         emit('lost', EXIT_LOST, target=target, claimed=False,
              reason='%s is already claimed by another run' % target)
     emit('error', EXIT_ENV, target=target, claimed=False,
-         reason='could not push the claim ref for %s; this is an environment '
-                'problem, not a rival — check write access to refs/claims/*'
-                % target)
+         reason=claim_error_reason(
+             target, 'could not push the claim ref for %s; this is an environment '
+             'problem, not a rival — check write access to refs/claims/*' % target))
 
 
 def cmd_claim_release(args):

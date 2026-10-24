@@ -23,17 +23,17 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 264 |
 | `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 628 |
 | `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 509 |
-| `wf_claim_assign.py` | Claims through an issue assignment where claim refs are refused: the switch, the claim read back, its release and the held check | 224 |
+| `wf_claim_assign.py` | Claims through an issue assignment where claim refs are refused: the switch, the claim read back, its release and the held check | 242 |
 | `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 339 |
 | `wf_unblock.py` | The unblock sweep, `unblock` | 316 |
 | `wf_pick.py` | The `pick` and `refine` entry point and the result a pick returns | 218 |
-| `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 365 |
+| `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 367 |
 | `wf_pick_tree.py` | The sub-issue tree under an Epic or Feature, one named issue checked as a pick candidate, and the reset of an issue whose pull request was closed without merging | 234 |
 | `wf_pick_candidates.py` | `candidates`, including `--parent` | 271 |
 | `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 538 |
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
 | `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, the release notes and release labels of a settled issue, `post-merge`, `settle-merged` | 889 |
-| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 645 |
+| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 647 |
 | `wf_issue_apply.py` | `issue-apply`, including the `area` key that writes an issue's 1 area label | 867 |
 | `wf_issue_audit.py` | `issue-audit` | 189 |
 | `wf_areas.py` | `areas`: the rows of the areas table, or the area an issue's label names | 89 |
@@ -41,7 +41,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_release_targets.py` | `release-targets`: the folders each story of a pull request touched, the release targets Jev is sure of, and the ones left to the caller | 160 |
 | `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 913 |
 | `wf_board_sync.py` | `board-sync` | 291 |
-| `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 385 |
+| `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 387 |
 | `wf_worktrees.py` | Reading a worktree's age and state, removing one (links first), the sweep, `worktree-reap` | 281 |
 | `wf_block.py` | `block` | 132 |
 | `wf_pr_create.py` | `pr-create` | 167 |

@@ -147,6 +147,11 @@ class ClaimTargetStateTests(unittest.TestCase):
 class HandoffTests(unittest.TestCase):
 
     def test_keeps_the_preflight_marker(self):
+        released = []
+
+        def release(targets, **kw):
+            released.append((list(targets), kw))
+            return {x: True for x in targets}
         with tempfile.TemporaryDirectory() as root:
             folder = os.path.join(root, '.claude')
             os.makedirs(folder)
@@ -158,12 +163,13 @@ class HandoffTests(unittest.TestCase):
                     mock.patch.object(wf_review, 'add_review_label', lambda *a: (True, '')), \
                     mock.patch.object(wf_review, 'set_stages',
                                       lambda cfg, m, *a: {n: (True, 'set') for n in m}), \
-                    mock.patch.object(wf_review, 'release_claims',
-                                      lambda t, **kw: {x: True for x in t}), \
+                    mock.patch.object(wf_review, 'release_claims', release), \
                     mock.patch.object(wf_review, 'repo_root', lambda: root):
                 result, code = invoke(args.func, args)
             self.assertEqual(code, 0)
             self.assertEqual(sorted(os.listdir(folder)), ['preflight-passed.txt'])
+            # An issue claimed by assignment stays assigned through review (#438).
+            self.assertEqual(released, [(['issue-4'], {'keep_assignment': True})])
 
 
 # The resolved path, not the bare name: on Windows a bare `bash` can start the
