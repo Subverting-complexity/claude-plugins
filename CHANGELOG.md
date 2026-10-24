@@ -6,6 +6,18 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.7.0
+
+- Cloud and local sessions now see each other's claims. Every claim adds the label `session: <guid>` to the issue or pull request, where the GUID names the Claude session, so a cloud run skips a story a local run holds and a local run skips one a cloud run holds. Before, each kind of session checked only its own kind of claim, and every session signs in as the same login, so a cloud run and a local run could take the same story.
+- Where the claim ref push works, the ref stays the primary lock and the label goes beside it. In a session that refuses claim refs, such as a Claude Code cloud session, the label is the only lock, and the run reads the claim ref first, so a story a local run holds is taken.
+- When 2 sessions label the same story at the same moment, the session whose label was added first keeps it, and the other removes its label and walks on.
+- Every run and every Builder in one Claude session shares the GUID, so a second run in the same session treats the first run's claims as its own.
+- The label replaces the assignment as the cloud lock that 20.6.0 added. `wf` still assigns a picked story, so GitHub shows who works on it, but the assignment no longer decides who holds the claim.
+- The GUID is the Claude Code session's own id. A new `SessionStart` hook reads the `session_id` Claude Code passes it and makes it available to `wf`, so every run and every Builder in one session uses the same label. Without it, `wf` falls back to a random GUID.
+- Releasing a claim, such as when a run drops, refines or blocks a story or exits without building it, removes the label from that issue or pull request only. A label that could not be removed fails the release, so a re-run takes it off.
+- A closed, completed issue and a merged pull request keep their session label for good, as the record of the session that built them. `handoff` leaves the label on the issue it hands to review, and `wf pick --issue N` takes it off an issue whose pull request closed without merging.
+- `wf claim-reap` frees a crashed claim by taking every `session:` label off the open story, so it can be claimed again, and reaps a crashed cloud claim held by its label alone on the same evidence it uses for a claim ref. It deletes a `session:` repository label only when no issue or pull request, open or closed, carries it.
+
 ## synergy 20.6.0
 
 - `wf` now claims stories in a session that refuses claim refs, such as a Claude Code cloud session. There, every push to `refs/claims/` and every write to the REST git data API answers HTTP 403, so `wf pick` could not claim anything and `execute` could not run. When a claim push is refused with 403, `wf` claims through an issue assignment instead: it assigns the run's login through the REST issues API, reads the assignees back, and goes on only when that login is the only one. A story already assigned to another login is not claimed.

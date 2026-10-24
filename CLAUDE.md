@@ -106,6 +106,8 @@ The plugin does not check where a tool call writes. Until 20.0.0 it asked before
 
 A session is told where the repository is hosted before it does anything. `hooks/repo-host.sh` runs at `SessionStart` and `SubagentStart`, reads the remote from the git config file (not from `git`, which refuses a repository another Windows user owns), and names the platform, so Claude in an Azure DevOps, GitLab or Bitbucket repository does not reach for `gh` or the GitHub workflows. It prints the platform only, never the URL. It is tested in `tests/test_repo_host.py`, and `lint-skills.sh` fails if `hooks.json` stops running it.
 
+Every claim carries the label `session: <id>`, so cloud and local sessions see each other's claims. `hooks/session-id.sh` runs at `SessionStart`, reads the `session_id` Claude Code passes on stdin, and appends `export WF_SESSION_ID=<id>` to the file `CLAUDE_ENV_FILE` names, so `wf` labels every claim in the session with the session's own id. It prints nothing. It is tested in `tests/test_session_id_hook.py`, and `lint-skills.sh` fails if `hooks.json` stops running it.
+
 ## Installing the plugin for a project
 
 Install the plugin per machine, at user scope, and never commit it into a consuming project. A project's `.claude/settings.json` must not carry `enabledPlugins` or `extraKnownMarketplaces` for this marketplace, and `claude plugin install --scope project` must not be used, because it writes `enabledPlugins` into that file.

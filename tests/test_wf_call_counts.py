@@ -283,6 +283,8 @@ class TestClaimReleaseCallCount(_Counted):
             self.assertEqual(code, wf.EXIT_OK)
             self.assertEqual(payload['failed'], [])
             counts.append(len(hub.calls))
+        # One push. This checkout holds none of the claims (no marker), so no
+        # session label is touched (#440).
         self.assertEqual(counts, [1, 1])
 
     def test_a_remote_that_cannot_be_asked_releases_nothing(self):

@@ -399,6 +399,12 @@ for plugin in synergy; do
         echo "FAIL: $hooks_file does not run hooks/repo-host.sh — a session would not be told which platform hosts the repository"
         status=1
     fi
+    # Without the session id hook every Builder and run falls back to an id
+    # of its own, and one session no longer keeps one claim label.
+    if [ -f "$hooks_file" ] && ! grep -q 'session-id.sh' "$hooks_file"; then
+        echo "FAIL: $hooks_file does not run hooks/session-id.sh — claims would not carry the Claude Code session id"
+        status=1
+    fi
 done
 
 # Allowlist coverage: an unattended run stops at a permission prompt nobody

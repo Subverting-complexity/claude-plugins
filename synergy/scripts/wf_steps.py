@@ -13,7 +13,7 @@ import os
 
 import wf_core
 import wf_rest_pr
-from wf_claim_assign import claim_error_reason
+from wf_claim_label import claim_error_reason
 from wf_claim import (
     _claim_marker_path, acquire_claim, holds_claim, release_claims,
 )

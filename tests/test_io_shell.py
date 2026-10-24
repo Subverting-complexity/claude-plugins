@@ -3848,7 +3848,10 @@ class TestClaimReap(unittest.TestCase):
                 mock.patch.object(wf, 'claim_age_hours', lambda sha: 9), \
                 mock.patch.object(wf, 'claim_target_state', target_state), \
                 mock.patch.object(wf, 'release_claim',
-                                  lambda t: released.append(t) or True), \
+                                  lambda t, **kw: released.append(t) or True), \
+                mock.patch.object(wf, 'label_claims', lambda skip=(): []), \
+                mock.patch.object(wf, 'reap_session_labels',
+                                  lambda dry_run=False: ([], [])), \
                 contextlib.redirect_stderr(io.StringIO()):
             code, payload = _capture(wf.cmd_claim_reap, args)
         return code, payload, released

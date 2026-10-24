@@ -206,7 +206,8 @@ def reset_abandoned(cfg, number, assignees):
     if not graphql_blocked():
         ok, prs, _ = gh_json(['pr', 'list', '--repo', repo, '--state', 'closed',
                               '--search', '#%d' % number, '--json',
-                              'number,title,mergedAt,closingIssuesReferences'])
+                              'number,title,mergedAt,closedAt,'
+                              'closingIssuesReferences'])
     if graphql_blocked():
         ok, prs, _ = wf_rest_pr.rest_closed_prs_closing(cfg, number)
     pr = wf_core.abandoned_pr(prs, number) if ok and isinstance(prs, list) else None
@@ -217,6 +218,16 @@ def reset_abandoned(cfg, number, assignees):
                      '--remove-assignee', login],
                     lambda: wf_rest.rest_unassign(cfg, number, login))
     set_stage(cfg, number, wf_core.STAGE_NAMES[wf_core.POOL_STAGE])
+    # The label `handoff` left as the build's record would otherwise come
+    # first on the issue, and every new claim would lose to it (#440). Only a
+    # label added before the pull request closed is that record; one added
+    # later is a live claim and stays.
+    from wf_claim_label import strip_session_labels
+    from wf_io import eprint
+    if not strip_session_labels('repos/%s/issues/%d' % (repo, number),
+                                pr.get('closedAt') or ''):
+        eprint('wf: warning - #%d was reset, but a session label may still be on '
+               'it; claims lose to it until claim-reap frees it' % number)
     body = 'Resetting — PR #%d closed without merge.' % pr['number']
     _issue_edit(['gh', 'issue', 'comment', str(number), '--repo', repo,
                  '--body', body],
