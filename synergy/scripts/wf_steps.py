@@ -13,6 +13,7 @@ import os
 
 import wf_core
 import wf_rest_pr
+from wf_claim_assign import claim_error_reason
 from wf_claim import (
     _claim_marker_path, acquire_claim, holds_claim, release_claims,
 )
@@ -257,8 +258,9 @@ def _start_issue(args, cfg):
              reason='#%d is claimed by another run; pick a different story' % number)
     if outcome == 'error':
         emit('error', EXIT_ENV, number=number,
-             reason='could not push the claim ref for #%d; check write access '
-                    'to refs/claims/*' % number)
+             reason=claim_error_reason(
+                 'issue-%d' % number, 'could not push the claim ref for #%d; check '
+                 'write access to refs/claims/*' % number))
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     ok, issue, err = gh_json(['issue', 'view', str(number), '--repo', repo,
                               '--json', 'number,title'])

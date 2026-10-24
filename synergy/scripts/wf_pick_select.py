@@ -13,6 +13,7 @@ from wf_candidates import (
     read_pool,
 )
 from wf_claim import acquire_claim, apply_in_progress, release_claim
+from wf_claim_assign import claim_error_reason
 from wf_deps import close_failed, close_resolved, mark_blocked, validate_issue
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_CAPABILITY, EXIT_ENV, EXIT_NEEDS_REFINEMENT, emit,
@@ -51,8 +52,9 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
         outcome = acquire_claim(target)
         if outcome == 'error':
             emit('error', EXIT_ENV,
-                 reason='could not write claim ref %s — no push access to '
-                        'refs/claims/* or a remote failure (not a lost claim)' % target,
+                 reason=claim_error_reason(
+                     target, 'could not write claim ref %s — no push access to '
+                     'refs/claims/* or a remote failure (not a lost claim)' % target),
                  backlog_mode=backlog_mode, side_effects=side_effects)
         if outcome == 'lost':
             side_effects.append({'issue': cand['number'], 'action': 'claim-lost'})

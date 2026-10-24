@@ -12,7 +12,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 
 | Module | Responsibility | Lines |
 |--------|----------------|-------|
-| `wf.py` | Entry point: argument parser, dispatch, re-exports | 811 |
+| `wf.py` | Entry point: argument parser, dispatch, re-exports | 813 |
 | `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 286 |
 | `wf_config.py` | Repo root (asked of git once per working directory), `ClaudeProject.md` parsing with its areas table, release-targets table and Jev row, the config cache, `config` | 549 |
 | `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 508 |
@@ -22,17 +22,18 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_rest_settle.py` | The REST fallback for settling a merge: the merged pull request with its closing keywords and comments, the merged pull requests `settle-merged` sweeps, the issues they close, the parents above them, and closing and stripping those issues | 178 |
 | `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 264 |
 | `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 628 |
-| `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 478 |
+| `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 509 |
+| `wf_claim_assign.py` | Claims through an issue assignment where claim refs are refused: the switch, the claim read back, its release and the held check | 242 |
 | `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 339 |
 | `wf_unblock.py` | The unblock sweep, `unblock` | 316 |
-| `wf_pick.py` | The `pick` and `refine` entry point and the result a pick returns | 217 |
-| `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 365 |
+| `wf_pick.py` | The `pick` and `refine` entry point and the result a pick returns | 218 |
+| `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 367 |
 | `wf_pick_tree.py` | The sub-issue tree under an Epic or Feature, one named issue checked as a pick candidate, and the reset of an issue whose pull request was closed without merging | 234 |
 | `wf_pick_candidates.py` | `candidates`, including `--parent` | 271 |
 | `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 538 |
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
 | `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, the release notes and release labels of a settled issue, `post-merge`, `settle-merged` | 889 |
-| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 643 |
+| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 647 |
 | `wf_issue_apply.py` | `issue-apply`, including the `area` key that writes an issue's 1 area label | 867 |
 | `wf_issue_audit.py` | `issue-audit` | 189 |
 | `wf_areas.py` | `areas`: the rows of the areas table, or the area an issue's label names | 89 |
@@ -40,7 +41,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_release_targets.py` | `release-targets`: the folders each story of a pull request touched, the release targets Jev is sure of, and the ones left to the caller | 160 |
 | `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 913 |
 | `wf_board_sync.py` | `board-sync` | 291 |
-| `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 385 |
+| `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 387 |
 | `wf_worktrees.py` | Reading a worktree's age and state, removing one (links first), the sweep, `worktree-reap` | 281 |
 | `wf_block.py` | `block` | 132 |
 | `wf_pr_create.py` | `pr-create` | 167 |
@@ -319,6 +320,14 @@ A REST `Stage` write names the option by its name, so it needs no option id, onl
 Pull requests go through REST too (`wf_rest_pr.py`), because `gh pr create`, `view`, `list`, `edit` and `checkout` all read through GraphQL inside `gh`. `pr-create` opens the pull request with the same title, body and base and reads it back; `review-next` and `update-next` read the same pool, so they pick the same pull request; `review-finish`, `handoff` and `claim --pr` move the review labels through the REST label endpoints; and `sibling-pr` finds the open pull requests that close an issue from the closing keywords in their bodies. REST lists each pull request's comments and reviews on their own, so the review pool costs two reads for each open pull request that is not a draft. The REST label endpoint does not refuse a label the repository lacks, as `gh pr edit` does, so a review label is looked for first and created with its colour and description when it is missing. An issue linked to a pull request by hand, with no closing keyword, is not seen on REST.
 
 Settling a merge goes through REST too (`wf_rest_settle.py`). `post-merge` reads the merged pull request and its comments through REST, and finds the issues it closes from the closing keywords in its body, so an issue linked by hand with no keyword is not settled unless the caller names it with `--issue`. It reads each issue once, closes it with its comment and takes off any retired lifecycle label, and writes `Stage` and the release notes fields in one request per issue. Each value is read back from GitHub's answer, and the issue counts as written only when every value landed, so notes GitHub did not store are reported and `Stage` is written again on its own, as on GraphQL. The parents above each issue cost one read each, plus one read of each parent's sub-issues, and a parent in another repository ends the walk. A release label goes on through the REST label endpoint, which would create a missing label grey, so a missing one is refused with the `labels-ensure` hint first. `settle-merged` lists the merged pull requests from the closed ones, newest first. The unblock sweep releases what the merge freed, as on GraphQL, but it does not report `partials`, because the blocker timelines it reads for them have no REST path.
+
+## When claim refs are refused
+
+A Claude Code cloud session refuses every way of creating a claim ref: `git push` to `refs/claims/` answers HTTP 403, and so does every write to the REST git data API. When a claim push is refused with 403 and the ref is absent, `wf` claims through an issue assignment instead (`wf_claim_assign.py`) for the rest of the run, and prints one line on stderr to say so. A rate limit that answers 403 does not switch it. `WF_CLAIM_REFS=off` starts a run on assignment claims.
+
+An assignment claim reads the assignees of the issue or pull request, assigns the run's login through the REST issues API, and reads GitHub's answer back. It goes on only when that login is the only assignee. When another login is there, before or after the write, it removes its own and treats the item as taken. `pick`, `start`, `plan-set --claim`, `handoff` and `claim --pr` all claim this way, and `claim-release`, `exit-cleanup`, `drop-story`, `refine` and `block` release by removing the assignment. `handoff` releases the issue claims and leaves the issues assigned, because from the open pull request on the assignment is the ownership marker, as it is after a claim ref is released. The marker file reads `assign:<login>:added` or `assign:<login>:kept`; `kept` is a pull request that was already assigned to the login alone, and its release leaves that assignment where it was. The `claim_ref` a pick or review result reports is then `assignee:<login>`.
+
+This lock is weaker than a ref. A ref's object was written by one run, so its sha tells that run apart from every other; an assignment names only the login, and every run by the same person signs in as the same login. Two sessions by the same person, started on the same pool at the same moment, can therefore take the same story. `execute`, `bulk-execute` and `orchestrate` still work, because one process takes the claims of a run one after another. `claim-reap` has nothing to reap for an assignment claim, because there is no ref.
 
 ## Classified issues — `issue-apply`
 
