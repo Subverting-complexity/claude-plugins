@@ -8,12 +8,13 @@ The selection is `wf_pick_select.py`, the tree and single-issue reads are
 """
 
 import wf_core
+import wf_rest
 from wf_candidates import report_unprioritised
 from wf_config import check_environment, load_config, prepare_cfg
 from wf_deps import known_edges
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE, emit,
-    emit_line, eprint, run,
+    emit_line, eprint, graphql_blocked, run,
 )
 from wf_pick_select import _pick_round, claim_validate_walk, prerequisite_pick
 from wf_pick_tree import fetch_issue_candidate
@@ -125,12 +126,16 @@ def cmd_refine(args):
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     stage = wf_core.STAGE_NAMES['stage-refinement']
     stage_set, stage_message = set_stage(cfg, number, stage)
-    code, _, err = run(['gh', 'issue', 'comment', str(number), '--repo', repo,
-                        '--body-file', args.body_file])
-    commented = code == 0
-    code, _, uerr = run(['gh', 'issue', 'edit', str(number), '--repo', repo,
-                         '--remove-assignee', '@me'])
-    unassigned = code == 0
+    if graphql_blocked():
+        commented, err = wf_rest.rest_comment(cfg, number, body)
+        unassigned, uerr = wf_rest.rest_unassign(cfg, number)
+    else:
+        code, _, err = run(['gh', 'issue', 'comment', str(number), '--repo', repo,
+                            '--body-file', args.body_file])
+        commented = code == 0
+        code, _, uerr = run(['gh', 'issue', 'edit', str(number), '--repo', repo,
+                             '--remove-assignee', '@me'])
+        unassigned = code == 0
     released = release_claims(['issue-%d' % number]).get('issue-%d' % number, False)
     failed = [name for name, done in (('stage_set', stage_set), ('commented', commented),
                                       ('unassigned', unassigned),

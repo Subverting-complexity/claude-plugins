@@ -120,9 +120,16 @@ def run(args, input_text=None):
 
 
 def gh_json(args):
-    """Run `gh <args>` expecting JSON on stdout. Returns (ok, parsed, stderr)."""
+    """Run `gh <args>` expecting JSON on stdout. Returns (ok, parsed, stderr).
+
+    `gh issue view`, `gh pr list` and the other subcommands read through
+    GraphQL, so a 403 from GraphQL on one of them switches the run to REST
+    too. A `gh api` call is REST, and its 403 says nothing about GraphQL.
+    """
     code, out, err = run(['gh'] + args)
     if code != 0:
+        if args[:1] != ['api'] and 'graphql' in (err or '').lower():
+            note_graphql_result(code, out, err)
         return False, None, (err or '').strip()
     out = out or ''
     try:
@@ -166,9 +173,12 @@ def gh_graphql(query, **fields):
     Fields are typed by Python type via `_graphql_args` so digit-only ID/String
     values are not coerced to ints (see that helper for the full rationale).
     """
+    if graphql_blocked():
+        return False, None, GRAPHQL_BLOCKED_REASON
     args = _graphql_args(query, fields)
     code, out, err = run(args)
     if code != 0:
+        note_graphql_result(code, out, err)
         return False, None, err.strip()
     try:
         parsed = json.loads(out)
@@ -177,3 +187,86 @@ def gh_graphql(query, **fields):
     if parsed.get('errors'):
         return False, None, json.dumps(parsed['errors'])
     return True, parsed.get('data'), ''
+
+
+# ── GraphQL blocked: the switch to REST ──────────────────────────────────────
+# Some sessions cannot reach GraphQL at all. A Claude Code cloud session
+# answers every GraphQL request with HTTP 403 while the REST API still works,
+# so every `wf` step failed there and the agent did the work by hand through
+# REST, outside every check `wf` makes. The first 403 from GraphQL switches the
+# rest of the run to REST for the steps that have a REST path (`wf_rest.py`),
+# and every later GraphQL call returns at once instead of failing again.
+
+# Set to `off` to start on REST without waiting for a 403, for a session known
+# to block GraphQL, or to try the fallback where GraphQL works.
+GRAPHQL_ENV = 'WF_GRAPHQL'
+
+GRAPHQL_BLOCKED_REASON = ('GraphQL is blocked in this session (HTTP 403), so '
+                          'this step has no way to reach GitHub')
+
+GRAPHQL_NOTICE = ('wf: GraphQL is blocked in this session, so wf reads and '
+                  'writes GitHub through the REST API instead, which takes '
+                  'more requests')
+
+_graphql_state = {'blocked': False, 'announced': False}
+
+
+def graphql_refused(out, err):
+    """Whether a failed GraphQL call was refused outright with HTTP 403.
+
+    A rate limit can also answer 403, and it passes, so it does not switch the
+    run. A `FORBIDDEN` error inside a 200 answer is a field this token may not
+    read, not a blocked API, and has no `HTTP 403` in it.
+    """
+    text = ('%s\n%s' % (err or '', out or '')).lower()
+    if 'rate limit' in text:
+        return False
+    return 'http 403' in text
+
+
+def mark_graphql_blocked():
+    """Switch the run to REST, and say so once."""
+    _graphql_state['blocked'] = True
+    if not _graphql_state['announced']:
+        _graphql_state['announced'] = True
+        eprint(GRAPHQL_NOTICE)
+
+
+def graphql_blocked():
+    """Whether this run reads and writes through REST."""
+    if (not _graphql_state['blocked']
+            and os.environ.get(GRAPHQL_ENV, '').strip().lower() == 'off'):
+        mark_graphql_blocked()
+    return _graphql_state['blocked']
+
+
+def note_graphql_result(code, out, err):
+    """Switch the run to REST when a GraphQL call came back refused."""
+    if code != 0 and graphql_refused(out, err):
+        mark_graphql_blocked()
+
+
+def reset_graphql_state():
+    """Forget the switch. The offline tests call this between cases."""
+    _graphql_state['blocked'] = False
+    _graphql_state['announced'] = False
+
+
+def gh_rest(path, method='GET', body=None):
+    """Run one REST call through `gh api`. Returns (ok, parsed, err).
+
+    `body` is sent as the JSON request body, so a list or a number keeps its
+    type, which `-f` and `-F` cannot promise.
+    """
+    args = ['gh', 'api', '-X', method, path]
+    input_text = None
+    if body is not None:
+        args += ['--input', '-']
+        input_text = json.dumps(body)
+    code, out, err = run(args, input_text=input_text)
+    if code != 0:
+        return False, None, (err or '').strip() or 'gh api exited %d' % code
+    try:
+        return True, json.loads(out) if (out or '').strip() else None, ''
+    except json.JSONDecodeError as exc:
+        return False, None, 'could not parse REST JSON: %s' % exc

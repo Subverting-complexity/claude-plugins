@@ -8,7 +8,11 @@ Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 import json
 
 import wf_core
-from wf_io import gh_graphql, run
+import wf_rest
+from wf_io import (
+    GRAPHQL_BLOCKED_REASON, gh_graphql, graphql_blocked, note_graphql_result,
+    run,
+)
 
 
 # ── issue-apply ──────────────────────────────────────────────────────────────
@@ -274,9 +278,12 @@ def _graphql_json(query, variables):
     one into the mutation body is what defeated the earlier `-f fields='[...]'`
     attempts. Sending a JSON request body keeps the types intact.
     """
+    if graphql_blocked():
+        return 1, '', GRAPHQL_BLOCKED_REASON
     code, out, err = run(['gh', 'api', 'graphql', '--input', '-'],
                          input_text=json.dumps({'query': query,
                                                 'variables': variables}))
+    note_graphql_result(code, out, err)
     return code, out, err
 
 
@@ -315,6 +322,18 @@ def _batch_result(code, out, err, aliases, field='issue'):
 # Comments per aliased `addComment` request: GitHub's complexity budget, as
 # for every other aliased write here.
 COMMENT_BATCH = 20
+
+
+def post_comments(cfg, comments):
+    """`add_comments`, or one REST call per comment where GraphQL is blocked.
+    {number: (posted, message)}."""
+    if not graphql_blocked():
+        return add_comments(comments)
+    out = {}
+    for n in sorted(comments):
+        posted, why = wf_rest.rest_comment(cfg, n, comments[n][1])
+        out[n] = (True, 'commented') if posted else (False, why)
+    return out
 
 
 def add_comments(comments):

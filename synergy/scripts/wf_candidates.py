@@ -8,8 +8,9 @@ Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 from concurrent.futures import ThreadPoolExecutor
 
 import wf_core
+import wf_rest
 from wf_config import field_name
-from wf_io import EXIT_ENV, emit, eprint, gh_graphql, run
+from wf_io import EXIT_ENV, emit, eprint, gh_graphql, graphql_blocked, run
 from wf_issue_io import issue_field_values
 from wf_stage import _chunks
 
@@ -157,6 +158,9 @@ def stage_issues(cfg, stages, unassigned_only=True, extra=''):
     # judges them all, and a parent's stage decides its children.
     wanted = None if stages is None else {(s or '').strip().lower() for s in stages}
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
+    if graphql_blocked():
+        return _stage_issues_rest(cfg, stage_field, wanted, unassigned_only,
+                                  repo, extra)
     issues, cursor = [], None
     size, asked = STAGE_PAGE_SIZE, 0
     while True:
@@ -180,6 +184,9 @@ def stage_issues(cfg, stages, unassigned_only=True, extra=''):
             # nothing is skipped or read twice.
             size = max(STAGE_MIN_PAGE_SIZE, size // 2)
             continue
+        if not ok and graphql_blocked():
+            return _stage_issues_rest(cfg, stage_field, wanted,
+                                      unassigned_only, repo, extra)
         if not ok or not data:
             return False, None, 'open-issue query failed: %s' % err
         try:
@@ -187,41 +194,66 @@ def stage_issues(cfg, stages, unassigned_only=True, extra=''):
             nodes = connection['nodes']
         except (KeyError, TypeError):
             return False, None, 'unexpected open-issue response shape'
-        for node in nodes:
-            if not node or not node.get('number'):
-                continue
-            stage = issue_field_values(node).get(stage_field) or ''
-            if wanted is not None and stage.strip().lower() not in wanted:
-                continue
-            assignees = (node.get('assignees') or {}).get('nodes') or []
-            if unassigned_only and assignees:
-                continue
-            milestone = node.get('milestone')
-            issues.append(dict(_tree_facts(node, repo), **{
-                'id': node.get('id'),
-                # Every field value, so the pick needs no second query for
-                # Priority, Effort, Ownership or Classification.
-                'fields': issue_field_values(node),
-                'number': node['number'],
-                'title': node.get('title', ''),
-                'labels': [l['name'] for l
-                           in (node.get('labels') or {}).get('nodes') or []],
-                'body': node.get('body', '') or '',
-                'milestone': milestone.get('title') if milestone else None,
-                'url': node.get('url', ''),
-                'stage': stage or None,
-                'assigned': bool(assignees),
-                'assignees': [a.get('login') for a in assignees if a.get('login')],
-                'blockedBy': node.get('blockedBy') or {},
-                # The repository the read came from, so a blocker elsewhere
-                # is told apart from the local issue with its number.
-                'repo': repo,
-            }))
+        issues.extend(_pool_entries(nodes, stage_field, wanted,
+                                    unassigned_only, repo))
         asked += size
         page_info = connection.get('pageInfo') or {}
         cursor = page_info.get('endCursor')
         if not page_info.get('hasNextPage') or not cursor:
             return True, issues, ''
+
+
+def _pool_entries(nodes, stage_field, wanted, unassigned_only, repo):
+    """The issues of one page of nodes that `stage_issues` keeps, as entries.
+
+    Shared by the GraphQL read and the REST fallback, which hands over nodes
+    of the same shape, so both build the pool the same way.
+    """
+    out = []
+    for node in nodes:
+        if not node or not node.get('number'):
+            continue
+        stage = issue_field_values(node).get(stage_field) or ''
+        if wanted is not None and stage.strip().lower() not in wanted:
+            continue
+        assignees = (node.get('assignees') or {}).get('nodes') or []
+        if unassigned_only and assignees:
+            continue
+        milestone = node.get('milestone')
+        out.append(dict(_tree_facts(node, repo), **{
+            'id': node.get('id'),
+            # Every field value, so the pick needs no second query for
+            # Priority, Effort, Ownership or Classification.
+            'fields': issue_field_values(node),
+            'number': node['number'],
+            'title': node.get('title', ''),
+            'labels': [l['name'] for l
+                       in (node.get('labels') or {}).get('nodes') or []],
+            'body': node.get('body', '') or '',
+            'milestone': milestone.get('title') if milestone else None,
+            'url': node.get('url', ''),
+            'stage': stage or None,
+            'assigned': bool(assignees),
+            'assignees': [a.get('login') for a in assignees if a.get('login')],
+            'blockedBy': node.get('blockedBy') or {},
+            # The repository the read came from, so a blocker elsewhere
+            # is told apart from the local issue with its number.
+            'repo': repo,
+        }))
+    return out
+
+
+def _stage_issues_rest(cfg, stage_field, wanted, unassigned_only, repo, extra):
+    """`stage_issues` through REST, for a session where GraphQL is blocked.
+
+    The pool facts (sub-issues, blocked-by edges, closing pull requests) are
+    read only when the caller asked for more than the basics, as the GraphQL
+    query reads them only when `extra` names them.
+    """
+    ok, nodes, err = wf_rest.rest_open_issue_nodes(cfg, pool_facts=bool(extra))
+    if not ok:
+        return False, None, err
+    return True, _pool_entries(nodes, stage_field, wanted, unassigned_only, repo), ''
 
 
 # -- org capability resolution -----------------------------------------------
@@ -310,6 +342,9 @@ def fetch_issue_facets(cfg, numbers=None, priority_field='Priority',
     facets = {'types': {}, 'priority': {}, 'classification': {},
               'effort': {}, 'ownership': {}, 'stage': {}}
 
+    if graphql_blocked():
+        return _fetch_issue_facets_rest(cfg, numbers, facets, fields)
+
     if numbers is not None:
         ordered = sorted({int(n) for n in numbers})
         for chunk in _chunks(ordered, FACET_BATCH):
@@ -319,6 +354,8 @@ def fetch_issue_facets(cfg, numbers=None, priority_field='Priority',
                 'query($owner:String!,$repo:String!){'
                 ' repository(owner:$owner,name:$repo){ %s } }' % ' '.join(parts),
                 owner=cfg['org'], repo=cfg['repo'])
+            if not ok and graphql_blocked():
+                return _fetch_issue_facets_rest(cfg, numbers, facets, fields)
             if not ok or not data:
                 return False, facets, 'issue facet query failed: %s' % err
             repo = data.get('repository') or {}
@@ -334,6 +371,8 @@ def fetch_issue_facets(cfg, numbers=None, priority_field='Priority',
         if cursor:
             args['cursor'] = cursor
         ok, data, err = gh_graphql(_facets_query(bool(cursor)), **args)
+        if not ok and graphql_blocked():
+            return _fetch_issue_facets_rest(cfg, numbers, facets, fields)
         if not ok or not data:
             return False, facets, 'issue facet query failed: %s' % err
         try:
@@ -354,6 +393,25 @@ def fetch_issue_facets(cfg, numbers=None, priority_field='Priority',
             return False, facets, (
                 'this repository has more than %d open issues, which is more '
                 'than one pass reads' % (FACET_PAGE_SIZE * FACET_MAX_PAGES))
+    return True, facets, ''
+
+
+def _fetch_issue_facets_rest(cfg, numbers, facets, fields):
+    """`fetch_issue_facets` through REST: each named issue read on its own,
+    or every open issue in one paged read when none is named."""
+    if numbers is None:
+        ok, nodes, err = wf_rest.rest_open_issue_nodes(cfg, pool_facts=False)
+        if not ok:
+            return False, facets, 'issue facet read failed: %s' % err
+    else:
+        nodes = []
+        for number in sorted({int(n) for n in numbers}):
+            ok, node, err = wf_rest.rest_read_issue(cfg, number)
+            if not ok:
+                return False, facets, 'issue facet read failed: %s' % err
+            nodes.append(node)
+    for node in nodes:
+        _read_facets(node, facets, fields)
     return True, facets, ''
 
 

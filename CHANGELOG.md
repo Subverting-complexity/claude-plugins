@@ -6,6 +6,13 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.3.0
+
+- `wf` now works in a session that blocks GraphQL, such as a Claude Code cloud session, which answers every GraphQL request with HTTP 403 while the REST API still works. Before, every `wf` step failed there, and the agent picked the story and set its `Stage` by hand through REST, outside the checks `wf` makes. The first 403 from GraphQL switches the rest of the run to REST, and `wf` prints one line to say so, because the REST path takes more requests. Set `WF_GRAPHQL=off` to start a run on REST.
+- On REST, `wf pick` reads the same pool and picks the same story: the open issues oldest first, with their field values, type, parent, open sub-issues, blocked-by edges and the open pull requests that close them. GitHub's REST API has no list of the issues a pull request closes, so `wf` reads the closing keywords in each pull request body, as GitHub does. The claim, the assignment, the `Stage` write and the comments on issues passed over all go through REST, and `pick --issue`, `stage-set` and `refine` work the same way.
+- A `Stage` write through REST is read back from GitHub's answer, so a write that GitHub took but did not store is reported. The REST write needs the field's REST id, which `wf` finds without the org endpoint when that is refused too: from the issues it has already read, from the id a past run kept, from the issue being written, from the org field list, and last from the recently updated issues.
+- Opening and listing pull requests and settling issues after a merge do not have a REST path yet.
+
 ## synergy 20.2.1
 
 - A claim push now sends 2 small objects instead of the whole project. `wf` built each claim commit on the project's tree with no parent, so git could not tell that GitHub already had the tree and sent every object in it, about 16 MB a claim in a large repository. A bulk run claims all its stories at once, and GitHub rejected some of those pushes at random, which released the whole set. The claim commit is now built on the empty tree, still with no parent, so it can never carry unpushed local commits. Its message is unchanged.

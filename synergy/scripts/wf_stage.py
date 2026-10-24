@@ -5,9 +5,10 @@ Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
 
 import wf_core
+import wf_rest
 from wf_capabilities import resolve_org_capabilities
 from wf_config import field_name, prepare_cfg
-from wf_io import EXIT_ENV, EXIT_OK, emit, emit_line, run
+from wf_io import EXIT_ENV, EXIT_OK, emit, emit_line, graphql_blocked, run
 from wf_issue_io import (
     _batch_result, _graphql_json, resolve_issue_ids,
 )
@@ -73,9 +74,28 @@ def set_stages(cfg, wanted, ids=None, extra=None):
     so the value written is the value every board shows, and an issue with no
     card is in exactly the same state as one with a card in every project.
     """
-    out = {}
     if not wanted:
-        return out
+        return {}
+    if graphql_blocked():
+        return set_stages_rest(cfg, wanted, extra)
+    out = _set_stages_graphql(cfg, wanted, ids, extra)
+    if graphql_blocked():
+        # The first GraphQL call of the run was refused. Every write that did
+        # not land goes again through REST; one that landed is kept.
+        retry = {n: wanted[n] for n in wanted
+                 if not out.get(int(n), (False, ''))[0]}
+        out.update(set_stages_rest(cfg, retry, extra))
+    return out
+
+
+def set_stages_rest(cfg, wanted, extra=None):
+    """`set_stages` through REST, one write per issue, each read back."""
+    return wf_rest.rest_set_stages(cfg, {int(n): s for n, s in wanted.items()}, extra)
+
+
+def _set_stages_graphql(cfg, wanted, ids=None, extra=None):
+    """`set_stages` through GraphQL: the aliased `setIssueFieldValue` writes."""
+    out = {}
     ok, meta, err = stage_field_meta(cfg)
     if not ok:
         return {int(n): (False, err) for n in wanted}

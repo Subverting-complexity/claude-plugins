@@ -6,7 +6,8 @@ Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
 
 import wf_core
-from wf_io import eprint, gh_graphql, run
+import wf_rest
+from wf_io import eprint, gh_graphql, graphql_blocked, run
 from wf_issue_io import EDGE_BATCH, EDGE_PAGE
 from wf_stage import set_stage
 
@@ -50,6 +51,8 @@ def issue_edges_map(cfg, numbers):
     """
     found, unknown = {}, []
     ordered = sorted({int(n) for n in (numbers or ())})
+    if graphql_blocked():
+        return _issue_edges_map_rest(cfg, ordered)
     for start in range(0, len(ordered), EDGE_BATCH):
         batch = ordered[start:start + EDGE_BATCH]
         parts = ['e%d: issue(number:%d){ blockedBy(first:%d){'
@@ -59,6 +62,10 @@ def issue_edges_map(cfg, numbers):
         ok, data, _ = gh_graphql(
             'query($o:String!,$r:String!){ repository(owner:$o,name:$r){ %s } }'
             % ' '.join(parts), o=cfg['org'], r=cfg['repo'])
+        if not ok and graphql_blocked():
+            more, missing = _issue_edges_map_rest(cfg, ordered[start:])
+            found.update(more)
+            return found, sorted(set(unknown) | set(missing))
         if not ok or not data:
             unknown.extend(batch)
             continue
@@ -74,6 +81,18 @@ def issue_edges_map(cfg, numbers):
                 continue
             found[number] = nodes
     return found, sorted(set(unknown))
+
+
+def _issue_edges_map_rest(cfg, numbers):
+    """`issue_edges_map` through REST, one read per issue. (found, unknown)."""
+    found, unknown = {}, []
+    for number in numbers:
+        conn = wf_rest.rest_blocked_by(cfg, number)
+        if wf_core.edges_incomplete(conn):
+            unknown.append(number)
+        else:
+            found[number] = conn['nodes']
+    return found, unknown
 
 
 def validate_issue(cfg, issue, siblings=()):
@@ -165,12 +184,16 @@ def issue_dependency_facts(cfg, number):
     """One issue's blocked-by edges and the pull requests that close it, in
     one query. Returns the facts to merge into a candidate, or {} when the
     read failed, so the claim falls back to reading each on its own."""
+    if graphql_blocked():
+        return wf_rest.rest_dependency_facts(cfg, number)
     ok, data, _ = gh_graphql(
         'query($o:String!,$r:String!,$n:Int!){ repository(owner:$o,name:$r){'
         ' issue(number:$n){ blockedBy(first:%d){ totalCount nodes { number state title'
         ' repository { nameWithOwner } } }'
         ' closedByPullRequestsReferences(first:5){ totalCount nodes { number state } } } } }'
         % EDGE_PAGE, o=cfg['org'], r=cfg['repo'], n=int(number))
+    if not ok and graphql_blocked():
+        return wf_rest.rest_dependency_facts(cfg, number)
     node = (((data or {}).get('repository') or {}).get('issue')) if ok else None
     if not node:
         return {}
@@ -209,7 +232,11 @@ def merged_pr_closing(cfg, number):
         ' orderBy:{field:CREATED_AT, direction:DESC}){'
         ' nodes { number closingIssuesReferences(first:10){ nodes { number } } } } } }'
     )
+    if graphql_blocked():
+        return wf_rest.rest_merged_pr_closing(cfg, number)
     ok, data, _ = gh_graphql(query, owner=cfg['org'], repo=cfg['repo'])
+    if not ok and graphql_blocked():
+        return wf_rest.rest_merged_pr_closing(cfg, number)
     if not ok or not data:
         return None
     try:
@@ -235,11 +262,18 @@ def mark_blocked(cfg, issue, detail, assigned=True):
     blocked before it assigned anybody.
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    if assigned:
-        run(['gh', 'issue', 'edit', str(issue['number']), '--repo', repo,
-             '--remove-assignee', '@me'])
-    run(['gh', 'issue', 'comment', str(issue['number']), '--repo', repo,
-         '--body', 'Blocked — open dependency(ies): %s. Returned to blocked until they close.' % detail])
+    note = ('Blocked — open dependency(ies): %s. Returned to blocked until '
+            'they close.' % detail)
+    if graphql_blocked():
+        if assigned:
+            wf_rest.rest_unassign(cfg, issue['number'])
+        wf_rest.rest_comment(cfg, issue['number'], note)
+    else:
+        if assigned:
+            run(['gh', 'issue', 'edit', str(issue['number']), '--repo', repo,
+                 '--remove-assignee', '@me'])
+        run(['gh', 'issue', 'comment', str(issue['number']), '--repo', repo,
+             '--body', note])
     written, message = set_stage(cfg, issue['number'],
                                  wf_core.STAGE_NAMES['stage-blocked'],
                                  issue.get('id'))
@@ -263,6 +297,9 @@ def clear_lifecycle_label(cfg, number, labels):
     stale = wf_core.retired_labels_on(labels, cfg.get('labels') or {})
     if not stale:
         return None
+    if graphql_blocked():
+        wf_rest.rest_remove_labels(cfg, number, stale)
+        return ', '.join(stale)
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     args = ['gh', 'issue', 'edit', str(number), '--repo', repo]
     for name in stale:
@@ -288,8 +325,13 @@ def close_resolved(cfg, issue, pr_number):
     the message starts with `NOT_CLOSED`, which `close_failed` tests for.
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    code, _, err = run(['gh', 'issue', 'close', str(issue['number']), '--repo', repo,
-                        '--comment', 'Closing — already resolved by #%s.' % pr_number])
+    note = 'Closing — already resolved by #%s.' % pr_number
+    if graphql_blocked():
+        closed, err = wf_rest.rest_close_issue(cfg, issue['number'], note)
+        code = 0 if closed else 1
+    else:
+        code, _, err = run(['gh', 'issue', 'close', str(issue['number']),
+                            '--repo', repo, '--comment', note])
     if code != 0:
         return False, NOT_CLOSED + ((err or '').strip() or 'gh exited %d' % code)
     clear_lifecycle_label(cfg, issue['number'], issue.get('labels', []))

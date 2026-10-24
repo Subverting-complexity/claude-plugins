@@ -131,6 +131,30 @@ def closing_issue_numbers(refs):
     return [n['number'] for n in refs if isinstance(n, dict) and 'number' in n]
 
 
+_CLOSING_KEYWORD = re.compile(
+    r'\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+'
+    r'(?:https://github\.com/([\w.-]+/[\w.-]+)/issues/|([\w.-]+/[\w.-]+)?#)(\d+)\b',
+    re.IGNORECASE)
+
+
+def body_closing_numbers(body, repo=None):
+    """The issue numbers a pull request body closes, read the way GitHub reads
+    its closing keywords: `Closes #5`, `fixes: #5`, `Resolved owner/name#5` or
+    the issue's URL, anywhere in the text.
+
+    The REST API has no `closingIssuesReferences`, so this is the REST
+    fallback's whole source for it. A reference to another repository is left
+    out; `repo` (`owner/name`) keeps one that names this repository in full.
+    """
+    found = set()
+    for url_repo, short_repo, number in _CLOSING_KEYWORD.findall(body or ''):
+        named = url_repo or short_repo
+        if named and (not repo or named.lower() != repo.lower()):
+            continue
+        found.add(int(number))
+    return sorted(found)
+
+
 # ── Branch naming ────────────────────────────────────────────────────────────
 # execute SKILL.md — deterministic slug from the issue title.
 

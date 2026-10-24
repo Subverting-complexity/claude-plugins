@@ -6,10 +6,13 @@ Split out of `wf_pick.py`; `scripts/README.md` has the module map.
 """
 
 import wf_core
+import wf_rest
 from wf_candidates import _norm_issue, load_issue_facets
 from wf_config import field_name
 from wf_deps import issue_dependency_facts
-from wf_io import EXIT_ALL_BLOCKED, EXIT_ENV, emit, gh_graphql, gh_json, run
+from wf_io import (
+    EXIT_ALL_BLOCKED, EXIT_ENV, emit, gh_graphql, gh_json, graphql_blocked, run,
+)
 
 
 # Stages an explicitly named issue may be picked from, beside a blank one. The
@@ -97,9 +100,12 @@ def fetch_issue_candidate(cfg, number):
     does that for every path.
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    ok, data, err = gh_json(['issue', 'view', str(number), '--repo', repo,
-                             '--json', 'number,title,labels,body,milestone,url,'
-                                       'state,assignees'])
+    if not graphql_blocked():
+        ok, data, err = gh_json(['issue', 'view', str(number), '--repo', repo,
+                                 '--json', 'number,title,labels,body,milestone,url,'
+                                           'state,assignees'])
+    if graphql_blocked():
+        ok, data, err = _issue_view_rest(cfg, number)
     if not ok or not data:
         emit('error', EXIT_ENV, reason='could not read issue #%d (%s)' % (number, err))
     if (data.get('state') or '').upper() == 'CLOSED':
@@ -164,6 +170,20 @@ def fetch_issue_candidate(cfg, number):
     if reset_from:
         cand['reset_from_pr'] = reset_from
     return cand
+
+
+def _issue_view_rest(cfg, number):
+    """The `gh issue view --json` fields `fetch_issue_candidate` reads, through
+    REST. (ok, data, err)."""
+    ok, node, err = wf_rest.rest_read_issue(cfg, number)
+    if not ok:
+        return False, None, err
+    return True, {
+        'number': node['number'], 'title': node['title'], 'body': node['body'],
+        'url': node['url'], 'state': node['state'],
+        'labels': node['labels']['nodes'], 'milestone': node['milestone'],
+        'assignees': node['assignees']['nodes'],
+    }, ''
 
 
 def reset_abandoned(cfg, number, assignees):

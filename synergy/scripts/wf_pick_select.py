@@ -7,6 +7,7 @@ Split out of `wf_pick.py`; `scripts/README.md` has the module map.
 """
 
 import wf_core
+import wf_rest
 from wf_candidates import (
     _prefilter_numbers, claimed_issue_numbers, load_issue_facets, pool_verdict,
     read_pool,
@@ -15,9 +16,9 @@ from wf_claim import acquire_claim, apply_in_progress, release_claim
 from wf_deps import close_failed, close_resolved, mark_blocked, validate_issue
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_CAPABILITY, EXIT_ENV, EXIT_NEEDS_REFINEMENT, emit,
-    eprint, run,
+    eprint, graphql_blocked, run,
 )
-from wf_issue_io import add_comments
+from wf_issue_io import post_comments
 from wf_stage import set_stage, set_stages
 from wf_unblock import UNBLOCK_COMMENT
 
@@ -217,7 +218,10 @@ def send_to_refinement(cfg, entry):
     """Set an unclear issue to Needs refinement and say why. Side effect dict."""
     stage = wf_core.STAGE_NAMES['stage-refinement']
     written, message = set_stage(cfg, entry['number'], stage)
-    if written:
+    if written and graphql_blocked():
+        wf_rest.rest_comment(cfg, entry['number'],
+                        REFINEMENT_COMMENT % (stage, entry['unclear']))
+    elif written:
         run(['gh', 'issue', 'comment', str(entry['number']), '--repo',
              '%s/%s' % (cfg['org'], cfg['repo']),
              '--body', REFINEMENT_COMMENT % (stage, entry['unclear'])])
@@ -274,7 +278,7 @@ def block_in_pool(cfg, blocked, side_effects, releasable=(), by_num=None):
         if entry['stage_set']:
             comments[number] = (issue.get('id'), UNBLOCK_COMMENT % named)
     if comments:
-        posted = add_comments(comments)
+        posted = post_comments(cfg, comments)
         for entry in released:
             if entry['issue'] in posted:
                 entry['commented'] = posted[entry['issue']][0]

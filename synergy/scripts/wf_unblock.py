@@ -11,7 +11,7 @@ import wf_core
 from wf_candidates import load_issue_facets, stage_issues
 from wf_config import prepare_cfg
 from wf_io import EXIT_ENV, EXIT_OK, emit, eprint, gh_graphql
-from wf_issue_io import add_comments
+from wf_issue_io import post_comments
 from wf_stage import set_stages
 
 
@@ -187,7 +187,7 @@ def settle_blocked(cfg, releases=(), rescopes=(), dry_run=False):
             entry['stage_message'] = message
         else:
             comments[n] = (ids.get(n), bodies[n])
-    posted = add_comments(comments) if comments else {}
+    posted = post_comments(cfg, comments) if comments else {}
     for entry in released + rescoped:
         if entry['issue'] in posted:
             entry['commented'] = posted[entry['issue']][0]

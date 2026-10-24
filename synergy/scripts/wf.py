@@ -102,10 +102,12 @@ import wf_worktrees  # noqa: E402
 import wf_jev  # noqa: E402
 import wf_release_targets  # noqa: E402
 import wf_quota  # noqa: E402
+import wf_rest  # noqa: E402
 
 _SHELL_MODULES = (
     wf_io,
     wf_config,
+    wf_rest,
     wf_issue_io,
     wf_capabilities,
     wf_stage,

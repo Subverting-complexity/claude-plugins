@@ -17,6 +17,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_config.py` | Repo root (asked of git once per working directory), `ClaudeProject.md` parsing with its areas table, release-targets table and Jev row, the config cache, `config` | 549 |
 | `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 498 |
 | `wf_issue_io.py` | Reading, writing and verifying single issues, the area label included; batched mutations; every label id a spec names, read to the last page | 516 |
+| `wf_rest.py` | The REST fallback where GraphQL is blocked: the open-issue read in the GraphQL shape, one issue read, `Stage` writes read back, the REST field ids, and the assign, unassign, comment, label and close edits a pick makes | 476 |
 | `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 219 |
 | `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 570 |
 | `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 457 |
@@ -280,6 +281,16 @@ A command whose write failed never reports `ok`. `refine`, `handoff`, `claim-rea
 Resolves what the org can actually classify an issue with: its **enabled native issue types** and every **org issue field** with the option ids needed to write single-select and multi-select values. One GraphQL round trip, cached to `.claude/issue-fields-cache.json`; `--refresh` re-queries and rewrites its own keys while preserving any other key in that file. The record carries `fetched_at` and is trusted for an hour, or for five minutes when it lacks `Priority`, `Effort`, `Ownership`, `Stage` or a `Stage` option, because an org's fields change and the file outlives the run that wrote it — a new worktree can start with a copy of the main checkout's.
 
 The command is GraphQL and not REST because REST (`/orgs/{org}/issue-fields`) returns `null` for every option id, which makes those fields readable but not writable.
+
+### When GraphQL is blocked
+
+Some sessions cannot reach GraphQL. A Claude Code cloud session answers every GraphQL request with HTTP 403 while the REST API works. The first 403 from GraphQL, from `gh api graphql` or from a `gh` subcommand that reads through it, switches the rest of the run to REST (`wf_rest.py`), and `wf` prints one line on stderr to say so. A rate limit that answers 403 does not switch it. `WF_GRAPHQL=off` starts a run on REST.
+
+On REST, the pool read returns each issue in the shape the GraphQL query returns it, oldest first, so the pool rules and the claim walk run unchanged and the same pool gives the same pick. The REST issue list carries the type, the parent and the field values; the blocked-by edges cost one read for each issue that has any, and the closing pull requests come from the closing keywords in the open pull requests' bodies, because REST has no `closingIssuesReferences`. Whether a merged pull request already closes the issue is read at the claim, from the newest hundred closed pull requests.
+
+A REST `Stage` write names the option by its name, so it needs no option id, only the field's REST id. That id comes from the values the run has already read, then the `rest_field_ids` key of the capability cache, then the issue being written, then `/orgs/{org}/issue-fields`, and last the recently updated issues, so it resolves when the org endpoint is refused too. Each write is read back from GitHub's answer.
+
+Opening, viewing and listing pull requests, and `post-merge`, have no REST path yet.
 
 Output beyond `type_map` and `field_map`:
 
