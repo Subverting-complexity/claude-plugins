@@ -2,7 +2,8 @@
 The REST fallback for pull requests, where GraphQL is blocked: opening,
 reading and editing one pull request, its labels, the review pool
 `review-next` reads, the open pull requests `sibling-pr` and `update-next`
-read, the repository's labels, and checking out a pull request's branch.
+read, the closed pull requests that close one issue, the repository's
+labels, and checking out a pull request's branch.
 
 `gh pr create`, `gh pr view`, `gh pr list`, `gh pr edit` and `gh pr checkout`
 all read through GraphQL inside `gh`, so in a session that refuses GraphQL
@@ -17,7 +18,9 @@ from urllib.parse import quote
 
 import wf_core
 from wf_io import gh_rest, run
-from wf_rest import REST_PAGE, REST_WORKERS, _pages, rest_viewer_login
+from wf_rest import (
+    REST_PAGE, REST_WORKERS, _pages, closing_refs, rest_closed_prs, rest_viewer_login,
+)
 
 
 # Comments and reviews the GraphQL review pool reads for each pull request,
@@ -27,6 +30,10 @@ OPEN_PR_LIMIT = 100
 # Pages of one pull request's comments read to reach its most recent ones:
 # REST lists them oldest first and cannot reverse the order.
 POST_PAGES = 10
+# Pages of closed pull requests read for the ones that close one issue. On
+# GraphQL a search finds them; REST cannot search pull requests by the issue
+# they close, so the newest thousand are read and filtered.
+CLOSING_PAGES = 10
 
 
 def _repo(cfg):
@@ -110,6 +117,25 @@ def rest_pr_view(cfg, ref):
     """`gh pr view <ref> --json ...` through REST. (view_or_None, err)."""
     raw, err = rest_find_pr(cfg, ref)
     return (pr_view(raw), '') if raw else (None, err)
+
+
+def rest_closed_prs_closing(cfg, number):
+    """The closed pull requests whose body closes issue `number`, merged or
+    not, as `gh pr list --state closed --json
+    number,title,mergedAt,closingIssuesReferences` returns them. (ok, prs, err).
+
+    A merged one keeps its `mergedAt`, so `wf_core.abandoned_pr` still reads
+    the issue as done rather than abandoned.
+    """
+    repo = _repo(cfg)
+    ok, prs, err = rest_closed_prs(
+        cfg, lambda p: int(number) in wf_core.body_closing_numbers(p.get('body'), repo),
+        max_pages=CLOSING_PAGES)
+    if not ok:
+        return False, None, 'closed pull request REST read failed: %s' % err
+    return True, [{'number': p.get('number'), 'title': p.get('title') or '',
+                   'mergedAt': p.get('merged_at'),
+                   'closingIssuesReferences': closing_refs(p, repo)} for p in prs], ''
 
 
 def rest_sibling_nodes(cfg):

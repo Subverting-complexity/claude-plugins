@@ -6,6 +6,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.5.1
+
+- `wf pick --issue N` now resets an issue whose pull request was closed without merging in a session that blocks GraphQL, such as a Claude Code cloud session. Before, the read of closed pull requests failed there, so the issue stayed assigned or `In Review` and the pick refused it. On REST, `wf` reads the newest thousand closed pull requests and finds the ones that close the issue from the closing keywords in their bodies, then removes the assignees and posts the reset comment through REST.
+- A merged pull request still never counts as abandoned on REST: `wf` reads a closed pull request as merged when GitHub records a merge time for it.
+- With GraphQL available, nothing changes.
+
 ## synergy 20.5.0
 
 - `wf post-merge` now settles a merge in a session that blocks GraphQL, such as a Claude Code cloud session. Before, it could not read the merged pull request or write anything, and the agent closed the issues and set their fields by hand through REST. Once a run has switched to REST, `post-merge` closes each issue the pull request closes, sets its `Stage` to Done, writes its release notes fields, closes a Feature or Epic the merge finished, and releases the issues that waited on them, as it does on GraphQL.

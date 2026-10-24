@@ -16,11 +16,10 @@ keyword, is not settled. `scripts/README.md` has the module map.
 
 from concurrent.futures import ThreadPoolExecutor
 
-import wf_core
 from wf_io import gh_rest
 from wf_rest import (
-    REST_PAGE, REST_WORKERS, _pages, number_of, repo_of, rest_close_issue,
-    rest_issue_node, rest_remove_labels,
+    REST_WORKERS, _pages, closing_refs, is_merged, number_of, repo_of,
+    rest_close_issue, rest_closed_prs, rest_issue_node, rest_remove_labels,
 )
 from wf_rest_pr import pr_state, rest_find_pr
 
@@ -32,12 +31,6 @@ MERGED_LIST_PAGES = 10
 
 def _repo(cfg):
     return '%s/%s' % (cfg['org'], cfg['repo'])
-
-
-def _closing(raw, repo):
-    """A REST pull request's closing references, as `gh pr view --json` lists
-    them, read from the closing keywords in its body."""
-    return [{'number': n} for n in wf_core.body_closing_numbers(raw.get('body'), repo)]
 
 
 # ── the merged pull requests ─────────────────────────────────────────────────
@@ -56,7 +49,7 @@ def rest_merged_pr_view(cfg, number):
     view = {'number': raw.get('number'), 'state': pr_state(raw),
             'mergedAt': raw.get('merged_at'),
             'baseRefName': (raw.get('base') or {}).get('ref') or '',
-            'closingIssuesReferences': _closing(raw, repo), 'comments': []}
+            'closingIssuesReferences': closing_refs(raw, repo), 'comments': []}
     if view['state'] != 'MERGED':
         return view, ''
     ok, comments, err = _pages('repos/%s/issues/%d/comments' % (repo, int(number)))
@@ -72,18 +65,11 @@ def rest_merged_prs(cfg, limit):
     """The newest `limit` merged pull requests with their closing references,
     as `gh pr list --state merged --json number,closingIssuesReferences`
     returns them. (ok, prs, err)."""
-    repo, merged = _repo(cfg), []
-    for page in range(1, MERGED_LIST_PAGES + 1):
-        ok, prs, err = gh_rest('repos/%s/pulls?state=closed&sort=created'
-                               '&direction=desc&per_page=%d&page=%d'
-                               % (repo, REST_PAGE, page))
-        if not ok or not isinstance(prs, list):
-            return False, None, 'merged pull request REST read failed: %s' % (
-                err or 'unexpected REST response')
-        merged.extend(p for p in prs if isinstance(p, dict) and p.get('merged_at'))
-        if len(merged) >= limit or len(prs) < REST_PAGE:
-            break
-    return True, [{'number': p['number'], 'closingIssuesReferences': _closing(p, repo)}
+    ok, merged, err = rest_closed_prs(cfg, is_merged, limit, MERGED_LIST_PAGES)
+    if not ok:
+        return False, None, 'merged pull request REST read failed: %s' % err
+    repo = _repo(cfg)
+    return True, [{'number': p['number'], 'closingIssuesReferences': closing_refs(p, repo)}
                   for p in merged[:limit]], ''
 
 

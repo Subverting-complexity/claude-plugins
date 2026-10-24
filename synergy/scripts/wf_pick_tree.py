@@ -7,11 +7,12 @@ Split out of `wf_pick.py`; `scripts/README.md` has the module map.
 
 import wf_core
 import wf_rest
+import wf_rest_pr
 from wf_candidates import _norm_issue, load_issue_facets
 from wf_config import field_name
 from wf_deps import issue_dependency_facts
 from wf_io import (
-    EXIT_ALL_BLOCKED, EXIT_ENV, emit, gh_graphql, gh_json, graphql_blocked, run,
+    EXIT_ALL_BLOCKED, EXIT_ENV, emit, gh_graphql, gh_json, graphql_blocked, run_gh,
 )
 
 
@@ -194,19 +195,40 @@ def reset_abandoned(cfg, number, assignees):
     assignees removed, `Stage` set to Backlog and a comment saying why. A
     merged PR means the work is done, so it never counts. Returns the PR
     number when the issue was reset, else None.
+
+    Where GraphQL is blocked, the closed pull requests come from REST, read
+    by the closing keywords in their bodies, and the assignees and the comment
+    go through REST too: `gh pr list`, `gh issue edit` and `gh issue comment`
+    all read through GraphQL inside `gh`.
     """
     from wf_stage import set_stage
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    ok, prs, _ = gh_json(['pr', 'list', '--repo', repo, '--state', 'closed',
-                          '--search', '#%d' % number, '--json',
-                          'number,title,mergedAt,closingIssuesReferences'])
+    if not graphql_blocked():
+        ok, prs, _ = gh_json(['pr', 'list', '--repo', repo, '--state', 'closed',
+                              '--search', '#%d' % number, '--json',
+                              'number,title,mergedAt,closingIssuesReferences'])
+    if graphql_blocked():
+        ok, prs, _ = wf_rest_pr.rest_closed_prs_closing(cfg, number)
     pr = wf_core.abandoned_pr(prs, number) if ok and isinstance(prs, list) else None
     if not pr:
         return None
     for login in assignees:
-        run(['gh', 'issue', 'edit', str(number), '--repo', repo,
-             '--remove-assignee', login])
+        _issue_edit(['gh', 'issue', 'edit', str(number), '--repo', repo,
+                     '--remove-assignee', login],
+                    lambda: wf_rest.rest_unassign(cfg, number, login))
     set_stage(cfg, number, wf_core.STAGE_NAMES[wf_core.POOL_STAGE])
-    run(['gh', 'issue', 'comment', str(number), '--repo', repo, '--body',
-         'Resetting — PR #%d closed without merge.' % pr['number']])
+    body = 'Resetting — PR #%d closed without merge.' % pr['number']
+    _issue_edit(['gh', 'issue', 'comment', str(number), '--repo', repo,
+                 '--body', body],
+                lambda: wf_rest.rest_comment(cfg, number, body))
     return pr['number']
+
+
+def _issue_edit(args, rest):
+    """Run one `gh issue` edit, or its REST twin where GraphQL is blocked,
+    including when this very call is the one GraphQL refused."""
+    if not graphql_blocked():
+        code, _out, _err = run_gh(args)
+        if code == 0 or not graphql_blocked():
+            return
+    rest()
