@@ -41,9 +41,18 @@ def acquire_claim(target):
                 for "every candidate was already claimed" (a phantom
                 all-blocked the user reads as an empty backlog).
     """
-    code, tree, _ = run(['git', 'rev-parse', 'HEAD^{tree}'])
+    # The claim commit carries the empty tree and no parent, so its push holds
+    # two objects whatever the remote already has (#431). Built on HEAD's tree
+    # with no parent, git could not tell the remote had that tree and sent the
+    # whole project with every claim. A parent of HEAD is not the fix either:
+    # it would push unpushed local commits into refs/claims/. The empty tree is
+    # written rather than hard-coded, because its id differs in a SHA-256
+    # repository. Nothing reads a claim commit's tree or parent: holders compare
+    # its sha, and claim-reap reads its commit time.
+    code, tree, err = run(['git', 'mktree'], input_text='')
     if code != 0:
-        eprint('wf: cannot read HEAD tree to build a claim object')
+        eprint('wf: cannot write the empty tree to build a claim object (%s)'
+               % (err.strip() or 'no detail'))
         return 'error'
     msg = 'claim %s %s pid%d-%d' % (
         target,

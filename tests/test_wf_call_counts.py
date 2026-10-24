@@ -88,7 +88,7 @@ class _GitHub(object):
             if input_text is not None:
                 return self._mutation(json.loads(input_text)['query'])
             return self._query(next(a for a in cmd if a.startswith('query=')))
-        if cmd[:2] == ['git', 'rev-parse']:
+        if cmd[:2] == ['git', 'mktree']:
             return 0, 'tree\n', ''
         if cmd[:2] == ['git', 'commit-tree']:
             return 0, 'sha\n', ''
