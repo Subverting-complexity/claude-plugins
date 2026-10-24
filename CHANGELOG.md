@@ -6,6 +6,14 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.5.0
+
+- `wf post-merge` now settles a merge in a session that blocks GraphQL, such as a Claude Code cloud session. Before, it could not read the merged pull request or write anything, and the agent closed the issues and set their fields by hand through REST. Once a run has switched to REST, `post-merge` closes each issue the pull request closes, sets its `Stage` to Done, writes its release notes fields, closes a Feature or Epic the merge finished, and releases the issues that waited on them, as it does on GraphQL.
+- Each field `post-merge` writes through REST is read back from GitHub's answer. When GitHub does not store the release notes, `post-merge` reports it and still sets `Stage` to Done. Before, the REST `Stage` write dropped the release notes and still reported success.
+- REST has no list of the issues a pull request closes, so `post-merge` reads the closing keywords in the pull request body. An issue linked to the pull request by hand, with no keyword, is not settled unless the caller names it with `--issue`.
+- `settle-merged` lists the merged pull requests through REST too. On REST, the unblock sweep does not report blocked issues whose blocker merged a pull request that closed nothing (`partials`).
+- With GraphQL available, nothing changes.
+
 ## synergy 20.4.0
 
 - `wf` now opens, finds and labels pull requests in a session that blocks GraphQL, such as a Claude Code cloud session. `gh pr create`, `gh pr view`, `gh pr list`, `gh pr edit` and `gh pr checkout` all read through GraphQL inside `gh`, so before this they failed there, and the agent opened, labelled and merged its pull requests by hand. Once a run has switched to REST, `pr-create` opens the pull request through REST with the same title, body and base, flags a possible duplicate, and reads the stored body back.

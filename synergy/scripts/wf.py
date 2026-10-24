@@ -104,12 +104,14 @@ import wf_release_targets  # noqa: E402
 import wf_quota  # noqa: E402
 import wf_rest  # noqa: E402
 import wf_rest_pr  # noqa: E402
+import wf_rest_settle  # noqa: E402
 
 _SHELL_MODULES = (
     wf_io,
     wf_config,
     wf_rest,
     wf_rest_pr,
+    wf_rest_settle,
     wf_issue_io,
     wf_capabilities,
     wf_stage,

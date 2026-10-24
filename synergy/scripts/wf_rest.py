@@ -9,8 +9,9 @@ in the shape the GraphQL query returns them, so everything after the read --
 the pool rules, the claim walk, the facts a pick reports -- runs unchanged, and
 the same pool gives the same pick either way.
 
-Pull requests have their own fallback in `wf_rest_pr.py`. Settling issues
-after a merge has no REST path yet. `scripts/README.md` has the module map.
+Pull requests have their own fallback in `wf_rest_pr.py`, and settling the
+issues a merge closes has its own in `wf_rest_settle.py`. `scripts/README.md`
+has the module map.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -378,8 +379,11 @@ def rest_set_stages(cfg, wanted, extra=None):
     write returns every value the issue now carries, so a write GitHub took
     but did not store is reported, not trusted.
 
-    `extra` holds GraphQL field inputs, which this path cannot send; an issue
-    that had any still gets its `Stage`, and the message says what was left.
+    `extra` is {number: [field input]} for other fields to write in the same
+    request, such as the release notes a merge records beside Done. Each is
+    read back as `Stage` is, and the issue counts as written only when every
+    value landed, as the GraphQL mutation counts it, so a caller that retries
+    `Stage` alone on a failure behaves the same either way.
     """
     out = {}
     field = field_name(cfg, 'field-stage')
@@ -400,11 +404,17 @@ def rest_set_stages(cfg, wanted, extra=None):
                                   'REST: no issue carries a value for it and the org '
                                   'field list could not be read' % field)
             continue
+        others, why = rest_field_values(cfg, (extra or {}).get(number), [number])
+        if why:
+            out[number] = (False, why)
+            continue
         value = _option_spelling(inputs[number], field)
         ok, values, err = gh_rest('repos/%s/issues/%d/issue-field-values'
                                   % (_repo(cfg), number), 'POST',
                                   {'issue_field_values': [{'field_id': fid,
-                                                           'value': value}]})
+                                                           'value': value}]
+                                   + [{'field_id': o['field_id'], 'value': o['value']}
+                                      for o in others]})
         if not ok:
             out[number] = (False, 'REST write failed: %s' % err)
             continue
@@ -417,12 +427,76 @@ def rest_set_stages(cfg, wanted, extra=None):
             out[number] = (False, 'GitHub took the write, but %s reads %s'
                            % (field, "'%s'" % got if got else 'blank'))
             continue
-        message = 'Stage set to %s' % inputs[number]
-        if (extra or {}).get(number):
-            message += ('; the other fields were not written, because the REST '
-                        'fallback writes Stage only')
-        out[number] = (True, message)
+        missed = [o['name'] for o in others if not _value_landed(values, o)]
+        if missed:
+            out[number] = (False, 'GitHub took the write, but %s did not read back '
+                                  'as written' % ', '.join(missed))
+            continue
+        out[number] = (True, 'Stage set to %s' % inputs[number])
     return out
+
+
+def _capability_names(field_id):
+    """The field name and {option id: option name} for a GraphQL field id,
+    from the cached capability record."""
+    for name, meta in ((load_capability_cache().get('field_map') or {}).items()):
+        if isinstance(meta, dict) and meta.get('id') == field_id:
+            return name, {v: k for k, v in (meta.get('options') or {}).items()}
+    return None, {}
+
+
+def rest_field_values(cfg, inputs, numbers=()):
+    """GraphQL field inputs as REST values. ([value], err).
+
+    Each value is {'name', 'field_id', 'value', 'kind'}. An input names its
+    field by `fieldName` (built on REST, where no GraphQL id was read) or by
+    `fieldId`, which the cached capability record turns into a name. Any input
+    this cannot turn into a REST value is an error for the whole write, so no
+    field is written without the others.
+    """
+    out = []
+    for item in inputs or ():
+        name, options = item.get('fieldName'), {}
+        if not name:
+            name, options = _capability_names(item.get('fieldId'))
+        if not name:
+            return [], ('could not write a field through REST: its id %s is not '
+                        'in the capability cache' % item.get('fieldId'))
+        if 'textValue' in item:
+            kind, value = 'text', str(item['textValue'])
+        elif 'numberValue' in item:
+            kind, value = 'number', item['numberValue']
+        elif 'dateValue' in item:
+            kind, value = 'date', str(item['dateValue'])
+        elif 'singleSelectOptionId' in item and item['singleSelectOptionId'] in options:
+            kind, value = 'single_select', options[item['singleSelectOptionId']]
+        else:
+            return [], 'could not write %s through REST: its value type is not supported' % name
+        fid = rest_field_id(cfg, name, numbers)
+        if fid is None:
+            return [], 'could not find the id of the %s field through REST' % name
+        out.append({'name': name, 'field_id': fid, 'value': value, 'kind': kind})
+    return out, ''
+
+
+def _value_landed(values, wanted):
+    """Whether GitHub's answer to a REST field write holds `wanted`."""
+    for v in values or ():
+        if not isinstance(v, dict) or not (v.get('issue_field_id') == wanted['field_id']
+                                           or v.get('issue_field_name') == wanted['name']):
+            continue
+        if wanted['kind'] == 'single_select':
+            got = (v.get('single_select_option') or {}).get('name') or ''
+            return got.strip().lower() == str(wanted['value']).strip().lower()
+        if wanted['kind'] == 'number':
+            try:
+                return float(v.get('value')) == float(wanted['value'])
+            except (TypeError, ValueError):
+                return False
+        if wanted['kind'] == 'date':
+            return str(v.get('value') or '')[:10] == wanted['value'][:10]
+        return str(v.get('value') or '').strip() == wanted['value'].strip()
+    return False
 
 
 _login = {}
