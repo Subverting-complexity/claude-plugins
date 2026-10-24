@@ -23,6 +23,7 @@ sys.path.insert(
     os.path.join(os.path.dirname(__file__), '..', 'synergy', 'scripts'),
 )
 import wf  # noqa: E402
+import wf_claim_label  # noqa: E402
 
 
 def _capture(func, *args, **kwargs):
@@ -233,6 +234,12 @@ class TestReleaseAgainstARealRemote(unittest.TestCase):
         prev = os.getcwd()
         os.chdir(self.work)
         self.addCleanup(os.chdir, prev)
+        # No org/repo, so the session label is never written: these tests are
+        # about the ref, and must not reach GitHub through a repository an
+        # earlier test left cached in `wf_claim_label`.
+        patcher = mock.patch.object(wf_claim_label, '_repo', lambda: None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _git(self, argv, cwd):
         r = subprocess.run(['git'] + argv, cwd=cwd, capture_output=True, text=True)
