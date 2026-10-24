@@ -3,19 +3,22 @@ Pull request review work: the PR pools, review labels, and the `update-next`,
 `review-next`, `review-finish`, `labels-ensure`, `sibling-pr` and `handoff`
 subcommands.
 
-Moved verbatim out of wf.py; `scripts/README.md` has the module map.
+Where GraphQL is blocked, every pull request read and edit here goes through
+REST (`wf_rest_pr.py`) and returns what the GraphQL read returns.
+`scripts/README.md` has the module map.
 """
 
 import os
 
 import wf_core
+import wf_rest_pr
 from wf_capabilities import fetch_repo_state
 from wf_claim import acquire_claim, holds_claim, release_claims
 from wf_config import prepare_cfg, repo_root
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, EXIT_PARTIAL, emit,
     emit_line,
-    eprint, gh_graphql, gh_json, run,
+    eprint, gh_graphql, gh_json, graphql_blocked, run, run_gh,
 )
 from wf_stage import set_stages
 
@@ -39,37 +42,79 @@ def assemble_prs(cfg, mine):
             '--json', 'number,title,labels,headRefName,url', '--limit', '200']
     if mine:
         args += ['--assignee', '@me']
-    ok, data, err = gh_json(args)
+    if not graphql_blocked():
+        ok, data, err = gh_json(args)
+        if ok:
+            return True, [_norm_pr(r) for r in data or []], ''
+        if not graphql_blocked():
+            return False, None, err
+    if mine:
+        ok, data, err = wf_rest_pr.rest_my_open_prs(cfg)
+    else:
+        ok, raws, err = wf_rest_pr.rest_open_prs(cfg)
+        data = [wf_rest_pr.pr_view(r) for r in raws or ()]
     if not ok:
         return False, None, err
-    return True, [_norm_pr(r) for r in data or []], ''
+    return True, [_norm_pr(r) for r in data], ''
 
 
 def pr_label_names(cfg, number):
     """Read a PR's current label names. Returns (names_or_None, err)."""
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    ok, data, err = gh_json(['pr', 'view', str(number), '--repo', repo, '--json', 'labels'])
-    if not ok or not data:
+    data, err = None, ''
+    if not graphql_blocked():
+        ok, data, err = gh_json(['pr', 'view', str(number), '--repo', repo,
+                                 '--json', 'labels'])
+        if not ok:
+            data = None
+    if data is None and graphql_blocked():
+        data, err = wf_rest_pr.rest_pr_view(cfg, number)
+    if not data:
         return None, err
     return [l['name'] for l in data.get('labels', [])], ''
 
 
+def _gh_pr_edit_labels(cfg, number, add, remove):
+    """`gh pr edit` with the label flags. (code, err)."""
+    edit = ['gh', 'pr', 'edit', str(number), '--repo', '%s/%s' % (cfg['org'], cfg['repo'])]
+    for name in remove:
+        edit += ['--remove-label', name]
+    for name in add:
+        edit += ['--add-label', name]
+    code, _, err = run_gh(edit)
+    return code, err or ''
+
+
+def edit_pr_labels(cfg, number, add=(), remove=()):
+    """Take labels off and put labels on a PR in one edit. (ok, err).
+
+    `gh pr edit` reads through GraphQL, so where GraphQL is blocked the edit
+    goes through the REST label endpoints instead.
+    """
+    add = [a for a in add or () if a]
+    remove = [r for r in remove or () if r]
+    if not graphql_blocked():
+        code, err = _gh_pr_edit_labels(cfg, number, add, remove)
+        if code == 0 or not graphql_blocked():
+            return code == 0, err
+    return wf_rest_pr.rest_edit_labels(cfg, number, add, remove)
+
+
 def apply_pr_labels(cfg, number, add, remove=None):
-    repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    args = ['pr', 'edit', str(number), '--repo', repo, '--add-label', add]
-    if remove:
-        args += ['--remove-label', remove]
-    code, _, err = run(['gh'] + args)
-    if code != 0:
+    ok, err = edit_pr_labels(cfg, number, [add], [remove] if remove else [])
+    if not ok:
         eprint('wf: warning — could not apply PR label (%s)' % err.strip())
 
 
 def checkout_pr(cfg, number):
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    code, _, err = run(['gh', 'pr', 'checkout', str(number), '--repo', repo])
-    if code != 0:
-        return False, 'gh pr checkout failed (%s)' % err.strip()
-    return True, 'checked out the PR branch'
+    if not graphql_blocked():
+        code, _, err = run_gh(['gh', 'pr', 'checkout', str(number), '--repo', repo])
+        if code == 0:
+            return True, 'checked out the PR branch'
+        if not graphql_blocked():
+            return False, 'gh pr checkout failed (%s)' % err.strip()
+    return wf_rest_pr.rest_checkout_pr(cfg, number)
 
 
 def claim_first_pr(pool, apply_marker, no_claim=False):
@@ -163,7 +208,11 @@ def assemble_review_prs(cfg):
     One query, so the picker can see a PR whose head moved since its last
     review without reading each PR's comments. Returns (ok, prs, err).
     """
+    if graphql_blocked():
+        return wf_rest_pr.rest_review_pool(cfg)
     ok, data, err = gh_graphql(REVIEW_POOL_QUERY, owner=cfg['org'], repo=cfg['repo'])
+    if not ok and graphql_blocked():
+        return wf_rest_pr.rest_review_pool(cfg)
     if not ok or not data:
         return False, None, err or 'no data'
     try:
@@ -266,13 +315,8 @@ def cmd_review_finish(args):
     add, remove = wf_core.reconcile_review_labels(
         current, args.verdict, names, fixes_applied=args.fixes_applied)
     if add or remove:
-        edit = ['gh', 'pr', 'edit', str(args.pr), '--repo', repo]
-        for a in add:
-            edit += ['--add-label', a]
-        for r in remove:
-            edit += ['--remove-label', r]
-        code, _, eerr = run(edit)
-        if code != 0:
+        edited, eerr = edit_pr_labels(cfg, args.pr, add, remove)
+        if not edited:
             eprint('wf: review-finish label edit warning (%s)' % eerr.strip())
 
     target = names[args.verdict]
@@ -282,7 +326,7 @@ def cmd_review_finish(args):
         color, desc = wf_core.REVIEW_LABEL_META[args.verdict]
         run(['gh', 'label', 'create', target, '--repo', repo,
              '--description', desc, '--color', color])
-        run(['gh', 'pr', 'edit', str(args.pr), '--repo', repo, '--add-label', target])
+        edit_pr_labels(cfg, args.pr, [target])
         created_label = True
         after, _ = pr_label_names(cfg, args.pr)
 
@@ -330,16 +374,21 @@ def add_review_label(cfg, number, add, remove=None):
     (guarded, never `--force`) and try the edit once more. Returns (ok, err).
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    edit = ['gh', 'pr', 'edit', str(number), '--repo', repo]
-    if remove:
-        edit += ['--remove-label', remove]
-    edit += ['--add-label', add]
-    code, _, err = run(edit)
-    if code != 0 and 'not found' in (err or '').lower():
-        _, _, lerr = ensure_review_labels(cfg, repo=repo)
-        if not lerr:
-            code, _, err = run(edit)
-    return code == 0, err or ''
+    remove = [remove] if remove else []
+    if not graphql_blocked():
+        code, err = _gh_pr_edit_labels(cfg, number, [add], remove)
+        if code != 0 and not graphql_blocked() and 'not found' in err.lower():
+            _, _, lerr = ensure_review_labels(cfg, repo=repo)
+            if not lerr:
+                code, err = _gh_pr_edit_labels(cfg, number, [add], remove)
+        if code == 0 or not graphql_blocked():
+            return code == 0, err
+    # The REST label endpoint does not refuse a label the repo lacks, as `gh
+    # pr edit` does, so the label is looked for first and the review labels
+    # are created the guarded way, with their colours, before it goes on.
+    if not wf_rest_pr.rest_label_exists(cfg, add):
+        ensure_review_labels(cfg, repo=repo)
+    return wf_rest_pr.rest_edit_labels(cfg, number, [add], remove)
 
 
 LABEL_DETAIL_QUERY = (
@@ -365,6 +414,8 @@ def fetch_label_details(cfg, repo=None):
         if cursor:
             fields['after'] = cursor
         ok, data, err = gh_graphql(LABEL_DETAIL_QUERY, **fields)
+        if not ok and graphql_blocked():
+            return wf_rest_pr.rest_repo_labels('%s/%s' % (owner, name))
         if not ok:
             return False, [], err
         page = (((data or {}).get('repository') or {}).get('labels')) or {}
@@ -475,6 +526,11 @@ def cmd_sibling_pr(args):
     """
     cfg = prepare_cfg()
     ok, data, err = gh_graphql(SIBLING_PR_QUERY, owner=cfg['org'], repo=cfg['repo'])
+    if not ok and graphql_blocked():
+        # REST has no closing references, so the bodies' closing keywords
+        # stand in for them (`wf_rest_pr.sibling_node`).
+        ok, nodes, err = wf_rest_pr.rest_sibling_nodes(cfg)
+        data = {'repository': {'pullRequests': {'nodes': nodes}}} if ok else None
     if not ok or not data:
         emit('error', EXIT_ENV,
              reason='could not read open PRs (%s)' % (err.strip() or 'no detail'))

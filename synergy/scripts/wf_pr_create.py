@@ -4,7 +4,9 @@ body, in one call.
 
 It replaces the push, `sibling-pr`, the stale-sibling `gh pr view`, `gh pr
 create`, and the read-back, corruption test and retry that `finish.md`,
-`bulk-finish.md` and `templates/body-file-write.md` described.
+`bulk-finish.md` and `templates/body-file-write.md` described. Where GraphQL
+is blocked, the create, the read-back and the rewrite go through REST
+(`wf_rest_pr.py`).
 `scripts/README.md` has the module map.
 """
 
@@ -13,10 +15,11 @@ import os
 import re
 
 import wf_core
+import wf_rest_pr
 from wf_config import prepare_cfg, repo_root
 from wf_io import (
     EXIT_ENV, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE, call_command, emit, emit_line,
-    gh_json, run,
+    gh_json, graphql_blocked, run, run_gh,
 )
 
 _PR_URL = re.compile(r'/pull/(\d+)')
@@ -28,10 +31,54 @@ def _write(path, text):
         fh.write(text)
 
 
-def _read_pr(repo, ref):
-    ok, data, err = gh_json(['pr', 'view', str(ref), '--repo', repo,
-                             '--json', 'number,url,body'])
-    return (data if ok and data else None), err
+def _read_pr(cfg, ref):
+    """The pull request `ref` names, with its number, URL and stored body.
+    (pr_or_None, err). Through REST when GraphQL is blocked."""
+    if not graphql_blocked():
+        ok, data, err = gh_json(['pr', 'view', str(ref), '--repo', _repo(cfg),
+                                 '--json', 'number,url,body'])
+        if ok and data:
+            return data, ''
+        if not graphql_blocked():
+            return None, err
+    return wf_rest_pr.rest_pr_view(cfg, ref)
+
+
+def _repo(cfg):
+    return '%s/%s' % (cfg['org'], cfg['repo'])
+
+
+def _create(cfg, base, branch, title, final, text):
+    """Open the pull request. (created, ref, note); `ref` is None when the
+    create failed, and `note` then says why.
+
+    `gh pr create` reads through GraphQL, so where GraphQL is blocked the
+    pull request is opened through REST with the same title, body and base.
+    """
+    if not graphql_blocked():
+        code, out, err = run_gh(['gh', 'pr', 'create', '--repo', _repo(cfg),
+                                 '--base', base, '--head', branch, '--title', title,
+                                 '--body-file', final])
+        if code == 0:
+            match = _PR_URL.search(out or '')
+            return True, match.group(1) if match else branch, None
+        if 'already exists' in (err or ''):
+            return False, branch, ''
+        if not graphql_blocked():
+            return False, None, 'gh pr create failed (%s)' % err.strip()
+    raw, existed, err = wf_rest_pr.rest_pr_create(cfg, base, branch, title, text)
+    if raw is None:
+        return False, None, 'REST pull request create failed (%s)' % err
+    return not existed, raw['number'], '' if existed else None
+
+
+def _edit_body(cfg, number, final, text):
+    if not graphql_blocked():
+        code, _, _ = run_gh(['gh', 'pr', 'edit', str(number), '--repo', _repo(cfg),
+                             '--body-file', final])
+        if code == 0 or not graphql_blocked():
+            return
+    wf_rest_pr.rest_pr_edit_body(cfg, number, text)
 
 
 def cmd_pr_create(args):
@@ -53,7 +100,6 @@ def cmd_pr_create(args):
         emit('usage', EXIT_USAGE, reason='name every issue the PR closes with --issue N')
 
     cfg = prepare_cfg()
-    repo = '%s/%s' % (cfg['org'], cfg['repo'])
     base = args.base or cfg['default_branch']
 
     code, branch, _ = run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
@@ -87,27 +133,20 @@ def cmd_pr_create(args):
     os.makedirs(os.path.dirname(final), exist_ok=True)
     _write(final, text)
 
-    code, out, err = run(['gh', 'pr', 'create', '--repo', repo, '--base', base,
-                          '--head', branch, '--title', args.title,
-                          '--body-file', final])
-    created = code == 0
-    if created:
-        match = _PR_URL.search(out or '')
-        ref = match.group(1) if match else branch
-    elif 'already exists' in (err or ''):
-        ref = branch
+    created, ref, why = _create(cfg, base, branch, args.title, final, text)
+    if ref is None:
+        emit('error', EXIT_ENV, reason=why)
+    if why == '':
         notes.append('a PR for this branch already existed; its body was checked')
-    else:
-        emit('error', EXIT_ENV, reason='gh pr create failed (%s)' % err.strip())
 
-    pr, rerr = _read_pr(repo, ref)
+    pr, rerr = _read_pr(cfg, ref)
     if pr is None:
         emit('partial', EXIT_PARTIAL, created=created, duplicates=duplicates,
              reason='PR created but could not be read back (%s)' % rerr)
     problems = wf_core.body_problems(pr.get('body'), issues)
     if problems:
-        run(['gh', 'pr', 'edit', str(pr['number']), '--repo', repo, '--body-file', final])
-        again, _ = _read_pr(repo, pr['number'])
+        _edit_body(cfg, pr['number'], final, text)
+        again, _ = _read_pr(cfg, pr['number'])
         problems = wf_core.body_problems((again or {}).get('body'), issues)
     try:
         os.remove(final)

@@ -12,12 +12,13 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 
 | Module | Responsibility | Lines |
 |--------|----------------|-------|
-| `wf.py` | Entry point: argument parser, dispatch, re-exports | 807 |
-| `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 272 |
+| `wf.py` | Entry point: argument parser, dispatch, re-exports | 809 |
+| `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 286 |
 | `wf_config.py` | Repo root (asked of git once per working directory), `ClaudeProject.md` parsing with its areas table, release-targets table and Jev row, the config cache, `config` | 549 |
-| `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 501 |
+| `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 506 |
 | `wf_issue_io.py` | Reading, writing and verifying single issues, the area label included; batched mutations; every label id a spec names, read to the last page | 535 |
 | `wf_rest.py` | The REST fallback where GraphQL is blocked: the open-issue read in the GraphQL shape, one issue read, `Stage` writes read back, the REST field ids, and the assign, unassign, comment, label and close edits a pick makes | 496 |
+| `wf_rest_pr.py` | The REST fallback for pull requests: open, read and edit one, its labels, the review pool, the open pull requests `sibling-pr` and `update-next` read, the repository's labels, and checking out a pull request's branch | 285 |
 | `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 239 |
 | `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 628 |
 | `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 478 |
@@ -30,7 +31,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 538 |
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
 | `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, the release notes and release labels of a settled issue, `post-merge`, `settle-merged` | 801 |
-| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 585 |
+| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 641 |
 | `wf_issue_apply.py` | `issue-apply`, including the `area` key that writes an issue's 1 area label | 867 |
 | `wf_issue_audit.py` | `issue-audit` | 189 |
 | `wf_areas.py` | `areas`: the rows of the areas table, or the area an issue's label names | 89 |
@@ -38,10 +39,10 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_release_targets.py` | `release-targets`: the folders each story of a pull request touched, the release targets Jev is sure of, and the ones left to the caller | 160 |
 | `wf_preflight.py` | `config-audit` and `preflight`, including `--fix` | 913 |
 | `wf_board_sync.py` | `board-sync` | 291 |
-| `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 381 |
+| `wf_steps.py` | Run boundaries: `start`, `exit-cleanup`, `tree-clean` | 385 |
 | `wf_worktrees.py` | Reading a worktree's age and state, removing one (links first), the sweep, `worktree-reap` | 281 |
 | `wf_block.py` | `block` | 132 |
-| `wf_pr_create.py` | `pr-create` | 128 |
+| `wf_pr_create.py` | `pr-create` | 167 |
 | `wf_core.py` | Facade: re-exports the rules below | 61 |
 | `wf_core_findings.py` | The finding record and the helpers findings are worded with | 46 |
 | `wf_core_fields.py` | Label resolution, native issue types, field vocabularies and ranks | 525 |
@@ -314,7 +315,7 @@ On REST, the pool read returns each issue in the shape the GraphQL query returns
 
 A REST `Stage` write names the option by its name, so it needs no option id, only the field's REST id. That id comes from the values the run has already read, then the `rest_field_ids` key of the capability cache, then the issue being written, then `/orgs/{org}/issue-fields`, and last the recently updated issues, so it resolves when the org endpoint is refused too. Each write is read back from GitHub's answer.
 
-Opening, viewing and listing pull requests, and `post-merge`, have no REST path yet.
+Pull requests go through REST too (`wf_rest_pr.py`), because `gh pr create`, `view`, `list`, `edit` and `checkout` all read through GraphQL inside `gh`. `pr-create` opens the pull request with the same title, body and base and reads it back; `review-next` and `update-next` read the same pool, so they pick the same pull request; `review-finish`, `handoff` and `claim --pr` move the review labels through the REST label endpoints; and `sibling-pr` finds the open pull requests that close an issue from the closing keywords in their bodies. REST lists each pull request's comments and reviews on their own, so the review pool costs two reads for each open pull request that is not a draft. The REST label endpoint does not refuse a label the repository lacks, as `gh pr edit` does, so a review label is looked for first and created with its colour and description when it is missing. An issue linked to a pull request by hand, with no closing keyword, is not seen on REST. `post-merge` has no REST path yet.
 
 ## Classified issues — `issue-apply`
 

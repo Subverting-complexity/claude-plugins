@@ -252,6 +252,20 @@ def reset_graphql_state():
     _graphql_state['announced'] = False
 
 
+def run_gh(args, input_text=None):
+    """Run a `gh` subcommand that reads or writes through GraphQL, such as
+    `gh pr create` or `gh pr edit`. Returns (code, out, err) as `run` does.
+
+    A 403 from GraphQL switches the run to REST, as it does for `gh_json`, so
+    the caller can test `graphql_blocked()` after a failure and take its REST
+    path. A `gh api` call is REST, and its 403 says nothing about GraphQL.
+    """
+    code, out, err = run(args, input_text=input_text)
+    if code != 0 and args[1:2] != ['api'] and 'graphql' in (err or '').lower():
+        note_graphql_result(code, out, err)
+    return code, out, err
+
+
 def gh_rest(path, method='GET', body=None):
     """Run one REST call through `gh api`. Returns (ok, parsed, err).
 

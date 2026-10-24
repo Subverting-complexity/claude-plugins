@@ -491,6 +491,11 @@ def fetch_repo_state(cfg, repo=None):
         if cursor:
             fields['after'] = cursor
         ok, data, err = gh_graphql(REPO_LABEL_QUERY, **fields)
+        if not ok and graphql_blocked():
+            # Imported here: wf_rest_pr imports wf_rest, which imports this.
+            import wf_rest_pr
+            ok, found, err = wf_rest_pr.rest_repo_labels('%s/%s' % (owner, name))
+            return (True, {'labels': [l['name'] for l in found]}, '') if ok                 else (False, None, err)
         if not ok:
             return False, None, err
         page = (((data or {}).get('repository') or {}).get('labels')) or {}
