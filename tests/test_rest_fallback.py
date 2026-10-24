@@ -155,6 +155,9 @@ class _GitHub(object):
             method, path = cmd[cmd.index('-X') + 1], cmd[cmd.index('-X') + 2]
             body = json.loads(input_text) if input_text else None
             return self._rest(method, path, body)
+        if cmd[:2] in (['gh', 'pr'], ['gh', 'issue']) and not self.graphql:
+            # `gh` reads through GraphQL inside these subcommands.
+            return 1, '', 'HTTP 403: Forbidden (https://api.github.com/graphql)'
         return 1, '', 'unexpected command %r' % cmd
 
     def _rest(self, method, path, body):
@@ -187,6 +190,12 @@ class _GitHub(object):
             return 0, json.dumps([{'id': v, 'name': k} for k, v in FIELD_IDS.items()]), ''
         if method == 'GET' and path.endswith('/issue-field-values'):
             return 0, json.dumps([]), ''
+        if method == 'GET' and path == 'user':
+            return 0, json.dumps({'login': 'builder'}), ''
+        if method in ('POST', 'DELETE') and (path.endswith('/assignees')
+                                             or path.endswith('/comments')):
+            self.writes.append((path, body))
+            return 0, '{}', ''
         if method == 'GET' and path.startswith(base + 'issues?state=all'):
             return 0, json.dumps([_rest_issue(POOL[0])]), ''
         if method == 'POST' and path.endswith('/issue-field-values'):
@@ -451,6 +460,78 @@ class TestPickEditsThroughRest(_Base):
                                  {5: ('I_5', 'one'), 6: (None, 'two')})
         self.assertEqual(out, {5: (True, 'commented'), 6: (True, 'commented')})
         self.assertEqual([b for _c, b in calls], [{'body': 'one'}, {'body': 'two'}])
+
+
+class TestAbandonedResetThroughRest(_Base):
+    """`pick --issue N` resets an issue whose pull request was closed without
+    merging. `gh pr list`, `gh issue edit` and `gh issue comment` read through
+    GraphQL, so where it is blocked the reset goes through REST."""
+
+    ABANDONED = {'number': 70, 'title': 'Old attempt', 'merged_at': None,
+                 'body': 'Closes #5'}
+
+    def _reset(self, closed, assignees=('someone',)):
+        hub = _GitHub(graphql=False, closed_prs=closed)
+        with mock.patch.object(wf, 'run', hub.run):
+            found, _ = self._quiet(wf.reset_abandoned, _cfg(), 5, list(assignees))
+        return found, hub
+
+    def test_the_first_refused_read_resets_the_issue_through_rest(self):
+        closed = [{'number': 71, 'merged_at': None, 'body': 'Closes #6'},
+                  self.ABANDONED]
+        found, hub = self._reset(closed)
+        self.assertEqual(found, 70)
+        self.assertTrue(wf_io.graphql_blocked())
+        self.assertIn(('repos/acme/widgets/issues/5/assignees',
+                       {'assignees': ['someone']}), hub.writes)
+        self.assertIn(('repos/acme/widgets/issues/5/comments',
+                       {'body': 'Resetting — PR #70 closed without merge.'}),
+                      hub.writes)
+        stage = [b for p, b in hub.writes if p.endswith('/issue-field-values')]
+        self.assertEqual(stage[0]['issue_field_values'][0]['value'], 'Backlog')
+        # The refused `gh pr list` was the only GraphQL call tried.
+        self.assertEqual([c[:3] for c in hub.calls if c[1] != 'api'],
+                         [['gh', 'pr', 'list']])
+
+    def test_a_merged_pull_request_is_never_abandoned(self):
+        merged = {'number': 72, 'merged_at': '2026-10-01T00:00:00Z',
+                  'state': 'closed', 'body': 'Fixes #5'}
+        found, hub = self._reset([merged, self.ABANDONED])
+        self.assertIsNone(found)
+        self.assertEqual(hub.writes, [])
+
+    def test_an_issue_no_closed_pull_request_closes_is_left_alone(self):
+        found, hub = self._reset([{'number': 71, 'merged_at': None,
+                                   'body': 'See #5'}])
+        self.assertIsNone(found)
+        self.assertEqual(hub.writes, [])
+
+    def test_with_graphql_on_the_reset_is_unchanged(self):
+        calls = []
+
+        def run(cmd, input_text=None):
+            calls.append(list(cmd))
+            if cmd[:3] == ['gh', 'pr', 'list']:
+                return 0, json.dumps([{'number': 70, 'title': 'Old attempt',
+                                       'mergedAt': None, 'closingIssuesReferences':
+                                       [{'number': 5}]}]), ''
+            return 0, '', ''
+
+        stages = []
+        with mock.patch.object(wf, 'run', run),                 mock.patch.object(wf, 'set_stage',
+                                  lambda cfg, n, stage, node_id=None:
+                                  stages.append((n, stage)) or (True, '')):
+            found, notice = self._quiet(wf.reset_abandoned, _cfg(), 5, ['someone'])
+        self.assertEqual(found, 70)
+        self.assertEqual(notice, '')
+        self.assertEqual(stages, [(5, 'Backlog')])
+        self.assertEqual(calls, [
+            ['gh', 'pr', 'list', '--repo', REPO, '--state', 'closed', '--search', '#5',
+             '--json', 'number,title,mergedAt,closingIssuesReferences'],
+            ['gh', 'issue', 'edit', '5', '--repo', REPO, '--remove-assignee', 'someone'],
+            ['gh', 'issue', 'comment', '5', '--repo', REPO, '--body',
+             'Resetting — PR #70 closed without merge.'],
+        ])
 
 
 class TestClosingReferences(unittest.TestCase):

@@ -1,8 +1,9 @@
 """
 The REST fallback for a session where GraphQL is blocked: the open-issue
 read the pick pool is judged from, one issue read, `Stage` writes with their
-read-back, the field ids those writes need, and the few issue edits a pick
-makes on the way (assign, unassign, comment, close, remove a label).
+read-back, the field ids those writes need, the closed pull requests read a
+page at a time, and the few issue edits a pick makes on the way (assign,
+unassign, comment, close, remove a label).
 
 `wf_io.graphql_blocked()` decides when these run. Each read returns its issues
 in the shape the GraphQL query returns them, so everything after the read --
@@ -282,6 +283,42 @@ def rest_dependency_facts(cfg, number):
             'prs_complete': False}
 
 
+# ── closed pull requests ─────────────────────────────────────────────────────
+
+def is_merged(raw):
+    """Whether a REST pull request merged. REST has no `MERGED` state: a closed
+    pull request merged when `merged_at` is set, whatever its `state` says."""
+    return bool(raw.get('merged_at'))
+
+
+def closing_refs(raw, repo):
+    """A REST pull request's closing references, as `gh pr list --json
+    closingIssuesReferences` lists them, read from the closing keywords in its
+    body. An issue linked by hand, with no keyword, is not among them."""
+    return [{'number': n} for n in wf_core.body_closing_numbers(raw.get('body'), repo)]
+
+
+def rest_closed_prs(cfg, keep, enough=None, max_pages=REST_MAX_PAGES):
+    """Closed pull requests, newest first, that `keep` accepts. (ok, kept,
+    err), where `kept` holds what was kept before any failure.
+
+    REST cannot filter closed pull requests by whether they merged or by the
+    issue they close, so they are read a page at a time and filtered here. The
+    read stops at a short page, once `enough` are kept, or after `max_pages`.
+    """
+    kept = []
+    for page in range(1, max_pages + 1):
+        ok, prs, err = gh_rest('repos/%s/pulls?state=closed&sort=created'
+                               '&direction=desc&per_page=%d&page=%d'
+                               % (_repo(cfg), REST_PAGE, page))
+        if not ok or not isinstance(prs, list):
+            return False, kept, err or 'unexpected REST response'
+        kept.extend(p for p in prs if isinstance(p, dict) and keep(p))
+        if (enough and len(kept) >= enough) or len(prs) < REST_PAGE:
+            break
+    return True, kept, ''
+
+
 # Merged pull requests the claim checks, newest first, as the GraphQL check
 # reads, and the pages of closed pull requests it may read to find them.
 MERGED_WINDOW = 100
@@ -296,16 +333,8 @@ def rest_merged_pr_closing(cfg, number):
     page at a time until a hundred merged ones are in hand, as many as the
     GraphQL check reads, or `MERGED_MAX_PAGES` run out.
     """
-    merged = []
-    for page in range(1, MERGED_MAX_PAGES + 1):
-        ok, prs, _err = gh_rest('repos/%s/pulls?state=closed&sort=created'
-                                '&direction=desc&per_page=%d&page=%d'
-                                % (_repo(cfg), REST_PAGE, page))
-        if not ok or not isinstance(prs, list):
-            break
-        merged.extend(pr for pr in prs if pr.get('merged_at'))
-        if len(merged) >= MERGED_WINDOW or len(prs) < REST_PAGE:
-            break
+    # A failed page ends the read with what was in hand, as it always has.
+    _ok, merged, _err = rest_closed_prs(cfg, is_merged, MERGED_WINDOW, MERGED_MAX_PAGES)
     matches = [pr['number'] for pr in merged[:MERGED_WINDOW]
                if int(number) in wf_core.body_closing_numbers(pr.get('body'), _repo(cfg))]
     return min(matches) if matches else None
