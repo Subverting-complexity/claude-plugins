@@ -54,12 +54,12 @@ class RunScratchTests(unittest.TestCase):
 
     def test_per_run_files_are_scratch(self):
         for name in ('plan.md', 'bulk-set.json', 'gate-failed.flag', 'claim-issue-4.sha',
-                     'report-spec.json', 'story-1-body.md'):
+                     'claim-issue-4.keep-label', 'report-spec.json', 'story-1-body.md'):
             self.assertTrue(wf_core.is_run_scratch(name), name)
 
     def test_caches_and_project_files_are_kept(self):
         for name in ('projected-config.md', 'wf-config.json', 'issue-fields-cache.json',
-                     'preflight-passed.txt', 'ecosystem.md',
+                     'preflight-passed.txt', 'ecosystem.md', 'wf-session-id',
                      'settings.json', 'architecture.md', 'preflight-dismiss.md'):
             self.assertFalse(wf_core.is_run_scratch(name), name)
 

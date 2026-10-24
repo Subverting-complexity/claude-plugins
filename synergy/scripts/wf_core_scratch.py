@@ -14,8 +14,9 @@ Pure: `scripts/README.md` has the module map.
 import fnmatch
 
 # Everything a run may leave under `.claude/`, as git ignore patterns.
-# `projected-config.md`, `wf-config.json` and `issue-fields-cache.json` are
-# caches that survive a run; the rest belong to one run.
+# `projected-config.md`, `wf-config.json`, `issue-fields-cache.json` and
+# `wf-session-id` (the session GUID outside Claude Code) survive a run; the
+# rest belong to one run.
 SCRATCH_IGNORE = (
     '.claude/plan.md',
     '.claude/projected-config.md',
@@ -24,6 +25,8 @@ SCRATCH_IGNORE = (
     '.claude/issue-fields-cache.json',
     '.claude/candidates.json',
     '.claude/claim-*.sha',
+    '.claude/claim-*.keep-label',
+    '.claude/wf-session-id',
     '.claude/wf-config.json',
     '.claude/bulk-set.json',
     '.claude/release-notes.json',
@@ -40,7 +43,8 @@ SCRATCH_IGNORE = (
 # next run a request, and the preflight marker the whole preflight skill.
 SCRATCH_RUN = (
     'plan.md', 'label-cache.json', 'candidates.json',
-    'claim-*.sha', 'bulk-set.json', 'release-notes.json', 'jev-*.json', '*.flag',
+    'claim-*.sha', 'claim-*.keep-label', 'bulk-set.json', 'release-notes.json',
+    'jev-*.json', '*.flag',
     '*-spec.json', '*-body.md',
 )
 

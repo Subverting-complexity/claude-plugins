@@ -197,7 +197,10 @@ class TestClaimReap(unittest.TestCase):
                 mock.patch.object(wf, 'claim_age_hours', lambda sha: 9), \
                 mock.patch.object(wf, 'claim_target_state',
                                   lambda cfg, target: states[target]), \
-                mock.patch.object(wf, 'release_claim', lambda t, **kw: t != 'issue-4'):
+                mock.patch.object(wf, 'release_claim', lambda t, **kw: t != 'issue-4'), \
+                mock.patch.object(wf, 'label_claims', lambda skip=(): []), \
+                mock.patch.object(wf, 'reap_session_labels',
+                                  lambda dry_run=False: ([], [])):
             code, payload = _capture(wf.cmd_claim_reap, args)
         self.assertEqual(code, wf.EXIT_PARTIAL)
         self.assertEqual([e['ref'] for e in payload['reaped']], ['refs/claims/issue-3'])
