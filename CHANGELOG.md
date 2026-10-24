@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.2.1
+
+- A claim push now sends 2 small objects instead of the whole project. `wf` built each claim commit on the project's tree with no parent, so git could not tell that GitHub already had the tree and sent every object in it, about 16 MB a claim in a large repository. A bulk run claims all its stories at once, and GitHub rejected some of those pushes at random, which released the whole set. The claim commit is now built on the empty tree, still with no parent, so it can never carry unpushed local commits. Its message is unchanged.
+
 ## synergy 20.2.0
 
 - `verify-feature` and the review that `build` runs now use one shared checklist, `_shared/review-checklist.md`. Before, the two checklists had drifted apart, and the `build` reviewer did not check modularity, extensibility or conventions.

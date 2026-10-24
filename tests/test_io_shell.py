@@ -1050,7 +1050,7 @@ class TestAtomicClaimCAS(unittest.TestCase):
         self._git(['init', '--bare', self.bare], cwd=self.tmp)
         self._git(['init', self.work], cwd=self.tmp)
         self._configure(self.work)
-        # An initial commit so `HEAD^{tree}` resolves for commit-tree.
+        # An initial commit, so the checkout has a HEAD like a real one.
         with open(os.path.join(self.work, 'README.md'), 'w'):
             pass
         self._git(['add', '.'], cwd=self.work)
@@ -1104,6 +1104,32 @@ class TestAtomicClaimCAS(unittest.TestCase):
         wf.release_claim('issue-1')
         self.assertFalse(self._ref_exists('issue-1'))
         self.assertFalse(os.path.isfile(marker))
+
+    def _claim_object(self, target, what):
+        return subprocess.run(
+            ['git', '--git-dir', self.bare, 'log', '-1', '--format=' + what,
+             'refs/claims/%s' % target],
+            capture_output=True, text=True).stdout.strip()
+
+    def test_claim_commit_is_the_empty_tree_with_no_parent(self):
+        """#431: built on HEAD's tree with no parent, a claim push sent the
+        whole project. On the empty tree it is two objects, whatever the
+        remote has, and an unpushed local commit never rides along."""
+        with open(os.path.join(self.work, 'big.txt'), 'w') as fh:
+            fh.write('x' * 10000)
+        self._git(['add', '.'], cwd=self.work)
+        self._git(['commit', '-m', 'unpushed'], cwd=self.work)
+        self.assertEqual(wf.acquire_claim('issue-1'), 'won')
+        empty = subprocess.run(['git', 'mktree'], cwd=self.work, input='',
+                               capture_output=True, text=True).stdout.strip()
+        self.assertEqual(self._claim_object('issue-1', '%T'), empty)
+        self.assertEqual(self._claim_object('issue-1', '%P'), '')
+        self.assertRegex(self._claim_object('issue-1', '%s'),
+                         r'^claim issue-1 \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ pid\d+-\d+$')
+        objects = subprocess.run(
+            ['git', '--git-dir', self.bare, 'rev-list', '--objects', '--all'],
+            capture_output=True, text=True).stdout.split()
+        self.assertEqual(len([o for o in objects if len(o) >= 40]), 2)
 
     def test_absent_ref_push_failure_is_error(self):
         """A push that fails while the ref stays absent is an environment error,
