@@ -14,7 +14,7 @@ import wf_core
 import wf_rest_pr
 from wf_capabilities import fetch_repo_state
 from wf_claim import acquire_claim, holds_claim, release_claims
-from wf_claim_assign import claim_error_reason, claim_ref_of
+from wf_claim_label import claim_error_reason, claim_ref_of
 from wf_config import prepare_cfg, repo_root
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, EXIT_PARTIAL, emit,
@@ -603,8 +603,8 @@ def cmd_handoff(args):
     # Reported rather than fatal, like the stage: the PR exists either way,
     # but a claim left behind keeps the issue locked until claim-reap. One
     # push for every issue claim (#300).
-    # An issue claimed by assignment stays assigned, as after a ref release.
-    releases = release_claims(['issue-%d' % n for n in numbers], keep_assignment=True)
+    # The issue stays assigned: claims never touch the assignment.
+    releases = release_claims(['issue-%d' % n for n in numbers])
     issues = []
     for number in numbers:
         written, message = outcomes.get(int(number), (False, 'not attempted'))

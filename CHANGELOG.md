@@ -6,6 +6,15 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.7.0
+
+- Cloud and local sessions now see each other's claims. Every claim adds the label `session: <guid>` to the issue or pull request, where the GUID names the Claude session, so a cloud run skips a story a local run holds and a local run skips one a cloud run holds. Before, each kind of session checked only its own kind of claim, and every session signs in as the same login, so a cloud run and a local run could take the same story.
+- Where the claim ref push works, the ref stays the primary lock and the label goes beside it. In a session that refuses claim refs, such as a Claude Code cloud session, the label is the only lock, and the run reads the claim ref first, so a story a local run holds is taken.
+- When 2 sessions label the same story at the same moment, the session whose label was added first keeps it, and the other removes its label and walks on.
+- Every run and every Builder in one Claude session shares the GUID, so a second run in the same session treats the first run's claims as its own.
+- The label replaces the assignment as the cloud lock that 20.6.0 added. `wf` still assigns a picked story, so GitHub shows who works on it, but the assignment no longer decides who holds the claim.
+- Releasing a claim removes the label as well as the ref. `wf claim-reap` deletes each `session:` label that no open issue or pull request carries.
+
 ## synergy 20.6.0
 
 - `wf` now claims stories in a session that refuses claim refs, such as a Claude Code cloud session. There, every push to `refs/claims/` and every write to the REST git data API answers HTTP 403, so `wf pick` could not claim anything and `execute` could not run. When a claim push is refused with 403, `wf` claims through an issue assignment instead: it assigns the run's login through the REST issues API, reads the assignees back, and goes on only when that login is the only one. A story already assigned to another login is not claimed.

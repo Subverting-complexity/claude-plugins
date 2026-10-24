@@ -13,7 +13,7 @@ from wf_candidates import (
     read_pool,
 )
 from wf_claim import acquire_claim, apply_in_progress, release_claim
-from wf_claim_assign import claim_error_reason
+from wf_claim_label import claim_error_reason
 from wf_deps import close_failed, close_resolved, mark_blocked, validate_issue
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_CAPABILITY, EXIT_ENV, EXIT_NEEDS_REFINEMENT, emit,

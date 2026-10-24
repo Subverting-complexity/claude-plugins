@@ -1,7 +1,8 @@
 """
 Claims: the atomic claim refs and markers, and the `claim`, `claim-release` and
-`claim-reap` subcommands. A session that refuses claim refs with 403 claims
-through an issue assignment instead (`wf_claim_assign.py`).
+`claim-reap` subcommands. Every claim also carries its session label, and a
+session that refuses claim refs with 403 claims with that label alone
+(`wf_claim_label.py`).
 
 Moved verbatim out of wf.py; `scripts/README.md` has the module map.
 """
@@ -13,10 +14,11 @@ from datetime import datetime, timezone
 
 import wf_core
 import wf_rest
-from wf_claim_assign import (
-    acquire_by_assignment, claim_error_reason, claim_marker_path, claim_refs_refused,
-    holds_assignment, mark_claim_refs_refused, push_refused,
-    read_assignment_marker, release_assignment,
+from wf_claim_label import (
+    acquire_by_label, add_and_settle, claim_error_reason, claim_marker_path,
+    claim_refs_refused, holds_label, mark_claim_refs_refused, push_refused,
+    read_label_marker, reap_session_labels, remove_session_label,
+    remove_session_labels,
 )
 from wf_config import check_environment, prepare_cfg, repo_root
 from wf_io import (
@@ -28,7 +30,7 @@ from wf_stage import set_stage, set_stages
 
 # ── claim + markers ──────────────────────────────────────────────────────────
 
-# The one marker path, shared with the assignment claims.
+# The one marker path, shared with the label claims.
 _claim_marker_path = claim_marker_path
 
 
@@ -48,12 +50,16 @@ def acquire_claim(target):
                 for "every candidate was already claimed" (a phantom
                 all-blocked the user reads as an empty backlog).
 
+    A won ref also gets this session's label (#440), so a session that cannot
+    read refs by pushing them still sees the claim. When another session's
+    label was added first, this run gives the ref back and loses.
+
     A push the remote refuses with 403, while the ref is absent, is a session
-    that allows no claim refs at all (#438). The claim is then taken by
-    assignment, and so is every later claim in the run.
+    that allows no claim refs at all (#438). The claim is then held by the
+    session label alone, and so is every later claim in the run.
     """
     if claim_refs_refused():
-        return acquire_by_assignment(target)
+        return acquire_by_label(target)
     # The claim commit carries the empty tree and no parent, so its push holds
     # two objects whatever the remote already has (#431). Built on HEAD's tree
     # with no parent, git could not tell the remote had that tree and sent the
@@ -90,7 +96,7 @@ def acquire_claim(target):
             return 'lost'
         if push_refused(push_err):
             mark_claim_refs_refused()
-            return acquire_by_assignment(target)
+            return acquire_by_label(target)
         eprint('wf: claim push for %s failed and the ref is absent — treating '
                'as an environment error (%s)' % (target, push_err.strip() or 'no detail'))
         return 'error'
@@ -98,6 +104,17 @@ def acquire_claim(target):
     os.makedirs(os.path.join(root, '.claude'), exist_ok=True)
     with open(_claim_marker_path(root, target), 'w', encoding='utf-8') as fh:
         fh.write(sha)
+    labelled = add_and_settle(target)
+    if labelled == 'lost':
+        # Another session's label came first: it holds the item, by label alone
+        # if it is a cloud session. Give the ref back.
+        if not release_claim(target):
+            eprint('wf: warning - %s is held by another session, and its claim '
+                   'ref could not be given back' % target)
+        return 'lost'
+    if labelled == 'error':
+        eprint('wf: warning - %s is claimed by its ref, but without its session '
+               'label a cloud session cannot see the claim' % target)
     return 'won'
 
 
@@ -114,10 +131,12 @@ def release_claim(target):
     a failed release only when the ref is still there or the remote cannot be
     asked.
 
-    A claim taken by assignment is released by removing the assignment.
+    The session label is removed as well. A claim held by the label alone is
+    released by removing the label.
     """
-    if read_assignment_marker(target) is not None:
-        return release_assignment(target)
+    if read_label_marker(target) is not None:
+        return _release_label_claim(target)
+    remove_session_label(target)
     ref = 'refs/claims/%s' % target
     code, _, err = run(['git', 'push', 'origin', ':%s' % ref])
     if code != 0:
@@ -139,7 +158,19 @@ def release_claim(target):
     return True
 
 
-def release_claims(targets, keep_assignment=False):
+def _release_label_claim(target):
+    """Release a claim held by the label alone. A label still on the item
+    keeps its marker, so a re-run can release it."""
+    if not remove_session_label(target):
+        return False
+    try:
+        os.remove(_claim_marker_path(repo_root(), target))
+    except OSError:
+        pass
+    return True
+
+
+def release_claims(targets):
     """Delete many claim refs in one push. Returns {target: released}.
 
     `release_claim` for a list, at the cost of one push however many refs
@@ -153,22 +184,22 @@ def release_claims(targets, keep_assignment=False):
     makes ls-remote exit 2 when it reached the remote and found none of them;
     any other failure leaves every ref's fate unknown, and none is reported as
     released. Only a released target's marker is removed, for the reason
-    `release_claim` gives. A claim taken by assignment costs one request of
-    its own, and the push names only the ref claims. `keep_assignment` is
-    passed on to `release_assignment`.
+    `release_claim` gives. The session labels come off in one batch
+    (`remove_session_labels`), and the push names only the ref claims.
     """
     targets = list(dict.fromkeys(targets or ()))
     if not targets:
         return {}
-    assigned = {target: release_assignment(target, keep_assignment)
+    labelled = {target: _release_label_claim(target)
                 for target in targets
-                if read_assignment_marker(target) is not None}
-    targets = [target for target in targets if target not in assigned]
+                if read_label_marker(target) is not None}
+    targets = [target for target in targets if target not in labelled]
     if not targets:
-        return assigned
+        return labelled
+    remove_session_labels(targets)
     refs = {target: 'refs/claims/%s' % target for target in targets}
     released = dict.fromkeys(targets, True)
-    released.update(assigned)
+    released.update(labelled)
     code, _, err = run(['git', 'push', 'origin']
                        + [':%s' % refs[target] for target in targets])
     if code != 0:
@@ -308,10 +339,11 @@ def holds_claim(target):
 
     It does when the marker Acquire wrote names the object the remote ref
     points at. A rival's claim is a different object, so it never matches.
-    A claim taken by assignment is held while its login is the only assignee.
+    The ref is checked first. A claim held by the label alone is held while
+    no claim ref is there and this session's label was added first.
     """
-    if read_assignment_marker(target) is not None:
-        return holds_assignment(target)
+    if read_label_marker(target) is not None:
+        return holds_label(target)
     try:
         with open(_claim_marker_path(repo_root(), target), encoding='utf-8') as fh:
             held = fh.read().strip()
@@ -451,6 +483,15 @@ def claim_target_state(cfg, target):
     return kind, number, state, labels, has_open_pr, assigned
 
 
+def _labels_reason(deleted, failed):
+    text = ''
+    if deleted:
+        text += '; %d unused session label(s) deleted' % len(deleted)
+    if failed:
+        text += '; %d unused session label(s) could not be deleted' % len(failed)
+    return text
+
+
 def cmd_claim_reap(args):
     """Free claim refs whose work has demonstrably moved on; flag the rest.
 
@@ -464,9 +505,15 @@ def cmd_claim_reap(args):
     refs, ferr = list_claim_refs()
     if refs is None:
         emit('error', EXIT_ENV, reason='could not list claim refs (%s)' % ferr)
+    # A `session:` label that no open issue or pull request carries is a
+    # finished session's; deleting it keeps the label list short (#440).
+    labels_deleted, labels_failed = reap_session_labels(dry_run=args.dry_run)
+    label_fields = {'labels_deleted': labels_deleted} if labels_deleted else {}
+    if labels_failed:
+        label_fields['labels_failed'] = labels_failed
     if not refs:
-        emit('ok', EXIT_OK, reaped=[], suspect=[], skipped=[],
-             reason='no active claim refs')
+        emit('ok', EXIT_OK, reaped=[], suspect=[], skipped=[], **label_fields,
+             reason='no active claim refs' + _labels_reason(labels_deleted, labels_failed))
 
     names = wf_core.review_names(cfg.get('review_labels'))
     active_review = [names['reviewing'], names['updating']]
@@ -497,10 +544,11 @@ def cmd_claim_reap(args):
     summary = wf_core.reap_summary(results)
     summary['reaped'] -= len(release_failed)
     reason = ('%d reaped, %d suspect (check by hand), %d too recent'
-              % (summary['reaped'], summary['suspect'], summary['skipped']))
+              % (summary['reaped'], summary['suspect'], summary['skipped'])
+              + _labels_reason(labels_deleted, labels_failed))
     fields = dict(reaped=detail[wf_core.REAP], suspect=detail[wf_core.SUSPECT],
                   skipped=detail[wf_core.SKIP], summary=summary,
-                  dry_run=bool(args.dry_run))
+                  dry_run=bool(args.dry_run), **label_fields)
     if release_failed:
         emit('partial', EXIT_PARTIAL, release_failed=release_failed, **fields,
              reason='%s; %d release(s) failed: %s' % (

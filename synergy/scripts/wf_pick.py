@@ -10,7 +10,7 @@ The selection is `wf_pick_select.py`, the tree and single-issue reads are
 import wf_core
 import wf_rest
 from wf_candidates import report_unprioritised
-from wf_claim_assign import claim_ref_of
+from wf_claim_label import claim_ref_of
 from wf_config import check_environment, load_config, prepare_cfg
 from wf_deps import known_edges
 from wf_io import (

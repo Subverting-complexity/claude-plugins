@@ -283,7 +283,9 @@ class TestClaimReleaseCallCount(_Counted):
             self.assertEqual(code, wf.EXIT_OK)
             self.assertEqual(payload['failed'], [])
             counts.append(len(hub.calls))
-        self.assertEqual(counts, [1, 1])
+        # The push, and the session label taken off: one REST call for one
+        # issue, one batched GraphQL read for four (#440).
+        self.assertEqual(counts, [2, 2])
 
     def test_a_remote_that_cannot_be_asked_releases_nothing(self):
         def run(cmd, input_text=None):

@@ -168,8 +168,7 @@ class HandoffTests(unittest.TestCase):
                 result, code = invoke(args.func, args)
             self.assertEqual(code, 0)
             self.assertEqual(sorted(os.listdir(folder)), ['preflight-passed.txt'])
-            # An issue claimed by assignment stays assigned through review (#438).
-            self.assertEqual(released, [(['issue-4'], {'keep_assignment': True})])
+            self.assertEqual(released, [(['issue-4'], {})])
 
 
 # The resolved path, not the bare name: on Windows a bare `bash` can start the
