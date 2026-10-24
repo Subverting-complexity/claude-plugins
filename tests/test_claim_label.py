@@ -54,6 +54,8 @@ class _Remote:
         self.repo_labels = {name for names in self.labels.values() for name in names}
         # A rival label GitHub adds just before ours, as in a race.
         self.race = race
+        # Finished work: closed, completed issues and merged pull requests.
+        self.closed, self.merged = set(), set()
         self.events = {}
         self.next_id = 100
         for number, names in self.labels.items():
@@ -64,7 +66,8 @@ class _Remote:
     def _event(self, number, name):
         self.next_id += 1
         self.events.setdefault(number, []).append(
-            {'id': self.next_id, 'event': 'labeled', 'label': {'name': name}})
+            {'id': self.next_id, 'event': 'labeled', 'label': {'name': name},
+             'created_at': '2026-01-01T00:00:00Z'})
 
     def run(self, cmd, input_text=None):
         self.git.append(list(cmd))
@@ -123,7 +126,12 @@ class _Remote:
             return True, [{'name': n} for n in current], ''
         if path.endswith('/labels'):
             return True, [{'name': n} for n in current], ''
-        return True, {'number': number, 'labels': [{'name': n} for n in current]}, ''
+        item = {'number': number, 'labels': [{'name': n} for n in current],
+                'state': 'closed' if number in self.closed | self.merged else 'open',
+                'state_reason': 'completed' if number in self.closed else None}
+        if number in self.merged:
+            item['pull_request'] = {'merged_at': '2026-10-24T00:00:00Z'}
+        return True, item, ''
 
     def writes(self):
         return [(m, p) for m, p, _ in self.rest if m != 'GET']
@@ -422,6 +430,141 @@ class TestReleaseAndHold(_Case):
         self.assertFalse(any('assignees' in p for _, p, _ in remote.rest))
 
 
+class TestReleaseKeepsTheRepositoryLabel(_Case):
+
+    def test_a_dropped_story_loses_the_label_and_the_repository_keeps_it(self):
+        remote = self.use(_Remote())
+        self.acquire('issue-5')
+        self.assertTrue(wf.release_claim('issue-5'))
+        self.assertEqual(remote.labels[5], [])
+        self.assertIn(MINE, remote.repo_labels)
+        self.assertFalse(any(m == 'DELETE' and '/labels/' in p and '/issues/' not in p
+                             for m, p, _ in remote.rest))
+
+    def test_release_takes_the_label_off_that_item_only(self):
+        remote = self.use(_Remote(push_err=REFUSED))
+        self.acquire('issue-5')
+        self.acquire('issue-6')
+        self.assertEqual(wf.release_claims(['issue-5']), {'issue-5': True})
+        self.assertEqual((remote.labels[5], remote.labels[6]), ([], [MINE]))
+
+    def test_exit_cleanup_on_an_unbuilt_story_takes_the_label_off(self):
+        remote = self.use(_Remote())
+        self.acquire('issue-5')
+        args = wf.build_parser().parse_args(['exit-cleanup', '--issue', '5'])
+        with mock.patch.object(wf, 'reap_finished', lambda: 0),                 mock.patch.object(wf, 'tree_entries', lambda: []),                 contextlib.redirect_stdout(io.StringIO()),                 contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                wf.cmd_exit_cleanup(args)
+        self.assertEqual(remote.labels[5], [])
+
+    def test_a_ref_release_that_leaves_the_label_is_not_released(self):
+        remote = self.use(_Remote())
+        self.acquire('issue-5')
+        real = remote.gh_rest
+
+        def failing(path, method='GET', body=None):
+            if method == 'DELETE' and '/issues/' in path:
+                return False, None, 'HTTP 502'
+            return real(path, method, body)
+        with mock.patch.object(wf, 'gh_rest', failing),                 contextlib.redirect_stderr(io.StringIO()):
+            self.assertFalse(wf.release_claim('issue-5'))
+            self.assertEqual(wf.release_claims(['issue-5']), {'issue-5': False})
+        self.assertEqual(self.marker('issue-5'), 'sha1')
+        self.assertTrue(wf.release_claim('issue-5'))
+        self.assertEqual(remote.labels[5], [])
+
+
+class TestFinishedWorkKeepsTheLabel(_Case):
+
+    def test_handoff_leaves_the_label_on_the_issue_in_review(self):
+        remote = self.use(_Remote())
+        self.acquire('issue-5')
+        self.assertEqual(wf.release_claims(['issue-5'], keep_label=True), {'issue-5': True})
+        self.assertEqual(remote.labels[5], [MINE])
+        self.assertIsNone(self.marker('issue-5'))
+
+    def test_exit_cleanup_after_the_handoff_leaves_the_label(self):
+        remote = self.use(_Remote())
+        self.acquire('issue-5')
+        wf.release_claims(['issue-5'], keep_label=True)
+        self.assertTrue(wf.release_claim('issue-5'))
+        self.assertEqual(remote.labels[5], [MINE])
+
+    def test_a_closed_completed_issue_keeps_the_label_at_release(self):
+        remote = self.use(_Remote(push_err=REFUSED))
+        self.acquire('issue-5')
+        remote.closed.add(5)
+        self.assertTrue(wf.release_claim('issue-5'))
+        self.assertEqual(remote.labels[5], [MINE])
+        self.assertIsNone(self.marker('issue-5'))
+
+    def test_a_merged_pull_request_keeps_the_label_at_exit_cleanup(self):
+        remote = self.use(_Remote())
+        self.acquire('pr-7')
+        remote.merged.add(7)
+        self.assertEqual(wf.release_claims(['pr-7']), {'pr-7': True})
+        self.assertEqual(remote.labels[7], [MINE])
+
+    def test_reap_never_strips_finished_work(self):
+        remote = self.use(_Remote(refs={'refs/claims/issue-5'}, labels={5: [RIVAL]}))
+        remote.closed.add(5)
+        self.assertTrue(wf.release_claim('issue-5', every_label=True))
+        self.assertEqual(remote.labels[5], [RIVAL])
+
+
+class TestUnreadableOrder(_Case):
+
+    def test_a_rival_label_with_no_event_read_is_no_win(self):
+        remote = self.use(_Remote(push_err=REFUSED, labels={5: [RIVAL]}))
+        remote.events[5] = []
+        outcome, _ = self.acquire('issue-5')
+        self.assertEqual(outcome, 'error')
+        self.assertEqual(remote.labels[5], [RIVAL])
+        self.assertIsNone(self.marker('issue-5'))
+
+
+class TestReapFreesCrashedClaims(_Case):
+
+    def _reap(self, remote, refs, target_state):
+        args = wf.build_parser().parse_args(['claim-reap'])
+        buf = io.StringIO()
+        with mock.patch.object(wf, 'list_claim_refs', lambda: (refs, '')),                 mock.patch.object(wf, 'claim_age_hours', lambda sha: 9),                 mock.patch.object(wf, 'claim_target_state', target_state),                 contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                wf.cmd_claim_reap(args)
+        return json.loads(buf.getvalue())
+
+    def test_a_crashed_local_claim_loses_its_label_and_the_story_can_be_claimed(self):
+        remote = self.use(_Remote(refs={'refs/claims/issue-5'}, labels={5: [RIVAL]}))
+        payload = self._reap(remote, [('sha0', 'issue-5')],
+                             lambda cfg, t: ('issue', 5, 'OPEN', [], False, False))
+        self.assertEqual([e['ref'] for e in payload['reaped']], ['refs/claims/issue-5'])
+        self.assertEqual(remote.labels[5], [])
+        self.assertNotIn('refs/claims/issue-5', remote.refs)
+        self.assertEqual(self.acquire('issue-5')[0], 'won')
+
+    def test_a_crashed_cloud_claim_held_by_its_label_alone_is_reaped(self):
+        remote = self.use(_Remote(labels={6: [RIVAL]}))
+        payload = self._reap(remote, [],
+                             lambda cfg, t: ('issue', 6, 'OPEN', [], False, False))
+        self.assertEqual([e['ref'] for e in payload['reaped']], ['label:' + RIVAL])
+        self.assertEqual(remote.labels[6], [])
+        self.assertEqual(self.acquire('issue-6')[0], 'won')
+
+    def test_an_issue_in_review_keeps_the_label_handoff_left(self):
+        remote = self.use(_Remote(labels={6: [RIVAL]}))
+        payload = self._reap(remote, [],
+                             lambda cfg, t: ('issue', 6, 'OPEN', [], True, False))
+        self.assertEqual(payload['reaped'], [])
+        self.assertEqual(remote.labels[6], [RIVAL])
+
+    def test_a_live_cloud_claim_is_left_alone(self):
+        remote = self.use(_Remote(labels={6: [RIVAL]}))
+        payload = self._reap(remote, [],
+                             lambda cfg, t: ('issue', 6, 'OPEN', [], False, True))
+        self.assertEqual(payload['reaped'], [])
+        self.assertEqual(remote.labels[6], [RIVAL])
+
+
 class TestBatchedRelease(_Case):
 
     def test_many_labels_come_off_in_one_graphql_read_and_one_mutation(self):
@@ -454,6 +597,12 @@ class TestBatchedRelease(_Case):
 
 class TestSessionGuid(_Case):
 
+    def test_the_id_the_session_start_hook_recorded_comes_first(self):
+        with mock.patch.dict(os.environ, {wf_claim_label.SESSION_ENV: 'hook-id',
+                                          wf_claim_label.CLAUDE_SESSION_ENV: 'env-id'}):
+            wf_claim_label.reset_claim_label_state()
+            self.assertEqual(wf_claim_label.session_label(), 'session: hook-id')
+
     def test_the_claude_session_id_names_the_session(self):
         with mock.patch.dict(os.environ, {wf_claim_label.SESSION_ENV: '',
                                           wf_claim_label.CLAUDE_SESSION_ENV:
@@ -474,8 +623,9 @@ class TestSessionGuid(_Case):
 
 class TestReap(_Case):
 
-    def test_reap_deletes_only_labels_no_open_item_carries(self):
+    def test_reap_deletes_only_labels_no_item_carries_open_or_closed(self):
         remote = self.use(_Remote(labels={5: [RIVAL]}))
+        remote.closed.add(5)
         remote.repo_labels.add('session: gone-guid')
         remote.repo_labels.add('bug')
         deleted, failed = wf_claim_label.reap_session_labels()

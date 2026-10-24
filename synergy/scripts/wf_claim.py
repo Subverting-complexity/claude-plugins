@@ -16,9 +16,9 @@ import wf_core
 import wf_rest
 from wf_claim_label import (
     acquire_by_label, add_and_settle, claim_error_reason, claim_marker_path,
-    claim_refs_refused, holds_label, mark_claim_refs_refused, push_refused,
-    read_label_marker, reap_session_labels, remove_session_label,
-    remove_session_labels,
+    claim_refs_refused, holds_label, label_claims, release_label,
+    mark_claim_refs_refused, push_refused, read_label_marker, reap_session_labels,
+    remove_every_session_label, remove_session_label, remove_session_labels,
 )
 from wf_config import check_environment, prepare_cfg, repo_root
 from wf_io import (
@@ -118,7 +118,12 @@ def acquire_claim(target):
     return 'won'
 
 
-def release_claim(target):
+def _marked(target):
+    """Whether this checkout has a marker for `target`: it holds the claim."""
+    return os.path.exists(_claim_marker_path(repo_root(), target))
+
+
+def release_claim(target, every_label=False, keep_label=False):
     """Delete refs/claims/<target> and this checkout's marker for it.
 
     Returns True when the ref is gone from the remote and False when it may
@@ -131,12 +136,25 @@ def release_claim(target):
     a failed release only when the ref is still there or the remote cannot be
     asked.
 
-    The session label is removed as well. A claim held by the label alone is
-    released by removing the label.
+    When this checkout holds the claim, its session label comes off that item
+    too (#440), and a label that stays is a failed release: it would go on
+    holding the item from every other session. A closed, completed issue and
+    a merged pull request keep the label as their record (`release_label`).
+    With no marker, this checkout holds nothing, and a label still on the
+    item is a record `handoff` left, so it stays. `keep_label` leaves it on
+    purpose, for `handoff`. `every_label` takes every session's label off an
+    open item, for `claim-reap` freeing a claim this session never held. A
+    claim held by the label alone is released by removing the label.
     """
-    if read_label_marker(target) is not None:
-        return _release_label_claim(target)
-    remove_session_label(target)
+    held = _marked(target)
+    if read_label_marker(target) is not None and not every_label:
+        return _release_label_claim(target, keep_label)
+    if every_label:
+        labels_off = remove_every_session_label(target)
+    elif held and not keep_label:
+        labels_off = release_label(target)
+    else:
+        labels_off = True
     ref = 'refs/claims/%s' % target
     code, _, err = run(['git', 'push', 'origin', ':%s' % ref])
     if code != 0:
@@ -150,18 +168,10 @@ def release_claim(target):
             # The marker stays as well: the ref is still this checkout's, and
             # the marker is what lets `claim --keep-held` recognise it as such.
             return False
-    marker = _claim_marker_path(repo_root(), target)
-    try:
-        os.remove(marker)
-    except OSError:
-        pass
-    return True
-
-
-def _release_label_claim(target):
-    """Release a claim held by the label alone. A label still on the item
-    keeps its marker, so a re-run can release it."""
-    if not remove_session_label(target):
+    if not labels_off:
+        # The marker stays, so a re-run takes the label off.
+        eprint('wf: warning - %s is released from its ref, but its session '
+               'label is still on it' % target)
         return False
     try:
         os.remove(_claim_marker_path(repo_root(), target))
@@ -170,7 +180,19 @@ def _release_label_claim(target):
     return True
 
 
-def release_claims(targets):
+def _release_label_claim(target, keep_label=False):
+    """Release a claim held by the label alone. A label still on an open item
+    keeps its marker, so a re-run can release it."""
+    if not keep_label and not release_label(target):
+        return False
+    try:
+        os.remove(_claim_marker_path(repo_root(), target))
+    except OSError:
+        pass
+    return True
+
+
+def release_claims(targets, keep_label=False):
     """Delete many claim refs in one push. Returns {target: released}.
 
     `release_claim` for a list, at the cost of one push however many refs
@@ -184,20 +206,33 @@ def release_claims(targets):
     makes ls-remote exit 2 when it reached the remote and found none of them;
     any other failure leaves every ref's fate unknown, and none is reported as
     released. Only a released target's marker is removed, for the reason
-    `release_claim` gives. The session labels come off in one batch
-    (`remove_session_labels`), and the push names only the ref claims.
+    `release_claim` gives. The session labels of the claims this checkout
+    holds come off in one batch (`remove_session_labels`), finished work
+    keeping its label, and a label that stays fails its target's release.
+    `keep_label` leaves every label where it is, for `handoff`. The push names
+    only the ref claims.
     """
     targets = list(dict.fromkeys(targets or ()))
     if not targets:
         return {}
-    labelled = {target: _release_label_claim(target)
-                for target in targets
-                if read_label_marker(target) is not None}
-    targets = [target for target in targets if target not in labelled]
+    label_only = [t for t in targets if read_label_marker(t) is not None]
+    ref_targets = [t for t in targets if t not in label_only]
+    unlabel = [] if keep_label else [t for t in targets if _marked(t)]
+    labels_off = dict.fromkeys(targets, True)
+    labels_off.update(remove_session_labels(unlabel))
+    released = {t: bool(labels_off.get(t)) for t in label_only}
+    root = repo_root()
+    for target in label_only:
+        if released[target]:
+            try:
+                os.remove(_claim_marker_path(root, target))
+            except OSError:
+                pass
+    targets = ref_targets
     if not targets:
-        return labelled
-    remove_session_labels(targets)
+        return released
     refs = {target: 'refs/claims/%s' % target for target in targets}
+    labelled = released
     released = dict.fromkeys(targets, True)
     released.update(labelled)
     code, _, err = run(['git', 'push', 'origin']
@@ -224,7 +259,13 @@ def release_claims(targets):
                       err.strip() or 'no detail',
                       'it stays' if len(failed) == 1 else 'they stay',
                       'it' if len(failed) == 1 else 'them'))
-    root = repo_root()
+    stuck = [t for t in targets if released[t] and not labels_off.get(t)]
+    for target in stuck:
+        released[target] = False
+    if stuck:
+        eprint('wf: warning - %s released from %s ref, but the session label is '
+               'still on %s' % (', '.join(stuck), 'its' if len(stuck) == 1 else 'their',
+                                'it' if len(stuck) == 1 else 'them'))
     for target in targets:
         if not released[target]:
             continue
@@ -497,6 +538,15 @@ def cmd_claim_reap(args):
 
     Replaces the hand-run procedure this command was extracted from. The
     judgement is `wf_core.reap_verdict`; everything here is I/O.
+
+    A freed open item loses every `session:` label, not only this session's:
+    a crashed session's label would otherwise stay first on it and every
+    later claim would lose to it (#440). A claim held by a label alone, which
+    a cloud session takes, is judged the same way, its age read from the
+    label's `labeled` event, and freed by taking that label off; an issue in
+    review keeps the label `handoff` left on it. Finished work keeps its
+    labels. Last, each `session:` label no issue or pull request carries,
+    open or closed, is deleted from the repository.
     """
     err = check_environment()
     if err:
@@ -505,41 +555,56 @@ def cmd_claim_reap(args):
     refs, ferr = list_claim_refs()
     if refs is None:
         emit('error', EXIT_ENV, reason='could not list claim refs (%s)' % ferr)
+
+    names = wf_core.review_names(cfg.get('review_labels'))
+    active_review = [names['reviewing'], names['updating']]
+
+    def judge(target, age, label=None):
+        kind, number, state, labels, has_open_pr, assigned = \
+            claim_target_state(cfg, target)
+        if kind is None:
+            return wf_core.SUSPECT, 'not an issue or PR claim'
+        if label and has_open_pr:
+            # `handoff` leaves the label on an issue in review, so that it
+            # still carries it once the pull request merges. Not a claim.
+            return None, None
+        return wf_core.reap_verdict(
+            kind, age, state, labels, threshold=args.threshold,
+            review_labels=active_review, has_open_pr=has_open_pr,
+            assigned=assigned)
+
+    results, detail = [], {wf_core.REAP: [], wf_core.SUSPECT: [], wf_core.SKIP: []}
+    release_failed = []
+    claims = [('refs/claims/%s' % target, target, None, claim_age_hours(sha))
+              for sha, target in refs]
+    claims += [('label:%s' % label, target, label, age)
+               for target, label, age in label_claims({t for _, t in refs})]
+    for held_by, target, label, age in claims:
+        verdict, reason = judge(target, age, label)
+        if verdict is None:
+            continue
+        results.append((target, verdict, reason))
+        entry = {'ref': held_by, 'reason': reason}
+        if age is not None:
+            entry['age_hours'] = age
+        if verdict == wf_core.REAP and not args.dry_run:
+            freed = (remove_session_label(target, label) if label
+                     else release_claim(target, every_label=True))
+            if not freed:
+                # The ref or the label is still there, so it is not reaped.
+                release_failed.append(entry)
+                continue
+        detail[verdict].append(entry)
+
     # A `session:` label that no open issue or pull request carries is a
     # finished session's; deleting it keeps the label list short (#440).
     labels_deleted, labels_failed = reap_session_labels(dry_run=args.dry_run)
     label_fields = {'labels_deleted': labels_deleted} if labels_deleted else {}
     if labels_failed:
         label_fields['labels_failed'] = labels_failed
-    if not refs:
+    if not claims:
         emit('ok', EXIT_OK, reaped=[], suspect=[], skipped=[], **label_fields,
              reason='no active claim refs' + _labels_reason(labels_deleted, labels_failed))
-
-    names = wf_core.review_names(cfg.get('review_labels'))
-    active_review = [names['reviewing'], names['updating']]
-
-    results, detail = [], {wf_core.REAP: [], wf_core.SUSPECT: [], wf_core.SKIP: []}
-    release_failed = []
-    for sha, target in refs:
-        kind, number, state, labels, has_open_pr, assigned = \
-            claim_target_state(cfg, target)
-        age = claim_age_hours(sha)
-        if kind is None:
-            verdict, reason = wf_core.SUSPECT, 'not an issue or PR claim'
-        else:
-            verdict, reason = wf_core.reap_verdict(
-                kind, age, state, labels, threshold=args.threshold,
-                review_labels=active_review, has_open_pr=has_open_pr,
-                assigned=assigned)
-        results.append((target, verdict, reason))
-        entry = {'ref': 'refs/claims/%s' % target, 'reason': reason}
-        if age is not None:
-            entry['age_hours'] = age
-        if verdict == wf_core.REAP and not args.dry_run and not release_claim(target):
-            # The ref is still there, so it is not reaped.
-            release_failed.append(entry)
-            continue
-        detail[verdict].append(entry)
 
     summary = wf_core.reap_summary(results)
     summary['reaped'] -= len(release_failed)

@@ -22,11 +22,14 @@ also adds the label `session: <guid>` to the issue or pull request, where
 - Every run and every Builder in one Claude session shares the GUID, so a
   second run in the same session treats the first run's label as its own.
 
-Releasing a claim removes the label as well as the ref. `claim-reap` deletes a
-`session:` label from the repository once no open issue or pull request
-carries it; release does not, because a run in the same session may be adding
-it to another item at that moment, and deleting a label takes it off every
-item.
+Releasing a claim this checkout holds removes the label from that item only.
+A closed, completed issue and a merged pull request keep their label for good,
+as the record of the session that built them, and `handoff` leaves the label
+on each issue it hands to review so the issue still carries it when it
+closes. The repository label is deleted only by `claim-reap`, once no issue or
+pull request, open or closed, carries it: deleting a label takes it off every
+item. `claim-reap` frees a crashed claim by taking every `session:` label off
+the item, and judges a claim held by a label alone as it judges a ref.
 
 The marker file `.claude/claim-<target>.sha` holds the ref's sha for a ref
 claim, or `session:<guid>` for a claim held by the label alone.
@@ -37,7 +40,9 @@ claim, or `session:<guid>` for a claim held by the label alone.
 import os
 import re
 import threading
+import time
 import uuid
+from datetime import datetime
 from urllib.parse import quote
 
 from wf_config import load_config, repo_root
@@ -107,10 +112,13 @@ def _clean_guid(raw):
 def session_guid():
     """The GUID of this Claude session.
 
-    `WF_SESSION_ID` when it is set, else `CLAUDE_CODE_SESSION_ID`, which
-    Claude Code gives every command in the session, a Builder's included.
-    Outside Claude Code, a GUID kept in `.claude/wf-session-id` of this
-    checkout, so the runs in one checkout share it.
+    `WF_SESSION_ID` first: the plugin's SessionStart hook
+    (`hooks/session-id.sh`) sets it from the `session_id` Claude Code passes
+    the hook, so it is the session's own id. Else `CLAUDE_CODE_SESSION_ID`,
+    which Claude Code sets in the process every command runs in, so a Builder
+    sees its parent session's id. Else, outside Claude Code, a random GUID
+    kept in `.claude/wf-session-id` of this checkout, so the runs in one
+    checkout share it.
     """
     with _lock:
         if _state['session']:
@@ -225,11 +233,12 @@ def _first_added(path, present):
                 latest[name] = max(latest.get(name, 0), int(event.get('id') or 0))
         if len(events) < 100:
             break
-    if not latest:
+    if any(name not in latest for name in present):
+        # A present label whose event was not read cannot be placed. Guessing
+        # its place could let two sessions both hold the item, so the order is
+        # unreadable and the caller gives its own label back.
         return None
-    # A label that is present but whose event was not found sorts last: it
-    # cannot be shown to have come first.
-    return min(present, key=lambda name: latest.get(name, float('inf')))
+    return min(present, key=lambda name: latest[name])
 
 
 def label_winner(path, names):
@@ -249,10 +258,11 @@ def label_winner(path, names):
 
 def remove_session_label(target, label=None):
     """Take this session's label off `target`. True when it is gone; a label
-    that is not there is gone."""
+    that is not there is gone. With no org/repo in the config no claim could
+    have added it, so it is gone too."""
     path = _issue_path(target)
     if not path:
-        return False
+        return True
     label = label or session_label()
     ok, _data, err = gh_rest('%s/labels/%s' % (path, quote(label, safe='')), 'DELETE')
     if ok or '404' in (err or '') or 'not found' in (err or '').lower():
@@ -262,21 +272,168 @@ def remove_session_label(target, label=None):
     return False
 
 
+def _carried(repo, name):
+    """True when any issue or pull request, open or closed, carries the
+    label, False when none does, None when the answer cannot be read."""
+    ok, items, _err = gh_rest('repos/%s/issues?state=all&per_page=1&labels=%s'
+                              % (repo, quote(name, safe='')))
+    if not ok or not isinstance(items, list):
+        return None
+    return bool(items)
+
+
+def _delete_repo_label(repo, name):
+    ok, _data, err = gh_rest('repos/%s/labels/%s' % (repo, quote(name, safe='')),
+                             'DELETE')
+    return ok or '404' in (err or '') or 'not found' in (err or '').lower()
+
+
+def remove_every_session_label(target):
+    """Take every `session:` label off `target`, whichever session added it.
+    `claim-reap` calls this for an item it frees, because a crashed session's
+    label would otherwise come first on it and every later claim would lose.
+    Finished work keeps its labels. True when none is left on an open item."""
+    path = _issue_path(target)
+    if not path or is_record(target):
+        return True
+    return strip_session_labels(path)
+
+
+def strip_session_labels(path):
+    """Take every `session:` label off the open item at `path`
+    (`repos/{owner}/{repo}/issues/{n}`). True when none is left. `pick`
+    calls it when it resets an issue whose pull request closed unmerged."""
+    ok, data, _err = gh_rest(path + '/labels')
+    if not ok:
+        return False
+    gone = True
+    for name in _label_names(data):
+        if not is_session_label(name):
+            continue
+        done, _data, err = gh_rest('%s/labels/%s' % (path, quote(name, safe='')),
+                                   'DELETE')
+        if not (done or '404' in (err or '')):
+            eprint('wf: warning - could not remove the label "%s" from %s (%s)'
+                   % (name, path, err or 'no detail'))
+            gone = False
+    return gone
+
+
+def _hours_since(stamp):
+    try:
+        then = datetime.strptime(stamp, '%Y-%m-%dT%H:%M:%SZ')
+    except (TypeError, ValueError):
+        return None
+    return int((time.time() - (then - datetime(1970, 1, 1)).total_seconds()) // 3600)
+
+
+def label_claims(skip=()):
+    """Every claim held by a `session:` label alone, for `claim-reap`.
+
+    Returns [(target, label, age_hours)] for each open issue or pull request
+    carrying a `session:` label whose target is not in `skip` (the items that
+    have a claim ref, which the ref pass judges). The age comes from the
+    label's latest `labeled` event, None when it cannot be read.
+    """
+    repo = _repo()
+    if not repo:
+        return []
+    claims = []
+    for name in _session_repo_labels(repo):
+        ok, items, _err = gh_rest('repos/%s/issues?state=open&per_page=100&labels=%s'
+                                  % (repo, quote(name, safe='')))
+        if not ok or not isinstance(items, list):
+            continue
+        for item in items:
+            number = (item or {}).get('number')
+            if not number:
+                continue
+            target = ('pr-%d' if item.get('pull_request') else 'issue-%d') % number
+            if target in skip:
+                continue
+            claims.append((target, name, _label_age(repo, number, name)))
+    return claims
+
+
+def _label_age(repo, number, name):
+    stamp = None
+    for page in range(1, _EVENT_PAGES + 1):
+        ok, events, _err = gh_rest('repos/%s/issues/%d/events?per_page=100&page=%d'
+                                   % (repo, number, page))
+        if not ok or not isinstance(events, list):
+            return None
+        for event in events:
+            if ((event or {}).get('event') == 'labeled'
+                    and ((event.get('label') or {}).get('name')) == name):
+                stamp = event.get('created_at') or stamp
+        if len(events) < 100:
+            break
+    return _hours_since(stamp) if stamp else None
+
+
+def _session_repo_labels(repo):
+    names = []
+    for page in range(1, _EVENT_PAGES + 1):
+        ok, labels, _err = gh_rest('repos/%s/labels?per_page=100&page=%d' % (repo, page))
+        if not ok or not isinstance(labels, list):
+            break
+        names += [n for n in _label_names(labels) if is_session_label(n)]
+        if len(labels) < 100:
+            break
+    return names
+
+
+def _record_of(item, kind):
+    """Whether an issue or pull request, as REST returns it, is a finished
+    piece of work whose session label stays as its record."""
+    if kind == 'pr' or (item or {}).get('pull_request'):
+        return bool(((item or {}).get('pull_request') or {}).get('merged_at')
+                    or (item or {}).get('merged_at'))
+    return ((item or {}).get('state') == 'closed'
+            and (item or {}).get('state_reason') in (None, 'completed'))
+
+
+def is_record(target):
+    """True when `target` is a closed, completed issue or a merged pull
+    request, whose session label stays for good. False when it cannot be
+    read: the label then comes off, as for any open item."""
+    path = _issue_path(target)
+    if not path:
+        return False
+    ok, item, _err = gh_rest(path)
+    return bool(ok and isinstance(item, dict)
+                and _record_of(item, target.partition('-')[0]))
+
+
+def release_label(target, label=None):
+    """Take this session's label off `target` at release, unless the item is
+    finished work, which keeps it. True when the claim no longer holds it."""
+    if is_record(target):
+        return True
+    return remove_session_label(target, label)
+
+
 def remove_session_labels(targets):
-    """Take this session's label off many items. Returns {target: removed}.
+    """Take this session's label off many items at release, leaving it on
+    finished work as `release_label` does. Returns {target: removed}.
 
     Through GraphQL this costs two requests however many items there are: one
-    read of their node ids and the label's, and one aliased mutation. Where
-    GraphQL is blocked, or the batch fails, each item costs one REST request.
+    read of their node ids, their state and the label's id, and one aliased
+    mutation. Where GraphQL is blocked, or the batch fails, each item costs a
+    read and a removal through REST.
     """
-    targets = [t for t in dict.fromkeys(targets or ()) if _issue_path(t)]
+    targets = list(dict.fromkeys(targets or ()))
+    done = {t: True for t in targets if not _issue_path(t)}
+    targets = [t for t in targets if t not in done]
     if not targets:
-        return {}
+        return done
     if len(targets) > 1 and not graphql_blocked():
-        done = _remove_labels_graphql(targets)
-        if done is not None:
+        batch = _remove_labels_graphql(targets)
+        if batch is not None:
+            done.update(batch)
             return done
-    return {target: remove_session_label(target) for target in targets}
+    done.update((target, release_label(target)) for target in targets)
+    return done
 
 
 def _remove_labels_graphql(targets):
@@ -284,8 +441,8 @@ def _remove_labels_graphql(targets):
     owner, _, name = _repo().partition('/')
     label = session_label()
     items = ''.join(
-        ' t%d: issueOrPullRequest(number: %d) { ... on Issue { id } '
-        '... on PullRequest { id } }' % (i, int(t.partition('-')[2]))
+        ' t%d: issueOrPullRequest(number: %d) { ... on Issue { id state stateReason } '
+        '... on PullRequest { id merged } }' % (i, int(t.partition('-')[2]))
         for i, t in enumerate(targets))
     query = ('query($owner: String!, $name: String!, $label: String!) { '
              'repository(owner: $owner, name: $name) { label(name: $label) { id }%s } }'
@@ -297,7 +454,13 @@ def _remove_labels_graphql(targets):
     if not repo.get('label'):
         # No item can carry a label the repository does not have.
         return dict.fromkeys(targets, True)
-    ids = {t: ((repo.get('t%d' % i) or {}).get('id')) for i, t in enumerate(targets)}
+    ids = {}
+    for i, t in enumerate(targets):
+        node = repo.get('t%d' % i) or {}
+        finished = node.get('merged') or (
+            node.get('state') == 'CLOSED'
+            and node.get('stateReason') in (None, 'COMPLETED'))
+        ids[t] = None if finished else node.get('id')
     body = ''.join(
         ' r%d: removeLabelsFromLabelable(input: {labelableId: "%s", labelIds: ["%s"]}) '
         '{ clientMutationId }' % (i, ids[t], repo['label']['id'])
@@ -383,29 +546,19 @@ def holds_label(target):
 
 
 def reap_session_labels(dry_run=False):
-    """Delete each `session:` repository label that no open issue or pull
-    request carries. Returns (deleted, failed), lists of label names."""
+    """Delete each `session:` repository label that no issue or pull
+    request carries, open or closed: deleting a label takes it off every item,
+    closed ones included, so a label still on a finished item is its record
+    and stays. Returns (deleted, failed), lists of label names."""
     repo = _repo()
     if not repo:
         return [], []
-    names = []
-    for page in range(1, _EVENT_PAGES + 1):
-        ok, labels, _err = gh_rest('repos/%s/labels?per_page=100&page=%d' % (repo, page))
-        if not ok or not isinstance(labels, list):
-            break
-        names += [n for n in _label_names(labels) if is_session_label(n)]
-        if len(labels) < 100:
-            break
     deleted, failed = [], []
-    for name in names:
-        ok, carried, _err = gh_rest('repos/%s/issues?state=open&per_page=1&labels=%s'
-                                    % (repo, quote(name, safe='')))
-        if not ok or not isinstance(carried, list) or carried:
+    for name in _session_repo_labels(repo):
+        if _carried(repo, name) is not False:
             continue
-        if dry_run:
+        if dry_run or _delete_repo_label(repo, name):
             deleted.append(name)
-            continue
-        ok, _data, err = gh_rest('repos/%s/labels/%s' % (repo, quote(name, safe='')),
-                                 'DELETE')
-        (deleted if ok or '404' in (err or '') else failed).append(name)
+        else:
+            failed.append(name)
     return deleted, failed

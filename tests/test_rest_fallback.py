@@ -530,6 +530,8 @@ class TestAbandonedResetThroughRest(_Base):
             ['gh', 'pr', 'list', '--repo', REPO, '--state', 'closed', '--search', '#5',
              '--json', 'number,title,mergedAt,closingIssuesReferences'],
             ['gh', 'issue', 'edit', '5', '--repo', REPO, '--remove-assignee', 'someone'],
+            # Any session label `handoff` left comes off (#440).
+            ['gh', 'api', '-X', 'GET', 'repos/%s/issues/5/labels' % REPO],
             ['gh', 'issue', 'comment', '5', '--repo', REPO, '--body',
              'Resetting — PR #70 closed without merge.'],
         ])
