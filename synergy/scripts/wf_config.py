@@ -499,7 +499,7 @@ def cmd_run_init(args):
     # Stray claim-marker scratch a hard-killed run left behind. `--others`
     # (untracked only) spares a marker a project committed on purpose.
     _, out, _ = run(['git', 'ls-files', '-z', '--others', '--',
-                    '.claude/claim-issue-*.sha'])
+                    '.claude/claim-issue-*.sha', '.claude/claim-issue-*.session'])
     for rel in (out or '').split('\0'):
         if rel:
             try:

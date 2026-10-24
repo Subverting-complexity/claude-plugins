@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 import wf_core
 import wf_rest
 from wf_claim_label import (
-    acquire_by_label, add_and_settle, claim_error_reason, claim_marker_path,
-    claim_refs_refused, holds_label, keep_label_path, label_claims, release_label,
+    acquire_by_label, add_and_settle, claim_error_reason, claim_label,
+    claim_marker_path, claim_refs_refused, claim_session_path, holds_label, keep_label_path, label_claims, release_label,
     mark_claim_refs_refused, push_refused, read_label_marker, reap_session_labels,
     session_guid, session_label, write_claim_marker,
     remove_every_session_label, remove_session_label, remove_session_labels,
@@ -101,7 +101,9 @@ def acquire_claim(target):
         eprint('wf: claim push for %s failed and the ref is absent — treating '
                'as an environment error (%s)' % (target, push_err.strip() or 'no detail'))
         return 'error'
-    write_claim_marker(repo_root(), target, sha)
+    # The GUID goes beside the marker, so the release removes the label this
+    # claim adds even after the session id changed (#442).
+    write_claim_marker(repo_root(), target, sha, session_guid())
     labelled = add_and_settle(target)
     if labelled == 'lost':
         # Another session's label came first: it holds the item, by label alone
@@ -134,7 +136,9 @@ def _unlabels(target):
 
 
 def _drop_marker(target):
-    for path in (_claim_marker_path(repo_root(), target), _keep_label_path(target)):
+    root = repo_root()
+    for path in (_claim_marker_path(root, target), _keep_label_path(target),
+                 claim_session_path(root, target)):
         try:
             os.remove(path)
         except OSError:
@@ -178,7 +182,7 @@ def release_claim(target, every_label=False, keep_label=False):
     if every_label:
         labels_off = remove_every_session_label(target)
     elif held and not keep_label:
-        labels_off = release_label(target)
+        labels_off = release_label(target, claim_label(target))
     else:
         labels_off = True
     ref = 'refs/claims/%s' % target
@@ -208,7 +212,7 @@ def _release_label_claim(target, keep_label=False):
     keeps its marker, so a re-run can release it. The label removed is the
     one the marker names, which differs from this session's after a
     `/clear` gave the session a new id."""
-    label = session_label(read_label_marker(target))
+    label = claim_label(target)
     if not keep_label and not release_label(target, label):
         return False
     _drop_marker(target)
@@ -249,7 +253,9 @@ def release_claims(targets, keep_label=False):
     ref_targets = [t for t in targets if t not in label_only]
     unlabel = [] if keep_label else [t for t in targets if _unlabels(t)]
     labels_off = dict.fromkeys(targets, True)
-    labels_off.update(remove_session_labels(unlabel))
+    # Each label is the one its claim added (#442), not this session's.
+    labels_off.update(remove_session_labels(
+        unlabel, {t: claim_label(t) for t in unlabel}))
     released.update((t, bool(labels_off.get(t))) for t in label_only)
     for target in label_only:
         if released[target]:
