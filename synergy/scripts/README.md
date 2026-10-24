@@ -12,22 +12,22 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 
 | Module | Responsibility | Lines |
 |--------|----------------|-------|
-| `wf.py` | Entry point: argument parser, dispatch, re-exports | 805 |
-| `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 179 |
+| `wf.py` | Entry point: argument parser, dispatch, re-exports | 807 |
+| `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 272 |
 | `wf_config.py` | Repo root (asked of git once per working directory), `ClaudeProject.md` parsing with its areas table, release-targets table and Jev row, the config cache, `config` | 549 |
-| `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 498 |
-| `wf_issue_io.py` | Reading, writing and verifying single issues, the area label included; batched mutations; every label id a spec names, read to the last page | 516 |
-| `wf_rest.py` | The REST fallback where GraphQL is blocked: the open-issue read in the GraphQL shape, one issue read, `Stage` writes read back, the REST field ids, and the assign, unassign, comment, label and close edits a pick makes | 476 |
-| `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 219 |
-| `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 570 |
-| `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 457 |
-| `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 297 |
+| `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 501 |
+| `wf_issue_io.py` | Reading, writing and verifying single issues, the area label included; batched mutations; every label id a spec names, read to the last page | 535 |
+| `wf_rest.py` | The REST fallback where GraphQL is blocked: the open-issue read in the GraphQL shape, one issue read, `Stage` writes read back, the REST field ids, and the assign, unassign, comment, label and close edits a pick makes | 496 |
+| `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 239 |
+| `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 628 |
+| `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 478 |
+| `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 339 |
 | `wf_unblock.py` | The unblock sweep, `unblock` | 316 |
-| `wf_pick.py` | The `pick` and `refine` entry point and the result a pick returns | 212 |
-| `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 361 |
-| `wf_pick_tree.py` | The sub-issue tree under an Epic or Feature, one named issue checked as a pick candidate | 192 |
+| `wf_pick.py` | The `pick` and `refine` entry point and the result a pick returns | 217 |
+| `wf_pick_select.py` | The claim and validate walk, the judged pool, one auto-pick round, the prerequisite redirect, the `Stage` writes on issues passed over | 365 |
+| `wf_pick_tree.py` | The sub-issue tree under an Epic or Feature, one named issue checked as a pick candidate | 212 |
 | `wf_pick_candidates.py` | `candidates`, including `--parent` | 271 |
-| `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 536 |
+| `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 538 |
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
 | `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, the release notes and release labels of a settled issue, `post-merge`, `settle-merged` | 801 |
 | `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 585 |
@@ -48,7 +48,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_core_stage.py` | `Stage` names, work scope, which stage an issue belongs in, stage drift targets | 467 |
 | `wf_core_select.py` | Candidate filter and sort, native type filtering, backlog mode | 308 |
 | `wf_core_pool.py` | The verdict on every open issue in the pool, waiting work, inherited priority and work mode | 585 |
-| `wf_core_refs.py` | Parent parsing, closing references, branch names, dependency edges, unblock verdicts | 366 |
+| `wf_core_refs.py` | Parent parsing, closing references, branch names, dependency edges, unblock verdicts | 390 |
 | `wf_core_bulk.py` | Filling a bulk set's effort budget, splitting it into groups, ordering each into waves | 484 |
 | `wf_core_claims.py` | Sibling PRs that would duplicate a claim, claim reaping | 110 |
 | `wf_core_spec.py` | The parent types an issue may have, spec validation with the `area` key, value shaping and batching | 720 |
@@ -282,16 +282,6 @@ Resolves what the org can actually classify an issue with: its **enabled native 
 
 The command is GraphQL and not REST because REST (`/orgs/{org}/issue-fields`) returns `null` for every option id, which makes those fields readable but not writable.
 
-### When GraphQL is blocked
-
-Some sessions cannot reach GraphQL. A Claude Code cloud session answers every GraphQL request with HTTP 403 while the REST API works. The first 403 from GraphQL, from `gh api graphql` or from a `gh` subcommand that reads through it, switches the rest of the run to REST (`wf_rest.py`), and `wf` prints one line on stderr to say so. A rate limit that answers 403 does not switch it. `WF_GRAPHQL=off` starts a run on REST.
-
-On REST, the pool read returns each issue in the shape the GraphQL query returns it, oldest first, so the pool rules and the claim walk run unchanged and the same pool gives the same pick. The REST issue list carries the type, the parent and the field values; the blocked-by edges cost one read for each issue that has any, and the closing pull requests come from the closing keywords in the open pull requests' bodies, because REST has no `closingIssuesReferences`. Whether a merged pull request already closes the issue is read at the claim, from the newest hundred closed pull requests.
-
-A REST `Stage` write names the option by its name, so it needs no option id, only the field's REST id. That id comes from the values the run has already read, then the `rest_field_ids` key of the capability cache, then the issue being written, then `/orgs/{org}/issue-fields`, and last the recently updated issues, so it resolves when the org endpoint is refused too. Each write is read back from GitHub's answer.
-
-Opening, viewing and listing pull requests, and `post-merge`, have no REST path yet.
-
 Output beyond `type_map` and `field_map`:
 
 - `owner_kind` — `organization` or `user`.
@@ -315,6 +305,16 @@ The denial case is worth calling out because GraphQL reports it *partially*: Git
 `NOT_FOUND` counts as a denial for the same reason. GitHub returns it when the account may not see the organisation at all, and reading it as "no such org" recorded `owner_kind: user` — an org filed away as a personal account, cached with no expiry, every issue created after that with no type and no field values and nothing reporting it. An empty result is now only believed when it carries the current `CAPABILITY_CACHE_SCHEMA`, so a cache written by a version whose conclusion is no longer trusted heals itself on the next run instead of waiting for someone to know about `--refresh`.
 
 Field **names** are overridable per project in `ClaudeProject.md` → `## Issue Types & Fields`; the value maps behind them are Python data in `wf_core.py` (`NATIVE_TYPE_MAP`, `CLASSIFICATION_OPTIONS`, `FIELD_NAME_DEFAULTS`, `FIELD_DATA_TYPES`, `PRIORITY_FIELD_OPTIONS`, `EFFORT_FIELD_OPTIONS`, `ORIGIN_FIELD_OPTIONS`).
+
+## When GraphQL is blocked
+
+Some sessions cannot reach GraphQL. A Claude Code cloud session answers every GraphQL request with HTTP 403 while the REST API works. The first 403 from GraphQL, from `gh api graphql` or from a `gh` subcommand that reads through it, switches the rest of the run to REST (`wf_rest.py`), and `wf` prints one line on stderr to say so. A rate limit that answers 403 does not switch it. `WF_GRAPHQL=off` starts a run on REST.
+
+On REST, the pool read returns each issue in the shape the GraphQL query returns it, oldest first, so the pool rules and the claim walk run unchanged and the same pool gives the same pick. The REST issue list carries the type, the parent and the field values; the blocked-by edges cost one read for each issue that has any, and the closing pull requests come from the closing keywords in the open pull requests' bodies, because REST has no `closingIssuesReferences`. Whether a merged pull request already closes the issue is read at the claim, from the newest hundred closed pull requests.
+
+A REST `Stage` write names the option by its name, so it needs no option id, only the field's REST id. That id comes from the values the run has already read, then the `rest_field_ids` key of the capability cache, then the issue being written, then `/orgs/{org}/issue-fields`, and last the recently updated issues, so it resolves when the org endpoint is refused too. Each write is read back from GitHub's answer.
+
+Opening, viewing and listing pull requests, and `post-merge`, have no REST path yet.
 
 ## Classified issues — `issue-apply`
 

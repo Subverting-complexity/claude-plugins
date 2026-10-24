@@ -131,10 +131,13 @@ def _rest_blocker(number, state):
 class _GitHub(object):
     """Answers `gh` and `git` as GitHub would, with GraphQL on or blocked."""
 
-    def __init__(self, graphql=True, org_fields=True, stage_reads=None):
+    def __init__(self, graphql=True, org_fields=True, stage_reads=None,
+                 prs_fail=False, closed_prs=()):
         self.graphql = graphql
         self.org_fields = org_fields
         self.stage_reads = stage_reads
+        self.prs_fail = prs_fail
+        self.closed_prs = list(closed_prs)
         self.calls = []
         self.writes = []
 
@@ -161,13 +164,22 @@ class _GitHub(object):
             # A pull request in the list, as the REST issue list returns them.
             items = [_rest_issue(i) for i in POOL] + [
                 {'number': 90, 'pull_request': {}}] if page == 1 else []
+            # GitHub's default order is newest first; only the query asks
+            # for the order the GraphQL read uses.
+            if not ('sort=created' in path and 'direction=asc' in path):
+                items.reverse()
             return 0, json.dumps(items), ''
+        if method == 'GET' and path.startswith(base + 'pulls?state=closed'):
+            page = int(path.rsplit('page=', 1)[1])
+            return 0, json.dumps(self.closed_prs[(page - 1) * 100:page * 100]), ''
         if method == 'GET' and '/dependencies/blocked_by' in path:
             number = int(path.split('/issues/')[1].split('/')[0])
             issue = next(i for i in POOL if i['number'] == number)
             return 0, json.dumps([_rest_blocker(n, s)
                                   for n, s in issue.get('blockers') or []]), ''
         if method == 'GET' and path.startswith(base + 'pulls?state=open'):
+            if self.prs_fail:
+                return 1, '', 'gh: Server Error (HTTP 502)'
             return 0, json.dumps([{'number': 90, 'body': 'Work.\n\nCloses #8'}]), ''
         if method == 'GET' and path == 'orgs/acme/issue-fields':
             if not self.org_fields:
@@ -291,6 +303,15 @@ class TestThePoolReadsTheSameEitherWay(_Base):
         edge_reads = [c for c in hub.calls if any('blocked_by' in a for a in c)]
         self.assertEqual(len(edge_reads), 2)
 
+    def test_a_failed_pull_request_read_fails_the_pool_read(self):
+        """Without it, an issue already in review would read as free work."""
+        hub = _GitHub(graphql=False, prs_fail=True)
+        with mock.patch.object(wf, 'run', hub.run):
+            (ok, issues, err), _ = self._quiet(wf.assemble_candidates, _cfg())
+        self.assertFalse(ok)
+        self.assertIsNone(issues)
+        self.assertIn('open pull request', err)
+
     def test_the_pool_ranks_the_same_either_way(self):
         def ranked(issues):
             facets = wf.facets_from_issues(_cfg(), issues, [i['number'] for i in issues])
@@ -370,6 +391,35 @@ class TestStageThroughRest(_Base):
         self.assertTrue(out[5][0])
         self.assertEqual(notice, '')
         self.assertEqual([c[:3] for c in calls], [['gh', 'api', 'graphql']])
+
+
+class TestMergedPullRequestCheck(_Base):
+
+    def _check(self, closed):
+        wf_io.mark_graphql_blocked()
+        hub = _GitHub(graphql=False, closed_prs=closed)
+        with mock.patch.object(wf, 'run', hub.run):
+            found, _ = self._quiet(wf.merged_pr_closing, _cfg(), 5)
+        return found, hub
+
+    def test_only_a_merged_pull_request_resolves_the_issue(self):
+        closed = [{'number': 70, 'merged_at': None, 'body': 'Closes #5'},
+                  {'number': 71, 'merged_at': '2026-10-01T00:00:00Z',
+                   'body': 'Fixes #5'},
+                  {'number': 72, 'merged_at': '2026-10-01T00:00:00Z',
+                   'body': 'Closes #6'}]
+        self.assertEqual(self._check(closed)[0], 71)
+
+    def test_closed_unmerged_pull_requests_do_not_shrink_the_window(self):
+        """A hundred abandoned pull requests on top: the merged one under
+        them is still found, as the GraphQL check would find it."""
+        closed = [{'number': 200 + n, 'merged_at': None, 'body': ''}
+                  for n in range(100)]
+        closed.append({'number': 99, 'merged_at': '2026-10-01T00:00:00Z',
+                       'body': 'Closes #5'})
+        found, hub = self._check(closed)
+        self.assertEqual(found, 99)
+        self.assertEqual(len([c for c in hub.calls if 'pulls?state=closed' in c[4]]), 2)
 
 
 class TestPickEditsThroughRest(_Base):

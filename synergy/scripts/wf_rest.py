@@ -240,7 +240,12 @@ def rest_open_issue_nodes(cfg, pool_facts=True):
             for r in with_edges}
         prs_future = pool.submit(rest_open_pr_closing, cfg)
         edges = {n: f.result() for n, f in futures.items()}
-        prs_ok, closing, _prs_err = prs_future.result()
+        prs_ok, closing, prs_err = prs_future.result()
+    if not prs_ok:
+        # On GraphQL the closing pull requests come in the same query as the
+        # issues, so a failure fails the pool read. Going on without them
+        # would offer an issue already in review as free work.
+        return False, None, 'open pull request REST read failed: %s' % prs_err
 
     nodes = []
     for raw in raws:
@@ -248,10 +253,9 @@ def rest_open_issue_nodes(cfg, pool_facts=True):
         conn = edges.get(number, {'totalCount': 0, 'nodes': []})
         # No merged pull request is known, so `totalCount` is left unknown and
         # the claim checks the merged pull requests itself.
-        prs = ({'totalCount': None,
-                'nodes': [{'number': p, 'state': 'OPEN'}
-                          for p in closing.get(number, ())]}
-               if prs_ok else None)
+        prs = {'totalCount': None,
+               'nodes': [{'number': p, 'state': 'OPEN'}
+                         for p in closing.get(number, ())]}
         nodes.append(rest_issue_node(raw, repo, children.get(number, []), conn, prs))
     return True, nodes, ''
 
@@ -277,16 +281,32 @@ def rest_dependency_facts(cfg, number):
             'prs_complete': False}
 
 
+# Merged pull requests the claim checks, newest first, as the GraphQL check
+# reads, and the pages of closed pull requests it may read to find them.
+MERGED_WINDOW = 100
+MERGED_MAX_PAGES = 5
+
+
 def rest_merged_pr_closing(cfg, number):
-    """The lowest merged pull request among the newest hundred closed ones
-    whose body closes issue `number`, or None."""
-    ok, prs, _err = gh_rest('repos/%s/pulls?state=closed&sort=created'
-                            '&direction=desc&per_page=%d' % (_repo(cfg), REST_PAGE))
-    if not ok or not isinstance(prs, list):
-        return None
-    matches = [pr['number'] for pr in prs
-               if pr.get('merged_at')
-               and int(number) in wf_core.body_closing_numbers(pr.get('body'), _repo(cfg))]
+    """The lowest merged pull request among the newest hundred merged ones
+    whose body closes issue `number`, or None.
+
+    REST cannot ask for merged pull requests only, so closed ones are read a
+    page at a time until a hundred merged ones are in hand, as many as the
+    GraphQL check reads, or `MERGED_MAX_PAGES` run out.
+    """
+    merged = []
+    for page in range(1, MERGED_MAX_PAGES + 1):
+        ok, prs, _err = gh_rest('repos/%s/pulls?state=closed&sort=created'
+                                '&direction=desc&per_page=%d&page=%d'
+                                % (_repo(cfg), REST_PAGE, page))
+        if not ok or not isinstance(prs, list):
+            break
+        merged.extend(pr for pr in prs if pr.get('merged_at'))
+        if len(merged) >= MERGED_WINDOW or len(prs) < REST_PAGE:
+            break
+    matches = [pr['number'] for pr in merged[:MERGED_WINDOW]
+               if int(number) in wf_core.body_closing_numbers(pr.get('body'), _repo(cfg))]
     return min(matches) if matches else None
 
 
