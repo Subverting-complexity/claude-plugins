@@ -11,10 +11,11 @@ import time
 from datetime import datetime, timezone
 
 import wf_core
+import wf_rest
 from wf_config import check_environment, prepare_cfg, repo_root
 from wf_io import (
     EXIT_ENV, EXIT_LOST, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE, emit, eprint, gh_json,
-    run,
+    graphql_blocked, run,
 )
 from wf_stage import set_stage, set_stages
 
@@ -206,6 +207,13 @@ def _assign(cfg, issue):
             '--add-assignee', '@me']
     retired = wf_core.retired_labels_on(issue.get('labels') or [],
                                         cfg.get('labels') or {})
+    if graphql_blocked():
+        # `gh issue edit` reads through GraphQL, so it fails here too.
+        ok, err = wf_rest.rest_assign(cfg, issue['number'])
+        wf_rest.rest_remove_labels(cfg, issue['number'], retired)
+        if not ok:
+            eprint('wf: warning — could not assign #%s (%s)' % (issue['number'], err))
+        return
     for name in retired:
         args += ['--remove-label', name]
     code, _, err = run(['gh'] + args)
@@ -226,8 +234,12 @@ def revert_in_progress(cfg, number):
     (written, message) for the `Stage` half.
     """
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
-    code, _, err = run(['gh', 'issue', 'edit', str(number), '--repo', repo,
-                        '--remove-assignee', '@me'])
+    if graphql_blocked():
+        ok, err = wf_rest.rest_unassign(cfg, number)
+        code = 0 if ok else 1
+    else:
+        code, _, err = run(['gh', 'issue', 'edit', str(number), '--repo', repo,
+                            '--remove-assignee', '@me'])
     if code != 0:
         eprint('wf: warning — could not unassign #%s (%s)' % (number, err.strip()))
     return set_stage(cfg, number, wf_core.STAGE_NAMES[wf_core.POOL_STAGE])

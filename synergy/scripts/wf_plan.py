@@ -24,7 +24,9 @@ from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, EXIT_USAGE, emit,
     gh_graphql,
 )
-from wf_issue_io import _batch_result, _graphql_json, add_comments, resolve_issue_ids
+from wf_issue_io import (
+    _batch_result, _graphql_json, post_comments, resolve_issue_ids,
+)
 from wf_pick_select import read_plan_pool
 from wf_pick_tree import PICKABLE_BY_NAME, _tree_unread, fetch_container_tree
 from wf_stage import set_stages
@@ -247,7 +249,7 @@ def claim_plan(cfg, args, pool, plan, stories, common):
     comments = {e['number']: (stage_ids.get(e['number']), UNBLOCK_COMMENT % ', '.join(
                     wf_core.ref_label(b) for b in e['closed_blockers']))
                 for e in releasing if results[e['number']][0]}
-    posted = add_comments(comments) if comments else {}
+    posted = post_comments(cfg, comments) if comments else {}
     for entry in common.get('released') or ():
         entry['stage_set'] = results.get(entry['number'], (False, ''))[0]
         if entry['number'] in posted:

@@ -12,8 +12,8 @@ import time
 import wf_core
 from wf_config import field_name, load_config, repo_root
 from wf_io import (
-    EXIT_CAPABILITY, EXIT_ENV, EXIT_OK, _graphql_args, emit, eprint,
-    gh_graphql, run,
+    EXIT_CAPABILITY, EXIT_ENV, EXIT_OK, GRAPHQL_BLOCKED_REASON, _graphql_args,
+    emit, eprint, gh_graphql, graphql_blocked, note_graphql_result, run,
 )
 
 
@@ -177,7 +177,10 @@ def gh_graphql_partial(query, **fields):
 
     Returns (data, errors, err) where `errors` is the GraphQL error list.
     """
+    if graphql_blocked():
+        return None, [], GRAPHQL_BLOCKED_REASON
     code, out, err = run(_graphql_args(query, fields))
+    note_graphql_result(code, out, err)
     try:
         parsed = json.loads(out) if (out or '').strip() else None
     except json.JSONDecodeError:
