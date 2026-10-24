@@ -889,6 +889,35 @@ class TestCandidatesCommand(WfCommandTestCase):
     def setUp(self):
         super().setUp()
         self._use_cfg(_cfg())
+        # The command reads each candidate's blocked-by edges. A test about
+        # edges patches this again with its own; every other test gets none,
+        # so it never sends that read to GitHub for the fake repository.
+        edges = mock.patch.object(wf, 'issue_edges_map', return_value=({}, set()))
+        edges.start()
+        self.addCleanup(edges.stop)
+        self._refuse_gh()
+
+    def _refuse_gh(self):
+        """Fail the test if anything it runs calls `gh`.
+
+        The suite runs offline. A `gh` call here either fails or reaches
+        GitHub on a signed-in machine, and the test passes both ways, so only
+        this check notices one. `git` still runs, because some seams read the
+        local repository.
+        """
+        real_run = subprocess.run
+        gh_calls = []
+
+        def guarded(args, *a, **kw):
+            if args and os.path.basename(str(args[0])).lower() in ('gh', 'gh.exe'):
+                gh_calls.append(list(args))
+                return subprocess.CompletedProcess(args, 1, '', 'gh is refused in this test')
+            return real_run(args, *a, **kw)
+
+        patch = mock.patch.object(subprocess, 'run', side_effect=guarded)
+        patch.start()
+        self.addCleanup(lambda: self.assertEqual(gh_calls, [], 'the test called gh'))
+        self.addCleanup(patch.stop)
 
     def test_the_pool_is_ordered_by_the_org_priority_field(self):
         """The field is the whole order, and the listing carries its value.
