@@ -97,6 +97,12 @@ def edit_pr_labels(cfg, number, add=(), remove=()):
         code, err = _gh_pr_edit_labels(cfg, number, add, remove)
         if code == 0 or not graphql_blocked():
             return code == 0, err
+    # The REST label endpoint does not refuse a label the repo lacks, as `gh
+    # pr edit` does: it creates it grey, with no description. So each label is
+    # looked for first, and the review labels are created the guarded way,
+    # with their colours, before any goes on.
+    if any(not wf_rest_pr.rest_label_exists(cfg, name) for name in add):
+        ensure_review_labels(cfg)
     return wf_rest_pr.rest_edit_labels(cfg, number, add, remove)
 
 
@@ -383,12 +389,8 @@ def add_review_label(cfg, number, add, remove=None):
                 code, err = _gh_pr_edit_labels(cfg, number, [add], remove)
         if code == 0 or not graphql_blocked():
             return code == 0, err
-    # The REST label endpoint does not refuse a label the repo lacks, as `gh
-    # pr edit` does, so the label is looked for first and the review labels
-    # are created the guarded way, with their colours, before it goes on.
-    if not wf_rest_pr.rest_label_exists(cfg, add):
-        ensure_review_labels(cfg, repo=repo)
-    return wf_rest_pr.rest_edit_labels(cfg, number, [add], remove)
+    # `edit_pr_labels` creates a missing review label on the REST path.
+    return edit_pr_labels(cfg, number, [add], remove)
 
 
 LABEL_DETAIL_QUERY = (

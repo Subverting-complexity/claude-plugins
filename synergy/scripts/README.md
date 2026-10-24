@@ -15,10 +15,10 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf.py` | Entry point: argument parser, dispatch, re-exports | 809 |
 | `wf_io.py` | Exit codes, the stdout JSON contract, the `gh`/`git` subprocess runner | 286 |
 | `wf_config.py` | Repo root (asked of git once per working directory), `ClaudeProject.md` parsing with its areas table, release-targets table and Jev row, the config cache, `config` | 549 |
-| `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 506 |
+| `wf_capabilities.py` | Org issue types, fields and type pins (one request for preflight), repo labels, the capability cache, `org-capabilities` | 508 |
 | `wf_issue_io.py` | Reading, writing and verifying single issues, the area label included; batched mutations; every label id a spec names, read to the last page | 535 |
 | `wf_rest.py` | The REST fallback where GraphQL is blocked: the open-issue read in the GraphQL shape, one issue read, `Stage` writes read back, the REST field ids, and the assign, unassign, comment, label and close edits a pick makes | 496 |
-| `wf_rest_pr.py` | The REST fallback for pull requests: open, read and edit one, its labels, the review pool, the open pull requests `sibling-pr` and `update-next` read, the repository's labels, and checking out a pull request's branch | 285 |
+| `wf_rest_pr.py` | The REST fallback for pull requests: open, read and edit one, its labels, the review pool, the open pull requests `sibling-pr` and `update-next` read, the repository's labels, and checking out a pull request's branch | 289 |
 | `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 239 |
 | `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 628 |
 | `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 478 |
@@ -31,7 +31,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 538 |
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
 | `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, the release notes and release labels of a settled issue, `post-merge`, `settle-merged` | 801 |
-| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 641 |
+| `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 643 |
 | `wf_issue_apply.py` | `issue-apply`, including the `area` key that writes an issue's 1 area label | 867 |
 | `wf_issue_audit.py` | `issue-audit` | 189 |
 | `wf_areas.py` | `areas`: the rows of the areas table, or the area an issue's label names | 89 |

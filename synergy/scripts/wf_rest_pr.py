@@ -239,12 +239,16 @@ def rest_pr_edit_body(cfg, number, body):
 
 def rest_edit_labels(cfg, number, add=(), remove=()):
     """Take labels off and put labels on an issue or pull request, as `gh pr
-    edit --remove-label --add-label` does. (ok, err) naming what failed."""
+    edit --remove-label --add-label` does. (ok, err) naming what failed.
+
+    A label the pull request does not carry answers 404 on its delete. That
+    label is already off, as `gh pr edit` treats it, so it is not a failure.
+    """
     repo, failed = _repo(cfg), []
     for name in remove or ():
         ok, _data, err = gh_rest('repos/%s/issues/%d/labels/%s'
                                  % (repo, int(number), quote(name, safe='')), 'DELETE')
-        if not ok:
+        if not ok and 'http 404' not in (err or '').lower():
             failed.append('remove %s (%s)' % (name, err))
     if add:
         ok, _data, err = gh_rest('repos/%s/issues/%d/labels' % (repo, int(number)),

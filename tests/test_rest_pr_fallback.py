@@ -100,6 +100,7 @@ class _GitHub(object):
         self.repo_labels = set(labels if labels is not None
                                else wf_core.REVIEW_DEFAULT_LABELS.values())
         self.calls = []
+        self.grey = []
         self.created = []
         self.edited = []
 
@@ -190,10 +191,18 @@ class _GitHub(object):
                                   for n in sorted(self.repo_labels)]), ''
         if method == 'DELETE' and '/labels/' in path:
             number = int(path.split('/issues/')[1].split('/')[0])
-            self.prs[number]['labels'].remove(path.rsplit('/', 1)[1])
+            name = path.rsplit('/', 1)[1]
+            if name not in self.prs[number]['labels']:
+                return 1, '', 'gh: Label does not exist (HTTP 404)'
+            self.prs[number]['labels'].remove(name)
             return 0, '[]', ''
         if method == 'POST' and path.endswith('/labels'):
             number = int(path.split('/issues/')[1].split('/')[0])
+            for name in body['labels']:
+                # GitHub creates a label it lacks, grey and undescribed.
+                if name not in self.repo_labels:
+                    self.repo_labels.add(name)
+                    self.grey.append(name)
             self.prs[number]['labels'].extend(body['labels'])
             return 0, '[]', ''
         return 1, '', 'unexpected REST call %s %s' % (method, path)
@@ -352,6 +361,27 @@ class TestReviewLabels(_Base):
         create = [c for c in hub.calls if c[:3] == ['gh', 'label', 'create']]
         self.assertIn(NAMES['needs-review'], [c[3] for c in create])
         self.assertIn('--color', create[0])
+        self.assertEqual(hub.grey, [])
+
+    def test_review_finish_creates_a_missing_verdict_label_with_its_colour(self):
+        labels = [n for n in wf_core.REVIEW_DEFAULT_LABELS.values()
+                  if n != NAMES['approved']]
+        hub = _GitHub(graphql=False, prs=[_pr(11, [NAMES['reviewing']])], labels=labels)
+        code, payload, _ = self._call(hub, wf.cmd_review_finish, argparse.Namespace(
+            pr=11, verdict='approved', fixes_applied=False))
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertTrue(payload['verified'], payload)
+        self.assertEqual(hub.grey, [])
+        create = [c for c in hub.calls if c[:3] == ['gh', 'label', 'create']]
+        self.assertEqual([c[3] for c in create], [NAMES['approved']])
+        self.assertIn('--color', create[0])
+
+    def test_claim_marks_a_pull_request_that_has_no_needs_review(self):
+        hub = _GitHub(graphql=False, prs=[_pr(11, [NAMES['changes-requested']])])
+        marker = self._quiet(hub, wf.apply_claim_marker, _cfg(),
+                             argparse.Namespace(issue=None, pr=11))
+        self.assertEqual(marker, NAMES['reviewing'])
+        self.assertIn(NAMES['reviewing'], hub.prs[11]['labels'])
 
 
 if __name__ == '__main__':
