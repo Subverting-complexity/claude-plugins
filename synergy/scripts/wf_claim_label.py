@@ -115,8 +115,9 @@ def session_guid():
     `WF_SESSION_ID` first: the plugin's SessionStart hook
     (`hooks/session-id.sh`) sets it from the `session_id` Claude Code passes
     the hook, so it is the session's own id. Else `CLAUDE_CODE_SESSION_ID`,
-    which Claude Code sets in the process every command runs in, so a Builder
-    sees its parent session's id. Else, outside Claude Code, a random GUID
+    which Claude Code sets in the environment of the commands it runs (not
+    documented, and not checked to be the parent's id inside a Builder).
+    Else, outside Claude Code, a random GUID
     kept in `.claude/wf-session-id` of this checkout, so the runs in one
     checkout share it.
     """
