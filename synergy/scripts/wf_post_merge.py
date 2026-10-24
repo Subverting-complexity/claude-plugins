@@ -19,7 +19,9 @@ from wf_io import (
     emit_line, gh_json, graphql_blocked, run_gh,
 )
 from wf_issue_io import _batch_result, _graphql_json, issue_field_values
-from wf_stage import _chunks, release_note_inputs, set_stage, set_stages
+from wf_stage import (
+    REST_FIELD_UNFOUND, _chunks, release_note_inputs, set_stage, set_stages,
+)
 from wf_unblock import unblock_scan
 
 
@@ -470,9 +472,12 @@ def cmd_post_merge(args):
                     'error': 'no release notes were supplied for #%d; write '
                              'them and re-run with --notes' % number}
     # A text the org has a field for but could not take is a gap too. An org
-    # with neither field skips every text, and that is not a failure.
-    for fact in note_facts.values() if has_fields else ():
-        if fact.get('skipped') and not fact.get('error'):
+    # with neither field skips every text, and that is not a failure. On REST
+    # a field whose id could not be found may exist all the same, so a text
+    # skipped for that reason is a gap whether or not any field was found.
+    for fact in note_facts.values():
+        unfound = any(REST_FIELD_UNFOUND in s for s in fact.get('skipped') or ())
+        if fact.get('skipped') and not fact.get('error') and (has_fields or unfound):
             fact['error'] = '; '.join(fact['skipped'])
     # The release labels, in a repository with a release-targets table. The
     # targets were decided before the merge and ride beside the notes, because

@@ -197,6 +197,11 @@ def release_note_inputs(cfg, texts):
     return inputs, written, skipped
 
 
+# Why `_rest_release_note_inputs` skipped a text. `post-merge` reads it: the
+# field may exist all the same, so the skip is a gap, not an org without it.
+REST_FIELD_UNFOUND = 'field id could not be found through REST'
+
+
 def _rest_release_note_inputs(cfg, texts):
     """`release_note_inputs` where GraphQL is blocked and no capability record
     is cached. The release-notes fields are text fields, so each input names
@@ -208,7 +213,7 @@ def _rest_release_note_inputs(cfg, texts):
             continue
         name = field_name(cfg, purpose)
         if wf_rest.rest_field_id(cfg, name) is None:
-            skipped.append('could not find a %s field through REST' % name)
+            skipped.append('%s %s' % (name, REST_FIELD_UNFOUND))
             continue
         inputs.append({'fieldName': name, 'textValue': str(text)})
         written.append(name)

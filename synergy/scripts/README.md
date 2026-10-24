@@ -20,7 +20,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_rest.py` | The REST fallback where GraphQL is blocked: the open-issue read in the GraphQL shape, one issue read, `Stage` writes read back with any other field written beside them, the REST field ids, and the assign, unassign, comment, label and close edits a pick makes | 570 |
 | `wf_rest_pr.py` | The REST fallback for pull requests: open, read and edit one, its labels, the review pool, the open pull requests `sibling-pr` and `update-next` read, the repository's labels, and checking out a pull request's branch | 289 |
 | `wf_rest_settle.py` | The REST fallback for settling a merge: the merged pull request with its closing keywords and comments, the merged pull requests `settle-merged` sweeps, the issues they close, the parents above them, and closing and stripping those issues | 192 |
-| `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 259 |
+| `wf_stage.py` | `Stage` writes, branch checkout, `stage-set` | 264 |
 | `wf_candidates.py` | Open issues by stage, their facets, the candidate list, the concurrent pool read | 628 |
 | `wf_claim.py` | Claim refs and markers, batched release, `claim`, `claim-release`, `claim-reap` | 478 |
 | `wf_deps.py` | Blocked-by edges, already-resolved issues, marking blocked | 339 |
@@ -31,7 +31,7 @@ Code is split by concern into flat modules in this directory. Two rules hold the
 | `wf_pick_candidates.py` | `candidates`, including `--parent` | 271 |
 | `wf_plan.py` | Planning and claiming a bulk set and its groups, `plan-set`, `drop-story`, `drop-group`, `bulk-mark` | 538 |
 | `wf_bulk_build.py` | Scheduling a group's bulk wave from the plan and integrating parallel builders' branches, `bulk-schedule`, `bulk-integrate` | 234 |
-| `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, the release notes and release labels of a settled issue, `post-merge`, `settle-merged` | 884 |
+| `wf_post_merge.py` | Closing finished containers, batched settle reads and writes, the release notes and release labels of a settled issue, `post-merge`, `settle-merged` | 889 |
 | `wf_review.py` | PR pools and review labels, the label read with colours and descriptions, the area and release label writes, `update-next`, `review-next`, `review-finish`, `labels-ensure`, `sibling-pr`, `handoff` | 643 |
 | `wf_issue_apply.py` | `issue-apply`, including the `area` key that writes an issue's 1 area label | 867 |
 | `wf_issue_audit.py` | `issue-audit` | 189 |

@@ -66,9 +66,10 @@ class _GitHub(object):
     """GitHub with GraphQL refused, answering the REST calls a merge makes."""
 
     def __init__(self, store_texts=True, pr_body='Work.\n\nCloses #5',
-                 labels=('release: app',)):
+                 labels=('release: app',), note_fields=True):
         self.issues = _issues()
         self.store_texts = store_texts
+        self.note_fields = note_fields
         self.pr_body = pr_body
         self.repo_labels = set(labels)
         self.calls, self.comments, self.writes, self.added = [], [], [], []
@@ -126,7 +127,8 @@ class _GitHub(object):
             return 0, '[]', ''
         if method == 'GET' and path == 'orgs/acme/issue-fields':
             return 0, json.dumps([{'id': fid, 'name': name}
-                                  for name, (fid, _k) in FIELDS.items()]), ''
+                                  for name, (fid, kind) in FIELDS.items()
+                                  if self.note_fields or kind != 'text']), ''
         if method == 'GET' and path.startswith(BASE + 'labels/'):
             name = path[len(BASE + 'labels/'):].replace('%3A', ':').replace('%20', ' ')
             return (0, '{}', '') if name in self.repo_labels else (1, '', 'HTTP 404')
@@ -163,6 +165,9 @@ class _GitHub(object):
                         continue
                     issue['values'][name] = value['value']
                 return 0, json.dumps(self._values(issue)), ''
+            if method == 'DELETE' and tail.startswith('/labels/'):
+                issue['labels'].remove(tail[len('/labels/'):].replace('%20', ' '))
+                return 0, '', ''
             if method == 'POST' and tail == '/labels':
                 self.added.append((number, body['labels']))
                 issue['labels'].extend(body['labels'])
@@ -245,6 +250,26 @@ class TestPostMergeThroughRest(_Base):
         self.assertTrue(entry['stage_set'])
         self.assertIn('did not read back', entry['release_notes']['error'])
         self.assertIn('#5 release notes not written', payload['reason'])
+
+    def test_notes_whose_field_cannot_be_found_are_a_gap_not_skipped(self):
+        """No issue, cache or org list shows the notes fields' ids. The fields
+        may exist all the same, so the notes are reported as not written."""
+        hub = _GitHub(note_fields=False)
+        code, payload, _ = self._call(hub, ['post-merge', '--pr', '50', '--no-unblock'])
+        self.assertEqual(code, wf.EXIT_PARTIAL, payload)
+        self.assertEqual(hub.issues[5]['values']['Stage'], 'Done')
+        self.assertIn('could not be found through REST',
+                      payload['settled'][0]['release_notes']['error'])
+
+    def test_a_closed_issue_has_its_retired_label_taken_off(self):
+        hub = _GitHub()
+        hub.issues[5].update(state='closed', labels=['status-in-review'])
+        code, payload, _ = self._call(hub, ['post-merge', '--pr', '50', '--no-unblock'])
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertEqual(hub.issues[5]['labels'], [])
+        self.assertEqual(payload['cleared'], {'5': 'status-in-review'})
+        # Already closed, so no second close and no closing comment.
+        self.assertNotIn(5, [n for n, _b in hub.comments])
 
     def test_an_issue_with_no_closing_keyword_is_not_settled(self):
         """REST has no closingIssuesReferences, so the body is the source."""
