@@ -6,6 +6,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.8.0
+
+- `execute`, `bulk-execute` and `build` now run the quality gate command from `ClaudeProject.md` as written, and add no full test suite beside it. A project whose remote CI run checks everything, nightly or on the pull request, can scope its gate to the change: lint and format the changed files, and run the tests related to them. Before, `bulk-execute` and `build` asked for the full gate or the full suite at the end of every run, and several runs at the same time used most of a machine's memory.
+- `build` with no quality gate configured runs the linter, the type check and the tests for the changed areas when a remote CI run checks everything, and the full suite only when none does. Its report says whether the gate checked the whole project or only the changed areas.
+- The `ClaudeProject.md` template, the specification and the setup questions say that the gate command can be scoped to the change when a remote CI run checks everything.
+
 ## synergy 20.7.3
 
 - The plugin description in `plugin.json` and the marketplace manifest now says that `synergy` runs in a Claude Code cloud session: `wf` falls back to REST where GraphQL is blocked, and a claim is a `session:` label where claim refs are refused. The description had not changed since 20.2.0.

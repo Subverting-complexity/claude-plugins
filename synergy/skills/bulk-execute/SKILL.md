@@ -121,13 +121,13 @@ Before each wave, run `wf bulk-schedule --group {G}` and read that wave's entry.
 
 **A batch of two or more stories** is built in parallel. Push the branch first, then spawn one `synergy:Builder` agent per story in a single message, each with `isolation: "worktree"`. Give each its story's number, title, body and plan section, the group's branch name, and these instructions: start from `origin/{branch}`, create `{branch}--{number}`, implement only this story, run the checks covering what it touched, commit with the message Phase 6 describes, push `{branch}--{number}`, and report the check results. When they have all returned, run `wf bulk-integrate --group {G} --wave {K}`: it cherry-picks each branch in build order, pushes once, marks what landed as built and deletes those branches. On `partial`, rebuild each story in `conflicted`, `missing` or `empty` serially. On `error`, stop and report `push_error`. A builder that failed its checks is treated as Phase 5's red check for that story.
 
-After the last wave, run Phase 5's full gate for the group before Phase 7.
+After the last wave, run Phase 5's group gate before Phase 7.
 
 ## Phase 5 — Verify (after each story, and once for the set)
 
 **After each story**, run the checks covering what it touched: linter, type check, and the test suites for the changed areas, or the whole gate when that is cheap.
 
-**Once per group, after its last wave**, run the full quality gate whatever ran during the build. That run is the gate the shared rules describe: it sets `gate-failed.flag`, and the per-story checks never replace it.
+**Once per group, after its last wave**, run the quality gate command from `ClaudeProject.md` whatever ran during the build. That run is the gate the shared rules describe: it sets `gate-failed.flag`, and the per-story checks never replace it. Run it as written, with no full suite beside it.
 
 If a check is still failing after the shared retry limit, **stop**: do not start the next wave, because more code on a red tree makes the failure harder to attribute. Commit what you have, set the gate-failed flag, drop the unbuilt stories (`references/set-selection.md`, **Dropping a story**), and go to Phase 7. The pull request closes only the stories that were built.
 

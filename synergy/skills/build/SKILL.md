@@ -116,7 +116,7 @@ Implement the Phase 2 plan by `templates/coding-method.md`:
 
 ## Phase 4 -- Verify with the related tests
 
-Do not run the full test suite or the full quality gate here. It runs once, in Phase 7. Run only the tests related to the change, so each run is fast:
+Do not run the full test suite or the quality gate here. The gate runs once, in Phase 7. Run only the tests related to the change, so each run is fast:
 
 - the tests the plan named for each acceptance criterion;
 - the tests for the changed modules, and the tests that import them.
@@ -148,9 +148,11 @@ Do not push or create PRs. This is a local workflow. The user decides what happe
 
 Read `references/independent-review.md` and follow it. One review agent reads the commits from this run in a fresh context, fixes the Blocking findings and Quick fixes, and commits the fixes on this branch. A second agent reviews those fixes only when they were substantial. Nothing is pushed or posted.
 
-## Phase 7 -- Run the full suite once, at the end
+## Phase 7 -- Run the quality gate once, at the end
 
-Run the project's full quality gate once, after the review and its fixes are committed. If no quality gate command is configured, run the project's full test suite (e.g. `npm test`, `pytest`, `dotnet test`, `cargo test`). Do not run it earlier, and do not run it a second time.
+Run the project's quality gate command once, after the review and its fixes are committed. Run it as written, with no full suite beside it. Do not run it earlier, and do not run it a second time.
+
+If none is configured and a remote CI run checks everything, run the linter, type check and tests for the changed areas only. Otherwise run the full test suite (e.g. `npm test`, `pytest`, `dotnet test`, `cargo test`).
 
 Sort each failure as Phase 4 does. Fix a failure caused by the change, re-run only the tests that failed, and commit the fix. Do not fix the others: record each one for the report as already failing, a local problem, or unclear.
 
@@ -164,7 +166,7 @@ Then include only the parts that carry information:
 
 - What was built, in plain language.
 - The review verdict, what the reviewer fixed, and each finding still open.
-- Each test that still fails, by name, with its class: already failing, a local problem with what the machine lacks, or unclear. If none fail, say the full suite passed.
+- Each test that still fails, by name, with its class: already failing, a local problem with what the machine lacks, or unclear. If none fail, say the gate passed, and say whether it checked the whole project or only the changed areas.
 - Anything outstanding: work left undone, a known limitation, or something the user has to do next.
 - Any meaningful assumption you had to make, or anything you could not verify.
 

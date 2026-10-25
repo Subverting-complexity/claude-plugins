@@ -57,7 +57,7 @@ If milestones with due dates exist, note that sprint mode is available.
 For anything not auto-detected, ask the user, showing the detected or suggested default for them to confirm or override:
 
 - **Branch convention**: suggest `feature/{number}/{short-desc}` as default
-- **Quality gate command**: if not auto-detected
+- **Quality gate command**: if not auto-detected. If a remote CI run checks everything, nightly or on the pull request, suggest a command that checks only what the change touches.
 - **Refinement skill**: which skill to use when a story is too thin to implement. Default: `feature-discovery` (runs the `grill` interview, then writes the fuller spec and acceptance criteria). Store as `refinement-skill` in ClaudeProject.md.
 - **Areas** (opt-in): first ask whether the project uses areas, the parts of the product such as Library or Listening. With areas, every issue belongs to exactly one and release notes are grouped by them. Without them, issues get no area label and release notes are one list. The default is no. Only on a yes, suggest 3-8 from the top-level folders and the README, each with one sentence on what it covers (100 characters at most), and let the user change them. Which areas exist is their decision: do not write a row they have not agreed. If the repository has open area epics (Step 8b), take the list from them.
 - **Release targets** (optional): what the project ships separately, such as `web` or `mobile`. With none, leave that table out.

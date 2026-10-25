@@ -73,6 +73,8 @@ Implement by `templates/coding-method.md`, code and tests together, following th
 
 Run the quality gate command from `ClaudeProject.md`. On a failure, read the error output, fix the failing check and re-run, up to 3 retries. Near the token budget or the timeout, stop after 2.
 
+Run the command as written. Do not add a full suite or a whole-repository lint beside it: a scoped gate relies on remote CI to check the rest.
+
 When retries are exhausted and the gate is still red, read `references/gate-failure.md` and follow it — the cause is likely outside the story's scope.
 
 ## Phase 6 — Commit
