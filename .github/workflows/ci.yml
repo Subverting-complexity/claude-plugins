@@ -97,7 +97,8 @@ jobs:
         # Raised in 18.9.0: user-facing-communication now states the ASD-STE100 sentence style, which every workflow loads.
         # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
         # Raised in 20.2.0: templates/coding-method.md says to read the related parts of the system, keep each unit to one job, follow the closest existing example, and start a bug fix with a failing test.
-        run: bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 25420
+        # Raised in 20.8.0: the gate phase runs the project's quality gate command as written, with no full suite beside it, so a gate scoped to the change is not doubled.
+        run: bash count-tokens.sh synergy/skills/execute/SKILL.md --budget 25990
 
       - name: Check bulk-execute every-run load
         shell: bash
@@ -105,7 +106,8 @@ jobs:
         # Raised in 18.9.0: user-facing-communication now states the ASD-STE100 sentence style, which every workflow loads.
         # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
         # Raised in 20.2.0: templates/coding-method.md says to read the related parts of the system, keep each unit to one job, follow the closest existing example, and start a bug fix with a failing test.
-        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 28530
+        # Raised in 20.8.0: the gate phase runs the project's quality gate command as written, with no full suite beside it, so a gate scoped to the change is not doubled.
+        run: bash count-tokens.sh synergy/skills/bulk-execute/SKILL.md --budget 29230
 
       - name: Check pr-review every-run load
         shell: bash
@@ -127,7 +129,8 @@ jobs:
         # Raised in 19.3.0: body-standard.md has a Level of detail section, which every workflow that writes a body loads.
         # Raised in 19.6.0: build has an independent review phase, whose reference file every run reads.
         # Raised in 20.2.0: build runs related tests while it works and the full gate once at the end, judges the acceptance criteria, names the existing example each new unit follows, and follows the longer coding method.
-        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 17040
+        # Raised in 20.8.0: the gate phase runs the project's quality gate command as written, with no full suite beside it, so a gate scoped to the change is not doubled.
+        run: bash count-tokens.sh synergy/skills/build/SKILL.md --budget 17490
 
       - name: Check setup every-run load
         shell: bash

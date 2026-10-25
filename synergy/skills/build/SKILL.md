@@ -150,9 +150,9 @@ Read `references/independent-review.md` and follow it. One review agent reads th
 
 ## Phase 7 -- Run the quality gate once, at the end
 
-Run the project's quality gate command once, after the review and its fixes are committed. Run it as `ClaudeProject.md` writes it: if it is scoped to the change, do not add a full suite beside it. Do not run it earlier, and do not run it a second time.
+Run the project's quality gate command once, after the review and its fixes are committed. Run it as written, with no full suite beside it. Do not run it earlier, and do not run it a second time.
 
-If no quality gate command is configured, check whether a remote CI run checks everything, nightly or on the pull request. If one does, run the linter, the type check and the tests for the changed areas only. If none does, run the project's full test suite (e.g. `npm test`, `pytest`, `dotnet test`, `cargo test`).
+If none is configured and a remote CI run checks everything, run the linter, type check and tests for the changed areas only. Otherwise run the full test suite (e.g. `npm test`, `pytest`, `dotnet test`, `cargo test`).
 
 Sort each failure as Phase 4 does. Fix a failure caused by the change, re-run only the tests that failed, and commit the fix. Do not fix the others: record each one for the report as already failing, a local problem, or unclear.
 

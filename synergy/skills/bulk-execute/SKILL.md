@@ -127,7 +127,7 @@ After the last wave, run Phase 5's group gate before Phase 7.
 
 **After each story**, run the checks covering what it touched: linter, type check, and the test suites for the changed areas, or the whole gate when that is cheap.
 
-**Once per group, after its last wave**, run the quality gate command from `ClaudeProject.md` whatever ran during the build. That run is the gate the shared rules describe: it sets `gate-failed.flag`, and the per-story checks never replace it. Run the command as written. If it is scoped to the change, it checks every file the group changed, and the project's remote CI checks the rest. Do not add a full test suite beside it.
+**Once per group, after its last wave**, run the quality gate command from `ClaudeProject.md` whatever ran during the build. That run is the gate the shared rules describe: it sets `gate-failed.flag`, and the per-story checks never replace it. Run it as written, with no full suite beside it.
 
 If a check is still failing after the shared retry limit, **stop**: do not start the next wave, because more code on a red tree makes the failure harder to attribute. Commit what you have, set the gate-failed flag, drop the unbuilt stories (`references/set-selection.md`, **Dropping a story**), and go to Phase 7. The pull request closes only the stories that were built.
 
