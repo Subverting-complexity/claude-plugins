@@ -54,7 +54,8 @@ class RunScratchTests(unittest.TestCase):
 
     def test_per_run_files_are_scratch(self):
         for name in ('plan.md', 'bulk-set.json', 'gate-failed.flag', 'claim-issue-4.sha',
-                     'claim-issue-4.keep-label', 'claim-issue-4.session', 'report-spec.json', 'story-1-body.md'):
+                     'claim-issue-4.keep-label', 'claim-issue-4.session', 'report-spec.json', 'story-1-body.md',
+                     'release-notes.json', 'release-notes-comment.md'):
             self.assertTrue(wf_core.is_run_scratch(name), name)
 
     def test_caches_and_project_files_are_kept(self):
@@ -68,6 +69,10 @@ class RunScratchTests(unittest.TestCase):
             sample = pattern.replace('*', 'x')
             self.assertTrue(any(fnmatch.fnmatchcase('.claude/' + sample, p)
                                 for p in wf_core.SCRATCH_IGNORE), pattern)
+
+    def test_the_release_notes_comment_is_ignored(self):
+        self.assertTrue(any(fnmatch.fnmatchcase('.claude/release-notes-comment.md', p)
+                            for p in wf_core.SCRATCH_IGNORE))
 
     def test_this_repository_ignores_every_pattern(self):
         with open(os.path.join(REPO, '.gitignore'), encoding='utf-8') as fh:
@@ -111,6 +116,7 @@ class GitDirTests(unittest.TestCase):
         with open(path) as fh:
             first = fh.read()
         self.assertIn('.claude/bulk-set.json', first)
+        self.assertIn('.claude/release-notes-comment.md', first)
         before = os.path.getmtime(path)
         self.assertTrue(wf_config.ensure_scratch_ignored(self.root))
         self.assertEqual(os.path.getmtime(path), before)
@@ -124,7 +130,7 @@ class ScratchCleanTests(unittest.TestCase):
             folder = os.path.join(root, '.claude')
             os.makedirs(folder)
             for name in ('plan.md', 'bulk-set.json', 'no-merge.flag', 'wf-config.json',
-                         'ecosystem.md', 'report-spec.json'):
+                         'ecosystem.md', 'report-spec.json', 'release-notes-comment.md'):
                 open(os.path.join(folder, name), 'w').close()
             out = io.StringIO()
             with mock.patch.object(wf_config, 'repo_root', lambda: root), \
@@ -134,7 +140,8 @@ class ScratchCleanTests(unittest.TestCase):
             result = json.loads(out.getvalue())
             self.assertEqual(sorted(result['removed']),
                              ['.claude/bulk-set.json', '.claude/no-merge.flag',
-                              '.claude/plan.md', '.claude/report-spec.json'])
+                              '.claude/plan.md', '.claude/release-notes-comment.md',
+                              '.claude/report-spec.json'])
             self.assertEqual(sorted(os.listdir(folder)), ['ecosystem.md', 'wf-config.json'])
 
 
