@@ -31,6 +31,7 @@ SCRATCH_IGNORE = (
     '.claude/wf-config.json',
     '.claude/bulk-set.json',
     '.claude/release-notes.json',
+    '.claude/release-notes-comment.md',
     '.claude/jev-*.json',
     '.claude/*.flag',
     '.claude/*-spec.json',
@@ -45,7 +46,7 @@ SCRATCH_IGNORE = (
 SCRATCH_RUN = (
     'plan.md', 'label-cache.json', 'candidates.json',
     'claim-*.sha', 'claim-*.keep-label', 'claim-*.session',
-    'bulk-set.json', 'release-notes.json',
+    'bulk-set.json', 'release-notes.json', 'release-notes-comment.md',
     'jev-*.json', '*.flag',
     '*-spec.json', '*-body.md',
 )

@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.7.2
+
+- `wf scratch-clean` now deletes `.claude/release-notes-comment.md`, the file a run writes the release notes comment to before posting it on the pull request, and `wf` lists it in the clone's ignore block. Before, the file was neither deleted nor ignored, so every `wf exit-cleanup` after a run that posted notes reported the worktree `dirty` with this file left over, and the run had to discard it by hand with `wf tree-clean`.
+
 ## synergy 20.7.1
 
 - Releasing a claim held by a claim ref now removes the session label that claim added, even when the session id changed in between, such as after `/clear`. Before, the release removed the label of the new id, which was not on the item. GitHub answered 404, the release reported success, and the old `session:` label stayed on the open issue or pull request, so every later claim on it lost until `wf claim-reap` judged the label stale. A ref claim now records its label's id in `.claude/claim-<target>.session`, beside its marker, and the release removes that label. A claim held by the label alone already worked this way.
