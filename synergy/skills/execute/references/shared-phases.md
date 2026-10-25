@@ -73,6 +73,8 @@ Implement by `templates/coding-method.md`, code and tests together, following th
 
 Run the quality gate command from `ClaudeProject.md`. On a failure, read the error output, fix the failing check and re-run, up to 3 retries. Near the token budget or the timeout, stop after 2.
 
+Run the command exactly as `ClaudeProject.md` writes it, and nothing broader. Do not add a full test suite, a whole-repository lint or a full gate beside it. A project can scope its gate to the change because a remote CI run, nightly or on the pull request, checks everything. Run the full gate only when `ClaudeProject.md` says the change needs it, such as a configuration or dependency change.
+
 When retries are exhausted and the gate is still red, read `references/gate-failure.md` and follow it — the cause is likely outside the story's scope.
 
 ## Phase 6 — Commit

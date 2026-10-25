@@ -28,7 +28,7 @@ An HTML comment so it renders invisibly. Consumers currently treat any file as v
 | ------- | ------- |
 | `## Identity` | Table: `org`, `repo`, `default-branch`. |
 | `## Package Manager` | One value (e.g. `pnpm`, `none`). |
-| `## Quality Gate` | The pre-commit command inside a fenced code block. |
+| `## Quality Gate` | The pre-commit command inside a fenced code block. The workflows run it as written and add no full suite beside it, so a project with a remote CI run that checks everything can scope it to the change. |
 | `## Branch Convention` | Branch pattern containing `{number}` in a fenced block. |
 | `## Issue Types & Fields` | Purpose key → field name table, plus what the org does not define. `Stage` is the issue's state, and `Priority`, `Effort` and `Ownership` are the picker's only other inputs, so a project that has not written this section cannot rank, size or route anything; `wf config-audit` reports the missing section as CRITICAL. |
 

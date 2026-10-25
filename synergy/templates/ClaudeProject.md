@@ -25,6 +25,8 @@ Command to run before each commit:
 {quality_gate_command}
 ```
 
+If a remote CI run checks everything, nightly or on the pull request, this command can check only what the change touches: lint and format the changed files, and run the tests related to them. Say here when the full gate is needed instead, such as for a configuration or dependency change.
+
 ## Branch Convention
 
 Pattern for feature branches:
