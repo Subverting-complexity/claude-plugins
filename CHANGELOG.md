@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.7.3
+
+- The plugin description in `plugin.json` and the marketplace manifest now says that `synergy` runs in a Claude Code cloud session: `wf` falls back to REST where GraphQL is blocked, and a claim is a `session:` label where claim refs are refused. The description had not changed since 20.2.0.
+
 ## synergy 20.7.2
 
 - `wf scratch-clean` now deletes `.claude/release-notes-comment.md`, the file a run writes the release notes comment to before posting it on the pull request, and `wf` lists it in the clone's ignore block. Before, the file was neither deleted nor ignored, so every `wf exit-cleanup` after a run that posted notes reported the worktree `dirty` with this file left over, and the run had to discard it by hand with `wf tree-clean`.
