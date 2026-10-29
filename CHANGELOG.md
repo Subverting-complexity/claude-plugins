@@ -6,6 +6,11 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.9.0
+
+- A claim no longer loses to a `session:` label that a crashed run left on an issue. The old label came first for ever, so every later run answered "claimed by another run" until someone ran `claim-reap`. Now a label counts as stale when the issue is open, nobody is assigned to it, and the label is 4 hours old or more. The claim takes it off and goes on. A live claim is assigned within moments, so it is never stale. A pull request, a closed issue, an assigned issue, a younger label and a label whose age cannot be read keep their old behaviour.
+- `plan-set` (and so `bulk-execute` and `orchestrate`) no longer limits a set to stories one `Priority` level apart. The set is still taken in priority order, so urgent work leads, and a lower-priority story joins when it fits the effort budget and the two-group limit. Before this, one High story and several Low stories could leave the budget unfilled.
+
 ## synergy 20.8.0
 
 - `execute`, `bulk-execute` and `build` now run the quality gate command from `ClaudeProject.md` as written, and add no full test suite beside it. A project whose remote CI run checks everything, nightly or on the pull request, can scope its gate to the change: lint and format the changed files, and run the tests related to them. Before, `bulk-execute` and `build` asked for the full gate or the full suite at the end of every run, and several runs at the same time used most of a machine's memory.

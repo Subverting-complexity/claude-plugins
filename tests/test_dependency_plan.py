@@ -156,20 +156,24 @@ class TestBudgetBandAndGroups(unittest.TestCase):
         self.assertEqual(numbers(plan), [1, 3])
         self.assertEqual(plan['weight'], 7)
 
-    def test_no_set_spans_more_than_one_priority_level(self):
+    def test_a_set_may_span_any_priority_levels_while_it_fits_the_budget(self):
         universe = {1: story(priority='Urgent'), 2: story(priority='Medium'),
                     3: story(priority='High'), 4: story(priority='Low')}
         plan = wf_core.plan_set(universe, [1, 3, 2, 4])
+        self.assertEqual(numbers(plan), [1, 3, 2, 4])
+        plan = wf_core.plan_set(universe, [1, 4], seeds=[1, 4])
+        self.assertEqual(numbers(plan), [1, 4])
+        self.assertEqual(plan['excluded'], [])
+
+    def test_a_low_priority_story_still_waits_for_the_budget_behind_urgent_work(self):
+        universe = {1: story(effort='High', priority='Urgent'),
+                    2: story(effort='High', priority='Low'),
+                    3: story(effort='Low', priority='Low')}
+        plan = wf_core.plan_set(universe, [1, 2, 3])
         self.assertEqual(numbers(plan), [1, 3])
         plan = wf_core.plan_set(universe, [1, 2], seeds=[1, 2])
         self.assertEqual(numbers(plan), [1])
-        self.assertIn('Priority', plan['excluded'][0]['reason'])
-
-    def test_a_blocker_is_banded_by_the_priority_it_inherits(self):
-        universe = {1: story([2], priority='Urgent'), 2: story(priority='Urgent'),
-                    3: story(priority='Low')}
-        plan = wf_core.plan_set(universe, [1, 2, 3])
-        self.assertEqual(numbers(plan), [2, 1])
+        self.assertIn('budget', plan['excluded'][0]['reason'])
 
     def test_modes_split_into_two_groups_and_one_group_holds_one_mode(self):
         universe = {1: story(mode='feature'), 2: story(mode='maintenance'),

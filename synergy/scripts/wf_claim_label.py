@@ -21,6 +21,11 @@ also adds the label `session: <guid>` to the issue or pull request, where
   as taken.
 - Every run and every Builder in one Claude session shares the GUID, so a
   second run in the same session treats the first run's label as its own.
+- A label of a crashed session would come first for good, so a run does not
+  count a label as a rival's when it is stale: on an open issue that nobody is
+  assigned to, and added `REAP_THRESHOLD_HOURS` or more ago, the same test
+  `claim-reap` applies. The run takes that label off and claims the issue. A
+  live holder is assigned within moments of its claim, so it is never stale.
 
 Releasing a claim this checkout holds removes the label from that item only.
 A closed, completed issue and a merged pull request keep their label for good,
@@ -49,6 +54,7 @@ from datetime import datetime
 from urllib.parse import quote
 
 from wf_config import load_config, repo_root
+from wf_core_claims import REAP_THRESHOLD_HOURS
 from wf_io import eprint, gh_graphql, gh_rest, graphql_blocked, run
 
 
@@ -314,6 +320,30 @@ def label_winner(path, names):
         return present[0], True
     first = _first_added(path, present)
     return first, first is not None
+
+
+def stale_rivals(target, path, rivals):
+    """The labels in `rivals` that no live session can hold, or [].
+
+    Only an open issue with nobody assigned to it qualifies: a live claim
+    assigns the issue right after it is won, and a pull request has no
+    assignee to test. A label counts as stale at `REAP_THRESHOLD_HOURS`, the
+    age `claim-reap` uses, and a label whose age cannot be read is not stale.
+    """
+    kind, _, raw = target.partition('-')
+    repo = _repo()
+    if kind != 'issue' or not raw.isdigit() or not repo:
+        return []
+    ok, item, _err = gh_rest(path)
+    if (not ok or not isinstance(item, dict) or item.get('pull_request')
+            or item.get('state') != 'open' or item.get('assignees')):
+        return []
+    stale = []
+    for name in rivals:
+        age = _label_age(repo, int(raw), name)
+        if age is not None and age >= REAP_THRESHOLD_HOURS:
+            stale.append(name)
+    return stale
 
 
 def remove_session_label(target, label=None):
@@ -621,6 +651,16 @@ def add_and_settle(target):
     if mine not in names:
         eprint('wf: GitHub did not add the label "%s" to %s' % (mine, target))
         return 'error'
+    rivals = [n for n in names if is_session_label(n) and n != mine]
+    if rivals:
+        gone = [n for n in stale_rivals(target, path, rivals)
+                if remove_session_label(target, n)]
+        if gone:
+            eprint('wf: took the stale session label%s "%s" off %s: nobody is '
+                   'assigned and %s older than %dh'
+                   % ('s' if len(gone) > 1 else '', '", "'.join(gone), target,
+                      'they are' if len(gone) > 1 else 'it is', REAP_THRESHOLD_HOURS))
+            names = [n for n in names if n not in gone]
     winner, readable = label_winner(path, names)
     if winner == mine:
         return 'won'

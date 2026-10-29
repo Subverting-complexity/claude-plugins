@@ -5358,14 +5358,13 @@ class TestCandidatesUnderParent(WfCommandTestCase):
     def test_a_blocked_leaf_keeps_its_priority_against_the_pool(self):
         """A High leaf waiting on a Medium one is built next, and the Medium
         blocker carries its High. A Low leaf that was ready all along is two
-        levels below, so it waits for another run and says why."""
+        levels below, and still joins the set because it fits the budget."""
         tree = _node(50, 'Feature', _node(51, 'User Story'), _node(52, 'User Story'),
                      _node(53, 'User Story'))
         priority = {51: 'Low', 52: 'Medium', 53: 'High'}
         pool = [_tree_leaf(52), _tree_leaf(51), _tree_leaf(53, 'Blocked', [52])]
         _, payload = self._run(tree, pool, priority=priority)
-        self.assertEqual([c['number'] for c in payload['candidates']], [52, 53])
-        self.assertIn('Priority', self._reason(payload, 51))
+        self.assertEqual([c['number'] for c in payload['candidates']], [52, 53, 51])
 
     def test_a_prerequisite_outside_the_tree_is_taken_and_says_why(self):
         """`within` holds for everything but a leaf's own prerequisite."""
