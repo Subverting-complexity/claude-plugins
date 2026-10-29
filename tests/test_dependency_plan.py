@@ -4,7 +4,7 @@ priority a blocker inherits in `evaluate_pool`.
 
 A dependency decides where a story goes in the build order, never whether it
 belongs in the set on its own account. Only a blocker the run cannot build
-takes a story out outright; the budget, priority and group rules take a story
+takes a story out outright; the budget and group rules take a story
 out with its whole chain.
 """
 
@@ -140,8 +140,8 @@ class TestPlanSetOpen(unittest.TestCase):
         self.assertEqual(plan['selected'], [])
 
 
-class TestBudgetBandAndGroups(unittest.TestCase):
-    """The three rules every set keeps, enforced in `plan_set`."""
+class TestBudgetAndGroups(unittest.TestCase):
+    """The two rules every set keeps, enforced in `plan_set`."""
 
     def test_effort_weights(self):
         self.assertEqual(wf_core.BULK_BUDGET, 7)
