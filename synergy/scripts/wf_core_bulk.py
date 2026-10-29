@@ -5,7 +5,6 @@ ordering each one; choosing from a container.
 `scripts/README.md` has the module map.
 """
 
-from wf_core_fields import _priority_rank
 from wf_core_refs import ref_label
 from wf_core_select import HIERARCHY_CONTAINER_TYPES
 
@@ -178,10 +177,6 @@ EFFORT_WEIGHT_DEFAULT = EFFORT_WEIGHTS['medium']
 # request is what fills its context.
 MAX_GROUPS = 2
 
-# How far apart two stories' `Priority` may be and still share a set: the same
-# level or the next one, so urgent work never waits behind low-priority work.
-PRIORITY_BAND = 1
-
 
 def effort_weight(value):
     """What an `Effort` value costs against `BULK_BUDGET`."""
@@ -286,12 +281,10 @@ def plan_set(universe, rank, seeds=None, budget=BULK_BUDGET, reasons=None,
     is excluded with the reason it is out.
 
     Every story is taken with its whole prerequisite chain or not at all, and
-    only while the set still keeps three rules:
+    only while the set still keeps two rules:
 
     - **Budget.** The `effort_weight` of every story, prerequisites included,
       adds up to no more than `budget`.
-    - **Priority.** No two stories are more than `PRIORITY_BAND` levels of
-      `Priority` apart, each read as the priority it carries.
     - **Groups.** `split_groups` can cut the set into at most `max_groups`
       pull requests, none of them mixing modes.
 
@@ -305,7 +298,10 @@ def plan_set(universe, rank, seeds=None, budget=BULK_BUDGET, reasons=None,
       stories under one container), every story inside it the set did not
       take is excluded too, with the rule that kept it out.
 
-    `budget` None turns the three rules off and gives one group holding
+    `Priority` is not a rule. Stories are taken in `rank` order, so urgent work
+    leads and a lower-priority story joins only when it still fits the budget.
+
+    `budget` None turns the two rules off and gives one group holding
     every story, its `mode` None when it holds both, for a caller that wants
     only the build order (`pick --issue` on a story that waits).
 
@@ -391,10 +387,6 @@ def plan_set(universe, rank, seeds=None, budget=BULK_BUDGET, reasons=None,
         if total > budget:
             return ('its Effort, with its prerequisites, takes the set to %d '
                     'against a budget of %d' % (total, budget))
-        levels = [_priority_rank(universe[n].get('priority')) for n in numbers]
-        if max(levels) - min(levels) > PRIORITY_BAND:
-            return ('its Priority is more than one level from another story in '
-                    'the set')
         return groups_of(numbers)[1]
 
     def take(chosen, why, n, reason):

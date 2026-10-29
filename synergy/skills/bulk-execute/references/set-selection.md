@@ -5,7 +5,7 @@ Read this at Phase 1. `wf plan-set` chooses the set, splits it into groups, orde
 ## What `plan-set` decides
 
 - **A set fills a budget.** Stories are taken in priority order, linked or not, while the `Effort` of the set stays within 7 (Low 1, Medium 2, High 6). A story comes with its whole prerequisite chain or not at all.
-- **A set keeps to one priority band.** No two stories are more than one `Priority` level apart, each read as the priority it carries.
+- **Priority sets the order, not the limit.** A set may hold stories of any `Priority`. Urgent stories are taken first, and a lower-priority story joins only when it still fits the budget.
 - **Groups.** The set is cut on the mode boundary into at most `--max-groups` groups, each one branch and one pull request, and a group holding a prerequisite comes first. One mode is always one group. In an open pool a story that joins a started group goes before one that would start a second.
 - **A dependency never excludes a story on its own.** A story waiting on another story in the set goes in a later wave or group. A story's open prerequisites join the set even when nobody named them, as long as this run can build them, and `--mode` or `--max-effort` never hold one back.
 - **Only a blocker nobody here may build excludes a story**: one owned by a person, assigned or claimed elsewhere, already closed by an open pull request, open in another repository, waiting on such an issue itself, in a dependency cycle, or with edges that could not be read. Each exclusion carries its reason.

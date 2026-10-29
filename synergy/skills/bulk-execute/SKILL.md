@@ -22,7 +22,7 @@ arguments:
 
 Take the stories that fill an **effort budget** and land them as **one or two groups**, each one branch, one pull request, one independent review and one merge. Group 1 is merged before group 2 is built. A story that waits on another story in the set is built after it, never left out, and independent stories in the same wave may be built in parallel.
 
-`wf plan-set` decides the set, and every rule is enforced there: a budget of 7 where `Effort` Low is 1, Medium 2 and High 6; no two stories more than one `Priority` level apart; feature and maintenance work never in one group. Stories need not be linked.
+`wf plan-set` decides the set, and every rule is enforced there: a budget of 7 where `Effort` Low is 1, Medium 2 and High 6; stories taken in `Priority` order, with no limit on how far apart their priorities are; feature and maintenance work never in one group. Stories need not be linked.
 
 **Use `/synergy:execute` instead** when there is one story.
 

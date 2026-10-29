@@ -21,6 +21,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 from urllib.parse import unquote
@@ -47,8 +48,12 @@ class _Remote:
     """A fake remote: claim refs on the git side, labels and their events on
     the REST side."""
 
-    def __init__(self, push_err=None, refs=(), labels=None, race=None):
+    def __init__(self, push_err=None, refs=(), labels=None, race=None,
+                 assigned=()):
         self.push_err = push_err
+        # Issues somebody is assigned to: a live claim assigns right after it
+        # is won.
+        self.assigned = set(assigned)
         self.refs = set(refs)
         self.labels = {k: list(v) for k, v in (labels or {}).items()}
         self.repo_labels = {name for names in self.labels.values() for name in names}
@@ -58,16 +63,20 @@ class _Remote:
         self.closed, self.merged = set(), set()
         self.events = {}
         self.next_id = 100
+        # A label that was there before the test began is an old one; a label
+        # added during the test is new.
         for number, names in self.labels.items():
             for name in names:
-                self._event(number, name)
+                self._event(number, name, hours_ago=24 * 30)
         self.git, self.rest = [], []
 
-    def _event(self, number, name):
+    def _event(self, number, name, hours_ago=0):
         self.next_id += 1
+        stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ',
+                              time.gmtime(time.time() - hours_ago * 3600))
         self.events.setdefault(number, []).append(
             {'id': self.next_id, 'event': 'labeled', 'label': {'name': name},
-             'created_at': '2026-01-01T00:00:00Z'})
+             'created_at': stamp})
 
     def run(self, cmd, input_text=None):
         self.git.append(list(cmd))
@@ -127,6 +136,7 @@ class _Remote:
         if path.endswith('/labels'):
             return True, [{'name': n} for n in current], ''
         item = {'number': number, 'labels': [{'name': n} for n in current],
+                'assignees': [{'login': 'me'}] if number in self.assigned else [],
                 'state': 'closed' if number in self.closed | self.merged else 'open',
                 'state_reason': 'completed' if number in self.closed else None}
         if number in self.merged:
@@ -205,7 +215,7 @@ class TestLocalSession(_Case):
         self.assertIsNone(self.marker('issue-5'))
 
     def test_a_story_a_cloud_session_labelled_first_is_lost_and_the_ref_given_back(self):
-        remote = self.use(_Remote(labels={5: [RIVAL]}))
+        remote = self.use(_Remote(labels={5: [RIVAL]}, assigned={5}))
         outcome, _ = self.acquire('issue-5')
         self.assertEqual(outcome, 'lost')
         self.assertNotIn('refs/claims/issue-5', remote.refs)
@@ -342,6 +352,69 @@ class TestCloudSession(_Case):
         self.assertEqual(err.getvalue().count('session label alone'), 1)
         self.assertEqual(wf.release_claims(targets), dict.fromkeys(targets, True))
         self.assertEqual([remote.labels[n] for n in (5, 6, 7)], [[], [], []])
+
+
+class TestStaleRivalLabel(_Case):
+    """A label a crashed session left is not a rival (#4444 in a real repo): it
+    came first on the issue for good, so every later claim lost to it."""
+
+    def test_an_old_label_on_an_unassigned_issue_is_taken_off_and_the_claim_wins(self):
+        remote = self.use(_Remote(labels={5: [RIVAL]}))
+        outcome, err = self.acquire('issue-5')
+        self.assertEqual(outcome, 'won')
+        self.assertEqual(remote.labels[5], [MINE])
+        self.assertIn('refs/claims/issue-5', remote.refs)
+        self.assertIn('stale session label', err)
+
+    def test_the_same_holds_for_a_session_that_claims_by_label_alone(self):
+        remote = self.use(_Remote(labels={5: [RIVAL]}, push_err=REFUSED))
+        outcome, _ = self.acquire('issue-5')
+        self.assertEqual(outcome, 'won')
+        self.assertEqual(remote.labels[5], [MINE])
+        self.assertEqual(self.marker('issue-5'), 'session:me-guid')
+
+    def test_an_old_label_on_an_assigned_issue_still_holds_it(self):
+        remote = self.use(_Remote(labels={5: [RIVAL]}, assigned={5}))
+        outcome, _ = self.acquire('issue-5')
+        self.assertEqual(outcome, 'lost')
+        self.assertEqual(remote.labels[5], [RIVAL])
+
+    def test_a_label_younger_than_the_reap_threshold_still_holds_the_issue(self):
+        remote = self.use(_Remote(labels={5: [RIVAL]}))
+        remote.events[5][0]['created_at'] = time.strftime(
+            '%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - 3600))
+        outcome, _ = self.acquire('issue-5')
+        self.assertEqual(outcome, 'lost')
+        self.assertEqual(remote.labels[5], [RIVAL])
+
+    def test_a_label_whose_age_cannot_be_read_is_not_taken_off(self):
+        remote = self.use(_Remote(labels={5: [RIVAL]}, push_err=REFUSED))
+        remote.events[5] = []
+        outcome, _ = self.acquire('issue-5')
+        self.assertEqual(outcome, 'error')
+        self.assertEqual(remote.labels[5], [RIVAL])
+
+    def test_a_closed_issue_keeps_its_old_label_as_a_record(self):
+        remote = self.use(_Remote(labels={5: [RIVAL]}))
+        remote.closed.add(5)
+        outcome, _ = self.acquire('issue-5')
+        self.assertEqual(outcome, 'lost')
+        self.assertEqual(remote.labels[5], [RIVAL])
+
+    def test_a_pull_request_label_is_never_judged_stale(self):
+        remote = self.use(_Remote(labels={7: [RIVAL]}))
+        outcome, _ = self.acquire('pr-7')
+        self.assertEqual(outcome, 'lost')
+        self.assertEqual(remote.labels[7], [RIVAL])
+
+    def test_only_the_stale_label_goes_when_a_live_one_is_also_there(self):
+        live = 'session: live-guid'
+        remote = self.use(_Remote(labels={5: [RIVAL]}))
+        remote.labels[5].append(live)
+        remote._event(5, live)
+        outcome, _ = self.acquire('issue-5')
+        self.assertEqual(outcome, 'lost')
+        self.assertEqual(remote.labels[5], [live])
 
 
 class TestPullRequestClaims(_Case):

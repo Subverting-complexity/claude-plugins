@@ -100,8 +100,7 @@ class TestPlanSet(Harness):
             code, payload = capture(['plan-set'])
         self.assertEqual(code, wf.EXIT_OK)
         self.assertFalse(payload['claimed'])
-        # #3 is High and #1 carries #2's Urgent: one level apart, so all three
-        # fit a budget of 7 (unestimated stories cost Medium).
+        # All three fit a budget of 7 (unestimated stories cost Medium).
         self.assertEqual([s['number'] for s in payload['stories']], [1, 2, 3])
         self.assertEqual(payload['groups'][0]['waves'], [[1, 3], [2]])
         self.assertEqual(payload['stories'][1]['blocked_by'], [1])
