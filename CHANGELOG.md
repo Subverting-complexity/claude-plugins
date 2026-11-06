@@ -6,6 +6,14 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 21.0.0
+
+- Breaking: the `walkthrough-mockup` skill is renamed `demo`, because it builds an explainer, not a mock-up. Use `/synergy:demo`. It no longer adds a `Mock-up · test data` banner; it adds a banner only when the person asks. Its files are named `<yyyy-mm-dd> <Subject> Demo v<x.y>.html`.
+- A new `mockup` skill runs a grooming session on the UI, UX, feel and functionality of an existing or designed system, then builds a clickable mock-up that looks exactly like the product. The grooming is a `grill` interview with a coverage list in `references/grooming.md`: purpose, users and tasks, screens, flows, look and feel, content, functionality, states, feedback, sizes, accessibility and open points. It ends with a short brief that the person confirms before the build.
+- For an existing system, the mock-up takes its colours, type, spacing, components and words from the codebase, so a user cannot tell it from the real product outside the change. Every visible control works, every agreed state can be reached, and a review panel, closed by default, links to each screen and state.
+- The mock-up is one standalone `.html` file that works with no network, never a hosted page. It names no AI tool anywhere, including comments and metadata, uses invented data, and has no banner or tag that marks it as a mock-up unless the person asks for one. `references/verification.md` holds the checks: script syntax, duplicate ids, outside requests, screenshots of each screen and state at each size, a click test of each flow, and a search for banned words and names.
+- The every-chat budget goes from 1520 to 1560 for the new skill's description.
+
 ## synergy 20.10.0
 
 - A new `walkthrough-mockup` skill builds a one-screen, interactive HTML walkthrough that explains a system or a proposal to business readers. The skill describes the feeling such a page must have (premium and calm, visual first, one idea per step, motion that shows the flow, everything explorable, one screen, accessible) and has each mock-up choose its own palette, type, layout and diagram style, so 2 mock-ups do not look like copies.

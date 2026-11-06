@@ -63,7 +63,8 @@ gh auth status 2>&1 | head -3
 > - `/synergy:spec-hardening` → Test a spec against the codebase before it is built and report its gaps, conflicts and missing cases, in the chat only.
 > - `/synergy:verify-feature` → Write the report a person reads before merging, in the chat only.
 > - `/synergy:release-notes` → Write the user and internal release notes for a branch or PR, grouped by product area. `execute` and `bulk-execute` write them onto each story when it reaches Done.
-> - "Make a walkthrough of this proposal" or `/synergy:walkthrough-mockup` → Build a one-screen, interactive HTML walkthrough of a system or proposal for business readers, as a plain file you can send to anyone.
+> - "Make a demo of this proposal" or `/synergy:demo` → Build a one-screen, interactive HTML walkthrough of a system or proposal for business readers, as a plain file you can send to anyone.
+> - "Mock up this screen" or `/synergy:mockup` → Run a grooming session on the look, feel and behaviour of new or changed screens, then build a clickable mock-up that looks exactly like the product, as a standalone HTML file you can send to users.
 > - "Use Jev" or `/synergy:jev` → Use Jev, the TypeSafe decision model, for quick sort, score and yes/no judgments. Optional: it needs a `TYPESAFE_API_KEY`, and no workflow needs it.
 >
 > **Review and audit:**

@@ -6,7 +6,7 @@ description: 'Interview the user hard about a plan until every open question is 
 
 Question a plan until its weak points are found and each open question has an answer or has been parked on purpose. The interview is worth running only if it changes something: a session in which the user agrees with everything and never has to stop and think has not found the parts of the plan nobody has decided yet.
 
-This skill is the one interview procedure in this plugin. Run it directly to stress-test a plan, or let `feature-discovery` run it as its interview. When another skill runs it, that skill supplies the subject and a list of topics that must be covered before the grill closes; everything about how the questions are asked lives here.
+This skill is the one interview procedure in this plugin. Run it directly to stress-test a plan, or let `feature-discovery` or `mockup` run it as its interview. When another skill runs it, that skill supplies the subject and a list of topics that must be covered before the grill closes; everything about how the questions are asked lives here.
 
 ## Output standard
 
