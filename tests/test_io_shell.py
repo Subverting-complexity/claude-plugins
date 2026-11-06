@@ -5729,6 +5729,17 @@ class TestBoardSync(unittest.TestCase):
         self.assertNotIn(('gadgets', 1), written)
         self.assertNotIn(('gadgets', 4), written)
 
+    def test_the_closed_read_asks_only_for_the_stage(self):
+        closed = wf._sync_issues_query('CLOSED', False)
+        self.assertIn('issueFieldValues', closed)
+        for heavy in ('blockedBy', 'closedByPullRequestsReferences',
+                      'projectItems', 'assignees'):
+            self.assertNotIn(heavy, closed)
+            self.assertIn(heavy, wf._sync_issues_query('OPEN', False))
+
+    def test_the_default_page_cap_reads_a_repository_of_3000_closed_issues(self):
+        self.assertGreaterEqual(wf.SYNC_MAX_PAGES * wf.SYNC_ISSUE_PAGE, 10000)
+
     def test_a_repository_past_the_page_cap_is_failed_and_left_untouched(self):
         hub = _SyncHub(page_size=1)
         with mock.patch.object(wf, 'SYNC_MAX_PAGES', 2):

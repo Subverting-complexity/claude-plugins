@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 21.0.1
+
+- Fix: the daily full `board-sync` sweep no longer fails on a repository with more than 2,000 closed issues. It stopped at 40 pages of 50 issues and reported the repository as failed, so CadenceReader (about 3,100 closed issues) was never swept and an issue closed more than a week earlier could keep a stale `Stage`. The cap is now 200 pages, which is 10,000 issues of one state in one repository. The sweep also reads a closed issue's `Stage` only, not its blockers, pull requests, assignees or cards, because a closed issue is `Done` or it is not. This makes the full sweep lighter, and a closed issue with more than 50 blockers is no longer skipped.
+
 ## synergy 21.0.0
 
 - Breaking: the `walkthrough-mockup` skill is renamed `demo`, because it builds an explainer, not a mock-up. Use `/synergy:demo`. It no longer adds a `Mock-up · test data` banner; it adds a banner only when the person asks. Its files are named `<yyyy-mm-dd> <Subject> Demo v<x.y>.html`.
