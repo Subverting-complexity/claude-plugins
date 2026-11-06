@@ -6,6 +6,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 20.10.0
+
+- A new `walkthrough-mockup` skill builds a one-screen, interactive HTML walkthrough that explains a system or a proposal to business readers. The skill describes the feeling such a page must have (premium and calm, visual first, one idea per step, motion that shows the flow, everything explorable, one screen, accessible) and has each mock-up choose its own palette, type, layout and diagram style, so 2 mock-ups do not look like copies.
+- `references/example-dark-system-walkthrough.html` is 1 worked example with invented data, to study and borrow techniques from, not to copy. A menu of components lists what each is good for. `references/patterns.md` holds the layout, navigation, motion and accessibility rules, and `references/verification.md` the checks: a script syntax check, a duplicate id check, headless browser screenshots of every step at 2 sizes, an optional click test, and a search for banned words and names.
+- The page is a plain `.html` file that anyone can open, never a hosted page. It uses invented data, names no AI tool, keeps a `Mock-up · test data` banner unless the person asks to remove it, and shows open points as open.
+
 ## synergy 20.9.0
 
 - A claim no longer loses to a `session:` label that a crashed run left on an issue. The old label came first for ever, so every later run answered "claimed by another run" until someone ran `claim-reap`. Now a label counts as stale when the issue is open, nobody is assigned to it, and the label is 4 hours old or more. The claim takes it off and goes on. A live claim is assigned within moments, so it is never stale. A pull request, a closed issue, an assigned issue, a younger label and a label whose age cannot be read keep their old behaviour.

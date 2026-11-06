@@ -85,7 +85,8 @@ jobs:
         # Raised in 17.12.0: the spec-hardening skill joins the visible skills, so a person can ask for a spec check in plain words.
         # Raised in 18.12.0: the jev skill joins the visible skills, so a person can ask to use Jev in plain words.
         # Raised in 18.13.0: the orchestrate skill joins the visible skills, so a person can ask to work through an Epic in plain words.
-        run: bash count-tokens.sh --every-chat --budget 1440
+        # Raised in 20.10.0: the walkthrough-mockup skill joins the visible skills, so a person can ask for a walkthrough mock-up in plain words.
+        run: bash count-tokens.sh --every-chat --budget 1520
 
       - name: Prove the load counter assigns tiers as documented
         shell: bash
