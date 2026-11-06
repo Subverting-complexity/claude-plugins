@@ -197,6 +197,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | `ecosystem-setup`     | Sets up companion tools, writes `ecosystem.md`    |
 | `support-request`     | Support-request and incident write-ups            |
 | `tone`                | Polishes correspondence in the user's voice       |
+| `walkthrough-mockup`  | Builds a one-screen, interactive HTML walkthrough of a system or proposal for business readers, with its own look for each subject |
 
 ## Adapting for a new project
 
