@@ -11,8 +11,9 @@ name: Board sync
 on:
   schedule:
     - cron: '17 * * * *'
-    # Once a day, every closed issue rather than the last week's, so one closed
-    # before the window does not keep a stale Stage for good.
+    # Once a day, the last 60 days of closed issues rather than the last week's,
+    # so one the hourly run missed does not keep a stale Stage. A manual
+    # dispatch reads every closed issue, for a one-off full correction.
     - cron: '47 3 * * *'
   workflow_dispatch:
 
@@ -46,8 +47,10 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           SCHEDULE: ${{ github.event.schedule }}
         run: |
-          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$SCHEDULE" = '47 3 * * *' ]; then
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
             python3 synergy/scripts/wf.py board-sync --closed-days 0
+          elif [ "$SCHEDULE" = '47 3 * * *' ]; then
+            python3 synergy/scripts/wf.py board-sync --closed-days 60
           else
             python3 synergy/scripts/wf.py board-sync
           fi

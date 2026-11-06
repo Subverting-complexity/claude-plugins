@@ -5822,6 +5822,12 @@ class TestBoardSyncWorkflow(unittest.TestCase):
                       self.code)
         self.assertIn('wf.py board-sync', self.code)
 
+    def test_the_daily_sweep_reads_60_days_and_a_manual_run_reads_all(self):
+        self.assertIn("cron: '47 3 * * *'", self.code)
+        self.assertIn('elif [ "$SCHEDULE" = \'47 3 * * *\' ]', self.code)
+        self.assertIn('board-sync --closed-days 60', self.code)
+        self.assertIn('board-sync --closed-days 0', self.code)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
