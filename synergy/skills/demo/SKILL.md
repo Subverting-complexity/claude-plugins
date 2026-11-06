@@ -1,14 +1,16 @@
 ---
-name: walkthrough-mockup
-description: 'Build an interactive one-screen HTML walkthrough of a system or proposal for business readers. Trigger on walkthrough or explainer mock-ups.'
+name: demo
+description: 'Build a one-screen interactive HTML demo that explains a system or proposal to business readers. Trigger on a demo, walkthrough or explainer.'
 ---
-# Walkthrough Mock-up
+# Demo
 
 This skill builds one self-contained `.html` page that explains a system or a proposal to a business audience. The reader moves through a short series of steps. Each step shows one idea as a visual they can explore and click.
 
-The point of this skill is a feeling, not a style. A good walkthrough feels premium, calm and alive, and the reader understands the system by playing with it. Each mock-up gets its own look. Two mock-ups made with this skill must not look like copies of each other.
+A demo explains how a system works. When the person wants to show users exactly what a screen or product will look like and how it behaves, use the `mockup` skill instead.
 
-`skills/user-facing-communication/SKILL.md` shapes what you say to the person around the mock-up: lead with the file path and the current state, keep it short, and surface open points and assumptions. It governs your reply, not the text on the page.
+The point of this skill is a feeling, not a style. A good walkthrough feels premium, calm and alive, and the reader understands the system by playing with it. Each demo gets its own look. Two demos made with this skill must not look like copies of each other.
+
+`skills/user-facing-communication/SKILL.md` shapes what you say to the person around the demo: lead with the file path and the current state, keep it short, and surface open points and assumptions. It governs your reply, not the text on the page.
 
 ## The feeling
 
@@ -36,7 +38,7 @@ Before you build, choose a look that suits the subject and the audience. Decide 
 - **Diagram style and metaphor.** Columns of stages, a map, layers, a timeline, a cycle, a city, a pipeline. Choose the metaphor that makes this system easy to see.
 - **Component mix.** Pick from the menu below, and invent new components when the story needs them.
 
-Do not reuse the last mock-up's identity by default. If the person has a house style or brand, follow it.
+Do not reuse the last demo's identity by default. If the person has a house style or brand, follow it.
 
 ## Design rules
 
@@ -85,7 +87,7 @@ These are ideas, not a required set. Each one is good for a kind of point. Pick 
 
 ## Process
 
-1. **Read the source first.** Read the proposal, design or notes the page explains, in full. List the stages of the system, who owns each, the numbers that matter and the points that are still open. If the project has its own instructions (for example its `CLAUDE.md`), read them for where mock-ups are saved and any extra rules.
+1. **Read the source first.** Read the proposal, design or notes the page explains, in full. List the stages of the system, who owns each, the numbers that matter and the points that are still open. If the project has its own instructions (for example its `CLAUDE.md`), read them for where demos are saved and any extra rules.
 2. **Choose the identity.** Decide the palette, type, layout, metaphor and component mix, as described above. Tell the person the choice in 1-2 lines when you hand over.
 3. **Plan the steps.** Plan 5-8 steps, plus an overview if it helps. Each step is one idea with one visual and one thing to try. Check that the plan covers the source.
 4. **Build.** Write the page from the plan. Build the visuals first, then add the shortest text that labels them. Mark each open point as open (`Open: ...`).
@@ -99,9 +101,9 @@ These rules are about safety and access, not about look. Keep all of them.
 - **A plain file, never a hosted page.** Write one self-contained `.html` file and give the person its path. Do not publish it as a hosted artifact and do not offer to: a hosted link may be locked to one account, and a plain file can go to anyone. Load fonts and libraries only from public sources, or inline them.
 - **Invented data only.** Use `Fund A`, `Broker 1`, roles such as `Analyst` or `Head of operations`, and round figures. Never use real names, real figures, account numbers or identifiers from the source. System names that the audience knows are allowed when the project allows them.
 - **No AI tools or vendors.** Do not name an AI tool, model or vendor anywhere in the page, its title, its comments or its file name.
-- **A test banner by default.** Keep a fixed `Mock-up · test data` banner at the bottom of the page, styled to suit the identity, and leave room for it. Remove it only when the person asks.
+- **A test banner by default.** Keep a fixed `Demo · test data` banner at the bottom of the page, styled to suit the identity, and leave room for it. Remove it only when the person asks.
 - **Accessibility patterns.** Follow the accessibility rules in `references/patterns.md`: landmarks, diagrams as `role="group"`, interactive parts as buttons with labels, hidden decoration, charts described in words, focus outlines and keyboard use.
 - **Verification.** Run the checks in `references/verification.md` before you hand over.
 - **Do not invent mechanisms.** Show only what the source states. If the source leaves a point open, show it as open. Do not fill the gap with a plausible design.
 - **British spelling, no em dashes** in visible text. Use a middle dot (`·`) as a separator.
-- **Name the file** `<yyyy-mm-dd> <Screen> Mockup v<x.y>.html`. Each iteration is a new minor version (`v1.1`, `v1.2`). Keep the old versions. Save it where the project's instructions say; with no instruction, ask.
+- **Name the file** `<yyyy-mm-dd> <Subject> Demo v<x.y>.html`. Each iteration is a new minor version (`v1.1`, `v1.2`). Keep the old versions. Save it where the project's instructions say; with no instruction, ask.

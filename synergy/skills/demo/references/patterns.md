@@ -1,6 +1,6 @@
 # Walkthrough patterns
 
-This file describes how `example-dark-system-walkthrough.html` is built. It shows 1 coherent design system, not the rules for every mock-up. Borrow the techniques. Choose your own palette, type, layout and diagram size for each new mock-up.
+This file describes how `example-dark-system-walkthrough.html` is built. It shows 1 coherent design system, not the rules for every demo. Borrow the techniques. Choose your own palette, type, layout and diagram size for each new demo.
 
 The sections on navigation, motion and accessibility apply to any look. The token values, the font and the layout numbers belong to this example only.
 
