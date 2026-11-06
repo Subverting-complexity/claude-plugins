@@ -30,7 +30,10 @@ from wf_stage import NO_STAGE_FIELD, _chunks, set_stages, stage_field_meta
 
 SYNC_REPO_PAGE = 50
 SYNC_ISSUE_PAGE = 50
-SYNC_MAX_PAGES = 40
+# 200 pages of 50 is 10,000 issues of one state in one repository. At 40 pages
+# (2,000) the daily full sweep failed on a repository with 3,000 closed issues,
+# so its closed issues were never corrected.
+SYNC_MAX_PAGES = 200
 SYNC_CLOSED_DAYS = 7
 CARD_BATCH = 20
 
@@ -52,23 +55,30 @@ def _sync_issues_query(state, paged):
     Newest update first, so the closed-issue read can stop at the first issue
     older than its window instead of reading the repository's whole history.
     """
-    return (
-        'query($owner:String!,$repo:String!%s){'
-        ' repository(owner:$owner,name:$repo){'
-        '  issues(first:%d,states:%s,orderBy:{field:UPDATED_AT,direction:DESC}%s){'
-        '   pageInfo { hasNextPage endCursor }'
-        '   nodes { id number updatedAt'
+    # A closed issue is Done or it is not, so its read is only its `Stage`. The
+    # blockers, pull requests, assignees and cards are what an open issue is
+    # judged on, and reading them for every closed issue made the full sweep
+    # slow and heavy for no decision.
+    open_only = (
         '    assignees(first:1){ nodes { login } }'
         '    blockedBy(first:50){ pageInfo { hasNextPage } nodes { state } }'
         '    closedByPullRequestsReferences(first:10,includeClosedPrs:false){'
         '     nodes { state isDraft } }'
         '    projectItems(first:20){ nodes { project { id } } }'
-        '    issueFieldValues(first:50){ nodes {'
-        '     ... on IssueFieldSingleSelectValue {'
-        '      field { ... on IssueFieldSingleSelect { name } } name } } }'
-        '   } } } }'
+        if state == 'OPEN' else '')
+    head = (
+        'query($owner:String!,$repo:String!%s){'
+        ' repository(owner:$owner,name:$repo){'
+        '  issues(first:%d,states:%s,orderBy:{field:UPDATED_AT,direction:DESC}%s){'
+        '   pageInfo { hasNextPage endCursor }'
+        '   nodes { id number updatedAt'
         % (',$cursor:String!' if paged else '', SYNC_ISSUE_PAGE, state,
            ',after:$cursor' if paged else ''))
+    return (head + open_only +
+            '    issueFieldValues(first:50){ nodes {'
+            '     ... on IssueFieldSingleSelectValue {'
+            '      field { ... on IssueFieldSingleSelect { name } } name } } }'
+            '   } } } }')
 
 
 def _paged_nodes(query_for, path, args, stop=None):
