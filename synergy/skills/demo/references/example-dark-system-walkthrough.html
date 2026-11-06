@@ -27,7 +27,7 @@ body{margin:0;font-family:Inter,"Segoe UI",system-ui,sans-serif;color:var(--text
 
 /* ---------- one-screen layout ---------- */
 body{height:100vh;height:100dvh;overflow:hidden;display:flex;flex-direction:column}
-.wrap{flex:1;min-height:0;width:100%;max-width:1680px;margin:0 auto;display:flex;flex-direction:column;padding:16px 24px 40px}
+.wrap{flex:1;min-height:0;width:100%;max-width:1680px;margin:0 auto;display:flex;flex-direction:column;padding:16px 24px 18px}
 header{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:12px}
 .eyebrow{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);font-weight:600}
 h1{margin:4px 0 0;font-size:26px;font-weight:800;letter-spacing:-.02em}
@@ -176,11 +176,6 @@ body.arch .archhint{display:block}
 #map [role=button]:focus{outline:none}
 #map [role=button]:focus-visible,#arch .node:focus-visible{outline:2px solid var(--teal);outline-offset:3px}
 
-/* banner: on by default, removed only when the user asks */
-.mock-banner { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25;
-  background: rgb(251 178 36); color: rgb(7 17 42); text-align: center;
-  font-weight: 700; font-size: 13px; padding: 6px 12px; }
-
 /* compact: short screens */
 @media(max-width:1500px){.sb .nm{display:none}.sb.on .nm{display:inline}}
 @media(max-height:860px){
@@ -199,7 +194,7 @@ body.arch .archhint{display:block}
   .answer{font-size:13px;padding:10px}
 }
 @media(max-height:760px){
-  .wrap{padding:10px 20px 36px}
+  .wrap{padding:10px 20px 14px}
   header{margin-bottom:8px}
   h1{font-size:20px;margin-top:2px}
   .grid{gap:12px}
@@ -219,7 +214,7 @@ body.arch .archhint{display:block}
 }
 /* fallback: narrow or very short screens scroll normally */
 @media(max-width:1100px),(max-height:600px){
-  body{height:auto;overflow:auto;padding-bottom:56px}
+  body{height:auto;overflow:auto}
   .grid{grid-template-columns:1fr}
   .panel{overflow:visible}
   .scroll{overflow-x:auto}
@@ -227,7 +222,7 @@ body.arch .archhint{display:block}
   .sb .nm{display:none}.sb.on .nm{display:inline}
   .howto{display:none}
 }
-@media(max-width:640px){.wrap{padding:18px 16px 40px}h1{font-size:22px}.panel{padding:18px}}
+@media(max-width:640px){.wrap{padding:18px 16px}h1{font-size:22px}.panel{padding:18px}}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -359,8 +354,6 @@ body.arch .archhint{display:block}
     <p class="archhint">Select a component to see what it does, who owns it and how it is controlled.</p>
   </nav>
 </main>
-
-<div class="mock-banner" role="note">Demo · test data</div>
 
 <script>
 const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;

@@ -35,7 +35,7 @@ This file describes how to put a mock-up together in one standalone `.html` file
 
 The review panel lets a reviewer reach every screen and state without hunting for it. It is part of the file, not the product.
 
-- Put it behind a small, quiet button in a corner, next to the `Mock-up · sample data` tag. It is closed by default, and the backtick key toggles it.
+- Put it behind a small, quiet button in a corner. It is closed by default, and the backtick key toggles it.
 - It lists each screen and, under each, its states. Each item is a link to its hash.
 - It has a `Reset` button that restores `DATA` and the start screen.
 - It may list the open points, each with the option the mock-up shows for now, when the person wants users to see them.

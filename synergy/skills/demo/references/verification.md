@@ -43,10 +43,10 @@ done
 Open every PNG and check:
 
 - The page fits one screen with no page scroll. The panel content fits, or scrolls only a little at 1366x700.
-- No text overlaps another text, a card edge or the banner. Labels fit inside their pills and cards.
+- No text overlaps another text or a card edge. Labels fit inside their pills and cards.
 - The current step's groups are bright and the rest are dimmed.
 - The step bar shows `Next: <step> →`, and the current step's name.
-- The banner shows at the bottom, unless the person asked to remove it.
+- The page has no banner, tag or label that marks it as a demo or as test data.
 - The architecture view, if any, has no link drawn through a node, and no empty node.
 - Muted text and thin lines are still easy to read against their background.
 - The page does not look like a copy of the worked example or of the last demo. If it does, change the identity, not only the colours.

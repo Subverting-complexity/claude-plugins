@@ -101,7 +101,7 @@ These rules are about safety and access, not about look. Keep all of them.
 - **A plain file, never a hosted page.** Write one self-contained `.html` file and give the person its path. Do not publish it as a hosted artifact and do not offer to: a hosted link may be locked to one account, and a plain file can go to anyone. Load fonts and libraries only from public sources, or inline them.
 - **Invented data only.** Use `Fund A`, `Broker 1`, roles such as `Analyst` or `Head of operations`, and round figures. Never use real names, real figures, account numbers or identifiers from the source. System names that the audience knows are allowed when the project allows them.
 - **No AI tools or vendors.** Do not name an AI tool, model or vendor anywhere in the page, its title, its comments or its file name.
-- **A test banner by default.** Keep a fixed `Demo · test data` banner at the bottom of the page, styled to suit the identity, and leave room for it. Remove it only when the person asks.
+- **No banner.** Do not add a banner, tag or label that says the page is a demo, a mock-up or test data. Add one only when the person asks.
 - **Accessibility patterns.** Follow the accessibility rules in `references/patterns.md`: landmarks, diagrams as `role="group"`, interactive parts as buttons with labels, hidden decoration, charts described in words, focus outlines and keyboard use.
 - **Verification.** Run the checks in `references/verification.md` before you hand over.
 - **Do not invent mechanisms.** Show only what the source states. If the source leaves a point open, show it as open. Do not fill the gap with a plausible design.

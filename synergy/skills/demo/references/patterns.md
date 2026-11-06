@@ -31,8 +31,7 @@ Other layouts are equally valid. Keep the one-screen rule and the small-screen f
 - **Diagram.** One SVG with `viewBox="0 0 1200 680"`, `width:100%; height:100%`, so it scales to the space. A fixed viewBox with a percentage size is the useful technique; the numbers suit this layout only. The example lays it out in columns with uppercase headers at `y=44`: sources at `x=40`, then stages, the hub near `x=790`, outcomes at `x=1000`, guardrails along `y=616-668`.
 - **Panel.** Kicker, `h2`, lead, `.stats` (3 tiles), then `.inset` with the step's example. A step with no stats keeps a 14px spacer.
 - **Compact rules.** `@media (max-height:860px)` shrinks the panel heading, lead, stats (number and label in one line), rows, tiles and chart. `@media (max-height:760px)` shrinks them again and tightens the header and step bar. `@media (max-width:1500px)` hides the step names except the current one.
-- **Fallback.** `@media (max-width:1100px), (max-height:600px)` returns to normal scrolling: one column, the panel below the diagram, the SVG at `min-width:760px` inside a horizontal scroll, and `padding-bottom:56px` for the banner.
-- **Banner space.** With the banner, `.wrap` has `40px` bottom padding (`36px` in the 760px rule). If the person asks to remove the banner, delete the element and its CSS, and set the padding back to `18px`.
+- **Fallback.** `@media (max-width:1100px), (max-height:600px)` returns to normal scrolling: one column, the panel below the diagram, the SVG at `min-width:760px` inside a horizontal scroll.
 
 ## Navigation
 

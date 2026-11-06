@@ -52,7 +52,7 @@ Open every PNG and check:
 - No text overlaps, is cut off, or runs out of its box. Long names wrap or truncate as agreed.
 - Each state looks finished, including empty, error and no permission.
 - The layout at the small size changes as agreed and has no horizontal scroll.
-- The `Mock-up · sample data` tag shows and does not cover anything, unless the person asked to remove it. The review panel is closed.
+- The page has no banner, tag or label that marks it as a mock-up or sample data. The review panel is closed.
 - Muted text and thin lines are still easy to read.
 
 ## 4. Click through every flow
