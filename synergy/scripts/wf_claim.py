@@ -318,8 +318,15 @@ def apply_in_progress(cfg, issue):
     The write uses the node id the pool read already holds, and its result is
     left on the issue as `_stage_result` so `finish_pick` does not write the
     `Stage` a second time.
+
+    Returns (assigned, message). A failed assignment writes no `Stage` and is
+    returned, not only warned about: a claim with nobody assigned looks
+    abandoned to every other session once it is `REAP_THRESHOLD_HOURS` old,
+    so the caller must give the claim back rather than build on it.
     """
-    _assign(cfg, issue)
+    assigned, why = _assign(cfg, issue)
+    if not assigned:
+        return False, why
     number = int(issue['number'])
     ids = {number: issue['id']} if issue.get('id') else None
     written, message = set_stages(
@@ -328,10 +335,12 @@ def apply_in_progress(cfg, issue):
     if not written:
         eprint('wf: warning — could not set #%s to In Progress (%s)'
                % (issue['number'], message))
+    return True, 'assigned'
 
 
 def _assign(cfg, issue):
-    """Assign @me, removing any retired workflow label in the same call."""
+    """Assign @me, removing any retired workflow label in the same call.
+    Returns (assigned, message)."""
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     args = ['issue', 'edit', str(issue['number']), '--repo', repo,
             '--add-assignee', '@me']
@@ -341,15 +350,13 @@ def _assign(cfg, issue):
         # `gh issue edit` reads through GraphQL, so it fails here too.
         ok, err = wf_rest.rest_assign(cfg, issue['number'])
         wf_rest.rest_remove_labels(cfg, issue['number'], retired)
-        if not ok:
-            eprint('wf: warning — could not assign #%s (%s)' % (issue['number'], err))
-        return
+        return (True, 'assigned') if ok else (False, (err or 'no detail').strip())
     for name in retired:
         args += ['--remove-label', name]
     code, _, err = run(['gh'] + args)
     if code != 0:
-        eprint('wf: warning — could not assign #%s (%s)'
-               % (issue['number'], err.strip()))
+        return False, (err or 'no detail').strip()
+    return True, 'assigned'
 
 
 def revert_in_progress(cfg, number):

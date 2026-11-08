@@ -524,7 +524,7 @@ class TestPickBuildsThePrerequisite(Harness):
         with self.pool(issues, {}), \
                 mock.patch.object(wf, 'fetch_issue_candidate', return_value=requested), \
                 mock.patch.object(wf, 'acquire_claim', return_value='won'), \
-                mock.patch.object(wf, 'apply_in_progress'), \
+                mock.patch.object(wf, 'apply_in_progress', return_value=(True, 'assigned')), \
                 mock.patch.object(wf, 'set_stages',
                                   side_effect=lambda cfg, wanted, *a, **k:
                                   {n: (True, '') for n in wanted}):
@@ -555,7 +555,7 @@ class TestPickBuildsThePrerequisite(Harness):
                 mock.patch.object(wf, 'fetch_issue_candidate',
                                   return_value=issue(10, blockers=[20])), \
                 mock.patch.object(wf, 'acquire_claim', return_value='won'), \
-                mock.patch.object(wf, 'apply_in_progress'), \
+                mock.patch.object(wf, 'apply_in_progress', return_value=(True, 'assigned')), \
                 mock.patch.object(wf, 'set_stages',
                                   side_effect=lambda cfg, wanted, *a, **k:
                                   {n: (True, '') for n in wanted}):
@@ -572,7 +572,7 @@ class TestPickBuildsThePrerequisite(Harness):
                 mock.patch.object(wf, 'fetch_issue_candidate',
                                   return_value=issue(2, stage='Parked', blockers=[1])), \
                 mock.patch.object(wf, 'acquire_claim', return_value='won'), \
-                mock.patch.object(wf, 'apply_in_progress'), \
+                mock.patch.object(wf, 'apply_in_progress', return_value=(True, 'assigned')), \
                 mock.patch.object(wf, 'set_stages',
                                   side_effect=lambda cfg, wanted, *a, **k:
                                   {n: (True, '') for n in wanted}) as stages:
@@ -594,7 +594,7 @@ class TestPickBuildsThePrerequisite(Harness):
                 mock.patch.object(wf, 'fetch_issue_candidate',
                                   return_value=issue(2, blockers=[1])), \
                 mock.patch.object(wf, 'acquire_claim', return_value='won'), \
-                mock.patch.object(wf, 'apply_in_progress'), \
+                mock.patch.object(wf, 'apply_in_progress', return_value=(True, 'assigned')), \
                 mock.patch.object(wf, 'set_stages',
                                   side_effect=lambda cfg, wanted, *a, **k:
                                   {n: (True, '') for n in wanted}):

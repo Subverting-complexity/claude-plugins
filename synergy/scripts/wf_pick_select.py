@@ -12,8 +12,11 @@ from wf_candidates import (
     _prefilter_numbers, claimed_issue_numbers, load_issue_facets, pool_verdict,
     read_pool,
 )
-from wf_claim import acquire_claim, apply_in_progress, release_claim
+from wf_claim import (
+    acquire_claim, apply_in_progress, release_claim, revert_in_progress,
+)
 from wf_claim_label import claim_error_reason
+from wf_core_claims import REAP_THRESHOLD_HOURS
 from wf_deps import close_failed, close_resolved, mark_blocked, validate_issue
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_CAPABILITY, EXIT_ENV, EXIT_NEEDS_REFINEMENT, emit,
@@ -43,8 +46,12 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
     bulk set, whose still-open state does not block a candidate that is being
     built alongside them.
 
+    A valid candidate the run cannot assign is never returned: its claim is
+    released, it is set back to Backlog, and the run stops with the reason.
+
     Returns (selected_or_None, side_effects). Emits + exits on a hard claim
-    error (no push access / remote failure), never on a lost claim.
+    error (no push access / remote failure) or a failed assignment, never on a
+    lost claim.
     """
     side_effects = []
     for cand in pool:
@@ -99,7 +106,31 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
                 effect['close_message'] = result[1]
             side_effects.append(effect)
             continue
-        apply_in_progress(cfg, cand)
+        assigned, why = apply_in_progress(cfg, cand)
+        if not assigned:
+            # A claim with nobody assigned looks abandoned to every other
+            # session once it is old enough, and one of them would build the
+            # story again, so it is given back, never returned. The run stops:
+            # the cause is almost always the account or the network, which
+            # the next candidate would hit too.
+            written, message = revert_in_progress(cfg, cand['number'])
+            released = release_claim(target)
+            side_effects.append({'issue': cand['number'],
+                                 'action': 'released-unassigned',
+                                 'detail': why, 'stage_set': written,
+                                 'stage_message': None if written else message,
+                                 'claim_released': released})
+            emit('error', EXIT_ENV,
+                 reason='could not assign #%d (%s), so it was not taken and its '
+                        'claim %s. A claim nobody is assigned to looks abandoned '
+                        'to other sessions after %d hours. Check the token and '
+                        'the network, then re-run.'
+                        % (cand['number'], why,
+                           'was released' if released else
+                           'could not be released: run wf claim-release --issue %d'
+                           % cand['number'],
+                           REAP_THRESHOLD_HOURS),
+                 backlog_mode=backlog_mode, side_effects=side_effects)
         return cand, side_effects
     return None, side_effects
 

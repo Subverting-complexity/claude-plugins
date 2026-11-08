@@ -206,7 +206,7 @@ class TestPickFromTheTree(unittest.TestCase):
                             ('load_config', (True, dict(_CFG), '')),
                             ('claimed_issue_numbers', set()),
                             ('acquire_claim', 'won'),
-                            ('apply_in_progress', None),
+                            ('apply_in_progress', (True, 'assigned')),
                             ('release_claim', None),
                             ('merged_pr_closing', None),
                             ('issue_edges', [])):
