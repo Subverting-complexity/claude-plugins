@@ -13,7 +13,7 @@ from wf_candidates import (
     read_pool,
 )
 from wf_claim import (
-    acquire_claim, apply_in_progress, release_claim, revert_in_progress,
+    acquire_claim, apply_in_progress, release_claim, unassign_issue,
 )
 from wf_claim_label import claim_error_reason
 from wf_core_claims import REAP_THRESHOLD_HOURS
@@ -47,7 +47,10 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
     built alongside them.
 
     A valid candidate the run cannot assign is never returned: its claim is
-    released, it is set back to Backlog, and the run stops with the reason.
+    released, and the run stops with the reason. Its `Stage` is left as it
+    was, because nothing was written to it: an explicit pick may take a
+    Parked or Needs refinement issue, which a write to Backlog would put back
+    in the pool.
 
     Returns (selected_or_None, side_effects). Emits + exits on a hard claim
     error (no push access / remote failure) or a failed assignment, never on a
@@ -112,13 +115,15 @@ def claim_validate_walk(cfg, pool, backlog_mode, siblings=()):
             # session once it is old enough, and one of them would build the
             # story again, so it is given back, never returned. The run stops:
             # the cause is almost always the account or the network, which
-            # the next candidate would hit too.
-            written, message = revert_in_progress(cfg, cand['number'])
+            # the next candidate would hit too. No `Stage` was written, so
+            # none is undone; the unassign covers an assignment that landed
+            # before the call failed, which would hold the issue for good.
+            unassigned, message = unassign_issue(cfg, cand['number'])
             released = release_claim(target)
             side_effects.append({'issue': cand['number'],
                                  'action': 'released-unassigned',
-                                 'detail': why, 'stage_set': written,
-                                 'stage_message': None if written else message,
+                                 'detail': why, 'unassigned': unassigned,
+                                 'unassign_message': None if unassigned else message,
                                  'claim_released': released})
             emit('error', EXIT_ENV,
                  reason='could not assign #%d (%s), so it was not taken and its '

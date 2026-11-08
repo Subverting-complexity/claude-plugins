@@ -370,6 +370,13 @@ def revert_in_progress(cfg, number):
     written value is the one a board shows under a column. Returns
     (written, message) for the `Stage` half.
     """
+    unassign_issue(cfg, number)
+    return set_stage(cfg, number, wf_core.STAGE_NAMES[wf_core.POOL_STAGE])
+
+
+def unassign_issue(cfg, number):
+    """Remove @me from the issue's assignees, through REST where GraphQL is
+    blocked. Warns on failure and returns (ok, message)."""
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     if graphql_blocked():
         ok, err = wf_rest.rest_unassign(cfg, number)
@@ -378,8 +385,10 @@ def revert_in_progress(cfg, number):
         code, _, err = run(['gh', 'issue', 'edit', str(number), '--repo', repo,
                             '--remove-assignee', '@me'])
     if code != 0:
-        eprint('wf: warning — could not unassign #%s (%s)' % (number, err.strip()))
-    return set_stage(cfg, number, wf_core.STAGE_NAMES[wf_core.POOL_STAGE])
+        why = (err or 'no detail').strip()
+        eprint('wf: warning — could not unassign #%s (%s)' % (number, why))
+        return False, why
+    return True, 'unassigned'
 
 
 def apply_claim_marker(cfg, args):
@@ -398,8 +407,13 @@ def apply_claim_marker(cfg, args):
         if not ok or data is None:
             eprint('wf: warning - could not read issue #%d to mark it' % args.issue)
             return None
-        apply_in_progress(cfg, {'number': args.issue,
-                                'labels': [l['name'] for l in data.get('labels', [])]})
+        assigned, why = apply_in_progress(
+            cfg, {'number': args.issue,
+                  'labels': [l['name'] for l in data.get('labels', [])]})
+        if not assigned:
+            eprint('wf: warning - could not assign #%d (%s), so the claim is '
+                   'held with nobody assigned' % (args.issue, why))
+            return None
         return '@me + Stage In Progress'
     # Imported here because wf_review imports this module.
     from wf_review import add_review_label

@@ -541,10 +541,13 @@ class TestPickGivesBackAnUnassignedClaim(_Base):
         self.assertEqual((effect['issue'], effect['action'], effect['claim_released']),
                          (5, 'released-unassigned', True))
         release.assert_called_once_with('issue-5')
-        # No In Progress write, and the issue is set back to the pool and
-        # unassigned through REST in case the assignment half landed.
+        # No Stage write at all, so an explicit pick of a Parked issue leaves
+        # it Parked, and the issue is unassigned through REST in case the
+        # assignment half landed.
         stages.assert_not_called()
-        stage.assert_called_once_with(_cfg(), 5, 'Backlog')
+        stage.assert_not_called()
+        self.assertEqual((effect['unassigned'], effect['unassign_message']),
+                         (True, None))
         self.assertIn((['gh', 'api', '-X', 'DELETE', 'repos/acme/widgets/issues/5/assignees',
                         '--input', '-'], {'assignees': ['builder']}), calls)
 
@@ -558,8 +561,24 @@ class TestPickGivesBackAnUnassignedClaim(_Base):
                       payload['reason'])
         release.assert_called_once_with('issue-5')
         stages.assert_not_called()
-        stage.assert_called_once_with(_cfg(), 5, 'Backlog')
+        stage.assert_not_called()
         self.assertIn('--remove-assignee', [a for c, _ in calls for a in c])
+
+    def test_a_failed_unassign_is_recorded_beside_the_release(self):
+        calls = []
+        def run(cmd, input_text=None):
+            calls.append(list(cmd))
+            if cmd[:3] == ['gh', 'issue', 'edit']:
+                return 1, '', 'HTTP 502'
+            return 0, '{}', ''
+        out = io.StringIO()
+        with mock.patch.object(wf, 'run', run),                 mock.patch.object(wf, 'acquire_claim', return_value='won'),                 mock.patch.object(wf, 'validate_issue', return_value=('valid', None)),                 mock.patch.object(wf, 'release_claim', return_value=True),                 contextlib.redirect_stdout(out),                 contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                wf.claim_validate_walk(_cfg(), [{'number': 5, 'labels': []}], None)
+        effect = json.loads(out.getvalue())['side_effects'][-1]
+        self.assertEqual((effect['action'], effect['unassigned'],
+                          effect['unassign_message'], effect['claim_released']),
+                         ('released-unassigned', False, 'HTTP 502', True))
 
     def test_a_release_that_fails_is_named_with_the_command_to_retry(self):
         wf_io.mark_graphql_blocked()
@@ -568,6 +587,23 @@ class TestPickGivesBackAnUnassignedClaim(_Base):
         self.assertIn('could not be released: run wf claim-release --issue 5',
                       payload['reason'])
         self.assertFalse(payload['side_effects'][-1]['claim_released'])
+
+    def test_claim_marker_warns_and_reports_no_marker_when_unassigned(self):
+        """`wf claim --issue N --marker` keeps its claim as best effort, but a
+        failed assignment is still said on stderr and reported as no marker,
+        not as `@me + Stage In Progress`."""
+        def run(cmd, input_text=None):
+            if cmd[:3] == ['gh', 'issue', 'view']:
+                return 0, json.dumps({'labels': []}), ''
+            if cmd[:3] == ['gh', 'issue', 'edit']:
+                return 1, '', 'GraphQL: could not assign'
+            return 0, '{}', ''
+        err = io.StringIO()
+        with mock.patch.object(wf, 'run', run),                 mock.patch.object(wf, 'set_stages') as stages,                 contextlib.redirect_stderr(err):
+            marker = wf.apply_claim_marker(_cfg(), mock.Mock(issue=5, pr=None))
+        self.assertIsNone(marker)
+        stages.assert_not_called()
+        self.assertIn('could not assign #5 (GraphQL: could not assign)', err.getvalue())
 
     def test_an_assigned_story_is_returned_as_claimed(self):
         wf_io.mark_graphql_blocked()
