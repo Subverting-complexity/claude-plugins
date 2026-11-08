@@ -278,6 +278,16 @@ class TestClaimAssignsThroughRest(Harness):
         release.assert_called_once_with(['issue-1'])
         stages.assert_not_called()
 
+    def test_only_the_story_graphql_did_not_assign_goes_to_rest(self):
+        mutation = json.dumps({'data': {'a1': {'assignable': {'id': 'I_1'}}, 'a2': None},
+                               'errors': [{'path': ['a2'], 'message': 'no access'}]})
+        with mock.patch.object(wf, '_graphql_json', return_value=(1, mutation, '')):
+            code, payload, rest, _, _ = self._claim([issue(1), issue(2)], graphql=True)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual([s['number'] for s in payload['stories']], [1, 2])
+        self.assertEqual([p for m, p in rest if m == 'POST'],
+                         ['repos/acme/widgets/issues/2/assignees'])
+
     def test_where_graphql_assigns_rest_is_not_asked(self):
         mutation = json.dumps({'data': {'a1': {'assignable': {'id': 'I_1'}}}})
         with mock.patch.object(wf, '_graphql_json', return_value=(0, mutation, '')):
@@ -405,6 +415,38 @@ class TestDropAndMark(Harness):
         self.assertEqual(query.count('addComment'), 2)
         run.assert_not_called()
         self.assertTrue(all(d['unassigned'] and d['commented'] for d in payload['dropped']))
+
+    def test_a_blocked_graphql_returns_dropped_stories_through_rest(self):
+        """A story `plan-set` assigned through REST is unassigned through
+        REST when it is dropped, or the pool skips it for good."""
+        self.write([{'number': 1, 'title': 'a', 'id': 'I_1', 'blocked_by': [], 'built': False},
+                    {'number': 2, 'title': 'b', 'id': None, 'blocked_by': [1], 'built': False}])
+        wf_io.reset_graphql_state()
+        wf_rest.reset_rest_state()
+        self.addCleanup(wf_io.reset_graphql_state)
+        self.addCleanup(wf_rest.reset_rest_state)
+        with contextlib.redirect_stderr(io.StringIO()):
+            wf_io.mark_graphql_blocked()
+        rest = []
+
+        def run(cmd, input_text=None):
+            rest.append((cmd[3], cmd[4], json.loads(input_text) if input_text else None))
+            if cmd[4] == 'user':
+                return 0, json.dumps({'login': 'builder'}), ''
+            return 0, '{}', ''
+        with mock.patch.object(wf, 'release_claims',
+                               side_effect=lambda t: {x: True for x in t}),                 mock.patch.object(wf, 'resolve_issue_ids', return_value={}),                 mock.patch.object(wf, 'run', run),                 mock.patch.object(wf, 'set_stages',
+                                  side_effect=lambda cfg, wanted, ids=None:
+                                  {n: (True, '') for n in wanted}):
+            code, payload = capture(['drop-story', '--issue', '1', '--reason', 'too big'])
+        self.assertEqual(code, wf.EXIT_OK)
+        for n in (1, 2):
+            self.assertIn(('DELETE', 'repos/acme/widgets/issues/%d/assignees' % n,
+                           {'assignees': ['builder']}), rest)
+            self.assertIn('POST', [m for m, p, _ in rest
+                                   if p == 'repos/acme/widgets/issues/%d/comments' % n])
+        self.assertTrue(all(d['unassigned'] and d['commented'] and not d['return_error']
+                            for d in payload['dropped']))
 
     def test_a_built_story_is_never_dropped(self):
         self.write([{'number': 1, 'title': 'a', 'blocked_by': [], 'built': True}])

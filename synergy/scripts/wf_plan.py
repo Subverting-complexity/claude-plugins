@@ -476,7 +476,7 @@ def _drop(cfg, record, drop):
     missing = sorted(n for n, node_id in ids.items() if not node_id)
     if missing:
         ids.update(resolve_issue_ids(cfg, missing))
-    returned = return_unbuilt(ids, drop)
+    returned = return_unbuilt(cfg, ids, drop)
     # A story still waiting on an open issue goes back as Blocked, so the
     # sweep releases it; one waiting on nothing goes back to the pool.
     stages = set_stages(cfg, {
@@ -507,24 +507,45 @@ def _drop(cfg, record, drop):
 DROP_COMMENT = 'Claimed for a bulk run and returned unbuilt: %s.'
 
 
-def return_unbuilt(ids, reasons):
-    """Take the signed-in account off many issues and say why on each, in one
-    mutation. {number: {'unassigned', 'commented', 'return_error'}}.
+def return_unbuilt(cfg, ids, reasons):
+    """Take the signed-in account off many issues and say why on each.
+    {number: {'unassigned', 'commented', 'return_error'}}.
 
     `ids` is {number: node id} and `reasons` {number: why it was returned}.
-    Two requests, the account read and one aliased mutation carrying a
-    `removeAssigneesFromAssignable` and an `addComment` per issue, where
-    `gh issue edit` and `gh issue comment` were two per story.
+    GraphQL first: the account read and one aliased mutation carrying a
+    `removeAssigneesFromAssignable` and an `addComment` per issue. Every
+    unassignment or comment it did not make is made again through REST, one
+    request each, which is the whole path where GraphQL is blocked. A story
+    left assigned drops out of every later plan, because the pool leaves out
+    assigned issues.
     """
     out = {n: {'unassigned': False, 'commented': False, 'return_error': None}
            for n in reasons}
+    if not graphql_blocked():
+        out.update(_return_graphql(ids, reasons))
+    for n in sorted(reasons):
+        entry, errors = out[n], []
+        if not entry['unassigned']:
+            done, why = wf_rest.rest_unassign(cfg, n)
+            entry['unassigned'] = done
+            if not done:
+                errors.append(why or 'could not unassign')
+        if not entry['commented']:
+            posted, why = wf_rest.rest_comment(cfg, n, DROP_COMMENT % reasons[n])
+            entry['commented'] = posted
+            if not posted:
+                errors.append(why or 'could not comment')
+        entry['return_error'] = '; '.join(errors) or None
+    return out
+
+
+def _return_graphql(ids, reasons):
+    """The aliased GraphQL return. {number: {'unassigned', 'commented'}} for
+    each issue with a node id."""
     live = sorted(n for n in reasons if ids.get(n))
-    for n in reasons:
-        if not ids.get(n):
-            out[n]['return_error'] = 'could not read the issue node id'
     if not live:
-        return out
-    ok, data, err = gh_graphql('query{ viewer { id } }')
+        return {}
+    ok, data, _err = gh_graphql('query{ viewer { id } }')
     viewer = ((data or {}).get('viewer') or {}).get('id') if ok else None
     decls, body, variables = [], [], {}
     if viewer:
@@ -547,13 +568,8 @@ def return_unbuilt(ids, reasons):
                                 field='assignable') if viewer else {})
     commented = _batch_result(code, raw, merr, ['c%d' % n for n in live],
                               field='subject')
-    for n in live:
-        done, _node, why = unassigned.get('u%d' % n) or (
-            False, None, 'could not read the signed-in account (%s)' % (err or 'no detail'))
-        posted, _node, cwhy = commented['c%d' % n]
-        out[n].update(unassigned=done, commented=posted,
-                      return_error=None if done and posted else (why or cwhy))
-    return out
+    return {n: {'unassigned': (unassigned.get('u%d' % n) or (False,))[0],
+                'commented': commented['c%d' % n][0]} for n in live}
 
 
 def cmd_bulk_mark(args):

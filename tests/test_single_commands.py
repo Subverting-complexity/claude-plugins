@@ -25,6 +25,8 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'synergy', 'scripts'))
 import wf  # noqa: E402
 import wf_core  # noqa: E402
+import wf_io  # noqa: E402
+import wf_rest  # noqa: E402
 
 NAMES = wf_core.review_names({})
 
@@ -419,6 +421,8 @@ class TestBlock(_Repo):
 
         def fake_run(cmd, input_text=None):
             calls.append(list(cmd))
+            if cmd[:2] == ['gh', 'api'] and cmd[-1] == 'user':
+                return 0, json.dumps({'login': 'builder'}), ''
             return 0, '', ''
         applied = []
 
@@ -444,6 +448,20 @@ class TestBlock(_Repo):
         self.assertEqual(applied, [{'issues': [{'blocked_by': [9], 'number': 3}]}])
         self.assertIn('Blocked', payload['reason'])
         self.assertTrue(any('--remove-assignee' in c for c in calls))
+
+    def test_a_blocked_graphql_unassigns_through_rest(self):
+        # A cloud session blocks GraphQL, and `gh issue edit` reads through it.
+        wf_io.reset_graphql_state()
+        wf_rest.reset_rest_state()
+        self.addCleanup(wf_io.reset_graphql_state)
+        self.addCleanup(wf_rest.reset_rest_state)
+        with contextlib.redirect_stderr(io.StringIO()):
+            wf_io.mark_graphql_blocked()
+        code, payload, _, calls = self._run(['--blocked-by', '9'])
+        self.assertEqual(code, wf.EXIT_OK, payload)
+        self.assertIn(['gh', 'api', '-X', 'DELETE', 'repos/acme/widgets/issues/3/assignees',
+                       '--input', '-'], calls)
+        self.assertFalse(any('--remove-assignee' in c for c in calls))
 
     def test_a_story_with_an_open_pr_stays_assigned(self):
         calls = []

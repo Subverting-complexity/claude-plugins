@@ -10,7 +10,8 @@ update appears to do nothing.
 
 - Fix: `wf plan-set --claim` now assigns every claimed story where GraphQL is blocked, as in a Claude Code cloud session. It assigned through GraphQL only, so there each story kept a `session:` label with nobody assigned. After 4 hours another session took that label for abandoned, removed it and built the same story, which is what made a CadenceReader bulk run on 6 November 2026 build 6 stories a second time. The assignment now falls back to the REST assignees route for every story GraphQL did not assign.
 - A story that still cannot be assigned is no longer returned as claimed with `assigned: false`. It goes in `dropped` with the reason, its claim is released, and every story in the set that waits on it is dropped and unassigned too. When no story can be assigned, `plan-set` answers `all-blocked`.
-- The REST assignment reads the issue GitHub returns. GitHub answers 201 even when it silently drops an assignee it cannot assign, so a missing login is now a failure, not a success. This also applies to the single-story claim of `pick` where GraphQL is blocked.
+- The REST assignment reads the issue GitHub returns. GitHub answers 201 even when it silently drops an assignee it cannot assign, so a missing login is now a failure, not a success. The single-story claim of `pick` uses the same call where GraphQL is blocked, so it now warns about such a failure, but it still keeps the claim.
+- `wf drop-story` and `wf block` now unassign through REST where GraphQL is blocked. Before, a cloud story was never assigned, so this did not matter. Now a dropped or blocked story would stay assigned, and the pool leaves out assigned issues, so no later plan would offer it again. `drop-story` also posts its comment through REST there.
 
 ## synergy 21.0.1
 

@@ -11,11 +11,12 @@ import json
 import os
 
 import wf_core
+import wf_rest
 from wf_claim import release_claims
 from wf_config import prepare_cfg, repo_root
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE, call_command,
-    emit, emit_line, gh_json, run,
+    emit, emit_line, gh_json, graphql_blocked, run,
 )
 from wf_stage import set_stage
 
@@ -114,10 +115,15 @@ def cmd_block(args):
     released = release_claims(['issue-%d' % number]).get('issue-%d' % number, False)
     if not released:
         problems.append('claim not released')
-    code, _, uerr = run(['gh', 'issue', 'edit', str(number), '--repo', repo,
-                         '--remove-assignee', '@me'])
+    if graphql_blocked():
+        # `gh issue edit` reads through GraphQL, so it fails here too.
+        ok, uerr = wf_rest.rest_unassign(cfg, number)
+        code = 0 if ok else 1
+    else:
+        code, _, uerr = run(['gh', 'issue', 'edit', str(number), '--repo', repo,
+                             '--remove-assignee', '@me'])
     if code != 0:
-        problems.append('not unassigned (%s)' % uerr.strip())
+        problems.append('not unassigned (%s)' % (uerr or 'no detail').strip())
 
     stage_key = 'stage-non-code' if args.non_code else 'stage-blocked'
     stage = wf_core.STAGE_NAMES[stage_key]
