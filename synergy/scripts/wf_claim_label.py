@@ -327,7 +327,10 @@ def stale_rivals(target, path, rivals):
 
     Only an open issue with nobody assigned to it qualifies: a live claim
     assigns the issue right after it is won, and a pull request has no
-    assignee to test. A label counts as stale at `REAP_THRESHOLD_HOURS`, the
+    assignee to test. That holds only while every claim path assigns, through
+    REST where GraphQL is blocked: `plan-set` gives back a claim it cannot
+    assign rather than hold it unassigned, because this test would take a
+    held, unassigned label for abandoned once it is old enough. A label counts as stale at `REAP_THRESHOLD_HOURS`, the
     age `claim-reap` uses, and a label whose age cannot be read is not stale.
     """
     kind, _, raw = target.partition('-')

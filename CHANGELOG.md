@@ -6,6 +6,12 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 21.0.2
+
+- Fix: `wf plan-set --claim` now assigns every claimed story where GraphQL is blocked, as in a Claude Code cloud session. It assigned through GraphQL only, so there each story kept a `session:` label with nobody assigned. After 4 hours another session took that label for abandoned, removed it and built the same story, which is what made a CadenceReader bulk run on 6 November 2026 build 6 stories a second time. The assignment now falls back to the REST assignees route for every story GraphQL did not assign.
+- A story that still cannot be assigned is no longer returned as claimed with `assigned: false`. It goes in `dropped` with the reason, its claim is released, and every story in the set that waits on it is dropped and unassigned too. When no story can be assigned, `plan-set` answers `all-blocked`.
+- The REST assignment reads the issue GitHub returns. GitHub answers 201 even when it silently drops an assignee it cannot assign, so a missing login is now a failure, not a success. This also applies to the single-story claim of `pick` where GraphQL is blocked.
+
 ## synergy 21.0.1
 
 - Fix: the daily full `board-sync` sweep no longer fails on a repository with more than 2,000 closed issues. It stopped at 40 pages of 50 issues and reported the repository as failed, so CadenceReader (about 3,100 closed issues) was never swept and an issue closed more than a week earlier could keep a stale `Stage`. The cap is now 200 pages, which is 10,000 issues of one state in one repository. The sweep also reads a closed issue's `Stage` only, not its blockers, pull requests, assignees or cards, because a closed issue is `Done` or it is not. This makes the sweep lighter, and a closed issue with more than 50 blockers is no longer skipped.

@@ -544,12 +544,20 @@ def _who(login):
 
 
 def rest_assign(cfg, number, login='@me'):
-    """Add an assignee. (ok, err)."""
+    """Add an assignee. (ok, err).
+
+    GitHub answers 201 even when it drops an assignee it cannot assign, so
+    the issue it returns is read: an `assignees` list without the login is a
+    failure, not a success."""
     who = _who(login)
     if not who:
         return False, 'could not read the signed-in login'
-    ok, _data, err = gh_rest('repos/%s/issues/%d/assignees' % (_repo(cfg), int(number)),
-                             'POST', {'assignees': [who]})
+    ok, data, err = gh_rest('repos/%s/issues/%d/assignees' % (_repo(cfg), int(number)),
+                            'POST', {'assignees': [who]})
+    if ok and isinstance(data, dict) and isinstance(data.get('assignees'), list):
+        logins = {((a or {}).get('login') or '').lower() for a in data['assignees']}
+        if who.lower() not in logins:
+            return False, 'GitHub did not add %s as an assignee' % who
     return ok, err
 
 

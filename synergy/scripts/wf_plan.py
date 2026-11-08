@@ -17,12 +17,13 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 import wf_core
+import wf_rest
 from wf_claim import acquire_claim, release_claims
 from wf_config import prepare_cfg, repo_root
 from wf_deps import close_failed, close_resolved, validate_issue_edges
 from wf_io import (
     EXIT_ALL_BLOCKED, EXIT_ENV, EXIT_NO_CANDIDATES, EXIT_OK, EXIT_USAGE, emit,
-    gh_graphql,
+    gh_graphql, graphql_blocked,
 )
 from wf_issue_io import (
     _batch_result, _graphql_json, post_comments, resolve_issue_ids,
@@ -173,7 +174,11 @@ def claim_plan(cfg, args, pool, plan, stories, common):
     the plan read: an edge added or closed in between changes which story waits
     on which, and a story whose edges cannot be read is dropped, never taken as
     waiting on nothing. The same `Stage` mutation returns every releasable
-    `Blocked` issue outside the set to Backlog."""
+    `Blocked` issue outside the set to Backlog.
+
+    A story the run cannot assign, through GraphQL or then REST, is dropped
+    with the reason and its claim released, and so is every story that waits
+    on it. Only an assigned story is returned as claimed."""
     by_num = pool['by_num']
     numbers = [s['number'] for s in stories]
     targets = {n: 'issue-%d' % n for n in numbers}
@@ -206,15 +211,37 @@ def claim_plan(cfg, args, pool, plan, stories, common):
         elif verdict != 'valid':
             dropped[n] = detail
     blockers_of = {s['number']: fresh.get(s['number'], s['blocked_by']) for s in stories}
-    changed = True
-    while changed:
-        changed = False
-        for story in stories:
-            n = story['number']
-            gone = [b for b in blockers_of[n] if b in dropped]
-            if n not in dropped and n not in resolved and gone:
-                dropped[n] = 'waits on #%d, which left the set' % gone[0]
-                changed = True
+
+    def drop_dependents():
+        """Drop every story that waits on a dropped one. Returns the numbers
+        it dropped."""
+        added, changed = [], True
+        while changed:
+            changed = False
+            for story in stories:
+                n = story['number']
+                gone = [b for b in blockers_of[n] if b in dropped]
+                if n not in dropped and n not in resolved and gone:
+                    dropped[n] = 'waits on #%d, which left the set' % gone[0]
+                    added.append(n)
+                    changed = True
+        return added
+
+    drop_dependents()
+    # The assignment is part of the claim. Another session takes a label-only
+    # claim with nobody assigned for abandoned once it is old enough, so a
+    # story this run cannot assign is given back now, not built twice later.
+    held = [n for n in numbers if n not in dropped and n not in resolved]
+    ids = {n: by_num[n].get('id') for n in held}
+    assigned = assign_many(cfg, ids) if held else {}
+    for n in held:
+        if not assigned[n][0]:
+            dropped[n] = 'could not be assigned to the signed-in account (%s)' % assigned[n][1]
+    for n in drop_dependents():
+        # Assigned a moment ago, and now waiting on a story that left.
+        done, why = wf_rest.rest_unassign(cfg, n)
+        if not done:
+            dropped[n] += '; could not unassign it again (%s)' % (why or 'no detail')
     release_claims([targets[n] for n in list(dropped) + list(resolved)
                     if outcomes[n] == 'won'])
     kept = [dict(s, blocked_by=[b for b in blockers_of[s['number']] if b not in resolved])
@@ -230,14 +257,13 @@ def claim_plan(cfg, args, pool, plan, stories, common):
                        for n, pr in resolved.items()])
     if not kept:
         emit('all-blocked', EXIT_ALL_BLOCKED, dropped=dropped_list, **common,
-             reason='every story in the plan was claimed away, blocked or '
-                    'already resolved')
+             reason='every story in the plan was claimed away, blocked, '
+                    'already resolved or could not be assigned')
 
     groups = _group_records(kept)
     wave_of = {n: i for g in groups for i, wave in enumerate(g['waves']) for n in wave}
     kept_numbers = [s['number'] for s in kept]
     ids = {n: by_num[n].get('id') for n in kept_numbers}
-    assigned = assign_many(ids)
     stage = wf_core.STAGE_NAMES['stage-in-progress']
     wanted = {n: stage for n in kept_numbers}
     releasing = [e for e in common.get('released') or () if e['number'] not in wanted]
@@ -307,12 +333,27 @@ def _group_records(stories, previous=()):
     return out
 
 
-def assign_many(ids):
-    """Assign the signed-in account to many issues in one mutation.
+def assign_many(cfg, ids):
+    """Assign the signed-in account to many issues.
 
-    `ids` is {number: node id}. Returns {number: (assigned, message)}. Two
-    requests whatever the size of the set, where `gh issue edit` was one each.
+    `ids` is {number: node id}. Returns {number: (assigned, message)}.
+    GraphQL first: two requests whatever the size of the set. Every issue it
+    did not assign is tried again through the REST assignees route, one
+    request each, which is the whole path where GraphQL is blocked. A claim
+    the run cannot assign looks abandoned to every other session once it is
+    `REAP_THRESHOLD_HOURS` old, so the second try is worth its requests.
     """
+    out = {} if graphql_blocked() else _assign_graphql(ids)
+    for n in sorted(ids):
+        if (out.get(n) or (False,))[0]:
+            continue
+        done, why = wf_rest.rest_assign(cfg, n)
+        out[n] = (True, 'assigned') if done else (False, why or 'no detail')
+    return out
+
+
+def _assign_graphql(ids):
+    """The aliased GraphQL assignment. {number: (assigned, message)}."""
     ok, data, err = gh_graphql('query{ viewer { id } }')
     viewer = ((data or {}).get('viewer') or {}).get('id') if ok else None
     if not viewer:

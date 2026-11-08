@@ -39,7 +39,7 @@ With neither, run it once without `--claim` and read the result:
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/wf.sh" plan-set --mode {mode} --max-groups {1|2} --issue {n} --issue {n} --claim
 ```
 
-- **`ok`** — every story in `stories` holds its claim ref, is assigned and is `In Progress`, and `.claude/bulk-set.json` records the set with its groups and waves. `dropped` lists stories claimed away, blocked or already resolved, and every story that waited on one of them; report each by number, title and reason. A story whose `stage_set` is false is retried once with `wf stage-set {number} --stage stage-in-progress`; if it still fails, it is listed as outstanding in the final report ("Stage update failed: {stage_message}").
+- **`ok`** — every story in `stories` holds its claim ref, is assigned and is `In Progress`, and `.claude/bulk-set.json` records the set with its groups and waves. `dropped` lists stories claimed away, blocked, already resolved or not assignable to the signed-in account, and every story that waited on one of them; a story that could not be assigned has had its claim released, because another session takes an unassigned claim for abandoned after 4 hours; report each by number, title and reason. A story whose `stage_set` is false is retried once with `wf stage-set {number} --stage stage-in-progress`; if it still fails, it is listed as outstanding in the final report ("Stage update failed: {stage_message}").
 - **`all-blocked`** — nothing is held. Report `dropped` and stop.
 - **`error`** — a claim ref could not be written, which is an environment problem rather than a rival. Every claim already taken was released. Stop and name the problem.
 
