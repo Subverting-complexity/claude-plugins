@@ -480,6 +480,142 @@ class TestPickEditsThroughRest(_Base):
         self.assertEqual([b for _c, b in calls], [{'body': 'one'}, {'body': 'two'}])
 
 
+class TestPickGivesBackAnUnassignedClaim(_Base):
+    """A pick that cannot assign its story gives the claim back. A claim with
+    nobody assigned looks abandoned to every other session once it is
+    `REAP_THRESHOLD_HOURS` old, so returning it as claimed lets another
+    session take the story and build it a second time."""
+
+    def _run(self, calls, assign_ok=True, edit_code=0):
+        """GitHub as `gh` sees it. The REST assignees route answers 201 and
+        drops the login when `assign_ok` is false, as GitHub does for an
+        assignee it cannot assign; `gh issue edit` exits `edit_code`."""
+        def run(cmd, input_text=None):
+            calls.append((list(cmd), json.loads(input_text) if input_text else None))
+            if cmd[:2] == ['gh', 'api'] and cmd[-1] == 'user':
+                return 0, json.dumps({'login': 'builder'}), ''
+            if cmd[:2] == ['gh', 'api'] and '/assignees' in ' '.join(cmd):
+                who = [{'login': 'builder'}] if assign_ok else []
+                return 0, json.dumps({'number': 5, 'assignees': who}), ''
+            if cmd[:3] == ['gh', 'issue', 'edit'] and '--add-assignee' in cmd:
+                return edit_code, '', 'GraphQL: could not assign' if edit_code else ''
+            return 0, '{}', ''
+        return run
+
+    def _walk(self, calls, released=True, **run_kwargs):
+        """Walk a pool of one valid candidate, #5. Returns (exit code,
+        payload or None, selected, the release mock, the Stage mocks)."""
+        out, code, selected = io.StringIO(), None, None
+        with mock.patch.object(wf, 'run', self._run(calls, **run_kwargs)), \
+                mock.patch.object(wf, 'acquire_claim', return_value='won'), \
+                mock.patch.object(wf, 'validate_issue', return_value=('valid', None)), \
+                mock.patch.object(wf, 'release_claim', return_value=released) as release, \
+                mock.patch.object(wf, 'set_stages',
+                                  side_effect=lambda cfg, wanted, ids=None:
+                                  {n: (True, 'Stage set') for n in wanted}) as stages, \
+                mock.patch.object(wf, 'set_stage',
+                                  return_value=(True, 'Stage set')) as stage, \
+                contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(io.StringIO()):
+            try:
+                selected, _ = wf.claim_validate_walk(
+                    _cfg(), [{'number': 5, 'labels': []}], None)
+            except SystemExit as exc:
+                code = exc.code
+        text = out.getvalue()
+        return (code, json.loads(text) if text.strip() else None, selected,
+                release, (stages, stage))
+
+    def test_a_refused_rest_assignment_releases_the_claim_and_stops(self):
+        wf_io.mark_graphql_blocked()
+        calls = []
+        code, payload, selected, release, (stages, stage) = self._walk(
+            calls, assign_ok=False)
+        self.assertIsNone(selected)
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertEqual(payload['status'], 'error')
+        self.assertIn('could not assign #5', payload['reason'])
+        self.assertIn('did not add builder', payload['reason'])
+        self.assertIn('was released', payload['reason'])
+        effect = payload['side_effects'][-1]
+        self.assertEqual((effect['issue'], effect['action'], effect['claim_released']),
+                         (5, 'released-unassigned', True))
+        release.assert_called_once_with('issue-5')
+        # No Stage write at all, so an explicit pick of a Parked issue leaves
+        # it Parked, and the issue is unassigned through REST in case the
+        # assignment half landed.
+        stages.assert_not_called()
+        stage.assert_not_called()
+        self.assertEqual((effect['unassigned'], effect['unassign_message']),
+                         (True, None))
+        self.assertIn((['gh', 'api', '-X', 'DELETE', 'repos/acme/widgets/issues/5/assignees',
+                        '--input', '-'], {'assignees': ['builder']}), calls)
+
+    def test_a_failed_gh_issue_edit_releases_the_claim_too(self):
+        calls = []
+        code, payload, selected, release, (stages, stage) = self._walk(
+            calls, edit_code=1)
+        self.assertIsNone(selected)
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertIn('could not assign #5 (GraphQL: could not assign)',
+                      payload['reason'])
+        release.assert_called_once_with('issue-5')
+        stages.assert_not_called()
+        stage.assert_not_called()
+        self.assertIn('--remove-assignee', [a for c, _ in calls for a in c])
+
+    def test_a_failed_unassign_is_recorded_beside_the_release(self):
+        calls = []
+        def run(cmd, input_text=None):
+            calls.append(list(cmd))
+            if cmd[:3] == ['gh', 'issue', 'edit']:
+                return 1, '', 'HTTP 502'
+            return 0, '{}', ''
+        out = io.StringIO()
+        with mock.patch.object(wf, 'run', run),                 mock.patch.object(wf, 'acquire_claim', return_value='won'),                 mock.patch.object(wf, 'validate_issue', return_value=('valid', None)),                 mock.patch.object(wf, 'release_claim', return_value=True),                 contextlib.redirect_stdout(out),                 contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                wf.claim_validate_walk(_cfg(), [{'number': 5, 'labels': []}], None)
+        effect = json.loads(out.getvalue())['side_effects'][-1]
+        self.assertEqual((effect['action'], effect['unassigned'],
+                          effect['unassign_message'], effect['claim_released']),
+                         ('released-unassigned', False, 'HTTP 502', True))
+
+    def test_a_release_that_fails_is_named_with_the_command_to_retry(self):
+        wf_io.mark_graphql_blocked()
+        code, payload, _, _, _ = self._walk([], assign_ok=False, released=False)
+        self.assertEqual(code, wf.EXIT_ENV)
+        self.assertIn('could not be released: run wf claim-release --issue 5',
+                      payload['reason'])
+        self.assertFalse(payload['side_effects'][-1]['claim_released'])
+
+    def test_claim_marker_warns_and_reports_no_marker_when_unassigned(self):
+        """`wf claim --issue N --marker` keeps its claim as best effort, but a
+        failed assignment is still said on stderr and reported as no marker,
+        not as `@me + Stage In Progress`."""
+        def run(cmd, input_text=None):
+            if cmd[:3] == ['gh', 'issue', 'view']:
+                return 0, json.dumps({'labels': []}), ''
+            if cmd[:3] == ['gh', 'issue', 'edit']:
+                return 1, '', 'GraphQL: could not assign'
+            return 0, '{}', ''
+        err = io.StringIO()
+        with mock.patch.object(wf, 'run', run),                 mock.patch.object(wf, 'set_stages') as stages,                 contextlib.redirect_stderr(err):
+            marker = wf.apply_claim_marker(_cfg(), mock.Mock(issue=5, pr=None))
+        self.assertIsNone(marker)
+        stages.assert_not_called()
+        self.assertIn('could not assign #5 (GraphQL: could not assign)', err.getvalue())
+
+    def test_an_assigned_story_is_returned_as_claimed(self):
+        wf_io.mark_graphql_blocked()
+        code, payload, selected, release, (stages, stage) = self._walk([])
+        self.assertIsNone(code)
+        self.assertIsNone(payload)
+        self.assertEqual(selected['number'], 5)
+        release.assert_not_called()
+        stages.assert_called_once()
+        stage.assert_not_called()
+
+
 class TestAbandonedResetThroughRest(_Base):
     """`pick --issue N` resets an issue whose pull request was closed without
     merging. `gh pr list`, `gh issue edit` and `gh issue comment` read through

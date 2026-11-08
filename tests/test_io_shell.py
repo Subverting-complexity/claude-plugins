@@ -295,7 +295,7 @@ class TestBulkPickPaths(WfCommandTestCase):
         with mock.patch.object(wf, 'assemble_candidates',
                                return_value=(True, [candidate], '')), \
                 mock.patch.object(wf, 'acquire_claim', return_value='won'), \
-                mock.patch.object(wf, 'apply_in_progress'), \
+                mock.patch.object(wf, 'apply_in_progress', return_value=(True, 'assigned')), \
                 mock.patch.object(wf, 'mark_blocked',
                                   return_value=(True, 'moved')), \
                 mock.patch.object(wf, 'release_claim', return_value=True), \
@@ -388,7 +388,7 @@ class TestBestEffortSteps(WfCommandTestCase):
     def _pick_with(self, **patches):
         with mock.patch.object(wf, 'load_config',
                                return_value=(True, _cfg(), '')),                 mock.patch.object(wf, 'assemble_candidates',
-                                  return_value=(True, [_candidate(1)], '')),                 mock.patch.object(wf, 'acquire_claim', return_value='won'),                 mock.patch.object(wf, 'apply_in_progress'),                 mock.patch.object(wf, 'release_claim'),                 mock.patch.object(wf, 'merged_pr_closing', return_value=None),                 mock.patch.object(wf, 'issue_edges', return_value=[]),                 mock.patch.object(wf, 'gh_json', return_value=(True, [], '')),                 mock.patch.object(wf, 'checkout_branch',
+                                  return_value=(True, [_candidate(1)], '')),                 mock.patch.object(wf, 'acquire_claim', return_value='won'),                 mock.patch.object(wf, 'apply_in_progress', return_value=(True, 'assigned')),                 mock.patch.object(wf, 'release_claim'),                 mock.patch.object(wf, 'merged_pr_closing', return_value=None),                 mock.patch.object(wf, 'issue_edges', return_value=[]),                 mock.patch.object(wf, 'gh_json', return_value=(True, [], '')),                 mock.patch.object(wf, 'checkout_branch',
                                   return_value=('feature/1/x', True, 'created')) as branch,                 contextlib.ExitStack() as stack:
             for name, patch in patches.items():
                 # `__name__` so the wrapper can label the step it caught,
@@ -955,7 +955,7 @@ class TestCandidatesCommand(WfCommandTestCase):
         with mock.patch.object(wf, 'assemble_candidates',
                                return_value=(True, [_candidate(1)], '')), \
                 mock.patch.object(wf, 'acquire_claim') as claim, \
-                mock.patch.object(wf, 'apply_in_progress') as marker, \
+                mock.patch.object(wf, 'apply_in_progress', return_value=(True, 'assigned')) as marker, \
                 mock.patch.object(wf, 'set_stages') as stages:
             code, _ = _capture(wf.cmd_candidates, _candidates_args())
         self.assertEqual(code, wf.EXIT_OK)

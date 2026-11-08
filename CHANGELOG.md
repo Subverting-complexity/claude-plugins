@@ -6,6 +6,10 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
+## synergy 21.0.3
+
+- Fix: `wf pick` no longer returns a story as claimed when it cannot assign it. Before, a failed assignment only printed a warning, so the claim stayed held with nobody assigned. After 4 hours another session took that claim for abandoned and built the same story again, which is the gap `plan-set --claim` closed in 21.0.2. A pick that cannot assign its story now writes no `Stage` at all, so the story keeps the one it had, unassigns it in case the assignment half landed, releases the claim ref and session label, and stops with an `error` that names the story and the reason. It stops rather than tries the next story, because the cause is almost always the account or the network, which the next story would hit too. This covers both the GraphQL assignment and the REST assignment used where GraphQL is blocked. `wf claim --issue N --marker` still keeps its claim when the assignment fails, but it now says so on stderr and reports no marker.
+
 ## synergy 21.0.2
 
 - Fix: `wf plan-set --claim` now assigns every claimed story where GraphQL is blocked, as in a Claude Code cloud session. It assigned through GraphQL only, so there each story kept a `session:` label with nobody assigned. After 4 hours another session took that label for abandoned, removed it and built the same story, which is what made a CadenceReader bulk run on 6 November 2026 build 6 stories a second time. The assignment now falls back to the REST assignees route for every story GraphQL did not assign.

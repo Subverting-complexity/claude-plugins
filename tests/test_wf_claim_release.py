@@ -142,7 +142,7 @@ class TestPickReportsTheRelease(unittest.TestCase):
         cand = {'number': 5, 'title': 't', 'labels': [], 'body': '', 'url': '',
                 'milestone': None}
         with mock.patch.object(wf, 'acquire_claim', return_value='won'), \
-                mock.patch.object(wf, 'apply_in_progress'), \
+                mock.patch.object(wf, 'apply_in_progress', return_value=(True, 'assigned')), \
                 mock.patch.object(wf, 'validate_issue', return_value=(verdict, '#9')), \
                 mock.patch.object(wf, 'mark_blocked', return_value=(True, 'moved')), \
                 mock.patch.object(wf, 'close_resolved', return_value=(True, 'done')), \
@@ -175,7 +175,7 @@ class TestPickReportsTheRelease(unittest.TestCase):
                 mock.patch.object(wf, 'load_config', return_value=(True, _cfg(), '')), \
                 mock.patch.object(wf, 'fetch_issue_candidate', return_value=cand), \
                 mock.patch.object(wf, 'acquire_claim', return_value='won'), \
-                mock.patch.object(wf, 'apply_in_progress'), \
+                mock.patch.object(wf, 'apply_in_progress', return_value=(True, 'assigned')), \
                 mock.patch.object(wf, 'validate_issue', return_value=('blocked', '#9')), \
                 mock.patch.object(wf, 'mark_blocked', return_value=(True, 'moved')), \
                 mock.patch.object(wf, 'release_claim', return_value=False):

@@ -318,8 +318,15 @@ def apply_in_progress(cfg, issue):
     The write uses the node id the pool read already holds, and its result is
     left on the issue as `_stage_result` so `finish_pick` does not write the
     `Stage` a second time.
+
+    Returns (assigned, message). A failed assignment writes no `Stage` and is
+    returned, not only warned about: a claim with nobody assigned looks
+    abandoned to every other session once it is `REAP_THRESHOLD_HOURS` old,
+    so the caller must give the claim back rather than build on it.
     """
-    _assign(cfg, issue)
+    assigned, why = _assign(cfg, issue)
+    if not assigned:
+        return False, why
     number = int(issue['number'])
     ids = {number: issue['id']} if issue.get('id') else None
     written, message = set_stages(
@@ -328,10 +335,12 @@ def apply_in_progress(cfg, issue):
     if not written:
         eprint('wf: warning — could not set #%s to In Progress (%s)'
                % (issue['number'], message))
+    return True, 'assigned'
 
 
 def _assign(cfg, issue):
-    """Assign @me, removing any retired workflow label in the same call."""
+    """Assign @me, removing any retired workflow label in the same call.
+    Returns (assigned, message)."""
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     args = ['issue', 'edit', str(issue['number']), '--repo', repo,
             '--add-assignee', '@me']
@@ -341,15 +350,13 @@ def _assign(cfg, issue):
         # `gh issue edit` reads through GraphQL, so it fails here too.
         ok, err = wf_rest.rest_assign(cfg, issue['number'])
         wf_rest.rest_remove_labels(cfg, issue['number'], retired)
-        if not ok:
-            eprint('wf: warning — could not assign #%s (%s)' % (issue['number'], err))
-        return
+        return (True, 'assigned') if ok else (False, (err or 'no detail').strip())
     for name in retired:
         args += ['--remove-label', name]
     code, _, err = run(['gh'] + args)
     if code != 0:
-        eprint('wf: warning — could not assign #%s (%s)'
-               % (issue['number'], err.strip()))
+        return False, (err or 'no detail').strip()
+    return True, 'assigned'
 
 
 def revert_in_progress(cfg, number):
@@ -363,6 +370,13 @@ def revert_in_progress(cfg, number):
     written value is the one a board shows under a column. Returns
     (written, message) for the `Stage` half.
     """
+    unassign_issue(cfg, number)
+    return set_stage(cfg, number, wf_core.STAGE_NAMES[wf_core.POOL_STAGE])
+
+
+def unassign_issue(cfg, number):
+    """Remove @me from the issue's assignees, through REST where GraphQL is
+    blocked. Warns on failure and returns (ok, message)."""
     repo = '%s/%s' % (cfg['org'], cfg['repo'])
     if graphql_blocked():
         ok, err = wf_rest.rest_unassign(cfg, number)
@@ -371,8 +385,10 @@ def revert_in_progress(cfg, number):
         code, _, err = run(['gh', 'issue', 'edit', str(number), '--repo', repo,
                             '--remove-assignee', '@me'])
     if code != 0:
-        eprint('wf: warning — could not unassign #%s (%s)' % (number, err.strip()))
-    return set_stage(cfg, number, wf_core.STAGE_NAMES[wf_core.POOL_STAGE])
+        why = (err or 'no detail').strip()
+        eprint('wf: warning — could not unassign #%s (%s)' % (number, why))
+        return False, why
+    return True, 'unassigned'
 
 
 def apply_claim_marker(cfg, args):
@@ -391,8 +407,13 @@ def apply_claim_marker(cfg, args):
         if not ok or data is None:
             eprint('wf: warning - could not read issue #%d to mark it' % args.issue)
             return None
-        apply_in_progress(cfg, {'number': args.issue,
-                                'labels': [l['name'] for l in data.get('labels', [])]})
+        assigned, why = apply_in_progress(
+            cfg, {'number': args.issue,
+                  'labels': [l['name'] for l in data.get('labels', [])]})
+        if not assigned:
+            eprint('wf: warning - could not assign #%d (%s), so the claim is '
+                   'held with nobody assigned' % (args.issue, why))
+            return None
         return '@me + Stage In Progress'
     # Imported here because wf_review imports this module.
     from wf_review import add_review_label
