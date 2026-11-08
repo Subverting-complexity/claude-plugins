@@ -24,6 +24,8 @@ sys.path.insert(
 )
 import wf  # noqa: E402
 import wf_core  # noqa: E402
+import wf_io  # noqa: E402
+import wf_rest  # noqa: E402
 
 CLEAR = ('## Summary\n\nChange the thing the story names.\n\n'
          '## Acceptance criteria\n\n- [ ] The thing is changed.\n')
@@ -186,6 +188,114 @@ class TestPlanSet(Harness):
         release.assert_called_once_with(['issue-2'])
 
 
+class TestClaimAssignsThroughRest(Harness):
+    """Where GraphQL is blocked, as in a Claude Code cloud session, the claim
+    still assigns every story, through the REST assignees route. A claim with
+    nobody assigned looks abandoned to another session after
+    `REAP_THRESHOLD_HOURS`, so a story that cannot be assigned is given back
+    rather than returned as claimed."""
+
+    def setUp(self):
+        super().setUp()
+        wf_io.reset_graphql_state()
+        wf_rest.reset_rest_state()
+        self.addCleanup(wf_io.reset_graphql_state)
+        self.addCleanup(wf_rest.reset_rest_state)
+
+    def block_graphql(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            wf_io.mark_graphql_blocked()
+
+    def _claim(self, issues, refuse=(), graphql=False):
+        """Claim `issues` with every claim won. GitHub drops the assignee on
+        each issue in `refuse`, as it does for one it cannot assign."""
+        rest = []
+
+        def run(cmd, input_text=None):
+            path = cmd[4] if cmd[:2] == ['gh', 'api'] and len(cmd) > 4 else ''
+            rest.append((cmd[3] if len(cmd) > 3 else '', path))
+            if path == 'user':
+                return 0, json.dumps({'login': 'builder'}), ''
+            if path.endswith('/assignees'):
+                number = int(path.split('/')[-2])
+                who = [] if number in refuse else [{'login': 'builder'}]
+                return 0, json.dumps({'number': number, 'assignees': who}), ''
+            return 1, '', 'unexpected call %s' % cmd
+
+        viewer = ((True, {'viewer': {'id': 'U_1'}}, '') if graphql
+                  else (False, None, 'gh: Forbidden (HTTP 403)'))
+        with self.pool(issues, {}), \
+                mock.patch.object(wf, 'acquire_claim', return_value='won'), \
+                mock.patch.object(wf, 'release_claims',
+                                  side_effect=lambda t: {x: True for x in t}) as release, \
+                mock.patch.object(wf, 'set_stages',
+                                  side_effect=lambda cfg, wanted, ids=None:
+                                  {n: (True, 'Stage set') for n in wanted}) as stages, \
+                mock.patch.object(wf, 'gh_graphql', return_value=viewer), \
+                mock.patch.object(wf, 'run', run), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code, payload = capture(['plan-set', '--claim'])
+        return code, payload, rest, release, stages
+
+    def test_a_blocked_graphql_assigns_every_claimed_story_through_rest(self):
+        self.block_graphql()
+        issues = [issue(1), issue(2), issue(3)]
+        code, payload, rest, release, _ = self._claim(issues)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertTrue(all(s['assigned'] for s in payload['stories']))
+        self.assertEqual(sorted(p for m, p in rest if m == 'POST'),
+                         ['repos/acme/widgets/issues/%d/assignees' % n for n in (1, 2, 3)])
+        release.assert_called_once_with([])
+
+    def test_a_graphql_read_that_fails_falls_back_to_rest(self):
+        issues = [issue(1), issue(2)]
+        code, payload, rest, _, _ = self._claim(issues)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual([s['number'] for s in payload['stories']], [1, 2])
+        self.assertEqual(len([p for m, p in rest if m == 'POST']), 2)
+
+    def test_a_story_that_cannot_be_assigned_is_given_back_with_its_dependent(self):
+        self.block_graphql()
+        issues = [issue(1), issue(2, stage='Blocked', blockers=[1]), issue(3)]
+        code, payload, rest, release, stages = self._claim(issues, refuse={1})
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual([s['number'] for s in payload['stories']], [3])
+        reasons = {d['number']: d['reason'] for d in payload['dropped']}
+        self.assertIn('could not be assigned', reasons[1])
+        self.assertIn('did not add builder', reasons[1])
+        self.assertIn('#1', reasons[2])
+        # #2 was assigned before #1 failed, so it is unassigned again.
+        self.assertIn(('DELETE', 'repos/acme/widgets/issues/2/assignees'), rest)
+        self.assertEqual(sorted(release.call_args[0][0]), ['issue-1', 'issue-2'])
+        self.assertEqual(sorted(stages.call_args[0][1]), [3])
+        self.assertEqual([s['number'] for s in self.bulk_set()['stories']], [3])
+
+    def test_no_story_assigned_claims_nothing(self):
+        self.block_graphql()
+        code, payload, _, release, stages = self._claim([issue(1)], refuse={1})
+        self.assertEqual(code, wf.EXIT_ALL_BLOCKED)
+        self.assertIn('could not be assigned', payload['dropped'][0]['reason'])
+        release.assert_called_once_with(['issue-1'])
+        stages.assert_not_called()
+
+    def test_only_the_story_graphql_did_not_assign_goes_to_rest(self):
+        mutation = json.dumps({'data': {'a1': {'assignable': {'id': 'I_1'}}, 'a2': None},
+                               'errors': [{'path': ['a2'], 'message': 'no access'}]})
+        with mock.patch.object(wf, '_graphql_json', return_value=(1, mutation, '')):
+            code, payload, rest, _, _ = self._claim([issue(1), issue(2)], graphql=True)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual([s['number'] for s in payload['stories']], [1, 2])
+        self.assertEqual([p for m, p in rest if m == 'POST'],
+                         ['repos/acme/widgets/issues/2/assignees'])
+
+    def test_where_graphql_assigns_rest_is_not_asked(self):
+        mutation = json.dumps({'data': {'a1': {'assignable': {'id': 'I_1'}}}})
+        with mock.patch.object(wf, '_graphql_json', return_value=(0, mutation, '')):
+            code, _, rest, _, _ = self._claim([issue(1)], graphql=True)
+        self.assertEqual(code, wf.EXIT_OK)
+        self.assertEqual(rest, [])
+
+
 class TestSelectionAcrossFilters(Harness):
     """What `--mode` and a closed blocker do to a plan."""
 
@@ -305,6 +415,38 @@ class TestDropAndMark(Harness):
         self.assertEqual(query.count('addComment'), 2)
         run.assert_not_called()
         self.assertTrue(all(d['unassigned'] and d['commented'] for d in payload['dropped']))
+
+    def test_a_blocked_graphql_returns_dropped_stories_through_rest(self):
+        """A story `plan-set` assigned through REST is unassigned through
+        REST when it is dropped, or the pool skips it for good."""
+        self.write([{'number': 1, 'title': 'a', 'id': 'I_1', 'blocked_by': [], 'built': False},
+                    {'number': 2, 'title': 'b', 'id': None, 'blocked_by': [1], 'built': False}])
+        wf_io.reset_graphql_state()
+        wf_rest.reset_rest_state()
+        self.addCleanup(wf_io.reset_graphql_state)
+        self.addCleanup(wf_rest.reset_rest_state)
+        with contextlib.redirect_stderr(io.StringIO()):
+            wf_io.mark_graphql_blocked()
+        rest = []
+
+        def run(cmd, input_text=None):
+            rest.append((cmd[3], cmd[4], json.loads(input_text) if input_text else None))
+            if cmd[4] == 'user':
+                return 0, json.dumps({'login': 'builder'}), ''
+            return 0, '{}', ''
+        with mock.patch.object(wf, 'release_claims',
+                               side_effect=lambda t: {x: True for x in t}),                 mock.patch.object(wf, 'resolve_issue_ids', return_value={}),                 mock.patch.object(wf, 'run', run),                 mock.patch.object(wf, 'set_stages',
+                                  side_effect=lambda cfg, wanted, ids=None:
+                                  {n: (True, '') for n in wanted}):
+            code, payload = capture(['drop-story', '--issue', '1', '--reason', 'too big'])
+        self.assertEqual(code, wf.EXIT_OK)
+        for n in (1, 2):
+            self.assertIn(('DELETE', 'repos/acme/widgets/issues/%d/assignees' % n,
+                           {'assignees': ['builder']}), rest)
+            self.assertIn('POST', [m for m, p, _ in rest
+                                   if p == 'repos/acme/widgets/issues/%d/comments' % n])
+        self.assertTrue(all(d['unassigned'] and d['commented'] and not d['return_error']
+                            for d in payload['dropped']))
 
     def test_a_built_story_is_never_dropped(self):
         self.write([{'number': 1, 'title': 'a', 'blocked_by': [], 'built': True}])
