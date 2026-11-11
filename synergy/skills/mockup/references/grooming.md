@@ -1,62 +1,56 @@
-# Grooming a mock-up
+# Settling a mock-up brief
 
-This file gives the grill its subject, its sources and its coverage list for a mock-up. `skills/grill/SKILL.md` decides how the questions are asked. This file decides what must be covered.
+Read this when you settle the brief for a mock-up: what to read first, what the brief must cover, and how it looks.
 
 ## Sources
 
-Settle every question that a source answers, and show the person what you found. Spend their time on what only they know: what users need, and how the product should feel.
+Settle every point that a source answers. Spend the person's time only on what the sources do not say.
 
-For an existing system, read these in the codebase before you ask anything:
+For an existing product, read these in the codebase before you ask anything:
 
-- **Design tokens.** CSS variables, a Tailwind config, a theme file, a design system package or a style guide. Copy the exact colours, type scale, spacing, radii and shadows.
-- **Components.** The buttons, inputs, tables, cards, dialogs, menus and navigation the screens use. Note how each looks in its hover, focus, disabled and error states.
-- **The screens around the change.** The layout, the navigation, the header and the pages a user comes from and goes to. The mock-up must fit between them.
-- **Words.** The labels, messages, tone and terms the product uses today. Use the same word for the same thing.
-- **Icons and images.** The icon set and the logo. Inline what you need as SVG.
-- **Behaviour.** How the product validates input, confirms a delete, shows a loading state and reports an error today.
+- **The closest existing page.** The page that does the most similar job, such as another admin list with a detail view. Copy its layout, its header, its toolbar, its table and its actions. Note the file, so the build matches it.
+- **Design tokens.** CSS variables, a Tailwind config, a theme file or a design system package. Copy the exact colours, type scale, spacing, radii and shadows, and keep their names.
+- **Components.** The buttons, inputs, tables, summary cards, dialogs, menus, toasts and empty states that the product already has. Note how each looks in its hover, focus, disabled and error states.
+- **Icons.** The icon set the product uses. Inline the exact icons as SVG. Do not mix in a second icon set.
+- **The screens around the change.** The navigation and the pages that a user comes from and goes to. The mock-up must fit between them.
+- **Words.** The labels, messages and terms the product uses today. Use the same word for the same thing.
+- **Behaviour.** How the product confirms a delete, shows a loading state, reports an error and confirms a save.
 
-If the app runs, and the person agrees, look at it in a browser to see what the code does not show. Do not sign in with real credentials. If a source is not available, ask the person for screenshots.
+If the app runs, and the person agrees, look at it in a browser to see what the code does not show. Do not sign in with real credentials. If the code is not available, ask the person for screenshots of the closest pages.
 
-For a new system, read the design, the spec, the issue or the notes in full. Then read the brand guide or house style, if there is one.
+For a new product, read the design, the spec or the notes in full, then the brand guide or house style if there is one.
 
-## Coverage list
+## What the brief covers
 
-The grill closes only when every topic below is answered, settled from a source, or deferred with a reason.
+Most of these come from the sources. Ask only about the points that the sources leave open.
 
-1. **Purpose.** What problem the screens solve, for whom, and what a user can do afterwards that they cannot do today. What the mock-up must prove to its audience.
-2. **Audience of the mock-up.** Who will open the file: end users, stakeholders or the build team. What they must decide or comment on after they see it.
-3. **Users and tasks.** Each kind of user, their role, and the 2-5 tasks they come to do. What each user can and cannot see or do.
-4. **Screens.** The list of screens, dialogs and panels in scope. What is deliberately out of scope.
-5. **Flows.** Each path a user takes, step by step, from where it starts to where it ends. The happy path first, then the other paths: cancel, back, undo, a wrong input, a lost connection.
-6. **Layout and navigation.** Where each screen sits in the product, how a user reaches it, and what stays fixed (header, side bar, footer).
-7. **Look and feel.** For an existing system, confirm that the mock-up follows the system, and agree any planned change to it. For a new system, agree the palette, type, density, corner style, depth and tone. Name 2-3 words for the feel, such as "calm, dense, precise", and test each design choice against them.
-8. **Content.** The real labels, headings, help text and messages. The data each screen shows, its shape, and how long and how varied it gets.
-9. **Functionality.** What each control does. Sorting, filtering, search, paging, editing, bulk actions, keyboard shortcuts. What the mock-up only pretends to do, such as saving or sending.
-10. **States.** For each screen: empty, loading, partial, full, error, success, read-only and no permission, where they apply. Validation rules and the error message for each.
-11. **Feedback and motion.** How the product confirms an action: a toast, an inline message, a change of state. Which transitions it uses, and how fast.
-12. **Sizes and devices.** The screen sizes to support, such as desktop at 1440px and phone at 390px. Touch or mouse. Whether dark mode is in scope.
-13. **Accessibility.** Keyboard order, focus, screen reader labels, contrast and reduced motion. Any known need of the users.
-14. **Open points.** Each question nobody can answer yet, with the option the mock-up shows for now.
+1. **Purpose and audience.** What the screens let a user do, and who will open the mock-up.
+2. **Users and permissions.** Each kind of user, and what each can and cannot see or do.
+3. **Screens in scope.** The screens, dialogs and panels to build, and where each sits in the product. The screens that must not change.
+4. **Flows.** Each path from its start to its end: the main path first, then cancel, back and a wrong input.
+5. **Content and data.** The labels, and the data each screen shows: its shape, its length and its variety.
+6. **States.** Empty, loading, error, success and no permission, where they apply.
+7. **Sizes.** The screen sizes to support, such as desktop only, or desktop and phone.
+8. **Open points.** Each question that nobody can answer yet, with the option the mock-up shows for now.
+
+The look is not a question for an existing product: the mock-up follows the product. Ask about the look only for a new product, or when the person wants to change the product's look. Accessibility follows `references/build.md` and is not a question either.
 
 ## Where to push
 
-In addition to the grill's own list, push on these:
+Push on these only when they matter for the screens in scope:
 
-- **The second user.** Screens are often designed for one role. Ask what a user with fewer permissions sees.
-- **The empty first day.** Ask what a new user sees before there is any data.
-- **The long name and the large list.** Ask what happens with 3 items, 300 items and a name of 80 characters.
-- **The change to the old screen.** For an existing system, ask what happens to the users who know the current screen, and what moves or goes away.
-- **Feel words that conflict.** "Simple" and "powerful" pull in different directions. Ask which one wins when they conflict.
+- **The second user.** What a user with fewer permissions sees.
+- **The empty first day.** What a new user sees before there is any data.
+- **The large list.** What happens with 300 items and a name of 80 characters.
+- **The old screen.** For an existing product, what changes for users who know the current screen.
 
-## The grooming brief
+## The brief
 
-When the grill closes, write the brief in the chat, not in a file. It must be readable in 2 minutes:
+Write the brief in the chat, not in a file. Keep it short enough to read in 1 minute:
 
-- **Purpose and audience.** 1-2 sentences.
-- **Screens and flows.** A short list. Each flow as a line of steps joined by `→`.
-- **Look.** Follows the existing system, or the agreed palette, type and feel words.
-- **States and sizes.** What each screen shows, at which sizes.
+- **Screens.** Each screen, where it sits, and the existing page it copies.
+- **Flows.** Each flow as a line of steps joined by `→`.
+- **States and sizes.**
 - **Pretend behaviour.** What the mock-up fakes, such as saving.
+- **New design.** Anything the product has no pattern for.
 - **Open points.** Each with the option the mock-up shows for now.
-
-Ask the person to confirm the brief before you build.
