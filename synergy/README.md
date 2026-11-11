@@ -198,7 +198,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | `support-request`     | Support-request and incident write-ups            |
 | `tone`                | Polishes correspondence in the user's voice       |
 | `demo`                | Builds a one-screen, interactive HTML walkthrough of a system or proposal for business readers, with its own look for each subject |
-| `mockup`              | Grooms the UI, UX, feel and functionality of new or changed screens, then builds a clickable mock-up that looks exactly like the product, as a standalone HTML file for users |
+| `mockup`              | Builds a clickable mock-up of new or changed screens from a story, spec or idea, reusing the product's own look, as a standalone HTML file for users |
 
 ## Adapting for a new project
 
