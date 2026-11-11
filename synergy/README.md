@@ -198,6 +198,7 @@ The plugin bundles the following skills. The orchestrators (`execute`, `bulk-exe
 | `support-request`     | Support-request and incident write-ups            |
 | `tone`                | Polishes correspondence in the user's voice       |
 | `demo`                | Builds a one-screen, interactive HTML walkthrough of a system or proposal for business readers, with its own look for each subject |
+| `functional-spec`     | Writes a functional spec: the problem, the goal, then the behaviour as short, testable rules, with no technical design |
 | `mockup`              | Builds a clickable mock-up of new or changed screens from a story, spec or idea, reusing the product's own look, as a standalone HTML file for users |
 
 ## Adapting for a new project
