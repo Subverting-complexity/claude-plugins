@@ -6,9 +6,11 @@ See [README.md](README.md#picking-up-a-new-version) for how to pick up a
 new version, and why a stale marketplace cache is the usual reason an
 update appears to do nothing.
 
-## synergy 21.2.1
+## synergy 21.3.0
 
 - `functional-spec` adds a section only when it is relevant to the feature. The rules on what to cover, such as what does not change, are not a list of sections to fill in each spec. A short spec with 2-3 sections is normal.
+- `functional-spec` starts with an Overview, as a user story does, in place of separate Problem and Goal sections.
+- `functional-spec` writes a related work item with a hash before its number, such as `#36032`, so the tracker links it.
 
 ## synergy 21.0.3
 
