@@ -28,7 +28,7 @@ A user story with an Overview and a Technical section is the `user-story` skill.
 - **1 section for each part of the behaviour.** Name each section after the concept, such as `Versions`, `Choosing a version` or `Undo`. Give each screen its own section, such as `Admin page: Order History`, and each flow too, such as `Bulk cancel`. Order the sections as a reader meets the feature.
 - **Bullets inside each section.** 1 rule in each bullet. Use a nested list for a set of conditions or results, such as "when all of these are true".
 
-Leave out sections that carry nothing. Do not add an overview, a technical section, acceptance criteria, an open questions section, an out of scope section, or a status, date or author line, unless the person asks.
+Add a section only when it is relevant to this feature. The list of rules below says what to cover when it applies, not a section to fill in each spec: approval, records, what does not change and what does not happen get a section of their own only when the feature changes them or a reader could expect otherwise. A short spec with 2-3 sections is normal. Leave out sections that carry nothing. Do not add an overview, a technical section, acceptance criteria, an open questions section, an out of scope section, or a status, date or author line, unless the person asks.
 
 ## How to write the rules
 
