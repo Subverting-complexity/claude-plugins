@@ -1,6 +1,6 @@
 ---
 name: functional-spec
-description: 'Write a functional spec for a feature or change: the problem, the goal, then the behaviour as short rules, with no technical design. Trigger on "functional spec", "spec this" or "write the spec". Not for user stories.'
+description: 'Write a functional spec for a feature or change: an overview, then the behaviour as short rules, with no technical design. Trigger on "functional spec", "spec this" or "write the spec". Not for user stories.'
 ---
 # Functional spec
 
@@ -23,12 +23,11 @@ A user story with an Overview and a Technical section is the `user-story` skill.
 ## Shape
 
 - **Title.** `<Area>: <Feature>`, in title case, such as `Orders: Bulk Cancel with Undo`.
-- **Problem.** 2-4 sentences: what does not work today, for whom, and why it matters now. Name the event that showed the problem, if there was one.
-- **Goal.** 1-3 sentences: what users can do when the feature is done. If a mock-up is attached, say so in 1 sentence.
+- **Overview.** The first section, as in a user story: 1-2 short paragraphs of prose. Say what the feature lets users do, who benefits and why it matters now, including what does not work today. Name the event that showed the problem, if there was one. If a mock-up is attached, say so in 1 sentence. Do not split it into a Problem and a Goal section.
 - **1 section for each part of the behaviour.** Name each section after the concept, such as `Versions`, `Choosing a version` or `Undo`. Give each screen its own section, such as `Admin page: Order History`, and each flow too, such as `Bulk cancel`. Order the sections as a reader meets the feature.
 - **Bullets inside each section.** 1 rule in each bullet. Use a nested list for a set of conditions or results, such as "when all of these are true".
 
-Leave out sections that carry nothing. Do not add an overview, a technical section, acceptance criteria, an open questions section, an out of scope section, or a status, date or author line, unless the person asks.
+Add a section only when it is relevant to this feature. The list of rules below says what to cover when it applies, not a section to fill in each spec: approval, records, what does not change and what does not happen get a section of their own only when the feature changes them or a reader could expect otherwise. A short spec with 2-3 sections is normal. Leave out sections that carry nothing. Do not add an overview, a technical section, acceptance criteria, an open questions section, an out of scope section, or a status, date or author line, unless the person asks.
 
 ## How to write the rules
 
@@ -40,11 +39,11 @@ Leave out sections that carry nothing. Do not add an overview, a technical secti
 - **Say who can do each action,** and where in the product they do it.
 - **Name the default and the most specific rule,** when a setting can be made at more than 1 level.
 - **Keep the person's own limits,** such as "must stay easy to build", when they stated them.
-- **Name related work items** by their number and title.
+- **Name related work items** by their number and title, with a hash before the number, such as `#36032 — Pipeline monitor on action failure`, so that Azure DevOps and GitHub link it.
 
 ## Checklist
 
-- The problem and the goal make sense to a reader who has not seen the chat.
+- The overview makes sense to a reader who has not seen the chat.
 - Each rule is testable: a tester can say if the system follows it.
 - Each rule appears once. 2 rules do not contradict each other.
 - Each screen, flow and state that the person agreed has a section or a bullet.
