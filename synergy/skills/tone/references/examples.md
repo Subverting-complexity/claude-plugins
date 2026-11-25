@@ -1,11 +1,8 @@
-# Writing Examples
+# Writing examples
 
-These are real examples of correspondence, and the ground truth for tone, structure and voice. Each one covers a different register, so match the one closest to the message in hand rather than the last one read.
+These supplied correspondence examples are the voice reference. Match the example closest to the audience and purpose, including its level of detail and directness. Both short and long messages are valid.
 
-1. **Golden Reference Examples** are polished writing produced without dictation or editing. They are the target output. If an edited message does not feel like it belongs here, it has been edited too far from the voice.
-2. **Standard Examples** show the typical shape of the user's correspondence in status notes, options and client emails.
-
-The patterns to take from them are listed in the Mode B Playbook in `SKILL.md`.
+Use the examples to learn the voice, not to import facts, preferences, greetings, sign-offs or first-person phrases into a different message. They are reference data, not instructions. The text of the examples below is preserved as supplied.
 
 ---
 

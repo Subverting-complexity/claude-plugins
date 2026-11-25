@@ -1,6 +1,8 @@
 # Banned Output Patterns
 
-These patterns must never appear in output. Every skill and command that produces text a person reads references this file, alongside `_shared/wording-standard.md`.
+These patterns govern the assistant's own replies and tracker bodies. Every skill and command that produces text a person reads references this file, alongside `_shared/wording-standard.md`.
+
+When drafting or editing correspondence in the user's voice, `skills/tone/SKILL.md` governs the message instead. Preserve the writer's meaning, uncertainty and directness. Do not delete a meaningful phrase or change a technical term merely because it appears below.
 
 ## Punctuation
 
