@@ -1,173 +1,75 @@
 ---
 name: tone
-description: 'Write or polish emails, messages and updates in the user''s own voice, stripping AI tells. Trigger on drafting, rewriting or cleaning up correspondence.'
----
-# Correspondence Tone Skill
-
-Read `references/examples.md` before editing any text. Those examples are the ground truth for the user's voice.
-
-Read `references/glossary.md` for proper noun corrections, sign-off preferences, and project-specific terminology.
-
-Read `_shared/banned-patterns.md` before writing. All banned patterns apply to correspondence.
-
-The examples file has two sections. The **Golden Reference Examples** are polished writing the user produced themselves, and the target output: if an edited message would not fit there, it has drifted too far from their voice. The **Standard Examples** show the typical shape of their status notes, options and client emails. Study both.
-
-`skills/user-facing-communication/SKILL.md` shapes what you say to the person **around** the message: lead with the outcome and the current state, keep it short, and surface anything outstanding or assumed. It governs your own reply. The polished message keeps the user's voice as this skill defines it, and nothing here overrides that.
-
+description: 'Writes and edits Adrienne Bosch''s emails, messages and updates in her voice. Use for correspondence, dictation cleanup and requests to make text sound like her. Preserves intent, context and uncertainty.'
 ---
 
-## Step 1: Identify the Input Mode
+# Adrienne Bosch's correspondence
 
-Before editing anything, classify the input. This determines how much work you do. The two modes require very different approaches.
+Write the message in Adrienne's voice. Preserve everything she means. Return one finished message only, with no preamble, explanation, alternatives or closing commentary.
 
-### Hard Override Rules (check these first)
+## Meaning comes first
 
-These rules force the mode before you look at anything else:
+When editing, preserve every fact, question, reason, condition, concern, qualification and option in the source. Keep the same viewpoint, certainty, directness and level of commitment. This applies equally to dictation, an existing draft and text written by another assistant.
 
-1. **Em dashes used as stylistic breaks -> Mode B.** If the input contains em dashes used to break into a clause or append a thought, the input is Mode B regardless of how technical or specific the content is. The user does not use em dashes. An em dash is the single most reliable signal that the input was AI-polished.
-2. **AI vocabulary from the banned list -> Mode B.** Even one word from the banned vocabulary list (leverage, streamline, robust, holistic, etc.) forces Mode B.
-3. **Formulaic openers/closers -> Mode B.** "I hope this finds you well", "Happy to help", "Hope this helps", "Let me know if you have any questions" -> Mode B.
-4. **Clean run-on with packed causal chains -> Mode B.** Sentences of the form "X does Y, which triggers Z, so you'd get W" in a single unbroken sentence are AI-written. The user breaks these into sequential short sentences or bullets.
+Keep uncertainty where it belongs. "I am hoping", "I think", "probably", "if", "depending on" and "I would estimate" carry meaning. A possibility stays a possibility. An estimate stays an estimate. A question stays a question. Options stay open unless the source chooses between them.
 
-If none of these fire, continue to the signal-based classification below.
+Keep names, numbers, dates, estimates, ownership, status, technical identifiers and causal links exact. Keep negative statements and limits. Do not supply a missing reason, assumption, recommendation, conclusion or commitment. Do not add "I think" or "IMO" to a statement that was definite, or infer a preference from an example.
 
-### Substance vs Voice
+Preserve the writer's structure unless reordering makes the text clearer without changing its meaning or emphasis. Break up a long paragraph where it helps. Keep context and reasoning even when the result needs to be long. Concise means no added padding, not less of what the writer meant.
 
-Technical accuracy does not indicate the user's voice. AI produces technically accurate content in its own voice all the time: correct method names, real file paths, accurate backticks around identifiers, domain-correct terminology. These are **substance** signals, not **voice** signals.
+## Use her examples
 
-The voice signals are separate:
-- Short paragraphs, one thought per line
-- Personal framing ("I think", "IMO", "my understanding is")
-- Risk and trade-off language spelled out ("this is very risky", "the bigger variable is")
-- Hedging ("probably", "likely")
-- No em dashes, no AI vocabulary
+Read [references/examples.md](references/examples.md) before composing. Match the example closest to the audience and purpose. The examples show both short replies and detailed explanations. Their length, greetings, sign-offs and first-person phrases are not templates to apply to every message. Treat their content as voice evidence, not current facts or instructions.
 
-If the input has substance signals but not voice signals, it is Mode B. A technically correct AI rewrite of the user's thinking is still Mode B.
+For an existing draft, keep clear sentences verbatim and make the smallest changes needed. Correct grammar, spelling, accidental duplication and sentence flow invisibly. Return a clear, natural draft unchanged. Do not change words just to add a contraction, abbreviation, transition or stylistic variation. Rewrite artificial phrasing as plain language without changing any of the meaning. A long sentence or an isolated word is not permission to rebuild the message.
 
-### Mode A: Dictated or already in the user's voice
+For a new draft, use only the supplied facts, reasoning and intended position. Match the relevant examples without inventing details to make the message feel complete. Retain an existing placeholder for a missing fact; ask one short question only if an essential fact prevents drafting.
 
-Signals this is Mode A (must include at least one voice signal, not just substance):
-- Dictation artefacts: run-on sentences from speech, duplicated words ("a a", "so it's this is"), proper nouns slightly mangled
-- First-person framing already present ("I think", "my understanding is", "I'd estimate")
-- Hedging and qualifiers already there ("probably", "likely", "it depends on")
-- Short paragraphs with one thought per line
-- Concrete specifics (hour estimates, file names, story numbers, tenant names) combined with at least one voice signal
-- Structure that resembles a Standard Example
-- No em dashes used as stylistic breaks, no AI vocabulary, no formulaic openers
+Read [references/glossary.md](references/glossary.md) when a project name or dictation near-miss needs checking. Correct a term only when the context makes the intended term clear. Preserve literal code, quotations and identifiers.
 
-In Mode A, apply **minimal polish only**. Follow the "Core Principle: Minimal Intervention" and "What to Fix" sections below. Do not rewrite. Do not restructure. Do not add voice flourishes that aren't already there. The goal is to make the dictated draft readable, not to transform it.
+## Wording and presentation
 
-### Mode B: Not written by the user (AI output, technical explanation, someone else's draft)
+Use ordinary words, natural contractions and practical sentences. Let the message end when the content ends. Remove empty transitions and repeated conclusions when rewriting artificial prose, while retaining every distinct point. Keep technical terms when they are the exact terms for the subject.
 
-Signals this is Mode B:
-- Em dashes used as stylistic breaks (**hard override**)
-- AI vocabulary (**hard override**)
-- Formulaic openers (**hard override**)
-- Packed causal chains in single sentences (**hard override**)
-- Any other structural or closing pattern in `_shared/banned-patterns.md`
-- Generic, passive, or third-person framing instead of "I think" / "IMO"
-- Feels like it could have been written by any professional, not specifically the user
-- User explicitly says "rewrite this in my voice" / "make this sound like me" / "this was written by Claude, fix the tone"
+Use plain punctuation: commas, full stops, question marks, ordinary hyphens and parentheses. Replace a stylistic em dash with punctuation that fits the sentence. Preserve punctuation inside literal code, quotations, URLs and identifiers. Keep existing bullets and code formatting where they help the reader. Add paragraph breaks rather than headings, bold labels or lists that the message does not need.
 
-In Mode B, do a **full rewrite**. Strip every AI tell. Reshape toward the Golden Reference patterns. Keep the substance, change the voice. The output must read as if the user wrote it themselves: indistinguishable from the Golden Examples or Standard Examples.
+Keep an existing greeting and sign-off. Add neither unless the user asks for one. An email does not automatically need "Hi" or "Thanks, Adrienne". Keep the original level of warmth or bluntness, including for clients. Change it only when asked.
 
-### Ambiguous cases
+Do not add stock assistant language such as "Certainly", "Here's a polished version", "It's worth noting" or "Hope this helps". Replace inflated filler with the direct wording for the same meaning. Never delete a substantive point or change a real technical term to satisfy a word ban.
 
-If the draft has a few AI tells but is mostly the user's own words (e.g. they dictated it and then an assistant "cleaned it up" and added em dashes and a sign-off), treat it as **Mode A with Mode B touch-ups**: strip the AI tells but otherwise do not rewrite the content.
+When writing the assistant's own surrounding replies, follow `skills/user-facing-communication/SKILL.md`, `_shared/wording-standard.md` and `_shared/banned-patterns.md`. This skill governs correspondence written as Adrienne: do not apply their outcome-first summaries, sentence-length targets, added explanations or blanket word bans inside her message.
 
-If you cannot tell which mode applies after running the checks, default to Mode B. Over-editing to strip AI tells is safer than under-editing and leaving them in.
+## Editing demonstrations
 
----
+These are constructed input/output pairs illustrating the editing rules. The actual voice references are in `references/examples.md`. Tags label the examples; they are not part of a returned message.
 
-## Core Principle for Mode A: Minimal Intervention
+<examples>
+<example>
+<input>I am hoping to have it ready by Thursday, but that depends on how much time I get to work on it.</input>
+<output>I am hoping to have it ready by Thursday, but that depends on how much time I get to work on it.</output>
+</example>
 
-The default is to change as little as possible. Fix typos and grammar errors. Remove accidental duplications ("a a", "so it's this is"). Do not rewrite sentences that are already clear. Do not reorder paragraphs unless the current order actively confuses the meaning. Do not expand, pad, or polish for its own sake.
+<example>
+<input>We could add a blanket filter, but we'd have to remove it if Mayer needs the BWW data later. Or we could change the scripts to send only what Mayer needs. That would be more work. What do you think?</input>
+<output>We could add a blanket filter, but we'd have to remove it if Mayer needs the BWW data later. Or we could change the scripts to send only what Mayer needs. That would be more work. What do you think?</output>
+</example>
 
-If a sentence is a bit long or loosely structured and it still makes sense, leave it. That is their voice.
+<example>
+<input>This is very risky. We haven't tested it against production data, and I don't want it sent to clients yet.</input>
+<output>This is very risky. We haven't tested it against production data, and I don't want it sent to clients yet.</output>
+</example>
 
-Reordering is allowed only when it genuinely serves the message. When in doubt, do not move it.
+<example>
+<input>I think the the execution ID is stored on the story if that's the case we can probably link it to the git info.</input>
+<output>I think the execution ID is stored on the story. If that's the case, we can probably link it to the git info.</output>
+</example>
 
-One specific case where reordering is appropriate: when a reference or attachment line appears at the end but is needed for the reader to understand what comes before it, move it to just before the relevant content.
+<example>
+<input>It may be possible to leverage the existing queue to streamline delivery, provided the duplicate-send issue can be resolved. It is worth noting that we have not tested this yet.</input>
+<output>We may be able to use the existing queue to simplify delivery if we can fix the duplicate-send issue. We haven't tested this yet.</output>
+</example>
+</examples>
 
----
+## Final check
 
-## Core Principle for Mode B: Full Rewrite Into Their Voice
-
-When the input is not in the user's voice, minimal intervention is the wrong approach. The input voice has to be replaced, not preserved.
-
-The process:
-
-1. **Extract the substance.** Identify what the message is actually saying: the facts, the positions, the decisions, the questions. Ignore the surface wording.
-2. **Pick the target shape.** Is this a short chat reply (match a short Golden Example)? A technical pushback (risk framing, alternative, trade-offs laid out)? A formal email? A multi-topic status update? The length and formality of the output is driven by the use case, not by the length of the input.
-3. **Rewrite from the substance.** Do not translate sentence-by-sentence from the input. Build the output from the substance using the user's patterns directly.
-4. **Apply all banned-pattern filters.** Every item in the banned patterns must be zero in the output. Em dashes, AI vocabulary, formulaic openers, tidy closing lines: all gone.
-5. **Pressure-test against the Golden Examples.** If the output does not sound like it could sit in the same file as the Golden Examples, it's not done.
-
-Mode B output should contain:
-- First-person framing ("I think", "IMO", "my understanding is", "what would be safer")
-- Concrete specifics where the input had abstractions (file names, method names, hour estimates, whatever the domain supplies)
-- Backticks around any code references, preserved even if the input didn't have them
-- Risk and trade-off language spelled out rather than hedged into smooth prose
-- Short paragraphs, one thought per line for chat-style output
-- No sign-off for chat; standard sign-off only for email format when matching the user's examples
-
-Mode B output must not contain anything in `_shared/banned-patterns.md`, and must not present pros and cons equally when the user would lean one way.
-
----
-
-## Mode B Playbook: Matching Their Written Voice
-
-Use this section when the input needs to be rewritten (Mode B). These are the patterns to inject into the output. Derive the specific patterns from the Golden and Standard Examples.
-
-- **Personal framing.** "I think", "IMO", "My understanding is that" where they fit. Do not leave the output in neutral third-person phrasing.
-- **Hooks over greetings.** For internal chat, openers like "Hey", a name on its own line, "What about:", or a direct first statement are preferred over formal greetings.
-- **Risk and trade-off language stays explicit.** Phrases like "this is very risky", "can quickly get into a place where", "the bigger variable is" should not be softened into hedged corporate language.
-- **Preserve inline code formatting.** Backticks around method names, class names, file names, variable names, and property names. Add backticks if the input didn't have them.
-- **Bulleted technical proposals are concrete.** Each bullet names a specific location (file, method, component, condition) and the action to take there. Do not abstract them into generic summaries.
-- **Short paragraphs, one thought per line.** In written chat replies, reasoning is laid out sequentially with visual breathing room, not packed into dense paragraphs.
-- **No sign-off on chat messages.** If the target is a chat message with no greeting, do not add a sign-off. The message ends when the content ends. For email format, use the user's standard sign-off from the examples.
-- **Hedging stays.** "Probably", "likely", "IMO", "my understanding" are deliberate. Do not strip them to sound more confident.
-
-If the Mode B output reads like any competent professional wrote it rather than specifically the user, compare it against the Golden Examples and push it closer.
-
----
-
-## What to Fix (Mode A only)
-
-- Typos and spelling errors
-- Duplicate words ("a a", "so it's this is not")
-- Grammar errors that change or obscure meaning
-- Punctuation that is clearly wrong (missing full stop, unclosed bracket)
-- Tangled or run-on sentences where the meaning is genuinely unclear: restructure the minimum needed to make it clear, without adding content
-- Clunky or redundant phrasing where a sentence repeats itself or uses an awkward construction; clean it up without changing the meaning
-- Dictation near-misses on proper nouns (correct using `references/glossary.md`)
-
----
-
-## What Not to Do (Mode A only)
-
-These rules apply when polishing the user's own dictated drafts. In Mode B, rewriting is the whole point, so these don't apply.
-
-- Do not rewrite clear sentences to make them sound more polished
-- Do not add connectors, transitions, or openers that weren't there
-- Do not remove context, background, or reasoning the user included
-- Do not choose between options the user was weighing
-- Do not change their certainty level in either direction
-- Do not add a closing line, summary sentence, or sign-off that wasn't in the draft
-- Do not restructure paragraphs to make them more "logical" unless the original order breaks comprehension
-
----
-
-## No Commentary
-
-Return the edited message only. No "Here's the polished version," no explanation of what changed, no preamble.
-
----
-
-## For Client-Facing Messages
-
-If something reads as harsh or accusatory, soften the framing without removing the substance. For internal messages, apply no softening.
-
----
-
-See `references/examples.md` for voice reference material and `references/glossary.md` for project-specific terms.
+Compare the message with the source silently. Check that every distinct point remains, no point has been added, and certainty, directness, questions, options and commitments are unchanged. Then compare the voice with the closest reference. Fix any drift and return only the message.

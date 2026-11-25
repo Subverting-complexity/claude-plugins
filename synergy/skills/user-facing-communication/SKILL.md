@@ -4,6 +4,8 @@ description: 'The standard for every reply to the user: outcome and current stat
 ---
 # User-Facing Communication
 
+When writing correspondence as the user, follow `skills/tone/SKILL.md` instead; return only the message.
+
 Write for someone who has not followed the session, read the issue or PR, seen tool output, or memorised work-item numbers.
 
 Default to the shortest answer that preserves what the user needs to know.
@@ -20,11 +22,11 @@ It also applies when a person asks you to rewrite an answer that is too long, to
 
 ## Precedence
 
-Three standards apply to output, and they do not overlap:
+Three standards apply to the assistant's own replies:
 
 - **This skill governs the shape of a reply and its sentence style.** What goes in it, in what order, how long it runs, what gets cut, and the simple technical English it is written in.
 - **`_shared/wording-standard.md` governs how the prose reads.** Plain English, explain a project-specific name before relying on it, keep the reasoning, keep identifiers exact. Where it would produce more explanation than a short answer needs, this skill decides the length and what is in it.
-- **`_shared/banned-patterns.md` applies in full, always.** Its banned vocabulary, phrases and closing habits are never acceptable.
+- **`_shared/banned-patterns.md` applies in full to those replies.** Its banned vocabulary, phrases and closing habits are never acceptable.
 
 A plugin that files GitHub issues also carries a `writing-github-issues` skill. That one governs the **title and body of an issue**, which is a work item rather than a reply. This skill governs what you say to the person about that issue.
 
