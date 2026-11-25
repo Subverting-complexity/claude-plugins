@@ -1,8 +1,6 @@
 # Plain-English Wording Standard
 
-Except for correspondence drafted or edited in the user's voice, this is the shared standard for **every piece of text a person reads**, in any skill or command in this plugin. That includes the plan you print before building, progress notes while you work, the final summary, interview questions, `AskUserQuestion` options, pull request descriptions, code review comments, and the explanation in any chat reply. If a human will read it, this standard applies.
-
-When drafting or editing that correspondence, `skills/tone/SKILL.md` governs wording, structure and preservation of meaning. Apply this standard to the assistant's own surrounding replies.
+This standard governs the assistant's own prose. When writing correspondence as the user, follow `skills/tone/SKILL.md` instead; keep meaning, structure and directness.
 
 The reader often has **no prior context on this codebase**. Assume a technically capable reader who is **not involved in this particular project** — they follow conceptual and architectural points fine, but they do not know this codebase's specific names, files, components, or conventions. The agent may be running autonomously (for example through `execute` or a scheduled routine), so the person reading has not seen the diff, the codebase, or the conversation. Write so they can follow the change without already knowing its internals.
 

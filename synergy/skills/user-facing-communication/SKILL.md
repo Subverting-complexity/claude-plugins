@@ -4,7 +4,7 @@ description: 'The standard for every reply to the user: outcome and current stat
 ---
 # User-Facing Communication
 
-When drafting or editing correspondence in the user's voice, `skills/tone/SKILL.md` governs the message, including its meaning, structure and length. Return only that message when requested. This standard governs the assistant's own replies around it.
+When writing correspondence as the user, follow `skills/tone/SKILL.md` instead; return only the message.
 
 Write for someone who has not followed the session, read the issue or PR, seen tool output, or memorised work-item numbers.
 
